@@ -39,7 +39,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               zotlit.services.bridge.runSync(zotlit.services.settings.current)[
                 "library.document"
               ] ?? null,
-            dataDir: zotlit.services.zoteroPref.dataDirOverride,
+            dataDir: zotlit.services.bridge.runSync(
+              zotlit.services.zoteroPrefService.current,
+            ).dataDirOverride,
           }),
         );
       },
@@ -52,7 +54,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app, zotlit }, { snapshot, notepath }) => {
           const saved = JSON.parse(snapshot);
-          zotlit.services.zoteroPref.setDataDir(saved.dataDir);
+          zotlit.services.bridge.runSync(
+            zotlit.services.zoteroPrefService.setDataDir(saved.dataDir),
+          );
           const { settings, bridge } = zotlit.services;
           bridge.runSync(
             settings.update({ "library.document": saved.document }),
@@ -1361,7 +1365,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }, { emptydir }) => {
-        zotlit.services.zoteroPref.setDataDir(emptydir);
+        zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.setDataDir(emptydir),
+        );
         return String(true);
       },
       { emptydir: emptyDir },
@@ -1404,7 +1410,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }, { dataDir }) => {
-        zotlit.services.zoteroPref.setDataDir(dataDir);
+        zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.setDataDir(dataDir),
+        );
         return String(true);
       },
       { dataDir: JSON.parse(snapshot).dataDir },

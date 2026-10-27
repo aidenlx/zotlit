@@ -388,9 +388,9 @@ async function saveMatch(match: unknown): Promise<void> {
             String(
               JSON.stringify(
                 (() => {
-                  const match = zotlit.services.profile.profiles.find(
-                    (p) => p.id === __typedArg0,
-                  )?.match;
+                  const match = zotlit.services.bridge
+                    .runSync(zotlit.services.profileService.profiles)
+                    .find((p) => p.id === __typedArg0)?.match;
                   return match && "tree" in match ? match.tree : undefined;
                 })(),
               ) === __typedArg1,
@@ -437,9 +437,9 @@ async function writeMatch(
             String(
               JSON.stringify(
                 (() => {
-                  const match = zotlit.services.profile.profiles.find(
-                    (p) => p.id === __typedArg0,
-                  )?.match;
+                  const match = zotlit.services.bridge
+                    .runSync(zotlit.services.profileService.profiles)
+                    .find((p) => p.id === __typedArg0)?.match;
                   return match && "tree" in match ? match.tree : undefined;
                 })(),
               ) === __typedArg1,

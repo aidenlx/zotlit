@@ -88,14 +88,14 @@ it.effect(
       yield* Deferred.await(started);
       yield* TestClock.adjust("5 seconds");
       const f = yield* Fiber.join(building);
-      expect(f.plain.current).toBeNull();
+      expect(f.bridge.runSync(f.service.current)).toBeNull();
       yield* Deferred.succeed(release, undefined);
       yield* Stream.runHead(
         f.service.changes.pipe(
           Stream.filter((state) => state.current !== null),
         ),
       );
-      expect(f.plain.current?.available).toHaveLength(1);
+      expect(f.bridge.runSync(f.service.current)?.available).toHaveLength(1);
     }),
 );
 
@@ -120,9 +120,11 @@ it.effect(
       );
       const f = yield* libraryScopeFixture(client);
       yield* Effect.promise(() =>
-        expect.poll(() => f.reads.state).toBe("ready"),
+        expect
+          .poll(() => f.bridge.runSync(f.reads.current).state)
+          .toBe("ready"),
       );
-      expect(f.plain.current?.available).toHaveLength(1);
+      expect(f.bridge.runSync(f.service.current)?.available).toHaveLength(1);
       yield* PubSub.publish(events, {
         _tag: "degraded",
         error: new DbUnavailable({ message: "feed lost" }),
@@ -132,8 +134,8 @@ it.effect(
           Stream.filter((state) => state.current === null),
         ),
       );
-      expect(f.plain.libraries).toEqual([]);
-      expect(f.plain.libraryRows).toBeNull();
+      expect(f.bridge.runSync(f.service.libraries)).toEqual([]);
+      expect(f.bridge.runSync(f.service.libraryRows)).toBeNull();
       yield* Effect.promise(() => f.close());
       expect(database.log).toEqual(["open #1", "close #1"]);
     }),
@@ -175,6 +177,6 @@ it.effect(
       yield* Effect.promise(() => f.close());
       yield* Deferred.await(interrupted);
       yield* Fiber.join(ended);
-      expect(f.plain.current).toBeNull();
+      expect(f.bridge.runSync(f.service.current)).toBeNull();
     }),
 );

@@ -284,7 +284,8 @@ it.effect(
     Effect.gen(function* () {
       const bridge = yield* harness({ files: {}, profileId: "default" });
       expect(
-        bridge.profile.resolveProfile("default")?.document,
+        bridge.profile.bridge.runSync(bridge.profile.resolveProfile("default"))
+          ?.document,
       ).toBeUndefined();
 
       const first = yield* bridge.save({
@@ -300,9 +301,10 @@ it.effect(
       expect(bridge.vault.contents.get(DEFAULT_PATH)).toBe(DEFAULT_DRAFT);
       // The settings tab reads the registry, which carries the ejected document
       // without a reload because the Profile service observed the write.
-      expect(bridge.profile.resolveProfile("default")?.document).toBe(
-        "zotlit-profile.default.md",
-      );
+      expect(
+        bridge.profile.bridge.runSync(bridge.profile.resolveProfile("default"))
+          ?.document,
+      ).toBe("zotlit-profile.default.md");
 
       const second = yield* bridge.save({
         reference: "default",

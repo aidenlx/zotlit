@@ -28,7 +28,10 @@ import { Template } from "@/services/template/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type { inProcessReadsService } from "@/services/zotero-reads/test-utils";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsState,
+} from "@/services/zotero-reads/service";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
@@ -36,13 +39,28 @@ import type { TemplateWorkbenchDeps } from "./view";
 type TemplateFixture = TemplateOperations & {
   readonly "compile-status-changed": Stream.Stream<void>;
 };
-type ZoteroReadsFixture = ReturnType<typeof inProcessReadsService>;
+type ZoteroReadsFixture = {
+  state: ZoteroReadsState["state"];
+  reads: ZoteroReads["Service"]["reads"];
+  acquireRead(): Promise<ZoteroReadLease>;
+  changed: Stream.Stream<void>;
+  degraded: Stream.Stream<unknown>;
+  "refresh-failed": Stream.Stream<unknown>;
+  refreshing: Stream.Stream<boolean>;
+  "db-file-missing": Stream.Stream<void>;
+  "refresh-requested": Stream.Stream<void>;
+};
 
 export type WorkbenchHostDeps = Omit<
   ExplorerViewDeps,
   "pluginVersion" | "registry"
 > &
   TemplateDataDeps & {
+    services?: {
+      template?: Template["Service"];
+      profile?: Profile["Service"];
+      zoteroReads?: ZoteroReads["Service"];
+    };
     app?: App;
     runtime: SubscriptionRuntime;
     zoteroReads: Pick<
@@ -100,6 +118,7 @@ export function makeWorkbenchHost(
   const deps = stubService<WorkbenchHostDeps>("WorkbenchHostDeps", {
     settings: { current: Effect.succeed(defaults), changes: Stream.empty },
     app: undefined,
+    services: undefined,
     profile: undefined,
     noteFeature: undefined,
     nativePreview: undefined,
@@ -221,35 +240,39 @@ export function makeWorkbenchHost(
       ),
     }),
   ).pipe(
-    Context.add(Template, template),
-    Context.add(Profile, profile),
+    Context.add(Template, deps.services?.template ?? template),
+    Context.add(Profile, deps.services?.profile ?? profile),
     Context.add(
       ZoteroReads,
-      stubService<ZoteroReads["Service"]>("ZoteroReads", {
-        current: Effect.sync(dbState),
-        changes: Stream.suspend(() => Stream.make(dbState())),
-        events: Stream.suspend(() =>
-          Stream.map(
-            "changed" in deps.zoteroReads
-              ? deps.zoteroReads.changed
-              : Stream.empty,
-            () => ({ _tag: "changed" as const }),
+      deps.services?.zoteroReads ??
+        stubService<ZoteroReads["Service"]>("ZoteroReads", {
+          current: Effect.sync(dbState),
+          changes: Stream.suspend(() => Stream.make(dbState())),
+          events: Stream.suspend(() =>
+            Stream.map(
+              "changed" in deps.zoteroReads
+                ? deps.zoteroReads.changed
+                : Stream.empty,
+              () => ({ _tag: "changed" as const }),
+            ),
           ),
-        ),
-        reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReadsApi", {
-          ItemsByIndexedKeys: (request) =>
-            deps.zoteroReads.reads.ItemsByIndexedKeys(request),
+          reads: stubService<ZoteroReads["Service"]["reads"]>(
+            "ZoteroReadsApi",
+            {
+              ItemsByIndexedKeys: (request) =>
+                deps.zoteroReads.reads.ItemsByIndexedKeys(request),
+            },
+          ),
+          snapshot: Effect.map(
+            Effect.acquireDisposable(
+              Effect.promise((signal) => {
+                signal.throwIfAborted();
+                return deps.zoteroReads.acquireRead();
+              }),
+            ),
+            (lease) => lease.reads,
+          ),
         }),
-        snapshot: Effect.map(
-          Effect.acquireDisposable(
-            Effect.promise((signal) => {
-              signal.throwIfAborted();
-              return deps.zoteroReads.acquireRead();
-            }),
-          ),
-          (lease) => lease.reads,
-        ),
-      }),
     ),
     Context.add(
       ZoteroPref,

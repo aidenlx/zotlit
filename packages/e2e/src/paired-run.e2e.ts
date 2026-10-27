@@ -54,6 +54,7 @@ import {
   waitFor,
 } from "./obsidian-cli.ts";
 import type { NoteQueryView } from "./page-helpers.ts";
+import type { LibraryWorkerMessage } from "./page-library-types.ts";
 import type { PagePdfView } from "./page-notes-types.ts";
 import type {
   PairedWriteProbe,
@@ -279,8 +280,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         recorded = await obRun(
           vaultId!,
           async ({ zotlit }) => {
-            const use = zotlit.services.useLedger.current.RUGIER24;
-            return use ? { instant: use.instant.toString() } : null;
+            const use = zotlit.services.bridge.runSync(
+              zotlit.services.useLedger.current,
+            ).RUGIER24;
+            return use
+              ? {
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    use.instant.epochMilliseconds,
+                  ).toString(),
+                }
+              : null;
           },
           undefined,
         );
@@ -1330,16 +1339,31 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // before it ran a query.
         await obRun(
           vaultId!,
-          async ({ zotlit, page: pageHelpers }) => {
-            const query = zotlit.services.query;
-            const run = query.run;
-            const { promise: gate, resolve: release } =
-              Promise.withResolvers<void>();
-            query.run = (request, signal) =>
-              gate.then(() => run.call(query, request, signal));
+          async ({ page: pageHelpers }) => {
+            // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
+            const post = Worker.prototype.postMessage;
+            const pending: (() => void)[] = [];
+            pageHelpers.scratch.__ztQueryGateHits = 0;
+            Worker.prototype.postMessage = new Proxy(post, {
+              apply: (
+                postTarget,
+                receiver: Worker,
+                args: Parameters<Worker["postMessage"]>,
+              ) => {
+                const request = (args[0] as LibraryWorkerMessage)?.[1];
+                if (
+                  request?.tag !== "ItemQuery" ||
+                  !("view" in request.payload.job) ||
+                  request.payload.job.view.from !== "annotations"
+                )
+                  return Reflect.apply(postTarget, receiver, args);
+                pageHelpers.scratch.__ztQueryGateHits!++;
+                pending.push(() => Reflect.apply(postTarget, receiver, args));
+              },
+            });
             pageHelpers.scratch.__ztQueryGate = () => {
-              query.run = run;
-              release();
+              Worker.prototype.postMessage = post;
+              for (const send of pending.splice(0)) send();
             };
             return String(true);
           },
@@ -1351,6 +1375,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             async ({ page: pageHelpers }) => {
               pageHelpers.scratch.__ztQueryGate?.();
               delete pageHelpers.scratch.__ztQueryGate;
+              delete pageHelpers.scratch.__ztQueryGateHits;
               return String(true);
             },
             undefined,
@@ -1436,11 +1461,25 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               () => false,
             ))({ expected: "true" }),
         ).toBe(true);
+        expect(
+          await obRunUntil(
+            vaultId!,
+            ({ page: pageHelpers }) =>
+              (pageHelpers.scratch.__ztQueryGateHits ?? 0) > 0,
+            undefined,
+            { what: "the creation query reaches the held worker boundary" },
+          ).then(
+            () => true,
+            () => false,
+          ),
+          "the creation query reaches the held worker boundary",
+        ).toBe(true);
         await obRun(
           vaultId!,
           async ({ page: pageHelpers }) => {
             pageHelpers.scratch.__ztQueryGate!();
             delete pageHelpers.scratch.__ztQueryGate;
+            delete pageHelpers.scratch.__ztQueryGateHits;
             return String(true);
           },
           undefined,
@@ -11079,15 +11118,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
 
-          // Keep the database replacement pending while the user changes
-          // editors: a refresh must preserve the card's editing capability.
-          await using pendingRead = new AsyncDisposableStack();
-          pendingRead.defer(async () => {
+          // Hold the annotation ItemQuery worker message while the user
+          // changes editors: a refresh must preserve the card's editing
+          // capability.
+          await using heldQuery = new AsyncDisposableStack();
+          heldQuery.defer(async () => {
             await obRun(
               vaultId!,
               async ({ page: pageHelpers }) => {
-                pageHelpers.scratch.__zlPendingDatabaseRead?.restore!();
-                delete pageHelpers.scratch.__zlPendingDatabaseRead;
+                pageHelpers.scratch.__zlHeldAnnotationQuery?.restore!();
+                delete pageHelpers.scratch.__zlHeldAnnotationQuery;
                 return String(true);
               },
               undefined,
@@ -11098,24 +11138,41 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             async ({ zotlit, page: pageHelpers }) => {
               const services = zotlit.services;
               const db = services.zoteroReads;
-              const acquire = db.acquireRead;
-              const pending = Promise.withResolvers<void>();
-              const state: { changed: boolean; restore: (() => void) | null } =
-                { changed: false, restore: null };
-              const off = services.bridge.subscribe(db.changed, () => {
-                state.changed = true;
+              // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
+              const post = Worker.prototype.postMessage;
+              const pending: (() => void)[] = [];
+              const state: {
+                changed: boolean;
+                heldReads: number;
+                restore: (() => void) | null;
+              } = { changed: false, heldReads: 0, restore: null };
+              const off = services.bridge.subscribe(db.events, (event) => {
+                if (event._tag === "changed") state.changed = true;
               });
               state.restore = () => {
-                db.acquireRead = acquire;
+                Worker.prototype.postMessage = post;
                 off();
-                pending.resolve();
+                for (const send of pending.splice(0)) send();
               };
-              pageHelpers.scratch.__zlPendingDatabaseRead = state;
-              db.acquireRead = async () => {
-                await pending.promise;
-                return acquire.call(db);
-              };
-              await db.refresh();
+              pageHelpers.scratch.__zlHeldAnnotationQuery = state;
+              Worker.prototype.postMessage = new Proxy(post, {
+                apply: (
+                  postTarget,
+                  receiver: Worker,
+                  args: Parameters<Worker["postMessage"]>,
+                ) => {
+                  const request = (args[0] as LibraryWorkerMessage)?.[1];
+                  if (
+                    request?.tag !== "ItemQuery" ||
+                    !("view" in request.payload.job) ||
+                    request.payload.job.view.from !== "annotations"
+                  )
+                    return Reflect.apply(postTarget, receiver, args);
+                  state.heldReads++;
+                  pending.push(() => Reflect.apply(postTarget, receiver, args));
+                },
+              });
+              await services.bridge.runPromise(db.refresh);
               return String(true);
             },
             undefined,
@@ -11126,7 +11183,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 vaultId!,
                 async ({ page: pageHelpers }) => {
                   return String(
-                    pageHelpers.scratch.__zlPendingDatabaseRead!.changed,
+                    pageHelpers.scratch.__zlHeldAnnotationQuery!.changed &&
+                      pageHelpers.scratch.__zlHeldAnnotationQuery!.heldReads >
+                        0,
                   );
                 },
                 undefined,
@@ -16187,11 +16246,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           vaultId!,
           async ({ app, zotlit }) => {
             const services = zotlit.services;
-            await services.noteIndex.whenIndexed();
-            const literature =
-              services.noteIndex.getNotesByItemKey("RUGIER24")[0];
-            const imported =
-              services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")[0];
+            await services.bridge.runPromise(services.noteIndex.whenIndexed);
+            const literature = services.bridge.runSync(
+              services.noteIndex.getNotesByItemKey("RUGIER24"),
+            )[0];
+            const imported = services.bridge.runSync(
+              services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
+            )[0];
             if (!literature || !imported)
               throw new Error("Managed acceptance notes missing");
             return {
@@ -16261,7 +16322,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   __typedArg0!,
                 ),
               );
-              await services.zoteroReads.refresh();
+              await services.bridge.runPromise(services.zoteroReads.refresh);
               services.bridge.runSync(
                 services.settings.updateDefaultLiteratureNoteProfileBindings({
                   "note.import-annotations-as-template": __typedArg1,
@@ -16412,7 +16473,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await obRun(
           vaultId!,
           async ({ zotlit }) => {
-            await zotlit.services.zoteroReads.refresh();
+            await zotlit.services.bridge.runPromise(
+              zotlit.services.zoteroReads.refresh,
+            );
             return String(true);
           },
           undefined,
@@ -17717,10 +17780,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { __typedArg0 }: { __typedArg0: "RUGIER24" },
           ) => {
             const services = zotlit.services;
-            await services.noteIndex.whenIndexed();
+            await services.bridge.runPromise(services.noteIndex.whenIndexed);
             const notes = [];
-            for (const note of services.noteIndex.getNotesByItemKey(
-              __typedArg0,
+            for (const note of services.bridge.runSync(
+              services.noteIndex.getNotesByItemKey(__typedArg0),
             )) {
               const file = app.vault.getFileByPath(note.path);
               notes.push({
@@ -17799,8 +17862,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ) => {
                 return String(
                   String(
-                    zotlit.services.noteIndex.getNotesByItemKey(__typedArg0)
-                      .length,
+                    zotlit.services.bridge.runSync(
+                      zotlit.services.noteIndex.getNotesByItemKey(__typedArg0),
+                    ).length,
                   ),
                 );
               },

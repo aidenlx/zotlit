@@ -58,7 +58,25 @@ export async function verifyPdfReads(
           JSON.parse(__typedArg0).ledger,
         );
         await app.plugins.enablePlugin("zotlit");
-        return String(JSON.stringify(zotlit.services.useLedger.current));
+        return String(
+          JSON.stringify(
+            Object.fromEntries(
+              Object.entries(
+                zotlit.services.bridge.runSync(
+                  zotlit.services.useLedger.current,
+                ),
+              ).map(([key, use]) => [
+                key,
+                {
+                  kind: use.kind,
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    use.instant.epochMilliseconds,
+                  ).toString(),
+                },
+              ]),
+            ),
+          ),
+        );
       },
       { __typedArg0: saved },
     );
@@ -88,7 +106,7 @@ export async function verifyPdfReads(
         );
         await s.bridge.runPromise(s.settings.flush);
         await app.workspace.changeLayout(saved.layout);
-        await s.zoteroReads.refresh();
+        await s.bridge.runPromise(s.zoteroReads.refresh);
         return String(true);
       },
       { __typedArg0: saved },
@@ -139,7 +157,7 @@ export async function verifyPdfReads(
       app.workspace.protocolHandler.handlers.get("zotlit/open-attachment")!({
         action: "zotlit/open-attachment",
         item: __typedArg0,
-        "source-id": s.zoteroPref.sourceId!,
+        "source-id": s.bridge.runSync(s.zoteroPrefService.current).sourceId!,
       });
       return String(true);
     },
@@ -185,9 +203,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -267,9 +295,19 @@ export async function verifyPdfReads(
       vaultId,
       async ({ zotlit }) => {
         return Object.fromEntries(
-          Object.entries(zotlit.services.useLedger.current).map(
+          Object.entries(
+            zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+          ).map(
             ([key, value]) =>
-              [key, { ...value, instant: value.instant.toString() }] as const,
+              [
+                key,
+                {
+                  ...value,
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    value.instant.epochMilliseconds,
+                  ).toString(),
+                },
+              ] as const,
           ),
         );
       },
@@ -305,9 +343,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -356,9 +404,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -407,9 +465,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -442,9 +510,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -473,7 +551,10 @@ export async function verifyPdfReads(
       );
       await until(
         "page read",
-        () => s.useLedger.get(__typedArg0)?.instant.toString() !== __typedArg1,
+        () =>
+          s.bridge.runSync(s.useLedger.get(__typedArg0))?.instant
+            .epochMilliseconds !==
+          Temporal.Instant.from(__typedArg1).epochMilliseconds,
       );
       return String(true);
     },
@@ -484,9 +565,19 @@ export async function verifyPdfReads(
       vaultId,
       async ({ zotlit }) => {
         return Object.fromEntries(
-          Object.entries(zotlit.services.useLedger.current).map(
+          Object.entries(
+            zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+          ).map(
             ([key, value]) =>
-              [key, { ...value, instant: value.instant.toString() }] as const,
+              [
+                key,
+                {
+                  ...value,
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    value.instant.epochMilliseconds,
+                  ).toString(),
+                },
+              ] as const,
           ),
         );
       },
@@ -514,9 +605,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -529,9 +630,19 @@ export async function verifyPdfReads(
       vaultId,
       async ({ zotlit }) => {
         return Object.fromEntries(
-          Object.entries(zotlit.services.useLedger.current).map(
+          Object.entries(
+            zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+          ).map(
             ([key, value]) =>
-              [key, { ...value, instant: value.instant.toString() }] as const,
+              [
+                key,
+                {
+                  ...value,
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    value.instant.epochMilliseconds,
+                  ).toString(),
+                },
+              ] as const,
           ),
         );
       },
@@ -602,9 +713,19 @@ export async function verifyPdfReads(
         vaultId,
         async ({ zotlit }) => {
           return Object.fromEntries(
-            Object.entries(zotlit.services.useLedger.current).map(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(
               ([key, value]) =>
-                [key, { ...value, instant: value.instant.toString() }] as const,
+                [
+                  key,
+                  {
+                    ...value,
+                    instant: Temporal.Instant.fromEpochMilliseconds(
+                      value.instant.epochMilliseconds,
+                    ).toString(),
+                  },
+                ] as const,
             ),
           );
         },
@@ -637,9 +758,19 @@ export async function verifyPdfReads(
     vaultId,
     async ({ zotlit }) => {
       return Object.fromEntries(
-        Object.entries(zotlit.services.useLedger.current).map(
+        Object.entries(
+          zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+        ).map(
           ([key, value]) =>
-            [key, { ...value, instant: value.instant.toString() }] as const,
+            [
+              key,
+              {
+                ...value,
+                instant: Temporal.Instant.fromEpochMilliseconds(
+                  value.instant.epochMilliseconds,
+                ).toString(),
+              },
+            ] as const,
         ),
       );
     },
@@ -732,9 +863,19 @@ export async function verifyPdfReads(
       vaultId,
       async ({ zotlit }) => {
         return Object.fromEntries(
-          Object.entries(zotlit.services.useLedger.current).map(
+          Object.entries(
+            zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+          ).map(
             ([key, value]) =>
-              [key, { ...value, instant: value.instant.toString() }] as const,
+              [
+                key,
+                {
+                  ...value,
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    value.instant.epochMilliseconds,
+                  ).toString(),
+                },
+              ] as const,
           ),
         );
       },

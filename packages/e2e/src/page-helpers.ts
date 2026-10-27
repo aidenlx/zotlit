@@ -619,11 +619,13 @@ export function createPageHelpers(app: PageApp) {
       { template, suffix }: { template: string; suffix: string },
     ) {
       const services = getServices();
-      const profilePath = services.profile.defaultDocumentPath;
+      const profilePath = services.bridge.runSync(
+        services.profileService.defaultDocumentPath,
+      );
       const existing = app.vault.getFileByPath(profilePath);
       const original = existing
         ? await app.vault.read(existing)
-        : services.profile.getBuiltInSource();
+        : services.bridge.runSync(services.profileService.getBuiltInSource());
       const header = "--- zotlit:annotation ---";
       if (!original.includes(header))
         throw new Error("The default profile has no annotation section");
@@ -634,7 +636,7 @@ export function createPageHelpers(app: PageApp) {
       if (existing) {
         cleanup.defer(async () => {
           await app.vault.modify(existing, original);
-          await services.template.refresh();
+          await services.bridge.runPromise(services.template.refresh);
         });
         await app.vault.modify(existing, inline);
       } else {
@@ -650,15 +652,15 @@ export function createPageHelpers(app: PageApp) {
         cleanup.defer(async () => {
           const made = app.vault.getFileByPath(profilePath);
           if (made) await app.vault.delete(made);
-          await services.template.refresh();
+          await services.bridge.runPromise(services.template.refresh);
         });
         await app.vault.create(profilePath, inline);
       }
-      await services.template.refresh();
+      await services.bridge.runPromise(services.template.refresh);
       await until(
         () =>
-          services.template
-            .getLoadedDocumentSource(profilePath)
+          services.bridge
+            .runSync(services.template.getLoadedDocumentSource(profilePath))
             ?.includes(template),
         () => "The inline annotation template did not load",
       );

@@ -76,6 +76,7 @@ import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
+import type { QueryHostDeps } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import {
   fakeQuery,
@@ -524,7 +525,7 @@ async function pluginData(
     CollectionPaths: sourceReads.reads.CollectionPaths,
     ConnectionReadout: sourceReads.reads.ConnectionReadout,
   });
-  const readsDeps = stubService<LibraryViewDeps["reads"]>("ZoteroReads", {
+  const readsDeps = stubService<QueryHostDeps["reads"]>("ZoteroReads", {
     ...reads.streams,
     get state() {
       return database_.state;
@@ -736,12 +737,12 @@ async function pluginData(
 
   await waitFor(() => expect(nativeEvents.subscribers).toBeGreaterThan(0));
 
-  const deps = stubService<LibraryViewDeps>("LibraryViewDeps", {
+  const deps = stubService<LibraryViewDeps & QueryHostDeps>("LibraryViewDeps", {
     runtime,
     registry: welcomeHost.registry,
     app,
     reads: readsDeps,
-    libraryScope: stubService<LibraryViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.map(
         scopeEvents.streams.changed,
         () => libraryScope.current,
@@ -2344,7 +2345,7 @@ it("leaves the search box unfocused when the command brings the tab forward unde
  * Hold the banner's connection readout until the returned call lands it, as
  * on a first launch, where Zotero's database is still loading.
  */
-async function holdReadout(deps: LibraryViewDeps) {
+async function holdReadout(deps: LibraryViewDeps & QueryHostDeps) {
   const ready = Promise.withResolvers<{ itemCount: number }>();
   await using lease = await deps.reads.acquireRead();
   Object.assign(lease.reads, {

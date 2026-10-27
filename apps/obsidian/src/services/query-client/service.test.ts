@@ -17,19 +17,21 @@ describe("QueryClients", () => {
         const gate = Promise.withResolvers<string>();
         const read = vi.fn(() => gate.promise);
         const events: string[] = [];
-        queries.watch(PREFIX, {
-          changed: (key) => events.push(`changed:${String(key[1])}`),
-          settled: (key) => events.push(`settled:${String(key[1])}`),
-        });
+        queries.bridge.runSync(
+          queries.watch(PREFIX, {
+            changed: (key) => events.push(`changed:${String(key[1])}`),
+            settled: (key) => events.push(`settled:${String(key[1])}`),
+          }),
+        );
 
-        const first = queries.ask(KEY, read);
-        const joined = queries.ask(KEY, read);
-        expect(queries.peek(KEY)).toBeNull();
+        const first = queries.bridge.runPromise(queries.ask(KEY, read));
+        const joined = queries.bridge.runPromise(queries.ask(KEY, read));
+        expect(queries.bridge.runSync(queries.peek(KEY))).toBeNull();
         gate.resolve("A");
 
         expect(await first).toBe("A");
         expect(await joined).toBe("A");
-        expect(queries.peek(KEY)).toMatchObject({
+        expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
           value: "A",
           status: "fresh",
         });
@@ -43,19 +45,27 @@ describe("QueryClients", () => {
     Effect.gen(function* () {
       const queries = yield* queryClientsOf();
       yield* Effect.promise(async () => {
-        await queries.ask(KEY, () => Promise.resolve("A"));
-        await queries.ask(["read", "b"], () => Promise.resolve("B"));
-        await queries.ask(["other", "c"], () => Promise.resolve("C"));
+        await queries.bridge.runPromise(
+          queries.ask(KEY, () => Promise.resolve("A")),
+        );
+        await queries.bridge.runPromise(
+          queries.ask(["read", "b"], () => Promise.resolve("B")),
+        );
+        await queries.bridge.runPromise(
+          queries.ask(["other", "c"], () => Promise.resolve("C")),
+        );
 
         expect(
-          queries
-            .keysUnder(PREFIX)
+          queries.bridge
+            .runSync(queries.keysUnder(PREFIX))
             .toSorted((a, b) => a.join().localeCompare(b.join())),
         ).toEqual([
           ["read", "a"],
           ["read", "b"],
         ]);
-        expect(queries.keysUnder(["nothing"])).toEqual([]);
+        expect(queries.bridge.runSync(queries.keysUnder(["nothing"]))).toEqual(
+          [],
+        );
       });
     }),
   );
@@ -64,18 +74,22 @@ describe("QueryClients", () => {
     Effect.gen(function* () {
       const queries = yield* queryClientsOf();
       yield* Effect.promise(async () => {
-        await queries.ask(KEY, () => Promise.resolve("old"));
-        queries.invalidate(KEY);
+        await queries.bridge.runPromise(
+          queries.ask(KEY, () => Promise.resolve("old")),
+        );
+        queries.bridge.runSync(queries.invalidate(KEY));
         const gate = Promise.withResolvers<string>();
 
-        const reading = queries.ask(KEY, () => gate.promise);
-        const stale = queries.peek<string>(KEY);
+        const reading = queries.bridge.runPromise(
+          queries.ask(KEY, () => gate.promise),
+        );
+        const stale = queries.bridge.runSync(queries.peek<string>(KEY));
         expect(stale).toMatchObject({ value: "old", status: "revalidating" });
 
         gate.resolve("new");
         expect(await stale?.settled).toBe("new");
         expect(await reading).toBe("new");
-        expect(queries.peek(KEY)).toMatchObject({
+        expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
           value: "new",
           status: "fresh",
         });
@@ -94,15 +108,15 @@ describe("QueryClients", () => {
             .fn<() => Promise<string>>()
             .mockReturnValueOnce(first.promise)
             .mockReturnValue(Promise.resolve("new"));
-          const superseded = queries.read(KEY, read);
+          const superseded = queries.bridge.runPromise(queries.read(KEY, read));
 
-          queries.invalidate(KEY);
+          queries.bridge.runSync(queries.invalidate(KEY));
           first.resolve("old");
 
           // The ask the cancellation arms reads what the invalidation asked for.
           expect(await superseded).toBe("new");
           expect(read).toHaveBeenCalledTimes(2);
-          expect(queries.peek(KEY)).toMatchObject({
+          expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
             value: "new",
             status: "fresh",
           });
@@ -121,9 +135,9 @@ describe("QueryClients", () => {
             .fn<() => Promise<string>>()
             .mockReturnValueOnce(first.promise)
             .mockReturnValue(Promise.resolve("new"));
-          const superseded = queries.ask(KEY, read);
+          const superseded = queries.bridge.runPromise(queries.ask(KEY, read));
 
-          queries.invalidate(KEY);
+          queries.bridge.runSync(queries.invalidate(KEY));
           first.resolve("old");
 
           // A cancellation is no answer: it never reaches the asker as a failure.
@@ -139,23 +153,25 @@ describe("QueryClients", () => {
       Effect.gen(function* () {
         const queries = yield* queryClientsOf();
         yield* Effect.promise(async () => {
-          await queries.ask(KEY, () => Promise.resolve("v1"));
-          queries.invalidate(KEY);
+          await queries.bridge.runPromise(
+            queries.ask(KEY, () => Promise.resolve("v1")),
+          );
+          queries.bridge.runSync(queries.invalidate(KEY));
           const superseded = Promise.withResolvers<string>();
           const read = vi
             .fn<() => Promise<string>>()
             .mockReturnValueOnce(superseded.promise)
             .mockReturnValue(Promise.resolve("v3"));
-          const asking = queries.ask(KEY, read);
+          const asking = queries.bridge.runPromise(queries.ask(KEY, read));
 
-          queries.invalidate(KEY);
+          queries.bridge.runSync(queries.invalidate(KEY));
           superseded.resolve("v2");
 
           // The reader that started the cancelled read is answered like any joiner:
           // never with the value the invalidation reverted to.
           expect(await asking).toBe("v3");
           expect(read).toHaveBeenCalledTimes(2);
-          expect(queries.peek(KEY)).toMatchObject({
+          expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
             value: "v3",
             status: "fresh",
           });
@@ -170,15 +186,19 @@ describe("QueryClients", () => {
         const queries = yield* queryClientsOf();
         yield* Effect.promise(async () => {
           const failing = vi.fn(() => Promise.reject(new Error("unreadable")));
-          expect(await queries.ask(KEY, failing)).toBeNull();
+          expect(
+            await queries.bridge.runPromise(queries.ask(KEY, failing)),
+          ).toBeNull();
 
-          queries.invalidate(KEY);
+          queries.bridge.runSync(queries.invalidate(KEY));
 
           // Inside the cooldown window, but the drop is what rearms the key.
-          expect(await queries.ask(KEY, () => Promise.resolve("new"))).toBe(
-            "new",
-          );
-          expect(queries.peek(KEY)).toMatchObject({
+          expect(
+            await queries.bridge.runPromise(
+              queries.ask(KEY, () => Promise.resolve("new")),
+            ),
+          ).toBe("new");
+          expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
             value: "new",
             status: "fresh",
           });
@@ -195,7 +215,7 @@ describe("QueryClients", () => {
           const gate = Promise.withResolvers<string>();
           const read = vi.fn(() => gate.promise);
 
-          const reading = queries.read(KEY, read);
+          const reading = queries.bridge.runPromise(queries.read(KEY, read));
           await queries[Symbol.asyncDispose]();
           gate.resolve("released");
 
@@ -212,27 +232,37 @@ describe("QueryClients", () => {
       Effect.gen(function* () {
         const queries = yield* queryClientsOf();
         yield* Effect.promise(async () => {
-          await queries.ask(KEY, () => Promise.resolve("old"));
-          queries.invalidate(KEY);
+          await queries.bridge.runPromise(
+            queries.ask(KEY, () => Promise.resolve("old")),
+          );
+          queries.bridge.runSync(queries.invalidate(KEY));
           const failing = vi.fn(() => Promise.reject(new Error("unreadable")));
 
-          expect(await queries.ask(KEY, failing)).toBeNull();
-          expect(queries.peek(KEY)).toMatchObject({
+          expect(
+            await queries.bridge.runPromise(queries.ask(KEY, failing)),
+          ).toBeNull();
+          expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
             value: "old",
             status: "failed",
           });
           // A read answers the caller with what the key still holds.
-          expect(await queries.read(KEY, failing)).toBe("old");
+          expect(
+            await queries.bridge.runPromise(queries.read(KEY, failing)),
+          ).toBe("old");
 
           // Inside the cooldown the held value answers and nothing is read again.
-          expect(await queries.ask(KEY, failing)).toBe("old");
+          expect(
+            await queries.bridge.runPromise(queries.ask(KEY, failing)),
+          ).toBe("old");
           expect(failing).toHaveBeenCalledOnce();
 
           await queries.passCooldown();
-          expect(await queries.ask(KEY, () => Promise.resolve("new"))).toBe(
-            "new",
-          );
-          expect(queries.peek(KEY)).toMatchObject({
+          expect(
+            await queries.bridge.runPromise(
+              queries.ask(KEY, () => Promise.resolve("new")),
+            ),
+          ).toBe("new");
+          expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
             value: "new",
             status: "fresh",
           });
@@ -248,16 +278,16 @@ describe("QueryClients", () => {
         yield* Effect.promise(async () => {
           const gate = Promise.withResolvers<string>();
           const read = vi.fn(() => gate.promise);
-          const reading = queries.read(KEY, read);
+          const reading = queries.bridge.runPromise(queries.read(KEY, read));
 
-          queries.invalidate(KEY);
+          queries.bridge.runSync(queries.invalidate(KEY));
           if (release === "dispose") await queries[Symbol.asyncDispose]();
           else queries.client.removeQueries({ queryKey: KEY });
           gate.resolve("released");
 
           expect(await reading).toBeNull();
           expect(read).toHaveBeenCalledOnce();
-          expect(queries.peek(KEY)).toBeNull();
+          expect(queries.bridge.runSync(queries.peek(KEY))).toBeNull();
         });
       }),
   );
@@ -269,17 +299,21 @@ describe("QueryClients", () => {
         const queries = yield* queryClientsOf();
         yield* Effect.promise(async () => {
           const gate = Promise.withResolvers<string>();
-          const reading = queries.read(KEY, () => gate.promise);
-          queries.invalidate(KEY);
+          const reading = queries.bridge.runPromise(
+            queries.read(KEY, () => gate.promise),
+          );
+          queries.bridge.runSync(queries.invalidate(KEY));
           queries.client.removeQueries({ queryKey: KEY });
-          const replacement = queries.read(KEY, () =>
-            Promise.resolve("new file"),
+          const replacement = queries.bridge.runPromise(
+            queries.read(KEY, () => Promise.resolve("new file")),
           );
           gate.resolve("deleted file");
 
           expect(await reading).toBeNull();
           expect(await replacement).toBe("new file");
-          expect(queries.peek(KEY)?.value).toBe("new file");
+          expect(queries.bridge.runSync(queries.peek(KEY))?.value).toBe(
+            "new file",
+          );
         });
       }),
   );
@@ -292,22 +326,30 @@ describe("QueryClients", () => {
         yield* Effect.promise(async () => {
           const failing = vi.fn(() => Promise.reject(new Error("unreadable")));
           const settlements: (Held<string> | null)[] = [];
-          queries.watch<string>(PREFIX, {
-            settled: (_key, held) => settlements.push(held),
-          });
+          queries.bridge.runSync(
+            queries.watch<string>(PREFIX, {
+              settled: (_key, held) => settlements.push(held),
+            }),
+          );
 
-          expect(await queries.ask(KEY, failing)).toBeNull();
-          expect(queries.peek(KEY)).toBeNull();
+          expect(
+            await queries.bridge.runPromise(queries.ask(KEY, failing)),
+          ).toBeNull();
+          expect(queries.bridge.runSync(queries.peek(KEY))).toBeNull();
           expect(settlements).toEqual([null]);
 
-          expect(await queries.ask(KEY, failing)).toBeNull();
+          expect(
+            await queries.bridge.runPromise(queries.ask(KEY, failing)),
+          ).toBeNull();
           expect(failing).toHaveBeenCalledOnce();
 
           await queries.passCooldown();
-          expect(await queries.ask(KEY, () => Promise.resolve("new"))).toBe(
-            "new",
-          );
-          expect(queries.peek(KEY)).toMatchObject({
+          expect(
+            await queries.bridge.runPromise(
+              queries.ask(KEY, () => Promise.resolve("new")),
+            ),
+          ).toBe("new");
+          expect(queries.bridge.runSync(queries.peek(KEY))).toMatchObject({
             value: "new",
             status: "fresh",
           });
@@ -325,23 +367,31 @@ describe("QueryClients", () => {
       Effect.gen(function* () {
         const queries = yield* queryClientsOf();
         yield* Effect.promise(async () => {
-          await queries.ask(KEY, () => Promise.resolve("old"));
-          queries.invalidate(KEY);
+          await queries.bridge.runPromise(
+            queries.ask(KEY, () => Promise.resolve("old")),
+          );
+          queries.bridge.runSync(queries.invalidate(KEY));
           const error = new Error("unreadable");
           const gate = Promise.withResolvers<string>();
           const read = vi.fn(() => gate.promise);
-          const composed = queries.readFresh(KEY, read);
+          const composed = queries.bridge.runPromise(
+            queries.readFresh(KEY, read),
+          );
           const rejected = expect(composed).rejects.toBe(error);
-          const displayed = queries.read(KEY, read);
+          const displayed = queries.bridge.runPromise(queries.read(KEY, read));
           gate.reject(error);
 
           await rejected;
           expect(await displayed).toBe("old");
-          await expect(queries.readFresh(KEY, read)).rejects.toBe(error);
+          await expect(
+            queries.bridge.runPromise(queries.readFresh(KEY, read)),
+          ).rejects.toBe(error);
           expect(read).toHaveBeenCalledOnce();
           await queries.passCooldown();
           expect(
-            await queries.readFresh(KEY, () => Promise.resolve("new")),
+            await queries.bridge.runPromise(
+              queries.readFresh(KEY, () => Promise.resolve("new")),
+            ),
           ).toBe("new");
         });
       }),
@@ -357,9 +407,11 @@ describe("QueryClients", () => {
           const gate = Promise.withResolvers<string>();
           const read = vi.fn(() => gate.promise);
           const rejected = expect(
-            queries.readFresh(KEY, read, controller.signal),
+            queries.bridge.runPromise(queries.readFresh(KEY, read), {
+              signal: controller.signal,
+            }),
           ).rejects.toMatchObject({ name: "AbortError" });
-          const displayed = queries.read(KEY, read);
+          const displayed = queries.bridge.runPromise(queries.read(KEY, read));
           controller.abort();
           await rejected;
           gate.resolve("shared");
@@ -375,13 +427,13 @@ describe("QueryClients", () => {
       yield* Effect.promise(async () => {
         const gate = Promise.withResolvers<string>();
         const rejected = expect(
-          queries.readFresh(KEY, () => gate.promise),
+          queries.bridge.runPromise(queries.readFresh(KEY, () => gate.promise)),
         ).rejects.toMatchObject({ name: "AbortError" });
-        queries.invalidate(KEY);
+        queries.bridge.runSync(queries.invalidate(KEY));
         queries.client.removeQueries({ queryKey: KEY });
         gate.resolve("released");
         await rejected;
-        expect(queries.peek(KEY)).toBeNull();
+        expect(queries.bridge.runSync(queries.peek(KEY))).toBeNull();
       });
     }),
   );
@@ -399,22 +451,24 @@ describe("QueryClients", () => {
                 ? held
                 : next,
           });
-          const first = await queries.ask(KEY, () =>
-            Promise.resolve({ text: "same" }),
+          const first = await queries.bridge.runPromise(
+            queries.ask(KEY, () => Promise.resolve({ text: "same" })),
           );
           const events: string[] = [];
-          queries.watch(PREFIX, {
-            changed: () => events.push("changed"),
-            settled: () => events.push("settled"),
-          });
+          queries.bridge.runSync(
+            queries.watch(PREFIX, {
+              changed: () => events.push("changed"),
+              settled: () => events.push("settled"),
+            }),
+          );
 
-          queries.invalidate(KEY);
-          const refreshed = await queries.ask(KEY, () =>
-            Promise.resolve({ text: "same" }),
+          queries.bridge.runSync(queries.invalidate(KEY));
+          const refreshed = await queries.bridge.runPromise(
+            queries.ask(KEY, () => Promise.resolve({ text: "same" })),
           );
 
           expect(refreshed).toBe(first);
-          expect(queries.peek(KEY)?.value).toBe(first);
+          expect(queries.bridge.runSync(queries.peek(KEY))?.value).toBe(first);
           expect(events).toEqual(["settled"]);
         });
       }),
@@ -427,20 +481,28 @@ describe("QueryClients", () => {
         const queries = yield* queryClientsOf();
         yield* Effect.promise(async () => {
           const other: QueryKey = ["read", "b"];
-          await queries.ask(KEY, () => Promise.resolve("A"));
-          await queries.ask(other, () => Promise.resolve("B"));
+          await queries.bridge.runPromise(
+            queries.ask(KEY, () => Promise.resolve("A")),
+          );
+          await queries.bridge.runPromise(
+            queries.ask(other, () => Promise.resolve("B")),
+          );
 
-          queries.invalidate(PREFIX);
+          queries.bridge.runSync(queries.invalidate(PREFIX));
           const read = vi.fn(() => Promise.resolve("fresh A"));
-          expect(await queries.ask(KEY, read)).toBe("fresh A");
+          expect(await queries.bridge.runPromise(queries.ask(KEY, read))).toBe(
+            "fresh A",
+          );
           expect(
-            await queries.ask(other, () => Promise.resolve("fresh B")),
+            await queries.bridge.runPromise(
+              queries.ask(other, () => Promise.resolve("fresh B")),
+            ),
           ).toBe("fresh B");
           expect(read).toHaveBeenCalledOnce();
 
           await queries[Symbol.asyncDispose]();
-          expect(queries.peek(KEY)).toBeNull();
-          expect(queries.peek(other)).toBeNull();
+          expect(queries.bridge.runSync(queries.peek(KEY))).toBeNull();
+          expect(queries.bridge.runSync(queries.peek(other))).toBeNull();
         });
       }),
   );

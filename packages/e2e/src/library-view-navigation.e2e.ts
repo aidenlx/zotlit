@@ -636,6 +636,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       frames: Frame[];
       /** The view after each batch of mutations of it. */
       mutations: Frame[];
+      delayedReads: number;
     }
 
     /**
@@ -659,10 +660,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obRun(
           run.vaultId,
-          async (
-            { app, zotlit, page },
-            { mode, from, titleInput, to, delay },
-          ) => {
+          async ({ app, page }, { mode, from, titleInput, to, delay }) => {
             const { until } = page;
             const view = (
               app.workspace.getLeavesOfType(
@@ -755,19 +753,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
             observer.observe(el, { childList: true, subtree: true });
             const frames: Step["frames"] = [sample()];
-            const service = zotlit.services.query;
-            // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original service receiver.
-            const run = service.run;
+            // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
+            const post = Worker.prototype.postMessage;
+            const pending = new Map<
+              ReturnType<typeof setTimeout>,
+              () => void
+            >();
+            let delayedReads = 0;
             if (delay > 0)
-              service.run = new Proxy(run, {
+              Worker.prototype.postMessage = new Proxy(post, {
                 apply: (
                   postTarget,
-                  receiver: typeof service,
-                  args: Parameters<typeof run>,
+                  receiver: Worker,
+                  args: Parameters<Worker["postMessage"]>,
                 ) => {
-                  return new Promise((r) => setTimeout(r, delay)).then(() =>
-                    Reflect.apply(postTarget, receiver, args),
-                  );
+                  const request = (args[0] as LibraryWorkerMessage)?.[1];
+                  if (
+                    request?.tag !== "ItemQuery" ||
+                    !("view" in request.payload.job) ||
+                    request.payload.job.view.from !== "annotations"
+                  )
+                    return Reflect.apply(postTarget, receiver, args);
+                  delayedReads++;
+                  const send = () => Reflect.apply(postTarget, receiver, args);
+                  const timer = setTimeout(() => {
+                    pending.delete(timer);
+                    send();
+                  }, delay);
+                  pending.set(timer, send);
                 },
               });
             try {
@@ -799,10 +812,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 at: Math.round(performance.now() - start),
               });
             } finally {
-              service.run = run;
+              Worker.prototype.postMessage = post;
+              for (const [timer, send] of pending) {
+                clearTimeout(timer);
+                send();
+              }
               observer.disconnect();
             }
-            return String(JSON.stringify({ frames, mutations }));
+            return String(JSON.stringify({ frames, mutations, delayedReads }));
           },
           { mode: mode, from: from, titleInput: title, to: to, delay: delay },
         ),
@@ -816,9 +833,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      */
     const oneStep = (
       what: string,
-      { frames, mutations }: Step,
+      { frames, mutations, delayedReads }: Step,
       { named, slow }: { named: boolean; slow: boolean },
     ) => {
+      expect(
+        delayedReads > 0,
+        `${what}: the query crosses the delayed worker boundary`,
+      ).toBe(slow);
       const before = frames[0]!;
       const after = frames.at(-1)!;
       // A read held past 150 ms shows the next Item over its cards loading.
@@ -1731,7 +1752,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { readerKey }) => {
         return String(
-          zotlit.services.noteIndex.getNotesByItemKey(readerKey)[0]?.path ?? "",
+          zotlit.services.bridge.runSync(
+            zotlit.services.noteIndex.getNotesByItemKey(readerKey),
+          )[0]?.path ?? "",
         );
       },
       { readerKey: reader.key },
@@ -1747,8 +1770,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { readPaperKey }) => {
         return String(
-          zotlit.services.noteIndex.getNotesByItemKey(readPaperKey)[0]?.path ??
-            "",
+          zotlit.services.bridge.runSync(
+            zotlit.services.noteIndex.getNotesByItemKey(readPaperKey),
+          )[0]?.path ?? "",
         );
       },
       { readPaperKey: readPaper.key },
@@ -1854,10 +1878,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }, { everywhere, query }) => {
             const s = zotlit.services;
             const libraries = everywhere
-              ? s.libraryScope.current!.available
-              : s.libraryScope.libraries.filter(
-                  (l) => l.selector.type === "personal",
-                );
+              ? s.bridge.runSync(s.libraryScope.current)!.available
+              : s.bridge
+                  .runSync(s.libraryScope.libraries)
+                  .filter((l) => l.selector.type === "personal");
             return String(
               JSON.stringify(
                 (
@@ -2492,10 +2516,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }, { everywhere, query }) => {
             const s = zotlit.services;
             const libraries = everywhere
-              ? s.libraryScope.current!.available
-              : s.libraryScope.libraries.filter(
-                  (l) => l.selector.type === "personal",
-                );
+              ? s.bridge.runSync(s.libraryScope.current)!.available
+              : s.bridge
+                  .runSync(s.libraryScope.libraries)
+                  .filter((l) => l.selector.type === "personal");
             return String(
               JSON.stringify(
                 (
@@ -3144,7 +3168,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const key = unwrittenkey;
           const written = () => [
             ...new Set([
-              ...zotlit.services.noteIndex.getNotesByItemKey(key),
+              ...zotlit.services.bridge.runSync(
+                zotlit.services.noteIndex.getNotesByItemKey(key),
+              ),
               ...app.vault
                 .getMarkdownFiles()
                 .filter(
@@ -3873,7 +3899,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             data: await app.vault.adapter.read(
               `${app.vault.configDir}/plugins/zotlit/data.json`,
             ),
-            dataDir: zotlit.services.zoteroPref.dataDirOverride,
+            dataDir: zotlit.services.bridge.runSync(
+              zotlit.services.zoteroPrefService.current,
+            ).dataDirOverride,
           }),
         );
       },
@@ -3885,7 +3913,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app, zotlit }, { snapshot }) => {
           const saved = JSON.parse(snapshot);
-          zotlit.services.zoteroPref.setDataDir(saved.dataDir);
+          zotlit.services.bridge.runSync(
+            zotlit.services.zoteroPrefService.setDataDir(saved.dataDir),
+          );
           await zotlit.services.bridge.runPromise(
             zotlit.services.settings.flush,
           );
@@ -4468,7 +4498,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }, { emptydir }) => {
-        zotlit.services.zoteroPref.setDataDir(emptydir);
+        zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.setDataDir(emptydir),
+        );
         return String(true);
       },
       { emptydir: emptyDir },
@@ -4549,7 +4581,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }, { dataDir }) => {
-        zotlit.services.zoteroPref.setDataDir(dataDir);
+        zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.setDataDir(dataDir),
+        );
         return String(true);
       },
       { dataDir: JSON.parse(snapshot).dataDir },

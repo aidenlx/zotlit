@@ -165,7 +165,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ zotlit }) => {
-          return String(String(zotlit.services.profile.profiles.length));
+          return String(
+            String(
+              zotlit.services.bridge.runSync(
+                zotlit.services.profileService.profiles,
+              ).length,
+            ),
+          );
         },
         undefined,
       ),
@@ -183,8 +189,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             return String(
               String(
                 !!app.workspace.getActiveFile() &&
-                  zotlit.services.noteIndex.getNotesByItemKey("RUGIER24")
-                    .length === 1,
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.noteIndex.getNotesByItemKey("RUGIER24"),
+                  ).length === 1,
               ),
             );
           },
@@ -841,7 +848,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }, { __typedArg0 }) => {
           return String(
             String(
-              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
+              zotlit.services.bridge.runSync(
+                zotlit.services.noteIndex.getNotesByItemKey(__typedArg0),
+              ).length,
             ),
           );
         },
@@ -869,7 +878,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }, { __typedArg0 }) => {
           return String(
             String(
-              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
+              zotlit.services.bridge.runSync(
+                zotlit.services.noteIndex.getNotesByItemKey(__typedArg0),
+              ).length,
             ),
           );
         },
@@ -914,8 +925,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }) => {
             return String(
               String(
-                zotlit.services.profile.resolveProfile("default")?.document ===
-                  undefined,
+                zotlit.services.bridge.runSync(
+                  zotlit.services.profileService.resolveProfile("default"),
+                )?.document === undefined,
               ),
             );
           },
@@ -937,10 +949,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app, zotlit }, { __typedArg0 }) => {
-          await zotlit.services.noteIndex.whenIndexed();
+          await zotlit.services.bridge.runPromise(
+            zotlit.services.noteIndex.whenIndexed,
+          );
           const notes = [];
-          for (const note of zotlit.services.noteIndex.getNotesByItemKey(
-            __typedArg0,
+          for (const note of zotlit.services.bridge.runSync(
+            zotlit.services.noteIndex.getNotesByItemKey(__typedArg0),
           )) {
             const file = app.vault.getFileByPath(note.path)!;
             notes.push({ path: note.path, text: await app.vault.read(file) });
@@ -981,8 +995,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }, { __typedArg0 }) => {
           return String(
             String(
-              zotlit.services.noteIndex.getImportedNoteByNoteKey(__typedArg0)
-                .length,
+              zotlit.services.bridge.runSync(
+                zotlit.services.noteIndex.getImportedNoteByNoteKey(__typedArg0),
+              ).length,
             ),
           );
         },
@@ -1940,7 +1955,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             JSON.stringify({
               hostname: settings["server.hostname"],
               port: services.bridge.runSync(services.localServer.effectivePort),
-              sourceId: services.zoteroPref.sourceId,
+              sourceId: services.bridge.runSync(
+                services.zoteroPrefService.current,
+              ).sourceId,
             }),
           );
         },
@@ -2221,9 +2238,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }, { __typedArg0 }) => {
             return String(
               String(
-                !zotlit.services.profile.profiles.some(
-                  (p) => p.id === __typedArg0,
-                ),
+                !zotlit.services.bridge
+                  .runSync(zotlit.services.profileService.profiles)
+                  .some((p) => p.id === __typedArg0),
               ),
             );
           },
@@ -2668,9 +2685,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }, { __typedArg0 }) => {
             return String(
               String(
-                !zotlit.services.profile.profiles.some(
-                  (p) => p.id === __typedArg0,
-                ),
+                !zotlit.services.bridge
+                  .runSync(zotlit.services.profileService.profiles)
+                  .some((p) => p.id === __typedArg0),
               ),
             );
           },
@@ -2760,7 +2777,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 port: services.bridge.runSync(
                   services.localServer.effectivePort,
                 ),
-                sourceId: services.zoteroPref.sourceId,
+                sourceId: services.bridge.runSync(
+                  services.zoteroPrefService.current,
+                ).sourceId,
                 workbench: settings["server.workbench"],
               }),
             );

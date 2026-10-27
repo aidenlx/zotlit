@@ -638,7 +638,7 @@ async function realImportFixture(held: boolean, source = incoming) {
     );
   const deps: ImportProfileDeps = {
     app: f.app,
-    base: f.profile.resolveProfile("default")!,
+    base: f.bridge.runSync(f.profile.resolveProfile("default"))!,
     prepareImport,
     previewNote: async () => draft(),
   };

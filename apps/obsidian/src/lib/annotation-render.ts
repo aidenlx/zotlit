@@ -15,6 +15,7 @@ import type {
   AnnotationTemplateContext,
   Attachment,
   CiteRef,
+  CitationVariant,
   FallibleTemplateLink,
   TemplateAnnotation,
   TemplateParentItemData,
@@ -29,8 +30,6 @@ import {
   createCommentTurndown,
 } from "@/lib/turndown/comment";
 import type { AttachmentImportBatch } from "@/services/attachment-import/service";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
 
 /**
  * Build the {@link FallibleTemplateLink} for an attachment's on-disk file
@@ -62,7 +61,7 @@ export function attachmentFileLink(
  * ({@link renderAnnotationSources}), so both render annotations identically.
  */
 export function buildAnnotationResolvers(options: {
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  zoteroPref: AttachmentPathContext;
   attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
   annotationImageLink?: AnnotationResolvers["annotationImageLink"];
 }): AnnotationResolvers {
@@ -96,10 +95,16 @@ export function buildAnnotationResolvers(options: {
   };
 }
 
+/** Synchronous callbacks used while a template evaluates its annotation fields. */
+interface AnnotationRenderers {
+  render(name: "annotation", data: AnnotationTemplateContext): string;
+  renderCitation(refs: readonly CiteRef[], variant: CitationVariant): string;
+}
+
 /** How {@link renderAnnotationSources} renders. */
 interface RenderAnnotationsOptions {
-  template: Pick<PlainTemplate, "render" | "renderCitation">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
+  template: AnnotationRenderers;
+  zoteroPref: AttachmentPathContext;
   attachmentImport: Pick<AttachmentImportBatch, "decide" | "resolveLink">;
   renderAnnotation?: (data: AnnotationTemplateContext) => string;
   annotationImageLink?: AnnotationResolvers["annotationImageLink"];
@@ -163,7 +168,7 @@ function renderTemplateData(
 export function annotationCitation(
   parentItem: TemplateParentItemData | null,
   pageLabel: string | null,
-  template: Pick<PlainTemplate, "renderCitation">,
+  template: Pick<AnnotationRenderers, "renderCitation">,
 ): string | null {
   const refs = annotationCiteRefs(parentItem, pageLabel);
   return refs && template.renderCitation(refs, "main");

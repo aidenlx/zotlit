@@ -305,8 +305,11 @@ async function searchAndInsert(
           content: draftContent,
         });
         cleanup.defer(() => annotations.close());
-        const ledger = () => zotlit.services.useLedger.get(itemKey);
-        const before = ledger()?.instant.toString() ?? null;
+        const ledger = () =>
+          zotlit.services.bridge.runSync(
+            zotlit.services.useLedger.get(itemKey),
+          );
+        const before = ledger()?.instant.epochMilliseconds ?? null;
         app.workspace.setActiveLeaf(leaf, { focus: true });
         const editor = view.editor;
         editor.setCursor({ line: editor.lastLine(), ch: cursorCh });
@@ -352,7 +355,9 @@ async function searchAndInsert(
         // the one held before the search.
         const after = ledger();
         const use =
-          after && after.instant.toString() !== before ? after.kind : null;
+          after && after.instant.epochMilliseconds !== before
+            ? after.kind
+            : null;
         outcome = { text, rows: shown, sup, citationOpen, use };
       }
       return outcome;
@@ -528,12 +533,12 @@ async function follow({
               return;
             }
             const [newest] =
-              Object.entries(s.useLedger.uses).sort(
+              Object.entries(s.bridge.runSync(s.useLedger.uses)).sort(
                 ([, a], [, b]) => b - a,
               )[0] ?? [];
             if (
               newest !== undefined &&
-              s.useLedger.get(newest)?.kind === "read"
+              s.bridge.runSync(s.useLedger.get(newest))?.kind === "read"
             ) {
               const attachment = s.bridge
                 .runSync(s.pdfAnnotationEditor.bindings)
@@ -771,7 +776,7 @@ async function reindexed(
     async ({ app, zotlit, page }, { kind, attachmentKey, pdfPath }) => {
       const { until } = page.annotationLinkTools(() => zotlit.services);
       const s = zotlit.services;
-      await s.zoteroReads.refresh();
+      await s.bridge.runPromise(s.zoteroReads.refresh);
       await until(
         () =>
           s.bridge.runSync(s.attachmentResolver.lookup(attachmentKey)).kind ===
@@ -884,9 +889,13 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
               return;
             }
             const [newest] =
-              Object.entries(ledger.uses).sort(([, a], [, b]) => b - a)[0] ??
-              [];
-            if (newest !== undefined && ledger.get(newest)?.kind === "read") {
+              Object.entries(services().bridge.runSync(ledger.uses)).sort(
+                ([, a], [, b]) => b - a,
+              )[0] ?? [];
+            if (
+              newest !== undefined &&
+              services().bridge.runSync(ledger.get(newest))?.kind === "read"
+            ) {
               const attachment = services().bridge.runSync(
                 services().pdfAnnotationEditor.bindingFor(restored.view),
               )?.attachment;
@@ -1013,7 +1022,7 @@ async function reread(annotationKey: string, text: string): Promise<void> {
       const links = page.annotationLinkTools(() => zotlit.services);
       const { sleep, deadline, past } = links;
       const s = zotlit.services;
-      await s.zoteroReads.refresh();
+      await s.bridge.runPromise(s.zoteroReads.refresh);
       const holds = async () =>
         (
           await s.bridge.runPromise(s.annotationRepository.read(attachmentKey))

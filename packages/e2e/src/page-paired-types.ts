@@ -25,11 +25,13 @@ export type PairedScope = Scope & {
 
 declare module "./page-helpers.ts" {
   interface PageScratch {
-    __zlPendingDatabaseRead?: {
+    __zlHeldAnnotationQuery?: {
       changed: boolean;
+      heldReads: number;
       restore: (() => void) | null;
     };
     __ztQueryGate?: () => void;
+    __ztQueryGateHits?: number;
     __ztInkNode?: Element;
     __ztTo?: [number, number];
     __zotlitWriteOutcomeProbe?: PairedWriteProbe;

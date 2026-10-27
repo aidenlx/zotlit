@@ -35,8 +35,10 @@ export async function measureCitationScan(vaultId: string) {
       vaultId,
       async ({ app, zotlit }, { text }) => {
         await using cleanup = new AsyncDisposableStack();
-        const index = zotlit.services.citationIndex;
-        if ((await index.waitUntilSettled(15000)) !== "settled")
+        const { bridge, citationIndex: index } = zotlit.services;
+        if (
+          (await bridge.runPromise(index.waitUntilSettled(15000))) !== "settled"
+        )
           throw Error("Citation backfill did not settle");
         const client = (
           require("@electron/remote") as {
@@ -76,7 +78,7 @@ export async function measureCitationScan(vaultId: string) {
         cleanup.defer(() => app.vault.delete(file));
         await ready.promise;
         clearTimeout(timer);
-        let previousScan = await index.getFileScan(file);
+        let previousScan = await bridge.runPromise(index.getFileScan(file));
         const cache = app.metadataCache.getFileCache(file);
         const taskCpu = async () => {
           const { metrics } = await client.sendCommand(
@@ -106,7 +108,7 @@ export async function measureCitationScan(vaultId: string) {
           // The public intake event supplies edited text, just as Obsidian does.
           // Keep editor rendering and Obsidian's own Markdown parse outside this gate.
           app.metadataCache.trigger("changed", file, body, cache);
-          const scan = await index.getFileScan(file);
+          const scan = await bridge.runPromise(index.getFileScan(file));
           await barrier();
           const cpuMs = ((await taskCpu()) - start) * 1000;
           if (

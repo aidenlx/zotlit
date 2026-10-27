@@ -1,17 +1,18 @@
-/** The real service and adapter over a test's scoped RPC transport. */
+/** The native service and lease edge over a test's scoped RPC transport. */
 import { Context, Effect, Layer, Stream } from "effect";
 import type { ManagedRuntime, Scope } from "effect";
 import { RpcSchema } from "effect/rpc";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import type { ZoteroReadsClient } from "./in-process";
-import { plainZoteroReads } from "./plain";
-import type { PlainZoteroReads } from "./plain";
+import { acquireReadLease } from "./lease";
 import { ZoteroReads as ZoteroReadsRpc } from "./rpc";
 import { layerZoteroReads, ZoteroReads } from "./service";
-import type { ZoteroReadsApi } from "./service";
+import type { ZoteroReadsApi, ZoteroReadLease } from "./service";
 
 export const readsFixture = Effect.fn("readsFixture")(function* (
   client: Effect.Effect<ZoteroReadsClient, never, Scope.Scope>,
@@ -36,16 +37,23 @@ async function openReads(
     stack,
   );
   await runtime.context();
-  const service = runtime.runSync(ZoteroReads);
-  const plain = Object.assign(plainZoteroReads(runtime), { runtime });
+  const bridge = effectBridge(runtime);
+  const native = runtime.runSync(ZoteroReads);
+  const service = Object.assign(native, {
+    runtime,
+    bridge,
+    acquireRead: () => acquireReadLease(native, bridge),
+  });
   const owned = stack.move();
-  return { runtime, service, plain, close: () => owned.disposeAsync() };
+  return { runtime, service, close: () => owned.disposeAsync() };
 }
 
 /** Legacy consumer fixtures can construct synchronously; only the test owner awaits ready. */
-export type TestReads = PlainZoteroReads &
+export type TestReads = ZoteroReads["Service"] &
   AsyncDisposable & {
     runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>;
+    bridge: EffectBridge;
+    acquireRead(): Promise<ZoteroReadLease>;
     ready: Promise<{ reads: ZoteroReadsApi; client: ZoteroReadsApi }>;
   };
 
@@ -54,12 +62,13 @@ export function testReads(
 ): TestReads {
   const stack = new AsyncDisposableStack();
   const runtime = buildRuntime(layerZoteroReads(client), stack);
-  let plain: PlainZoteroReads | undefined;
-  const loaded = runtime
-    .context()
-    .then(
-      () => (plain = Object.assign(plainZoteroReads(runtime), { runtime })),
-    );
+  let native: ZoteroReads["Service"] | undefined;
+  let bridge: EffectBridge;
+  const loaded = runtime.context().then(() => {
+    bridge = effectBridge(runtime);
+    return (native = runtime.runSync(ZoteroReads));
+  });
+  const service = Effect.promise(() => loaded);
   // Calls made by a consumer during fixture startup wait for the real layer.
   const reads: Record<string, unknown> = {};
   for (const [tag, rpc] of ZoteroReadsRpc.requests) {
@@ -77,9 +86,9 @@ export function testReads(
     const invoke = (...args: unknown[]) =>
       Effect.map(
         Effect.promise(() => loaded),
-        (adapter) =>
+        (native) =>
           (
-            adapter.reads[tag as keyof ZoteroReadsApi] as (
+            native.reads[tag as keyof ZoteroReadsApi] as (
               ...args: unknown[]
             ) => unknown
           )(...args),
@@ -98,70 +107,30 @@ export function testReads(
   return {
     ready: loaded.then(() => ({ reads: api, client: api })),
     reads: api,
-    get state() {
-      return plain?.state ?? "loading";
-    },
-    get error() {
-      return plain?.error ?? null;
-    },
-    get moved() {
-      return plain?.moved ?? false;
-    },
-    get dbFileMissing() {
-      return plain?.dbFileMissing ?? false;
-    },
-    snapshot: Effect.flatMap(
-      Effect.promise(() => loaded),
-      (adapter) => adapter.snapshot,
+    current: Effect.suspend(
+      () =>
+        native?.current ??
+        Effect.succeed({
+          state: "loading" as const,
+          error: null,
+          moved: false,
+          dbFileMissing: false,
+          activeReadMode: null,
+        }),
     ),
-    acquireRead: async () => (await loaded).acquireRead(),
-    refresh: async () => (await loaded).refresh(),
-    notifyExternalChange: () => {
-      void loaded.then((adapter) => adapter.notifyExternalChange());
+    snapshot: Effect.flatMap(service, (reads) => reads.snapshot),
+    refresh: Effect.flatMap(service, (reads) => reads.refresh),
+    notifyExternalChange: Effect.flatMap(
+      service,
+      (reads) => reads.notifyExternalChange,
+    ),
+    changes: Stream.unwrap(Effect.map(service, (reads) => reads.changes)),
+    events: Stream.unwrap(Effect.map(service, (reads) => reads.events)),
+    acquireRead: async () => acquireReadLease(await loaded, bridge),
+    get bridge() {
+      return bridge;
     },
     runtime,
-    changes: Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["changes"],
-      ),
-    ),
-    changed: Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["changed"],
-      ),
-    ),
-    degraded: Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["degraded"],
-      ),
-    ),
-    "refresh-failed": Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["refresh-failed"],
-      ),
-    ),
-    refreshing: Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["refreshing"],
-      ),
-    ),
-    "db-file-missing": Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["db-file-missing"],
-      ),
-    ),
-    "refresh-requested": Stream.unwrap(
-      Effect.map(
-        Effect.promise(() => loaded),
-        (adapter) => adapter["refresh-requested"],
-      ),
-    ),
     [Symbol.asyncDispose]: async () => {
       await loaded;
       await stack.disposeAsync();

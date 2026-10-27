@@ -101,7 +101,7 @@ export function stubbedReads(): Pick<
   TestReads,
   "reads" | "ready" | "acquireRead"
 > &
-  AsyncDisposable & { state: TestReads["state"] } {
+  AsyncDisposable & { state: import("./service").ZoteroReadsState["state"] } {
   const service = inProcessReadsService(memoryOpener(() => "").open);
   return {
     state: "ready",
@@ -120,14 +120,10 @@ export function stubbedReads(): Pick<
  */
 export function withState<S extends TestReads>(
   service: S,
-  state: TestReads["state"],
+  state: import("./service").ZoteroReadsState["state"],
 ): S {
-  return new Proxy(service, {
-    get(target, property) {
-      if (property === "state") return state;
-      const value: unknown = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
+  return Object.assign(service, {
+    current: Effect.map(service.current, (current) => ({ ...current, state })),
   });
 }
 

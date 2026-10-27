@@ -1,45 +1,29 @@
-import { Context, Effect, Layer, PubSub, Stream } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import { forkEach } from "@/lib/effect-stream";
 import type { OpenDocuments } from "@/lib/open-documents";
-import { VaultError } from "@/lib/vault-errors";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
-import type { CitationLookupState } from "@/services/citation-index/lookup-service";
-import type {
-  PlainCitationIndex,
-  PlainCitationLookup,
-} from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
 import { CitationIndex } from "@/services/citation-index/service";
-import type { CitationIndexEvent } from "@/services/citation-index/service";
 import type {
   Citation,
   CitationOccurrence,
 } from "@/services/citation-index/service";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
-import type { NoteIndexChange } from "@/services/note-index/service";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
-import type { BibliographyRenderEvent } from "@/services/pandoc/render-cache";
-import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
-import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
 import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
 // The one cited work, and the Citation Index answer naming it, that the citation-text suites read against.
-import type { PlainQueryClients } from "@/services/query-client/plain";
 import { QueryClients } from "@/services/query-client/service";
-import type { HeldReadChange } from "@/services/query-client/service";
 
-import { plainCitationText } from "./plain";
 import type { FormattedOccurrence, PresentedCitation } from "./present";
-import { layerCitationText } from "./service";
+import { CitationText, layerCitationText } from "./service";
 
 /** The Indexed Key of the cited work, which is also the CSL id a render names it by. */
 export const ALPHA_KEY = "ALPHA234";
@@ -141,20 +125,17 @@ export function firstText(
 export interface CitationTextFixtureDeps {
   /** The Obsidian objects the capability tags read; a missing one is empty. */
   host: HostSources;
-  citationIndex: Pick<
-    PlainCitationIndex,
-    "getParsedDocument" | "changed" | "membership-changed"
-  >;
-  citationLookup: Pick<PlainCitationLookup, "changed">;
-  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "changed" | "indexed">;
+  citationIndex: Pick<CitationIndex["Service"], "getParsedDocument" | "events">;
+  citationLookup: Pick<CitationLookup["Service"], "current" | "changes">;
+  noteIndex: Pick<NoteIndex["Service"], "whenIndexed" | "changes">;
   profile: ProfileReader;
   bibliographyRender: Pick<
-    PlainBibliographyRender,
-    "readCitations" | "readBibliography" | "vaultPresentation" | "invalidated"
+    BibliographyRender["Service"],
+    "readCitations" | "readBibliography" | "state" | "events"
   >;
   queryClient: Pick<
-    PlainQueryClients,
-    "client" | "ask" | "read" | "peek" | "invalidate" | "watch"
+    QueryClients["Service"],
+    "client" | "changes" | "ask" | "read" | "peek" | "invalidate" | "watch"
   >;
   /** The documents open in the workspace; without it, the layer reads the host's workspace. */
   openDocuments?: OpenDocuments;
@@ -165,17 +146,7 @@ export function citationTextFixture(
   context: Context.Context<never> = Context.empty(),
 ) {
   const stack = new AsyncDisposableStack();
-  const callbacks = <A>(
-    register: (emit: (event: A) => void) => (() => void)[],
-  ) => {
-    const bus = Effect.runSync(PubSub.unbounded<A>());
-    for (const off of register((value) => PubSub.publishUnsafe(bus, value)))
-      stack.defer(off);
-    stack.defer(() => Effect.runSync(PubSub.shutdown(bus)));
-    return Stream.fromPubSub(bus);
-  };
-  let revision = 0;
-  const initialLookup = { revision: "0" } as CitationLookupState;
+
   const queries = deps.queryClient;
   const runtime = buildRuntime(
     layerCitationText(deps.openDocuments).pipe(
@@ -185,64 +156,19 @@ export function citationTextFixture(
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {
-              getParsedDocument: (file) =>
-                Effect.tryPromise({
-                  try: (signal) =>
-                    deps.citationIndex.getParsedDocument(file, signal),
-                  catch: (cause) =>
-                    new VaultError({
-                      operation: "cachedRead",
-                      path: file.path,
-                      cause,
-                      message: String(cause),
-                    }),
-                }),
-              changes: Stream.empty,
-              // Install both source subscriptions before fixture startup returns.
-              events: Stream.unwrap(
-                Effect.gen(function* () {
-                  const events = testEvent<CitationIndexEvent>();
-                  yield* forkEach(deps.citationIndex.changed, (path) => {
-                    events.emit({ type: "changed", path });
-                  });
-                  yield* forkEach(
-                    deps.citationIndex["membership-changed"],
-                    () => {
-                      events.emit({ type: "membership-changed" });
-                    },
-                  );
-                  return events.stream;
-                }),
-              ),
+              ...deps.citationIndex,
             }),
           ),
           Layer.succeed(
             CitationLookup,
             stubService<CitationLookup["Service"]>("CitationLookup", {
-              current: Effect.succeed(initialLookup),
-              changes: deps.citationLookup.changed.pipe(
-                Stream.map((): CitationLookupState => ({
-                  ...initialLookup,
-                  revision: String(++revision),
-                })),
-              ),
+              ...deps.citationLookup,
             }),
           ),
           Layer.succeed(
             NoteIndex,
             stubService<NoteIndex["Service"]>("NoteIndex", {
-              whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
-              changes: Stream.merge(
-                deps.noteIndex.changed.pipe(
-                  Stream.map((file): NoteIndexChange => ({
-                    type: "changed",
-                    file,
-                  })),
-                ),
-                deps.noteIndex.indexed.pipe(
-                  Stream.map((): NoteIndexChange => ({ type: "indexed" })),
-                ),
-              ),
+              ...deps.noteIndex,
             }),
           ),
           Layer.succeed(
@@ -261,61 +187,13 @@ export function citationTextFixture(
           Layer.succeed(
             BibliographyRender,
             stubService<BibliographyRender["Service"]>("BibliographyRender", {
-              state: Effect.sync(() => ({
-                vaultPresentation: deps.bibliographyRender.vaultPresentation,
-                missingStyle: null,
-              })),
-              readCitations: (citations, items, options) =>
-                Effect.tryPromise({
-                  try: (signal) =>
-                    deps.bibliographyRender.readCitations(citations, items, {
-                      ...options,
-                      signal,
-                    }),
-                  catch: renderFailure,
-                }),
-              readBibliography: (items, options) =>
-                Effect.tryPromise({
-                  try: (signal) =>
-                    deps.bibliographyRender.readBibliography(items, {
-                      ...options,
-                      signal,
-                    }),
-                  catch: renderFailure,
-                }),
-              changes: Stream.empty,
-              events: deps.bibliographyRender.invalidated.pipe(
-                Stream.map((): BibliographyRenderEvent => ({
-                  _tag: "invalidated",
-                })),
-              ),
+              ...deps.bibliographyRender,
             }),
           ),
           Layer.succeed(
             QueryClients,
             stubService<QueryClients["Service"]>("QueryClients", {
-              client: queries.client,
-              changes: callbacks<HeldReadChange>((emit) => {
-                let changed = false;
-                return [
-                  queries.watch([], {
-                    changed: () => {
-                      changed = true;
-                    },
-                    settled: (key, held) => {
-                      emit({ key, held, changed });
-                      changed = false;
-                    },
-                  }),
-                ];
-              }),
-              ask: (key, fn) => Effect.promise(() => queries.ask(key, fn)),
-              read: (key, fn) =>
-                Effect.promise((signal) => queries.read(key, fn, signal)),
-              peek: (key) => Effect.sync(() => queries.peek(key)),
-              invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
-              watch: (prefix, on) =>
-                Effect.sync(() => queries.watch(prefix, on)),
+              ...queries,
             }),
           ),
         ),
@@ -325,7 +203,8 @@ export function citationTextFixture(
     stack,
   );
   try {
-    return Object.assign(plainCitationText(runtime), {
+    return Object.assign(runtime.runSync(CitationText), {
+      bridge: effectBridge(runtime),
       runtime,
       [Symbol.asyncDispose]: () => stack.disposeAsync(),
     });

@@ -5,16 +5,16 @@ import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
-import type { QueryViewDeps } from "@/views/query-view/view";
+import type { QueryHostDeps } from "./host";
 
 /**
  * The ZotLit Query a Query View reads in a test, answering by `run`; every
- * other read answers nothing. A wider `QueryViewDeps["query"]` adds its read
+ * other read answers nothing. A wider `QueryHostDeps["query"]` adds its read
  * here.
  */
 export const fakeQuery = (
-  run: QueryViewDeps["query"]["run"],
-): QueryViewDeps["query"] => ({
+  run: QueryHostDeps["query"]["run"],
+): QueryHostDeps["query"] => ({
   run,
   on: () => () => {},
   customFieldNames: async () => [],

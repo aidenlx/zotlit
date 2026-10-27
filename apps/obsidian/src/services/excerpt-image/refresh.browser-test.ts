@@ -13,8 +13,6 @@ import { Effect } from "effect";
 // those exist — see `service.test.ts`.
 import { ExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/service";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import { taggedQueryClients } from "@/services/query-client/__fixtures__";
-import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { check } from "./__fixtures__/check";
 import { ExcerptDisplayFixture } from "./__fixtures__/display";
@@ -138,7 +136,7 @@ interface Live {
   readonly store: ExcerptStore;
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayFixture;
-  readonly queries: PlainQueryClients;
+  readonly queries: ReturnType<typeof queryClientsFixture>;
   readonly renders: GatedRender[];
   /** One render, once the service reached it. */
   started(index: number): Promise<GatedRender>;
@@ -169,7 +167,7 @@ async function live(options: {
   });
   const queries = queryClientsFixture();
   const display = new ExcerptDisplayFixture({
-    queries: taggedQueryClients(queries),
+    queries: queries,
     resolve: (request, signal) => service.resolve(request, signal),
     stored: (request) => {
       const read = service.stored(request);
@@ -307,7 +305,8 @@ export async function run(): Promise<RefreshReport> {
 
       card.release();
       check(
-        app.queries.keysUnder([EXCERPT_DISPLAY]).length === 0,
+        app.queries.bridge.runSync(app.queries.keysUnder([EXCERPT_DISPLAY]))
+          .length === 0,
         "A released card left its Held Read behind",
       );
 
@@ -523,7 +522,8 @@ export async function run(): Promise<RefreshReport> {
       app.display.clear();
       await app.service.clear();
       check(
-        app.queries.keysUnder([EXCERPT_DISPLAY]).length === 0,
+        app.queries.bridge.runSync(app.queries.keysUnder([EXCERPT_DISPLAY]))
+          .length === 0,
         "A cleared display kept its Held Read",
       );
       check(

@@ -20,6 +20,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { layerVaultFrom } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { themeHook } from "@/lib/theme-hooks";
+import { vaultError } from "@/lib/vault-errors";
 import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
 import { lookupAnswerFor } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
@@ -41,6 +42,7 @@ import type { CitationTextEvent } from "@/services/citation-text/service";
 import { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { settingsFeed } from "@/services/settings/__fixtures__";
@@ -221,61 +223,74 @@ const makeHarness = Effect.fnUntraced(function* ({
         }),
         host: { vault, metadataCache: metadata },
         citationIndex: {
-          getParsedDocument: async () => ({
-            facts: new ParsedNote(
-              body,
-              (
-                await runPromise(
-                  inProcessParseClient.parse({
-                    path: "note.md",
-                    generation: 0,
-                    text: body,
-                  }),
-                )
-              ).record,
-            ),
-            set: {
-              occurrences,
-              citations: cited,
-              errors: [],
-              lookup: answer(occurrences.map((o) => o.raw)),
-              ...(await reads.runtime.runPromise(
-                ZoteroReads.use((db) => readReferenceSources(db, cited)),
-              )),
-              syntaxes: {
-                citekey: "included",
-                wikilink: "excluded",
-                annotation: "included",
-              },
-              omittedSyntaxes: [],
-              coverage: "complete",
-            },
-          }),
-          changed: Stream.empty,
-          "membership-changed": Stream.empty,
+          getParsedDocument: () =>
+            Effect.tryPromise({
+              try: async () => ({
+                facts: new ParsedNote(
+                  body,
+                  (
+                    await runPromise(
+                      inProcessParseClient.parse({
+                        path: "note.md",
+                        generation: 0,
+                        text: body,
+                      }),
+                    )
+                  ).record,
+                ),
+                set: {
+                  occurrences,
+                  citations: cited,
+                  errors: [],
+                  lookup: answer(occurrences.map((o) => o.raw)),
+                  ...(await reads.runtime.runPromise(
+                    ZoteroReads.use((db) => readReferenceSources(db, cited)),
+                  )),
+                  syntaxes: {
+                    citekey: "included" as const,
+                    wikilink: "excluded" as const,
+                    annotation: "included" as const,
+                  },
+                  omittedSyntaxes: [],
+                  coverage: "complete" as const,
+                },
+              }),
+              catch: vaultError("cachedRead", "note.md"),
+            }),
+          events: Stream.empty,
         },
         noteIndex: {
-          changed: Stream.empty,
-          indexed: Stream.empty,
-          whenIndexed: () => Promise.resolve(),
+          changes: Stream.empty,
+          whenIndexed: Effect.void,
         },
         bibliographyRender: {
-          vaultPresentation: { styleId: null, locale: null },
-          readCitations: async (citations: readonly string[]) => {
-            citationRequests.push({ citations });
-            return formatCitations
-              ? await formatCitations(citations)
-              : formatting
-                ? citations.map((source, index) =>
-                    rendered(render(source, index)),
-                  )
-                : null;
-          },
-          readBibliography: async () => ({
-            entries: [],
-            hasEntryMarkers: false,
+          state: Effect.succeed({
+            vaultPresentation: { styleId: null, locale: null },
+            missingStyle: null,
           }),
-          invalidated: Stream.empty,
+          readCitations: (citations: readonly string[]) =>
+            Effect.tryPromise({
+              try: async () => {
+                citationRequests.push({ citations });
+                return formatCitations
+                  ? await formatCitations(citations)
+                  : formatting
+                    ? citations.map((source, index) =>
+                        rendered(render(source, index)),
+                      )
+                    : null;
+              },
+              catch: renderFailure,
+            }),
+          readBibliography: () =>
+            Effect.tryPromise({
+              try: async () => ({
+                entries: [],
+                hasEntryMarkers: false,
+              }),
+              catch: renderFailure,
+            }),
+          events: Stream.empty,
         },
         queryClient,
       }),
@@ -290,7 +305,7 @@ const makeHarness = Effect.fnUntraced(function* ({
     vault,
     citationText: Layer.succeed(CitationText, text),
     citationLookup: {
-      observe: (changed) => Effect.sync(() => citationLookup.observe(changed)),
+      observe: (changed) => citationLookup.observe(changed),
     },
     citekeyEditor: {
       openCitekey: (citekey, pane) =>

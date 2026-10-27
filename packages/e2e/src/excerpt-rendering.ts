@@ -1124,7 +1124,7 @@ export async function verifyZoteroExcerptParity(
       vaultId,
       async ({ app, zotlit }, { __typedArg0 }) => {
         const services = zotlit.services;
-        await services.zoteroReads.refresh();
+        await services.bridge.runPromise(services.zoteroReads.refresh);
         const list = await services.bridge.runPromise(
           services.annotationRepository.read("RGRPDF24"),
         );
@@ -1270,7 +1270,7 @@ export async function verifyZoteroExcerptParity(
           );
           if (!annotation) throw new Error(`Missing Fixture annotation ${key}`);
           const fallback = require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -1278,7 +1278,9 @@ export async function verifyZoteroExcerptParity(
           const request = {
             annotation,
             source: list.source,
-            sourceScope: services.zoteroPref.dataDir,
+            sourceScope: services.bridge.runSync(
+              services.zoteroPrefService.current,
+            ).dataDir,
             attachmentKey: "RGRPDF24",
             libraryID: 1,
             pdfPath,

@@ -10,10 +10,10 @@ import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache"
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 
-import type { PlainNoteIndex } from "./plain";
-import { plainNoteIndex } from "./plain";
 import { layerNoteIndex, NoteIndex } from "./service";
 
 export const noteIndexOver = (host: HostSources) =>
@@ -27,7 +27,10 @@ export const noteIndexOf = Effect.fn("fixture.noteIndexOf")(function* (
 
 export function buildNoteIndex(host: HostSources, stack: AsyncDisposableStack) {
   const runtime = buildRuntime(noteIndexOver(host), stack);
-  return Object.assign(plainNoteIndex(runtime), { runtime });
+  return Object.assign(runtime.runSync(NoteIndex), {
+    runtime,
+    bridge: effectBridge(runtime),
+  });
 }
 
 /**
@@ -51,7 +54,7 @@ export async function openNoteVault(
     { enabledAtRuntime: true },
   );
   const noteIndex = buildNoteIndex(host, stack);
-  await noteIndex.whenIndexed();
+  await noteIndex.bridge.runPromise(noteIndex.whenIndexed);
   return {
     ...host,
     noteIndex,
@@ -65,7 +68,7 @@ export async function openNoteVault(
     ): Promise<void> => {
       const file = host.vault.files.get(path) ?? host.vault.addFile(path);
       host.metadataCache.change(file, cache({ itemKey }));
-      await noteIndex.whenSettled();
+      await noteIndex.bridge.runPromise(noteIndex.whenSettled);
     },
   };
 }
@@ -124,7 +127,8 @@ class MockVault extends MemoryVault {
 export interface Harness {
   metadataCache: MockMetadataCache;
   workspace: MemoryWorkspace;
-  service: PlainNoteIndex & {
+  service: NoteIndex["Service"] & {
+    bridge: EffectBridge;
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
   };
   close: () => Promise<void>;

@@ -7,11 +7,8 @@ import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
-import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 
-import { plainUseLedger } from "./plain";
-import type { PlainUseLedger } from "./plain";
 import { layerUseLedger, UseLedger } from "./service";
 
 /** The Obsidian objects a ledger reads, each in memory. */
@@ -40,19 +37,17 @@ export function useLedgerOf(
 /** The same ledger for a test outside Effect; `stack` closes it. */
 export function buildUseLedger(host: HostSources, stack: AsyncDisposableStack) {
   const runtime = buildRuntime(ledgerOver(host), stack);
-  return Object.assign(plainUseLedger(runtime), { runtime });
+  return Object.assign(runtime.runSync(UseLedger), { runtime });
 }
 
 /** A ledger that holds no Use and records none. */
-export const inertUseLedger: PlainUseLedger = {
-  current: {},
-  get: () => undefined,
-  uses: {},
-  record: (_itemKey, kind, instant = toInstant(DateTime.nowUnsafe())) => ({
-    instant,
-    kind,
-  }),
-  withoutNoteUse: (_file, open) => open(),
+export const inertUseLedger: UseLedger["Service"] = {
+  current: Effect.succeed({}),
+  get: () => Effect.succeed(undefined),
+  uses: Effect.succeed({}),
+  record: (_itemKey, kind, instant = DateTime.nowUnsafe()) =>
+    Effect.succeed({ instant, kind }),
+  withoutNoteUse: (_file, open) => open,
   changes: Stream.succeed({}),
 };
 

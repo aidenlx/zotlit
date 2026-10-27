@@ -49,14 +49,17 @@ it.effect(
         },
       );
       const stop = new AbortController();
-      const cancelled = harness.index.getDocumentCitationSet(harness.draft, {
-        signal: stop.signal,
-      });
+      const cancelled = harness.index.bridge.runPromise(
+        harness.index.getDocumentCitationSet(harness.draft),
+        { signal: stop.signal },
+      );
       const rejected = expect(cancelled).rejects.toMatchObject({
         name: "AbortError",
       });
       await entered.promise;
-      const remaining = harness.index.getDocumentCitationSet(harness.draft);
+      const remaining = harness.index.bridge.runPromise(
+        harness.index.getDocumentCitationSet(harness.draft),
+      );
       stop.abort();
       try {
         await rejected;
@@ -79,7 +82,9 @@ it.effect.each(["changed event", "document read"])(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       const saved = structuredClone(store.records.get("draft.md"));
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
@@ -104,12 +109,15 @@ it.effect.each(["changed event", "document read"])(
       else harness.vault.write(harness.draft, "@replacement");
       const stop = new AbortController();
       const cancelled = expect(
-        harness.index.getDocumentCitationSet(harness.draft, {
-          signal: stop.signal,
-        }),
+        harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+          { signal: stop.signal },
+        ),
       ).rejects.toMatchObject({ name: "AbortError" });
       const retained = expect(
-        harness.index.getDocumentCitationSet(harness.draft),
+        harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        ),
       ).resolves.toMatchObject({ occurrences: [{ raw: "doe2024" }] });
       await entered.promise;
       stop.abort();
@@ -130,7 +138,9 @@ it.effect.each(["before", "during"])(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       const saved = structuredClone(store.records.get("draft.md"));
       const release = Promise.withResolvers<void>();
       await using harness = await createCitationIndexHarness(
@@ -152,17 +162,23 @@ it.effect.each(["before", "during"])(
         },
       );
       harness.metadataCache.change(harness.draft, "@replacement");
-      const reader = harness.index.getDocumentCitationSet(harness.draft);
+      const reader = harness.index.bridge.runPromise(
+        harness.index.getDocumentCitationSet(harness.draft),
+      );
       if (timing === "during") harness.workspace.layoutReady();
       release.resolve();
       await reader;
       if (timing === "before") harness.workspace.layoutReady();
-      await harness.index.whenIndexed();
-      expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
+      expect(
+        await harness.index.bridge.runPromise(harness.index.getCitedBy(KEY_A)),
+      ).toMatchObject({
         coverage: "degraded",
         groups: [{ path: "draft.md" }],
       });
-      expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024", "roe2025"]);
       expect(store.records.get("draft.md")).toEqual(saved);
     }),
 );
@@ -197,23 +213,27 @@ it.effect.each(["edited", "new"])(
         },
       );
       harness.workspace.layoutReady();
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       const snapshots: CitedBySnapshot[] = [];
-      harness.index.observeCitedBy(KEY_A, (snapshot) =>
-        snapshots.push(snapshot),
+      harness.index.bridge.runSync(
+        harness.index.observeCitedBy(KEY_A, (snapshot) =>
+          snapshots.push(snapshot),
+        ),
       );
       await expect.poll(() => snapshots.at(-1)?.coverage).toBe("complete");
       const file = source === "edited" ? harness.draft : makeFile("new.md", "");
       const saved = structuredClone(harness.store.records.get(file.path));
       outcome = "failure";
       harness.metadataCache.change(file, "@poison");
-      const failed = harness.index
-        .getDocumentCitationSet(file)
+      const failed = harness.index.bridge
+        .runPromise(harness.index.getDocumentCitationSet(file))
         .catch(() => null);
       failRelease.resolve();
       await failed;
       expect(harness.store.records.get(file.path)).toEqual(saved);
-      expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+      expect(
+        await harness.index.bridge.runPromise(harness.index.getCitedBy(KEY_A)),
+      ).toMatchObject({
         coverage: "degraded",
         groups: [{ path: "draft.md" }],
       });
@@ -223,14 +243,20 @@ it.effect.each(["edited", "new"])(
       harness.metadataCache.change(file, "@doe2024");
       await retryEntered.promise;
       try {
-        expect((await harness.index.getCitedBy(KEY_A)).coverage).toBe(
-          "degraded",
-        );
+        expect(
+          (
+            await harness.index.bridge.runPromise(
+              harness.index.getCitedBy(KEY_A),
+            )
+          ).coverage,
+        ).toBe("degraded");
         expect(snapshots.at(-1)?.coverage).toBe("degraded");
       } finally {
         retryRelease.resolve();
       }
-      await harness.index.getDocumentCitationSet(file);
+      await harness.index.bridge.runPromise(
+        harness.index.getDocumentCitationSet(file),
+      );
       await expect
         .poll(() => snapshots.at(-1))
         .toMatchObject({
@@ -254,8 +280,8 @@ it.effect(
       harness.metadataCache.fileCache.set("draft.md", {
         links: [link("Doe 2024", 3), link("Roe 2025", 18)],
       });
-      const document = await harness.index.getDocumentCitationSet(
-        harness.draft,
+      const document = await harness.index.bridge.runPromise(
+        harness.index.getDocumentCitationSet(harness.draft),
       );
       expect(document.occurrences.map(({ raw }) => raw)).toEqual(["Roe 2025"]);
     }),
@@ -285,24 +311,46 @@ it.effect(
         },
       );
       const publications: string[][] = [];
-      subscribe(harness.index.runtime, harness.index["changed"], () =>
-        publications.push(harness.index.citationKeys()),
+      subscribe(
+        harness.index.runtime,
+        harness.index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        () =>
+          publications.push(
+            harness.index.bridge.runSync(harness.index.citationKeys()),
+          ),
       );
       harness.workspace.layoutReady();
       await started.promise;
       const changed = new Promise<void>((resolve) =>
         subscribe(
           harness.index.runtime,
-          Stream.take(harness.index["changed"], 1),
+          Stream.take(
+            harness.index.events.pipe(
+              Stream.filter(
+                (event): event is Extract<typeof event, { type: "changed" }> =>
+                  event.type === "changed",
+              ),
+              Stream.map((event) => event.path),
+            ),
+            1,
+          ),
           () => resolve(),
         ),
       );
       harness.metadataCache.change(harness.draft, "@roe2025");
       await changed;
       release.resolve();
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       expect(publications).toEqual([["roe2025"]]);
-      expect(harness.index.citationKeys()).toEqual(["roe2025"]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["roe2025"]);
       expect(
         harness.store.records.get("draft.md")?.citekeys.map(({ raw }) => raw),
       ).toEqual(["roe2025"]);
@@ -318,7 +366,9 @@ it.effect(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       const record = store.records.get("draft.md")!;
       record.scannerRevision = 0;
       record.citekeys[0]!.raw = "roe2025";
@@ -342,16 +392,25 @@ it.effect(
       );
       expect(
         (
-          await harness.index.getDocumentCitationSet(harness.draft)
+          await harness.index.bridge.runPromise(
+            harness.index.getDocumentCitationSet(harness.draft),
+          )
         ).occurrences.map(({ raw }) => raw),
       ).toEqual(["roe2025"]);
       harness.workspace.layoutReady();
       // A completed pass also releases the wait, so a skipped stale record fails below.
-      await Promise.race([entered.promise, harness.index.whenIndexed()]);
-      expect(harness.index.citationKeys()).toEqual(["roe2025"]);
+      await Promise.race([
+        entered.promise,
+        harness.index.bridge.runPromise(harness.index.whenIndexed),
+      ]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["roe2025"]);
       release.resolve();
-      await harness.index.whenIndexed();
-      expect(harness.index.citationKeys()).toEqual(["doe2024"]);
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024"]);
       expect(store.records.get("draft.md")?.scannerRevision).toBe(
         SCANNER_REVISION,
       );
@@ -367,7 +426,9 @@ it.effect(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       store.records.get("draft.md")!.scannerRevision = 0;
       const failed = Promise.withResolvers<void>();
       const started = Promise.withResolvers<void>();
@@ -397,22 +458,27 @@ it.effect(
       );
       harness.workspace.layoutReady();
       await started.promise;
-      expect(harness.index.citationKeys()).toEqual(["doe2024"]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024"]);
       failed.resolve();
       expect(
         (
-          await harness.index.getDocumentCitationSet(harness.draft)
+          await harness.index.bridge.runPromise(
+            harness.index.getDocumentCitationSet(harness.draft),
+          )
         ).occurrences.map(({ raw }) => raw),
       ).toEqual(["doe2024"]);
       await recovery.advance(99);
       expect(connections).toBe(1);
       await recovery.advance(1);
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       expect(connections).toBe(2);
-      expect([...harness.index.citationsByPath(["citekey"]).keys()]).toEqual([
-        "draft.md",
-        "new.md",
-      ]);
+      expect([
+        ...harness.index.bridge
+          .runSync(harness.index.citationsByPath(["citekey"]))
+          .keys(),
+      ]).toEqual(["draft.md", "new.md"]);
       expect(store.records.get("draft.md")?.scannerRevision).toBe(
         SCANNER_REVISION,
       );
@@ -429,7 +495,7 @@ it.effect(
         { store, notes: false },
       );
       seed.workspace.layoutReady();
-      await seed.index.whenIndexed();
+      await seed.index.bridge.runPromise(seed.index.whenIndexed);
       const release = Promise.withResolvers<void>();
       let active = 0;
       let peak = 0;
@@ -464,9 +530,12 @@ it.effect(
       } finally {
         release.resolve();
       }
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       expect(peak).toBe(4);
-      expect(harness.index.citationsByPath(["citekey"]).size).toBe(9);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationsByPath(["citekey"]))
+          .size,
+      ).toBe(9);
       expect(store.records.has("deleted.md")).toBe(false);
     }),
 );
@@ -501,7 +570,7 @@ it.effect(
       await entered.promise;
       harness.vault.rename(harness.draft, "renamed.md");
       release.resolve();
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       expect(parses).toBe(1);
       expect(harness.store.records.get("renamed.md")).toMatchObject({
         citekeys: [{ raw: "doe2024" }],
@@ -513,9 +582,11 @@ it.effect(
       });
       expect(harness.store.records.has("draft.md")).toBe(false);
       harness.vault.deleteFile(harness.draft);
-      expect(harness.index.citationsByPath(["citekey", "wikilink"]).size).toBe(
-        0,
-      );
+      expect(
+        harness.index.bridge.runSync(
+          harness.index.citationsByPath(["citekey", "wikilink"]),
+        ).size,
+      ).toBe(0);
       expect(harness.store.records.size).toBe(0);
       expect(parses).toBe(1);
     }),
@@ -530,7 +601,9 @@ it.effect(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       const loaded = Promise.withResolvers<void>();
       const restore = Promise.withResolvers<void>();
       const entered = Promise.withResolvers<void>();
@@ -570,8 +643,8 @@ it.effect(
       await harness.ready;
       try {
         expect(
-          harness.index
-            .citationsByPath(["citekey"])
+          harness.index.bridge
+            .runSync(harness.index.citationsByPath(["citekey"]))
             .get("draft.md")
             ?.map(({ raw }) => raw),
         ).toEqual(["doe2024"]);
@@ -580,7 +653,9 @@ it.effect(
       }
       expect(
         (
-          await harness.index.getDocumentCitationSet(harness.draft)
+          await harness.index.bridge.runPromise(
+            harness.index.getDocumentCitationSet(harness.draft),
+          )
         ).occurrences.map(({ raw }) => raw),
       ).toEqual(["roe2025"]);
     }),
@@ -595,7 +670,9 @@ it.effect(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       const saved = structuredClone(store.records.get("draft.md"));
       let connections = 0;
       let attempts = 0;
@@ -621,8 +698,10 @@ it.effect(
         { store, notes: false, parseClient: client },
       );
       harness.workspace.layoutReady();
-      await harness.index.whenIndexed();
-      expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024", "roe2025"]);
       expect(store.records.get("draft.md")).toEqual(saved);
       expect(
         store.records.get("neighbour.md")?.citekeys.map(({ raw }) => raw),
@@ -726,8 +805,19 @@ it.effect(
         { notes: false, parseClient: recovery.client },
       );
       const publications: string[][] = [];
-      subscribe(harness.index.runtime, harness.index["changed"], () =>
-        publications.push(harness.index.citationKeys()),
+      subscribe(
+        harness.index.runtime,
+        harness.index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        () =>
+          publications.push(
+            harness.index.bridge.runSync(harness.index.citationKeys()),
+          ),
       );
       harness.workspace.layoutReady();
       await entered.promise;
@@ -742,10 +832,12 @@ it.effect(
       }
       expect(
         (
-          await harness.index.getDocumentCitationSet(harness.draft)
+          await harness.index.bridge.runPromise(
+            harness.index.getDocumentCitationSet(harness.draft),
+          )
         ).occurrences.map(({ raw }) => raw),
       ).toEqual(["roe2025"]);
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       expect(publications).toEqual([["roe2025"]]);
       await recovery.advance(15_000);
       expect(terminations).toBe(0);
@@ -762,7 +854,9 @@ it.effect.each([0, 10_000])(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       const saved = structuredClone(store.records.get("draft.md"));
       const entered = Promise.withResolvers<void>();
       const queued = Promise.withResolvers<void>();
@@ -811,19 +905,25 @@ it.effect.each([0, 10_000])(
       await recovery.advance(arrival);
       readNeighbour();
       await queued.promise;
-      expect(harness.index.citationKeys()).toEqual(["doe2024"]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024"]);
       await recovery.advance(15_000 - arrival);
       expect(terminations).toBe(1);
       await recovery.advance(100);
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       expect(connections).toBe(2);
       expect(attempts).toBe(1);
       expect(store.records.get("draft.md")).toEqual(saved);
-      expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024", "roe2025"]);
       harness.metadataCache.change(harness.draft, "@recovered");
       expect(
         (
-          await harness.index.getDocumentCitationSet(harness.draft)
+          await harness.index.bridge.runPromise(
+            harness.index.getDocumentCitationSet(harness.draft),
+          )
         ).occurrences.map(({ raw }) => raw),
       ).toEqual(["recovered"]);
     }),
@@ -874,7 +974,7 @@ it.effect(
       await entered.promise;
       await recovery.advance(5_000);
       harness.vault.deleteFile(harness.draft);
-      await harness.index.whenIndexed();
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
       await recovery.advance(9_999);
       expect(terminations).toBe(0);
       expect(connections).toBe(1);
@@ -882,7 +982,9 @@ it.effect(
       expect(terminations).toBe(1);
       await recovery.advance(100);
       expect(connections).toBe(2);
-      expect(harness.index.citationKeys()).toEqual([]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual([]);
       expect(
         await Effect.runPromise(
           recovery.client.parse({
@@ -909,13 +1011,17 @@ it.effect("settles backfill when the parse worker cannot start (#1691)", () =>
     harness.workspace.layoutReady();
     await entered.promise;
     let indexed = false;
-    const settled = harness.index.whenIndexed().then(() => {
-      indexed = true;
-    });
+    const settled = harness.index.bridge
+      .runPromise(harness.index.whenIndexed)
+      .then(() => {
+        indexed = true;
+      });
     await recovery.advance(15_000);
     await expect.poll(() => indexed).toBe(true);
     await settled;
-    expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+    expect(
+      await harness.index.bridge.runPromise(harness.index.getCitedBy(KEY_A)),
+    ).toMatchObject({
       coverage: "degraded",
       groups: [],
     });
@@ -931,7 +1037,9 @@ it.effect.each([SCANNER_REVISION, 0])(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getDocumentCitationSet(seed.draft);
+      await seed.index.bridge.runPromise(
+        seed.index.getDocumentCitationSet(seed.draft),
+      );
       store.records.get("draft.md")!.scannerRevision = revision;
       const saved = structuredClone(store.records.get("draft.md"));
       const attempts = Array.from({ length: 3 }, () =>
@@ -968,17 +1076,23 @@ it.effect.each([SCANNER_REVISION, 0])(
       await recovery.advance(200);
       await attempts[2]!.promise;
       let indexed = false;
-      const settled = harness.index.whenIndexed().then(() => {
-        indexed = true;
-      });
+      const settled = harness.index.bridge
+        .runPromise(harness.index.whenIndexed)
+        .then(() => {
+          indexed = true;
+        });
       await expect.poll(() => indexed).toBe(true);
       await settled;
-      expect(await harness.index.getCitedBy(KEY_A)).toMatchObject({
+      expect(
+        await harness.index.bridge.runPromise(harness.index.getCitedBy(KEY_A)),
+      ).toMatchObject({
         coverage: "degraded",
         groups: [{ path: "draft.md" }],
       });
       expect(count).toBe(3);
       expect(store.records.get("draft.md")).toEqual(saved);
-      expect(harness.index.citationKeys()).toEqual(["doe2024", "roe2025"]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024", "roe2025"]);
     }),
 );

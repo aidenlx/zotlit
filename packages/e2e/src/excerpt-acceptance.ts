@@ -518,14 +518,16 @@ export async function verifyReaderBackedExcerpts(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(
+            services.zoteroPrefService.current,
+          ).dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: __typedArg1,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             __typedArg2!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -695,8 +697,10 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
       const services = zotlit.services;
-      await services.noteIndex.whenIndexed();
-      const file = services.noteIndex.getImportedNoteByNoteKey(__typedArg0)[0];
+      await services.bridge.runPromise(services.noteIndex.whenIndexed);
+      const file = services.bridge.runSync(
+        services.noteIndex.getImportedNoteByNoteKey(__typedArg0),
+      )[0];
       if (!file)
         throw new Error(
           `The Fixture Vault holds no Imported Note for ${__typedArg1}`,
@@ -794,14 +798,16 @@ export async function verifyReaderBackedExcerpts(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(
+            services.zoteroPrefService.current,
+          ).dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: __typedArg1,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             __typedArg2!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -919,7 +925,7 @@ export async function verifyReaderBackedExcerpts(
             result: null,
             error: null,
           });
-        await services.noteIndex.whenIndexed();
+        await services.bridge.runPromise(services.noteIndex.whenIndexed);
         void services.batchImport
           .runBatchImport("note", [__typedArg0])
           .then(
@@ -1900,7 +1906,7 @@ export async function verifyMultiPdfExcerptBatch(
     vaultId,
     async ({ zotlit }) => {
       const services = zotlit.services;
-      await services.noteIndex.whenIndexed();
+      await services.bridge.runPromise(services.noteIndex.whenIndexed);
       await services.bridge.runPromise(services.excerptImage.clear);
       return String(true);
     },
@@ -2221,14 +2227,16 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(
+            services.zoteroPrefService.current,
+          ).dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: __typedArg1,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             __typedArg2!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2563,14 +2571,16 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(
+            services.zoteroPrefService.current,
+          ).dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: __typedArg1,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             __typedArg2!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2770,14 +2780,16 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(
+            services.zoteroPrefService.current,
+          ).dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: __typedArg1,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             __typedArg2!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
             "cache",
             "library",
             `${key}.png`,

@@ -5,10 +5,8 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 
-import type { ParseReply } from "./client";
-import { plainCitationParse } from "./plain";
-import type { PlainCitationParse } from "./plain";
-import { layerCitationParse } from "./service";
+import type { ParseRequest } from "./client";
+import { CitationParse, layerCitationParse } from "./service";
 
 function openParseHarness(ready: boolean) {
   const stack = new AsyncDisposableStack();
@@ -19,7 +17,7 @@ function openParseHarness(ready: boolean) {
   );
   return {
     runtime,
-    parser: plainCitationParse(runtime),
+    parser: runtime.runSync(CitationParse),
     layoutReady: () => workspace.layoutReady(),
     context: () => runtime.context(),
     resources: stack.move(),
@@ -41,17 +39,12 @@ export const makeParseHarness = Effect.fnUntraced(function* (ready = false) {
   );
 });
 
-/**
- * A caller of the plain facade, as the Citation Index is: it holds the parse's
- * signal and cancels by aborting it.
- */
-export function cancellableParse(
-  parser: PlainCitationParse,
-  request: Parameters<PlainCitationParse["parse"]>[0],
-): { pending: Promise<ParseReply>; cancel: () => void } {
-  const caller = new AbortController();
-  return {
-    pending: parser.parse(request, caller.signal),
-    cancel: () => caller.abort(),
-  };
-}
+/** A caller owns its parse fiber and can interrupt it without stopping the worker. */
+export const cancellableParse = Effect.fnUntraced(function* (
+  parser: CitationParse["Service"],
+  request: ParseRequest,
+) {
+  return yield* Effect.forkChild(parser.parse(request), {
+    startImmediately: true,
+  });
+});

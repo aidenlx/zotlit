@@ -1,3 +1,4 @@
+import { Stream } from "effect";
 import { deleteDB, openDB } from "idb";
 import "fake-indexeddb/auto";
 import { expect, it } from "vitest";
@@ -16,9 +17,11 @@ it("reads all Annotation Occurrence forms in document order (#1692)", async () =
     ].join("\n"),
   });
   harness.workspace.layoutReady();
-  await harness.index.whenIndexed();
+  await harness.index.bridge.runPromise(harness.index.whenIndexed);
 
-  expect(harness.index.getAnnotationUses("EFGH6789")).toEqual([
+  expect(
+    harness.index.bridge.runSync(harness.index.getAnnotationUses("EFGH6789")),
+  ).toEqual([
     {
       path: "draft.md",
       occurrence: {
@@ -62,7 +65,9 @@ it("reads all Annotation Occurrence forms in document order (#1692)", async () =
       },
     },
   ]);
-  expect(harness.index.getAnnotationUses("MISSING1")).toEqual([]);
+  expect(
+    harness.index.bridge.runSync(harness.index.getAnnotationUses("MISSING1")),
+  ).toEqual([]);
 });
 
 it("restores schema v2 Annotation Occurrences with link text without a read (#1692)", async () => {
@@ -106,11 +111,13 @@ it("restores schema v2 Annotation Occurrences with link text without a read (#16
         openStore: () => openCitekeyStore(appId),
       },
     );
-    expect(harness.index.getAnnotationUses("EFGH6789")).toMatchObject([
+    expect(
+      harness.index.bridge.runSync(harness.index.getAnnotationUses("EFGH6789")),
+    ).toMatchObject([
       { path: "draft.md", occurrence: { text: "label", form: "labelled" } },
     ]);
     harness.workspace.layoutReady();
-    await harness.index.whenIndexed();
+    await harness.index.bridge.runPromise(harness.index.whenIndexed);
     expect(harness.vault.reads).toEqual([]);
   } finally {
     await deleteDB(name);
@@ -128,21 +135,33 @@ it("keeps uses current through edits, identical touches, renames and deletion (#
   );
   const { index, draft, metadataCache, vault, workspace } = harness;
   workspace.layoutReady();
-  await index.whenIndexed();
+  await index.bridge.runPromise(index.whenIndexed);
   const changes: string[] = [];
-  subscribe(index.runtime, index["changed"], (path) => changes.push(path));
+  subscribe(
+    index.runtime,
+    index.events.pipe(
+      Stream.filter(
+        (event): event is Extract<typeof event, { type: "changed" }> =>
+          event.type === "changed",
+      ),
+      Stream.map((event) => event.path),
+    ),
+    (path) => changes.push(path),
+  );
 
   metadataCache.change(draft, body);
-  await index.getDocumentCitationSet(draft);
+  await index.bridge.runPromise(index.getDocumentCitationSet(draft));
   expect(changes).toEqual([]);
 
   metadataCache.change(
     draft,
     "[new](zotero://open/library/items/ABCD2345?annotation=EFGH6789)",
   );
-  await index.getDocumentCitationSet(draft);
+  await index.bridge.runPromise(index.getDocumentCitationSet(draft));
   expect(changes).toEqual(["draft.md"]);
-  expect(index.getAnnotationUses("EFGH6789")).toMatchObject([
+  expect(
+    index.bridge.runSync(index.getAnnotationUses("EFGH6789")),
+  ).toMatchObject([
     {
       path: "draft.md",
       occurrence: {
@@ -161,23 +180,25 @@ it("keeps uses current through edits, identical touches, renames and deletion (#
     draft,
     "[](zotero://open/library/items/ABCD2345?annotation=NEXT2345)",
   );
-  await index.getDocumentCitationSet(draft);
-  expect(index.getAnnotationUses("EFGH6789")).toMatchObject([
-    { path: "other.md" },
-  ]);
-  expect(index.getAnnotationUses("NEXT2345")).toMatchObject([
+  await index.bridge.runPromise(index.getDocumentCitationSet(draft));
+  expect(
+    index.bridge.runSync(index.getAnnotationUses("EFGH6789")),
+  ).toMatchObject([{ path: "other.md" }]);
+  expect(
+    index.bridge.runSync(index.getAnnotationUses("NEXT2345")),
+  ).toMatchObject([
     { path: "draft.md", occurrence: { text: "", form: "citation" } },
   ]);
 
   vault.rename(draft, "renamed.md");
-  expect(index.getAnnotationUses("NEXT2345")).toMatchObject([
-    { path: "renamed.md" },
-  ]);
+  expect(
+    index.bridge.runSync(index.getAnnotationUses("NEXT2345")),
+  ).toMatchObject([{ path: "renamed.md" }]);
   vault.deleteFile(draft);
-  expect(index.getAnnotationUses("NEXT2345")).toEqual([]);
-  expect(index.getAnnotationUses("EFGH6789")).toMatchObject([
-    { path: "other.md" },
-  ]);
+  expect(index.bridge.runSync(index.getAnnotationUses("NEXT2345"))).toEqual([]);
+  expect(
+    index.bridge.runSync(index.getAnnotationUses("EFGH6789")),
+  ).toMatchObject([{ path: "other.md" }]);
 });
 
 it.each([
@@ -217,9 +238,13 @@ it.each([
     { notes: false },
   );
   harness.workspace.layoutReady();
-  await harness.index.whenIndexed();
-  expect(harness.index.getAnnotationUses("EFGH6789")).toEqual([]);
-  expect(harness.index.getAnnotationUses("NEXT2345")).toMatchObject([
+  await harness.index.bridge.runPromise(harness.index.whenIndexed);
+  expect(
+    harness.index.bridge.runSync(harness.index.getAnnotationUses("EFGH6789")),
+  ).toEqual([]);
+  expect(
+    harness.index.bridge.runSync(harness.index.getAnnotationUses("NEXT2345")),
+  ).toMatchObject([
     { path: "draft.md", occurrence: { form: "labelled", text: "visible" } },
   ]);
 });
@@ -233,15 +258,19 @@ it("separates personal and group Annotation keys and restores their uses before 
     notes: false,
   });
   first.workspace.layoutReady();
-  await first.index.whenIndexed();
+  await first.index.bridge.runPromise(first.index.whenIndexed);
   await using restored = await createCitationIndexHarness(documents, {
     notes: false,
     store: first.store,
   });
-  expect(restored.index.getAnnotationUses("EFGH6789")).toMatchObject([
-    { path: "z.md" },
-  ]);
-  expect(restored.index.getAnnotationUses("EFGH6789g42")).toEqual([
+  expect(
+    restored.index.bridge.runSync(restored.index.getAnnotationUses("EFGH6789")),
+  ).toMatchObject([{ path: "z.md" }]);
+  expect(
+    restored.index.bridge.runSync(
+      restored.index.getAnnotationUses("EFGH6789g42"),
+    ),
+  ).toEqual([
     {
       path: "a.md",
       occurrence: {
@@ -258,6 +287,6 @@ it("separates personal and group Annotation keys and restores their uses before 
     },
   ]);
   restored.workspace.layoutReady();
-  await restored.index.whenIndexed();
+  await restored.index.bridge.runPromise(restored.index.whenIndexed);
   expect(restored.vault.reads).toEqual([]);
 });

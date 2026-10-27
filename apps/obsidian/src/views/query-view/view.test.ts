@@ -48,6 +48,7 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
+import type { QueryHostDeps } from "@/views/query-view/__fixtures__/host";
 import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 
 // @vitest-environment happy-dom
@@ -199,7 +200,7 @@ async function mount(
     notePaths = [],
     queryRead,
   }: {
-    queryRead?: QueryViewDeps["query"]["run"];
+    queryRead?: QueryHostDeps["query"]["run"];
     notes?: Record<string, string>;
     /** The frontmatter of each note, by path. */
     frontmatter?: Record<string, Record<string, unknown>>;
@@ -331,7 +332,7 @@ async function mount(
   };
   const runtime = testRuntime();
   const readService = new Proxy(
-    stubService<QueryViewDeps["reads"]>("ZoteroReads", {
+    stubService<QueryHostDeps["reads"]>("ZoteroReads", {
       ...reads.streams,
       acquireRead: vi.fn(),
     }),
@@ -389,11 +390,11 @@ async function mount(
       },
     },
   );
-  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+  const deps = stubService<QueryViewDeps & QueryHostDeps>("QueryViewDeps", {
     runtime,
     app: editorApp(),
     reads: readService,
-    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       ...libraryScope.streams,
       current: {
         mode: "selected",

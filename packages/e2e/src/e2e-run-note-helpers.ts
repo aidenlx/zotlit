@@ -143,7 +143,9 @@ function hasIndexedNotes(
       async ({ zotlit }, { __typedArg0 }) => {
         return String(
           String(
-            zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
+            zotlit.services.bridge.runSync(
+              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0),
+            ).length,
           ),
         );
       },
@@ -170,8 +172,8 @@ async function indexedNote(
       const hits = await zotlit.services.itemLookup.search("", { limit: 100 });
       const hit = hits.find((candidate) => candidate.item.itemID === itemID);
       if (!hit) throw new Error("Fixture Item not found");
-      const notes = zotlit.services.noteIndex.getNotesByItemKey(
-        hit.item.indexedKey,
+      const notes = zotlit.services.bridge.runSync(
+        zotlit.services.noteIndex.getNotesByItemKey(hit.item.indexedKey),
       );
       return { indexedKey: hit.item.indexedKey, path: notes[0]?.path ?? null };
     },
@@ -577,7 +579,9 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
           JSON.stringify({
             hostname: settings["server.hostname"],
             port: services.bridge.runSync(services.localServer.effectivePort),
-            sourceId: services.zoteroPref.sourceId,
+            sourceId: services.bridge.runSync(
+              services.zoteroPrefService.current,
+            ).sourceId,
           }),
         );
       },

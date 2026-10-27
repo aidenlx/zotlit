@@ -58,12 +58,6 @@ const renderError = (cause: unknown) =>
   });
 const CITATION_RENDER = "citation-render";
 
-export interface BibliographyRenderEvents {
-  changed: (key: string) => void;
-  settled: (key: string, held: Held<unknown> | null) => void;
-  invalidated: () => void;
-  "style-missing": (styleId: string) => void;
-}
 export type BibliographyRenderEvent =
   | { readonly _tag: "changed"; readonly key: string }
   | {

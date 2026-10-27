@@ -20,8 +20,12 @@ export async function verifyPdfReadSource(
     vaultId,
     async ({ zotlit }) => {
       return {
-        dataDir: zotlit.services.zoteroPref.dataDir,
-        override: zotlit.services.zoteroPref.dataDirOverride,
+        dataDir: zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.current,
+        ).dataDir,
+        override: zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.current,
+        ).dataDirOverride,
         log: {
           "log.level": zotlit.services.bridge.runSync(
             zotlit.services.settings.current,
@@ -41,7 +45,9 @@ export async function verifyPdfReadSource(
       vaultId,
       async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
         app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
-        zotlit.services.zoteroPref.setDataDir(__typedArg0);
+        zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPrefService.setDataDir(__typedArg0),
+        );
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update(__typedArg1),
         );
@@ -102,7 +108,9 @@ export async function verifyPdfReadSource(
         app.vault.getFileByPath("attachments/rougier-2014.pdf")!,
         "old-source.pdf",
       );
-      zotlit.services.zoteroPref.setDataDir(__typedArg0);
+      zotlit.services.bridge.runSync(
+        zotlit.services.zoteroPrefService.setDataDir(__typedArg0),
+      );
       return String(true);
     },
     { __typedArg0: oldDir },
@@ -166,7 +174,9 @@ export async function verifyPdfReadSource(
   await obRun(
     vaultId,
     async ({ zotlit }, { __typedArg0 }) => {
-      zotlit.services.zoteroPref.setDataDir(__typedArg0);
+      zotlit.services.bridge.runSync(
+        zotlit.services.zoteroPrefService.setDataDir(__typedArg0),
+      );
       await zotlit.services.bridge.runPromise(
         zotlit.services.zoteroLocalApi.probe,
       );

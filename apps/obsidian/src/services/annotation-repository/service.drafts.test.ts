@@ -388,7 +388,7 @@ it.effect(
       yield* service.editTextField("comment", "PUPR5FG5", "Keep this draft");
 
       deferNext = true;
-      queryClient.invalidate([
+      yield* queryClient.invalidate([
         "annotations",
         "zotero-local-api",
         SERVER_ID,
@@ -398,7 +398,7 @@ it.effect(
         startImmediately: true,
       });
       yield* Effect.promise(() => started.promise);
-      queryClient.invalidate([
+      yield* queryClient.invalidate([
         "annotations",
         "zotero-local-api",
         SERVER_ID,

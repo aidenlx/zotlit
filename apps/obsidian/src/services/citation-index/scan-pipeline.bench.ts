@@ -140,14 +140,18 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
             const citekey = `r${String(run + 4).padStart(4, "0")}`;
             const body = text.replace("[@work1]", `[@${citekey}]`);
             harness.metadataCache.change(harness.draft, body);
-            const applied = await harness.index.getFileScan(harness.draft);
+            const applied = await harness.index.bridge.runPromise(
+              harness.index.getFileScan(harness.draft),
+            );
             const elapsed =
               worker.postMs + performance.now() - worker.receivedAt;
             if (run >= 0) cell.hostPostApplyMs.push(elapsed);
             assert.equal(applied?.citekeys.length, expected.citekeys.length);
             assert.equal(applied?.citekeys[0]?.raw, citekey);
             assert.equal(
-              harness.index.getAnnotationUses("EFGH6789").length,
+              harness.index.bridge.runSync(
+                harness.index.getAnnotationUses("EFGH6789"),
+              ).length,
               expected.annotations.length,
             );
           }
@@ -226,13 +230,16 @@ it("meets the host scanner and worker budgets (#1695)", async () => {
             assert.equal(persisted.size, backfill.files);
           } else {
             harness.workspace.layoutReady();
-            await harness.index.whenIndexed();
+            await harness.index.bridge.runPromise(harness.index.whenIndexed);
           }
           const elapsed = performance.now() - start;
           if (run >= 0)
             (mode === "legacy" ? trial.legacyMs : trial.workerMs).push(elapsed);
           if (mode === "worker") {
-            assert.equal(harness.index.coverage, "complete");
+            assert.equal(
+              harness.index.bridge.runSync(harness.index.current).coverage,
+              "complete",
+            );
             assert.equal(harness.store.records.size, backfill.files);
           }
         }

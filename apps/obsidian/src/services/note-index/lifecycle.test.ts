@@ -20,7 +20,6 @@ import {
   noteIndexOver,
   startup,
 } from "./__fixtures__";
-import { plainNoteIndex } from "./plain";
 import { NoteIndex } from "./service";
 import type { NoteIndexChange } from "./service";
 
@@ -139,8 +138,8 @@ it.effect(
       );
       const runtime = buildRuntime(noteIndexOver(host), stack);
       yield* Effect.promise(() => runtime.context());
-      const index = plainNoteIndex(runtime);
-      expect(index.getNotesByItemKey("ABCD2345")).toEqual([
+      const index = runtime.runSync(NoteIndex);
+      expect(yield* index.getNotesByItemKey("ABCD2345")).toEqual([
         host.vault.files.get("paper.md")!,
       ]);
     }),

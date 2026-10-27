@@ -508,8 +508,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }) => {
             return String(
               String(
-                zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")
-                  .length,
+                zotlit.services.bridge.runSync(
+                  zotlit.services.noteIndex.getImportedNoteByNoteKey(
+                    "NNNNAAAA",
+                  ),
+                ).length,
               ),
             );
           },
@@ -528,8 +531,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       id,
       async ({ zotlit }) => {
         return String(
-          zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")[0]!
-            .path,
+          zotlit.services.bridge.runSync(
+            zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
+          )[0]!.path,
         );
       },
       undefined,

@@ -9,9 +9,9 @@ import {
   noDefaultRuntime,
   noLegacyService,
   noNanoevents,
+  noPlainServiceAdapters,
   layerStreamConsumer,
   obsidianCapabilities,
-  plainAdapterStreams,
   scopeClosed,
   scopedRunner,
   serviceTagId,
@@ -173,39 +173,6 @@ tester.run("no-nanoevents", noNanoevents, {
     {
       code: 'const events = await import("nanoevents");',
       errors: [{ messageId: "nanoevents" }],
-    },
-  ],
-});
-
-tester.run("plain-adapter-streams", plainAdapterStreams, {
-  valid: [
-    // The adapter hands out the Stream; plain code subscribes through the helper.
-    `export function plainProfile(runtime) {
-      return { changes: Profile.changes, current: () => runtime.runSync(Profile.current) };
-    }`,
-    `const stop = subscribe(runtime, adapter.changes, refresh);`,
-    "interface PlainProfile { readonly changes: Stream.Stream<Snapshot>; }",
-  ],
-  invalid: [
-    {
-      code: "const adapter = { on(event, callback) { return () => {}; } };",
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: "const adapter = { subscribe: (callback) => () => {} };",
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: 'interface PlainIndex { on(event: "changed", callback: () => void): () => void; }',
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: "interface PlainSettings { subscribe: (callback: () => void) => () => void; }",
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: "class PlainLookup { on() {} }",
-      errors: [{ messageId: "emitter" }],
     },
   ],
 });
@@ -539,6 +506,47 @@ tester.run("temporal-in-effect", temporalInEffect, {
       code: 'import { instantClock } from "@/lib/effect-clock";\nconst spy = vi.spyOn(Temporal.Now, "instant");',
       filename: library,
       errors: [temporal],
+    },
+  ],
+});
+
+// #1863: every consumer, including fixtures, reads the retained service contract.
+tester.run("no-plain-service-adapters", noPlainServiceAdapters, {
+  valid: [
+    {
+      code: 'import { Template } from "@/services/template/service";',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+    },
+    {
+      code: 'import { plain } from "./plain";',
+      filename: "/repo/apps/obsidian/src/lib/text.ts",
+    },
+  ],
+  invalid: [
+    {
+      code: 'import type { PlainTemplate } from "@/services/template/plain";',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'import { plain } from "./plain";',
+      filename: "/repo/apps/obsidian/src/services/template/__fixtures__.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'export type { Plain } from "../template/plain.ts";',
+      filename: "/repo/apps/obsidian/src/services/profile/service.test.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'export * from "@/services/pandoc/render-cache/plain";',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'const adapter = import("@/services/template/plain");',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+      errors: [{ messageId: "adapter" }],
     },
   ],
 });

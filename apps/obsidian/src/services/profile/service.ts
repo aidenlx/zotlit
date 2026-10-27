@@ -1560,7 +1560,7 @@ function updateProfilePackMetadata(
   }
 }
 
-/** The original values and Promise surface, implemented by the plain adapter. */
+/** The Profile values and Promise surface for callers outside Effect. */
 export interface ProfileOperations {
   readonly loaded: boolean;
   readonly profiles: readonly LiteratureNoteProfile[];
@@ -1626,14 +1626,6 @@ export class ProfileOperationError extends Schema.TaggedError<
   cause: Schema.Defect(),
 }) {}
 
-export type ProfileError =
-  | ProfileOperationError
-  | ProfileImportChanged
-  | VaultError
-  | FileExists
-  | VaultFolderBlockedError
-  | LiveTextRewriteFailed
-  | TemplateFailure;
 export interface ProfileState {
   readonly loaded: boolean;
   readonly profiles: readonly LiteratureNoteProfile[];

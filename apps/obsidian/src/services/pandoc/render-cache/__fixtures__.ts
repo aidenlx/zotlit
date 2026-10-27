@@ -1,31 +1,27 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 /** The real bibliography layer over the dependency ports used by consumer fixtures. */
-import { Context, Effect, Layer, PubSub, Stream } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import {
+  BibliographyRender,
   BibliographyRenderError,
   layerBibliographyRender,
 } from "@/services/pandoc/render-cache";
 import { PandocEngine } from "@/services/pandoc/service";
-import type { PlainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
-import type { PlainQueryClients } from "@/services/query-client/plain";
 import {
   QueryClients,
   layerQueryClients,
 } from "@/services/query-client/service";
-import type { HeldReadChange } from "@/services/query-client/service";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-
-import { plainBibliographyRender } from "./plain";
 
 /**
  * A render read's rejection as the real member fails: an abort and a
@@ -44,16 +40,8 @@ export function renderFailure(
 }
 
 export interface BibliographyRenderFixtureOptions {
-  profile: Pick<PlainProfile, "changed">;
-  db: Pick<
-    PlainZoteroReads,
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-  >;
+  profile: Pick<Profile["Service"], "changes">;
+  db: Pick<ZoteroReads["Service"], "events">;
   pandocEngine: Pick<ManagedBinaryHandle<CitationEngine>, "binary">;
   zoteroPref: {
     readonly dataDir: string;
@@ -62,8 +50,8 @@ export interface BibliographyRenderFixtureOptions {
   };
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   queryClient?: Pick<
-    PlainQueryClients,
-    "ask" | "readFresh" | "peek" | "invalidate" | "watch"
+    QueryClients["Service"],
+    "changes" | "ask" | "readFresh" | "peek" | "invalidate" | "watch"
   >;
 }
 
@@ -72,14 +60,7 @@ export async function bibliographyRenderFixture(
   context: Context.Context<never> = Context.empty(),
 ) {
   await using stack = new AsyncDisposableStack();
-  const callbacks = <A>(
-    register: (callback: (value: A) => void) => () => void,
-  ): Stream.Stream<A> => {
-    const bus = Effect.runSync(PubSub.unbounded<A>());
-    stack.defer(register((value) => PubSub.publishUnsafe(bus, value)));
-    stack.defer(() => Effect.runSync(PubSub.shutdown(bus)));
-    return Stream.fromPubSub(bus);
-  };
+
   const profileState = {
     loaded: true,
     profiles: [],
@@ -105,26 +86,7 @@ export async function bibliographyRenderFixture(
     ? Layer.succeed(
         QueryClients,
         stubService<QueryClients["Service"]>("QueryClients", {
-          changes: callbacks<HeldReadChange>((emit) => {
-            let changed = false;
-            return query.watch([], {
-              changed: () => {
-                changed = true;
-              },
-              settled: (key, held) => {
-                emit({ key, held, changed });
-                changed = false;
-              },
-            });
-          }),
-          ask: (key, fn) => Effect.promise(() => query.ask(key, fn)),
-          peek: (key) => Effect.sync(() => query.peek(key)),
-          readFresh: (key, fn) =>
-            Effect.tryPromise({
-              try: (signal) => query.readFresh(key, fn, signal),
-              catch: renderFailure,
-            }),
-          invalidate: (key) => Effect.sync(() => query.invalidate(key)),
+          ...query,
         }),
       )
     : layerQueryClients;
@@ -137,17 +99,13 @@ export async function bibliographyRenderFixture(
           Profile,
           stubService<Profile["Service"]>("Profile", {
             state: Effect.succeed(profileState),
-            changes: options.profile.changed.pipe(
-              Stream.map(() => ({ ...profileState })),
-            ),
+            changes: options.profile.changes,
           }),
         ),
         Layer.succeed(
           ZoteroReads,
           stubService<ZoteroReads["Service"]>("ZoteroReads", {
-            events: options.db.changed.pipe(
-              Stream.map(() => ({ _tag: "changed" as const })),
-            ),
+            events: options.db.events,
           }),
         ),
         Layer.succeed(
@@ -182,10 +140,11 @@ export async function bibliographyRenderFixture(
     stack,
   );
   await runtime.context();
-  const cache = plainBibliographyRender(runtime);
+  const cache = runtime.runSync(BibliographyRender);
   const owned = stack.move();
   return Object.assign(cache, {
     runtime,
+    bridge: effectBridge(runtime),
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
   });
 }

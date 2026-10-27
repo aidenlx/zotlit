@@ -177,8 +177,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                       : null,
                     fullPath: full,
                     exists: full ? require("fs").existsSync(full) : false,
-                    profileDir: services.zoteroPref.resolvedProfileDir,
-                    dataDir: services.zoteroPref.dataDir,
+                    profileDir: services.bridge.runSync(
+                      services.zoteroPrefService.current,
+                    ).resolvedProfileDir,
+                    dataDir: services.bridge.runSync(
+                      services.zoteroPrefService.current,
+                    ).dataDir,
                   };
                 })(),
               ),

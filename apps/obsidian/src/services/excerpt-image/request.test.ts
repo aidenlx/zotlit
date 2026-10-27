@@ -32,7 +32,6 @@ import { PNG_FORMAT } from "./format";
 import {
   ExcerptSourceUnavailable,
   excerptRequestForKey,
-  savedExcerptRequest,
   savedExcerptRequestFor,
   savedExcerptRequestOver,
 } from "./request";
@@ -120,12 +119,6 @@ async function fixture(serverID: string | null = SERVER_ID): Promise<
 const fixtureDb = (serverID?: string | null) =>
   Effect.acquireDisposable(Effect.tryPromise(() => fixture(serverID)));
 
-/** A bridge over an empty runtime, held for the case's scope. */
-const testBridge = () =>
-  Effect.acquireDisposable(
-    Effect.tryPromise(() => Promise.resolve(openTestBridge())),
-  );
-
 /** An Excerpt Image service over `render` and an in-memory cache. */
 const serviceOf = (
   options: ConstructorParameters<typeof ExcerptImageService>[0],
@@ -191,15 +184,19 @@ describe("Saved excerpt request", () => {
       const over = yield* Effect.promise(() =>
         requestOver({ annotation, source: apiSource }),
       );
-      const direct = yield* Effect.promise(() =>
-        savedExcerptRequest({
-          annotation,
-          source: apiSource,
-          sourceScope: paths.dataDir,
-          zoteroReads: db.zoteroReads,
-          paths,
-          bridge,
-        }),
+      const direct = yield* savedExcerptRequestFor({
+        annotation,
+        source: apiSource,
+      }).pipe(
+        Effect.provideService(ZoteroReads, reads),
+        Effect.provideService(
+          ZoteroPref,
+          stubService<ZoteroPref["Service"]>("ZoteroPref", {
+            current: Effect.succeed(
+              stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", paths),
+            ),
+          }),
+        ),
       );
 
       expect(over).toEqual(direct);
@@ -209,61 +206,6 @@ describe("Saved excerpt request", () => {
         attachmentKey: ATTACHMENT,
       });
     }),
-  );
-
-  it.effect("resolves to nothing where the database cannot answer", () =>
-    Effect.gen(function* () {
-      const closed = createClient(":memory:");
-      closed.$client.close();
-      const zoteroReads = yield* Effect.acquireDisposable(
-        Effect.tryPromise(() =>
-          Promise.resolve(inProcessReadsService(sharedClientOpener(closed))),
-        ),
-      );
-      const bridge = yield* testBridge();
-
-      expect(
-        yield* Effect.promise(() =>
-          savedExcerptRequest({
-            annotation,
-            source: apiSource,
-            sourceScope: paths.dataDir,
-            zoteroReads,
-            paths,
-            bridge,
-          }),
-        ),
-      ).toBeNull();
-    }),
-  );
-
-  it.effect(
-    "resolves to nothing where the data directory moves during the read",
-    () =>
-      Effect.gen(function* () {
-        const db = yield* fixtureDb();
-        const moving = { ...paths };
-        const bridge = yield* testBridge();
-
-        const request = yield* Effect.promise(() =>
-          savedExcerptRequest({
-            annotation,
-            source: apiSource,
-            sourceScope: paths.dataDir,
-            zoteroReads: {
-              acquireRead: async () => {
-                const lease = await db.zoteroReads.acquireRead();
-                moving.dataDir = "/other-zotero";
-                return lease;
-              },
-            },
-            paths: moving,
-            bridge,
-          }),
-        );
-
-        expect(request).toBeNull();
-      }),
   );
 
   it.effect(

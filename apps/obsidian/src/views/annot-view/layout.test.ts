@@ -190,7 +190,6 @@ async function mountLayout(
     app,
     opener: stubService<AnnotationsLayoutDeps["opener"]>("TargetOpener", {}),
     registry: hostModel.registry,
-    reads: stubService<AnnotationsLayoutDeps["reads"]>("ZoteroReads", {}),
   });
   const scope = new Scope();
   const layout = new AnnotationsLayout(deps, {

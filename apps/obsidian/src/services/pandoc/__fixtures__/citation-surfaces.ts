@@ -1,3 +1,4 @@
+import { missingStyleChanges } from "@/services/pandoc/render-cache";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { Notifier } from "@/lib/notifier";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
@@ -384,13 +385,10 @@ export async function openCitationVault({
   const cache = stack.use(
     await bibliographyRenderFixture({
       profile: {
-        changed: Stream.merge(
-          settings.changes.pipe(
-            Stream.drop(1),
-            Stream.map(() => undefined),
-          ),
+        changes: Stream.merge(
+          settings.changes.pipe(Stream.drop(1)),
           profileChanged.stream,
-        ),
+        ).pipe(Stream.map(() => ({ loaded: true, profiles: [], diagnostics: [], defaultDocumentPath: "", templateStatus: { state: "loaded" as const, compileErrors: new Map() } }))),
       },
       db: harness.db,
       pandocEngine: pandocEngineHandle(engine),
@@ -401,7 +399,7 @@ export async function openCitationVault({
   );
   let vaultStyleMissing: string | null = null;
   stack.defer(
-    subscribe(cache.runtime, cache.missingStyle, (styleId) => {
+    subscribe(cache.runtime, missingStyleChanges(cache.changes), (styleId) => {
       vaultStyleMissing = styleId;
     }),
   );
@@ -519,10 +517,7 @@ export async function openCitationVault({
         }),
       },
       db: harness.db,
-      citationIndex: harness.index,
-      citationLookup: harness.lookup,
-      citationText,
-      bibliographyRender: cache,
+      services: { citationIndex: harness.index, citationLookup: harness.lookup, citationText, bibliographyRender: cache },
       libraryScope: harness.libraryScope,
     }),
   );
@@ -598,9 +593,9 @@ export async function openCitationVault({
   const held = stack.move();
   return {
     async citationText(citekey = CITATION_KEY) {
-      let held = citationText.peek(harness.draft.path);
+      let held = citationText.bridge.runSync(citationText.peek(harness.draft.path));
       await settle(() => {
-        held = citationText.peek(harness.draft.path);
+        held = citationText.bridge.runSync(citationText.peek(harness.draft.path));
         return held !== null && held.status !== "revalidating";
       });
       const { formatted } = held!.value;

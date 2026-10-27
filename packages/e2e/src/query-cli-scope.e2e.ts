@@ -225,7 +225,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           obRunUntil(
             run.vaultId,
             async ({ zotlit }) => {
-              return String(String(zotlit.services.zoteroReads.state));
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.zoteroReads.current,
+                  ).state,
+                ),
+              );
             },
             undefined,
             {
@@ -244,8 +250,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             run.vaultId,
             async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
               return String(
-                await zotlit.services.citationLookup
-                  .read({ indexedKeys: [__typedArg0] })
+                await zotlit.services.bridge
+                  .runPromise(
+                    zotlit.services.citationLookup.read({
+                      indexedKeys: [__typedArg0],
+                    }),
+                  )
                   .then(function (answer) {
                     return String(answer.citekeyOf(__typedArg1));
                   }),
@@ -283,7 +293,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           obRunUntil(
             run.vaultId,
             async ({ zotlit }) => {
-              return String(String(zotlit.services.citationLookup.status));
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.citationLookup.current,
+                  ).status,
+                ),
+              );
             },
             undefined,
             {
@@ -300,9 +316,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }) => {
           return String(
-            await zotlit.services.zoteroReads.refresh().then(function () {
-              return true;
-            }),
+            await zotlit.services.bridge
+              .runPromise(zotlit.services.zoteroReads.refresh)
+              .then(function () {
+                return true;
+              }),
           );
         },
         undefined,
@@ -312,7 +330,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           obRunUntil(
             run.vaultId,
             async ({ zotlit }) => {
-              return String(String(zotlit.services.zoteroReads.state));
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.zoteroReads.current,
+                  ).state,
+                ),
+              );
             },
             undefined,
             {
@@ -352,7 +376,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           obRunUntil(
             run.vaultId,
             async ({ zotlit }) => {
-              return String(String(zotlit.services.citationLookup.status));
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.citationLookup.current,
+                  ).status,
+                ),
+              );
             },
             undefined,
             {
@@ -371,11 +401,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             run.vaultId,
             async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
               return String(
-                await zotlit.services.citationLookup
-                  .whenResolved()
+                await zotlit.services.bridge
+                  .runPromise(zotlit.services.citationLookup.whenResolved)
                   .then(function () {
-                    return zotlit.services.citationLookup
-                      .read({ indexedKeys: [__typedArg0] })
+                    return zotlit.services.bridge
+                      .runPromise(
+                        zotlit.services.citationLookup.read({
+                          indexedKeys: [__typedArg0],
+                        }),
+                      )
                       .then(function (answer) {
                         return String(answer.citekeyOf(__typedArg1));
                       });
@@ -417,9 +451,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   return Reflect.apply(target, receiver, args);
                 },
               });
-              return zotlit.services.zoteroReads.refresh().then(function () {
-                return true;
-              });
+              return zotlit.services.bridge
+                .runPromise(zotlit.services.zoteroReads.refresh)
+                .then(function () {
+                  return true;
+                });
             })(),
           );
         },

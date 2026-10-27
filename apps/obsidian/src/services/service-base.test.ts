@@ -6,7 +6,6 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 
 import { buildNoteIndex } from "./note-index/__fixtures__";
-import type { PlainNoteIndex } from "./note-index/plain";
 import { Service, ServiceContainer } from "./service-base";
 
 vi.mock("@/lib/log", () => ({
@@ -53,11 +52,11 @@ class ReadsOnTeardown extends Service {
   readonly #finish = Promise.withResolvers<void>();
   readonly started = Promise.withResolvers<void>();
 
-  constructor(noteIndex: Pick<PlainNoteIndex, "getIndexedItemKeys">) {
+  constructor(readKeys: () => readonly string[]) {
     super();
     const stack = new AsyncDisposableStack();
     stack.defer(async () => {
-      noteIndex.getIndexedItemKeys();
+      readKeys();
       this.started.resolve();
       await this.#finish.promise;
     });
@@ -120,7 +119,12 @@ it("disposes services newest first, so an older service keeps its vault and meta
           stack,
         ),
     })
-    .use({ newer: ({ noteIndex }) => new ReadsOnTeardown(noteIndex) });
+    .use({
+      newer: ({ noteIndex }) =>
+        new ReadsOnTeardown(() =>
+          noteIndex.bridge.runSync(noteIndex.getIndexedItemKeys),
+        ),
+    });
   expect(vault.listened().sort()).toEqual([
     "create",
     "delete",

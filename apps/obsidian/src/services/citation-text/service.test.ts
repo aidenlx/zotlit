@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Context } from "effect";
+import { Cause, Context, Exit } from "effect";
 import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
@@ -18,6 +18,7 @@ import {
 } from "@/lib/constants";
 import { subscribe } from "@/lib/effect-stream";
 import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
+import { vaultError } from "@/lib/vault-errors";
 import { annotationRows } from "@/services/citation-index/__fixtures__/annotations";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // @vitest-environment happy-dom
@@ -42,13 +43,15 @@ import type {
   CitationEngine,
   RenderedCitation,
 } from "@/services/pandoc/engine";
+import type { BibliographyRender } from "@/services/pandoc/render-cache";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
 import { bibliographyRenderFixture } from "@/services/pandoc/render-cache/__fixtures__";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import {
   queryClientsFixture,
   queryClientsOf,
 } from "@/services/query-client/__fixtures__";
-import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -104,7 +107,7 @@ interface Harness {
   /** Deletes the document, as Obsidian reports a file the vault no longer has. */
   deleteNote: () => void;
   /** The client the text is held on, for reading what one path holds. */
-  queryClient: PlainQueryClients & AsyncDisposable;
+  queryClient: QueryClients["Service"] & AsyncDisposable;
   /** How many cited-item reads the database answered or failed. */
   readonly itemReads: number;
   /** Fails the next cited-item read, as a locked database would. */
@@ -158,7 +161,7 @@ async function makeHarness({
     "occurrences" | "citations" | "errors"
   >;
   bibliographyRender?: CitationTextDeps["bibliographyRender"];
-  queryClient?: PlainQueryClients & AsyncDisposable;
+  queryClient?: QueryClients["Service"] & AsyncDisposable;
   /** The workspace whose Markdown leaves are the open documents, in place of `openDocuments`. */
   workspace?: MemoryWorkspace;
   openDocuments?: OpenDocumentsStub;
@@ -257,85 +260,130 @@ async function makeHarness({
         }),
     },
   );
+  let lookupRevision = 0;
+  const lookupState = () => ({
+    status: "fresh" as const,
+    revision: String(lookupRevision),
+    stopped: false,
+  });
   const service = citationTextFixture(
     {
       openDocuments,
       citationLookup: {
-        changed: stream("lookup:changed"),
+        current: Effect.sync(lookupState),
+        changes: stream("lookup:changed").pipe(
+          Stream.map(() => {
+            lookupRevision++;
+            return lookupState();
+          }),
+        ),
       },
       host,
       citationIndex: {
-        getParsedDocument: async () => ({
-          facts: new ParsedNote(
-            body,
-            (
-              await Effect.runPromise(
-                inProcessParseClient.parse({
-                  path: NOTE.path,
-                  generation: 0,
-                  text: body,
-                }),
-              )
-            ).record,
+        getParsedDocument: () =>
+          Effect.tryPromise({
+            try: async () => ({
+              facts: new ParsedNote(
+                body,
+                (
+                  await Effect.runPromise(
+                    inProcessParseClient.parse({
+                      path: NOTE.path,
+                      generation: 0,
+                      text: body,
+                    }),
+                  )
+                ).record,
+              ),
+              set: {
+                ...set,
+                ...(await reads.runtime.runPromise(
+                  ZoteroReads.use((db) =>
+                    readReferenceSources(db, set.citations),
+                  ),
+                )),
+                syntaxes: {
+                  citekey: "included" as const,
+                  wikilink: "excluded" as const,
+                  annotation: "included" as const,
+                },
+                omittedSyntaxes: [],
+                coverage: "complete" as const,
+                lookup: lookupAnswer(
+                  {},
+                  { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
+                ),
+              },
+            }),
+            catch: vaultError("cachedRead", NOTE.path),
+          }),
+        events: Stream.merge(
+          stream<string>("index:changed").pipe(
+            Stream.map((path) => ({ type: "changed" as const, path })),
           ),
-          set: {
-            ...set,
-            ...(await reads.runtime.runPromise(
-              ZoteroReads.use((db) => readReferenceSources(db, set.citations)),
-            )),
-            syntaxes: {
-              citekey: "included" as const,
-              wikilink: "excluded" as const,
-              annotation: "included" as const,
-            },
-            omittedSyntaxes: [],
-            coverage: "complete" as const,
-            lookup: lookupAnswer(
-              {},
-              { [LIT_KEY]: Object.values(notes)[0]?.citekey ?? null },
-            ),
-          },
-        }),
-        changed: stream("index:changed"),
-        "membership-changed": stream("index:membership-changed"),
+          stream("index:membership-changed").pipe(
+            Stream.map(() => ({ type: "membership-changed" as const })),
+          ),
+        ),
       },
       noteIndex: {
-        changed: stream("notes:changed"),
-        indexed: stream("notes:indexed"),
-        whenIndexed: () => Promise.resolve(),
+        changes: Stream.merge(
+          stream<TFile>("notes:changed").pipe(
+            Stream.map((file) => ({ type: "changed" as const, file })),
+          ),
+          stream("notes:indexed").pipe(
+            Stream.map(() => ({ type: "indexed" as const })),
+          ),
+        ),
+        whenIndexed: Effect.void,
       },
       bibliographyRender: bibliographyRender ?? {
-        vaultPresentation: { styleId: null, locale: null },
-        readCitations: async (
+        state: Effect.succeed({
+          vaultPresentation: { styleId: null, locale: null },
+          missingStyle: null,
+        }),
+        readCitations: (
           citations: readonly string[],
           _items: unknown,
-          options?: { signal?: AbortSignal },
-        ) => {
-          citationRequests.push({ citations });
-          return formatCitations
-            ? await formatCitations(citations, options?.signal)
-            : formats
-              ? citations.map((source) => rendered(`«${source}»`))
-              : null;
-        },
-        readBibliography: (items: readonly { id: string }[]) => {
-          const ids = items.map(({ id }) => id);
-          bibliographyRequests.push(ids);
-          const entries = bibliography ? bibliography(ids) : ids;
-          return Promise.resolve(
-            entries === null
-              ? null
-              : {
-                  entries: entries.map((id) => ({
-                    id,
-                    marker: undefined,
-                    content: [],
-                  })),
-                  hasEntryMarkers: false,
-                },
-          );
-        },
-        invalidated: stream("render:invalidated"),
+          _options?: Parameters<
+            BibliographyRender["Service"]["readCitations"]
+          >[2],
+        ) =>
+          Effect.tryPromise({
+            try: async (signal) => {
+              citationRequests.push({ citations });
+              return formatCitations
+                ? await formatCitations(citations, signal)
+                : formats
+                  ? citations.map((source) => rendered(`«${source}»`))
+                  : null;
+            },
+            catch: renderFailure,
+          }),
+        readBibliography: (items: readonly { id: string }[]) =>
+          Effect.tryPromise({
+            try: async () => {
+              const ids = items.map(({ id }) => id);
+              bibliographyRequests.push(ids);
+              const entries = bibliography ? bibliography(ids) : ids;
+              return Promise.resolve(
+                entries === null
+                  ? null
+                  : {
+                      entries: entries.map((id) => ({
+                        id,
+                        marker: undefined,
+                        content: [],
+                      })),
+                      hasEntryMarkers: false,
+                    },
+              );
+            },
+            catch: renderFailure,
+          }),
+        events: stream("render:invalidated").pipe(
+          Stream.map(() => ({ _tag: "invalidated" as const })),
+        ),
       },
       profile: profileReader({ ...defaults, ...settings }, metadataCache),
       queryClient,
@@ -373,12 +421,12 @@ async function makeHarness({
 }
 
 async function readText(service: CitationText): Promise<DocumentCitations> {
-  let held = service.peek(NOTE.path);
+  let held = service.bridge.runSync(service.peek(NOTE.path));
   if (held === null) {
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribe(
         service.runtime,
-        service.settled,
+        service.events.pipe(Stream.filter((event) => event.type === "settled")),
         ({ path }) => {
           if (path !== NOTE.path) return;
           unsubscribe();
@@ -386,11 +434,11 @@ async function readText(service: CitationText): Promise<DocumentCitations> {
         },
       );
     });
-    held = service.peek(NOTE.path);
+    held = service.bridge.runSync(service.peek(NOTE.path));
   }
   if (held === null) throw new Error("citation text missing");
   await held.settled;
-  return service.peek(NOTE.path)?.value ?? held.value;
+  return service.bridge.runSync(service.peek(NOTE.path))?.value ?? held.value;
 }
 
 describe("CitationText", () => {
@@ -405,8 +453,13 @@ describe("CitationText", () => {
           );
           expect(state).toEqual([{ startup: "ready", stopped: false }]);
           expect(h.citationRequests).toEqual([]);
-          expect(h.service.peek(NOTE.path)).toBeNull();
-          expect((await h.service.read(NOTE.path))?.formatted.size).toBe(1);
+          expect(
+            h.service.bridge.runSync(h.service.peek(NOTE.path)),
+          ).toBeNull();
+          expect(
+            (await h.service.bridge.runPromise(h.service.read(NOTE.path)))
+              ?.formatted.size,
+          ).toBe(1);
         } finally {
           await h.dispose();
         }
@@ -431,7 +484,9 @@ describe("CitationText", () => {
         },
       });
       try {
-        const held = await h.service.read(NOTE.path);
+        const held = await h.service.bridge.runPromise(
+          h.service.read(NOTE.path),
+        );
         expect(firstText(held?.formatted.get("[@alpha]"))).toBe(
           "«[@ALPHA234]»",
         );
@@ -455,10 +510,10 @@ describe("CitationText", () => {
         );
         h.citekeys.error = new Error("snapshot database locked");
         db.settle();
-        await h.lookup.whenResolved();
-        await expect(h.index.getDocumentCitationSet(h.draft)).rejects.toThrow(
-          "snapshot database locked",
-        );
+        await h.lookup.bridge.runPromise(h.lookup.whenResolved);
+        await expect(
+          h.index.bridge.runPromise(h.index.getDocumentCitationSet(h.draft)),
+        ).rejects.toThrow("snapshot database locked");
         const service = cleanup.use(
           citationTextFixture({
             openDocuments: new OpenDocumentsStub(),
@@ -469,27 +524,46 @@ describe("CitationText", () => {
             profile: profileReader(),
             queryClient: h.queryClient,
             bibliographyRender: {
-              vaultPresentation: { styleId: null, locale: null },
-              readCitations: async (sources: readonly string[]) =>
-                sources.map((source) => rendered(source)),
-              readBibliography: async () => ({
-                entries: [],
-                hasEntryMarkers: false,
+              state: Effect.succeed({
+                vaultPresentation: { styleId: null, locale: null },
+                missingStyle: null,
               }),
-              invalidated: Stream.empty,
+              readCitations: (sources: readonly string[]) =>
+                Effect.tryPromise({
+                  try: async () => sources.map((source) => rendered(source)),
+                  catch: renderFailure,
+                }),
+              readBibliography: () =>
+                Effect.tryPromise({
+                  try: async () => ({
+                    entries: [],
+                    hasEntryMarkers: false,
+                  }),
+                  catch: renderFailure,
+                }),
+              events: Stream.empty,
             } satisfies CitationTextDeps["bibliographyRender"],
           }),
         );
 
-        expect(await service.read(h.draft.path)).toBeNull();
+        expect(
+          await service.bridge.runPromise(service.read(h.draft.path)),
+        ).toBeNull();
         const reads = h.citekeys.calls.length;
         h.citekeys.error = null;
-        expect(await service.read(h.draft.path)).toBeNull();
+        expect(
+          await service.bridge.runPromise(service.read(h.draft.path)),
+        ).toBeNull();
         expect(h.citekeys.calls).toHaveLength(reads);
         h.passCooldown();
 
-        expect((await service.read(h.draft.path))?.formatted.size).toBe(1);
-        expect(service.peek(h.draft.path)?.status).toBe("fresh");
+        expect(
+          (await service.bridge.runPromise(service.read(h.draft.path)))
+            ?.formatted.size,
+        ).toBe(1);
+        expect(service.bridge.runSync(service.peek(h.draft.path))?.status).toBe(
+          "fresh",
+        );
         // The retry reads each Library in the scope once.
         expect(h.citekeys.calls.slice(reads)).toEqual([
           MY_LIBRARY_ID,
@@ -511,20 +585,29 @@ describe("CitationText", () => {
             (h) => h.dispose(),
           );
           const first =
-            kind === "replacement" ? await h.service.read(NOTE.path) : null;
+            kind === "replacement"
+              ? await h.service.bridge.runPromise(h.service.read(NOTE.path))
+              : null;
           h.failNextItemRead();
           if (kind === "replacement") h.metadataChanged(NOTE.path);
 
-          expect(await h.service.read(NOTE.path)).toBe(first);
-          expect(h.service.peek(NOTE.path)?.status ?? null).toBe(
-            kind === "replacement" ? "failed" : null,
-          );
-          await h.service.read(NOTE.path);
+          expect(
+            await h.service.bridge.runPromise(h.service.read(NOTE.path)),
+          ).toBe(first);
+          expect(
+            h.service.bridge.runSync(h.service.peek(NOTE.path))?.status ?? null,
+          ).toBe(kind === "replacement" ? "failed" : null);
+          await h.service.bridge.runPromise(h.service.read(NOTE.path));
           expect(h.itemReads).toBe(kind === "replacement" ? 2 : 1);
           await queryClient.passCooldown();
 
-          expect((await h.service.read(NOTE.path))?.formatted.size).toBe(1);
-          expect(h.service.peek(NOTE.path)?.status).toBe("fresh");
+          expect(
+            (await h.service.bridge.runPromise(h.service.read(NOTE.path)))
+              ?.formatted.size,
+          ).toBe(1);
+          expect(
+            h.service.bridge.runSync(h.service.peek(NOTE.path))?.status,
+          ).toBe("fresh");
           expect(h.itemReads).toBe(kind === "replacement" ? 3 : 2);
         });
       }),
@@ -570,15 +653,8 @@ describe("CitationText", () => {
             await bibliographyRenderFixture(
               {
                 queryClient,
-                profile: { changed: Stream.empty },
-                db: {
-                  changed: Stream.empty,
-                  degraded: Stream.empty,
-                  "refresh-failed": Stream.empty,
-                  refreshing: Stream.empty,
-                  "db-file-missing": Stream.empty,
-                  "refresh-requested": Stream.empty,
-                },
+                profile: { changes: Stream.empty },
+                db: { events: Stream.empty },
                 zoteroPref: { dataDir: "/unused", moves: Stream.empty },
                 settings: {
                   current: Effect.succeed(defaults),
@@ -620,29 +696,41 @@ describe("CitationText", () => {
             (h) => h.dispose(),
           );
           const first =
-            kind === "replacement" ? await h.service.read(NOTE.path) : null;
+            kind === "replacement"
+              ? await h.service.bridge.runPromise(h.service.read(NOTE.path))
+              : null;
           if (kind === "replacement") {
             fails = true;
-            queryClient.invalidate(["citation-render"]);
-            queryClient.invalidate(["bibliography-render"]);
+            queryClient.bridge.runSync(
+              queryClient.invalidate(["citation-render"]),
+            );
+            queryClient.bridge.runSync(
+              queryClient.invalidate(["bibliography-render"]),
+            );
             h.metadataChanged(NOTE.path);
           }
 
-          expect(await h.service.read(NOTE.path)).toBe(first);
-          expect(h.service.peek(NOTE.path)?.status ?? null).toBe(
-            kind === "replacement" ? "failed" : null,
-          );
+          expect(
+            await h.service.bridge.runPromise(h.service.read(NOTE.path)),
+          ).toBe(first);
+          expect(
+            h.service.bridge.runSync(h.service.peek(NOTE.path))?.status ?? null,
+          ).toBe(kind === "replacement" ? "failed" : null);
           fails = false;
-          await h.service.read(NOTE.path);
+          await h.service.bridge.runPromise(h.service.read(NOTE.path));
           expect(failedRender).toHaveBeenCalledTimes(
             kind === "replacement" ? 2 : 1,
           );
           await queryClient.passCooldown();
 
-          const recovered = await h.service.read(NOTE.path);
+          const recovered = await h.service.bridge.runPromise(
+            h.service.read(NOTE.path),
+          );
           expect(recovered?.formatted.size).toBe(1);
           expect(recovered?.entrySerials).toBe(format === "bibliography");
-          expect(h.service.peek(NOTE.path)?.status).toBe("fresh");
+          expect(
+            h.service.bridge.runSync(h.service.peek(NOTE.path))?.status,
+          ).toBe("fresh");
           expect(failedRender).toHaveBeenCalledTimes(
             kind === "replacement" ? 3 : 2,
           );
@@ -658,9 +746,15 @@ describe("CitationText", () => {
           body: "Blah [@alpha].",
         });
         const settlements: (Held<DocumentCitations> | null)[] = [];
-        subscribe(service.runtime, service.settled, ({ path, held }) => {
-          if (path === NOTE.path) settlements.push(held);
-        });
+        subscribe(
+          service.runtime,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "settled"),
+          ),
+          ({ path, held }) => {
+            if (path === NOTE.path) settlements.push(held);
+          },
+        );
 
         await readText(service);
 
@@ -979,16 +1073,20 @@ describe("CitationText staleness", () => {
             },
           });
 
-        service.peek(NOTE.path);
+        service.bridge.runSync(service.peek(NOTE.path));
         await vi.waitFor(() => expect(citationRequests).toHaveLength(1));
         indexChanged(NOTE.path);
-        service.peek(NOTE.path);
+        service.bridge.runSync(service.peek(NOTE.path));
         await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
         finishFirst?.([rendered("stale")]);
 
         await vi.waitFor(() =>
           expect(
-            firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+            firstText(
+              service.bridge
+                .runSync(service.peek(NOTE.path))
+                ?.value.formatted.get("[@alpha]"),
+            ),
           ).toBe("fresh"),
         );
         await dispose();
@@ -1001,12 +1099,14 @@ describe("CitationText staleness", () => {
         body: "Blah [@alpha].",
       });
 
-      service.peek(NOTE.path);
-      expect(service.peek(NOTE.path)).toBeNull();
+      service.bridge.runSync(service.peek(NOTE.path));
+      expect(service.bridge.runSync(service.peek(NOTE.path))).toBeNull();
       await readText(service);
 
       expect(
-        service.peek(NOTE.path)?.value.formatted.get("[@alpha]"),
+        service.bridge
+          .runSync(service.peek(NOTE.path))
+          ?.value.formatted.get("[@alpha]"),
       ).toBeDefined();
       await dispose();
     }),
@@ -1020,8 +1120,13 @@ describe("CitationText staleness", () => {
           await makeHarness({ body: "Blah [@alpha]." });
         await readText(service);
         const changed: string[] = [];
-        subscribe(service.runtime, service.changed, (path) =>
-          changed.push(path),
+        subscribe(
+          service.runtime,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "changed"),
+            Stream.map((event) => event.path),
+          ),
+          (path) => changed.push(path),
         );
 
         indexChanged(NOTE.path);
@@ -1029,7 +1134,9 @@ describe("CitationText staleness", () => {
         expect(changed).toEqual([NOTE.path]);
         // The peek that serves the stale text is also what starts the fresh read.
         expect(
-          service.peek(NOTE.path)?.value.formatted.get("[@alpha]"),
+          service.bridge
+            .runSync(service.peek(NOTE.path))
+            ?.value.formatted.get("[@alpha]"),
         ).toBeDefined();
         await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
         await vi.waitFor(() => expect(changed).toEqual([NOTE.path]));
@@ -1048,14 +1155,19 @@ describe("CitationText staleness", () => {
         let invalidated = 0;
         subscribe(
           service.runtime,
-          service.invalidated,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "invalidated"),
+            Stream.map(() => undefined),
+          ),
           () => (invalidated += 1),
         );
 
         rendersInvalidated();
 
         expect(
-          service.peek(NOTE.path)?.value.formatted.get("[@alpha]"),
+          service.bridge
+            .runSync(service.peek(NOTE.path))
+            ?.value.formatted.get("[@alpha]"),
         ).toBeDefined();
         expect(invalidated).toBe(1);
         await dispose();
@@ -1080,22 +1192,41 @@ describe("CitationText staleness", () => {
       });
       await readText(service);
       const changed: string[] = [];
-      subscribe(service.runtime, service.changed, (path) => changed.push(path));
+      subscribe(
+        service.runtime,
+        service.events.pipe(
+          Stream.filter((event) => event.type === "changed"),
+          Stream.map((event) => event.path),
+        ),
+        (path) => changed.push(path),
+      );
 
       rendersInvalidated();
       // The peek that serves the stale text is also what starts the fresh read.
       expect(
-        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+        firstText(
+          service.bridge
+            .runSync(service.peek(NOTE.path))
+            ?.value.formatted.get("[@alpha]"),
+        ),
       ).toBe("stale");
       await vi.waitFor(() => expect(finishFresh).toBeDefined());
       expect(
-        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+        firstText(
+          service.bridge
+            .runSync(service.peek(NOTE.path))
+            ?.value.formatted.get("[@alpha]"),
+        ),
       ).toBe("stale");
 
       finishFresh!([rendered("fresh")]);
       await vi.waitFor(() => expect(changed).toEqual([NOTE.path]));
       expect(
-        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+        firstText(
+          service.bridge
+            .runSync(service.peek(NOTE.path))
+            ?.value.formatted.get("[@alpha]"),
+        ),
       ).toBe("fresh");
       await dispose();
     }),
@@ -1117,19 +1248,26 @@ describe("CitationText staleness", () => {
           (await readText(service)).presentationFailure?.diagnostic.stamp,
         ).toBe("Missing one");
         const changed: string[] = [];
-        subscribe(service.runtime, service.changed, (path) =>
-          changed.push(path),
+        subscribe(
+          service.runtime,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "changed"),
+            Stream.map((event) => event.path),
+          ),
+          (path) => changed.push(path),
         );
 
         frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = "Missing two";
         metadataChanged(NOTE.path);
         expect(
-          service.peek(NOTE.path)?.value.presentationFailure?.diagnostic.stamp,
+          service.bridge.runSync(service.peek(NOTE.path))?.value
+            .presentationFailure?.diagnostic.stamp,
         ).toBe("Missing one");
 
         await vi.waitFor(() => expect(changed).toEqual([NOTE.path, NOTE.path]));
         expect(
-          service.peek(NOTE.path)?.value.presentationFailure?.diagnostic.stamp,
+          service.bridge.runSync(service.peek(NOTE.path))?.value
+            .presentationFailure?.diagnostic.stamp,
         ).toBe("Missing two");
         await dispose();
       }),
@@ -1156,20 +1294,28 @@ describe("CitationText staleness", () => {
       await readText(service);
 
       rendersInvalidated();
-      service.peek(NOTE.path);
+      service.bridge.runSync(service.peek(NOTE.path));
       await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
       rendersInvalidated();
       gates[0]!([rendered("v2")]);
       await vi.waitFor(() => {
         expect(
-          firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+          firstText(
+            service.bridge
+              .runSync(service.peek(NOTE.path))
+              ?.value.formatted.get("[@alpha]"),
+          ),
         ).toBe("v1");
         expect(citationRequests).toHaveLength(3);
       });
       gates[1]!([rendered("v3")]);
       await vi.waitFor(() =>
         expect(
-          firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+          firstText(
+            service.bridge
+              .runSync(service.peek(NOTE.path))
+              ?.value.formatted.get("[@alpha]"),
+          ),
         ).toBe("v3"),
       );
       await dispose();
@@ -1185,11 +1331,11 @@ describe("CitationText staleness", () => {
         await readText(service);
 
         rendersInvalidated();
-        service.peek(NOTE.path);
-        service.peek(NOTE.path);
+        service.bridge.runSync(service.peek(NOTE.path));
+        service.bridge.runSync(service.peek(NOTE.path));
 
         await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
-        expect(service.peek(NOTE.path)).not.toBeNull();
+        expect(service.bridge.runSync(service.peek(NOTE.path))).not.toBeNull();
         expect(citationRequests).toHaveLength(2);
         await dispose();
       }),
@@ -1213,7 +1359,11 @@ describe("CitationText staleness", () => {
 
       expect(firstText(text.formatted.get("[@alpha]"))).toBe("fresh");
       expect(
-        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+        firstText(
+          service.bridge
+            .runSync(service.peek(NOTE.path))
+            ?.value.formatted.get("[@alpha]"),
+        ),
       ).toBe("fresh");
       await dispose();
     }),
@@ -1245,25 +1395,42 @@ describe("CitationText staleness", () => {
         });
         await readText(service);
         const changed: string[] = [];
-        subscribe(service.runtime, service.changed, (path) =>
-          changed.push(path),
+        subscribe(
+          service.runtime,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "changed"),
+            Stream.map((event) => event.path),
+          ),
+          (path) => changed.push(path),
         );
 
         metadataChanged(NOTE.path);
 
         expect(changed).toEqual([NOTE.path]);
         expect(
-          firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+          firstText(
+            service.bridge
+              .runSync(service.peek(NOTE.path))
+              ?.value.formatted.get("[@alpha]"),
+          ),
         ).toBe("stale");
         await vi.waitFor(() => expect(finishFresh).toBeDefined());
         expect(
-          firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+          firstText(
+            service.bridge
+              .runSync(service.peek(NOTE.path))
+              ?.value.formatted.get("[@alpha]"),
+          ),
         ).toBe("stale");
 
         finishFresh!([rendered("fresh")]);
         await vi.waitFor(() => expect(changed).toEqual([NOTE.path, NOTE.path]));
         expect(
-          firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+          firstText(
+            service.bridge
+              .runSync(service.peek(NOTE.path))
+              ?.value.formatted.get("[@alpha]"),
+          ),
         ).toBe("fresh");
         await dispose();
       }),
@@ -1284,16 +1451,21 @@ describe("CitationText staleness", () => {
                 finishFirst = resolve;
               }),
           });
-        service.peek(NOTE.path);
+        service.bridge.runSync(service.peek(NOTE.path));
         await vi.waitFor(() => expect(finishFirst).toBeDefined());
         const changed: string[] = [];
-        subscribe(service.runtime, service.changed, (path) =>
-          changed.push(path),
+        subscribe(
+          service.runtime,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "changed"),
+            Stream.map((event) => event.path),
+          ),
+          (path) => changed.push(path),
         );
 
         metadataChanged(NOTE.path);
 
-        expect(service.peek(NOTE.path)).toBeNull();
+        expect(service.bridge.runSync(service.peek(NOTE.path))).toBeNull();
         expect(changed).toEqual([NOTE.path]);
         expect(citationRequests).toHaveLength(1);
         await dispose();
@@ -1307,14 +1479,26 @@ describe("CitationText staleness", () => {
       });
       await readText(service);
       const events: string[] = [];
-      subscribe(service.runtime, service.changed, () => events.push("changed"));
-      subscribe(service.runtime, service.invalidated, () =>
-        events.push("invalidated"),
+      subscribe(
+        service.runtime,
+        service.events.pipe(
+          Stream.filter((event) => event.type === "changed"),
+          Stream.map((event) => event.path),
+        ),
+        () => events.push("changed"),
+      );
+      subscribe(
+        service.runtime,
+        service.events.pipe(
+          Stream.filter((event) => event.type === "invalidated"),
+          Stream.map(() => undefined),
+        ),
+        () => events.push("invalidated"),
       );
 
       metadataChanged("somewhere/else.md");
 
-      expect(service.peek(NOTE.path)).not.toBeNull();
+      expect(service.bridge.runSync(service.peek(NOTE.path))).not.toBeNull();
       expect(events).toEqual([]);
       await dispose();
     }),
@@ -1333,13 +1517,16 @@ describe("CitationText staleness", () => {
         let invalidated = 0;
         subscribe(
           service.runtime,
-          service.invalidated,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "invalidated"),
+            Stream.map(() => undefined),
+          ),
           () => (invalidated += 1),
         );
 
         resolutionChanged();
 
-        expect(service.peek(NOTE.path)).not.toBeNull();
+        expect(service.bridge.runSync(service.peek(NOTE.path))).not.toBeNull();
         expect(invalidated).toBe(1);
         await dispose();
       }),
@@ -1362,13 +1549,16 @@ describe("CitationText staleness", () => {
         let invalidated = 0;
         subscribe(
           service.runtime,
-          service.invalidated,
+          service.events.pipe(
+            Stream.filter((event) => event.type === "invalidated"),
+            Stream.map(() => undefined),
+          ),
           () => (invalidated += 1),
         );
 
         citekeyResolutionChanged();
 
-        expect(service.peek(NOTE.path)).not.toBeNull();
+        expect(service.bridge.runSync(service.peek(NOTE.path))).not.toBeNull();
         expect(invalidated).toBe(1);
         await service[Symbol.asyncDispose]();
 
@@ -1388,7 +1578,7 @@ describe("CitationText staleness", () => {
             formatCitations: () => gate.promise,
           });
 
-        const reading = service.read(NOTE.path);
+        const reading = service.bridge.runPromise(service.read(NOTE.path));
         await vi.waitFor(() => expect(citationRequests).toHaveLength(1));
         deleteNote();
         gate.resolve([rendered("gone")]);
@@ -1398,7 +1588,7 @@ describe("CitationText staleness", () => {
         expect(
           queryClient.client.getQueryState(["citation-text", NOTE.path]),
         ).toBeUndefined();
-        expect(service.peek(NOTE.path)).toBeNull();
+        expect(service.bridge.runSync(service.peek(NOTE.path))).toBeNull();
         await dispose();
       }),
   );
@@ -1413,7 +1603,7 @@ describe("CitationText staleness", () => {
       await readText(service);
 
       expect(citationRequests).toHaveLength(2);
-      expect(service.peek(NOTE.path)).not.toBeNull();
+      expect(service.bridge.runSync(service.peek(NOTE.path))).not.toBeNull();
       await dispose();
     }),
   );
@@ -1454,7 +1644,9 @@ describe("CitationText staleness", () => {
         vi.advanceTimersByTime(GC_MS * 2);
 
         expect(held(h)).toBeDefined();
-        expect(h.service.peek(NOTE.path)).not.toBeNull();
+        expect(
+          h.service.bridge.runSync(h.service.peek(NOTE.path)),
+        ).not.toBeNull();
         await h.dispose();
       }),
     );
@@ -1737,14 +1929,24 @@ it.effect("#1683 renders a document with one source read", () =>
       queryClient: h.queryClient,
       openDocuments: new OpenDocumentsStub(),
       bibliographyRender: {
-        vaultPresentation: { styleId: null, locale: null },
-        readCitations: async (sources) =>
-          sources.map((source) => rendered(source)),
-        readBibliography: async () => ({ entries: [], hasEntryMarkers: false }),
-        invalidated: Stream.empty,
+        state: Effect.succeed({
+          vaultPresentation: { styleId: null, locale: null },
+          missingStyle: null,
+        }),
+        readCitations: (sources) =>
+          Effect.tryPromise({
+            try: async () => sources.map((source) => rendered(source)),
+            catch: renderFailure,
+          }),
+        readBibliography: () =>
+          Effect.tryPromise({
+            try: async () => ({ entries: [], hasEntryMarkers: false }),
+            catch: renderFailure,
+          }),
+        events: Stream.empty,
       } satisfies CitationTextDeps["bibliographyRender"],
     });
-    const result = await service.read(h.draft.path);
+    const result = await service.bridge.runPromise(service.read(h.draft.path));
     expect(result?.formatted.size).toBe(1);
     expect(h.db.itemReads).toBe(1);
   }),
@@ -1758,11 +1960,18 @@ it.effect(
       try {
         const received = Promise.withResolvers<void>();
         let deliveries = 0;
-        const off = subscribe(h.service.runtime, h.service.invalidated, () => {
-          deliveries += 1;
-          if (deliveries === 1) throw new Error("surface failed");
-          if (deliveries === 2) received.resolve();
-        });
+        const off = subscribe(
+          h.service.runtime,
+          h.service.events.pipe(
+            Stream.filter((event) => event.type === "invalidated"),
+            Stream.map(() => undefined),
+          ),
+          () => {
+            deliveries += 1;
+            if (deliveries === 1) throw new Error("surface failed");
+            if (deliveries === 2) received.resolve();
+          },
+        );
         h.rendersInvalidated();
         h.rendersInvalidated();
         await received.promise;
@@ -1806,7 +2015,10 @@ it.effect(
         let invalidations = 0;
         subscribe(
           h.service.runtime,
-          h.service.invalidated,
+          h.service.events.pipe(
+            Stream.filter((event) => event.type === "invalidated"),
+            Stream.map(() => undefined),
+          ),
           () => invalidations++,
         );
         h.rendersInvalidated();
@@ -1822,7 +2034,10 @@ it.effect(
           ).toBe("idle"),
         );
         expect(h.citationRequests).toEqual([]);
-        expect((await h.service.read(NOTE.path))?.formatted.size).toBe(1);
+        expect(
+          (await h.service.bridge.runPromise(h.service.read(NOTE.path)))
+            ?.formatted.size,
+        ).toBe(1);
       } finally {
         await h.dispose();
       }
@@ -1851,17 +2066,23 @@ it.effect(
         },
       });
       try {
-        const reading = h.service.read(NOTE.path);
+        const reading = h.service.bridge.runPromiseExit(
+          h.service.read(NOTE.path),
+        );
         const signal = await entered.promise;
         await h.service.runtime.dispose();
         await aborted.promise;
         expect(signal.aborted).toBe(true);
-        expect(await reading).toBeNull();
-        expect(h.service.peek(NOTE.path)).toBeNull();
-        expect(await h.service.read(NOTE.path)).toBeNull();
+        const interrupted = await reading;
+        expect(
+          Exit.isFailure(interrupted) &&
+            Cause.hasInterruptsOnly(interrupted.cause),
+        ).toBe(true);
+        expect(h.service.bridge.runSync(h.service.peek(NOTE.path))).toBeNull();
+        expect(h.service.bridge.runSync(h.service.read(NOTE.path))).toBeNull();
         render.resolve([rendered("late")]);
         expect(h.citationRequests).toHaveLength(1);
-        expect(h.service.current.stopped).toBe(true);
+        expect(h.service.bridge.runSync(h.service.current).stopped).toBe(true);
         expect(
           h.queryClient.client.getQueryState(["citation-text", NOTE.path]),
         ).toBeUndefined();
@@ -1893,18 +2114,28 @@ it.effect(
         ),
         (h) => Effect.promise(() => h.dispose()),
       );
-      expect(yield* Effect.promise(() => h.service.read(NOTE.path))).toBeNull();
-      expect(yield* Effect.promise(() => h.service.read(NOTE.path))).toBeNull();
+      expect(
+        yield* Effect.promise(() =>
+          h.service.bridge.runPromise(h.service.read(NOTE.path)),
+        ),
+      ).toBeNull();
+      expect(
+        yield* Effect.promise(() =>
+          h.service.bridge.runPromise(h.service.read(NOTE.path)),
+        ),
+      ).toBeNull();
       expect(reads).toBe(1);
       yield* TestClock.adjust(5001);
-      const text = yield* Effect.promise(() => h.service.read(NOTE.path));
+      const text = yield* Effect.promise(() =>
+        h.service.bridge.runPromise(h.service.read(NOTE.path)),
+      );
       expect(firstText(text?.formatted.get("[@alpha]"))).toBe("recovered");
       expect(reads).toBe(2);
     }),
 );
 
 it.effect(
-  "preserves caller AbortError while another surface shares the render (#1705)",
+  "interrupts the caller while another surface shares the render (#1705)",
   () =>
     Effect.promise(async () => {
       const entered = Promise.withResolvers<AbortSignal>();
@@ -1918,14 +2149,18 @@ it.effect(
       });
       try {
         const caller = new AbortController();
-        const cancelled = h.service.read(NOTE.path, { signal: caller.signal });
-        const cancelledResult = expect(cancelled).rejects.toMatchObject({
-          name: "AbortError",
-        });
+        const cancelled = h.service.bridge.runPromiseExit(
+          h.service.read(NOTE.path),
+          { signal: caller.signal },
+        );
         const sharedSignal = await entered.promise;
-        const other = h.service.read(NOTE.path);
+        const other = h.service.bridge.runPromise(h.service.read(NOTE.path));
         caller.abort();
-        await cancelledResult;
+        const interrupted = await cancelled;
+        expect(
+          Exit.isFailure(interrupted) &&
+            Cause.hasInterruptsOnly(interrupted.cause),
+        ).toBe(true);
         expect(sharedSignal.aborted).toBe(false);
         render.resolve([rendered("shared")]);
         expect(firstText((await other)?.formatted.get("[@alpha]"))).toBe(

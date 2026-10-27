@@ -18,17 +18,15 @@ const versioned = (open: number) => `
 it.effect("answers single reads through the unbound interface", () =>
   Effect.gen(function* () {
     const { open } = memoryOpener(versioned);
-    const { service, plain } = yield* readsFixture(
-      inProcessClient(layerRcRef(open)),
-    );
+    const { service } = yield* readsFixture(inProcessClient(layerRcRef(open)));
     expect(yield* service.reads.Libraries({})).toMatchObject([
       { libraryID: 1, type: "user" },
     ]);
     yield* Stream.runHead(
       Stream.filter(service.changes, (state) => state.state === "ready"),
     );
-    expect(plain.state).toBe("ready");
-    expect(plain.error).toBeNull();
+    expect((yield* service.current).state).toBe("ready");
+    expect((yield* service.current).error).toBeNull();
   }),
 );
 
@@ -87,15 +85,17 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const { open } = memoryOpener(() => null);
-      const { service, plain } = yield* readsFixture(
+      const { service } = yield* readsFixture(
         inProcessClient(layerRcRef(open)),
       );
       yield* Stream.runHead(
         Stream.filter(service.changes, (state) => state.state === "degraded"),
       );
-      expect(plain.state).toBe("degraded");
-      expect(plain.error).toBeInstanceOf(DbUnavailable);
-      expect(plain.error?.message).toBe("source #1 is not readable");
+      expect((yield* service.current).state).toBe("degraded");
+      expect((yield* service.current).error).toBeInstanceOf(DbUnavailable);
+      expect((yield* service.current).error?.message).toBe(
+        "source #1 is not readable",
+      );
       expect(
         Exit.isFailure(yield* Effect.exit(Effect.scoped(service.snapshot))),
       ).toBe(true);
@@ -105,7 +105,7 @@ it.effect(
 it.effect("degrades when the change stream is lost", () =>
   Effect.gen(function* () {
     const { open } = memoryOpener(versioned);
-    const { plain } = yield* readsFixture(
+    const { service } = yield* readsFixture(
       Effect.map(inProcessClient(layerRcRef(open)), (client) => ({
         ...client,
         Changes: ((...args: Parameters<typeof client.Changes>) =>
@@ -115,8 +115,8 @@ it.effect("degrades when the change stream is lost", () =>
           )) as typeof client.Changes,
       })),
     );
-    expect(plain.state).toBe("degraded");
-    expect(plain.error).toBeInstanceOf(DbUnavailable);
+    expect((yield* service.current).state).toBe("degraded");
+    expect((yield* service.current).error).toBeInstanceOf(DbUnavailable);
   }),
 );
 
@@ -124,7 +124,7 @@ it.effect("reports the Read Mode of each serving connection", () =>
   Effect.gen(function* () {
     const { open } = memoryOpener(versioned);
     let mode: "copy" | "immutable" = "copy";
-    const { service, plain } = yield* readsFixture(
+    const { service } = yield* readsFixture(
       Effect.map(inProcessClient(layerRcRef(open)), (client) => ({
         ...client,
         Changes: ((...args: Parameters<typeof client.Changes>) =>
@@ -143,7 +143,7 @@ it.effect("reports the Read Mode of each serving connection", () =>
     );
     expect((yield* service.current).activeReadMode).toBe("copy");
     const changes = yield* Queue.unbounded<string | null>();
-    subscribe(plain.runtime, Stream.drop(plain.changes, 1), (next) =>
+    subscribe(service.runtime, Stream.drop(service.changes, 1), (next) =>
       Queue.offerUnsafe(changes, next.activeReadMode),
     );
     mode = "immutable";

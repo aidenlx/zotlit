@@ -841,9 +841,7 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
           Layer.mock(CitationLookup, {
             observe: (changed) =>
               (options.observeGate ?? Effect.void).pipe(
-                Effect.andThen(
-                  Effect.sync(() => citationIndex.lookup.observe(changed)),
-                ),
+                Effect.andThen(citationIndex.lookup.observe(changed)),
               ),
           }),
           Layer.mock(CitekeyEditor, { openCitekey, openIndexedKey }),

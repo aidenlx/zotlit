@@ -69,11 +69,15 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
               ),
             ),
           );
-          const profilePath = services.profile.defaultDocumentPath;
+          const profilePath = services.bridge.runSync(
+            services.profileService.defaultDocumentPath,
+          );
           const existing = app.vault.getFileByPath(profilePath);
           const original = existing
             ? await app.vault.read(existing)
-            : services.profile.getBuiltInSource();
+            : services.bridge.runSync(
+                services.profileService.getBuiltInSource(),
+              );
           const header = "--- zotlit:annotation ---";
           if (!original.includes(header))
             throw Error("Default profile has no annotation section");
@@ -83,7 +87,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           if (existing) {
             cleanup.defer(async () => {
               await app.vault.modify(existing, original);
-              await services.template.refresh();
+              await services.bridge.runPromise(services.template.refresh);
             });
             await app.vault.modify(existing, source);
           } else {
@@ -99,10 +103,10 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             const created = await app.vault.create(profilePath, source);
             cleanup.defer(async () => {
               await app.vault.delete(created);
-              await services.template.refresh();
+              await services.bridge.runPromise(services.template.refresh);
             });
           }
-          await services.template.refresh();
+          await services.bridge.runPromise(services.template.refresh);
           // Pin before any tab cites the Item: a pin that follows an active-tab load
           // of the same Item stays "Loading…" (#1701).
           s.annotations = cleanup.adopt(

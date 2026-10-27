@@ -99,9 +99,10 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     ).toBe(true);
     await changeNativeAnnotationCallout(vaultId, {
       view: {
-        path: await obRun(
-          vaultId,
-          ({ zotlit }) => zotlit.services.profile.defaultDocumentPath,
+        path: await obRun(vaultId, ({ zotlit }) =>
+          zotlit.services.bridge.runSync(
+            zotlit.services.profileService.defaultDocumentPath,
+          ),
         ),
       },
       vaultPath,
@@ -192,7 +193,13 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          return String(String(zotlit.services.profile.profiles.length));
+          return String(
+            String(
+              zotlit.services.bridge.runSync(
+                zotlit.services.profileService.profiles,
+              ).length,
+            ),
+          );
         },
         undefined,
       ),
@@ -293,9 +300,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           async ({ zotlit }) => {
             return String(
               String(
-                zotlit.services.profile.profiles.some(
-                  (p) => p.label === "Books",
-                ),
+                zotlit.services.bridge
+                  .runSync(zotlit.services.profileService.profiles)
+                  .some((p) => p.label === "Books"),
               ),
             );
           },
@@ -316,7 +323,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         async ({ zotlit }) => {
           return String(
             JSON.stringify(
-              zotlit.services.profile.profiles.find((p) => p.label === "Books"),
+              zotlit.services.bridge
+                .runSync(zotlit.services.profileService.profiles)
+                .find((p) => p.label === "Books"),
             ),
           );
         },

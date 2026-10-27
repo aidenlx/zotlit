@@ -33,7 +33,6 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 import type {
   ZoteroReadLease,
   ZoteroReadsApi,
-  ZoteroReadsState,
 } from "@/services/zotero-reads/service";
 
 import { layerCitationPopover, CitationPopover } from "./service";
@@ -42,11 +41,17 @@ export interface CitationPopoverFixtureDeps {
   /** The Obsidian objects the capability tags read; a missing one is empty. */
   host: HostSources;
   db: {
-    state: ZoteroReadsState["state"];
+    current: ZoteroReads["Service"]["current"];
     reads?: ZoteroReadsApi;
     acquireRead(): Promise<ZoteroReadLease>;
   };
-  citationLookup: {
+  services?: {
+    citationLookup?: CitationLookup["Service"];
+    citationIndex?: CitationIndex["Service"];
+    citationText?: CitationText["Service"];
+    bibliographyRender?: BibliographyRender["Service"];
+  };
+  citationLookup?: {
     status: CitationLookupStatus;
     read?(
       request: CitationLookupRequest,
@@ -72,7 +77,7 @@ export interface CitationPopoverFixtureDeps {
     ): Promise<DocumentCitations | null>;
   };
   profile: ProfileReader;
-  bibliographyRender: {
+  bibliographyRender?: {
     changed?: Stream.Stream<unknown>;
     settled?: Stream.Stream<unknown>;
     "style-missing"?: Stream.Stream<string>;
@@ -94,13 +99,6 @@ export interface CitationPopoverFixture extends AsyncDisposable {
   runtime: ManagedRuntime.ManagedRuntime<CitationPopover, never>;
 }
 
-const READS_IDLE: Omit<ZoteroReadsState, "state"> = {
-  error: null,
-  moved: false,
-  dbFileMissing: false,
-  activeReadMode: null,
-};
-
 /**
  * The popover layer over the reads each test scenario supplies.
  *
@@ -112,9 +110,11 @@ export function citationPopoverFixture(
   options: { logs?: Layer.Layer<never> } = {},
 ): CitationPopoverFixture {
   const stack = new AsyncDisposableStack();
+  const citationLookup = deps.citationLookup ?? { status: "fresh" as const };
+  const bibliographyRender = deps.bibliographyRender ?? {};
   let revision = 0;
   const lookupState = () => ({
-    status: deps.citationLookup.status,
+    status: citationLookup.status,
     revision: String(revision),
     stopped: false,
   });
@@ -126,10 +126,7 @@ export function citationPopoverFixture(
         Layer.succeed(
           ZoteroReads,
           stubService<ZoteroReads["Service"]>("ZoteroReads", {
-            current: Effect.sync(() => ({
-              ...READS_IDLE,
-              state: deps.db.state,
-            })),
+            current: deps.db.current,
             reads:
               deps.db.reads ??
               Object.assign(stubService<ZoteroReadsApi>("ZoteroReadsApi", {}), {
@@ -149,38 +146,45 @@ export function citationPopoverFixture(
         ),
         Layer.succeed(
           CitationLookup,
-          stubService<CitationLookup["Service"]>("CitationLookup", {
-            current: Effect.sync(lookupState),
-            changes: Stream.concat(
-              Stream.succeed(lookupState()),
-              (deps.citationLookup.changed ?? Stream.empty).pipe(
-                Stream.map(() => {
-                  revision += 1;
-                  return lookupState();
-                }),
+          deps.services?.citationLookup ??
+            stubService<CitationLookup["Service"]>("CitationLookup", {
+              current: Effect.sync(lookupState),
+              changes: Stream.concat(
+                Stream.succeed(lookupState()),
+                (citationLookup.changed ?? Stream.empty).pipe(
+                  Stream.map(() => {
+                    revision += 1;
+                    return lookupState();
+                  }),
+                ),
               ),
-            ),
-            read: (request) =>
-              deps.citationLookup.read
-                ? Effect.promise(() => deps.citationLookup.read!(request))
-                : Effect.promise(() =>
-                    Promise.reject(new Error("CitationLookup stub lacks read")),
-                  ),
-          }),
+              read: (request) =>
+                citationLookup.read
+                  ? Effect.promise(() => citationLookup.read!(request))
+                  : Effect.promise(() =>
+                      Promise.reject(
+                        new Error("CitationLookup stub lacks read"),
+                      ),
+                    ),
+            }),
         ),
         Layer.succeed(
           CitationIndex,
-          stubService<CitationIndex["Service"]>("CitationIndex", {
-            getDocumentCitationSet: (file, options) => {
-              if (!deps.citationIndex)
-                throw new Error(
-                  "CitationIndex stub lacks getDocumentCitationSet",
-                );
-              return Effect.promise(() =>
-                deps.citationIndex!.getDocumentCitationSet(file, options ?? {}),
-              ).pipe(Effect.map((value) => value as DocumentCitationSet));
-            },
-          }),
+          deps.services?.citationIndex ??
+            stubService<CitationIndex["Service"]>("CitationIndex", {
+              getDocumentCitationSet: (file, options) => {
+                if (!deps.citationIndex)
+                  throw new Error(
+                    "CitationIndex stub lacks getDocumentCitationSet",
+                  );
+                return Effect.promise(() =>
+                  deps.citationIndex!.getDocumentCitationSet(
+                    file,
+                    options ?? {},
+                  ),
+                ).pipe(Effect.map((value) => value as DocumentCitationSet));
+              },
+            }),
         ),
         Layer.succeed(
           LibraryScope,
@@ -192,46 +196,54 @@ export function citationPopoverFixture(
         ),
         Layer.succeed(
           CitationText,
-          stubService<CitationText["Service"]>("CitationText", {
-            read: (path) =>
-              Effect.promise((signal) =>
-                deps.citationText
-                  ? deps.citationText.read(path, { signal })
-                  : Promise.resolve(null),
-              ).pipe(Effect.map((value) => value as DocumentCitations | null)),
-          }),
+          deps.services?.citationText ??
+            stubService<CitationText["Service"]>("CitationText", {
+              read: (path) =>
+                Effect.promise((signal) =>
+                  deps.citationText
+                    ? deps.citationText.read(path, { signal })
+                    : Promise.resolve(null),
+                ).pipe(
+                  Effect.map((value) => value as DocumentCitations | null),
+                ),
+            }),
         ),
         Layer.succeed(
           BibliographyRender,
-          stubService<BibliographyRender["Service"]>("BibliographyRender", {
-            state: Effect.sync(() => ({
-              vaultPresentation: deps.bibliographyRender.vaultPresentation ?? {
-                styleId: null,
-                locale: null,
-              },
-              missingStyle: null,
-            })),
-            events: (deps.bibliographyRender.invalidated ?? Stream.empty).pipe(
-              Stream.map(() => ({ _tag: "invalidated" as const })),
-            ),
-            render: (items, presentation) =>
-              Effect.promise(() =>
-                deps.bibliographyRender.render
-                  ? deps.bibliographyRender.render(items, presentation)
-                  : Promise.resolve({
-                      kind: "unavailable",
-                      reason: "engine-absent",
-                    } as const),
-              ).pipe(Effect.map((value) => value as BibliographyRenderOutcome)),
-            readBibliography: (items) =>
-              Effect.promise((signal) =>
-                deps.bibliographyRender.readBibliography
-                  ? deps.bibliographyRender.readBibliography(items, { signal })
-                  : Promise.resolve(null),
-              ).pipe(
-                Effect.map((value) => value as BibliographyRenderResult | null),
+          deps.services?.bibliographyRender ??
+            stubService<BibliographyRender["Service"]>("BibliographyRender", {
+              state: Effect.sync(() => ({
+                vaultPresentation: bibliographyRender.vaultPresentation ?? {
+                  styleId: null,
+                  locale: null,
+                },
+                missingStyle: null,
+              })),
+              events: (bibliographyRender.invalidated ?? Stream.empty).pipe(
+                Stream.map(() => ({ _tag: "invalidated" as const })),
               ),
-          }),
+              render: (items, presentation) =>
+                Effect.promise(() =>
+                  bibliographyRender.render
+                    ? bibliographyRender.render(items, presentation)
+                    : Promise.resolve({
+                        kind: "unavailable",
+                        reason: "engine-absent",
+                      } as const),
+                ).pipe(
+                  Effect.map((value) => value as BibliographyRenderOutcome),
+                ),
+              readBibliography: (items) =>
+                Effect.promise((signal) =>
+                  bibliographyRender.readBibliography
+                    ? bibliographyRender.readBibliography(items, { signal })
+                    : Promise.resolve(null),
+                ).pipe(
+                  Effect.map(
+                    (value) => value as BibliographyRenderResult | null,
+                  ),
+                ),
+            }),
         ),
         Layer.succeed(
           Profile,

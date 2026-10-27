@@ -4,13 +4,13 @@ import { TestClock } from "effect/testing";
 import { expect, expectTypeOf, vi } from "vitest";
 
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { subscribe } from "@/lib/effect-stream";
 import { PluginSettings } from "@/services/settings/service";
 
 import { createTemplateHost, templateOf, templateOver } from "./__fixtures__";
 import { layerTemplateMigration, TemplateMigration } from "./migration";
-import { plainTemplate, plainTemplateMigration } from "./plain";
 import { Template } from "./service";
 
 it.effect("#1705: a built Template exposes its first loaded template", () =>
@@ -43,7 +43,9 @@ it.effect(
         stack,
       );
       yield* Effect.promise(() => runtime.context());
-      const template = plainTemplate(runtime);
+      const template = Object.assign(runtime.runSync(Template), {
+        bridge: effectBridge(runtime),
+      });
       const received = yield* Queue.unbounded<void>();
       let changes = 0;
       const unsubscribe = subscribe(runtime, template.changes, () => {
@@ -52,18 +54,16 @@ it.effect(
       });
       const compiled = yield* Queue.unbounded<void>();
       let compilations = 0;
-      const stopCompile = subscribe(
-        runtime,
-        template["compile-status-changed"],
-        () => {
-          Queue.offerUnsafe(compiled, undefined);
-          if (++compilations === 1) throw new Error("compile listener failed");
-        },
-      );
+      const stopCompile = subscribe(runtime, template.compileEvents, () => {
+        Queue.offerUnsafe(compiled, undefined);
+        if (++compilations === 1) throw new Error("compile listener failed");
+      });
       yield* Queue.take(received);
       // Concurrent folder rebuilds coalesce. Chain the second reconciliation
       // as soon as the first completes so both actual changes are observable.
-      const both = template.refresh().then(() => template.refresh());
+      const both = template.bridge
+        .runPromise(template.refresh)
+        .then(() => template.bridge.runPromise(template.refresh));
       yield* Effect.promise(() => both);
       yield* Queue.take(received);
       yield* Queue.take(received);
@@ -72,9 +72,13 @@ it.effect(
       stopCompile();
       unsubscribe();
       yield* Effect.promise(() => runtime.dispose());
-      expect(template.render("note", {})).toBe("First");
+      expect(template.bridge.runSync(template.render("note", {}))).toBe(
+        "First",
+      );
       yield* Effect.promise(() =>
-        expect(template.waitUntilSettled(500)).rejects.toMatchObject({
+        expect(
+          template.bridge.runPromise(template.waitUntilSettled(500)),
+        ).rejects.toMatchObject({
           name: "AbortError",
         }),
       );
@@ -83,7 +87,9 @@ it.effect(
       });
       host.vault.modifyFile("templates/zotlit-note.liquid.md", "After close");
       yield* TestClock.adjust(500);
-      expect(template.render("note", {})).toBe("First");
+      expect(template.bridge.runSync(template.render("note", {}))).toBe(
+        "First",
+      );
       afterClose();
     }),
 );
@@ -133,7 +139,9 @@ it.effect(
         stack,
       );
       yield* Effect.promise(() => runtime.context());
-      const template = plainTemplate(runtime);
+      const template = Object.assign(runtime.runSync(Template), {
+        bridge: effectBridge(runtime),
+      });
       const started = yield* Queue.unbounded<void>();
       const writing = Promise.withResolvers<void>();
       const create = host.vault.create.bind(host.vault);
@@ -146,7 +154,9 @@ it.effect(
       );
       // Unload stops the waiting caller; the write itself finishes.
       const created = expect(
-        template.createPartial("authors", { source: "Authors" }),
+        template.bridge.runPromise(
+          template.createPartial("authors", { source: "Authors" }),
+        ),
       ).rejects.toMatchObject({ name: "AbortError" });
       yield* Queue.take(started);
       let disposed = false;
@@ -181,10 +191,14 @@ it.effect("runtime disposal waits for a partial unpack that has started", () =>
       stack,
     );
     yield* Effect.promise(() => runtime.context());
-    const template = plainTemplate(runtime);
-    const plan = template.planPartialUnpack([
-      { name: "venue-line", language: "liquid", source: "{{ zt.venue }}" },
-    ]);
+    const template = Object.assign(runtime.runSync(Template), {
+      bridge: effectBridge(runtime),
+    });
+    const plan = template.bridge.runSync(
+      template.planPartialUnpack([
+        { name: "venue-line", language: "liquid", source: "{{ zt.venue }}" },
+      ]),
+    );
     const started = yield* Queue.unbounded<void>();
     const writing = Promise.withResolvers<void>();
     const create = host.vault.create.bind(host.vault);
@@ -194,7 +208,7 @@ it.effect("runtime disposal waits for a partial unpack that has started", () =>
       return create(path, source);
     });
     const unpacked = expect(
-      template.unpackPartials(plan),
+      template.bridge.runPromise(template.unpackPartials(plan)),
     ).rejects.toMatchObject({ name: "AbortError" });
     yield* Queue.take(started);
     let disposed = false;
@@ -238,20 +252,28 @@ it.effect(
         stack,
       );
       yield* Effect.promise(() => runtime.context());
-      const migration = plainTemplateMigration(runtime);
+      const migration = Object.assign(runtime.runSync(TemplateMigration), {
+        bridge: effectBridge(runtime),
+      });
       expect(callbacks).toHaveLength(1);
       yield* Effect.promise(() => runtime.dispose());
       host.vault.addFile("templates/zotlit-note.liquid.md", "Late inventory");
       for (const callback of callbacks) callback();
       const aborted = { name: "AbortError" };
       // A closed migration has nothing to settle: the answer is at once.
-      yield* Effect.promise(() => migration.whenSettled());
+      yield* Effect.promise(() =>
+        migration.bridge.runPromise(migration.whenSettled),
+      );
       expect(openPrompt).not.toHaveBeenCalled();
       yield* Effect.promise(() =>
-        expect(migration.convert()).rejects.toMatchObject(aborted),
+        expect(
+          migration.bridge.runPromise(migration.convert),
+        ).rejects.toMatchObject(aborted),
       );
       yield* Effect.promise(() =>
-        expect(migration.retryCleanup()).rejects.toMatchObject(aborted),
+        expect(
+          migration.bridge.runPromise(migration.retryCleanup),
+        ).rejects.toMatchObject(aborted),
       );
     }),
 );
@@ -371,14 +393,18 @@ it.effect("#1705: a stalled source read does not block runtime disposal", () =>
       stack,
     );
     yield* Effect.promise(() => runtime.context());
-    const template = plainTemplate(runtime);
+    const template = Object.assign(runtime.runSync(Template), {
+      bridge: effectBridge(runtime),
+    });
     const started = yield* Queue.unbounded<void>();
     const stalled = Promise.withResolvers<string>();
     host.vault.cachedRead.mockImplementationOnce(() => {
       Queue.offerUnsafe(started, undefined);
       return stalled.promise;
     });
-    const reading = template.getTemplateSource("note").catch(() => undefined);
+    const reading = template.bridge
+      .runPromise(template.getTemplateSource("note"))
+      .catch(() => undefined);
     yield* Queue.take(started);
     const closing = runtime.dispose();
     const disposed = yield* Effect.promise(() => closing).pipe(
@@ -474,7 +500,9 @@ it.effect("#1791: unload interrupts a reconcile in flight", () =>
       stack,
     );
     yield* Effect.promise(() => runtime.context());
-    const template = plainTemplate(runtime);
+    const template = Object.assign(runtime.runSync(Template), {
+      bridge: effectBridge(runtime),
+    });
     const started = yield* Queue.unbounded<void>();
     const stalled = Promise.withResolvers<string>();
     host.vault.cachedRead.mockImplementationOnce(() => {
@@ -487,7 +515,7 @@ it.effect("#1791: unload interrupts a reconcile in flight", () =>
     yield* Effect.promise(() => runtime.dispose());
     stalled.resolve("Late source");
     yield* TestClock.adjust(0);
-    expect(template.render("note", {})).toBe("Loaded");
+    expect(template.bridge.runSync(template.render("note", {}))).toBe("Loaded");
   }),
 );
 

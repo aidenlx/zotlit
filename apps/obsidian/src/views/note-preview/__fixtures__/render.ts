@@ -16,8 +16,7 @@ import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { ProfileOperations } from "@/services/profile/service";
-import type { TemplateOperations } from "@/services/template/service";
-import type { ParseRequest, ParseReply } from "@/services/citation-parse/client";
+import type { ParseClient } from "@/services/citation-parse/client";
 import type { CitationLookupRequest, CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
 
@@ -33,10 +32,10 @@ interface PreviewHostDeps extends TemplateDataDeps {
   settings: Pick<PluginSettings["Service"], "current">;
   noteIndex: Parameters<typeof findExistingLitNote>[0];
   bridge: Pick<EffectBridge, "runSync">;
-  zoteroReads: Pick<ReturnType<typeof inProcessReadsService>, "acquireRead" | "changed" | "degraded" | "refresh-failed" | "refreshing" | "db-file-missing" | "refresh-requested">;
-  templates: Pick<TemplateOperations, "render" | "renderCitation" | "renderCitationSource" | "renderPartialSource" | "prepareLiteratureNoteTemplateSource" | "frontmatterFields" | "javascriptTemplatesEnabled"> & { readonly "compile-status-changed": Stream.Stream<void> };
+  zoteroReads: Pick<ReturnType<typeof inProcessReadsService>, "acquireRead" | "events">;
+  templates: Pick<Template["Service"], "render" | "renderCitation" | "renderCitationSource" | "renderPartialSource" | "prepareLiteratureNoteTemplateSource" | "frontmatterFields" | "javascriptTemplatesEnabled" | "compileEvents">;
   profile: Pick<ProfileOperations, "resolveProfile" | "getBuiltInSource" | "profiles">;
-  citationParse: { parse(request: ParseRequest, signal: AbortSignal): Promise<ParseReply> };
+  citationParse: Pick<ParseClient, "parse">;
   citationLookup: { read(request: CitationLookupRequest): Promise<CitationLookupAnswer> };
   bibliographyRender: Pick<PromiseMethods<BibliographyRender["Service"]>, "renderCitations" | "readCitations" | "readBibliography"> & {
     readonly vaultPresentation: EffectivePresentation;
@@ -49,7 +48,6 @@ interface PreviewHostDeps extends TemplateDataDeps {
 import { Stream } from "effect";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
-import { plainTestParseClient } from "@/lib/__fixtures__/parse-client";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 // Live database and TemplateService boundaries for native preview tests.
 import type { DatabaseSync } from "node:sqlite";
@@ -214,8 +212,8 @@ export async function createRenderFixture(options: { existing?: string; javascri
   const zoteroReads = inProcessReadsService(sharedClientOpener(client));
   // The plugin's worker opens the database at start; open it here too, so its
   // first `changed` lands before a view subscribes.
-  await Effect.runPromise((await zoteroReads.ready).reads.Libraries({}));
-  await vi.waitFor(() => expect(zoteroReads.state).toBe("ready"));
+  await Effect.runPromise(zoteroReads.reads.Libraries({}));
+  await vi.waitFor(() => expect(zoteroReads.bridge.runSync(zoteroReads.current).state).toBe("ready"));
   const notesOf = (key: string) => (file && key === "MAIN2345" ? [file] : []);
   const handles = new AsyncDisposableStack();
   const templateData = templateDataHandle(handles, {
@@ -227,7 +225,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
   });
   const deps = { runtime: settings.runtime, bridge: settings.bridge,
-    citationParse: plainTestParseClient(inProcessParseClient),
+    citationParse: inProcessParseClient,
     app, settings, templates, templateData,
     profile: { resolveProfile: (_selector: Parameters<ProfileOperations["resolveProfile"]>[0]): ReturnType<ProfileOperations["resolveProfile"]> => undefined, getBuiltInSource: () => DEFAULT_PROFILE_SOURCE, profiles: [] as ProfileOperations["profiles"] },
     zoteroReads,
@@ -251,17 +249,17 @@ export async function createRenderFixture(options: { existing?: string; javascri
     Layer.mock(ZoteroPref, { current: Effect.succeed(stubService<ZoteroPref["Service"]["current"] extends Effect.Effect<infer A, unknown, unknown> ? A : never>("ZoteroPrefSnapshot", { dataDir: "/Zotero", baseAttachmentPath: null })) }),
     Layer.succeed(ZoteroReads, { ...service,
       snapshot: Effect.map(Effect.acquireDisposable(Effect.promise((signal) => { signal.addEventListener("abort", () => cancelled.push(cancelled.length + 1)); return deps.zoteroReads.acquireRead(); }).pipe(Effect.interruptible)), (lease) => lease.reads),
-      events: Stream.unwrap(Effect.sync(() => Stream.map(deps.zoteroReads.changed, () => ({ _tag: "changed" as const })))),
+      events: Stream.suspend(() => deps.zoteroReads.events),
     }),
     Layer.succeed(Template, { ...template,
-      render: (name, data) => Effect.sync(() => deps.templates.render(name, data)),
-      renderPartialSource: (source, data, options) => Effect.sync(() => deps.templates.renderPartialSource(source, data, options)),
-      renderCitationSource: (source, data) => Effect.sync(() => deps.templates.renderCitationSource(source, data)),
-      prepareLiteratureNoteTemplateSource: (source) => Effect.sync(() => deps.templates.prepareLiteratureNoteTemplateSource(source)),
-      compileEvents: Stream.unwrap(Effect.sync(() => deps.templates["compile-status-changed"])),
+      render: (name, data) => Effect.suspend(() => deps.templates.render(name, data)),
+      renderPartialSource: (source, data, options) => Effect.suspend(() => deps.templates.renderPartialSource(source, data, options)),
+      renderCitationSource: (source, data) => Effect.suspend(() => deps.templates.renderCitationSource(source, data)),
+      prepareLiteratureNoteTemplateSource: (source) => Effect.suspend(() => deps.templates.prepareLiteratureNoteTemplateSource(source)),
+      compileEvents: Stream.unwrap(Effect.sync(() => deps.templates.compileEvents)),
     }),
-    Layer.mock(Profile, { resolveProfile: (selector) => Effect.sync(() => deps.profile.resolveProfile(selector)), getBuiltInSource: () => Effect.sync(() => deps.profile.getBuiltInSource()), changes: Stream.suspend(() => Stream.make({ loaded: true, profiles: deps.profile.profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.status })) }),
-    Layer.mock(CitationParse, { parse: (request) => Effect.tryPromise((signal) => deps.citationParse.parse(request, signal)).pipe(Effect.orDie) }),
+    Layer.mock(Profile, { resolveProfile: (selector) => Effect.sync(() => deps.profile.resolveProfile(selector)), getBuiltInSource: () => Effect.sync(() => deps.profile.getBuiltInSource()), changes: Stream.suspend(() => Stream.make({ loaded: true, profiles: deps.profile.profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.bridge.runSync(templates.status) })) }),
+    Layer.mock(CitationParse, { parse: (request) => Effect.suspend(() => deps.citationParse.parse(request)) }),
     Layer.mock(CitationLookup, { read: (request) => Effect.tryPromise(() => deps.citationLookup.read(request)).pipe(Effect.orDie) }),
     Layer.mock(BibliographyRender, {
       state: Effect.sync(() => ({ missingStyle: null, vaultPresentation: deps.bibliographyRender.vaultPresentation })),

@@ -582,7 +582,9 @@ describe("Citation Suggester document citations", () => {
             "$5 [@doe2024] x$",
           ].join("\n"),
         });
-        const set = await index.index.getDocumentCitationSet(index.draft);
+        const set = await index.index.bridge.runPromise(
+          index.index.getDocumentCitationSet(index.draft),
+        );
         expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
           KEY_A,
         ]);
