@@ -98,7 +98,7 @@ describe("onOpenNote", () => {
       onDismissEngineHint: () => undefined,
       getCopySnapshot,
       writeClipboard,
-      notify: () => undefined,
+      reportCopy: () => undefined,
     }).onOpenNote(entry);
     return { openIndexedKey, openLinkText };
   }
@@ -163,6 +163,30 @@ describe("copyBibliography", () => {
     writeClipboard.mockRejectedValue(new Error("clipboard unavailable"));
 
     expect(await copy()).toEqual({ kind: "failed" });
+  });
+});
+
+describe("onCopyBibliography", () => {
+  it("hands the copy's outcome to the seam that reports it", async () => {
+    const reportCopy = vi.fn<(outcome: CopyBibliographyOutcome) => void>();
+    writeClipboard.mockResolvedValue("text");
+
+    await createReferenceActions({
+      app: stubService<App>("App", {}),
+      getSourcePath: () => "notes/tidal.md",
+      openIndexedKey: () => undefined,
+      onOpenEngineSettings: () => undefined,
+      onChangeStyle: () => undefined,
+      onDismissEngineHint: () => undefined,
+      getCopySnapshot,
+      writeClipboard,
+      reportCopy,
+    }).onCopyBibliography(offered);
+
+    expect(reportCopy).toHaveBeenCalledExactlyOnceWith({
+      kind: "copied",
+      representation: "text",
+    });
   });
 });
 

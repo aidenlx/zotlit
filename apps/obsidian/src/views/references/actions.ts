@@ -73,8 +73,11 @@ export interface ReferenceActionDeps {
   writeClipboard: (
     content: CopiedBibliography,
   ) => Promise<ClipboardRepresentation>;
-  /** Show one transient message; the seam that owns notices supplies it. */
-  notify: (message: string) => void;
+  /**
+   * Show how a bibliography copy ended; the seam that owns notices supplies
+   * it.
+   */
+  reportCopy: (outcome: CopyBibliographyOutcome) => void;
 }
 
 export function createReferenceActions(
@@ -135,9 +138,7 @@ export function createReferenceActions(
     onSwitchProfile: (path) => requestProfileSwitch(deps.app, path),
     onDismissEngineHint: deps.onDismissEngineHint,
     async onCopyBibliography(target) {
-      deps.notify(
-        copyBibliographyMessage(await copyBibliography(deps, target)),
-      );
+      deps.reportCopy(await copyBibliography(deps, target));
     },
   };
 }
