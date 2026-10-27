@@ -1149,7 +1149,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const name of ["zt-rank", "zt-due", "zt-projects"]) {
       await sameLine(name);
       await key("Escape");
-      if (
+      try {
         await obRunUntil(
           run.vaultId,
           async (_context) => {
@@ -1163,12 +1163,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             tries: 5,
             what: "the vault property editor in the Table to close",
           },
-        ).then(
-          () => true,
-          () => false,
-        )
-      )
+        );
         continue;
+      } catch {
+        // The first Escape ended a text edit; a second one closes the editor.
+      }
       await key("Escape");
       await obRunUntil(
         run.vaultId,
@@ -1403,28 +1402,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { what: "the vault chip input to take focus" },
     );
     await typeText(", d");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              activeDocument.activeElement?.matches(
-                "[data-query-vault-chip-input]",
-              ) && (activeDocument.activeElement as HTMLInputElement).value,
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "the vault chip input to hold the expected typed value",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "c, d" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        const focused = activeDocument.activeElement;
+        return focused?.matches("[data-query-vault-chip-input]")
+          ? (focused as HTMLInputElement).value
+          : null;
+      },
+      undefined,
+      {
+        ready: (value) => value === "c, d",
+        what: "the vault chip input to hold the expected typed value",
+      },
+    );
     await key("Enter");
     await obRunUntil(
       run.vaultId,

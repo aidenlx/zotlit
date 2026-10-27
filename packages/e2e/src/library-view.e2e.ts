@@ -43,6 +43,36 @@ import type {} from "./page-library-types.ts";
 import { verifyPdfReads } from "./pdf-reads.ts";
 import { verifyRecentUses } from "./recent-uses.ts";
 
+/** Wait for the saved `library.document` setting, compared as JSON limited to the keys the Library View writes. */
+async function waitForLibraryDocument(
+  vaultId: string,
+  expected: unknown,
+  what: string,
+): Promise<void> {
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return JSON.stringify(
+        zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "library.document"
+        ],
+        [
+          "node",
+          "kind",
+          "library",
+          "type",
+          "path",
+          "sort",
+          "property",
+          "direction",
+        ],
+      );
+    },
+    undefined,
+    { ready: (value) => value === JSON.stringify(expected), what },
+  );
+}
+
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
@@ -1253,43 +1283,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expectRecent(again!, [personal], -1);
     expect(again!.sort).toEqual({ set: false, text: "Sort" });
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return JSON.stringify(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ],
-              [
-                "node",
-                "kind",
-                "library",
-                "type",
-                "path",
-                "sort",
-                "property",
-                "direction",
-              ],
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "the library.document setting to hold the expected Recent sort before the switch",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          node: { kind: "recent" },
-          sort: [{ property: "lastActivity", direction: "DESC" }],
-        }),
-      }),
-    ).toBe(true);
+    await waitForLibraryDocument(
+      run.vaultId,
+      {
+        node: { kind: "recent" },
+        sort: [{ property: "lastActivity", direction: "DESC" }],
+      },
+      "the library.document setting to hold the expected Recent sort before the switch",
+    );
 
     const modified = new Map(
       ITEMS.map((item) => [indexedKey(item), item.dateModified]),
@@ -1416,38 +1417,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(unsorted!.sort).toEqual({ set: false, text: "Sort" });
     expectFiled(unsorted!, -1);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return JSON.stringify(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ],
-              [
-                "node",
-                "kind",
-                "library",
-                "type",
-                "path",
-                "sort",
-                "property",
-                "direction",
-              ],
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "the library.document setting after switching to a Collection",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: JSON.stringify({ node: sharedKeyPath, sort: [] }) }),
-    ).toBe(true);
+    await waitForLibraryDocument(
+      run.vaultId,
+      { node: sharedKeyPath, sort: [] },
+      "the library.document setting after switching to a Collection",
+    );
 
     // A sort the researcher changed on Recent is theirs: it stays on the
     // Collection, and the Sort button shows it as set.
@@ -1721,43 +1695,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .map((item) => activity.get(indexedKey(item))!)
         .toSorted((a, b) => a - b),
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return JSON.stringify(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ],
-              [
-                "node",
-                "kind",
-                "library",
-                "type",
-                "path",
-                "sort",
-                "property",
-                "direction",
-              ],
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "the library.document setting after reselecting Recent to restore its sort",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          node: sharedKeyPath,
-          sort: [{ property: "lastActivity", direction: "ASC" }],
-        }),
-      }),
-    ).toBe(true);
+    await waitForLibraryDocument(
+      run.vaultId,
+      {
+        node: sharedKeyPath,
+        sort: [{ property: "lastActivity", direction: "ASC" }],
+      },
+      "the library.document setting after reselecting Recent to restore its sort",
+    );
   });
 
   it("records PDF reads from every open route and page changes, preserves restored reads, and excludes standalone Attachments", async () => {

@@ -5240,20 +5240,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               },
               undefined,
             );
-            const closed = await obRunUntil(
-              vaultId!,
-              async ({ page: pageHelpers }) => {
-                return !!pageHelpers.popupEditor();
-              },
-              undefined,
-              {
-                ready: (value) => value === false,
-                what: "the Mark Popup comment editor to close",
-              },
-            ).then(
-              () => true,
-              () => false,
-            );
+            let closeFailure: unknown;
+            try {
+              await obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return !!pageHelpers.popupEditor();
+                },
+                undefined,
+                {
+                  ready: (value) => value === false,
+                  what: "the Mark Popup comment editor to close",
+                },
+              );
+            } catch (error) {
+              closeFailure = error;
+            }
             await image.settled();
             await restoreAnnotationComment(api, {
               serverID,
@@ -5261,7 +5263,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               annotationKey: imageKey,
               comment: "",
             });
-            expect(closed).toBe(true);
+            if (closeFailure) throw closeFailure;
           }
         });
 
@@ -10764,30 +10766,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
              * Settles once ZotLit holds no write on the Annotation and no
              * draft waiting on one: the last save is confirmed and read back.
              */
-            const saveSettled = async () =>
-              expect(
-                await obRunUntil(
-                  vaultId!,
-                  async ({ zotlit }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
-                    const { annotationRepository: repository, bridge } =
-                      zotlit.services;
-                    const draft = bridge.runSync(
-                      repository.textDraftFor("text", cardKey),
-                    );
-                    return (
-                      bridge.runSync(repository.mutationFor(cardKey)).kind ===
-                        "idle" && draft?.state.kind !== "pending"
-                    );
-                  },
-                  { cardKey },
-                  {
-                    what: "the Q8ZR4TDH annotation to have no pending write or draft",
-                  },
-                ).then(
-                  () => true,
-                  () => false,
-                ),
-              ).toBe(true);
+            const saveSettled = async () => {
+              await obRunUntil(
+                vaultId!,
+                async ({ zotlit }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  const draft = bridge.runSync(
+                    repository.textDraftFor("text", cardKey),
+                  );
+                  return (
+                    bridge.runSync(repository.mutationFor(cardKey)).kind ===
+                      "idle" && draft?.state.kind !== "pending"
+                  );
+                },
+                { cardKey },
+                {
+                  what: "the Q8ZR4TDH annotation to have no pending write or draft",
+                },
+              );
+            };
 
             // Two saves in one session: the first run's autosave lands and is
             // read back before the second run is typed, and Escape saves that.

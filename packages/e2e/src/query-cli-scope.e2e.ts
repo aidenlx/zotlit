@@ -365,30 +365,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
       );
-      const ended = await obRunUntil(
-        run.vaultId,
-        async ({ page: pageHelpers }) => {
-          var record = pageHelpers.scratch.zotlitE2EWorkers;
-          return record!.spawned
-            .filter(function (entry) {
-              return entry.name === "zotlit-zotero-reads";
-            })
-            .every(function (entry) {
-              return record!.ended.has(entry.worker);
-            });
-        },
-        undefined,
-        {
-          tries: 120,
-          what: "every zotlit-zotero-reads worker to end after the Scope Case switch",
-        },
-      ).then(
-        () => true,
-        () => false,
-      );
-      expect(
-        ended,
-        await obRun(
+      try {
+        await obRunUntil(
+          run.vaultId,
+          async ({ page: pageHelpers }) => {
+            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            return record!.spawned
+              .filter(function (entry) {
+                return entry.name === "zotlit-zotero-reads";
+              })
+              .every(function (entry) {
+                return record!.ended.has(entry.worker);
+              });
+          },
+          undefined,
+          {
+            tries: 120,
+            what: "every zotlit-zotero-reads worker to end after the Scope Case switch",
+          },
+        );
+      } catch (error) {
+        const workers = await obRun(
           run.vaultId,
           async ({ page: pageHelpers }) => {
             var record = pageHelpers.scratch.zotlitE2EWorkers;
@@ -402,8 +399,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           undefined,
-        ),
-      ).toBe(true);
+        );
+        throw new Error(
+          `The Scope Case switch left workers running: ${workers}`,
+          {
+            cause: error,
+          },
+        );
+      }
     }
   }, 120_000);
 });

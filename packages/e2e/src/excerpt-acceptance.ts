@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { FileSystemAdapter, PDFFileView } from "obsidian";
 import { expect } from "vitest";
 
@@ -184,30 +185,30 @@ function importSettlement(vaultId: string): () => Promise<void> {
  * cost.
  */
 async function settleImport(vaultId: string): Promise<void> {
-  const observed = await obRunUntil(
-    vaultId,
-    async ({ page: helpers }) => {
-      const button = document.querySelector<HTMLButtonElement>(
-        ".modal-container .modal .modal-button-container button.mod-destructive",
-      );
-      // Answers the overwrite confirm the import may raise: setup the phase
-      // waits through, not the press it measures.
-      if (button) button.click();
-      return !!helpers.scratch.__zotlitExcerptImport?.settled;
-    },
-    undefined,
-    {
-      tries: 240,
-      what: "the excerpt import to settle after any overwrite confirm",
-    },
-  ).then(
-    () => true,
-    () => false,
-  );
-  if (observed) return;
-  throw new Error(
-    `the note import did not settle: ${await importState(vaultId)}`,
-  );
+  try {
+    await obRunUntil(
+      vaultId,
+      async ({ page: helpers }) => {
+        const button = document.querySelector<HTMLButtonElement>(
+          ".modal-container .modal .modal-button-container button.mod-destructive",
+        );
+        // Answers the overwrite confirm the import may raise: setup the phase
+        // waits through, not the press it measures.
+        if (button) button.click();
+        return !!helpers.scratch.__zotlitExcerptImport?.settled;
+      },
+      undefined,
+      {
+        tries: 240,
+        what: "the excerpt import to settle after any overwrite confirm",
+      },
+    );
+  } catch (error) {
+    throw new Error(
+      `the note import did not settle: ${await importState(vaultId)}`,
+      { cause: error },
+    );
+  }
 }
 
 /** Install the object-URL probe, so a card's publication is observable. */
@@ -958,141 +959,122 @@ export async function verifyReaderBackedExcerpts(
     },
     undefined,
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async (
-          { app, page: helpers },
-          {
-            itemKey,
-            filterTriggerLabel,
-            activeTriggerPrefix,
-            colorListLabel,
-            expectedColor,
+  await obRunUntil(
+    vaultId,
+    async (
+      { app, page: helpers },
+      {
+        itemKey,
+        filterTriggerLabel,
+        activeTriggerPrefix,
+        colorListLabel,
+        expectedColor,
+      },
+    ) => {
+      const leaf = app.workspace.getLeavesOfType("zotero-annotation-view")[0];
+      if (!leaf) return "no view";
+      const state = (leaf.view as AnnotationView).snapshot;
+      if (state.followMode !== "pinned" || state.pinnedItemKey !== itemKey)
+        await leaf.setViewState({
+          type: "zotero-annotation-view",
+          state: {
+            followMode: "pinned",
+            previousMode: "active-tab",
+            pinnedItemKey: itemKey,
           },
-        ) => {
-          const leaf = app.workspace.getLeavesOfType(
-            "zotero-annotation-view",
-          )[0];
-          if (!leaf) return await JSON.stringify("no view");
-          const state = (leaf.view as AnnotationView).snapshot;
-          if (state.followMode !== "pinned" || state.pinnedItemKey !== itemKey)
-            await leaf.setViewState({
-              type: "zotero-annotation-view",
-              state: {
-                followMode: "pinned",
-                previousMode: "active-tab",
-                pinnedItemKey: itemKey,
-              },
-              active: true,
-            });
-          const { press, until } = helpers;
-          try {
-            const root = leaf.view.containerEl;
-            const trigger = Array.from(
-              root.querySelectorAll<HTMLButtonElement>("button[aria-label]"),
-            ).find(
-              (button) =>
-                button.getAttribute("aria-label") === filterTriggerLabel ||
-                button
-                  .getAttribute("aria-label")!
-                  .startsWith(activeTriggerPrefix),
-            );
-            if (!trigger) return await JSON.stringify("no colour Chooser");
-            press(trigger, "colour Chooser");
-            const list = await until("colour list opens", () => {
-              const list = Array.from(
-                root.ownerDocument.querySelectorAll<HTMLElement>(
-                  '[role="listbox"]',
-                ),
-              ).find(
-                (list) =>
-                  root.ownerDocument.getElementById(
-                    list.getAttribute("aria-labelledby")!,
-                  )?.textContent === colorListLabel,
-              );
-              return list?.checkVisibility() ? list : null;
-            });
-            const row = Array.from(
-              list.querySelectorAll<HTMLElement>('[role="option"]'),
-            ).find(
-              (option) =>
-                option
-                  .querySelector<HTMLElement>('[style*="--zt-swatch-color"]')
-                  ?.style.getPropertyValue("--zt-swatch-color")
-                  .trim()
-                  .toLowerCase() === expectedColor,
-            );
-            if (!row) return await JSON.stringify("no swatch");
-            if (row.getAttribute("aria-selected") !== "true") {
-              press(row, "colour row");
-              await until(
-                "colour filter applies",
-                () => row.getAttribute("aria-selected") === "true",
-              );
-            }
-            (
-              root.ownerDocument.activeElement ?? root.ownerDocument.body
-            ).dispatchEvent(
-              new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-            );
-            return await JSON.stringify("demanded");
-          } catch (error) {
-            return await JSON.stringify(
-              String(error instanceof Error ? error.message : error),
-            );
-          }
-        },
-        {
-          itemKey: item.key,
-          filterTriggerLabel: m.annot_view_filter_color_trigger(),
-          activeTriggerPrefix: m.annot_view_filter_color_trigger_active({
-            colors: "",
-          }),
-          colorListLabel: m.annot_view_filter_color_list(),
-          expectedColor: target.color.toLowerCase(),
-        },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "the Annotation View color filter menu to list the expected color",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: JSON.stringify("demanded"), tries: 80 }),
-    "the Annotation View must pin the Item and leave the target Annotation's card alone",
-  ).toBe(true);
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ app }) => {
-          const cards = Array.from(
-            new Set(
-              Array.from(
-                app.workspace
-                  .getLeavesOfType("zotero-annotation-view")[0]!
-                  .view.containerEl.querySelectorAll(
-                    ".zt-annot-card[data-zotero-annotation-key]",
-                  ),
-              ).map((card) => card.getAttribute("data-zotero-annotation-key")),
+          active: true,
+        });
+      const { press, until } = helpers;
+      try {
+        const root = leaf.view.containerEl;
+        const trigger = Array.from(
+          root.querySelectorAll<HTMLButtonElement>("button[aria-label]"),
+        ).find(
+          (button) =>
+            button.getAttribute("aria-label") === filterTriggerLabel ||
+            button.getAttribute("aria-label")!.startsWith(activeTriggerPrefix),
+        );
+        if (!trigger) return "no colour Chooser";
+        press(trigger, "colour Chooser");
+        const list = await until("colour list opens", () => {
+          const list = Array.from(
+            root.ownerDocument.querySelectorAll<HTMLElement>(
+              '[role="listbox"]',
             ),
+          ).find(
+            (list) =>
+              root.ownerDocument.getElementById(
+                list.getAttribute("aria-labelledby")!,
+              )?.textContent === colorListLabel,
           );
-          return await JSON.stringify(cards);
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "the Annotation View to list the expected annotation card keys",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: JSON.stringify([target.key]), tries: 80 }),
-  ).toBe(true);
+          return list?.checkVisibility() ? list : null;
+        });
+        const row = Array.from(
+          list.querySelectorAll<HTMLElement>('[role="option"]'),
+        ).find(
+          (option) =>
+            option
+              .querySelector<HTMLElement>('[style*="--zt-swatch-color"]')
+              ?.style.getPropertyValue("--zt-swatch-color")
+              .trim()
+              .toLowerCase() === expectedColor,
+        );
+        if (!row) return "no swatch";
+        if (row.getAttribute("aria-selected") !== "true") {
+          press(row, "colour row");
+          await until(
+            "colour filter applies",
+            () => row.getAttribute("aria-selected") === "true",
+          );
+        }
+        (
+          root.ownerDocument.activeElement ?? root.ownerDocument.body
+        ).dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+        return "demanded";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    },
+    {
+      itemKey: item.key,
+      filterTriggerLabel: m.annot_view_filter_color_trigger(),
+      activeTriggerPrefix: m.annot_view_filter_color_trigger_active({
+        colors: "",
+      }),
+      colorListLabel: m.annot_view_filter_color_list(),
+      expectedColor: target.color.toLowerCase(),
+    },
+    {
+      ready: (value) => value === "demanded",
+      tries: 80,
+      what: "the Annotation View to pin the Item, list the expected color and leave the target Annotation's card alone",
+    },
+  );
+  await obRunUntil(
+    vaultId,
+    async ({ app }) => {
+      const cards = Array.from(
+        new Set(
+          Array.from(
+            app.workspace
+              .getLeavesOfType("zotero-annotation-view")[0]!
+              .view.containerEl.querySelectorAll(
+                ".zt-annot-card[data-zotero-annotation-key]",
+              ),
+          ).map((card) => card.getAttribute("data-zotero-annotation-key")),
+        ),
+      );
+      return cards;
+    },
+    undefined,
+    {
+      ready: (value) => isDeepStrictEqual(value, [target.key]),
+      tries: 80,
+      what: "the Annotation View to list the expected annotation card keys",
+    },
+  );
   await obRunUntil(
     vaultId,
     async ({ app }, { cardSelector }) => {

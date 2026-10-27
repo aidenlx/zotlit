@@ -954,27 +954,29 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
 
   for (const phase of ["document-loading", "page-rendering"] as const) {
     await using probe = await startRenderProbe(vaultId, 0, phase);
-    const workerReady =
-      phase !== "document-loading" ||
-      (await obRunUntil(
-        vaultId,
-        async ({ page: helpers }) => {
-          return await helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
-            .worker;
-        },
-        undefined,
-        {
-          ready: (value) => value === "web-worker",
-          tries: 80,
-          what: "the excerpt renderer to run on a web worker",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ));
+    let workerTimeout: unknown;
+    if (phase === "document-loading") {
+      try {
+        await obRunUntil(
+          vaultId,
+          async ({ page: helpers }) => {
+            return await helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
+              .worker;
+          },
+          undefined,
+          {
+            ready: (value) => value === "web-worker",
+            tries: 80,
+            what: "the excerpt renderer to run on a web worker",
+          },
+        );
+      } catch (error) {
+        workerTimeout = error;
+      }
+    }
     const active = await probe.snapshot();
     expect(active.jobActive).toBe(true);
-    expect(workerReady, JSON.stringify(active)).toBe(true);
+    expect(workerTimeout, JSON.stringify(active)).toBeUndefined();
     if (phase === "document-loading") expect(active.worker).toBe("web-worker");
     if (phase === "page-rendering") {
       expect(active.renderTaskActive).toBe(true);
