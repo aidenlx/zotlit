@@ -80,29 +80,24 @@ async function recordFrames(vaultId: string): Promise<
       });
       record.observer.observe({ type: "longtask" });
       page.scratch.frames = record;
-      return String(true);
     },
     undefined,
   );
   return {
     async read() {
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page }) => {
-            var r = page.scratch.frames!;
-            return String(
-              JSON.stringify({
-                frames: r.frames,
-                maxFrameGapMs: Math.round(r.maxFrameGapMs),
-                longTasks: r.longTasks,
-                longestTaskMs: Math.round(r.longestTaskMs),
-              }),
-            );
-          },
-          undefined,
-        ),
-      ) as {
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          var r = page.scratch.frames!;
+          return {
+            frames: r.frames,
+            maxFrameGapMs: Math.round(r.maxFrameGapMs),
+            longTasks: r.longTasks,
+            longestTaskMs: Math.round(r.longestTaskMs),
+          };
+        },
+        undefined,
+      )) as {
         frames: number;
         maxFrameGapMs: number;
         longTasks: number;
@@ -117,7 +112,6 @@ async function recordFrames(vaultId: string): Promise<
           r.live = false;
           r.observer!.disconnect();
           delete page.scratch.frames;
-          return String(true);
         },
         undefined,
       );
@@ -125,38 +119,29 @@ async function recordFrames(vaultId: string): Promise<
   };
 }
 
-function hasOneIndexedNote(
+async function waitForOneIndexedNote(
   vaultId: string,
   indexedKey: string,
-): Promise<boolean> {
-  return hasIndexedNotes(vaultId, indexedKey, 1);
+): Promise<void> {
+  await waitForIndexedNotes(vaultId, indexedKey, 1);
 }
 
-function hasIndexedNotes(
+async function waitForIndexedNotes(
   vaultId: string,
   indexedKey: string,
   count: number,
-): Promise<boolean> {
-  return ((options: { expected: string; tries?: number }) =>
-    obRunUntil(
-      vaultId,
-      async ({ zotlit }, { __typedArg0 }) => {
-        return String(
-          String(
-            zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
-          ),
-        );
-      },
-      { __typedArg0: indexedKey },
-      {
-        ready: (value) => value === options.expected,
-        tries: options.tries,
-        what: "e2e-run-note-helpers.ts:81",
-      },
-    ).then(
-      () => true,
-      () => false,
-    ))({ expected: String(count) });
+): Promise<void> {
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }, { indexedKey }) => {
+      return zotlit.services.noteIndex.getNotesByItemKey(indexedKey).length;
+    },
+    { indexedKey },
+    {
+      ready: (value) => value === count,
+      what: "notes indexed under the item key to match the expected count",
+    },
+  );
 }
 
 /** A Fixture Item's Indexed Key and its current Literature Note, if any. */
@@ -272,17 +257,16 @@ async function selectItemSuggestion(
 ): Promise<string> {
   await obRun(
     vaultId,
-    async (_context, { __typedArg0 }) => {
+    async (_context, { query }) => {
       var input = Array.from(activeDocument.querySelectorAll(".prompt"))
         .at(-1)!
         .querySelector("input")!;
-      input.value = __typedArg0;
+      input.value = query;
       input.dispatchEvent(
         new input.ownerDocument.defaultView!.Event("input", { bubbles: true }),
       );
-      return String(true);
     },
-    { __typedArg0: query },
+    { query },
   );
   return hoverSuggestion(vaultId, { key });
 }
@@ -302,20 +286,19 @@ async function pressPromptKey(
   const keyCode = key === "Enter" ? 13 : 27;
   await obRun(
     vaultId,
-    async (_context, { __typedArg0 }) => {
+    async (_context, { keyEventInit }) => {
       Array.from(activeDocument.querySelectorAll(".prompt"))
         .at(-1)!
         .querySelector("input")!
         .dispatchEvent(
           new (activeWindow as Window & typeof globalThis).KeyboardEvent(
             "keydown",
-            __typedArg0,
+            keyEventInit,
           ),
         );
-      return String(true);
     },
     {
-      __typedArg0: {
+      keyEventInit: {
         key,
         code: key,
         keyCode,
@@ -351,9 +334,6 @@ function clickModalButton(
     },
     { label, documentTarget },
     { what: `modal button ${label}` },
-  ).then(
-    () => true,
-    () => false,
   );
 }
 
@@ -379,23 +359,18 @@ async function observeNotices(vaultId: string) {
         observer.observe(doc.body, { childList: true, subtree: true });
       }
       page.scratch.notices = { observers: observers.move(), values };
-      return String(true);
     },
     undefined,
   );
   return {
     async read(): Promise<string[]> {
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              JSON.stringify([...page.scratch.notices!.values.values()]),
-            );
-          },
-          undefined,
-        ),
-      ) as string[];
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          return [...page.scratch.notices!.values.values()];
+        },
+        undefined,
+      )) as string[];
     },
     async [Symbol.asyncDispose]() {
       await obRun(
@@ -403,7 +378,6 @@ async function observeNotices(vaultId: string) {
         async ({ page }) => {
           page.scratch.notices!.observers[Symbol.dispose]();
           delete page.scratch.notices;
-          return String(true);
         },
         undefined,
       );
@@ -567,23 +541,19 @@ function zoteroKey(itemID: number): string {
 
 /** Tells the plugin the Zotero database changed, as the Companion's Freshness Signal does. */
 async function signalDatabaseUpdated(vaultId: string): Promise<void> {
-  const server = JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ zotlit }) => {
-        var services = zotlit.services;
-        var settings = services.bridge.runSync(services.settings.current);
-        return String(
-          JSON.stringify({
-            hostname: settings["server.hostname"],
-            port: services.bridge.runSync(services.localServer.effectivePort),
-            sourceId: services.zoteroPref.sourceId,
-          }),
-        );
-      },
-      undefined,
-    ),
-  ) as { hostname: string; port: number; sourceId: string };
+  const server = (await obRun(
+    vaultId,
+    async ({ zotlit }) => {
+      var services = zotlit.services;
+      var settings = services.bridge.runSync(services.settings.current);
+      return {
+        hostname: settings["server.hostname"],
+        port: services.bridge.runSync(services.localServer.effectivePort),
+        sourceId: services.zoteroPref.sourceId,
+      };
+    },
+    undefined,
+  )) as { hostname: string; port: number; sourceId: string };
   const response = await fetch(
     `http://${server.hostname}:${server.port}/notify`,
     {
@@ -604,20 +574,18 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
  * collection. A Web Worker's heap is its own and stays out of this figure.
  */
 async function rendererHeap(vaultId: string): Promise<number> {
-  return Number(
-    await obRun(
-      vaultId,
-      async (_context) => {
-        require("v8").setFlagsFromString("--expose-gc");
-        var gc = (require("vm") as typeof import("node:vm")).runInNewContext(
-          "gc",
-        ) as () => void;
-        gc();
-        gc();
-        return String(String(process.memoryUsage().heapUsed));
-      },
-      undefined,
-    ),
+  return await obRun(
+    vaultId,
+    async (_context) => {
+      require("v8").setFlagsFromString("--expose-gc");
+      var gc = (require("vm") as typeof import("node:vm")).runInNewContext(
+        "gc",
+      ) as () => void;
+      gc();
+      gc();
+      return process.memoryUsage().heapUsed;
+    },
+    undefined,
   );
 }
 
@@ -627,8 +595,8 @@ export {
   SYNTHETIC_MARKER,
   createFixtureNote,
   recordFrames,
-  hasOneIndexedNote,
-  hasIndexedNotes,
+  waitForOneIndexedNote,
+  waitForIndexedNotes,
   indexedNote,
   expectedLibraryIDs,
   managedRegion,

@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { WorkspaceLeaf, MarkdownView, FileView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
@@ -52,15 +53,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -77,7 +76,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await bridge.runPromise(settings.flush);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot },
       );
@@ -108,7 +106,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )[0],
           10000,
         );
-        return String(true);
       },
       { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
@@ -146,182 +143,174 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       [from, to]: readonly [string | null, string],
       delay: number,
     ) => {
-      const step = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { app, page },
-            { toInput, fromInput, condition, delay, how },
-          ) => {
-            const { press, until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            const view = leaf!.view;
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await view.query.settled;
-            const el = view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
-            const row = (key: string) =>
-              el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
-            const frame = () => new Promise((r) => requestAnimationFrame(r));
-            const title = () =>
-              card!.querySelector<HTMLElement>("[data-library-card-title]");
-            await until("rows", () => row(toInput), 10000);
-            if (condition) {
+      const step = (await obRun(
+        run.vaultId,
+        async (
+          { app, page },
+          { toInput, fromInput, condition, delay, how },
+        ) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          const view = leaf!.view;
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await view.query.settled;
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const row = (key: string) =>
+            el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
+          const frame = () => new Promise((r) => requestAnimationFrame(r));
+          const title = () =>
+            card!.querySelector<HTMLElement>("[data-library-card-title]");
+          await until("rows", () => row(toInput), 10000);
+          if (condition) {
+            view.card.registry.set(view.model.selection, {
+              key: null,
+              card: false,
+            });
+            await until("no card", () => !card!.checkVisibility(), 10000);
+            await view.card.settled;
+            await frame();
+            await frame();
+          } else {
+            view.card.registry.set(view.model.selection, {
+              key: fromInput,
+              card: true,
+            });
+            await until(
+              "card",
+              () => card!.checkVisibility() && title()?.textContent,
+              10000,
+            );
+            await view.card.settled;
+            await frame();
+            await frame();
+            row(fromInput!)!.focus({ preventScroll: true });
+          }
+          const sample = () => {
+            const button = card!.querySelector<HTMLElement>(
+              '[data-library-card-action="pdf"]',
+            );
+            const box = card!.getBoundingClientRect();
+            return {
+              title: title() ? title()!.textContent : null,
+              top:
+                button && card!.checkVisibility()
+                  ? Math.round(button.getBoundingClientRect().top - box.top)
+                  : null,
+              cards: [
+                ...card!.querySelectorAll<HTMLElement>(
+                  ".zt-annot-card[data-zotero-annotation-key]",
+                ),
+              ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+              shown: card!.checkVisibility(),
+            };
+          };
+          const mutations: Switch["mutations"] = [];
+          const observer = new MutationObserver(() =>
+            mutations.push(title() ? title()!.textContent : null),
+          );
+          observer.observe(card!, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+          });
+          const frames = [sample()];
+          // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
+          const post = Worker.prototype.postMessage;
+          const pending = new Map<ReturnType<typeof setTimeout>, () => void>();
+          let delayedCards = 0;
+          if (delay > 0)
+            Worker.prototype.postMessage = new Proxy(post, {
+              apply: (
+                postTarget,
+                receiver: Worker,
+                args: Parameters<Worker["postMessage"]>,
+              ) => {
+                const request = (args[0] as LibraryWorkerMessage)?.[1];
+                const query =
+                  request?.tag === "ItemQuery" && "view" in request.payload.job
+                    ? request.payload.job.view
+                    : null;
+                const target = toInput;
+                if (
+                  !query ||
+                  !(
+                    (query.from === "items" &&
+                      query.limit === 1 &&
+                      query.filter ===
+                        `${JSON.stringify([target])}.contains(indexedKey)`) ||
+                    (query.from === "annotations" &&
+                      query.context?.item === target)
+                  )
+                )
+                  return Reflect.apply(postTarget, receiver, args);
+                const worker = receiver;
+                const send = () => Reflect.apply(postTarget, worker, args);
+                const timer = setTimeout(() => {
+                  pending.delete(timer);
+                  if (query.from === "items" && query.limit === 1)
+                    delayedCards++;
+                  send();
+                }, delay);
+                pending.set(timer, send);
+              },
+            });
+          try {
+            if (how === "key") {
+              activeDocument.activeElement!.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "ArrowDown",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            }
+            if (how === "click") {
+              press(row(toInput), "row");
+            }
+            if (how === "show") {
               view.card.registry.set(view.model.selection, {
-                key: null,
-                card: false,
-              });
-              await until("no card", () => !card!.checkVisibility(), 10000);
-              await view.card.settled;
-              await frame();
-              await frame();
-            } else {
-              view.card.registry.set(view.model.selection, {
-                key: fromInput,
+                key: toInput,
                 card: true,
               });
-              await until(
-                "card",
-                () => card!.checkVisibility() && title()?.textContent,
-                10000,
-              );
-              await view.card.settled;
-              await frame();
-              await frame();
-              row(fromInput!)!.focus({ preventScroll: true });
             }
-            const sample = () => {
-              const button = card!.querySelector<HTMLElement>(
-                '[data-library-card-action="pdf"]',
-              );
-              const box = card!.getBoundingClientRect();
-              return {
-                title: title() ? title()!.textContent : null,
-                top:
-                  button && card!.checkVisibility()
-                    ? Math.round(button.getBoundingClientRect().top - box.top)
-                    : null,
-                cards: [
-                  ...card!.querySelectorAll<HTMLElement>(
-                    ".zt-annot-card[data-zotero-annotation-key]",
-                  ),
-                ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
-                shown: card!.checkVisibility(),
-              };
-            };
-            const mutations: Switch["mutations"] = [];
-            const observer = new MutationObserver(() =>
-              mutations.push(title() ? title()!.textContent : null),
-            );
-            observer.observe(card!, {
-              childList: true,
-              subtree: true,
-              characterData: true,
-            });
-            const frames = [sample()];
-            // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
-            const post = Worker.prototype.postMessage;
-            const pending = new Map<
-              ReturnType<typeof setTimeout>,
-              () => void
-            >();
-            let delayedCards = 0;
-            if (delay > 0)
-              Worker.prototype.postMessage = new Proxy(post, {
-                apply: (
-                  postTarget,
-                  receiver: Worker,
-                  args: Parameters<Worker["postMessage"]>,
-                ) => {
-                  const request = (args[0] as LibraryWorkerMessage)?.[1];
-                  const query =
-                    request?.tag === "ItemQuery" &&
-                    "view" in request.payload.job
-                      ? request.payload.job.view
-                      : null;
-                  const target = toInput;
-                  if (
-                    !query ||
-                    !(
-                      (query.from === "items" &&
-                        query.limit === 1 &&
-                        query.filter ===
-                          `${JSON.stringify([target])}.contains(indexedKey)`) ||
-                      (query.from === "annotations" &&
-                        query.context?.item === target)
-                    )
-                  )
-                    return Reflect.apply(postTarget, receiver, args);
-                  const worker = receiver;
-                  const send = () => Reflect.apply(postTarget, worker, args);
-                  const timer = setTimeout(() => {
-                    pending.delete(timer);
-                    if (query.from === "items" && query.limit === 1)
-                      delayedCards++;
-                    send();
-                  }, delay);
-                  pending.set(timer, send);
-                },
-              });
-            try {
-              if (how === "key") {
-                activeDocument.activeElement!.dispatchEvent(
-                  new KeyboardEvent("keydown", {
-                    key: "ArrowDown",
-                    bubbles: true,
-                    cancelable: true,
-                  }),
-                );
-              }
-              if (how === "click") {
-                press(row(toInput), "row");
-              }
-              if (how === "show") {
-                view.card.registry.set(view.model.selection, {
-                  key: toInput,
-                  card: true,
-                });
-              }
-              const start = performance.now();
-              while (performance.now() - start < delay + 600) {
-                await frame();
-                frames.push(sample());
-              }
-              await view.card.settled;
+            const start = performance.now();
+            while (performance.now() - start < delay + 600) {
               await frame();
               frames.push(sample());
-            } finally {
-              Worker.prototype.postMessage = post;
-              for (const [timer, send] of pending) {
-                clearTimeout(timer);
-                send();
-              }
-              observer.disconnect();
             }
-            return String(
-              JSON.stringify({
-                from: frames[0]!.title,
-                to: frames.at(-1)!.title,
-                frames,
-                mutations,
-                delayedCards,
-              }),
-            );
-          },
-          {
-            toInput: to,
-            fromInput: from,
-            condition: from === null,
-            delay: delay,
-            how: how,
-          },
-        ),
-      ) as Switch;
+            await view.card.settled;
+            await frame();
+            frames.push(sample());
+          } finally {
+            Worker.prototype.postMessage = post;
+            for (const [timer, send] of pending) {
+              clearTimeout(timer);
+              send();
+            }
+            observer.disconnect();
+          }
+          return {
+            from: frames[0]!.title,
+            to: frames.at(-1)!.title,
+            frames,
+            mutations,
+            delayedCards,
+          };
+        },
+        {
+          toInput: to,
+          fromInput: from,
+          condition: from === null,
+          delay: delay,
+          how: how,
+        },
+      )) as Switch;
       expect(
         step.delayedCards > 0,
         "the Reading Card item read crosses the delayed worker boundary when requested",
@@ -415,38 +404,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
 
     /** The keys of the first rows of the list, and the row of the paper with Annotations. */
-    const { rows, listed } = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { annotationItemKey }) => {
-          const { until } = page;
-          const view = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0]!.view;
-          await view.query.settled;
-          const el = view.contentEl;
-          await until(
-            "rows",
-            () =>
-              el.querySelectorAll<HTMLElement>("[data-query-item-row]").length >
-              6,
-            10000,
-          );
-          const keys = [
-            ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
-          ].map((n) => n.getAttribute("data-query-item-row")!);
-          return String(
-            JSON.stringify({
-              rows: keys.slice(0, 7),
-              listed: keys.find((k) => k!.endsWith(annotationItemKey)) ?? null,
-            }),
-          );
-        },
-        { annotationItemKey: annotationItem.key },
-      ),
-    ) as { rows: string[]; listed: string | null };
+    const { rows, listed } = (await obRun(
+      run.vaultId,
+      async ({ app, page }, { annotationItemKey }) => {
+        const { until } = page;
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view;
+        await view.query.settled;
+        const el = view.contentEl;
+        await until(
+          "rows",
+          () =>
+            el.querySelectorAll<HTMLElement>("[data-query-item-row]").length >
+            6,
+          10000,
+        );
+        const keys = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+        ].map((n) => n.getAttribute("data-query-item-row")!);
+        return {
+          rows: keys.slice(0, 7),
+          listed: keys.find((k) => k!.endsWith(annotationItemKey)) ?? null,
+        };
+      },
+      { annotationItemKey: annotationItem.key },
+    )) as { rows: string[]; listed: string | null };
     expect(listed).not.toBeNull();
 
     const switches = async (where: string, narrow: boolean) => {
@@ -496,7 +481,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             view: LibraryView;
           })[]
         )[0]?.view.card.disclose("annotations", enabled);
-        return String(true);
       },
       { enabled: true },
     );
@@ -509,7 +493,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "zotlit-library",
             ) as (WorkspaceLeaf & { view: LibraryView })[]
           )[0]?.view.card.disclose("annotations", enabled);
-          return String(true);
         },
         { enabled: false },
       );
@@ -532,7 +515,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             view: LibraryView;
           })[]
         )[0]?.view.card.disclose("annotations", enabled);
-        return String(true);
       },
       { enabled: false },
     );
@@ -565,7 +547,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             getComputedStyle(card!).position === "absolute",
           5000,
         );
-        return String(true);
       },
       { value: rows[0] },
     );
@@ -576,7 +557,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -596,7 +577,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "zotlit:annot-view-follow-active-tab",
           );
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { layout: layout },
       );
@@ -616,7 +596,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         app.commands.executeCommandById("zotlit:open-annot-view");
         app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
         app.workspace.rightSplit.expand();
-        return String(true);
       },
       { value: notes[0] },
     );
@@ -656,157 +635,152 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       title: string | null;
       delay: number;
     }) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { app, zotlit, page },
-            { mode, from, titleInput, to, delay },
-          ) => {
-            const { until } = page;
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as (WorkspaceLeaf & { view: AnnotView })[]
-            )[0]!.view;
-            if (mode === "active-tab") {
-              if (view.getState().followMode !== "active-tab") {
-                app.commands.executeCommandById("zotlit:annot-view-unpin");
-                app.commands.executeCommandById(
-                  "zotlit:annot-view-follow-active-tab",
-                );
-                await until(
-                  "active tab",
-                  () => view.getState().followMode === "active-tab",
-                );
-              }
-              const leaf = app.workspace.getMostRecentLeaf(
-                app.workspace.rootSplit,
+      (await obRun(
+        run.vaultId,
+        async (
+          { app, zotlit, page },
+          { mode, from, titleInput, to, delay },
+        ) => {
+          const { until } = page;
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            ) as (WorkspaceLeaf & { view: AnnotView })[]
+          )[0]!.view;
+          if (mode === "active-tab") {
+            if (view.getState().followMode !== "active-tab") {
+              app.commands.executeCommandById("zotlit:annot-view-unpin");
+              app.commands.executeCommandById(
+                "zotlit:annot-view-follow-active-tab",
               );
-              if ((leaf!.view as FileView).file?.path !== from)
-                await leaf!.openFile(app.vault.getFileByPath(from)!);
-            } else {
-              view.pinItem(from);
               await until(
-                "pinned",
-                () => view.getState().pinnedItemKey === from,
+                "active tab",
+                () => view.getState().followMode === "active-tab",
               );
-              app.commands.executeCommandById("zotlit:annot-view-pin-item");
-              const input = await until(
-                "picker",
-                () =>
-                  activeDocument.querySelector<HTMLElement>(
-                    ".prompt .prompt-input",
-                  ),
-                5000,
-              );
-              (input as HTMLInputElement).value = titleInput!;
-              input.dispatchEvent(new Event("input", { bubbles: true }));
             }
-            const choice =
-              mode === "pinned"
-                ? await until(
-                    "suggestion",
-                    () =>
-                      [
-                        ...activeDocument.querySelectorAll<HTMLElement>(
-                          ".prompt .suggestion-item",
-                        ),
-                      ].find(
-                        (n) =>
-                          !n.closest<HTMLElement>("[aria-busy]") &&
-                          n.dataset.indexedKey === to,
-                      ),
-                    10000,
-                  )
-                : null;
-            await until(
-              "cards",
-              () => view.contentEl.querySelector<HTMLElement>(".zt-annot-card"),
-              10000,
+            const leaf = app.workspace.getMostRecentLeaf(
+              app.workspace.rootSplit,
             );
-            await view.read;
-            const frame = () => new Promise((r) => requestAnimationFrame(r));
-            await frame();
-            await frame();
-            const el = view.contentEl;
-            const cards = () =>
-              [
-                ...el.querySelectorAll<HTMLElement>(
-                  ".zt-annot-card[data-zotero-annotation-key]",
+            if ((leaf!.view as FileView).file?.path !== from)
+              await leaf!.openFile(app.vault.getFileByPath(from)!);
+          } else {
+            view.pinItem(from);
+            await until("pinned", () => view.getState().pinnedItemKey === from);
+            app.commands.executeCommandById("zotlit:annot-view-pin-item");
+            const input = await until(
+              "picker",
+              () =>
+                activeDocument.querySelector<HTMLElement>(
+                  ".prompt .prompt-input",
                 ),
-              ].map((n) => n.getAttribute("data-zotero-annotation-key")!);
-            const sample = () => ({
-              title:
-                el.querySelector<HTMLElement>("[data-annot-header-title]")
-                  ?.textContent ?? null,
-              cards: cards(),
-              loading: !!el.querySelector<HTMLElement>(
-                "[data-annot-view-loading]",
-              ),
-            });
-            const mutations: Step["mutations"] = [];
-            let start = performance.now();
-            const observer = new MutationObserver(() =>
-              mutations.push({
-                ...sample(),
-                at: Math.round(performance.now() - start),
-              }),
+              5000,
             );
-            observer.observe(el, { childList: true, subtree: true });
-            const frames: Step["frames"] = [sample()];
-            const service = zotlit.services.query;
-            // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original service receiver.
-            const run = service.run;
-            if (delay > 0)
-              service.run = new Proxy(run, {
-                apply: (
-                  postTarget,
-                  receiver: typeof service,
-                  args: Parameters<typeof run>,
-                ) => {
-                  return new Promise((r) => setTimeout(r, delay)).then(() =>
-                    Reflect.apply(postTarget, receiver, args),
-                  );
-                },
-              });
-            try {
-              start = performance.now();
-              if (mode === "active-tab")
-                void app.workspace
-                  .getMostRecentLeaf(app.workspace.rootSplit)!
-                  .openFile(app.vault.getFileByPath(to)!);
-              else choice!.click();
-              const first = frames[0]!.cards.join();
-              const moved = () => {
-                const now = frames.at(-1);
-                return now!.cards.length > 0 && now!.cards.join() !== first;
-              };
-              while (
-                performance.now() - start < delay + 600 ||
-                (!moved() && performance.now() - start < 5000)
-              ) {
-                await frame();
-                frames.push({
-                  ...sample(),
-                  at: Math.round(performance.now() - start),
-                });
-              }
-              await view.read;
+            (input as HTMLInputElement).value = titleInput!;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          const choice =
+            mode === "pinned"
+              ? await until(
+                  "suggestion",
+                  () =>
+                    [
+                      ...activeDocument.querySelectorAll<HTMLElement>(
+                        ".prompt .suggestion-item",
+                      ),
+                    ].find(
+                      (n) =>
+                        !n.closest<HTMLElement>("[aria-busy]") &&
+                        n.dataset.indexedKey === to,
+                    ),
+                  10000,
+                )
+              : null;
+          await until(
+            "cards",
+            () => view.contentEl.querySelector<HTMLElement>(".zt-annot-card"),
+            10000,
+          );
+          await view.read;
+          const frame = () => new Promise((r) => requestAnimationFrame(r));
+          await frame();
+          await frame();
+          const el = view.contentEl;
+          const cards = () =>
+            [
+              ...el.querySelectorAll<HTMLElement>(
+                ".zt-annot-card[data-zotero-annotation-key]",
+              ),
+            ].map((n) => n.getAttribute("data-zotero-annotation-key")!);
+          const sample = () => ({
+            title:
+              el.querySelector<HTMLElement>("[data-annot-header-title]")
+                ?.textContent ?? null,
+            cards: cards(),
+            loading: !!el.querySelector<HTMLElement>(
+              "[data-annot-view-loading]",
+            ),
+          });
+          const mutations: Step["mutations"] = [];
+          let start = performance.now();
+          const observer = new MutationObserver(() =>
+            mutations.push({
+              ...sample(),
+              at: Math.round(performance.now() - start),
+            }),
+          );
+          observer.observe(el, { childList: true, subtree: true });
+          const frames: Step["frames"] = [sample()];
+          const service = zotlit.services.query;
+          // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original service receiver.
+          const run = service.run;
+          if (delay > 0)
+            service.run = new Proxy(run, {
+              apply: (
+                postTarget,
+                receiver: typeof service,
+                args: Parameters<typeof run>,
+              ) => {
+                return new Promise((r) => setTimeout(r, delay)).then(() =>
+                  Reflect.apply(postTarget, receiver, args),
+                );
+              },
+            });
+          try {
+            start = performance.now();
+            if (mode === "active-tab")
+              void app.workspace
+                .getMostRecentLeaf(app.workspace.rootSplit)!
+                .openFile(app.vault.getFileByPath(to)!);
+            else choice!.click();
+            const first = frames[0]!.cards.join();
+            const moved = () => {
+              const now = frames.at(-1);
+              return now!.cards.length > 0 && now!.cards.join() !== first;
+            };
+            while (
+              performance.now() - start < delay + 600 ||
+              (!moved() && performance.now() - start < 5000)
+            ) {
               await frame();
               frames.push({
                 ...sample(),
                 at: Math.round(performance.now() - start),
               });
-            } finally {
-              service.run = run;
-              observer.disconnect();
             }
-            return String(JSON.stringify({ frames, mutations }));
-          },
-          { mode: mode, from: from, titleInput: title, to: to, delay: delay },
-        ),
-      ) as Step;
+            await view.read;
+            await frame();
+            frames.push({
+              ...sample(),
+              at: Math.round(performance.now() - start),
+            });
+          } finally {
+            service.run = run;
+            observer.disconnect();
+          }
+          return { frames, mutations };
+        },
+        { mode: mode, from: from, titleInput: title, to: to, delay: delay },
+      )) as Step;
 
     /**
      * The view goes from one Item to the next in one step: the last Item's
@@ -946,19 +920,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -982,7 +954,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(saved.layout);
           const file = app.vault.getFileByPath(savedpath);
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         {
           snapshot: snapshot,
@@ -1054,7 +1025,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         await bridge.runPromise(settings.flush);
         app.commands.executeCommandById("zotlit:open-library-view");
-        return String(true);
       },
       {
         sharedKeyName: sharedKey.name,
@@ -1159,56 +1129,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Save as query file",
         );
-        return String(true);
       },
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async () => {
-            const modal = document.querySelector<HTMLElement>(
-              ".modal.zt-save-query-file-modal",
-            );
-            return String(
-              JSON.stringify(
-                modal
-                  ? {
-                      title:
-                        modal.querySelector<HTMLElement>(".modal-title")
-                          ?.textContent ?? null,
-                      fields: [
-                        ...modal.querySelectorAll<HTMLElement>(
-                          "[data-save-field]",
-                        ),
-                      ].map((n) => n.getAttribute("data-save-field")),
-                      records: modal.querySelectorAll<HTMLElement>(
-                        "[data-save-records]",
-                      ).length,
-                    }
-                  : null,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:548",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          title: run.m.annot_view_save_title(),
-          fields: ["name", "folder"],
-          records: 0,
-        }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async () => {
+        const modal = document.querySelector<HTMLElement>(
+          ".modal.zt-save-query-file-modal",
+        );
+        return modal
+          ? {
+              title:
+                modal.querySelector<HTMLElement>(".modal-title")?.textContent ??
+                null,
+              fields: [
+                ...modal.querySelectorAll<HTMLElement>("[data-save-field]"),
+              ].map((n) => n.getAttribute("data-save-field")),
+              records: modal.querySelectorAll<HTMLElement>(
+                "[data-save-records]",
+              ).length,
+            }
+          : null;
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            title: run.m.annot_view_save_title(),
+            fields: ["name", "folder"],
+            records: 0,
+          }),
+        what: "the save Query File modal to open with name and folder fields",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ page }) => {
@@ -1231,7 +1186,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Save",
         );
-        return String(true);
       },
       undefined,
     );
@@ -1310,9 +1264,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const text = await obRun(
       run.vaultId,
       async ({ app }, { savedpath }) => {
-        return String(
-          await app.vault.read(app.vault.getFileByPath(savedpath)!),
-        );
+        return await app.vault.read(app.vault.getFileByPath(savedpath)!);
       },
       { savedpath: savedPath },
     );
@@ -1326,15 +1278,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -1350,7 +1300,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await bridge.runPromise(settings.flush);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot },
       );
@@ -1369,7 +1318,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           settings.update({ "library.document": myLibraryDocument }),
         );
         await bridge.runPromise(settings.flush);
-        return String(true);
       },
       { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
@@ -1411,53 +1359,49 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "zotlit-library",
                 ) as (WorkspaceLeaf & { view: LibraryView })[]
               )[0]?.view;
-              if (!view?.tree) return String("null");
+              if (!view?.tree) return "null";
               await view.searched;
               await view.query.settled;
               await view.tree.settled;
               const el = view.contentEl;
-              return String(
-                JSON.stringify({
-                  phase: view.query.state.getState().phase,
-                  header: ((h: Element | null) =>
-                    h
-                      ? ["[data-library-header]", "[data-library-header-count]"]
-                          .map((s) => h.querySelector(s)?.textContent ?? "")
-                          .filter((t) => t !== "")
-                          .join(" | ")
-                      : null)(el.querySelector("[data-library-heading]")),
-                  facets: Object.fromEntries(
-                    [
-                      ...el.querySelectorAll<HTMLElement>(
-                        "[data-library-facet]",
-                      ),
-                    ].map((n) => [
-                      n.getAttribute("data-library-facet"),
-                      n.getAttribute("aria-pressed") === "true",
-                    ]),
+              return JSON.stringify({
+                phase: view.query.state.getState().phase,
+                header: ((h: Element | null) =>
+                  h
+                    ? ["[data-library-header]", "[data-library-header-count]"]
+                        .map((s) => h.querySelector(s)?.textContent ?? "")
+                        .filter((t) => t !== "")
+                        .join(" | ")
+                    : null)(el.querySelector("[data-library-heading]")),
+                facets: Object.fromEntries(
+                  [
+                    ...el.querySelectorAll<HTMLElement>("[data-library-facet]"),
+                  ].map((n) => [
+                    n.getAttribute("data-library-facet"),
+                    n.getAttribute("aria-pressed") === "true",
+                  ]),
+                ),
+                selected:
+                  el
+                    .querySelector<HTMLElement>(
+                      '[data-library-node][aria-selected="true"]',
+                    )
+                    ?.getAttribute("data-library-node") ?? null,
+                search: (
+                  el.querySelector<HTMLElement>(
+                    "[data-library-search] input",
+                  ) as HTMLInputElement
+                ).value,
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                rows: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    "[data-query-papers-row]",
                   ),
-                  selected:
-                    el
-                      .querySelector<HTMLElement>(
-                        '[data-library-node][aria-selected="true"]',
-                      )
-                      ?.getAttribute("data-library-node") ?? null,
-                  search: (
-                    el.querySelector<HTMLElement>(
-                      "[data-library-search] input",
-                    ) as HTMLInputElement
-                  ).value,
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  rows: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-query-papers-row]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-papers-row")!),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-papers-row")!),
+              });
             },
             undefined,
           ),
@@ -1485,7 +1429,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.commands.executeCommandById("zotlit:open-library-view");
-        return String(true);
       },
       undefined,
     );
@@ -1524,7 +1467,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             pane!.querySelector<HTMLElement>(`[data-library-facet="${id}"]`),
             value,
           );
-          return String(true);
         },
         { id: id, value: `${id} facet` },
       );
@@ -1556,7 +1498,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             pane!.querySelector<HTMLElement>(`[data-library-facet="${id}"]`),
             value,
           );
-          return String(true);
         },
         { id: id, value: `${id} facet` },
       );
@@ -1590,7 +1531,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           collection,
         );
-        return String(true);
       },
       { sharednode: sharedNode, collection: "Collection" },
     );
@@ -1619,7 +1559,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pane!.querySelector<HTMLElement>('[data-library-facet="annotated"]'),
           value,
         );
-        return String(true);
       },
       { value: `${"annotated"} facet` },
     );
@@ -1652,7 +1591,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pane!.querySelector<HTMLElement>('[data-library-facet="pdf"]'),
           value,
         );
-        return String(true);
       },
       { value: `${"pdf"} facet` },
     );
@@ -1685,7 +1623,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pane!.querySelector<HTMLElement>('[data-library-facet="annotated"]'),
           value,
         );
-        return String(true);
       },
       { value: `${"annotated"} facet` },
     );
@@ -1713,7 +1650,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pane!.querySelector<HTMLElement>('[data-library-facet="pdf"]'),
           value,
         );
-        return String(true);
       },
       { value: `${"pdf"} facet` },
     );
@@ -1730,8 +1666,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const notePath = await obRun(
       run.vaultId,
       async ({ zotlit }, { readerKey }) => {
-        return String(
-          zotlit.services.noteIndex.getNotesByItemKey(readerKey)[0]?.path ?? "",
+        return (
+          zotlit.services.noteIndex.getNotesByItemKey(readerKey)[0]?.path ?? ""
         );
       },
       { readerKey: reader.key },
@@ -1746,9 +1682,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const readNotePath = await obRun(
       run.vaultId,
       async ({ zotlit }, { readPaperKey }) => {
-        return String(
+        return (
           zotlit.services.noteIndex.getNotesByItemKey(readPaperKey)[0]?.path ??
-            "",
+          ""
         );
       },
       { readPaperKey: readPaper.key },
@@ -1761,7 +1697,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.vault.getAbstractFileByPath(readnotepath)!,
           value,
         );
-        return String(true);
       },
       { readnotepath: readNotePath, value: `${readNotePath}.away` },
     );
@@ -1773,7 +1708,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             app.vault.getAbstractFileByPath(value)!,
             readnotepath,
           );
-          return String(true);
         },
         { value: `${readNotePath}.away`, readnotepath: readNotePath },
       );
@@ -1786,7 +1720,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.vault.getAbstractFileByPath(notepath)!,
           away,
         );
-        return String(true);
       },
       { notepath: notePath, away: away },
     );
@@ -1798,7 +1731,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             app.vault.getAbstractFileByPath(away)!,
             notepath,
           );
-          return String(true);
         },
         { away: away, notepath: notePath },
       );
@@ -1829,7 +1761,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pane!.querySelector<HTMLElement>('[data-library-facet="unread"]'),
           value,
         );
-        return String(true);
       },
       { value: `${"unread"} facet` },
     );
@@ -1848,27 +1779,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A search keeps to the facets: in the Collection, then in every
     // Library, each in the quick switcher's rank.
     const lookup = async (query: string, everywhere: boolean) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ zotlit }, { everywhere, query }) => {
-            const s = zotlit.services;
-            const libraries = everywhere
-              ? s.libraryScope.current!.available
-              : s.libraryScope.libraries.filter(
-                  (l) => l.selector.type === "personal",
-                );
-            return String(
-              JSON.stringify(
-                (
-                  await s.itemLookup.search(query, { limit: 500, libraries })
-                ).map((h) => h.item.indexedKey),
-              ),
-            );
-          },
-          { everywhere: everywhere, query: query },
-        ),
-      ) as string[];
+      (await obRun(
+        run.vaultId,
+        async ({ zotlit }, { everywhere, query }) => {
+          const s = zotlit.services;
+          const libraries = everywhere
+            ? s.libraryScope.current!.available
+            : s.libraryScope.libraries.filter(
+                (l) => l.selector.type === "personal",
+              );
+          return (
+            await s.itemLookup.search(query, { limit: 500, libraries })
+          ).map((h) => h.item.indexedKey);
+        },
+        { everywhere: everywhere, query: query },
+      )) as string[];
     /**
      * Type `text` into the search box as a researcher does: the press into
      * the box, on its part the tree leaves uncovered, puts away the tree a
@@ -1902,7 +1827,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until("Library Tree put away", () => !view.tree.state.open);
         (input as HTMLInputElement).value = readerTitle;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { readerTitle: reader.title },
     );
@@ -1933,7 +1857,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Search all libraries",
         );
-        return String(true);
       },
       undefined,
     );
@@ -1972,7 +1895,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await until("Library Tree put away", () => !view.tree.state.open);
         (input as HTMLInputElement).value = text;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { text: "" },
     );
@@ -1988,33 +1910,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // A plugin reload comes back on the Collection with the facet on.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              await app.plugins
-                .disablePlugin("zotlit")
-                .then(function () {
-                  return app.plugins.enablePlugin("zotlit");
-                })
-                .then(function () {
-                  return true;
-                }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:834",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 20 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish its disable and enable reload",
+      },
+    );
     const reloaded = await shownWith(
       ["unread"],
       (shown) =>
@@ -2032,15 +1945,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -2056,7 +1967,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await bridge.runPromise(settings.flush);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot },
       );
@@ -2076,7 +1986,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           settings.update({ "library.document": myLibraryDocument }),
         );
         await bridge.runPromise(settings.flush);
-        return String(true);
       },
       { myLibraryDocument: MY_LIBRARY_DOCUMENT },
     );
@@ -2120,7 +2029,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "zotlit-library",
                 ) as (WorkspaceLeaf & { view: LibraryView })[]
               )[0]?.view;
-              if (!view?.tree) return String("null");
+              if (!view?.tree) return "null";
               await view.searched;
               await view.query.settled;
               await view.tree.settled;
@@ -2128,36 +2037,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               const tags = [
                 ...el.querySelectorAll<HTMLElement>("[data-library-tag]"),
               ];
-              return String(
-                JSON.stringify({
-                  phase: view.query.state.getState().phase,
-                  header: ((h: Element | null) =>
-                    h
-                      ? ["[data-library-header]", "[data-library-header-count]"]
-                          .map((s) => h.querySelector(s)?.textContent ?? "")
-                          .filter((t) => t !== "")
-                          .join(" | ")
-                      : null)(el.querySelector("[data-library-heading]")),
-                  tags: tags.map((n) => n.getAttribute("data-library-tag")),
-                  chips: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-library-filter]",
-                    ),
-                  ].map((n) => n.getAttribute("data-library-filter")),
-                  pressed: tags
-                    .filter((n) => n.getAttribute("aria-pressed") === "true")
-                    .map((n) => n.getAttribute("data-library-tag")),
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  rows: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-query-papers-row]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-papers-row")!),
-                }),
-              );
+              return JSON.stringify({
+                phase: view.query.state.getState().phase,
+                header: ((h: Element | null) =>
+                  h
+                    ? ["[data-library-header]", "[data-library-header-count]"]
+                        .map((s) => h.querySelector(s)?.textContent ?? "")
+                        .filter((t) => t !== "")
+                        .join(" | ")
+                    : null)(el.querySelector("[data-library-heading]")),
+                tags: tags.map((n) => n.getAttribute("data-library-tag")),
+                chips: [
+                  ...el.querySelectorAll<HTMLElement>("[data-library-filter]"),
+                ].map((n) => n.getAttribute("data-library-filter")),
+                pressed: tags
+                  .filter((n) => n.getAttribute("aria-pressed") === "true")
+                  .map((n) => n.getAttribute("data-library-tag")),
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                rows: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    "[data-query-papers-row]",
+                  ),
+                ].map((n) => n.getAttribute("data-query-papers-row")!),
+              });
             },
             undefined,
           ),
@@ -2183,7 +2088,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.commands.executeCommandById("zotlit:open-library-view");
-        return String(true);
       },
       undefined,
     );
@@ -2220,7 +2124,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           value,
         );
-        return String(true);
       },
       { first: first, value: `${first} tag` },
     );
@@ -2259,7 +2162,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           value,
         );
-        return String(true);
       },
       { second: second, value: `${second} tag` },
     );
@@ -2290,7 +2192,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         (input as HTMLInputElement).value = "zzz-no-tag";
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       undefined,
     );
@@ -2302,33 +2203,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(filtered.rows).toEqual(two.rows);
 
     // A plugin reload comes back with the tags selected.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              await app.plugins
-                .disablePlugin("zotlit")
-                .then(function () {
-                  return app.plugins.enablePlugin("zotlit");
-                })
-                .then(function () {
-                  return true;
-                }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:979",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 20 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish its disable and enable reload",
+      },
+    );
     const reloaded = await shownWith(both);
     expect(reloaded.rows).toEqual(two.rows);
 
@@ -2357,7 +2249,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pane!.querySelector<HTMLElement>("[data-library-tags-clear]"),
           deselectAll,
         );
-        return String(true);
       },
       { deselectAll: "Deselect all" },
     );
@@ -2370,12 +2261,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            JSON.stringify(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ]!.tags,
-            ),
+          return JSON.stringify(
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ]!.tags,
           );
         },
         undefined,
@@ -2387,19 +2276,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -2418,7 +2305,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await bridge.runPromise(settings.flush);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         {
           snapshot: snapshot,
@@ -2446,7 +2332,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }),
         );
         await bridge.runPromise(settings.flush);
-        return String(true);
       },
       {
         myLibraryDocument: MY_LIBRARY_DOCUMENT,
@@ -2486,27 +2371,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     /** The Indexed Keys the quick switcher's search answers, best first. */
     const lookup = async (query: string, everywhere: boolean) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ zotlit }, { everywhere, query }) => {
-            const s = zotlit.services;
-            const libraries = everywhere
-              ? s.libraryScope.current!.available
-              : s.libraryScope.libraries.filter(
-                  (l) => l.selector.type === "personal",
-                );
-            return String(
-              JSON.stringify(
-                (
-                  await s.itemLookup.search(query, { limit: 500, libraries })
-                ).map((h) => h.item.indexedKey),
-              ),
-            );
-          },
-          { everywhere: everywhere, query: query },
-        ),
-      ) as string[];
+      (await obRun(
+        run.vaultId,
+        async ({ zotlit }, { everywhere, query }) => {
+          const s = zotlit.services;
+          const libraries = everywhere
+            ? s.libraryScope.current!.available
+            : s.libraryScope.libraries.filter(
+                (l) => l.selector.type === "personal",
+              );
+          return (
+            await s.itemLookup.search(query, { limit: 500, libraries })
+          ).map((h) => h.item.indexedKey);
+        },
+        { everywhere: everywhere, query: query },
+      )) as string[];
 
     interface Shown {
       phase: string;
@@ -2526,7 +2405,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.commands.executeCommandById("zotlit:open-library-view");
-        return String(true);
       },
       undefined,
     );
@@ -2603,7 +2481,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         (input as HTMLInputElement).value = title;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { title: title },
     );
@@ -2675,7 +2552,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         (input as HTMLInputElement).value = duplicate;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { duplicate: "duplicate" },
     );
@@ -2752,7 +2628,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "Library Tree button",
           );
         press(row, "Collection");
-        return String(true);
       },
       { JSONStringifyResult: JSON.stringify(["personal", sharedKey.name]) },
     );
@@ -2831,7 +2706,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Search all libraries",
         );
-        return String(true);
       },
       undefined,
     );
@@ -2919,7 +2793,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "Library Tree button",
           );
         press(row, "My Library");
-        return String(true);
       },
       { JSONStringifyResult: JSON.stringify(["personal"]) },
     );
@@ -2935,7 +2808,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         (input as HTMLInputElement).value = text;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { text: "tag:fixture-core" },
     );
@@ -3017,7 +2889,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             cancelable: true,
           }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -3085,15 +2956,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -3112,7 +2981,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const file = app.vault.getFileByPath(notepath);
           if (file) await app.vault.delete(file);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot, notepath: notePath },
       );
@@ -3161,7 +3029,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             () => written().length === 0,
             10000,
           );
-          return String(true);
         },
         { unwrittenkey: unwrittenKey },
       );
@@ -3207,7 +3074,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )[0],
         );
         await app.workspace.getLeaf("split").openFile(file);
-        return String(true);
       },
       { notepath: notePath },
     );
@@ -3242,12 +3108,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             () => el.querySelector<HTMLElement>("[data-query-item-row]"),
             10000,
           );
-          return String(
+          return (
             el
               .querySelector<HTMLElement>(
                 "[data-query-item-row][data-selected]",
               )
-              ?.getAttribute("data-query-item-row") ?? "none",
+              ?.getAttribute("data-query-item-row") ?? "none"
           );
         },
         undefined,
@@ -3255,58 +3121,54 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A click selects a row and opens nothing; ↓ moves the selection to the
     // next row on screen.
-    const { next } = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { readingKey }) => {
-          const { press, until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const row = (key: string) =>
-            el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
-          const keydown = (target: Element, init: KeyboardEventInit) =>
-            target.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                bubbles: true,
-                cancelable: true,
-                ...init,
-              }),
-            );
-          const pressRow = (el: HTMLElement | null, what: string) => {
-            if (!el) throw new Error(`Missing: ${what}`);
-            el.scrollIntoView({ block: "center", behavior: "instant" });
-            const r = el.getBoundingClientRect();
-            const hit = el.ownerDocument.elementFromPoint(
-              r.left + 24,
-              r.top + r.height / 2,
-            );
-            if (!hit || !el.contains(hit))
-              throw new Error(
-                `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
-              );
-            press(hit as HTMLElement, what);
-            return el;
-          };
-          await until("rows", () => row(readingKey), 10000);
-          pressRow(row(readingKey), "reading row");
-          const keys = [
-            ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
-          ].map((n) => n.getAttribute("data-query-item-row")!);
-          keydown(row(readingKey)!, { key: "ArrowDown" });
-          return String(
-            JSON.stringify({ next: keys[keys.indexOf(readingKey) + 1] }),
+    const { next } = (await obRun(
+      run.vaultId,
+      async ({ app, page }, { readingKey }) => {
+        const { press, until } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        await leaf!.view.query.settled;
+        const el = leaf!.view.contentEl;
+        const row = (key: string) =>
+          el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
+        const keydown = (target: Element, init: KeyboardEventInit) =>
+          target.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              bubbles: true,
+              cancelable: true,
+              ...init,
+            }),
           );
-        },
-        { readingKey: reading.key },
-      ),
-    ) as { next: string };
+        const pressRow = (el: HTMLElement | null, what: string) => {
+          if (!el) throw new Error(`Missing: ${what}`);
+          el.scrollIntoView({ block: "center", behavior: "instant" });
+          const r = el.getBoundingClientRect();
+          const hit = el.ownerDocument.elementFromPoint(
+            r.left + 24,
+            r.top + r.height / 2,
+          );
+          if (!hit || !el.contains(hit))
+            throw new Error(
+              `Covered: ${what} (by ${hit ? hit.outerHTML.slice(0, 80) : "nothing"})`,
+            );
+          press(hit as HTMLElement, what);
+          return el;
+        };
+        await until("rows", () => row(readingKey), 10000);
+        pressRow(row(readingKey), "reading row");
+        const keys = [
+          ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+        ].map((n) => n.getAttribute("data-query-item-row")!);
+        keydown(row(readingKey)!, { key: "ArrowDown" });
+        return { next: keys[keys.indexOf(readingKey) + 1] };
+      },
+      { readingKey: reading.key },
+    )) as { next: string };
     // A row drawn moments before takes the selection to its markup a frame
     // later.
     expect(
@@ -3358,7 +3220,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         pressRow(row(readingKey), "reading row");
         keydown(row(readingKey)!, { key: "Enter" });
-        return String(true);
       },
       { readingKey: reading.key },
     );
@@ -3407,11 +3268,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         pressRow(row(readingKey), "reading row");
         keydown(row(readingKey)!, { key: "Enter", shiftKey: true });
-        return String(true);
       },
       { readingKey: reading.key },
     );
-    expect(await pdfOpened(run.vaultId, annotationAttachment.path!)).toBe(true);
+    await pdfOpened(run.vaultId, annotationAttachment.path!);
 
     // On an Item with no Literature Note, Enter writes one through the
     // Profile selection, as the quick switcher does.
@@ -3474,7 +3334,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         pressRow(row(unwrittenkey), "unwritten row");
         keydown(row(unwrittenkey)!, { key: "Enter" });
-        return String(true);
       },
       {
         JSONStringifyResult: JSON.stringify([`group:${unwrittenGroup}`]),
@@ -3482,32 +3341,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
     // The picker reads every Profile's preview before it shows.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { booksProfileLabel }) => {
-            return String(
-              String(
-                Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(
-                    ".prompt .suggestion-item",
-                  ),
-                ).some((el) => el.textContent.includes(booksProfileLabel)),
-              ),
-            );
-          },
-          { booksProfileLabel: booksProfile.label },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1288",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 120 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { booksProfileLabel }) => {
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(
+            ".prompt .suggestion-item",
+          ),
+        ).some((el) => el.textContent.includes(booksProfileLabel));
+      },
+      { booksProfileLabel: booksProfile.label },
+      {
+        tries: 120,
+        what: "the profile picker to list the Books profile suggestion",
+      },
+    );
     expect(await selectSuggestion(run.vaultId, booksProfile.label)).toContain(
       booksProfile.label,
     );
@@ -3532,62 +3380,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           line: 0,
           ch: "LEFT ".length,
         });
-        return String(true);
       },
       { notepath: notePath },
     );
-    const menu = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { unwrittenkey }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const row = (key: string) =>
-            el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
+    const menu = (await obRun(
+      run.vaultId,
+      async ({ app, page }, { unwrittenkey }) => {
+        const { until } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        await leaf!.view.query.settled;
+        const el = leaf!.view.contentEl;
+        const row = (key: string) =>
+          el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
 
-          const ref = app.workspace.on("zotlit:item-menu", (menu, info) =>
-            menu.addItem((item) =>
-              item
-                .setTitle(`Listener: ${info.source} ${info.indexedKey}`)
-                .setIcon("star"),
-            ),
+        const ref = app.workspace.on("zotlit:item-menu", (menu, info) =>
+          menu.addItem((item) =>
+            item
+              .setTitle(`Listener: ${info.source} ${info.indexedKey}`)
+              .setIcon("star"),
+          ),
+        );
+        try {
+          const target = row(unwrittenkey);
+          const r = target!.getBoundingClientRect();
+          target!.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: r.left + 20,
+              clientY: r.top + 10,
+            }),
           );
-          try {
-            const target = row(unwrittenkey);
-            const r = target!.getBoundingClientRect();
-            target!.dispatchEvent(
-              new MouseEvent("contextmenu", {
-                bubbles: true,
-                cancelable: true,
-                clientX: r.left + 20,
-                clientY: r.top + 10,
-              }),
-            );
-            const menu = await until("row menu", () =>
-              activeDocument.querySelector<HTMLElement>(".menu"),
-            );
-            return String(
-              JSON.stringify(
-                [...menu.querySelectorAll<HTMLElement>(".menu-item")].map(
-                  (item) => item.textContent,
-                ),
-              ),
-            );
-          } finally {
-            app.workspace.offref(ref);
-          }
-        },
-        { unwrittenkey: unwrittenKey },
-      ),
-    ) as string[];
+          const menu = await until("row menu", () =>
+            activeDocument.querySelector<HTMLElement>(".menu"),
+          );
+          return [...menu.querySelectorAll<HTMLElement>(".menu-item")].map(
+            (item) => item.textContent,
+          );
+        } finally {
+          app.workspace.offref(ref);
+        }
+      },
+      { unwrittenkey: unwrittenKey },
+    )) as string[];
     expect(menu).toEqual([
       run.m.library_view_menu_open_note(),
       run.m.library_view_menu_insert_citation(),
@@ -3618,7 +3459,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Insert citation",
         );
-        return String(true);
       },
       {
         libraryViewMenuInsertCitationLabel:
@@ -3635,15 +3475,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await obRun(
               run.vaultId,
               async ({ app }, { notepath }) => {
-                return String(
-                  (
-                    app.workspace.getLeavesOfType(
-                      "markdown",
-                    ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                  )
-                    .find((leaf) => leaf.view.file?.path === notepath)!
-                    .view.editor.getValue(),
-                );
+                return (
+                  app.workspace.getLeavesOfType(
+                    "markdown",
+                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
+                )
+                  .find((leaf) => leaf.view.file?.path === notepath)!
+                  .view.editor.getValue();
               },
               { notepath: notePath },
             ),
@@ -3655,15 +3493,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { notepath }) => {
-          return String(
-            (
-              app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-                view: MarkdownView;
-              })[]
-            )
-              .find((leaf) => leaf.view.file?.path === notepath)!
-              .view.editor.getValue(),
-          );
+          return (
+            app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+              view: MarkdownView;
+            })[]
+          )
+            .find((leaf) => leaf.view.file?.path === notepath)!
+            .view.editor.getValue();
         },
         { notepath: notePath },
       ),
@@ -3671,65 +3507,60 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A row dragged over the view is refused; dropped into the note, it
     // inserts its citation where it lands.
-    const drag = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app }, { notepath, unwrittenkey }) => {
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const row = (key: string) =>
-            el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
+    const drag = (await obRun(
+      run.vaultId,
+      async ({ app }, { notepath, unwrittenkey }) => {
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        await leaf!.view.query.settled;
+        const el = leaf!.view.contentEl;
+        const row = (key: string) =>
+          el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
 
-          const note = (
-            app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-              view: MarkdownView;
-            })[]
-          ).find((leaf) => leaf.view.file?.path === notepath);
-          const cm = note!.view.editor.cm;
-          const transfer = new DataTransfer();
-          const source = row(unwrittenkey);
-          source!.dispatchEvent(
-            new DragEvent("dragstart", {
-              bubbles: true,
-              cancelable: true,
-              dataTransfer: transfer,
-            }),
-          );
-          const over = new DragEvent("dragover", {
+        const note = (
+          app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+            view: MarkdownView;
+          })[]
+        ).find((leaf) => leaf.view.file?.path === notepath);
+        const cm = note!.view.editor.cm;
+        const transfer = new DataTransfer();
+        const source = row(unwrittenkey);
+        source!.dispatchEvent(
+          new DragEvent("dragstart", {
             bubbles: true,
             cancelable: true,
             dataTransfer: transfer,
-          });
-          el.querySelector<HTMLElement>("[data-library-node]")!.dispatchEvent(
-            over,
-          );
-          const refused =
-            over.defaultPrevented && transfer.dropEffect === "none";
-          const at = cm.coordsAtPos(0);
-          cm.contentDOM.dispatchEvent(
-            new DragEvent("drop", {
-              bubbles: true,
-              cancelable: true,
-              dataTransfer: transfer,
-              clientX: Math.floor(at!.left + 1),
-              clientY: Math.floor((at!.top + at!.bottom) / 2),
-            }),
-          );
-          source!.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
-          return String(
-            JSON.stringify({ refused, types: [...transfer.types] }),
-          );
-        },
-        { notepath: notePath, unwrittenkey: unwrittenKey },
-      ),
-    ) as { refused: boolean; types: string[] };
+          }),
+        );
+        const over = new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        });
+        el.querySelector<HTMLElement>("[data-library-node]")!.dispatchEvent(
+          over,
+        );
+        const refused = over.defaultPrevented && transfer.dropEffect === "none";
+        const at = cm.coordsAtPos(0);
+        cm.contentDOM.dispatchEvent(
+          new DragEvent("drop", {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: transfer,
+            clientX: Math.floor(at!.left + 1),
+            clientY: Math.floor((at!.top + at!.bottom) / 2),
+          }),
+        );
+        source!.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
+        return { refused, types: [...transfer.types] };
+      },
+      { notepath: notePath, unwrittenkey: unwrittenKey },
+    )) as { refused: boolean; types: string[] };
     expect(drag).toEqual({
       refused: true,
       types: ["text/plain", "application/x-zotlit-item"],
@@ -3741,15 +3572,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await obRun(
               run.vaultId,
               async ({ app }, { notepath }) => {
-                return String(
-                  (
-                    app.workspace.getLeavesOfType(
-                      "markdown",
-                    ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                  )
-                    .find((leaf) => leaf.view.file?.path === notepath)!
-                    .view.editor.getValue(),
-                );
+                return (
+                  app.workspace.getLeavesOfType(
+                    "markdown",
+                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
+                )
+                  .find((leaf) => leaf.view.file?.path === notepath)!
+                  .view.editor.getValue();
               },
               { notepath: notePath },
             ),
@@ -3761,15 +3590,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { notepath }) => {
-          return String(
-            (
-              app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-                view: MarkdownView;
-              })[]
-            )
-              .find((leaf) => leaf.view.file?.path === notepath)!
-              .view.editor.getValue(),
-          );
+          return (
+            app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+              view: MarkdownView;
+            })[]
+          )
+            .find((leaf) => leaf.view.file?.path === notepath)!
+            .view.editor.getValue();
         },
         { notepath: notePath },
       ),
@@ -3788,94 +3615,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await app.workspace.revealLeaf(leaf!);
         app.workspace.setActiveLeaf(leaf!, { focus: true });
         app.commands.executeCommandById("zotlit:note-quick-switcher");
-        return String(true);
       },
       { notepath: notePath },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async () => {
-            return String(
-              String(
-                !!activeDocument.querySelector<HTMLElement>(".prompt input"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1352",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async () => {
+        return !!activeDocument.querySelector<HTMLElement>(".prompt input");
+      },
+      undefined,
+      { what: "the quick switcher prompt input to appear" },
+    );
     await selectItemSuggestion(run.vaultId, filed.title, filed.key);
     await pressPromptKey(run.vaultId, "Enter", { altKey: true });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]?.view;
-            if (app.workspace.activeLeaf?.view !== view)
-              return String("not active");
-            await view!.query.settled;
-            const el = view!.contentEl;
-            return String(
-              JSON.stringify({
-                node: el
-                  .querySelector<HTMLElement>(
-                    "[data-library-node][aria-selected=true]",
-                  )
-                  ?.getAttribute("data-library-node"),
-                row: el
-                  .querySelector<HTMLElement>(
-                    "[data-query-item-row][data-selected]",
-                  )
-                  ?.getAttribute("data-query-item-row"),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1361",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          node: JSON.stringify(["personal", parent.name, child.name]),
-          row: filed.key,
-        }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (app.workspace.activeLeaf?.view !== view) return "not active";
+        await view!.query.settled;
+        const el = view!.contentEl;
+        return {
+          node: el
+            .querySelector<HTMLElement>(
+              "[data-library-node][aria-selected=true]",
+            )
+            ?.getAttribute("data-library-node"),
+          row: el
+            .querySelector<HTMLElement>("[data-query-item-row][data-selected]")
+            ?.getAttribute("data-query-item-row"),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            node: JSON.stringify(["personal", parent.name, child.name]),
+            row: filed.key,
+          }),
+        what: "the Library View to select the filed paper row and its collection node",
+      },
+    );
   }, 180000);
 
   it("opens the Library View once on a fresh install, shows the Welcome View banner above it until dismissed, whose Search your library focuses the Library View's search box, and says where Zotero's data folder is missing until it is set", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            data: await app.vault.adapter.read(
-              `${app.vault.configDir}/plugins/zotlit/data.json`,
-            ),
-            dataDir: zotlit.services.zoteroPref.dataDirOverride,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          data: await app.vault.adapter.read(
+            `${app.vault.configDir}/plugins/zotlit/data.json`,
+          ),
+          dataDir: zotlit.services.zoteroPref.dataDirOverride,
+        });
       },
       undefined,
     );
@@ -3896,7 +3693,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await app.plugins.enablePlugin("zotlit");
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot },
       );
@@ -3919,65 +3715,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await app.vault.adapter.remove(
           `${app.vault.configDir}/plugins/zotlit/data.json`,
         );
-        return String(true);
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            await app.plugins
-              .disablePlugin("zotlit")
-              .then(function () {
-                return app.plugins.enablePlugin("zotlit");
-              })
-              .then(function () {
-                return true;
-              });
-            return String(true);
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1405",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+        return true;
+      },
+      undefined,
+      {
         tries: 20,
-      }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                (
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                ).length,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1415",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "1" }),
-    ).toBe(true);
+        what: "the zotlit plugin to finish its disable and enable reload",
+      },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).length;
+      },
+      undefined,
+      {
+        ready: (value) => value === 1,
+        what: "the Library View tab to open",
+      },
+    );
     // The release check recorded this launch in plugin data, which the next
     // launch reads.
     await obRun(
@@ -3989,7 +3763,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           })[]
         ).forEach((leaf) => leaf.detach());
         await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
-        return String(true);
       },
       undefined,
     );
@@ -4007,7 +3780,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       undefined,
     );
@@ -4015,19 +3787,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(
-            String(
-              (
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              ).length,
-            ),
-          );
+          return (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          ).length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
 
     // Setup is incomplete while the literature-notes folder is missing: the
     // banner shows the checklist and the Help Links above the Library View,
@@ -4041,75 +3809,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }),
         );
         app.commands.executeCommandById("zotlit:open-library-view");
-        return String(true);
       },
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelector<HTMLElement>(
-              "[data-welcome-banner]",
-            );
-            if (!el) return String("null");
-            return String(
-              JSON.stringify({
-                steps: [
-                  ...el.querySelectorAll<HTMLElement>(
-                    '[role=heading][aria-level="3"]',
-                  ),
-                ].map((n) => n.textContent),
-                open: el.querySelector<HTMLElement>(
-                  "[data-welcome-step][data-open] [role=heading]",
-                )?.textContent,
-                help: [
-                  ...el.querySelectorAll<HTMLElement>("[data-welcome-help] a"),
-                ].map((a) => a.getAttribute("href")),
-                companion: el.textContent.includes("Companion"),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1440",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+        if (!el) return "null";
+        return {
           steps: [
-            run.m.welcome_step_connect_title(),
-            run.m.welcome_step_folder_title(),
-            run.m.welcome_step_library_title(),
-          ],
-          // Zotero reads, so the folder is the one step still open.
-          open: run.m.welcome_step_folder_title(),
-          // The Help Links show beside the checklist.
+            ...el.querySelectorAll<HTMLElement>(
+              '[role=heading][aria-level="3"]',
+            ),
+          ].map((n) => n.textContent),
+          open: el.querySelector<HTMLElement>(
+            "[data-welcome-step][data-open] [role=heading]",
+          )?.textContent,
           help: [
-            "https://zotlit.aidenlx.site/docs",
-            "https://zotlit.aidenlx.site/community",
-            "https://github.com/aidenlx/zotlit",
-            "https://zotlit.aidenlx.site/docs/reference/templates",
-            "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
-            "https://zotlit.aidenlx.site/blog",
-            "https://zotlit.aidenlx.site/changelog",
-            "https://github.com/sponsors/aidenlx",
-            "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
-          ],
-          companion: false,
-        }),
-      }),
-    ).toBe(true);
+            ...el.querySelectorAll<HTMLElement>("[data-welcome-help] a"),
+          ].map((a) => a.getAttribute("href")),
+          companion: el.textContent.includes("Companion"),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            steps: [
+              run.m.welcome_step_connect_title(),
+              run.m.welcome_step_folder_title(),
+              run.m.welcome_step_library_title(),
+            ],
+            // Zotero reads, so the folder is the one step still open.
+            open: run.m.welcome_step_folder_title(),
+            // The Help Links show beside the checklist.
+            help: [
+              "https://zotlit.aidenlx.site/docs",
+              "https://zotlit.aidenlx.site/community",
+              "https://github.com/aidenlx/zotlit",
+              "https://zotlit.aidenlx.site/docs/reference/templates",
+              "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
+              "https://zotlit.aidenlx.site/blog",
+              "https://zotlit.aidenlx.site/changelog",
+              "https://github.com/sponsors/aidenlx",
+              "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
+            ],
+            companion: false,
+          }),
+        what: "the Welcome banner in the Library View to show its three setup steps",
+      },
+    );
     // Search your library puts the cursor in the Library View's own search
     // box, just under the banner.
     expect(
@@ -4141,15 +3898,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "search box focused",
             () => input!.ownerDocument.activeElement === input,
           );
-          return String(
-            String(
-              !activeDocument.querySelector<HTMLElement>(".modal-container"),
-            ),
-          );
+          return !activeDocument.querySelector<HTMLElement>(".modal-container");
         },
         { welcomeActionSearchLabel: run.m.welcome_action_search() },
       ),
-    ).toBe("true");
+    ).toBe(true);
     // A notice over the tab's corner would cover the dismiss control.
     await clearNotices(run.vaultId);
     await obRun(
@@ -4177,7 +3930,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "[data-welcome-banner]",
             ),
         );
-        return String(true);
       },
       undefined,
     );
@@ -4185,56 +3937,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            String(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "welcome.dismissed"
-              ],
-            ),
-          );
+          return zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"];
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     // The Welcome command shows it again.
     await obRun(
       run.vaultId,
       async ({ app }) => {
         app.commands.executeCommandById("zotlit:open-welcome-view");
-        return String(true);
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                !!(
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                )[0]!.view.contentEl.querySelector<HTMLElement>(
-                  "[data-welcome-banner]",
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1491",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return !!(
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+      },
+      undefined,
+      { what: "the Welcome banner in the Library View to render" },
+    );
     // So does the Welcome & help view action in the tab header, with the
     // setup steps, and focus moves to the banner; the action reads as
     // pressed while the banner shows, and a second press dismisses it.
@@ -4263,7 +3994,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "[data-welcome-banner]",
             ),
         );
-        return String(true);
       },
       undefined,
     );
@@ -4327,20 +4057,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             active: action!.classList.contains("is-active"),
             pressed: action!.getAttribute("aria-pressed"),
           };
-          return String(
-            JSON.stringify({
-              before,
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              steps: el.querySelectorAll<HTMLElement>("[data-welcome-step]")
-                .length,
-              rows: view.contentEl.querySelectorAll<HTMLElement>(
-                "[data-welcome-help-row]",
-              ).length,
-              ...pressed,
-            }),
-          );
+          return JSON.stringify({
+            before,
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            steps: el.querySelectorAll<HTMLElement>("[data-welcome-step]")
+              .length,
+            rows: view.contentEl.querySelectorAll<HTMLElement>(
+              "[data-welcome-help-row]",
+            ).length,
+            ...pressed,
+          });
         },
         {
           value: `.view-actions .view-action[aria-label="${run.m.library_view_help_action()}"]`,
@@ -4401,15 +4129,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             active: action!.classList.contains("is-active"),
             pressed: action!.getAttribute("aria-pressed"),
           };
-          return String(
-            JSON.stringify({
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              saved,
-              ...pressed,
-            }),
-          );
+          return JSON.stringify({
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            saved,
+            ...pressed,
+          });
         },
         {
           value: `.view-actions .view-action[aria-label="${run.m.library_view_help_action()}"]`,
@@ -4429,36 +4155,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // list say so and offer to locate it, in place of the papers. A narrow
     // pane keeps the tree out of view, and the list says it alone.
 
-    const listed = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app }) => {
-          const view = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0]!.view;
-          await view.query.settled;
-          const el = view.contentEl;
-          return String(
-            JSON.stringify({
-              missing:
-                el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
-              rows: [
-                ...el.querySelectorAll<HTMLElement>(
-                  'tr[data-query-table-row="item"], [data-query-papers-row]',
-                ),
-              ].map(
-                (n) =>
-                  n.getAttribute("data-query-key")! ??
-                  n.getAttribute("data-query-papers-row")!,
-              ),
-            }),
-          );
-        },
-        undefined,
-      ),
-    ) as {
+    const listed = (await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view;
+        await view.query.settled;
+        const el = view.contentEl;
+        return {
+          missing:
+            el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+    )) as {
       rows: string[];
     };
     expect(listed.rows.length).toBeGreaterThan(0);
@@ -4469,80 +4191,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { emptydir }) => {
         zotlit.services.zoteroPref.setDataDir(emptydir);
-        return String(true);
       },
       { emptydir: emptyDir },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl;
-            const shown = (n: Element | null) => !!n && n.checkVisibility();
-            const part = (name: string) =>
-              el.querySelector<HTMLElement>(
-                `[data-library-not-found="${name}"]`,
-              );
-            const pane = el.querySelector<HTMLElement>("[data-library-tree]");
-            return String(
-              JSON.stringify({
-                tree:
-                  shown(part("tree")) ||
-                  getComputedStyle(pane!).display === "none"
-                    ? part("tree")!.textContent
-                    : null,
-                list: shown(part("list"))
-                  ? [
-                      ...part("list")!.querySelectorAll<HTMLElement>("button"),
-                    ].map((b) => b.textContent)
-                  : null,
-                papers: [
-                  ...el.querySelectorAll<HTMLElement>(
-                    "[data-query-table], [data-query-layout]",
-                  ),
-                ].some(shown),
-                search: shown(
-                  el.querySelector<HTMLElement>("[data-library-search]"),
-                ),
-                nodes: [
-                  ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
-                ].some(shown),
-                facets: [
-                  ...el.querySelectorAll<HTMLElement>("[data-library-facet]"),
-                ].some(shown),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1550",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          tree: run.m.library_view_not_found(),
-          list: [
-            run.m.library_view_locate(),
-            run.m.welcome_action_open_settings(),
-          ],
-          papers: false,
-          search: false,
-          nodes: false,
-          facets: false,
-        }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const shown = (n: Element | null) => !!n && n.checkVisibility();
+        const part = (name: string) =>
+          el.querySelector<HTMLElement>(`[data-library-not-found="${name}"]`);
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        return {
+          tree:
+            shown(part("tree")) || getComputedStyle(pane!).display === "none"
+              ? part("tree")!.textContent
+              : null,
+          list: shown(part("list"))
+            ? [...part("list")!.querySelectorAll<HTMLElement>("button")].map(
+                (b) => b.textContent,
+              )
+            : null,
+          papers: [
+            ...el.querySelectorAll<HTMLElement>(
+              "[data-query-table], [data-query-layout]",
+            ),
+          ].some(shown),
+          search: shown(el.querySelector<HTMLElement>("[data-library-search]")),
+          nodes: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(shown),
+          facets: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-facet]"),
+          ].some(shown),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            tree: run.m.library_view_not_found(),
+            list: [
+              run.m.library_view_locate(),
+              run.m.welcome_action_open_settings(),
+            ],
+            papers: false,
+            search: false,
+            nodes: false,
+            facets: false,
+          }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "the Library View to show the not-found tree message and hide the papers",
+      },
+    );
 
     // "Locate data folder" saves the folder the system dialog returns; the
     // case sets the same folder, since no reader can press a native dialog.
@@ -4550,54 +4256,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { dataDir }) => {
         zotlit.services.zoteroPref.setDataDir(dataDir);
-        return String(true);
       },
       { dataDir: JSON.parse(snapshot).dataDir },
     );
     // The papers the Library View listed before come back.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view;
-            await view.query.settled;
-            const el = view.contentEl;
-            return String(
-              JSON.stringify({
-                missing:
-                  el.querySelector<HTMLElement>("[data-zotero-missing]") !==
-                  null,
-                rows: [
-                  ...el.querySelectorAll<HTMLElement>(
-                    'tr[data-query-table-row="item"], [data-query-papers-row]',
-                  ),
-                ].map(
-                  (n) =>
-                    n.getAttribute("data-query-key")! ??
-                    n.getAttribute("data-query-papers-row")!,
-                ),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1574",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ missing: false, rows: listed.rows }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view;
+        await view.query.settled;
+        const el = view.contentEl;
+        return {
+          missing:
+            el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { missing: false, rows: listed.rows }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "the Library View to list the papers it showed before the reload",
+      },
+    );
   });
 
   it("leaves the search box unfocused on a fresh install's first screen, under the Welcome View banner", async () => {
@@ -4607,14 +4301,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            data: await app.vault.adapter.read(
-              `${app.vault.configDir}/plugins/zotlit/data.json`,
-            ),
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          data: await app.vault.adapter.read(
+            `${app.vault.configDir}/plugins/zotlit/data.json`,
+          ),
+        });
       },
       undefined,
     );
@@ -4639,7 +4331,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await app.plugins.enablePlugin("zotlit");
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot, aside: aside },
       );
@@ -4665,7 +4356,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       undefined,
     );
@@ -4691,58 +4381,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       { aside: aside },
     );
     // Once the banner settles, the cursor is not in the box right under it.
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }) => {
-            const { until } = page;
-            const view = await until(
-              "the Library View",
-              () =>
-                (
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                )[0]?.view.search &&
-                (
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                )[0]!.view,
-              10000,
-            );
-            await until(
-              "banner",
-              () =>
-                view.contentEl.querySelector<HTMLElement>(
-                  "[data-welcome-banner]",
-                ),
-              10000,
-            );
-            await view.welcome.settled;
-            await view.arrived;
-            await view.searched;
-            await new Promise((r) =>
-              requestAnimationFrame(() => requestAnimationFrame(r)),
-            );
-            const input = view.contentEl.querySelector<HTMLElement>(
-              "[data-library-search] input",
-            );
-            return String(
-              JSON.stringify({
-                banner: view.welcome.shown,
-                focused: input!.ownerDocument.activeElement === input,
-              }),
-            );
-          },
-          undefined,
-        ),
+      await obRun(
+        run.vaultId,
+        async ({ app, page }) => {
+          const { until } = page;
+          const view = await until(
+            "the Library View",
+            () =>
+              (
+                app.workspace.getLeavesOfType(
+                  "zotlit-library",
+                ) as (WorkspaceLeaf & { view: LibraryView })[]
+              )[0]?.view.search &&
+              (
+                app.workspace.getLeavesOfType(
+                  "zotlit-library",
+                ) as (WorkspaceLeaf & { view: LibraryView })[]
+              )[0]!.view,
+            10000,
+          );
+          await until(
+            "banner",
+            () =>
+              view.contentEl.querySelector<HTMLElement>(
+                "[data-welcome-banner]",
+              ),
+            10000,
+          );
+          await view.welcome.settled;
+          await view.arrived;
+          await view.searched;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const input = view.contentEl.querySelector<HTMLElement>(
+            "[data-library-search] input",
+          );
+          return {
+            banner: view.welcome.shown,
+            focused: input!.ownerDocument.activeElement === input,
+          };
+        },
+        undefined,
       ),
     ).toEqual({ banner: true, focused: false });
   });
@@ -4752,14 +4437,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app, zotlit }) => {
         await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            data: await app.vault.adapter.read(
-              `${app.vault.configDir}/plugins/zotlit/data.json`,
-            ),
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          data: await app.vault.adapter.read(
+            `${app.vault.configDir}/plugins/zotlit/data.json`,
+          ),
+        });
       },
       undefined,
     );
@@ -4779,7 +4462,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await app.plugins.enablePlugin("zotlit");
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot },
       );
@@ -4795,24 +4477,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "welcome.dismissed": true,
     };
     // The researcher has a note open in the active leaf.
-    const note = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app }) => {
-          (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          ).forEach((leaf) => leaf.detach());
-          const file = app.vault.getMarkdownFiles()[0];
-          const leaf = app.workspace.getLeaf(false);
-          await leaf.openFile(file!);
-          app.workspace.setActiveLeaf(leaf);
-          return String(JSON.stringify({ id: leaf.id, path: file!.path }));
-        },
-        undefined,
-      ),
-    ) as { id: string; path: string };
+    const note = (await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).forEach((leaf) => leaf.detach());
+        const file = app.vault.getMarkdownFiles()[0];
+        const leaf = app.workspace.getLeaf(false);
+        await leaf.openFile(file!);
+        app.workspace.setActiveLeaf(leaf);
+        return { id: leaf.id, path: file!.path };
+      },
+      undefined,
+    )) as { id: string; path: string };
     await clearNotices(run.vaultId);
     await obRun(
       run.vaultId,
@@ -4832,7 +4512,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       { JSONStringifyResult: JSON.stringify(seeded) },
     );
@@ -4841,17 +4520,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { noteId }) => {
-          return String(
-            JSON.stringify({
-              note: (app.workspace.getLeafById(noteId)!.view as FileView).file
-                ?.path,
-              library: (
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              ).map((leaf) => leaf.id !== noteId),
-            }),
-          );
+          return JSON.stringify({
+            note: (app.workspace.getLeafById(noteId)!.view as FileView).file
+              ?.path,
+            library: (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            ).map((leaf) => leaf.id !== noteId),
+          });
         },
         { noteId: note.id },
       ),
@@ -4860,89 +4537,73 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const version = await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(zotlit.services.release.version);
+        return zotlit.services.release.version;
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelector<HTMLElement>(
-              "[data-welcome-banner]",
-            );
-            return String(
-              JSON.stringify({
-                library: (
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                ).length,
-                banner: !!el && {
-                  badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
-                    ?.textContent,
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[role=heading][aria-level="3"]',
-                    ),
-                  ].map((n) => n.textContent),
-                  buttons: [...el.querySelectorAll<HTMLElement>("button")]
-                    .map((n) => n.textContent)
-                    .filter(Boolean),
-                  help: el.querySelectorAll<HTMLElement>(
-                    "[data-welcome-help] a",
-                  ).length,
-                },
-                notices:
-                  activeDocument.querySelectorAll<HTMLElement>(".notice")
-                    .length,
-              }),
-            );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+        return {
+          library: (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          ).length,
+          banner: !!el && {
+            badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
+              ?.textContent,
+            headings: [
+              ...el.querySelectorAll<HTMLElement>(
+                '[role=heading][aria-level="3"]',
+              ),
+            ].map((n) => n.textContent),
+            buttons: [...el.querySelectorAll<HTMLElement>("button")]
+              .map((n) => n.textContent)
+              .filter(Boolean),
+            help: el.querySelectorAll<HTMLElement>("[data-welcome-help] a")
+              .length,
           },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1671",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          library: 1,
-          banner: {
-            badge: run.m.welcome_badge_updated(),
-            // The update alone: setup is done.
-            headings: [run.m.welcome_update_title({ version })],
-            buttons: [run.m.welcome_update_action()],
-            help: 9,
-          },
-          // The banner says it in place of the update notice.
-          notices: 0,
-        }),
-      }),
-    ).toBe(true);
+          notices:
+            activeDocument.querySelectorAll<HTMLElement>(".notice").length,
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            library: 1,
+            banner: {
+              badge: run.m.welcome_badge_updated(),
+              // The update alone: setup is done.
+              headings: [run.m.welcome_update_title({ version })],
+              buttons: [run.m.welcome_update_action()],
+              help: 9,
+            },
+            // The banner says it in place of the update notice.
+            notices: 0,
+          }),
+        what: "the Welcome banner to announce the ZotLit update in the Library View",
+      },
+    );
     expect(
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            String(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "release.update-pending"
-              ],
-            ),
-          );
+          return zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["release.update-pending"];
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
 
     // "What's new" opens the Release Note and acknowledges the update.
     expect(
@@ -4992,14 +4653,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ...leaves.map((leaf) => leaf.view.getState().url),
           ];
           leaves.forEach((leaf) => leaf.detach());
-          return String(
-            JSON.stringify({
-              urls,
-              pending: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["release.update-pending"],
-            }),
-          );
+          return JSON.stringify({
+            urls,
+            pending: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["release.update-pending"],
+          });
         },
         { welcomeUpdateActionLabel: run.m.welcome_update_action() },
       ),
@@ -5026,7 +4685,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       undefined,
     );
@@ -5051,18 +4709,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )[0]!.view.contentEl,
           );
           await new Promise((r) => setTimeout(r, 500));
-          return String(
-            JSON.stringify({
-              opened,
-              banner: !!(
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              )[0]!.view.contentEl.querySelector<HTMLElement>(
-                "[data-welcome-banner]",
-              ),
-            }),
-          );
+          return JSON.stringify({
+            opened,
+            banner: !!(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelector<HTMLElement>(
+              "[data-welcome-banner]",
+            ),
+          });
         },
         undefined,
       ),
@@ -5091,7 +4747,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       {
         JSONStringifyResult: JSON.stringify({
@@ -5103,73 +4758,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          (zotlit.services.bridge.runSync(
+        return (
+          zotlit.services.bridge.runSync(
             zotlit.services.settings.update({
               "note.template-conversion-pending": true,
             }),
           ),
-          true),
+          true
         );
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelector<HTMLElement>(
-              "[data-welcome-banner]",
-            );
-            return String(
-              JSON.stringify(
-                !!el && {
-                  badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
-                    ?.textContent,
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[role=heading][aria-level="3"]',
-                    ),
-                  ].map((n) => n.textContent),
-                  folded: !!el.querySelector<HTMLElement>(
-                    "[data-welcome-setup-done]",
-                  ),
-                  how: [
-                    ...el.querySelectorAll<HTMLDetailsElement>("details"),
-                  ].map(
-                    (d) =>
-                      `${d.open}:${d.querySelector<HTMLElement>("summary")!.textContent}`,
-                  ),
-                },
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+        return (
+          !!el && {
+            badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
+              ?.textContent,
+            headings: [
+              ...el.querySelectorAll<HTMLElement>(
+                '[role=heading][aria-level="3"]',
               ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1727",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          badge: run.m.welcome_badge_updated(),
-          headings: [
-            run.m.welcome_update_title({ version }),
-            run.m.welcome_template_conversion_title(),
-          ],
-          folded: true,
-          how: [`false:${run.m.welcome_how_it_works()}`],
-        }),
-      }),
-    ).toBe(true);
+            ].map((n) => n.textContent),
+            folded: !!el.querySelector<HTMLElement>(
+              "[data-welcome-setup-done]",
+            ),
+            how: [...el.querySelectorAll<HTMLDetailsElement>("details")].map(
+              (d) =>
+                `${d.open}:${d.querySelector<HTMLElement>("summary")!.textContent}`,
+            ),
+          }
+        );
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            badge: run.m.welcome_badge_updated(),
+            headings: [
+              run.m.welcome_update_title({ version }),
+              run.m.welcome_template_conversion_title(),
+            ],
+            folded: true,
+            how: [`false:${run.m.welcome_how_it_works()}`],
+          }),
+        what: "the Welcome banner to fold setup and list the update headings",
+      },
+    );
 
     // The dismiss button puts every combination away, and it stays away
     // after a reload, until a later update.
@@ -5198,7 +4841,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "[data-welcome-banner]",
             ),
         );
-        return String(true);
       },
       undefined,
     );
@@ -5216,7 +4858,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.release.checked,
         );
-        return String(true);
       },
       undefined,
     );
@@ -5236,23 +4877,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )[0]!.view.contentEl,
           );
           await new Promise((r) => setTimeout(r, 500));
-          return String(
-            JSON.stringify({
-              banner: !!(
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              )[0]!.view.contentEl.querySelector<HTMLElement>(
-                "[data-welcome-banner]",
-              ),
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              update: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["release.update-pending"],
-            }),
-          );
+          return JSON.stringify({
+            banner: !!(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelector<HTMLElement>(
+              "[data-welcome-banner]",
+            ),
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            update: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["release.update-pending"],
+          });
         },
         undefined,
       ),
@@ -5271,23 +4910,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { keys }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            size: require("@electron/remote").getCurrentWindow().getSize(),
-            folder: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["note.default-profile"].bindings["note.literature-folder"],
-            settings: Object.fromEntries(
-              keys.map((k) => [
-                k,
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )[k],
-              ]),
-            ),
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          size: require("@electron/remote").getCurrentWindow().getSize(),
+          folder: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["note.default-profile"].bindings["note.literature-folder"],
+          settings: Object.fromEntries(
+            keys.map((k) => [
+              k,
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                k
+              ],
+            ]),
+          ),
+        });
       },
       { keys: keys },
     );
@@ -5309,7 +4946,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .getCurrentWindow()
             .setSize(...saved.size);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot },
       );
@@ -5318,9 +4954,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const created = await obRun(
       run.vaultId,
       async ({ app }, { folder }) => {
-        if (app.vault.getFolderByPath(folder)) return String("false");
+        if (app.vault.getFolderByPath(folder)) return "false";
         await app.vault.createFolder(folder);
-        return String("true");
+        return "true";
       },
       { folder: folder },
     );
@@ -5331,7 +4967,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ app }, { folder }) => {
             const f = app.vault.getFolderByPath(folder);
             if (f) await app.vault.delete(f, true);
-            return String(true);
           },
           { folder: folder },
         );
@@ -5354,7 +4989,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )[0];
         await app.workspace.revealLeaf(leaf!);
         app.workspace.setActiveLeaf(leaf!, { focus: true });
-        return String(true);
       },
       undefined,
     );
@@ -5433,7 +5067,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           bridge.runSync(settings.update(settingsInput));
           await bridge.runPromise(settings.flush);
-          return String(true);
         },
         {
           choice:
@@ -5446,131 +5079,125 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async (_context, { width }) => {
             require("@electron/remote").getCurrentWindow().setSize(width, 900);
-            return String(true);
           },
           { width: width },
         );
         const label = `${name}-${size}`;
-        results[label] = JSON.parse(
-          await obRun(
-            run.vaultId,
-            async (
-              { app, page },
-              { width, sectionsOpen, sectionsDone, sectionsCallouts },
-            ) => {
-              const { until } = page;
-              const view = (
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              )[0]?.view;
-              await until(
-                `the window at ${width}px`,
-                () => activeWindow.outerWidth === width,
-                5000,
-              );
-              await view!.welcome.decided;
-              await view!.welcome.settled;
-              const el = view!.contentEl;
-              const b = await until(
-                "the banner sections",
-                () => {
-                  const b = el.querySelector<HTMLElement>(
-                    "[data-welcome-banner]",
-                  );
-                  return (
-                    b &&
-                    b.querySelectorAll<HTMLElement>(
-                      "[data-welcome-step][data-open]",
-                    ).length === sectionsOpen &&
-                    b.querySelectorAll<HTMLElement>("[data-welcome-setup-done]")
-                      .length === sectionsDone &&
-                    b.querySelectorAll<HTMLElement>("[data-welcome-callout]")
-                      .length === sectionsCallouts &&
-                    b
-                  );
-                },
-                5000,
-              );
-              await new Promise((r) =>
-                requestAnimationFrame(() => requestAnimationFrame(r)),
-              );
-              const R = (n: Element | null) => {
-                const r = n!.getBoundingClientRect();
-                return { l: r.left, r: r.right, t: r.top, b: r.bottom };
-              };
-              const all = (...s: string[]) => {
-                for (const q of s) {
-                  const n = [...b.querySelectorAll<HTMLElement>(q)];
-                  if (n.length) return n;
-                }
-                return [];
-              };
-              const cs = getComputedStyle(b);
-              const help = b.querySelector<HTMLElement>("[data-welcome-help]");
-              const column =
-                b.querySelector<HTMLElement>("[data-welcome-column]") ??
-                help!.parentElement!.firstElementChild;
-              const grid = help!.parentElement;
-              const notices = [
+        results[label] = (await obRun(
+          run.vaultId,
+          async (
+            { app, page },
+            { width, sectionsOpen, sectionsDone, sectionsCallouts },
+          ) => {
+            const { until } = page;
+            const view = (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]?.view;
+            await until(
+              `the window at ${width}px`,
+              () => activeWindow.outerWidth === width,
+              5000,
+            );
+            await view!.welcome.decided;
+            await view!.welcome.settled;
+            const el = view!.contentEl;
+            const b = await until(
+              "the banner sections",
+              () => {
+                const b = el.querySelector<HTMLElement>(
+                  "[data-welcome-banner]",
+                );
+                return (
+                  b &&
+                  b.querySelectorAll<HTMLElement>(
+                    "[data-welcome-step][data-open]",
+                  ).length === sectionsOpen &&
+                  b.querySelectorAll<HTMLElement>("[data-welcome-setup-done]")
+                    .length === sectionsDone &&
+                  b.querySelectorAll<HTMLElement>("[data-welcome-callout]")
+                    .length === sectionsCallouts &&
+                  b
+                );
+              },
+              5000,
+            );
+            await new Promise((r) =>
+              requestAnimationFrame(() => requestAnimationFrame(r)),
+            );
+            const R = (n: Element | null) => {
+              const r = n!.getBoundingClientRect();
+              return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+            };
+            const all = (...s: string[]) => {
+              for (const q of s) {
+                const n = [...b.querySelectorAll<HTMLElement>(q)];
+                if (n.length) return n;
+              }
+              return [];
+            };
+            const cs = getComputedStyle(b);
+            const help = b.querySelector<HTMLElement>("[data-welcome-help]");
+            const column =
+              b.querySelector<HTMLElement>("[data-welcome-column]") ??
+              help!.parentElement!.firstElementChild;
+            const grid = help!.parentElement;
+            const notices = [
+              ...b.querySelectorAll<HTMLElement>(
+                '[role=heading][aria-level="3"]',
+              ),
+            ].filter((n) => !n.closest<HTMLElement>("[data-welcome-step]"));
+            const banner = R(b);
+            return {
+              banner,
+              contentStart: banner.l + Number.parseFloat(cs.paddingLeft),
+              contentEnd: banner.r - Number.parseFloat(cs.paddingRight),
+              gap: Number.parseFloat(getComputedStyle(grid!).columnGap) || 0,
+              lockup: R(
+                b.querySelector<HTMLElement>("[data-welcome-lockup]") ??
+                  b.querySelector<HTMLElement>(
+                    '[role=heading][aria-level="2"]',
+                  ),
+              ),
+              marks: all(
+                "[data-welcome-mark]",
+                "[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child",
+              ).map(R),
+              notices: notices.map(R),
+              surfaces: [
                 ...b.querySelectorAll<HTMLElement>(
-                  '[role=heading][aria-level="3"]',
+                  "[data-welcome-step][data-open]",
                 ),
-              ].filter((n) => !n.closest<HTMLElement>("[data-welcome-step]"));
-              const banner = R(b);
-              return String(
-                JSON.stringify({
-                  banner,
-                  contentStart: banner.l + Number.parseFloat(cs.paddingLeft),
-                  contentEnd: banner.r - Number.parseFloat(cs.paddingRight),
-                  gap:
-                    Number.parseFloat(getComputedStyle(grid!).columnGap) || 0,
-                  lockup: R(
-                    b.querySelector<HTMLElement>("[data-welcome-lockup]") ??
-                      b.querySelector<HTMLElement>(
-                        '[role=heading][aria-level="2"]',
-                      ),
-                  ),
-                  marks: all(
-                    "[data-welcome-mark]",
-                    "[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child",
-                  ).map(R),
-                  notices: notices.map(R),
-                  surfaces: [
-                    ...b.querySelectorAll<HTMLElement>(
-                      "[data-welcome-step][data-open]",
-                    ),
-                    ...notices.map(
-                      (n) =>
-                        n.closest<HTMLElement>("[data-welcome-callout]") ??
-                        n.parentElement!.parentElement,
-                    ),
-                  ].map(R),
-                  header: R(b.querySelector<HTMLElement>("header")),
-                  column: R(column),
-                  first: R(column!.firstElementChild),
-                  help: R(help),
-                  tiles: all(
-                    "[data-welcome-help-tile]",
-                    "[data-welcome-help] > div > a",
-                  ).map(R),
-                  dismiss: R(
-                    b.querySelector<HTMLElement>("[data-welcome-dismiss]"),
-                  ),
-                  glyph: R(
-                    b.querySelector<HTMLElement>("[data-welcome-dismiss] svg"),
-                  ),
-                }),
-              );
-            },
-            {
-              width: width,
-              sectionsOpen: sections.open,
-              sectionsDone: sections.done,
-              sectionsCallouts: sections.callouts,
-            },
-          ),
-        ) as Layout;
+                ...notices.map(
+                  (n) =>
+                    n.closest<HTMLElement>("[data-welcome-callout]") ??
+                    n.parentElement!.parentElement,
+                ),
+              ].map(R),
+              header: R(b.querySelector<HTMLElement>("header")),
+              column: R(column),
+              first: R(column!.firstElementChild),
+              help: R(help),
+              tiles: all(
+                "[data-welcome-help-tile]",
+                "[data-welcome-help] > div > a",
+              ).map(R),
+              dismiss: R(
+                b.querySelector<HTMLElement>("[data-welcome-dismiss]"),
+              ),
+              glyph: R(
+                b.querySelector<HTMLElement>("[data-welcome-dismiss] svg"),
+              ),
+            };
+          },
+          {
+            width: width,
+            sectionsOpen: sections.open,
+            sectionsDone: sections.done,
+            sectionsCallouts: sections.callouts,
+          },
+        )) as Layout;
         await cli([
           `vault=${run.vaultId}`,
           "dev:screenshot",

@@ -102,29 +102,22 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
     },
     { effectPath: EFFECT_MODULE_PATH },
   );
-  assert.equal(
-    await obRunUntil(
-      vaultId,
-      ({ page }) => {
-        const state = page.scratch.__zotlitExcerptRefreshTrial!;
-        const card = state.leaf!.view.containerEl.querySelector(
-          '[data-zotero-annotation-key="4PE492KU"]',
-        );
-        return (
-          state.completed > 0 &&
-          !!card &&
-          !card.querySelector("img") &&
-          !card.querySelector('[aria-busy="true"]')
-        );
-      },
-      undefined,
-      { what: "the card shows the injected unavailable result" },
-    ).then(
-      () => true,
-      () => false,
-    ),
-    true,
-    "the real card must show the injected unavailable result",
+  await obRunUntil(
+    vaultId,
+    ({ page }) => {
+      const state = page.scratch.__zotlitExcerptRefreshTrial!;
+      const card = state.leaf!.view.containerEl.querySelector(
+        '[data-zotero-annotation-key="4PE492KU"]',
+      );
+      return (
+        state.completed > 0 &&
+        !!card &&
+        !card.querySelector("img") &&
+        !card.querySelector('[aria-busy="true"]')
+      );
+    },
+    undefined,
+    { what: "the real card to show the injected unavailable result" },
   );
   await obRun(vaultId, ({ page }) => {
     const state = page.scratch.__zotlitExcerptRefreshTrial!;
@@ -137,36 +130,31 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
     state.recover = true;
     view.gestures!.onRefresh();
   });
-  assert.equal(
-    await obRunUntil(
-      vaultId,
-      ({ page }) => {
-        const state = page.scratch.__zotlitExcerptRefreshTrial!;
-        const view = state.leaf!.view as AnnotationView;
-        const image = view.containerEl.querySelector<HTMLImageElement>(
-          '[data-zotero-annotation-key="4PE492KU"] img',
-        );
-        const inputAfter = JSON.stringify({
-          source: view.snapshot.annotationSource,
-          annotation: view.snapshot.annotations!.find(
-            (a) => a.key === "4PE492KU",
-          ),
-        });
-        return (
-          state.inputBefore === inputAfter &&
-          state.calls > state.before! &&
-          !!image?.complete &&
-          image.naturalWidth > 0 &&
-          image.src.startsWith("blob:")
-        );
-      },
-      undefined,
-      { what: "Refresh replaces unavailable with a decoded excerpt" },
-    ).then(
-      () => true,
-      () => false,
-    ),
-    true,
-    "the actual Refresh action must resolve again and replace unavailable with a decoded excerpt",
+  await obRunUntil(
+    vaultId,
+    ({ page }) => {
+      const state = page.scratch.__zotlitExcerptRefreshTrial!;
+      const view = state.leaf!.view as AnnotationView;
+      const image = view.containerEl.querySelector<HTMLImageElement>(
+        '[data-zotero-annotation-key="4PE492KU"] img',
+      );
+      const inputAfter = JSON.stringify({
+        source: view.snapshot.annotationSource,
+        annotation: view.snapshot.annotations!.find(
+          (a) => a.key === "4PE492KU",
+        ),
+      });
+      return (
+        state.inputBefore === inputAfter &&
+        state.calls > state.before! &&
+        !!image?.complete &&
+        image.naturalWidth > 0 &&
+        image.src.startsWith("blob:")
+      );
+    },
+    undefined,
+    {
+      what: "the Refresh action to resolve again and replace unavailable with a decoded excerpt",
+    },
   );
 }

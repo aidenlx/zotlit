@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { WorkspaceLeaf, MarkdownView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
@@ -32,16 +33,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            dataDir: zotlit.services.zoteroPref.dataDirOverride,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          dataDir: zotlit.services.zoteroPref.dataDirOverride,
+        });
       },
       undefined,
     );
@@ -61,7 +60,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const file = app.vault.getFileByPath(notepath);
           if (file) await app.vault.delete(file);
           await app.workspace.changeLayout(saved.layout);
-          return String(true);
         },
         { snapshot: snapshot, notepath: notePath },
       );
@@ -124,7 +122,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) as (WorkspaceLeaf & { view: LibraryView })[]
             )[0],
         );
-        return String(true);
       },
       { myLibraryDocument: MY_LIBRARY_DOCUMENT, notepath: notePath },
     );
@@ -154,37 +151,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const part = (name: string) =>
             card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
               ?.textContent ?? null;
-          return String(
-            JSON.stringify(
-              card!.checkVisibility()
-                ? {
-                    title: part("title"),
-                    creators: part("creators"),
-                    venue: part("venue"),
-                    citationKey: part("citekey"),
-                    abstract: part("abstract"),
-                    actions: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        "[data-library-card-action]",
-                      ),
-                    ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                    cards: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ),
-                    ]
-                      .map((n) => ({
-                        key: n.getAttribute("data-zotero-annotation-key")!,
-                        color: n.getAttribute("data-annot-color"),
-                        page:
-                          n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                            ?.textContent ?? null,
-                        text: n.textContent,
-                      }))
-                      .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                  }
-                : null,
-            ),
+          return JSON.stringify(
+            card!.checkVisibility()
+              ? {
+                  title: part("title"),
+                  creators: part("creators"),
+                  venue: part("venue"),
+                  citationKey: part("citekey"),
+                  abstract: part("abstract"),
+                  actions: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      "[data-library-card-action]",
+                    ),
+                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
+                  cards: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ),
+                  ]
+                    .map((n) => ({
+                      key: n.getAttribute("data-zotero-annotation-key")!,
+                      color: n.getAttribute("data-annot-color"),
+                      page:
+                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
+                          ?.textContent ?? null,
+                      text: n.textContent,
+                    }))
+                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                }
+              : null,
           );
         },
         { paperKey: paper.key },
@@ -195,73 +190,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Annotations: the first two quoted, the count of each colour, and "See
     // all", with no Annotation Card drawn.
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { paperKey }) => {
-            const { press, until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
-            const row = (key: string) =>
-              el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
-            press(row(paperKey), "paper row");
-            await until(
-              "card",
-              () =>
-                card!.checkVisibility() &&
-                card!.querySelector<HTMLElement>(
-                  '[data-library-card-toggle="annotations"]',
-                ),
-              10000,
-            );
-            await leaf!.view.card.settled;
-            const toggle = card!.querySelector<HTMLElement>(
-              '[data-library-card-toggle="annotations"]',
-            );
-            return String(
-              JSON.stringify({
-                toggle: toggle!.textContent,
-                expanded: toggle!.getAttribute("aria-expanded"),
-                cards:
-                  card!.querySelectorAll<HTMLElement>(".zt-annot-card").length,
-                quotes: card!.querySelectorAll<HTMLElement>(
-                  "[data-library-card-quote]",
-                ).length,
-                colours: [
-                  ...card!.querySelectorAll<HTMLElement>(
-                    "[data-library-card-colour]",
-                  ),
-                ].reduce(
-                  (sum, n) => sum + Number(n.textContent.split(": ").at(-1)),
-                  0,
-                ),
-              }),
-            );
-          },
-          { paperKey: paper.key },
-        ),
-      ),
-    ).toEqual({
-      toggle: run.m.library_view_card_see_all({ count: seededCards.length }),
-      expanded: "false",
-      cards: 0,
-      quotes: Math.min(2, seededCards.length),
-      colours: seededCards.length,
-    });
-    // Opened, the card shows the seeded fields and abstract, the row menu's
-    // actions, and its Annotations as cards.
-    const shown = JSON.parse(
       await obRun(
         run.vaultId,
-        async ({ app, page }, { seededCardsLength }) => {
+        async ({ app, page }, { paperKey }) => {
           const { press, until } = page;
           const leaf = (
             app.workspace.getLeavesOfType(
@@ -273,60 +204,113 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await leaf!.view.query.settled;
           const el = leaf!.view.contentEl;
           const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          press(
-            card!.querySelector<HTMLElement>(
-              '[data-library-card-toggle="annotations"]',
-            ),
-            "Annotations",
-          );
+          const row = (key: string) =>
+            el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
+          press(row(paperKey), "paper row");
           await until(
-            "cards",
+            "card",
             () =>
-              card!.querySelectorAll<HTMLElement>(".zt-annot-card").length >=
-              seededCardsLength,
+              card!.checkVisibility() &&
+              card!.querySelector<HTMLElement>(
+                '[data-library-card-toggle="annotations"]',
+              ),
             10000,
           );
           await leaf!.view.card.settled;
-          const part = (name: string) =>
-            card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
-              ?.textContent ?? null;
-          return String(
-            JSON.stringify(
-              card!.checkVisibility()
-                ? {
-                    title: part("title"),
-                    creators: part("creators"),
-                    venue: part("venue"),
-                    citationKey: part("citekey"),
-                    abstract: part("abstract"),
-                    actions: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        "[data-library-card-action]",
-                      ),
-                    ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                    cards: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ),
-                    ]
-                      .map((n) => ({
-                        key: n.getAttribute("data-zotero-annotation-key")!,
-                        color: n.getAttribute("data-annot-color"),
-                        page:
-                          n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                            ?.textContent ?? null,
-                        text: n.textContent,
-                      }))
-                      .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                  }
-                : null,
-            ),
+          const toggle = card!.querySelector<HTMLElement>(
+            '[data-library-card-toggle="annotations"]',
           );
+          return {
+            toggle: toggle!.textContent,
+            expanded: toggle!.getAttribute("aria-expanded"),
+            cards: card!.querySelectorAll<HTMLElement>(".zt-annot-card").length,
+            quotes: card!.querySelectorAll<HTMLElement>(
+              "[data-library-card-quote]",
+            ).length,
+            colours: [
+              ...card!.querySelectorAll<HTMLElement>(
+                "[data-library-card-colour]",
+              ),
+            ].reduce(
+              (sum, n) => sum + Number(n.textContent.split(": ").at(-1)),
+              0,
+            ),
+          };
         },
-        { seededCardsLength: seededCards.length },
+        { paperKey: paper.key },
       ),
-    ) as {
+    ).toEqual({
+      toggle: run.m.library_view_card_see_all({ count: seededCards.length }),
+      expanded: "false",
+      cards: 0,
+      quotes: Math.min(2, seededCards.length),
+      colours: seededCards.length,
+    });
+    // Opened, the card shows the seeded fields and abstract, the row menu's
+    // actions, and its Annotations as cards.
+    const shown = (await obRun(
+      run.vaultId,
+      async ({ app, page }, { seededCardsLength }) => {
+        const { press, until } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        await leaf!.view.query.settled;
+        const el = leaf!.view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+
+        press(
+          card!.querySelector<HTMLElement>(
+            '[data-library-card-toggle="annotations"]',
+          ),
+          "Annotations",
+        );
+        await until(
+          "cards",
+          () =>
+            card!.querySelectorAll<HTMLElement>(".zt-annot-card").length >=
+            seededCardsLength,
+          10000,
+        );
+        await leaf!.view.card.settled;
+        const part = (name: string) =>
+          card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
+            ?.textContent ?? null;
+        return card!.checkVisibility()
+          ? {
+              title: part("title"),
+              creators: part("creators"),
+              venue: part("venue"),
+              citationKey: part("citekey"),
+              abstract: part("abstract"),
+              actions: [
+                ...card!.querySelectorAll<HTMLElement>(
+                  "[data-library-card-action]",
+                ),
+              ].map((b) => b.textContent || b.getAttribute("aria-label")),
+              cards: [
+                ...card!.querySelectorAll<HTMLElement>(
+                  ".zt-annot-card[data-zotero-annotation-key]",
+                ),
+              ]
+                .map((n) => ({
+                  key: n.getAttribute("data-zotero-annotation-key")!,
+                  color: n.getAttribute("data-annot-color"),
+                  page:
+                    n.querySelector<HTMLElement>(".zt-annot-page-chip")
+                      ?.textContent ?? null,
+                  text: n.textContent,
+                }))
+                .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+            }
+          : null;
+      },
+      { seededCardsLength: seededCards.length },
+    )) as {
       title: string;
       creators: string;
       venue: string;
@@ -391,29 +375,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const el = leaf!.view.contentEl;
             const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            return String(
-              JSON.stringify({
-                capability: zotlit.services.bridge.runSync(
-                  zotlit.services.annotationRepository.capabilityFor(
-                    annotationAttachmentKey,
-                  ),
+            return JSON.stringify({
+              capability: zotlit.services.bridge.runSync(
+                zotlit.services.annotationRepository.capabilityFor(
+                  annotationAttachmentKey,
                 ),
-                blocked:
-                  [
-                    ...card!.querySelectorAll<HTMLElement>(".zt-annot-card"),
-                  ].every(
-                    (n) =>
-                      n.querySelectorAll<HTMLElement>(
-                        ".clickable-icon[data-blocked]",
-                      ).length >= 2,
-                  ) &&
-                  [
-                    ...card!.querySelectorAll<HTMLElement>(
-                      ".zt-annot-comment-field[role=textbox]",
-                    ),
-                  ].every((f) => f.hasAttribute("data-blocked")),
-              }),
-            );
+              ),
+              blocked:
+                [
+                  ...card!.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].every(
+                  (n) =>
+                    n.querySelectorAll<HTMLElement>(
+                      ".clickable-icon[data-blocked]",
+                    ).length >= 2,
+                ) &&
+                [
+                  ...card!.querySelectorAll<HTMLElement>(
+                    ".zt-annot-comment-field[role=textbox]",
+                  ),
+                ].every((f) => f.hasAttribute("data-blocked")),
+            });
           },
           { annotationAttachmentKey: annotationAttachment.key },
         ),
@@ -457,7 +439,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
         );
         press(item, "Insert citation");
-        return String(true);
       },
       {
         libraryViewMenuInsertCitationLabel:
@@ -470,15 +451,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ app }, { notepath }) => {
-              return String(
-                (
-                  app.workspace.getLeavesOfType(
-                    "markdown",
-                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                )
-                  .find((leaf) => leaf.view.file?.path === notepath)!
-                  .view.editor.getValue(),
-              );
+              return (
+                app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+                  view: MarkdownView;
+                })[]
+              )
+                .find((leaf) => leaf.view.file?.path === notepath)!
+                .view.editor.getValue();
             },
             { notepath: notePath },
           )
@@ -504,7 +483,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           card!.querySelector<HTMLElement>('[data-library-card-action="note"]'),
           "Open literature note",
         );
-        return String(true);
       },
       undefined,
     );
@@ -536,11 +514,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           card!.querySelector<HTMLElement>('[data-library-card-action="pdf"]'),
           "Open PDF",
         );
-        return String(true);
       },
       undefined,
     );
-    expect(await pdfOpened(run.vaultId, annotationAttachment.path!)).toBe(true);
+    await pdfOpened(run.vaultId, annotationAttachment.path!);
 
     // "Open in the annotation view" pins the paper in the sidebar Annotation View, which
     // lists its cards.
@@ -565,52 +542,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Open in the annotation view",
         );
-        return String(true);
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as (WorkspaceLeaf & { view: AnnotView })[]
-            )[0]?.view;
-            if (!view) return String("none");
-            await view.read;
-            return String(
-              JSON.stringify({
-                pinned: view.getState().pinnedItemKey,
-                cards: [
-                  ...view.contentEl.querySelectorAll<HTMLElement>(
-                    ".zt-annot-card[data-zotero-annotation-key]",
-                  ),
-                ]
-                  .map((n) => n.getAttribute("data-zotero-annotation-key")!)
-                  .toSorted(),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-reading.e2e.ts:186",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          pinned: paper.key,
-          cards: seededCards.map(({ key }) => key),
-        }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType(
+            "zotero-annotation-view",
+          ) as (WorkspaceLeaf & { view: AnnotView })[]
+        )[0]?.view;
+        if (!view) return "none";
+        await view.read;
+        return {
+          pinned: view.getState().pinnedItemKey as string,
+          cards: [
+            ...view.contentEl.querySelectorAll<HTMLElement>(
+              ".zt-annot-card[data-zotero-annotation-key]",
+            ),
+          ]
+            .map((n) => n.getAttribute("data-zotero-annotation-key")!)
+            .toSorted(),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            pinned: paper.key,
+            cards: seededCards.map(({ key }) => key),
+          }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "the Annotation View to pin the PDF and list its seeded cards",
+      },
+    );
 
     // A narrow pane shows the card over the list, and a wide one beside it;
     // the row stays selected.
@@ -620,63 +586,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page }) => {
           delete page.scratch.zotlitE2EBeside;
-          return String(true);
         },
         undefined,
       );
     });
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { app, page },
-            { positionInput, condition, choice, enabled },
-          ) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async (
+          { app, page },
+          { positionInput, condition, choice, enabled },
+        ) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            app.workspace.rightSplit.collapse();
-            const beside = (page.scratch.zotlitE2EBeside ??=
-              app.workspace.createLeafBySplit(leaf!, "vertical"));
-            (leaf!.parent as LibraryTabs).setDimension(positionInput);
-            (beside.parent as LibraryTabs).setDimension(condition);
-            await until(
-              `card ${choice} the list at ${el.clientWidth}px`,
-              () =>
-                card!.checkVisibility() &&
-                (getComputedStyle(card!).position === "absolute") === enabled,
-              5000,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                over: getComputedStyle(card!).position === "absolute",
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-              }),
-            );
-          },
-          {
-            positionInput: 30,
-            condition: 100 - 30,
-            choice: "over",
-            enabled: true,
-          },
-        ),
+          app.workspace.rightSplit.collapse();
+          const beside = (page.scratch.zotlitE2EBeside ??=
+            app.workspace.createLeafBySplit(leaf!, "vertical"));
+          (leaf!.parent as LibraryTabs).setDimension(positionInput);
+          (beside.parent as LibraryTabs).setDimension(condition);
+          await until(
+            `card ${choice} the list at ${el.clientWidth}px`,
+            () =>
+              card!.checkVisibility() &&
+              (getComputedStyle(card!).position === "absolute") === enabled,
+            5000,
+          );
+          return {
+            card: card!.checkVisibility(),
+            over: getComputedStyle(card!).position === "absolute",
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+          };
+        },
+        {
+          positionInput: 30,
+          condition: 100 - 30,
+          choice: "over",
+          enabled: true,
+        },
       ),
     ).toEqual({
       card: true,
@@ -686,44 +647,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Its close button puts it away; the row stays selected and takes the
     // focus back.
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }) => {
-            const { press, until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            press(
-              card!.querySelector<HTMLElement>("[data-library-card-close]"),
-              "Close",
-            );
-            await until("card hides", () => !card!.checkVisibility());
-            return String(
-              JSON.stringify({
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          undefined,
-        ),
+          press(
+            card!.querySelector<HTMLElement>("[data-library-card-close]"),
+            "Close",
+          );
+          await until("card hides", () => !card!.checkVisibility());
+          return {
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        undefined,
       ),
     ).toEqual({ selected: paper.key, focused: paper.key });
     // The arrow keys move the selection and leave the list uncovered; Space
@@ -733,29 +690,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     /** The row after `key` on screen. */
     const rowAfter = async (key: string) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app }, { key }) => {
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            el.querySelector<HTMLElement>("[data-library-card]");
+      (await obRun(
+        run.vaultId,
+        async ({ app }, { key }) => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          el.querySelector<HTMLElement>("[data-library-card]");
 
-            const keys = [
-              ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
-            ].map((n) => n.getAttribute("data-query-item-row")!);
-            return String(JSON.stringify(keys[keys.indexOf(key) + 1] ?? null));
-          },
-          { key: key },
-        ),
-      ) as string;
+          const keys = [
+            ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+          ].map((n) => n.getAttribute("data-query-item-row")!);
+          return keys[keys.indexOf(key) + 1] ?? null;
+        },
+        { key: key },
+      )) as string;
     // Over the list, a click waits out a double click before it opens the
     // card.
     await obRun(
@@ -776,58 +731,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
         press(row(paperKey), "paper row");
         await until("card", () => card!.checkVisibility());
-        return String(true);
       },
       { paperKey: paper.key },
     );
     const next = await rowAfter(paper.key);
     expect(next).not.toBeNull();
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { arrowDown, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { arrowDown, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: arrowDown,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { arrowDown: "ArrowDown", choice: "hides", enabled: false },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: arrowDown,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { arrowDown: "ArrowDown", choice: "hides", enabled: false },
       ),
     ).toEqual({
       card: false,
@@ -835,51 +785,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       focused: next,
     });
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { text, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { text, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: text,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { text: " ", choice: "shows", enabled: true },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: text,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { text: " ", choice: "shows", enabled: true },
       ),
     ).toEqual({
       card: true,
@@ -887,51 +833,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       focused: next,
     });
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { escape, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { escape, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: escape,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { escape: "Escape", choice: "hides", enabled: false },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: escape,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { escape: "Escape", choice: "hides", enabled: false },
       ),
     ).toEqual({
       card: false,
@@ -978,80 +920,73 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             contents.sendInputEvent({ type: "mouseDown", ...at, clickCount });
             contents.sendInputEvent({ type: "mouseUp", ...at, clickCount });
           }
-          return String("double-clicked");
+          return "double-clicked";
         },
         { paperKey: paper.key },
       ),
     ).toBe("double-clicked");
-    expect(await pdfOpened(run.vaultId, annotationAttachment.path!)).toBe(true);
+    await pdfOpened(run.vaultId, annotationAttachment.path!);
     // The keyboard that enters the list at its first row selects it, with
     // no card, so Space opens its card. Selecting the node again lets go of
     // the selection.
-    const entered = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }) => {
-          const { press, until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
+    const entered = (await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, until } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        await leaf!.view.query.settled;
+        const el = leaf!.view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-          press(
-            el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
-            "tree toggle",
-          );
-          press(
-            await until("selected node", () =>
-              el.querySelector<HTMLElement>(
-                "[data-library-node][aria-selected=true]",
-              ),
+        press(
+          el.querySelector<HTMLElement>("[data-library-tree-toggle]"),
+          "tree toggle",
+        );
+        press(
+          await until("selected node", () =>
+            el.querySelector<HTMLElement>(
+              "[data-library-node][aria-selected=true]",
             ),
-            "selected node",
-          );
-          await leaf!.view.searched;
-          await leaf!.view.query.settled;
-          await until(
-            "no selection",
-            () =>
-              !el.querySelector<HTMLElement>(
-                "[data-query-item-row][data-selected]",
-              ),
-          );
-          const first = el.querySelector<HTMLElement>(
-            '[data-query-item-row][tabindex="0"]',
-          );
-          first!.focus();
-          await until("first row selected", () =>
-            first!.hasAttribute("data-selected"),
-          );
-          return String(
-            JSON.stringify({
-              card: card!.checkVisibility(),
-              selected: el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )!
-                .getAttribute("data-query-item-row")!,
-              focused:
-                activeDocument.activeElement?.getAttribute(
-                  "data-query-item-row",
-                ) ?? null,
-              first: el
-                .querySelector<HTMLElement>("[data-query-item-row]")!
-                .getAttribute("data-query-item-row")!,
-            }),
-          );
-        },
-        undefined,
-      ),
-    ) as {
+          ),
+          "selected node",
+        );
+        await leaf!.view.searched;
+        await leaf!.view.query.settled;
+        await until(
+          "no selection",
+          () =>
+            !el.querySelector<HTMLElement>(
+              "[data-query-item-row][data-selected]",
+            ),
+        );
+        const first = el.querySelector<HTMLElement>(
+          '[data-query-item-row][tabindex="0"]',
+        );
+        first!.focus();
+        await until("first row selected", () =>
+          first!.hasAttribute("data-selected"),
+        );
+        return {
+          card: card!.checkVisibility(),
+          selected: el
+            .querySelector<HTMLElement>("[data-query-item-row][data-selected]")!
+            .getAttribute("data-query-item-row")!,
+          focused:
+            activeDocument.activeElement?.getAttribute("data-query-item-row") ??
+            null,
+          first: el
+            .querySelector<HTMLElement>("[data-query-item-row]")!
+            .getAttribute("data-query-item-row")!,
+        };
+      },
+      undefined,
+    )) as {
       card: boolean;
       selected: string;
       focused: string | null;
@@ -1064,51 +999,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       first: entered.first,
     });
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { text, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { text, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: text,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { text: " ", choice: "shows", enabled: true },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: text,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { text: " ", choice: "shows", enabled: true },
       ),
     ).toEqual({
       card: true,
@@ -1116,51 +1047,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       focused: entered.first,
     });
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { escape, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { escape, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: escape,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { escape: "Escape", choice: "hides", enabled: false },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: escape,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { escape: "Escape", choice: "hides", enabled: false },
       ),
     ).toMatchObject({
       card: false,
@@ -1184,58 +1111,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
         press(row(next), "row after the paper");
         await until("card", () => card!.checkVisibility());
-        return String(true);
       },
       { next: next },
     );
     // ↑ goes back to the paper and puts its card away; a wide pane shows
     // the card of the selected row beside the list.
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { arrowUp, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { arrowUp, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: arrowUp,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { arrowUp: "ArrowUp", choice: "hides", enabled: false },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: arrowUp,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { arrowUp: "ArrowUp", choice: "hides", enabled: false },
       ),
     ).toEqual({
       card: false,
@@ -1243,57 +1165,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       focused: paper.key,
     });
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { app, page },
-            { positionInput, condition, choice, enabled },
-          ) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async (
+          { app, page },
+          { positionInput, condition, choice, enabled },
+        ) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            app.workspace.rightSplit.collapse();
-            const beside = (page.scratch.zotlitE2EBeside ??=
-              app.workspace.createLeafBySplit(leaf!, "vertical"));
-            (leaf!.parent as LibraryTabs).setDimension(positionInput);
-            (beside.parent as LibraryTabs).setDimension(condition);
-            await until(
-              `card ${choice} the list at ${el.clientWidth}px`,
-              () =>
-                card!.checkVisibility() &&
-                (getComputedStyle(card!).position === "absolute") === enabled,
-              5000,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                over: getComputedStyle(card!).position === "absolute",
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-              }),
-            );
-          },
-          {
-            positionInput: 90,
-            condition: 100 - 90,
-            choice: "beside",
-            enabled: false,
-          },
-        ),
+          app.workspace.rightSplit.collapse();
+          const beside = (page.scratch.zotlitE2EBeside ??=
+            app.workspace.createLeafBySplit(leaf!, "vertical"));
+          (leaf!.parent as LibraryTabs).setDimension(positionInput);
+          (beside.parent as LibraryTabs).setDimension(condition);
+          await until(
+            `card ${choice} the list at ${el.clientWidth}px`,
+            () =>
+              card!.checkVisibility() &&
+              (getComputedStyle(card!).position === "absolute") === enabled,
+            5000,
+          );
+          return {
+            card: card!.checkVisibility(),
+            over: getComputedStyle(card!).position === "absolute",
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+          };
+        },
+        {
+          positionInput: 90,
+          condition: 100 - 90,
+          choice: "beside",
+          enabled: false,
+        },
       ),
     ).toEqual({
       card: true,
@@ -1302,51 +1220,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     // Beside a wide list the card follows the arrow keys.
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { arrowDown, choice, enabled }) => {
-            const { until } = page;
-            const leaf = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0];
-            await app.workspace.revealLeaf(leaf!);
-            app.workspace.setActiveLeaf(leaf!, { focus: true });
-            await leaf!.view.query.settled;
-            const el = leaf!.view.contentEl;
-            const card = el.querySelector<HTMLElement>("[data-library-card]");
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { arrowDown, choice, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            activeDocument.activeElement!.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: arrowDown,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            await until(
-              `card ${choice}`,
-              () => card!.checkVisibility() === enabled,
-            );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
-          },
-          { arrowDown: "ArrowDown", choice: "shows", enabled: true },
-        ),
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: arrowDown,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${choice}`,
+            () => card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { arrowDown: "ArrowDown", choice: "shows", enabled: true },
       ),
     ).toEqual({
       card: true,
@@ -1362,50 +1276,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }, { emptydir }) => {
         zotlit.services.zoteroPref.setDataDir(emptydir);
-        return String(true);
       },
       { emptydir: emptyDir },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl;
-            return String(
-              JSON.stringify({
-                missing:
-                  el.querySelector<HTMLElement>("[data-zotero-missing]") !==
-                  null,
-                card: el
-                  .querySelector<HTMLElement>("[data-library-card]")!
-                  .checkVisibility(),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-reading.e2e.ts:320",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ missing: true, card: false }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        return {
+          missing:
+            el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
+          card: el
+            .querySelector<HTMLElement>("[data-library-card]")!
+            .checkVisibility(),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { missing: true, card: false }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "the Library View missing-folder notice with the reading card hidden",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ zotlit }, { dataDir }) => {
         zotlit.services.zoteroPref.setDataDir(dataDir);
-        return String(true);
       },
       { dataDir: JSON.parse(snapshot).dataDir },
     );
@@ -1448,37 +1349,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const part = (name: string) =>
             card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
               ?.textContent ?? null;
-          return String(
-            JSON.stringify(
-              card!.checkVisibility()
-                ? {
-                    title: part("title"),
-                    creators: part("creators"),
-                    venue: part("venue"),
-                    citationKey: part("citekey"),
-                    abstract: part("abstract"),
-                    actions: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        "[data-library-card-action]",
-                      ),
-                    ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                    cards: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ),
-                    ]
-                      .map((n) => ({
-                        key: n.getAttribute("data-zotero-annotation-key")!,
-                        color: n.getAttribute("data-annot-color"),
-                        page:
-                          n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                            ?.textContent ?? null,
-                        text: n.textContent,
-                      }))
-                      .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                  }
-                : null,
-            ),
+          return JSON.stringify(
+            card!.checkVisibility()
+              ? {
+                  title: part("title"),
+                  creators: part("creators"),
+                  venue: part("venue"),
+                  citationKey: part("citekey"),
+                  abstract: part("abstract"),
+                  actions: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      "[data-library-card-action]",
+                    ),
+                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
+                  cards: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ),
+                  ]
+                    .map((n) => ({
+                      key: n.getAttribute("data-zotero-annotation-key")!,
+                      color: n.getAttribute("data-annot-color"),
+                      page:
+                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
+                          ?.textContent ?? null,
+                      text: n.textContent,
+                    }))
+                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                }
+              : null,
           );
         },
         undefined,

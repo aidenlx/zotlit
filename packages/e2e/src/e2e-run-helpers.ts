@@ -44,7 +44,6 @@ export async function openProfilesSettings(
     async ({ app }) => {
       app.vault.setConfig("settingsPopoutWindow", false);
       app.setting.open();
-      return String(true);
     },
     undefined,
   );
@@ -52,20 +51,18 @@ export async function openProfilesSettings(
     vaultId,
     async ({ app }) => {
       app.setting.openTabById("zotlit");
-      return String(true);
     },
     undefined,
   );
   await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { pageId }) => {
       app.setting.navigateToSearchResult({
         tab: app.setting.activeTab!,
-        pagePath: [__typedArg0],
+        pagePath: [pageId],
       });
-      return String(true);
     },
-    { __typedArg0: pageId },
+    { pageId },
   );
 }
 
@@ -147,58 +144,47 @@ export interface ActiveTab {
 }
 
 export async function activeTab(vaultId: string): Promise<ActiveTab> {
-  return JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ app }) => {
-        const view = app.workspace.activeLeaf?.view as
-          | import("obsidian").FileView
-          | undefined;
-        const file = view?.file ?? null;
-        return String(
-          JSON.stringify({
-            type: view?.getViewType() ?? null,
-            path: file?.path ?? null,
-            key: file
-              ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
-                  "zotero-key"
-                ] ?? null)
-              : null,
-            opening: !!(
-              app.workspace.activeLeaf as
-                | (import("obsidian").WorkspaceLeaf & { working?: boolean })
-                | null
-            )?.working,
-          }),
-        );
-      },
-      undefined,
-    ),
-  ) as ActiveTab;
+  return (await obRun(
+    vaultId,
+    async ({ app }) => {
+      const view = app.workspace.activeLeaf?.view as
+        | import("obsidian").FileView
+        | undefined;
+      const file = view?.file ?? null;
+      return {
+        type: view?.getViewType() ?? null,
+        path: file?.path ?? null,
+        key: file
+          ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
+              "zotero-key"
+            ] ?? null)
+          : null,
+        opening: !!(
+          app.workspace.activeLeaf as
+            | (import("obsidian").WorkspaceLeaf & { working?: boolean })
+            | null
+        )?.working,
+      };
+    },
+    undefined,
+  )) as ActiveTab;
 }
 
 export function pdfOpened(vaultId: string, path: string): Promise<boolean> {
-  return ((options: { expected: string; tries?: number }) =>
-    obRunUntil(
-      vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        const view = app.workspace.activeLeaf?.view as PagePdfView | undefined;
-        return String(
-          String(
-            view?.getViewType() === "pdf" &&
-              view.file?.path === __typedArg0 &&
-              (view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) > 0,
-          ),
-        );
-      },
-      { __typedArg0: path },
-      {
-        ready: (value) => value === options.expected,
-        tries: options.tries,
-        what: "e2e-run-helpers.ts:111",
-      },
-    ).then(
-      () => true,
-      () => false,
-    ))({ expected: "true", tries: 120 });
+  return obRunUntil(
+    vaultId,
+    async ({ app }, { expectedPath }) => {
+      const view = app.workspace.activeLeaf?.view as PagePdfView | undefined;
+      return (
+        view?.getViewType() === "pdf" &&
+        view.file?.path === expectedPath &&
+        (view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) > 0
+      );
+    },
+    { expectedPath: path },
+    {
+      tries: 120,
+      what: "the expected PDF to be the active leaf with pages loaded",
+    },
+  );
 }

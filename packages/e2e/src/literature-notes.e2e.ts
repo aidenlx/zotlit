@@ -37,8 +37,8 @@ import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import {
   clickModalButton,
   createFixtureNote,
-  hasIndexedNotes,
-  hasOneIndexedNote,
+  waitForIndexedNotes,
+  waitForOneIndexedNote,
   indexedNote,
   managedRegion,
   noteBody,
@@ -78,7 +78,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }) => {
         app.saveLocalStorage("zotlit-profile-customization", "native");
-        return String(true);
       },
       undefined,
     );
@@ -86,40 +85,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ zotlit }) => {
-          return String(String(zotlit.services.profile.profiles.length));
+          return zotlit.services.profile.profiles.length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
     // A default Profile that lists the Annotations in the note puts one
     // callout for each of them in the body, where the customized callout
     // must arrive.
     await useListingProfile(freshId);
     await suite.quickSwitchCreate(annotatedItem, freshId);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          freshId,
-          async ({ app, zotlit }) => {
-            return String(
-              String(
-                !!app.workspace.getActiveFile() &&
-                  zotlit.services.noteIndex.getNotesByItemKey("RUGIER24")
-                    .length === 1,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:100",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      freshId,
+      async ({ app, zotlit }) => {
+        return (
+          !!app.workspace.getActiveFile() &&
+          zotlit.services.noteIndex.getNotesByItemKey("RUGIER24").length === 1
+        );
+      },
+      undefined,
+      {
+        what: "an active note file and exactly one Literature Note indexed for item RUGIER24",
+      },
+    );
     const note = await indexedNote(freshId, annotatedItem.itemID);
     expect(note.path).not.toBeNull();
     const personal = "\nMy own research question stays here.\n";
@@ -129,21 +117,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // `changed` event rather than racing the parse.
     await obRun(
       freshId,
-      async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
-        const file = app.vault.getFileByPath(__typedArg0)!;
+      async ({ app }, { notePath, personal }) => {
+        const file = app.vault.getFileByPath(notePath)!;
         const indexed = new Promise<void>((resolve) => {
           const ref = app.metadataCache.on("changed", (changed, data) => {
-            if (changed !== file || !data.includes(__typedArg1)) return;
+            if (changed !== file || !data.includes(personal)) return;
             app.metadataCache.offref(ref);
             resolve();
           });
         });
-        await app.vault.append(file, __typedArg2);
+        await app.vault.append(file, personal);
         await indexed;
         await app.workspace.getLeaf(false).openFile(file);
-        return String(true);
       },
-      { __typedArg0: note.path!, __typedArg1: personal, __typedArg2: personal },
+      { notePath: note.path!, personal },
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
     expect(before.split("[!note]").length - 1).toBe(annotationKeys.length);
@@ -151,57 +138,76 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ app }) => {
-          return String(
-            app.commands.executeCommandById("zotlit:customize-note-template"),
+          return app.commands.executeCommandById(
+            "zotlit:customize-note-template",
           );
         },
         undefined,
       ),
-    ).toBe("true");
-
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          freshId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              String(
-                !!(function () {
-                  var leaves = app.workspace.getLeavesOfType(
-                    "zotlit-template-workbench",
-                  ) as (import("obsidian").WorkspaceLeaf & {
-                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-                  })[];
-                  return (
-                    leaves.find(
-                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                    ) ?? leaves[0]
-                  )?.view;
-                })()?.file,
-              ),
-            );
-          },
-          { __typedArg0: note.path! },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:127",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-        tries: 80,
-      }),
     ).toBe(true);
+
+    await obRunUntil(
+      freshId,
+      async ({ app }, { notePath }) => {
+        return !!(function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === notePath,
+            ) ?? leaves[0]
+          )?.view;
+        })()?.file;
+      },
+      { notePath: note.path! },
+      {
+        tries: 80,
+        what: "the Template Workbench to open a file for the originating note",
+      },
+    );
     // The Default document already exists, so the workbench shows its file
     // before Customize sets the note it came from.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
+    await obRunUntil(
+      freshId,
+      async ({ app }, { notePath, expectedTemplateText }) => {
+        const view = (function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === notePath,
+            ) ?? leaves[0]
+          )?.view;
+        })()!;
+        return (
+          view.contentEl.textContent.includes(expectedTemplateText) &&
+          view.store.getState().item?.id === "RUGIER24"
+        );
+      },
+      {
+        notePath: note.path!,
+        expectedTemplateText: run.m.template_workbench_shared_template({
+          name: run.m.settings_profile_default_name(),
+        }),
+      },
+      {
+        what: "the Template Workbench to show the expected template text for item RUGIER24",
+      },
+    );
+    await changeNativeAnnotationCallout(freshId, {
+      view: { originatingNote: note.path! },
+      vaultPath: freshPath,
+      tabLabel: run.m.workbench_tab_annotation(),
+      beforeEdit: async () => {
+        await obRunUntil(
           freshId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
+          async ({ app }, { notePath, helpButtonLabel }) => {
             const view = (function () {
               var leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
@@ -210,82 +216,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               })[];
               return (
                 leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                  (leaf) => leaf.view.originatingNote?.path === notePath,
                 ) ?? leaves[0]
               )?.view;
             })()!;
-            return String(
-              String(
-                view.contentEl.textContent.includes(__typedArg1) &&
-                  view.store.getState().item?.id === "RUGIER24",
-              ),
+            const help = view.contentEl.querySelector<HTMLElement>(
+              `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
+            );
+            if (!help) return false;
+            view.leaf.getContainer().focus();
+            help!.focus();
+            return (
+              help === view.contentEl.ownerDocument.activeElement &&
+              help!.getAttribute("aria-expanded") === "false"
             );
           },
+          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
           {
-            __typedArg0: note.path!,
-            __typedArg1: run.m.template_workbench_shared_template({
-              name: run.m.settings_profile_default_name(),
-            }),
+            what: "the Template Workbench help button to take focus while collapsed",
           },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:135",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    await changeNativeAnnotationCallout(freshId, {
-      view: { originatingNote: note.path! },
-      vaultPath: freshPath,
-      tabLabel: run.m.workbench_tab_annotation(),
-      beforeEdit: async () => {
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              freshId,
-              async ({ app }, { __typedArg0, __typedArg1 }) => {
-                const view = (function () {
-                  var leaves = app.workspace.getLeavesOfType(
-                    "zotlit-template-workbench",
-                  ) as (import("obsidian").WorkspaceLeaf & {
-                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-                  })[];
-                  return (
-                    leaves.find(
-                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                    ) ?? leaves[0]
-                  )?.view;
-                })()!;
-                const help = view.contentEl.querySelector<HTMLElement>(
-                  `button[aria-label=${JSON.stringify(__typedArg1)}]`,
-                );
-                if (!help) return String(false);
-                view.leaf.getContainer().focus();
-                help!.focus();
-                return String(
-                  String(
-                    help === view.contentEl.ownerDocument.activeElement &&
-                      help!.getAttribute("aria-expanded") === "false",
-                  ),
-                );
-              },
-              { __typedArg0: note.path!, __typedArg1: run.m.workbench_help() },
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "literature.ts:147",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
+        );
         await obRun(
           freshId,
-          async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+          async ({ app, page }, { notePath, helpButtonLabel }) => {
             const { press } = page;
             const view = (function () {
               var leaves = app.workspace.getLeavesOfType(
@@ -295,73 +248,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               })[];
               return (
                 leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                  (leaf) => leaf.view.originatingNote?.path === notePath,
                 ) ?? leaves[0]
               )?.view;
             })()!;
             press(
               view.contentEl.querySelector<HTMLElement>(
-                `button[aria-label=${JSON.stringify(__typedArg1)}]`,
+                `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
               ),
               "Help",
             );
-            return String(true);
           },
-          { __typedArg0: note.path!, __typedArg1: run.m.workbench_help() },
+          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
         );
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              freshId,
-              async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
-                const view = (function () {
-                  var leaves = app.workspace.getLeavesOfType(
-                    "zotlit-template-workbench",
-                  ) as (import("obsidian").WorkspaceLeaf & {
-                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-                  })[];
-                  return (
-                    leaves.find(
-                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                    ) ?? leaves[0]
-                  )?.view;
-                })()!;
-                const guide = view.contentEl.querySelector<HTMLElement>(
-                  `section[aria-label=${JSON.stringify(__typedArg1)}]`,
-                );
-                const source = Array.from(
-                  view.contentEl.querySelectorAll<CodeMirrorElement>(
-                    ".cm-content",
-                  ),
-                ).find((element) => element.textContent.includes("[!note]"));
-                return String(
-                  String(
-                    !!guide &&
-                      guide.textContent.includes("[!quote]") &&
-                      guide.textContent.includes(__typedArg2) &&
-                      guide!.getBoundingClientRect().height > 0 &&
-                      source!.getBoundingClientRect().height > 0,
-                  ),
-                );
-              },
-              {
-                __typedArg0: note.path!,
-                __typedArg1: run.m.workbench_annotation_help_title(),
-                __typedArg2: run.m.template_workbench_update_this_note(),
-              },
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "literature.ts:158",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
-        await obRun(
+        await obRunUntil(
           freshId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
+          async ({ app }, { notePath, helpSectionLabel, guideText }) => {
             const view = (function () {
               var leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
@@ -370,12 +272,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               })[];
               return (
                 leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                  (leaf) => leaf.view.originatingNote?.path === notePath,
                 ) ?? leaves[0]
               )?.view;
             })()!;
             const guide = view.contentEl.querySelector<HTMLElement>(
-              `section[aria-label=${JSON.stringify(__typedArg1)}]`,
+              `section[aria-label=${JSON.stringify(helpSectionLabel)}]`,
+            );
+            const source = Array.from(
+              view.contentEl.querySelectorAll<CodeMirrorElement>(".cm-content"),
+            ).find((element) => element.textContent.includes("[!note]"));
+            return (
+              !!guide &&
+              guide.textContent.includes("[!quote]") &&
+              guide.textContent.includes(guideText) &&
+              guide!.getBoundingClientRect().height > 0 &&
+              source!.getBoundingClientRect().height > 0
+            );
+          },
+          {
+            notePath: note.path!,
+            helpSectionLabel: run.m.workbench_annotation_help_title(),
+            guideText: run.m.template_workbench_update_this_note(),
+          },
+          {
+            what: "the Template Workbench guide section to render with its quote callout visible",
+          },
+        );
+        await obRun(
+          freshId,
+          async ({ app }, { notePath, helpSectionLabel }) => {
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === notePath,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            const guide = view.contentEl.querySelector<HTMLElement>(
+              `section[aria-label=${JSON.stringify(helpSectionLabel)}]`,
             );
             guide!.focus();
             guide!.dispatchEvent(
@@ -384,66 +324,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 { key: "Escape", bubbles: true },
               ),
             );
-            return String(true);
           },
           {
-            __typedArg0: note.path!,
-            __typedArg1: run.m.workbench_annotation_help_title(),
+            notePath: note.path!,
+            helpSectionLabel: run.m.workbench_annotation_help_title(),
           },
         );
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              freshId,
-              async ({ app }, { __typedArg0, __typedArg1 }) => {
-                const view = (function () {
-                  var leaves = app.workspace.getLeavesOfType(
-                    "zotlit-template-workbench",
-                  ) as (import("obsidian").WorkspaceLeaf & {
-                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-                  })[];
-                  return (
-                    leaves.find(
-                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                    ) ?? leaves[0]
-                  )?.view;
-                })()!;
-                const help = view.contentEl.querySelector<HTMLElement>(
-                  `button[aria-label=${JSON.stringify(__typedArg1)}]`,
-                );
-                return String(
-                  String(
-                    help!.getAttribute("aria-expanded") === "false" &&
-                      help === view.contentEl.ownerDocument.activeElement &&
-                      Array.from(
-                        view.contentEl.querySelectorAll<CodeMirrorElement>(
-                          ".cm-content",
-                        ),
-                      ).some((element) =>
-                        element.textContent.includes("[!note]"),
-                      ),
-                  ),
-                );
-              },
-              { __typedArg0: note.path!, __typedArg1: run.m.workbench_help() },
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "literature.ts:169",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
-      },
-    });
-    // The linked Preview belongs to the editor's native window, which can differ from the CLI window.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
+        await obRunUntil(
           freshId,
-          async ({ app }, { __typedArg0 }) => {
+          async ({ app }, { notePath, helpButtonLabel }) => {
             const view = (function () {
               var leaves = app.workspace.getLeavesOfType(
                 "zotlit-template-workbench",
@@ -452,49 +341,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               })[];
               return (
                 leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                  (leaf) => leaf.view.originatingNote?.path === notePath,
                 ) ?? leaves[0]
               )?.view;
             })()!;
-            return String(
-              String(
-                !!view.contentEl.ownerDocument.querySelector<HTMLElement>(
-                  '.callout[data-callout="quote"]',
+            const help = view.contentEl.querySelector<HTMLElement>(
+              `button[aria-label=${JSON.stringify(helpButtonLabel)}]`,
+            );
+            return (
+              help!.getAttribute("aria-expanded") === "false" &&
+              help === view.contentEl.ownerDocument.activeElement &&
+              Array.from(
+                view.contentEl.querySelectorAll<CodeMirrorElement>(
+                  ".cm-content",
                 ),
-              ),
+              ).some((element) => element.textContent.includes("[!note]"))
             );
           },
-          { __typedArg0: note.path! },
+          { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
           {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:179",
+            what: "the help button collapsed and focused with the note source visible",
           },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    expect(await readFile(join(freshPath, note.path!), "utf-8")).toBe(before);
-    const other = await createFixtureNote(freshId, createTargetItem.itemID);
-    expect(other.outcome).toBe("created");
-    if (other.outcome !== "created")
-      throw new Error("Second note was not created");
-    const otherBefore = await readFile(join(freshPath, other.path), "utf-8");
-    await obRun(
-      freshId,
-      async ({ app }, { __typedArg0 }) => {
-        await app.workspace
-          .getLeaf("tab")
-          .openFile(app.vault.getFileByPath(__typedArg0)!);
-        app.workspace.rootSplit.focus();
-        return String(true);
+        );
       },
-      { __typedArg0: other.path },
-    );
-    await obRun(
+    });
+    // The linked Preview belongs to the editor's native window, which can differ from the CLI window.
+    await obRunUntil(
       freshId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { notePath }) => {
         const view = (function () {
           var leaves = app.workspace.getLeavesOfType(
             "zotlit-template-workbench",
@@ -503,112 +377,127 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           })[];
           return (
             leaves.find(
-              (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+              (leaf) => leaf.view.originatingNote?.path === notePath,
+            ) ?? leaves[0]
+          )?.view;
+        })()!;
+        return !!view.contentEl.ownerDocument.querySelector<HTMLElement>(
+          '.callout[data-callout="quote"]',
+        );
+      },
+      { notePath: note.path! },
+      {
+        what: "a quote callout to render in the Preview of the editor's window",
+      },
+    );
+    expect(await readFile(join(freshPath, note.path!), "utf-8")).toBe(before);
+    const other = await createFixtureNote(freshId, createTargetItem.itemID);
+    expect(other.outcome).toBe("created");
+    if (other.outcome !== "created")
+      throw new Error("Second note was not created");
+    const otherBefore = await readFile(join(freshPath, other.path), "utf-8");
+    await obRun(
+      freshId,
+      async ({ app }, { otherPath }) => {
+        await app.workspace
+          .getLeaf("tab")
+          .openFile(app.vault.getFileByPath(otherPath)!);
+        app.workspace.rootSplit.focus();
+      },
+      { otherPath: other.path },
+    );
+    await obRun(
+      freshId,
+      async ({ app }, { notePath }) => {
+        const view = (function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === notePath,
             ) ?? leaves[0]
           )?.view;
         })()!;
         await app.workspace.revealLeaf(view.leaf);
         view.contentEl.ownerDocument.defaultView!.focus();
         app.workspace.setActiveLeaf(view.leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: note.path! },
+      { notePath: note.path! },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          freshId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              String(
-                activeWindow ===
-                  (function () {
-                    var leaves = app.workspace.getLeavesOfType(
-                      "zotlit-template-workbench",
-                    ) as (import("obsidian").WorkspaceLeaf & {
-                      view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-                    })[];
-                    return (
-                      leaves.find(
-                        (leaf) =>
-                          leaf.view.originatingNote?.path === __typedArg0,
-                      ) ?? leaves[0]
-                    )?.view;
-                  })()!.contentEl.ownerDocument.defaultView,
-              ),
-            );
-          },
-          { __typedArg0: note.path! },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:200",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          freshId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
-            const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            const button = Array.from(
-              view.contentEl.querySelectorAll<HTMLButtonElement>("button"),
-            ).find((button) => button.innerText.trim() === __typedArg1);
-            button!.focus();
-            return String(
-              String(
-                view.contentEl.ownerDocument.activeElement === button &&
-                  !button.disabled,
-              ),
-            );
-          },
-          {
-            __typedArg0: note.path!,
-            __typedArg1: run.m.template_workbench_update_this_note(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:207",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      freshId,
+      async ({ app }, { notePath }) => {
+        return (
+          activeWindow ===
+          (function () {
+            var leaves = app.workspace.getLeavesOfType(
+              "zotlit-template-workbench",
+            ) as (import("obsidian").WorkspaceLeaf & {
+              view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+            })[];
+            return (
+              leaves.find(
+                (leaf) => leaf.view.originatingNote?.path === notePath,
+              ) ?? leaves[0]
+            )?.view;
+          })()!.contentEl.ownerDocument.defaultView
+        );
+      },
+      { notePath: note.path! },
+      { what: "the Template Workbench's window to become the active window" },
+    );
+    await obRunUntil(
+      freshId,
+      async ({ app }, { notePath, updateButtonText }) => {
+        const view = (function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === notePath,
+            ) ?? leaves[0]
+          )?.view;
+        })()!;
+        const button = Array.from(
+          view.contentEl.querySelectorAll<HTMLButtonElement>("button"),
+        ).find((button) => button.innerText.trim() === updateButtonText);
+        button!.focus();
+        return (
+          view.contentEl.ownerDocument.activeElement === button &&
+          !button.disabled
+        );
+      },
+      {
+        notePath: note.path!,
+        updateButtonText: run.m.template_workbench_update_this_note(),
+      },
+      {
+        what: "the Template Workbench Update button to take focus and be enabled",
+      },
+    );
     // The first click after an edit writes the Managed Frontmatter with the
     // body: a managed Property removed now comes back with this one update.
     await obRun(
       freshId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { notePath }) => {
         await app.fileManager.processFrontMatter(
-          app.vault.getFileByPath(__typedArg0)!,
+          app.vault.getFileByPath(notePath)!,
           (fm) => {
             delete fm.collections;
           },
         );
-        return String(true);
       },
-      { __typedArg0: note.path! },
+      { notePath: note.path! },
     );
     await obRun(
       freshId,
-      async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+      async ({ app, page }, { notePath, updateButtonText }) => {
         const { press } = page;
         const view = (function () {
           var leaves = app.workspace.getLeavesOfType(
@@ -618,58 +507,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           })[];
           return (
             leaves.find(
-              (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+              (leaf) => leaf.view.originatingNote?.path === notePath,
             ) ?? leaves[0]
           )?.view;
         })()!;
         press(
           Array.from(
             view.contentEl.querySelectorAll<HTMLButtonElement>("button"),
-          ).find((button) => button.innerText.trim() === __typedArg1),
+          ).find((button) => button.innerText.trim() === updateButtonText),
           "Update this note",
         );
-        return String(true);
       },
       {
-        __typedArg0: note.path!,
-        __typedArg1: run.m.template_workbench_update_this_note(),
+        notePath: note.path!,
+        updateButtonText: run.m.template_workbench_update_this_note(),
       },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          freshId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              String(
-                !(function () {
-                  var leaves = app.workspace.getLeavesOfType(
-                    "zotlit-template-workbench",
-                  ) as (import("obsidian").WorkspaceLeaf & {
-                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-                  })[];
-                  return (
-                    leaves.find(
-                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                    ) ?? leaves[0]
-                  )?.view;
-                })()!.updatingNote,
-              ),
-            );
-          },
-          { __typedArg0: note.path! },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:224",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      freshId,
+      async ({ app }, { notePath }) => {
+        return !(function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === notePath,
+            ) ?? leaves[0]
+          )?.view;
+        })()!.updatingNote;
+      },
+      { notePath: note.path! },
+      { what: "the Template Workbench to clear its updating-note flag" },
+    );
     expect(
       await waitFor(async () =>
         /^collections:/m.test(
@@ -694,44 +566,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const updated = run.m.template_workbench_updated_note({
       name: basename(note.path!, ".md"),
     });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          freshId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
-            const view = (function () {
-              var leaves = app.workspace.getLeavesOfType(
-                "zotlit-template-workbench",
-              ) as (import("obsidian").WorkspaceLeaf & {
-                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-              })[];
-              return (
-                leaves.find(
-                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
-                ) ?? leaves[0]
-              )?.view;
-            })()!;
-            return String(
-              String(
-                [view.contentEl.ownerDocument, document].some((doc) =>
-                  Array.from(doc.querySelectorAll<HTMLElement>(".notice")).some(
-                    (notice) => notice.textContent.includes(__typedArg1),
-                  ),
-                ),
-              ),
-            );
-          },
-          { __typedArg0: note.path!, __typedArg1: updated },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:253",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      freshId,
+      async ({ app }, { notePath, updated }) => {
+        const view = (function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === notePath,
+            ) ?? leaves[0]
+          )?.view;
+        })()!;
+        return [view.contentEl.ownerDocument, document].some((doc) =>
+          Array.from(doc.querySelectorAll<HTMLElement>(".notice")).some(
+            (notice) => notice.textContent.includes(updated),
+          ),
+        );
+      },
+      { notePath: note.path!, updated },
+      {
+        what: "an Obsidian notice with the note update confirmation text to appear",
+      },
+    );
     const after = await readFile(join(freshPath, note.path!), "utf-8");
     expect(after.split("---")[1]).toMatch(/^collections:/m);
     expect(noteBody(after).replace(managedRegion(after), "")).toBe(
@@ -753,30 +613,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const notePath = `${folder}/${noteName}.md`;
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
 
-    const removedFromIndex = await ((options: {
-      expected: string;
-      tries?: number;
-    }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
-            ),
-          );
-        },
-        { __typedArg0: createTargetItem.key },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "literature.ts:280",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "0" });
-    expect(removedFromIndex).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { createTargetItemKey }) => {
+        return zotlit.services.noteIndex.getNotesByItemKey(createTargetItemKey)
+          .length;
+      },
+      { createTargetItemKey: createTargetItem.key },
+      {
+        ready: (value) => value === 0,
+        what: "Literature Notes indexed for the create target item to reach 0",
+      },
+    );
 
     const first = await createFixtureNote(run.vaultId, createTargetItem.itemID);
     expect(first.outcome).toBe("created");
@@ -784,27 +632,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       throw new Error("The first create did not create a Literature Note");
     }
 
-    const indexed = await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
-            ),
-          );
-        },
-        { __typedArg0: createTargetItem.key },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "literature.ts:293",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "1" });
-    expect(indexed).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { createTargetItemKey }) => {
+        return zotlit.services.noteIndex.getNotesByItemKey(createTargetItemKey)
+          .length;
+      },
+      { createTargetItemKey: createTargetItem.key },
+      {
+        ready: (value) => value === 1,
+        what: "Literature Notes indexed for the create target item to reach 1",
+      },
+    );
 
     const second = await createFixtureNote(
       run.vaultId,
@@ -820,78 +659,62 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     });
 
-    const oneNote = await hasOneIndexedNote(run.vaultId, createTargetItem.key);
-    expect(oneNote).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, createTargetItem.key);
   });
 
   it("creates a default note whose body renders once and imports no Child Note", async () => {
     const item = ITEMS.find(({ itemID }) => itemID === 1)!;
     const childNoteKey = "NNNNAAAA";
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return String(
-              String(
-                zotlit.services.profile.resolveProfile("default")?.document ===
-                  undefined,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:323",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return (
+          zotlit.services.profile.resolveProfile("default")?.document ===
+          undefined
+        );
+      },
+      undefined,
+      { what: "the default Profile to resolve without a document" },
+    );
     // Set the Item's seeded notes aside, so the default Profile writes a new
     // one; the cleanup puts them back.
     await using cleanup = new AsyncDisposableStack();
-    const seeded = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, zotlit }, { __typedArg0 }) => {
-          await zotlit.services.noteIndex.whenIndexed();
-          const notes = [];
-          for (const note of zotlit.services.noteIndex.getNotesByItemKey(
-            __typedArg0,
-          )) {
-            const file = app.vault.getFileByPath(note.path)!;
-            notes.push({ path: note.path, text: await app.vault.read(file) });
-            await app.vault.delete(file);
-          }
-          return String(JSON.stringify(notes));
-        },
-        { __typedArg0: item.key },
-      ),
-    ) as { path: string; text: string }[];
+    const seeded = (await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { itemKey }) => {
+        await zotlit.services.noteIndex.whenIndexed();
+        const notes = [];
+        for (const note of zotlit.services.noteIndex.getNotesByItemKey(
+          itemKey,
+        )) {
+          const file = app.vault.getFileByPath(note.path)!;
+          notes.push({ path: note.path, text: await app.vault.read(file) });
+          await app.vault.delete(file);
+        }
+        return notes;
+      },
+      { itemKey: item.key },
+    )) as { path: string; text: string }[];
     let created = "";
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          const created = app.vault.getFileByPath(__typedArg0)!;
+        async ({ app }, { createdNotePath, seeded }) => {
+          const created = app.vault.getFileByPath(createdNotePath)!;
           if (created) await app.vault.delete(created);
-          for (const { path, text } of __typedArg1)
+          for (const { path, text } of seeded)
             await app.vault.create(path, text);
-          return String(true);
         },
-        { __typedArg0: created, __typedArg1: seeded },
+        { createdNotePath: created, seeded },
       );
     });
-    expect(await hasIndexedNotes(run.vaultId, item.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, item.key, 0);
     const markdownFiles = () =>
       obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(String(app.vault.getMarkdownFiles().length));
+          return String(app.vault.getMarkdownFiles().length);
         },
         undefined,
       );
@@ -899,15 +722,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const importedNotes = () =>
       obRun(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
+        async ({ zotlit }, { childNoteKey }) => {
           return String(
-            String(
-              zotlit.services.noteIndex.getImportedNoteByNoteKey(__typedArg0)
-                .length,
-            ),
+            zotlit.services.noteIndex.getImportedNoteByNoteKey(childNoteKey)
+              .length,
           );
         },
-        { __typedArg0: childNoteKey },
+        { childNoteKey },
       );
     const importedBefore = await importedNotes();
 
@@ -929,34 +750,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const personal = "\nMy own reading of this paper.\n";
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        await app.vault.append(
-          app.vault.getFileByPath(__typedArg0)!,
-          __typedArg1,
-        );
-        return String(true);
+      async ({ app }, { created, personal }) => {
+        await app.vault.append(app.vault.getFileByPath(created)!, personal);
       },
-      { __typedArg0: created, __typedArg1: personal },
+      { created, personal },
     );
     const before = await readFile(join(e2eVaultPath, created), "utf-8");
-    const update = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
-          const result = await zotlit.services.noteFeature.updateNote(
-            app.vault.getFileByPath(__typedArg0)!,
-            { indexedKey: __typedArg1, scope: "full" },
-          );
-          return String(
-            JSON.stringify({
-              bodyUpdated: result.bodyUpdated,
-              diagnostic: result.diagnostic ?? null,
-            }),
-          );
-        },
-        { __typedArg0: created, __typedArg1: item.key },
-      ),
-    ) as { bodyUpdated: boolean; diagnostic: unknown };
+    const update = (await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { created, itemKey }) => {
+        const result = await zotlit.services.noteFeature.updateNote(
+          app.vault.getFileByPath(created)!,
+          { indexedKey: itemKey, scope: "full" },
+        );
+        return {
+          bodyUpdated: result.bodyUpdated,
+          diagnostic: result.diagnostic ?? null,
+        };
+      },
+      { created, itemKey: item.key },
+    )) as { bodyUpdated: boolean; diagnostic: unknown };
     expect(update).toEqual({ bodyUpdated: false, diagnostic: null });
     const after = await readFile(join(e2eVaultPath, created), "utf-8");
     expect(noteBody(after)).toBe(noteBody(before));
@@ -977,7 +790,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     run.booksNotePath = `books/books-${booksProfileTargetItem.citationKey}.md`;
     await obRun(
       run.vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { citationText }) => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({
             "citation.pandoc-citations": true,
@@ -986,7 +799,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         var file = await app.vault.create(
           "Profile flow source.md",
-          __typedArg0,
+          citationText,
         );
         var leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
@@ -994,30 +807,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           line: 0,
           ch: 5,
         });
-        return String(true);
       },
-      { __typedArg0: `[@${booksProfileTargetItem.citationKey}]\n` },
+      { citationText: `[@${booksProfileTargetItem.citationKey}]\n` },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:open-citekey"),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:406",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:open-citekey");
+      },
+      undefined,
+      { what: "the open-citekey command to run and report success" },
+    );
     // Without an explicit input the picker preselects Default; the Books
     // choice below belongs to this operation alone.
     const preselected = await selectSuggestion(
@@ -1029,14 +829,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(preselected).not.toContain(booksProfile.label);
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { booksProfileLabel }) => {
         var input =
           activeDocument.querySelector<HTMLInputElement>(".prompt input");
-        input!.value = __typedArg0;
+        input!.value = booksProfileLabel;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
-      { __typedArg0: booksProfile.label },
+      { booksProfileLabel: booksProfile.label },
     );
     const selected = await selectSuggestion(run.vaultId, run.booksNotePath);
     expect(selected).toContain(booksProfile.label);
@@ -1079,21 +878,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(managedRegion(booksContent)).toContain(
       `Citation key: ${booksProfileTargetItem.citationKey}`,
     );
-    expect(await hasOneIndexedNote(run.vaultId, defaultResult.indexedKey)).toBe(
-      true,
-    );
+    await waitForOneIndexedNote(run.vaultId, defaultResult.indexedKey);
     const booksIndexedKey = await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { booksNotePath }) => {
         return String(
           await app.metadataCache.getFileCache(
-            app.vault.getFileByPath(__typedArg0)!,
+            app.vault.getFileByPath(booksNotePath)!,
           )!.frontmatter!["zotero-key"],
         );
       },
-      { __typedArg0: run.booksNotePath },
+      { booksNotePath: run.booksNotePath },
     );
-    expect(await hasOneIndexedNote(run.vaultId, booksIndexedKey)).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, booksIndexedKey);
   });
 
   it("refuses an update whose open note switched its Profile in unsaved text", async () => {
@@ -1109,73 +906,54 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Books when the update chooses its Profile, a moment later.
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        var file = app.vault.getFileByPath(__typedArg0)!;
+      async ({ app }, { booksNotePath, edited }) => {
+        var file = app.vault.getFileByPath(booksNotePath)!;
         var leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
-        (leaf.view as import("obsidian").MarkdownView).editor.setValue(
-          __typedArg1,
-        );
-        return String(app.commands.executeCommandById("zotlit:update-note"));
+        (leaf.view as import("obsidian").MarkdownView).editor.setValue(edited);
+        return app.commands.executeCommandById("zotlit:update-note");
       },
-      { __typedArg0: run.booksNotePath, __typedArg1: edited },
+      { booksNotePath: run.booksNotePath, edited },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ page }, { __typedArg0 }) => {
-            return String(
-              String(
-                page
-                  .windowDocuments()
-                  .some((doc) =>
-                    Array.from(
-                      doc.querySelectorAll<HTMLElement>(".notice"),
-                    ).some((notice) =>
-                      notice.textContent.includes(__typedArg0),
-                    ),
-                  ),
-              ),
-            );
-          },
-          { __typedArg0: run.m.notice_literature_note_profile_changed() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:492",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ page }, { noticeText }) => {
+        return page
+          .windowDocuments()
+          .some((doc) =>
+            Array.from(doc.querySelectorAll<HTMLElement>(".notice")).some(
+              (notice) => notice.textContent.includes(noticeText),
+            ),
+          );
+      },
+      { noticeText: run.m.notice_literature_note_profile_changed() },
+      {
+        what: "a notice refusing the update over an unsaved Profile switch to appear",
+      },
+    );
     expect(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          return String(
-            String(
-              (
-                app.workspace.getActiveFileView() as import("obsidian").MarkdownView
-              )?.getViewData() === __typedArg0,
-            ),
+        async ({ app }, { edited }) => {
+          return (
+            (
+              app.workspace.getActiveFileView() as import("obsidian").MarkdownView
+            )?.getViewData() === edited
           );
         },
-        { __typedArg0: edited },
+        { edited },
       ),
-    ).toBe("true");
+    ).toBe(true);
     // Put the stamp back, so the scenarios below find the note as it was.
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { original }) => {
         var view =
           app.workspace.getActiveFileView() as import("obsidian").MarkdownView;
-        view.editor.setValue(__typedArg0);
+        view.editor.setValue(original);
         await view.save();
-        return String(true);
       },
-      { __typedArg0: original },
+      { original },
     );
     expect(
       await waitFor(
@@ -1197,88 +975,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       throw new Error("The Books Profile note was not created");
     }
 
-    const staleFieldSeeded = await ((options: {
-      expected: string;
-      tries?: number;
-    }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          var file = app.vault.getFileByPath(__typedArg0)!;
-          if (!file || file.extension !== "md") {
-            return String("missing");
-          }
-          await app.fileManager.processFrontMatter(
-            file,
-            function (frontmatter) {
-              frontmatter["fixture-obsolete"] = "stale";
-              frontmatter["fixture-spread-title"] = "stale";
-              frontmatter["fixture-spread-kind"] = "stale";
-              frontmatter["fixture-manual"] = "mine";
-            },
-          );
-          return String("seeded");
-        },
-        { __typedArg0: run.booksNotePath },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "literature.ts:529",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "seeded" });
-    expect(staleFieldSeeded).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { booksNotePath }) => {
+        var file = app.vault.getFileByPath(booksNotePath)!;
+        if (!file || file.extension !== "md") {
+          return "missing";
+        }
+        await app.fileManager.processFrontMatter(file, function (frontmatter) {
+          frontmatter["fixture-obsolete"] = "stale";
+          frontmatter["fixture-spread-title"] = "stale";
+          frontmatter["fixture-spread-kind"] = "stale";
+          frontmatter["fixture-manual"] = "mine";
+        });
+        return "seeded";
+      },
+      { booksNotePath: run.booksNotePath },
+      {
+        ready: (value) => value === "seeded",
+        what: "the Books note front matter to be seeded with stale fixture values",
+      },
+    );
     // The batch reads each note's Profile stamp from the metadata cache, and
     // the write above sends the Books note back through the parser. Until the
     // cache holds the rewritten frontmatter, the note reads as unstamped.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              String(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath(__typedArg0)!,
-                )?.frontmatter?.["fixture-manual"] === "mine",
-              ),
-            );
-          },
-          { __typedArg0: run.booksNotePath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:539",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { booksNotePath }) => {
+        return (
+          app.metadataCache.getFileCache(
+            app.vault.getFileByPath(booksNotePath)!,
+          )?.frontmatter?.["fixture-manual"] === "mine"
+        );
+      },
+      { booksNotePath: run.booksNotePath },
+      {
+        what: "the metadata cache to hold fixture-manual as mine on the Books note",
+      },
+    );
 
     await using notices = await observeNotices(run.vaultId);
     await using frames = await recordFrames(run.vaultId);
-    const triggered = await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ app }) => {
-          return String(
-            app.commands.executeCommandById("zotlit:update-all-notes"),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "literature.ts:548",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 20 });
-    expect(triggered).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:update-all-notes");
+      },
+      undefined,
+      {
+        tries: 20,
+        what: "the zotlit update-all-notes command to run and report success",
+      },
+    );
 
     // The Fixture's My Library carries more than one Literature Note, so
     // `runBatchUpdateAll` (apps/obsidian/src/services/note-feature/update-batch.ts)
@@ -1286,33 +1034,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // immediate write — the same modal a person clicking the command would
     // see. Confirming it is an ordinary user action, not a bypass; the modal
     // classifies items asynchronously, so this polls for the button first.
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_confirm_button()),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(".modal button"),
-                ).some((button) => button.textContent.trim() === __typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: run.m.batch_update_close() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:565",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_confirm_button());
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { closeButtonText }) => {
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal button"),
+        ).some((button) => button.textContent.trim() === closeButtonText);
+      },
+      { closeButtonText: run.m.batch_update_close() },
+      { what: "the update-all-notes result modal to show its Close button" },
+    );
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
     // remaining group items (8, 9, 10, 79) are created under Default, the batch's
@@ -1325,9 +1057,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const summary = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          activeDocument.querySelector<HTMLElement>(".modal")!.textContent,
-        );
+        return activeDocument.querySelector<HTMLElement>(".modal")!.textContent;
       },
       undefined,
     );
@@ -1351,9 +1081,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         profile: booksProfile.label,
       }),
     );
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_close()),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_close());
     // The batch's database reads run in the worker: the window kept painting
     // from the command to the summary.
     const painted = await frames.read();
@@ -1385,27 +1113,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const managedFrontmatterApplied = await waitFor(async () => {
       const response = await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          var file = app.vault.getFileByPath(__typedArg0)!;
+        async ({ app }, { booksNotePath }) => {
+          var file = app.vault.getFileByPath(booksNotePath)!;
           var frontmatter =
             file && app.metadataCache.getFileCache(file)?.frontmatter;
-          return String(
-            JSON.stringify({
-              title: frontmatter?.["fixture-title"],
-              kind: frontmatter?.["fixture-kind"],
-              spreadTitle: frontmatter?.["fixture-spread-title"],
-              spreadKind: frontmatter?.["fixture-spread-kind"],
-              manual: frontmatter?.["fixture-manual"],
-              obsolete: frontmatter
-                ? Object.prototype.hasOwnProperty.call(
-                    frontmatter,
-                    "fixture-obsolete",
-                  )
-                : false,
-            }),
-          );
+          return JSON.stringify({
+            title: frontmatter?.["fixture-title"],
+            kind: frontmatter?.["fixture-kind"],
+            spreadTitle: frontmatter?.["fixture-spread-title"],
+            spreadKind: frontmatter?.["fixture-spread-kind"],
+            manual: frontmatter?.["fixture-manual"],
+            obsolete: frontmatter
+              ? Object.prototype.hasOwnProperty.call(
+                  frontmatter,
+                  "fixture-obsolete",
+                )
+              : false,
+          });
         },
-        { __typedArg0: run.booksNotePath },
+        { booksNotePath: run.booksNotePath },
       ).catch(() => "");
       if (response === "") return false;
       managedFrontmatter = JSON.parse(response) as ManagedFrontmatterReport;
@@ -1428,9 +1154,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       obsolete: false,
     });
 
-    expect(await hasOneIndexedNote(run.vaultId, createTargetItem.key)).toBe(
-      true,
-    );
+    await waitForOneIndexedNote(run.vaultId, createTargetItem.key);
   });
 
   it("creates under a document match and reports the matched Profile and path", async () => {
@@ -1438,7 +1162,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const seededPath = `literatures/${bookItem.literatureNoteName ?? bookItem.key}.md`;
     const notePath = `books/books-${bookItem.citationKey}.md`;
     await cli([`vault=${run.vaultId}`, "delete", `path=${seededPath}`]);
-    expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, bookItem.key, 0);
     await suite.openMatchEditor();
     // A Profile with no Match shows one placeholder row.
     await suite.shapeCondition(0, "item-type", "book");
@@ -1447,44 +1171,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const description = run.m.settings_profile_match_status({
       state: "evaluable",
     });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
-            return String(
-              String(
-                Array.from(
-                  app.setting.containerEl.querySelectorAll<HTMLElement>(
-                    ".setting-item",
-                  ),
-                ).some(
-                  (el) =>
-                    el.querySelector<HTMLElement>(".setting-item-name")
-                      ?.textContent === __typedArg0 &&
-                    el
-                      .querySelector<HTMLElement>(".setting-item-description")
-                      ?.textContent?.includes(__typedArg1),
-                ),
-              ),
-            );
-          },
-          { __typedArg0: booksProfile.label, __typedArg1: description },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:681",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { booksProfileLabel, description }) => {
+        return Array.from(
+          app.setting.containerEl.querySelectorAll<HTMLElement>(
+            ".setting-item",
+          ),
+        ).some(
+          (el) =>
+            el.querySelector<HTMLElement>(".setting-item-name")?.textContent ===
+              booksProfileLabel &&
+            el
+              .querySelector<HTMLElement>(".setting-item-description")
+              ?.textContent?.includes(description),
+        );
+      },
+      { booksProfileLabel: booksProfile.label, description },
+      {
+        what: "the Books Profile row in settings to show the matched document description",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        return String(true);
       },
       undefined,
     );
@@ -1501,13 +1212,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(
-            String(!!activeDocument.querySelector<HTMLElement>(".prompt")),
-          );
+          return !!activeDocument.querySelector<HTMLElement>(".prompt");
         },
         undefined,
       ),
-    ).toBe("false");
+    ).toBe(false);
     await expect
       .poll(() => notices.read(), { timeout: 5000 })
       .toContain(
@@ -1519,50 +1228,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await readFile(join(e2eVaultPath, notePath), "utf-8")).toContain(
       `zotlit-profile: Books (${booksProfile.id})`,
     );
-    expect(await hasOneIndexedNote(run.vaultId, bookItem.key)).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, bookItem.key);
 
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
-    expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, bookItem.key, 0);
     await obRun(
       run.vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { fileContent }) => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({
             "citation.pandoc-citations": true,
             "citation.open-as-links": true,
           }),
         );
-        var file = await app.vault.create("Match flow source.md", __typedArg0);
+        var file = await app.vault.create("Match flow source.md", fileContent);
         var leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.setCursor({
           line: 0,
           ch: 5,
         });
-        return String(true);
       },
-      { __typedArg0: `[@${bookItem.citationKey}]\n` },
+      { fileContent: `[@${bookItem.citationKey}]\n` },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:open-citekey"),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:723",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:open-citekey");
+      },
+      undefined,
+      {
+        what: "the open-citekey command to run from the document-match creation flow",
+      },
+    );
     expect(
       await waitFor(async () =>
         (
@@ -1574,13 +1272,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(
-            String(!!activeDocument.querySelector<HTMLElement>(".prompt")),
-          );
+          return !!activeDocument.querySelector<HTMLElement>(".prompt");
         },
         undefined,
       ),
-    ).toBe("false");
+    ).toBe(false);
     await expect
       .poll(() => notices.read(), { timeout: 5000 })
       .toContain(
@@ -1589,9 +1285,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           path: notePath,
         }),
       );
-    expect(await hasOneIndexedNote(run.vaultId, bookItem.key)).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, bookItem.key);
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
-    expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, bookItem.key, 0);
   });
 
   it("checks a Profile Match against a chosen Item and marks a mistake on its row", async () => {
@@ -1610,7 +1306,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
-          return String(true);
         },
         undefined,
       );
@@ -1624,24 +1319,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await waitFor(async () => {
         text = await obRun(
           run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
+          async ({ app }, { key }) => {
             const view = app.workspace.activeLeaf!
               .view as import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
-            if (view.getState().itemIndexedKey !== __typedArg0)
+            if (view.getState().itemIndexedKey !== key)
               await view.setState(
-                { ...view.getState(), itemIndexedKey: __typedArg1 },
+                { ...view.getState(), itemIndexedKey: key },
                 { history: false },
               );
             const result = view.contentEl.querySelector<HTMLElement>(
               '[data-part="result"]',
             );
-            return String(
-              result?.getAttribute("data-state") === "loading"
-                ? "loading"
-                : (result?.textContent ?? "loading"),
-            );
+            return result?.getAttribute("data-state") === "loading"
+              ? "loading"
+              : (result?.textContent ?? "loading");
           },
-          { __typedArg0: key, __typedArg1: key },
+          { key },
         );
         return text !== "loading";
       });
@@ -1662,29 +1355,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     let rows: (string | null)[] = [];
     expect(
       await waitFor(async () => {
-        rows = JSON.parse(
-          await obRun(
-            run.vaultId,
-            async ({ page }) => {
-              return String(
-                JSON.stringify(
-                  Array.from(
-                    page
-                      .workbench()
-                      ?.contentEl?.querySelectorAll<HTMLElement>(
-                        "[data-condition-row]",
-                      ) ?? [],
-                  ).map(
-                    (row) =>
-                      row.querySelector<HTMLElement>("[role=alert]")
-                        ?.textContent ?? null,
-                  ),
-                ),
-              );
-            },
-            undefined,
-          ),
-        ) as (string | null)[];
+        rows = (await obRun(
+          run.vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page
+                .workbench()
+                ?.contentEl?.querySelectorAll<HTMLElement>(
+                  "[data-condition-row]",
+                ) ?? [],
+            ).map(
+              (row) =>
+                row.querySelector<HTMLElement>("[role=alert]")?.textContent ??
+                null,
+            );
+          },
+          undefined,
+        )) as (string | null)[];
         return rows.length === 2 && rows[1] !== null;
       }),
     ).toBe(true);
@@ -1698,29 +1385,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const underlines = async (expected: string) => {
       let marks: string[][] = [];
       await waitFor(async () => {
-        marks = JSON.parse(
-          await obRun(
-            run.vaultId,
-            async ({ page }) => {
-              return String(
-                JSON.stringify(
-                  Array.from(
-                    page
-                      .workbench()
-                      ?.contentEl?.querySelectorAll<HTMLElement>(
-                        "[data-condition-row]",
-                      ) ?? [],
-                  ).map((row) =>
-                    Array.from(
-                      row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
-                    ).map((n) => n.textContent),
-                  ),
-                ),
-              );
-            },
-            undefined,
-          ),
-        ) as string[][];
+        marks = (await obRun(
+          run.vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page
+                .workbench()
+                ?.contentEl?.querySelectorAll<HTMLElement>(
+                  "[data-condition-row]",
+                ) ?? [],
+            ).map((row) =>
+              Array.from(
+                row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
+              ).map((n) => n.textContent),
+            );
+          },
+          undefined,
+        )) as string[][];
         return marks[1]?.join() === expected;
       });
       return marks;
@@ -1796,11 +1477,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const kept = view.controller.source === before;
           await input.key("Escape");
-          return String(String(kept));
+          return kept;
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
   });
 
   it("keeps per-Item matches in a mixed-Library batch with one unmatched-or-overlap fallback", async () => {
@@ -1822,7 +1503,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const note = await indexedNote(run.vaultId, item.itemID);
       if (note.path)
         await cli([`vault=${run.vaultId}`, "delete", `path=${note.path!}`]);
-      expect(await hasIndexedNotes(run.vaultId, note.indexedKey, 0)).toBe(true);
+      await waitForIndexedNotes(run.vaultId, note.indexedKey, 0);
     }
     const articlesSource = (
       await readFile(
@@ -1851,23 +1532,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         labMatch,
       ],
     });
-    const server = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ zotlit }) => {
-          var services = zotlit.services;
-          var settings = services.bridge.runSync(services.settings.current);
-          return String(
-            JSON.stringify({
-              hostname: settings["server.hostname"],
-              port: services.bridge.runSync(services.localServer.effectivePort),
-              sourceId: services.zoteroPref.sourceId,
-            }),
-          );
-        },
-        undefined,
-      ),
-    ) as { hostname: string; port: number; sourceId: string };
+    const server = (await obRun(
+      run.vaultId,
+      async ({ zotlit }) => {
+        var services = zotlit.services;
+        var settings = services.bridge.runSync(services.settings.current);
+        return {
+          hostname: settings["server.hostname"],
+          port: services.bridge.runSync(services.localServer.effectivePort),
+          sourceId: services.zoteroPref.sourceId,
+        };
+      },
+      undefined,
+    )) as { hostname: string; port: number; sourceId: string };
     const pushed = await fetch(
       `http://${server.hostname}:${server.port}/literature-notes`,
       {
@@ -1885,34 +1562,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
     expect(pushed.status).toBe(204);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                Array.from(
-                  Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                  )
-                    .at(-1)
-                    ?.querySelectorAll<HTMLButtonElement>("button") ?? [],
-                ).some((button) => button.textContent.trim() === __typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: run.m.batch_update_confirm_button() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:916",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { confirmButtonText }) => {
+        return Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .at(-1)
+            ?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+        ).some((button) => button.textContent.trim() === confirmButtonText);
+      },
+      { confirmButtonText: run.m.batch_update_confirm_button() },
+      { what: "the topmost modal to show the batch confirm button" },
+    );
     const bookPath = `books/books-${bookItem.citationKey}.md`;
     const articlesPath = `articles/articles-${sharedItem.citationKey}.md`;
     const preprintPath = `books/books-${preprintItem.citationKey}.md`;
@@ -1920,11 +1581,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const confirmation = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
-            -1,
-          )!.textContent,
-        );
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -1944,16 +1603,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           (_context, { scope }) =>
-            String(
-              Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
-                .at(-1)!
-                .querySelectorAll<HTMLElement>(
-                  `[data-profile-choice-scope=${scope}]`,
-                ).length,
-            ),
+            Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+              .at(-1)!
+              .querySelectorAll<HTMLElement>(
+                `[data-profile-choice-scope=${scope}]`,
+              ).length,
           { scope },
         ),
-      ).toBe("1");
+      ).toBe(1);
     expect(confirmation).not.toContain(run.m.batch_profile_recovery_help());
     await obRun(
       run.vaultId,
@@ -1967,7 +1624,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ),
           "unresolved Profile choice",
         );
-        return String(true);
       },
       undefined,
     );
@@ -1980,62 +1636,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(candidate).toContain(suite.articlesProfile.label);
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { booksProfileLabel }) => {
         var input = Array.from(
           activeDocument.querySelectorAll<HTMLElement>(".prompt"),
         )
           .at(-1)!
           .querySelector<HTMLInputElement>("input");
-        input!.value = __typedArg0;
+        input!.value = booksProfileLabel;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
-      { __typedArg0: booksProfile.label },
+      { booksProfileLabel: booksProfile.label },
     );
     await selectSuggestion(run.vaultId, preprintPath);
     await pressPromptKey(run.vaultId, "Enter");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                )
-                  .at(-1)
-                  ?.querySelector<HTMLElement>(
-                    "[data-profile-choice-scope=unresolved] [data-profile-choice]",
-                  )
-                  ?.getAttribute("aria-label") === __typedArg0,
-              ),
-            );
-          },
-          {
-            __typedArg0: run.m.batch_profile_unresolved_destination({
-              count: 2,
-              label: booksProfile.label,
-            }),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:967",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { unresolvedDestinationLabel }) => {
+        return (
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .at(-1)
+            ?.querySelector<HTMLElement>(
+              "[data-profile-choice-scope=unresolved] [data-profile-choice]",
+            )
+            ?.getAttribute("aria-label") === unresolvedDestinationLabel
+        );
+      },
+      {
+        unresolvedDestinationLabel: run.m.batch_profile_unresolved_destination({
+          count: 2,
+          label: booksProfile.label,
+        }),
+      },
+      {
+        what: "the unresolved Profile choice in the topmost modal to show its label",
+      },
+    );
     const chosen = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
-            -1,
-          )!.textContent,
-        );
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -2050,45 +1691,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ])
       expect(chosen).toContain(text);
     await using notices = await observeNotices(run.vaultId);
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_confirm_button()),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                Array.from(
-                  Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                  )
-                    .at(-1)
-                    ?.querySelectorAll<HTMLButtonElement>("button") ?? [],
-                ).some((button) => button.textContent.trim() === __typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: run.m.batch_update_close() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:992",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_confirm_button());
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { closeButtonText }) => {
+        return Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .at(-1)
+            ?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+        ).some((button) => button.textContent.trim() === closeButtonText);
+      },
+      { closeButtonText: run.m.batch_update_close() },
+      { what: "the close button in the topmost modal to appear" },
+    );
     const summary = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
-            -1,
-          )!.textContent,
-        );
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -2109,9 +1730,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(summary).toContain(text);
       expect((await notices.read()).join("\n")).toContain(text);
     }
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_close()),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_close());
     for (const [item, path, label, id] of [
       [bookItem, bookPath, booksProfile.label, booksProfile.id],
       [preprintItem, preprintPath, booksProfile.label, booksProfile.id],
@@ -2126,39 +1745,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const content = await readFile(join(e2eVaultPath, path), "utf-8");
       expect(content).toContain(`zotlit-profile: ${label} (${id})`);
       const note = await indexedNote(run.vaultId, item.itemID);
-      expect(await hasOneIndexedNote(run.vaultId, note.indexedKey)).toBe(true);
+      await waitForOneIndexedNote(run.vaultId, note.indexedKey);
       await cli([`vault=${run.vaultId}`, "delete", `path=${path}`]);
-      expect(await hasIndexedNotes(run.vaultId, note.indexedKey, 0)).toBe(true);
+      await waitForIndexedNotes(run.vaultId, note.indexedKey, 0);
     }
     await cli([
       `vault=${run.vaultId}`,
       "delete",
       `path=templates/${suite.articlesProfile.document}`,
     ]);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0 }) => {
-            return String(
-              String(
-                !zotlit.services.profile.profiles.some(
-                  (p) => p.id === __typedArg0,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: suite.articlesProfile.id },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1046",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { articlesProfileId }) => {
+        return !zotlit.services.profile.profiles.some(
+          (p) => p.id === articlesProfileId,
+        );
+      },
+      { articlesProfileId: suite.articlesProfile.id },
+      { what: "the articles Profile to be removed from the Profile list" },
+    );
     await suite.writeMatch(booksProfile, suite.bookMatch);
   });
 
@@ -2172,7 +1777,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const seededPath = `literatures/${childItem.literatureNoteName ?? childItem.key}.md`;
     const notePath = `books/books-${childItem.citationKey}.md`;
     await cli([`vault=${run.vaultId}`, "delete", `path=${seededPath}`]);
-    expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, childItem.key, 0);
     await suite.writeMatch(
       booksProfile,
       `collections.within(${JSON.stringify(parent.name)})`,
@@ -2189,40 +1794,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `zotlit-profile: Books (${booksProfile.id})`,
     );
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
-    expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, childItem.key, 0);
     await suite.openMatchEditor();
-    expect(
-      await suite.conditionReady({
-        kind: "collection",
-        operator: "within",
-        value: parent.name,
-      }),
-    ).toBe(true);
+    await suite.conditionReady({
+      kind: "collection",
+      operator: "within",
+      value: parent.name,
+    });
     await obRun(
       run.vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { filterOperator }) => {
         const { pick } = page;
         var editor = page.workbench()!.contentEl;
         await pick(
           editor.querySelector<HTMLSelectElement>(
             `[data-condition-row] select[aria-label=${JSON.stringify(
-              __typedArg0,
+              filterOperator,
             )}]`,
           ),
           "contains",
           "Operator",
         );
-        return String(true);
       },
-      { __typedArg0: run.m.workbench_filter_operator() },
+      { filterOperator: run.m.workbench_filter_operator() },
     );
-    expect(
-      await suite.conditionReady({
-        kind: "collection",
-        operator: "contains",
-        value: parent.name,
-      }),
-    ).toBe(true);
+    await suite.conditionReady({
+      kind: "collection",
+      operator: "contains",
+      value: parent.name,
+    });
     await suite.saveMatch({
       and: [`collections.contains(${JSON.stringify(parent.name)})`],
     });
@@ -2230,7 +1830,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        return String(true);
       },
       undefined,
     );
@@ -2242,29 +1841,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(fallback).toContain(run.m.settings_profile_default_name());
     expect(fallback).toContain(`literatures/${childItem.citationKey}.md`);
     await pressPromptKey(run.vaultId, "Escape");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(!activeDocument.querySelector<HTMLElement>(".prompt")),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1115",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
-    expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return !activeDocument.querySelector<HTMLElement>(".prompt");
+      },
+      undefined,
+      {
+        what: "the suggestion prompt to close after the Collection path match",
+      },
+    );
+    await waitForIndexedNotes(run.vaultId, childItem.key, 0);
     await suite.writeMatch(booksProfile, suite.bookMatch);
   });
 
@@ -2277,36 +1864,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const exterior = "My discussion stays outside the managed region.";
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
+      async ({ app }, { booksNotePath, appendedContent }) => {
         app.workspace.detachLeavesOfType("zotlit-template-workbench");
         app.vault.setConfig("trashOption", "local");
-        var file = app.vault.getFileByPath(__typedArg0)!;
-        await app.vault.append(file, __typedArg1);
-        return String(true);
+        var file = app.vault.getFileByPath(booksNotePath)!;
+        await app.vault.append(file, appendedContent);
       },
-      { __typedArg0: run.booksNotePath, __typedArg1: `\n${exterior}\n` },
+      { booksNotePath: run.booksNotePath, appendedContent: `\n${exterior}\n` },
     );
     await openProfilesSettings(run.vaultId, "settings_page_profiles");
-    const profileNoteCount = Number(
-      await obRun(
-        run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          return String(
+    const profileNoteCount = await obRun(
+      run.vaultId,
+      async ({ app }, { profileLabelPrefix }) => {
+        return app.vault
+          .getMarkdownFiles()
+          .filter((file) =>
             String(
-              app.vault
-                .getMarkdownFiles()
-                .filter((file) =>
-                  String(
-                    app.metadataCache.getFileCache(file)?.frontmatter?.[
-                      "zotlit-profile"
-                    ] ?? "",
-                  ).startsWith(__typedArg0),
-                ).length,
-            ),
-          );
-        },
-        { __typedArg0: `${booksProfile.label} (` },
-      ),
+              app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotlit-profile"
+              ] ?? "",
+            ).startsWith(profileLabelPrefix),
+          ).length;
+      },
+      { profileLabelPrefix: `${booksProfile.label} (` },
     );
     expect(profileNoteCount).toBeGreaterThan(0);
     const beforeMove = await readFile(
@@ -2314,106 +1894,72 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "utf-8",
     );
     // Profile management lives in the row's More actions menu.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app, page }, { __typedArg0, __typedArg1 }) => {
-            const { press } = page;
-            var settings = app.setting.containerEl;
-            var row = Array.from(
-              settings.querySelectorAll<HTMLElement>(".setting-item"),
-            ).find(
-              (row) =>
-                row.querySelector<HTMLElement>(".setting-item-name")
-                  ?.textContent === __typedArg0,
-            );
-            var button =
-              row &&
-              (Array.from(
-                row.querySelectorAll<HTMLButtonElement>("button"),
-              ).find(
-                (button) => button!.getAttribute("aria-label") === __typedArg1,
-              ) ??
-                row.querySelector<HTMLElement>(".extra-setting-button"));
-            if (!button) return String(false);
-            press(button, "More actions");
-            return String(true);
-          },
-          {
-            __typedArg0: booksProfile.label,
-            __typedArg1: run.m.workbench_more_actions(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1152",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app, page }, { __typedArg0 }) => {
-            const { press } = page;
-            var doc = app.setting.containerEl.ownerDocument;
-            var title = Array.from(
-              doc.querySelectorAll<HTMLElement>(".menu-item-title"),
-            ).find((title) => title.textContent.trim() === __typedArg0);
-            var item = title?.closest<HTMLElement>(".menu-item");
-            if (!item) return String(false);
-            press(item, "Delete");
-            return String(true);
-          },
-          { __typedArg0: run.m.settings_profile_delete() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1159",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                !!app.setting.containerEl.ownerDocument.querySelector<HTMLInputElement>(
-                  'input[name="zotlit-delete-profile-target"]:checked',
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1166",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app, page }, { booksProfileLabel, moreActionsLabel }) => {
+        const { press } = page;
+        var settings = app.setting.containerEl;
+        var row = Array.from(
+          settings.querySelectorAll<HTMLElement>(".setting-item"),
+        ).find(
+          (row) =>
+            row.querySelector<HTMLElement>(".setting-item-name")
+              ?.textContent === booksProfileLabel,
+        );
+        var button =
+          row &&
+          (Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find(
+            (button) => button!.getAttribute("aria-label") === moreActionsLabel,
+          ) ??
+            row.querySelector<HTMLElement>(".extra-setting-button"));
+        if (!button) return false;
+        press(button, "More actions");
+        return true;
+      },
+      {
+        booksProfileLabel: booksProfile.label,
+        moreActionsLabel: run.m.workbench_more_actions(),
+      },
+      {
+        what: "the Books Profile row's More actions button to be found and pressed",
+      },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app, page }, { deleteTitleText }) => {
+        const { press } = page;
+        var doc = app.setting.containerEl.ownerDocument;
+        var title = Array.from(
+          doc.querySelectorAll<HTMLElement>(".menu-item-title"),
+        ).find((title) => title.textContent.trim() === deleteTitleText);
+        var item = title?.closest<HTMLElement>(".menu-item");
+        if (!item) return false;
+        press(item, "Delete");
+        return true;
+      },
+      { deleteTitleText: run.m.settings_profile_delete() },
+      { what: "the Delete entry in the open More actions menu to be pressed" },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return !!app.setting.containerEl.ownerDocument.querySelector<HTMLInputElement>(
+          'input[name="zotlit-delete-profile-target"]:checked',
+        );
+      },
+      undefined,
+      {
+        what: "a delete-target radio button to be checked in the delete Profile dialog",
+      },
+    );
     const target = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(
-          app.setting.containerEl.ownerDocument
-            .querySelector<HTMLInputElement>(
-              'input[name="zotlit-delete-profile-target"]:checked',
-            )!
-            .closest("label")!.textContent,
-        );
+        return app.setting.containerEl.ownerDocument
+          .querySelector<HTMLInputElement>(
+            'input[name="zotlit-delete-profile-target"]:checked',
+          )!
+          .closest("label")!.textContent;
       },
       undefined,
     );
@@ -2423,36 +1969,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app, page }, { __typedArg0 }) => {
+        async ({ app, page }, { moveFilesLabel }) => {
           const { press } = page;
           var doc = app.setting.containerEl.ownerDocument;
           var label = Array.from(
             doc.querySelectorAll<HTMLElement>(".modal label"),
-          ).find((label) => label.textContent === __typedArg0);
+          ).find((label) => label.textContent === moveFilesLabel);
           var checkbox = label?.querySelector<HTMLInputElement>(
             "input[type=checkbox]",
           );
-          if (!checkbox || checkbox.checked) return String(false);
+          if (!checkbox || checkbox.checked) return false;
           press(label!, "Move files");
-          return String(checkbox.checked);
+          return checkbox.checked;
         },
         {
-          __typedArg0: run.m.settings_profile_delete_move_files({
+          moveFilesLabel: run.m.settings_profile_delete_move_files({
             folder: "literatures/",
           }),
         },
       ),
-    ).toBe("true");
+    ).toBe(true);
     const deletionDialog = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(
-          Array.from(
-            app.setting.containerEl.ownerDocument.querySelectorAll<HTMLElement>(
-              ".modal",
-            ),
-          ).at(-1)!.textContent,
-        );
+        return Array.from(
+          app.setting.containerEl.ownerDocument.querySelectorAll<HTMLElement>(
+            ".modal",
+          ),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -2467,14 +2011,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(deletionDialog).toContain(
       run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
     );
-    expect(
-      await clickModalButton(
-        run.vaultId,
-        run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
-        "settings",
-      ),
-      deletionDialog,
-    ).toBe(true);
+    await clickModalButton(
+      run.vaultId,
+      run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
+      "settings",
+    );
     expect(
       await waitFor(async () =>
         readFile(join(e2eVaultPath, movedPath), "utf-8")
@@ -2512,37 +2053,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(trashed).toContain(profileSource);
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { movedPath }) => {
         app.setting.close();
-        var file = app.vault.getFileByPath(__typedArg0)!;
+        var file = app.vault.getFileByPath(movedPath)!;
         await app.fileManager.processFrontMatter(file, (frontmatter) => {
           frontmatter.title = "Not the Zotero title";
         });
         await app.workspace.getLeaf(false).openFile(file);
-        return String(true);
       },
-      { __typedArg0: movedPath },
+      { movedPath },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:update-note"),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1248",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById("zotlit:update-note");
+      },
+      undefined,
+      { what: "the zotlit update-note command to run and report success" },
+    );
     let updated = "";
     expect(
       await waitFor(async () => {
@@ -2582,35 +2110,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(updated).toContain(exterior);
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0 }) => {
-            return String(
-              String(
-                !zotlit.services.profile.profiles.some(
-                  (p) => p.id === __typedArg0,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: booksProfile.id },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "literature.ts:1294",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { booksProfileId }) => {
+        return !zotlit.services.profile.profiles.some(
+          (p) => p.id === booksProfileId,
+        );
+      },
+      { booksProfileId: booksProfile.id },
+      {
+        what: "the Books Profile to drop out of the Profile list after delete",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        return String(true);
       },
       undefined,
     );
@@ -2625,7 +2140,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ app }) => {
             app.setting.close();
-            return String(true);
           },
           undefined,
         );
@@ -2642,53 +2156,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "server.workbench": true,
             }),
           );
-          return String(true);
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }) => {
-              return String(
-                String(
-                  zotlit.services.bridge.runSync(
-                    zotlit.services.localServer.effectivePort,
-                  ) !== null,
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "literature.ts:1315",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
-      const server = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ zotlit }) => {
-            var services = zotlit.services;
-            var settings = services.bridge.runSync(services.settings.current);
-            return String(
-              JSON.stringify({
-                port: services.bridge.runSync(
-                  services.localServer.effectivePort,
-                ),
-                sourceId: services.zoteroPref.sourceId,
-                workbench: settings["server.workbench"],
-              }),
-            );
-          },
-          undefined,
-        ),
-      ) as { port: number; sourceId: string; workbench: boolean };
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return (
+            zotlit.services.bridge.runSync(
+              zotlit.services.localServer.effectivePort,
+            ) !== null
+          );
+        },
+        undefined,
+        { what: "the local server port to resolve through the bridge" },
+      );
+      const server = (await obRun(
+        run.vaultId,
+        async ({ zotlit }) => {
+          var services = zotlit.services;
+          var settings = services.bridge.runSync(services.settings.current);
+          return {
+            port: services.bridge.runSync(services.localServer.effectivePort),
+            sourceId: services.zoteroPref.sourceId,
+            workbench: settings["server.workbench"],
+          };
+        },
+        undefined,
+      )) as { port: number; sourceId: string; workbench: boolean };
       expect(server.workbench).toBe(true);
       const headers = {
         [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
@@ -2710,29 +2205,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obRun(
           run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+          async (
+            { app },
+            {
+              localServerSettingName,
+              workbenchSettingName,
+              templateSettingName,
+            },
+          ) => {
             var names = Array.from(
               app.setting.containerEl.querySelectorAll<HTMLElement>(
                 ".setting-item-name",
               ),
               (el) => el.textContent,
             );
-            return String(
-              String(
-                names.includes(__typedArg0) &&
-                  !names.includes(__typedArg1) &&
-                  !names.includes(__typedArg2) &&
-                  !app.commands.commands["zotlit:open-profile-web-workbench"],
-              ),
+            return (
+              names.includes(localServerSettingName) &&
+              !names.includes(workbenchSettingName) &&
+              !names.includes(templateSettingName) &&
+              !app.commands.commands["zotlit:open-profile-web-workbench"]
             );
           },
           {
-            __typedArg0: run.m.settings_local_server_enabled_name(),
-            __typedArg1: run.m.settings_local_server_workbench_name(),
-            __typedArg2: run.m.template_workbench_preference_name(),
+            localServerSettingName: run.m.settings_local_server_enabled_name(),
+            workbenchSettingName: run.m.settings_local_server_workbench_name(),
+            templateSettingName: run.m.template_workbench_preference_name(),
           },
         ),
-      ).toBe("true");
+      ).toBe(true);
 
       // Live updates answer the Companion, so their switch sits on the Zotero
       // page beside it rather than with the server that carries them.
@@ -2740,54 +2240,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obRun(
           run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
+          async ({ app }, { liveUpdatesSettingName, advancedHeadingText }) => {
             var names = Array.from(
               app.setting.containerEl.querySelectorAll<HTMLElement>(
                 ".setting-item-name",
               ),
               (el) => el.textContent,
             );
-            return String(
-              String(
-                names.includes(__typedArg0) && names.includes(__typedArg1),
-              ),
+            return (
+              names.includes(liveUpdatesSettingName) &&
+              names.includes(advancedHeadingText)
             );
           },
           {
-            __typedArg0: run.m.settings_live_updates_enabled_name(),
-            __typedArg1: run.m.settings_advanced_local_server_heading(),
+            liveUpdatesSettingName: run.m.settings_live_updates_enabled_name(),
+            advancedHeadingText: run.m.settings_advanced_local_server_heading(),
           },
         ),
-      ).toBe("true");
+      ).toBe(true);
 
       await suite.mainSettings();
-      expect(await suite.clickTemplateCustomize()).toBe(true);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ app }) => {
-              return String(
-                String(
-                  app.workspace.activeLeaf?.view.getViewType() ===
-                    "zotlit-template-workbench" &&
-                    !document.querySelector<HTMLInputElement>(
-                      'input[name="zotlit-customize-destination"]',
-                    ),
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "literature.ts:1365",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await suite.clickTemplateCustomize();
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return (
+            app.workspace.activeLeaf?.view.getViewType() ===
+              "zotlit-template-workbench" &&
+            !document.querySelector<HTMLInputElement>(
+              'input[name="zotlit-customize-destination"]',
+            )
+          );
+        },
+        undefined,
+        {
+          what: "the Template Workbench to be the active leaf with no destination radio",
+        },
+      );
       await obRun(
         run.vaultId,
         async ({ app, zotlit }) => {
@@ -2796,7 +2285,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({ "server.workbench": false }),
           );
-          return String(true);
         },
         undefined,
       );
