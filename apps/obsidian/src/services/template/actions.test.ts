@@ -1,33 +1,31 @@
-import { expect, it, vi } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 // @vitest-environment happy-dom
-import { Effect } from "effect";
+import { Effect, Exit, Fiber, Layer } from "effect";
 import { TFile } from "obsidian";
 import type { App, Command, WorkspaceContainer, WorkspaceLeaf } from "obsidian";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
+import { Notifier } from "@/lib/notifier";
 import type { PluginHostShape } from "@/lib/plugin-host";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE } from "@/views/template-workbench/view";
 
-import { addCitationTemplateActions } from "./actions";
-import { templateFailure } from "./service";
+import {
+  addCitationTemplateActions,
+  openCitationTemplate,
+  reportCitationTemplateOpen,
+} from "./actions";
+import { Template, templateFailure } from "./service";
+import type { TemplateFailure } from "./service";
 
-interface Harness {
-  command: Command;
-  /** The view states the flow opened, in order. */
-  opened: { type: string; path: unknown }[];
-  materialize: ReturnType<typeof vi.fn>;
-}
+const CITATION = Object.assign(new TFile(), {
+  path: "Templates/zotlit-citation.md",
+});
 
-const harness = Effect.fnUntraced(function* (
-  materialize = vi.fn(async () =>
-    Object.assign(new TFile(), {
-      path: "Templates/zotlit-citation.md",
-    }),
-  ),
-): Effect.fn.Return<Harness, never, import("effect").Scope.Scope> {
-  const commands: Command[] = [];
+/** An App whose workspace records each view state the open sets. */
+function workspaceApp() {
   const opened: { type: string; path: unknown }[] = [];
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     setViewState: async (state: { type: string; state: { file: unknown } }) => {
@@ -37,6 +35,7 @@ const harness = Effect.fnUntraced(function* (
       stubService<WorkspaceContainer>("WorkspaceContainer", {
         focus: () => {},
       }),
+    view: stubService<WorkspaceLeaf["view"]>("View", {}),
   });
   const app = stubService<App>("App", {
     workspace: stubService<App["workspace"]>("Workspace", {
@@ -45,36 +44,48 @@ const harness = Effect.fnUntraced(function* (
       revealLeaf: async () => {},
     }),
   });
-  const plugin = stubService<Pick<PluginHostShape, "addCommand" | "app">>(
-    "PluginHost",
-    {
-      addCommand: (command: Command) =>
-        Effect.sync(() => {
-          commands.push(command);
-          return command;
-        }),
-      app,
-    },
+  return { app, opened };
+}
+
+/** The Template and Notifier the open reads. */
+const servicesOver = (
+  materializeCitationTemplate: Effect.Effect<TFile, TemplateFailure>,
+  notifier: Notifier["Service"] = testNotifier().service,
+) =>
+  Layer.merge(
+    Layer.mock(Template, { materializeCitationTemplate }),
+    Layer.succeed(Notifier, notifier),
   );
 
-  yield* addCitationTemplateActions(plugin, {
-    template: {
-      materializeCitationTemplate: Effect.tryPromise({
-        try: () => materialize(),
-        catch: templateFailure,
-      }),
-    },
-    bridge: yield* scopedBridge,
-  });
-  return { command: commands[0]!, opened, materialize };
-});
+const failure = templateFailure(new Error("the template folder is a file"));
 
 it.effect("registers Customize citation text as a command", () =>
   Effect.gen(function* () {
-    expect((yield* harness()).command).toMatchObject({
-      id: "customize-citation-text",
-      name: m.command_customize_citation_text_name(),
+    const commands: Command[] = [];
+    const host = stubService<Pick<PluginHostShape, "addCommand" | "app">>(
+      "PluginHost",
+      {
+        addCommand: (command: Command) =>
+          Effect.sync(() => {
+            commands.push(command);
+            return command;
+          }),
+        app: workspaceApp().app,
+      },
+    );
+    const context = yield* Effect.context<Template | Notifier>().pipe(
+      Effect.provide(servicesOver(Effect.succeed(CITATION))),
+    );
+    yield* addCitationTemplateActions(host, {
+      context,
+      bridge: yield* scopedBridge,
     });
+    expect(commands).toMatchObject([
+      {
+        id: "customize-citation-text",
+        name: m.command_customize_citation_text_name(),
+      },
+    ]);
   }),
 );
 
@@ -82,36 +93,65 @@ it.effect(
   "materializes the document, then opens it in the Template Workbench View",
   () =>
     Effect.gen(function* () {
-      const h = yield* harness();
+      const { app, opened } = workspaceApp();
 
-      h.command.callback!();
-      yield* Effect.promise(() =>
-        vi.waitFor(() => expect(h.opened).toHaveLength(1)),
+      yield* openCitationTemplate(app).pipe(
+        Effect.provide(servicesOver(Effect.succeed(CITATION))),
       );
 
-      expect(h.materialize).toHaveBeenCalledTimes(1);
-      expect(h.opened[0]).toEqual({
-        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-        path: "Templates/zotlit-citation.md",
-      });
+      expect(opened).toEqual([
+        { type: TEMPLATE_WORKBENCH_VIEW_TYPE, path: CITATION.path },
+      ]);
     }),
 );
 
+it.effect("fails with the Template failure and opens nothing", () =>
+  Effect.gen(function* () {
+    const { app, opened } = workspaceApp();
+
+    const error = yield* openCitationTemplate(app).pipe(
+      Effect.provide(servicesOver(Effect.fail(failure))),
+      Effect.flip,
+    );
+
+    expect(error).toBe(failure);
+    expect(opened).toEqual([]);
+  }),
+);
+
+it.effect("opens nothing once interrupted", () =>
+  Effect.gen(function* () {
+    const { app, opened } = workspaceApp();
+
+    const fiber = yield* openCitationTemplate(app).pipe(
+      Effect.provide(servicesOver(Effect.never)),
+      Effect.forkChild,
+    );
+    yield* Effect.yieldNow;
+    yield* Fiber.interrupt(fiber);
+    const exit = yield* Fiber.await(fiber);
+
+    expect(Exit.hasInterrupts(exit)).toBe(true);
+    expect(opened).toEqual([]);
+  }),
+);
+
 it.effect(
-  "reports a failure as a notice instead of opening nothing silently",
+  "reports a failed open as a notice, and an interrupted one as none",
   () =>
     Effect.gen(function* () {
-      const h = yield* harness(
-        vi.fn(async () => {
-          throw new Error("the template folder is a file");
-        }),
-      );
+      const notifier = testNotifier();
+      const report = (materialize: Effect.Effect<TFile, TemplateFailure>) =>
+        reportCitationTemplateOpen(workspaceApp().app).pipe(
+          Effect.provide(servicesOver(materialize, notifier.service)),
+        );
 
-      h.command.callback!();
-      yield* Effect.promise(() =>
-        vi.waitFor(() => expect(h.materialize).toHaveBeenCalled()),
-      );
+      yield* report(Effect.fail(failure));
+      const interrupted = yield* Effect.exit(report(Effect.interrupt));
 
-      expect(h.opened).toEqual([]);
+      expect(notifier.notices.map((notice) => notice.messages)).toEqual([
+        [m.notice_citation_text_open_failed()],
+      ]);
+      expect(Exit.hasInterrupts(interrupted)).toBe(true);
     }),
 );

@@ -335,7 +335,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
         void ctx.tab.run(
-          openCitationText(ctx),
+          openCitationTemplate(ctx.app).pipe(Effect.ensuring(rebuild)),
           m.settings_failed_citation_text_open(),
         );
       }),
@@ -355,16 +355,6 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         );
       }),
   );
-}
-
-/**
- * Open the Citation Template in the Template Workbench View, creating its
- * document from the built-in citation text when the vault holds none.
- */
-function openCitationText(ctx: SettingTabContext) {
-  return Effect.gen(function* () {
-    yield* openCitationTemplate(ctx.app, yield* Template);
-  }).pipe(Effect.ensuring(rebuild));
 }
 
 function resetCitationText(ctx: SettingTabContext, path: string) {

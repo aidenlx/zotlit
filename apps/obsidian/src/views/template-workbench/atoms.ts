@@ -9,7 +9,7 @@ import { itemSummary } from "@/lib/item-summary";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import { Profile } from "@/services/profile/service";
-import { openCitationTemplate } from "@/services/template/actions";
+import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -63,9 +63,7 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
       }),
     ),
     citation: makeWorkbenchCommand(registry, (app: App) =>
-      Effect.gen(function* () {
-        yield* openCitationTemplate(app, yield* Template);
-      }),
+      reportCitationTemplateOpen(app),
     ),
     unpack: makeWorkbenchCommand(
       registry,
