@@ -45,11 +45,10 @@ For a single long call, pass `{ timeoutMs }` as `obRun`'s fourth argument.
 For embedded Query Views, use `revealQueryView` and the typed callback form of
 `readQueryViewUntil` in `src/note-query-view.ts`.
 
-The `zotlit-tests/no-eval-capture` lint rule checks these callbacks: use page
-globals, callback-local bindings, and type-only imports. Pass runtime host values
-through `args`. Write arrow or function expressions; callbacks must serialize
-without a host closure or an outer `this`. The type and serialization proofs are
-in `src/ob-run.types.ts` and `src/ob-run*.test.ts`. The eval wrapper is private;
+The [`zotlit-tests/no-eval-capture` rule](../config/oxlint-plugin-tests.ts) checks serialized callbacks.
+
+The type and serialization proofs are in `src/ob-run.types.ts` and
+`src/ob-run*.test.ts`. The eval wrapper is private;
 `cliCommand` continues to dispatch registered commands.
 
 ## End-to-end Run layout
