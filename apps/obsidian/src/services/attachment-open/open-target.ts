@@ -7,6 +7,8 @@
 //
 // @see apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md
 
+import { Context, Effect, Layer, Schema } from "effect";
+import type { Duration } from "effect";
 import { fileURLToPath } from "node:url";
 import type { PaneType } from "obsidian";
 
@@ -19,19 +21,21 @@ import {
   parseIndexedKey,
 } from "@zotlit/db";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import { getLogger } from "@/lib/log";
-import { indexedWithin } from "@/services/attachment-resolver/service";
-import type {
-  AttachmentLookup,
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
+import * as m from "@/lib/i18n/generated/messages";
+import { portCall } from "@/lib/legacy-port";
+import { Notifier } from "@/lib/notifier";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import {
   AttachmentResolver,
+  indexedWithin,
 } from "@/services/attachment-resolver/service";
-import type { PluginSettings } from "@/services/settings/service";
+import type { AttachmentLookup } from "@/services/attachment-resolver/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
 import { filename, obsidianOpenPath } from "./resolve";
-
-const logger = getLogger("attachment-open");
 
 /**
  * What one gesture opens: an Attachment, or one Annotation in it. Both keys
@@ -61,7 +65,19 @@ export type OpenOutcome =
    */
   | { kind: "file-missing" }
   /** The target names no Zotero object at all; nothing opened. */
-  | { kind: "unknown" };
+  | { kind: "unknown" }
+  /** The reader or the system handler failed; the Notifier said so. */
+  | { kind: "failed" };
+
+/** The system handler threw as it was handed a `zotero://` link. */
+export class SystemOpenFailed extends Schema.TaggedError<
+  SystemOpenFailed,
+  { readonly brand: unique symbol }
+>()("SystemOpenFailed", {
+  /** The link the handler was handed. */
+  url: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 /** Whether Obsidian's PDF view opened the file, which it learns at the open itself. */
 export type ReaderOutcome = "opened" | "file-missing";
@@ -77,244 +93,320 @@ export interface TargetReader {
 /** The system handler a `zotero://` link reaches Zotero through. */
 export type NativeOpener = (url: string) => void;
 
-export interface TargetOpenerDeps {
-  attachments: Pick<
-    AttachmentResolver["Service"],
-    "resolve" | "lookup" | "warm" | "indexed"
-  >;
-  reader: TargetReader;
-  native: NativeOpener;
-  /**
-   * Read per followed link: `reader.open-annotation-links` decides whether a
-   * Durable Annotation Link is ZotLit's to follow.
-   */
-  settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
-  /** The vault's own directory, for telling an in-vault file from one outside. */
-  vaultBasePath: string;
+/**
+ * The opener every ZotLit gesture opens an Attachment through, and File Link
+ * Capture follows a link Obsidian rendered through.
+ */
+export class TargetOpener extends Context.Service<
+  TargetOpener,
+  {
+    /**
+     * Open a target named by key. An Attachment that Obsidian's PDF view can
+     * host, and whose file this device holds, opens there in `pane`; every
+     * other one opens in Zotero, which finds any Attachment by its key. Waits
+     * a bounded time for the Attachment index while it is still being built,
+     * and opens in Zotero once that wait ends. A failed build is retried, so
+     * the index never fails outright; it is only late.
+     *
+     * An interrupt opens nothing and shows nothing. A reader or system
+     * handler that fails shows a notice and ends `failed`; so does a defect.
+     */
+    open(
+      target: OpenTarget,
+      pane: PaneType | boolean,
+    ): Effect.Effect<OpenOutcome>;
+    /**
+     * Follow a clicked link: an Attachment File Link or a Durable Annotation
+     * Link that names an Obsidian-Openable Attachment opens in Obsidian's
+     * reader. The decision runs at once, from the index held now, so a click
+     * handler runs it synchronously and claims the click; the open it answers
+     * is what the handler runs next.
+     *
+     * @returns `null` for a link ZotLit leaves to the caller's own handler —
+     *   another scheme, a file no Attachment keeps, a file Obsidian cannot
+     *   host, a Durable Annotation Link while the settings leave those to
+     *   Zotero, and every link while the index is still being built.
+     */
+    follow(
+      url: string,
+      pane: PaneType | boolean,
+    ): Effect.Effect<Effect.Effect<OpenOutcome> | null>;
+  }
+>()("zotlit/attachment-open/TargetOpener") {}
+
+export interface TargetOpenerPorts<R> {
+  /** Obsidian's PDF view, built over the layer's services. */
+  readonly reader: Effect.Effect<TargetReader, never, R>;
+  readonly native: NativeOpener;
   /** @default process.platform */
-  platform?: NodeJS.Platform;
+  readonly platform?: NodeJS.Platform;
   /**
    * How long a keyed open waits for the first Attachment index before it
    * hands the target to Zotero.
    *
    * @default 5 seconds
    */
-  indexWait?: Temporal.Duration;
+  readonly indexWait?: Duration.Input;
 }
 
-export interface TargetOpener {
-  /**
-   * Open a target named by key. An Attachment that Obsidian's PDF view can
-   * host, and whose file this device holds, opens there in `pane`; every other
-   * one opens in Zotero, which finds any Attachment by its key. Waits a
-   * bounded time for the Attachment index while it is still being built, and
-   * opens in Zotero once that wait ends. A failed build is retried, so the
-   * index never fails outright; it is only late.
-   */
-  open(target: OpenTarget, pane: PaneType | boolean): Promise<OpenOutcome>;
-  /**
-   * Follow a clicked link: an Attachment File Link or a Durable Annotation
-   * Link that names an Obsidian-Openable Attachment opens in Obsidian's reader.
-   * Decided at once, from the index held now.
-   *
-   * @returns `null` for a link ZotLit leaves to the caller's own handler —
-   *   another scheme, a file no Attachment keeps, a file Obsidian cannot host,
-   *   a Durable Annotation Link while the settings leave those to Zotero, and
-   *   every link while the index is still being built.
-   */
-  follow(url: string, pane: PaneType | boolean): Promise<OpenOutcome> | null;
+/**
+ * What a followed link opens: the Attachment, and the link Zotero takes in
+ * its stead when the reader finds no file; `null` for a link that names
+ * nothing Zotero could open.
+ */
+interface Claim {
+  readonly attachment: ObsidianOpenableAttachment;
+  readonly fallback: string | null;
 }
 
 /** A printed page label that also reads as a 1-based page number. */
 const PAGE_NUMBER_RE = /^[1-9]\d*$/;
 
-/** The opener every ZotLit gesture opens an Attachment through. */
-export function createTargetOpener({
-  attachments,
-  reader,
+export function layerTargetOpener<R>({
+  reader: makeReader,
   native,
-  settings,
-  bridge,
-  vaultBasePath,
   platform = process.platform,
-  indexWait = Temporal.Duration.from({ seconds: 5 }),
-}: TargetOpenerDeps): TargetOpener {
-  const openable = (
-    file: { attachmentKey: string; absolutePath: string },
-    subpath: string,
-  ): ObsidianOpenableAttachment => ({
-    indexedKey: file.attachmentKey,
-    label: filename(file.absolutePath),
-    openPath: obsidianOpenPath(file.absolutePath, vaultBasePath, platform),
-    absolutePath: file.absolutePath,
-    ...(subpath ? { subpath } : {}),
-  });
+  indexWait = "5 seconds",
+}: TargetOpenerPorts<R>): Layer.Layer<
+  TargetOpener,
+  never,
+  R | AttachmentResolver | PluginSettings | Notifier | ObsidianEnv
+> {
+  return Layer.effect(
+    TargetOpener,
+    Effect.gen(function* () {
+      const attachments = yield* AttachmentResolver;
+      const settings = yield* PluginSettings;
+      const notifier = yield* Notifier;
+      const { basePath } = yield* ObsidianEnv;
+      const reader = yield* makeReader;
 
-  /** Opens in the reader, or hands `fallback` to Zotero when the file is gone. */
-  const read = async (
-    attachment: ObsidianOpenableAttachment,
-    { pane, fallback }: { pane: PaneType | boolean; fallback: string | null },
-  ): Promise<OpenOutcome> => {
-    if ((await reader.open(attachment, pane)) === "opened")
-      return { kind: "reader" };
-    if (fallback === null) return { kind: "file-missing" };
-    logger.debug("Target handed to Zotero: the reader found no file", {
-      attachmentKey: attachment.indexedKey,
-    });
-    return toZotero(fallback);
-  };
-
-  const toZotero = (url: string): OpenOutcome => {
-    native(url);
-    return { kind: "zotero", url };
-  };
-
-  /**
-   * The index's answer for `attachmentKey`, waiting a bounded time for the
-   * first index; still `pending` when that wait ends.
-   */
-  const lookup = async (attachmentKey: string): Promise<AttachmentLookup> => {
-    const found = bridge.runSync(attachments.lookup(attachmentKey));
-    if (found.kind !== "pending") return found;
-    logger.debug("Target waits for the Attachment index", { attachmentKey });
-    bridge.runSync(attachments.warm);
-    const indexed = await bridge.runPromise(
-      indexedWithin(attachments, indexWait.total("milliseconds")),
-    );
-    if (!indexed) {
-      logger.debug("Target gave up on the Attachment index", {
-        attachmentKey,
+      const openable = (
+        file: { attachmentKey: string; absolutePath: string },
+        subpath: string,
+      ): ObsidianOpenableAttachment => ({
+        indexedKey: file.attachmentKey,
+        label: filename(file.absolutePath),
+        openPath: obsidianOpenPath(file.absolutePath, basePath, platform),
+        absolutePath: file.absolutePath,
+        ...(subpath ? { subpath } : {}),
       });
-      return { kind: "pending" };
-    }
-    return bridge.runSync(attachments.lookup(attachmentKey));
-  };
 
-  const followFile = (
-    parsed: URL,
-    pane: PaneType | boolean,
-  ): Promise<OpenOutcome> | null => {
-    let absolutePath: string;
-    try {
-      absolutePath = fileURLToPath(parsed);
-    } catch {
-      return null;
-    }
-    const resolution = bridge.runSync(attachments.resolve(absolutePath));
-    if (resolution.kind !== "resolved" || !resolution.openable) return null;
-    return read(
-      openable(
-        { attachmentKey: resolution.attachmentKey, absolutePath },
-        parsed.hash,
-      ),
-      { pane, fallback: null },
-    );
-  };
+      const toZotero = (url: string) =>
+        Effect.try({
+          try: () => native(url),
+          catch: (cause) => new SystemOpenFailed({ url, cause }),
+        }).pipe(Effect.as<OpenOutcome>({ kind: "zotero", url }));
 
-  /**
-   * A `zotero://open` link that names an Annotation names its Attachment by
-   * key, so the Attachment it names opens — even where another one keeps the
-   * same file. A file this device does not hold leaves the link to Zotero,
-   * which is what makes the link durable; the reader finds that out at the
-   * open, so the link is handed over then, as written. Anything short of a
-   * valid Annotation key is Zotero's alone, `zotero://select` included.
-   *
-   * The link's `page` is a printed label, which Obsidian's own jump reads as a
-   * page number. It is carried only when it reads as one; the Annotation's own
-   * page wins over it whenever the reader can place the Annotation.
-   *
-   * The link is ZotLit's to follow only while
-   * `reader.open-annotation-links` is on; otherwise the click is Zotero's and
-   * the link reaches Zotero as written.
-   */
-  const followDurable = (
-    url: string,
-    pane: PaneType | boolean,
-  ): Promise<OpenOutcome> | null => {
-    const link = parseAnnotationOpenUri(url);
-    if (link === null) return null;
-    const current = bridge.runSync(settings.current);
-    if (!current["reader.open-annotation-links"]) {
-      logger.debug("Durable Annotation Link left to Zotero", {
-        attachmentKey: link.attachmentKey,
-        groupID: link.groupID,
-        reason: "settings",
+      /** Opens in the reader, or hands `fallback` to Zotero when the file is gone. */
+      const read = Effect.fnUntraced(function* (
+        attachment: ObsidianOpenableAttachment,
+        {
+          pane,
+          fallback,
+        }: { pane: PaneType | boolean; fallback: string | null },
+      ) {
+        const outcome = yield* portCall("open-reader", () =>
+          reader.open(attachment, pane),
+        );
+        if (outcome === "opened") return { kind: "reader" } as OpenOutcome;
+        if (fallback === null) {
+          yield* notifier.show(m.notice_pdf_file_missing());
+          return { kind: "file-missing" } as OpenOutcome;
+        }
+        yield* Effect.logDebug(
+          "Target handed to Zotero: the reader found no file",
+        ).pipe(Effect.annotateLogs({ attachmentKey: attachment.indexedKey }));
+        return yield* toZotero(fallback);
       });
-      return null;
-    }
-    const attachment = bridge.runSync(
-      attachments.lookup(formatIndexedKey(link.attachmentKey, link.groupID)),
-    );
-    if (attachment.kind !== "resolved" || !attachment.openable) {
-      logger.debug("Durable Annotation Link left to Zotero", {
-        attachmentKey: link.attachmentKey,
-        groupID: link.groupID,
-        reason:
-          attachment.kind === "resolved" ? "not-openable" : attachment.kind,
-      });
-      return null;
-    }
-    const page =
-      link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
-        ? Number(link.pageLabel)
-        : null;
-    return read(
-      openable(
-        attachment,
-        formatAnnotationSubpath({
-          page,
-          annotation: formatIndexedKey(link.annotationKey, link.groupID),
-        }),
-      ),
-      { pane, fallback: url },
-    );
-  };
 
-  return {
-    async open(target, pane) {
-      const uri = zoteroUri(target);
-      if (uri === null) {
-        logger.warn("Target names no Zotero object", {
-          attachmentKey: target.attachmentKey,
-        });
-        return { kind: "unknown" };
-      }
-      const attachment = await lookup(target.attachmentKey);
-      if (attachment.kind !== "resolved" || !attachment.openable) {
-        logger.debug("Target handed to Zotero", {
-          attachmentKey: target.attachmentKey,
-          reason:
-            attachment.kind === "resolved" ? "not-openable" : attachment.kind,
-        });
-        return toZotero(uri);
-      }
-      return read(
-        openable(
-          attachment,
-          target.kind === "annotation"
-            ? formatAnnotationSubpath({
-                page: target.pageIndex === null ? null : target.pageIndex + 1,
-                annotation: target.annotationKey,
-              })
-            : "",
-        ),
-        { pane, fallback: uri },
+      /**
+       * A reader or system handler that failed, or a defect, shows a notice
+       * and ends `failed`; an interrupt passes on.
+       */
+      const reported = recover(
+        (cause) =>
+          Effect.logError("Target did not open").pipe(
+            Effect.annotateLogs({ cause }),
+            withLogCategory("attachment-open"),
+          ),
+        notifier
+          .show(m.notice_attachment_open_failed(), { duration: 4000 })
+          .pipe(Effect.as<OpenOutcome>({ kind: "failed" })),
       );
-    },
 
-    follow(url, pane) {
-      let parsed: URL;
-      try {
-        parsed = new URL(url);
-      } catch {
-        return null;
-      }
-      if (parsed.protocol === "file:") return followFile(parsed, pane);
-      if (parsed.protocol === "zotero:") return followDurable(url, pane);
-      return null;
-    },
-  };
+      /**
+       * The index's answer for `attachmentKey`, waiting a bounded time for the
+       * first index; still `pending` when that wait ends.
+       */
+      const lookup = Effect.fnUntraced(function* (attachmentKey: string) {
+        const found = yield* attachments.lookup(attachmentKey);
+        if (found.kind !== "pending") return found;
+        yield* Effect.logDebug("Target waits for the Attachment index").pipe(
+          Effect.annotateLogs({ attachmentKey }),
+        );
+        yield* attachments.warm;
+        if (!(yield* indexedWithin(attachments, indexWait))) {
+          yield* Effect.logDebug("Target gave up on the Attachment index").pipe(
+            Effect.annotateLogs({ attachmentKey }),
+          );
+          return { kind: "pending" } as AttachmentLookup;
+        }
+        return yield* attachments.lookup(attachmentKey);
+      });
+
+      const followFile = Effect.fnUntraced(function* (
+        parsed: URL,
+      ): Effect.fn.Return<Claim | null> {
+        const absolutePath = yield* Effect.try(() =>
+          fileURLToPath(parsed),
+        ).pipe(Effect.orElseSucceed(() => null));
+        if (absolutePath === null) return null;
+        const resolution = yield* attachments.resolve(absolutePath);
+        if (resolution.kind !== "resolved" || !resolution.openable) return null;
+        return {
+          attachment: openable(
+            { attachmentKey: resolution.attachmentKey, absolutePath },
+            parsed.hash,
+          ),
+          fallback: null,
+        };
+      });
+
+      /**
+       * A `zotero://open` link that names an Annotation names its Attachment
+       * by key, so the Attachment it names opens — even where another one
+       * keeps the same file. A file this device does not hold leaves the link
+       * to Zotero, which is what makes the link durable; the reader finds that
+       * out at the open, so the link is handed over then, as written. Anything
+       * short of a valid Annotation key is Zotero's alone, `zotero://select`
+       * included.
+       *
+       * The link's `page` is a printed label, which Obsidian's own jump reads
+       * as a page number. It is carried only when it reads as one; the
+       * Annotation's own page wins over it whenever the reader can place the
+       * Annotation.
+       *
+       * The link is ZotLit's to follow only while
+       * `reader.open-annotation-links` is on; otherwise the click is Zotero's
+       * and the link reaches Zotero as written.
+       */
+      const followDurable = Effect.fnUntraced(function* (
+        url: string,
+      ): Effect.fn.Return<Claim | null> {
+        const link = parseAnnotationOpenUri(url);
+        if (link === null) return null;
+        const current = yield* settings.current;
+        if (!current["reader.open-annotation-links"]) {
+          yield* Effect.logDebug("Durable Annotation Link left to Zotero").pipe(
+            Effect.annotateLogs({
+              attachmentKey: link.attachmentKey,
+              groupID: link.groupID,
+              reason: "settings",
+            }),
+          );
+          return null;
+        }
+        const attachment = yield* attachments.lookup(
+          formatIndexedKey(link.attachmentKey, link.groupID),
+        );
+        if (attachment.kind !== "resolved" || !attachment.openable) {
+          yield* Effect.logDebug("Durable Annotation Link left to Zotero").pipe(
+            Effect.annotateLogs({
+              attachmentKey: link.attachmentKey,
+              groupID: link.groupID,
+              reason:
+                attachment.kind === "resolved"
+                  ? "not-openable"
+                  : attachment.kind,
+            }),
+          );
+          return null;
+        }
+        const page =
+          link.pageLabel !== null && PAGE_NUMBER_RE.test(link.pageLabel)
+            ? Number(link.pageLabel)
+            : null;
+        return {
+          attachment: openable(
+            attachment,
+            formatAnnotationSubpath({
+              page,
+              annotation: formatIndexedKey(link.annotationKey, link.groupID),
+            }),
+          ),
+          fallback: url,
+        };
+      });
+
+      return TargetOpener.of({
+        open: Effect.fn("TargetOpener.open")(function* (
+          target: OpenTarget,
+          pane: PaneType | boolean,
+        ) {
+          const uri = zoteroUri(target);
+          if (uri === null) {
+            yield* Effect.logWarning("Target names no Zotero object").pipe(
+              Effect.annotateLogs({ attachmentKey: target.attachmentKey }),
+            );
+            return { kind: "unknown" } as OpenOutcome;
+          }
+          const attachment = yield* lookup(target.attachmentKey);
+          if (attachment.kind !== "resolved" || !attachment.openable) {
+            yield* Effect.logDebug("Target handed to Zotero").pipe(
+              Effect.annotateLogs({
+                attachmentKey: target.attachmentKey,
+                reason:
+                  attachment.kind === "resolved"
+                    ? "not-openable"
+                    : attachment.kind,
+              }),
+            );
+            return yield* toZotero(uri);
+          }
+          return yield* read(
+            openable(
+              attachment,
+              target.kind === "annotation"
+                ? formatAnnotationSubpath({
+                    page:
+                      target.pageIndex === null ? null : target.pageIndex + 1,
+                    annotation: target.annotationKey,
+                  })
+                : "",
+            ),
+            { pane, fallback: uri },
+          );
+        }, reported),
+
+        follow: Effect.fn("TargetOpener.follow")(
+          function* (url: string, _pane: PaneType | boolean) {
+            if (!URL.canParse(url)) return null;
+            const parsed = new URL(url);
+            if (parsed.protocol === "file:") return yield* followFile(parsed);
+            if (parsed.protocol === "zotero:") return yield* followDurable(url);
+            return null;
+          },
+          // The decision is the claim; the open it answers runs later.
+          (claim, _url, pane) =>
+            Effect.map(claim, (claimed) =>
+              claimed === null
+                ? null
+                : reported(
+                    read(claimed.attachment, {
+                      pane,
+                      fallback: claimed.fallback,
+                    }),
+                  ).pipe(
+                    Effect.withSpan("TargetOpener.follow.open"),
+                    withLogCategory("attachment-open"),
+                  ),
+            ),
+          withLogCategory("attachment-open"),
+        ),
+      });
+    }),
+  );
 }
 
 /**

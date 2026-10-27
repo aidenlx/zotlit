@@ -51,8 +51,11 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import { pdfPickerReader } from "@/services/attachment-open/actions";
-import type { TargetOpener } from "@/services/attachment-open/open-target";
+import {
+  openGesture,
+  pdfPickerReader,
+} from "@/services/attachment-open/actions";
+import { TargetOpener } from "@/services/attachment-open/open-target";
 import { toObsidianOpenable } from "@/services/attachment-open/openable";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import { LocalServer } from "@/services/local-server/service";
@@ -100,6 +103,7 @@ export type ProtocolServices =
   | Notifier
   | ObsidianEnv
   | ProfileDialogServices
+  | TargetOpener
   | UseLedger
   | Vault
   | Workspace
@@ -108,17 +112,17 @@ export type ProtocolServices =
 
 /**
  * The legacy values the handlers still hold. The Profile dialogs run in the
- * handler's fiber; the note import view and the Attachment opener convert in
- * later slices.
+ * handler's fiber; the note import view converts in a later slice.
  */
 export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
-  /** Also runs the note import modal's callbacks, which unload interrupts. */
-  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
-  /** Opens the Attachment `open-attachment` names. */
-  opener: Pick<TargetOpener, "open">;
+  /**
+   * Also runs the note import modal's callbacks and the Attachment picker's
+   * opens, which unload interrupts.
+   */
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit" | "runAndForget">;
 }
 
 /**
@@ -486,7 +490,12 @@ const handleOpenAttachmentProtocol = Effect.fn(
   });
 
   openAttachments(openable, {
-    reader: withPaneOverride(pdfPickerReader(deps.opener), query.paneType),
+    reader: withPaneOverride(
+      pdfPickerReader(
+        openGesture(yield* TargetOpener, deps.bridge.runAndForget),
+      ),
+      query.paneType,
+    ),
     app: deps.app,
   });
   return ProtocolOutcome.Opened();

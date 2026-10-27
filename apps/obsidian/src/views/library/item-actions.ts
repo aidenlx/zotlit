@@ -12,7 +12,6 @@ import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
-import { AbortError } from "@/lib/abort-error";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
@@ -23,10 +22,6 @@ import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { pdfPickerReader } from "@/services/attachment-open/actions";
 import { literatureNoteAttachments } from "@/services/attachment-open/literature-note";
-import type {
-  TargetOpener,
-  OpenOutcome,
-} from "@/services/attachment-open/open-target";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
 import { openLiteratureNote } from "@/services/note-feature/navigation";
@@ -36,6 +31,7 @@ import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
+import { viewTargetOpener } from "@/views/open-target";
 
 import { lastEditor } from "./last-note";
 
@@ -56,41 +52,6 @@ export const libraryItemCommand = viewRuntime.fn(
     ),
   { concurrent: true },
 );
-
-export const openLibraryTargetCommand = viewRuntime.fn(
-  (request: {
-    readonly opener: Pick<TargetOpener, "open">;
-    readonly args: Parameters<TargetOpener["open"]>;
-    readonly result: PromiseWithResolvers<OpenOutcome>;
-  }) =>
-    Effect.tryPromise(() => request.opener.open(...request.args)).pipe(
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (Exit.isFailure(exit))
-            request.result.reject(
-              Cause.hasInterruptsOnly(exit.cause)
-                ? new AbortError()
-                : Cause.squash(exit.cause),
-            );
-          else request.result.resolve(exit.value);
-        }),
-      ),
-    ),
-  { concurrent: true },
-);
-
-export function libraryTargetOpener(
-  registry: ViewRegistryHandle,
-  opener: Pick<TargetOpener, "open">,
-): Pick<TargetOpener, "open"> {
-  return {
-    open: (...args) => {
-      const result = Promise.withResolvers<OpenOutcome>();
-      registry.set(openLibraryTargetCommand, { opener, args, result });
-      return result.promise;
-    },
-  };
-}
 
 export type ItemActionsDeps = Pick<AttachmentOpenDeps, "app" | "opener"> & {
   registry: ViewRegistryHandle;
@@ -206,7 +167,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
           const attachments = yield* literatureNoteAttachments(indexedKey);
           openAttachments(attachments, {
             reader: withFixedPane(
-              pdfPickerReader(libraryTargetOpener(deps.registry, deps.opener)),
+              pdfPickerReader(viewTargetOpener(deps.registry, deps.opener)),
               pane,
             ),
             app: deps.app,

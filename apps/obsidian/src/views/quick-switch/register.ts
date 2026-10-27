@@ -16,9 +16,10 @@ export interface QuickSwitchDeps extends NoteResultDeps {
   attachments: LiteratureNoteAttachmentsHandle;
   lookup: ItemLookupHandle;
   settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
+  /** Also runs each PDF open a result fires; unload interrupts it. */
+  bridge: Pick<EffectBridge, "runSync" | "runAndForget">;
   /** Opens the PDF a result asks for. */
-  opener: Pick<TargetOpener, "open">;
+  opener: Pick<TargetOpener["Service"], "open">;
   /** Open the Library View with the Item selected. */
   showInLibrary: (indexedKey: string) => Promise<void>;
 }

@@ -14,18 +14,22 @@ import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
+import { ObsidianApp } from "@/lib/obsidian-app";
 import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import { activateAnnotView } from "@/views/annot-view/register";
 
-import { openerHarness } from "./__fixtures__";
+import { openOpener } from "./__fixtures__";
 import {
   addAttachmentOpenActions,
-  createPdfReader,
+  openGesture,
   pdfPickerReader,
 } from "./actions";
-import type { AttachmentOpenDeps, PdfReaderDeps } from "./actions";
+import type { AttachmentOpenDeps } from "./actions";
 import type { LiteratureNoteAttachmentsHandle } from "./handle";
 import type { TargetOpener } from "./open-target";
+import { pdfReader } from "./pdf-reader";
 import type { ObsidianOpenableAttachment } from "./resolve";
 
 vi.mock("@/views/annot-view/register", () => ({
@@ -88,20 +92,20 @@ const unreadAttachments = stubService<LiteratureNoteAttachmentsHandle>(
 );
 
 /** An opener a case leaves unused: the picker it builds is mocked. */
-const unusedOpener = stubService<Pick<TargetOpener, "open">>(
+const unusedOpener = stubService<Pick<TargetOpener["Service"], "open">>(
   "TargetOpener",
   {},
 );
 
 function lookupDeps(
   attachments: LiteratureNoteAttachmentsHandle,
-  overrides: Partial<AttachmentOpenDeps & PdfReaderDeps> = {},
-): AttachmentOpenDeps & PdfReaderDeps {
+  overrides: Partial<AttachmentOpenDeps> = {},
+): AttachmentOpenDeps {
   return {
     app: appWith(),
     attachments,
-    settings: { current: Effect.succeed(defaults) },
-    bridge: { runSync: Effect.runSync },
+    // The picker is mocked, so no open runs.
+    bridge: { runAndForget: () => {} },
     opener: unusedOpener,
     ...overrides,
   };
@@ -175,10 +179,20 @@ describe("open-pdf command", () => {
   });
 });
 
-describe("createPdfReader", () => {
+describe("pdfReader", () => {
   /** The hook the reader hands back to its caller once a file is on screen. */
-  function onOpenedOf(deps: PdfReaderDeps): () => void {
-    createPdfReader(deps);
+  function onOpenedOf(app: App, settings: Settings = defaults): () => void {
+    Effect.runSync(
+      pdfReader.pipe(
+        Effect.provideService(ObsidianApp, app),
+        Effect.provideService(
+          PluginSettings,
+          stubService<PluginSettings["Service"]>("PluginSettings", {
+            current: Effect.succeed(settings),
+          }),
+        ),
+      ),
+    );
     const [, options] = vi.mocked(createObsidianAttachmentReader).mock
       .calls[0]!;
     const onOpened = options?.onOpened;
@@ -187,45 +201,42 @@ describe("createPdfReader", () => {
   }
 
   it("brings the annotation view forward beside the PDF by default", () => {
-    const deps = lookupDeps(unreadAttachments);
+    const app = appWith();
 
-    onOpenedOf(deps)();
+    onOpenedOf(app)();
 
-    expect(activateAnnotView).toHaveBeenCalledWith(deps.app);
+    expect(activateAnnotView).toHaveBeenCalledWith(app);
   });
 
   it("leaves the sidebar alone once the user turns the reveal off", () => {
-    onOpenedOf(
-      lookupDeps(unreadAttachments, {
-        settings: {
-          current: Effect.succeed({
-            ...defaults,
-            "reader.focus-annot-view": false,
-          }),
-        },
-      }),
-    )();
+    onOpenedOf(appWith(), {
+      ...defaults,
+      "reader.focus-annot-view": false,
+    })();
 
     expect(activateAnnotView).not.toHaveBeenCalled();
   });
 });
 
 describe("pdfPickerReader", () => {
-  // A picker row fires its open and forgets it; unload must not turn the
-  // wait for the index into an unhandled rejection.
+  // A picker row fires its open and forgets it; unload must neither open
+  // the row nor turn the wait for the index into an unhandled rejection.
   it("stays silent when unload ends an open that waits for the index", async () => {
-    await using stack = new AsyncDisposableStack();
-    const { opener, gate, close } = await openerHarness(stack, {
-      prime: false,
-    });
+    const { opener, bridge, gate, close, opened, handed, notices } =
+      await openOpener({ prime: false });
     const read = gate();
 
-    const opening = pdfPickerReader(opener).open(OPENABLE_FIXTURE[0]!, false);
+    pdfPickerReader(openGesture(opener, bridge.runAndForget)).open(
+      OPENABLE_FIXTURE[0]!,
+      false,
+    );
     await read.waiting;
     const closing = close();
     read.release();
     await closing;
 
-    await expect(opening).resolves.toBeUndefined();
+    expect(opened).toEqual([]);
+    expect(handed).toEqual([]);
+    expect(notices).toEqual([]);
   });
 });

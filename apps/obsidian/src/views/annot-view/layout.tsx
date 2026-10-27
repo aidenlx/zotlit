@@ -125,7 +125,7 @@ export interface AnnotationsLayoutDeps {
    * Opens an Attachment or one Annotation in it — the page chip, and the
    * Table's Attachment and Annotation links.
    */
-  opener: Pick<TargetOpener, "open">;
+  opener: Pick<TargetOpener["Service"], "open">;
   registry: ViewRegistryHandle;
 }
 
