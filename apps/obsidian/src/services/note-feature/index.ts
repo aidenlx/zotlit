@@ -1,4 +1,4 @@
-export { NoteFeature, layerNoteFeature } from "./service";
+export { NoteFeature } from "./service";
 export { bindNoteFeature } from "./handle";
 export {
   applyComposedFrontmatter,
@@ -20,8 +20,6 @@ export {
   type ProfileSwitchConsent,
 } from "./switch-view";
 export {
-  createNoteInteractively,
-  type InteractiveCreationDeps,
   type InteractiveCreationOptions,
   type InteractiveCreationPorts,
 } from "./creation-view";
@@ -33,13 +31,14 @@ export {
   type CreationProfileSelection,
   type CreationProfileSource,
   type CreationSelectionProblem,
-  type PreparedCreationProfile,
   type ProfileNotePreview,
-  type ProfileNotePreviewOptions,
   type ProfilePreview,
-  type PreparedProfileSwitch,
   type NoteFeatureHandle,
   type UpdateResult,
   type UpdateScope,
 } from "./operations";
+export {
+  type ProfileNotePreviewOptions,
+  type PreparedProfileSwitch,
+} from "./types";
 export { type AnnotationCitation } from "./annotation-citation";
