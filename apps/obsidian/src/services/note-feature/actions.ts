@@ -9,13 +9,7 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
-import * as toast from "@/lib/toast";
 import type { FileMenuContext, FileMenuSegment } from "@/services/file-menu";
-import type { BatchImport } from "@/services/note-import/batch-import";
-import {
-  batchImportAllToast,
-  childImportToast,
-} from "@/services/note-import/batch-import-notices";
 import {
   isLiteratureNote,
   itemKeyFromFrontmatter,
@@ -28,7 +22,8 @@ import type { UpdateScope } from "./operations";
 interface NoteFeatureActionDeps {
   app: App;
   noteActions: NoteActions;
-  batchImport: Pick<BatchImport, "runChildImportByKey" | "runBatchImportAll">;
+  /** Runs Import child notes for the item `indexedKey` names. */
+  importChildNotes: (indexedKey: string) => void;
 }
 
 export function addNoteFeatureActions(
@@ -80,16 +75,6 @@ export function addNoteFeatureActions(
   });
 
   plugin.addCommand({
-    id: "import-child-notes",
-    name: m.command_import_child_notes_name(),
-    editorCheckCallback(checking, _editor, ctx) {
-      return withLiteratureNote(plugin, { ctx, checking }, (_file, itemKey) => {
-        void handleChildImport(deps, itemKey);
-      });
-    },
-  });
-
-  plugin.addCommand({
     id: "reimport-note",
     name: m.command_reimport_note_name(),
     editorCheckCallback(checking, _editor, ctx) {
@@ -104,17 +89,6 @@ export function addNoteFeatureActions(
     name: m.command_update_all_notes_name(),
     callback() {
       void deps.noteActions.updateAll();
-    },
-  });
-
-  plugin.addCommand({
-    id: "import-all-notes",
-    name: m.command_import_all_notes_name(),
-    callback() {
-      void toast.promise(
-        deps.batchImport.runBatchImportAll(),
-        batchImportAllToast({ app: deps.app }),
-      );
     },
   });
 }
@@ -173,7 +147,7 @@ function buildFileMenu(
         .setTitle(m.command_import_child_notes_name())
         .setIcon("download")
         .onClick(() => {
-          void handleChildImport(deps, itemKey);
+          deps.importChildNotes(itemKey);
         }),
     );
     return;
@@ -216,17 +190,11 @@ function addUpdateCommand(
   });
 }
 
-function handleChildImport(
-  deps: NoteFeatureActionDeps,
-  itemKey: string,
-): Promise<void> {
-  return toast.promise(
-    deps.batchImport.runChildImportByKey(itemKey),
-    childImportToast({ app: deps.app }),
-  );
-}
-
-function withLiteratureNote(
+/**
+ * Run `run` on the Literature Note `ctx` holds, unless `checking`: whether a
+ * command applies there.
+ */
+export function withLiteratureNote(
   plugin: Pick<Plugin, "app">,
   options: { ctx: Pick<MarkdownFileInfo, "file">; checking: boolean },
   run: (file: TFile, itemKey: string) => void,

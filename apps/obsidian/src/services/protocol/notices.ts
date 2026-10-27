@@ -8,12 +8,12 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
 import {
   batchImportAllToast,
   batchImportToast,
+  importNotices,
 } from "@/services/note-import/batch-import-notices";
 
 import { ProtocolOutcome } from "./outcome";
@@ -48,17 +48,6 @@ export const showProtocolOutcome = Effect.fn("protocol.showProtocolOutcome")(
     });
   },
 );
-
-/** The outcome notice of a note import, from its toast copy. */
-function importNotices<A>(copy: {
-  success: (result: A) => NoticeMessage | undefined;
-  error: (message: string, error: unknown) => NoticeMessage | undefined;
-}): OutcomeCopy<A> {
-  return {
-    success: copy.success,
-    error: (error) => copy.error(toast.formatErrorMessage(error), error),
-  };
-}
 
 /** A batch update's notices: the early-exit outcomes; a failure shows none. */
 const batchUpdateToast: OutcomeCopy<BatchUpdateResult> = {

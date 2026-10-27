@@ -30,7 +30,7 @@ it("offers Profile switching only for the active Literature Note and opens its c
     noteActions: stubService<NoteDeps["noteActions"]>("NoteActions", {
       switchProfile,
     }),
-    batchImport: stubService<NoteDeps["batchImport"]>("BatchImport", {}),
+    importChildNotes: vi.fn(),
   };
   addNoteFeatureActions(
     {

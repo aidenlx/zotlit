@@ -94,10 +94,15 @@ export const layerNotifier: Layer.Layer<Notifier> = Layer.effect(
 /** The three messages of a task's progress notice. */
 export interface ProgressCopy<A = unknown> {
   readonly loading: NoticeMessage;
-  /** The success message, or the message for the task's result. */
-  readonly success: NoticeMessage | ((result: A) => NoticeMessage);
-  /** The error message, or the message for the error the task failed with. */
-  readonly error: NoticeMessage | ((error: unknown) => NoticeMessage);
+  /** The success message, or the message for the task's result, or none. */
+  readonly success: NoticeMessage | ((result: A) => NoticeMessage | undefined);
+  /**
+   * The error message, or the message for the error the task failed with, or
+   * none.
+   */
+  readonly error:
+    | NoticeMessage
+    | ((error: unknown) => NoticeMessage | undefined);
   /**
    * How long the success message stays.
    *
@@ -110,8 +115,9 @@ export interface ProgressCopy<A = unknown> {
  * Report a task's outcome the way `toast.promise` does: the loading message
  * after 200 ms when the task has not finished (so a fast task does not flash
  * it), then the success message for 2 s (or `successDuration`) or the error
- * message for 4 s. An interrupted task or an abort shows nothing, and an
- * error is logged.
+ * message for 4 s. A result or error with no message, an interrupted task
+ * and an abort show nothing after the loading message, and an error is
+ * logged.
  *
  * @param outcome Completes with the task's Exit once the task ends. It runs
  *   again after the loading delay, so it awaits a task started elsewhere
@@ -128,9 +134,10 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
   const exit = Option.isSome(early) ? early.value : yield* outcome;
   if (Exit.isSuccess(exit)) {
     const { success } = copy;
-    yield* notice.setMessage(
-      typeof success === "function" ? success(exit.value) : success,
-    );
+    const message =
+      typeof success === "function" ? success(exit.value) : success;
+    if (message === undefined) return;
+    yield* notice.setMessage(message);
     yield* Effect.sleep(copy.successDuration ?? "2 seconds");
     return;
   }

@@ -36,10 +36,6 @@ import {
 
 const logger = getLogger(["setting-tab", "profile-import"]);
 export type ImportSource = "clipboard" | "file";
-export type ImportProfile = (options?: {
-  indexedKey?: string;
-  source?: ImportSource;
-}) => Promise<LiteratureNoteProfile | undefined>;
 
 /** What the import dialog reads and runs while it is open. */
 export interface ImportProfileDeps {

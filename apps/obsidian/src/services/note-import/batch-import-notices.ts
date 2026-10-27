@@ -2,7 +2,9 @@ import type { App } from "obsidian";
 
 // Batch-import outcomes and actionable Profile recovery for notices and toasts.
 import * as m from "@/lib/i18n/generated/messages";
+import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import * as toast from "@/lib/toast";
 import type { BatchRunResult } from "@/services/batch-run";
 import { ProfileAnnotationError } from "@/services/template/service";
 
@@ -121,6 +123,17 @@ export function childImportToast(options: { app?: App } = {}): {
     success: (result) =>
       result ? batchImportNotice(result) : m.notice_protocol_item_not_found(),
     error: (message, error) => importErrorNotice(message, error, options),
+  };
+}
+
+/** The outcome notice of a note import, from its toast copy. */
+export function importNotices<A>(copy: {
+  success: (result: A) => NoticeMessage | undefined;
+  error: (message: string, error: unknown) => NoticeMessage | undefined;
+}): OutcomeCopy<A> {
+  return {
+    success: copy.success,
+    error: (error) => copy.error(toast.formatErrorMessage(error), error),
   };
 }
 

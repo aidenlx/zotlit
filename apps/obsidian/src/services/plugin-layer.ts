@@ -108,6 +108,7 @@ import type { InteractiveCreationPorts } from "./note-feature/creation-view";
 import { layerNoteFeatureNotices } from "./note-feature/notices";
 import { layerNoteFeature } from "./note-feature/service";
 import type { NoteFeature } from "./note-feature/service";
+import { layerNoteImportCommands } from "./note-import/commands";
 import { layerNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { layerNoteIndex } from "./note-index/service";
@@ -123,6 +124,7 @@ import type {
   PdfAnnotationEditor,
   PdfAnnotationEditorPorts,
 } from "./pdf-annotation-editor/service";
+import { layerProfileActions } from "./profile/actions";
 import { layerProfile } from "./profile/service";
 import type { Profile } from "./profile/service";
 import { layerProtocolHandlers } from "./protocol/register";
@@ -189,7 +191,10 @@ export function pluginLayer(
     readonly creation: InteractiveCreationPorts;
     /** The launch sheet, the browser and the native editor Customize opens. */
     readonly customize: CustomizePorts;
-    /** The note import's modals and the Attachment opener the protocol handlers call. */
+    /**
+     * The note import's modals, which the protocol handlers and the note
+     * import commands open, and the Attachment opener the handlers call.
+     */
     readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
@@ -405,7 +410,11 @@ export function pluginLayer(
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerNoteFeatureNotices.pipe(startingAs("NoteFeatureNotices")),
+    layerNoteImportCommands({ view: protocol.noteImportView }).pipe(
+      startingAs("NoteImportCommands"),
+    ),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
+    layerProfileActions.pipe(startingAs("ProfileActions")),
     layerProtocolHandlers({
       ...creation,
       ...protocol,

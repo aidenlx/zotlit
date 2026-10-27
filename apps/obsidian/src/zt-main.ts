@@ -35,7 +35,6 @@ import {
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
 import { createPluginRuntime } from "./services/plugin-runtime";
-import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import {
   createProfileDialog,
@@ -247,7 +246,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       bridge: services.bridge,
     };
     addCustomizeActions(this, customizeDeps);
-    addProfileActions(this, { importProfile: services.importProfile });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, {
       citekeyEditor: services.citekeyEditor,
@@ -275,7 +273,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     const noteFeatureDeps = {
       app: this.app,
       noteActions: services.noteActions,
-      batchImport: services.batchImport,
+      importChildNotes: services.importChildNotes,
     };
     addNoteFeatureActions(this, noteFeatureDeps);
     stack.defer(
