@@ -1,7 +1,8 @@
 // zotlit-effect-tests: Effect tests run inside the test runtime
 // (policies/testing-strategy.md, policies/test-timing.md). Rejects running an
 // Effect by hand in a test, real timers in an Effect case, and fake services
-// cast to `Tag["Service"]` instead of built with stubService. Rule tests:
+// cast to `Tag["Service"]` instead of built with stubService, and notice
+// modules mocked instead of observed through the Notifier. Rule tests:
 // src/lint/effect-tests.test.ts.
 import { isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, Rule } from "./oxlint-ast.ts";
@@ -445,10 +446,49 @@ export const typedFake: Rule = {
   },
 };
 
+/** The notice modules a test reaches only by mocking them. */
+const NOTICE_MODULES = new Set(["@/lib/notice", "@/lib/toast"]);
+
+/**
+ * A test that mocks a notice module asserts what the seam renders, not what
+ * the core returns (policies/ui-seams.md): the module behind it moves behind
+ * the Notifier, and the test reads its calls through `testNotifier()`.
+ */
+export const noNoticeMock: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description: "Observe notices through the Notifier, not a module mock.",
+    },
+    messages: {
+      mock: "Move the module behind the Notifier and observe its notices with testNotifier() from @/lib/__fixtures__/notifier (policies/ui-seams.md).",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const source = node.arguments?.[0] as AstNode | undefined;
+        if (
+          isMemberOf(
+            node.callee as AstNode,
+            VI,
+            (name) => name === "mock" || name === "doMock",
+          ) &&
+          source?.type === "Literal" &&
+          NOTICE_MODULES.has(source.value as string)
+        )
+          context.report({ node, messageId: "mock" });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-effect-tests" },
   rules: {
     "no-effect-run-in-test": noEffectRunInTest,
+    "no-notice-mock": noNoticeMock,
     "no-real-timer-in-effect-test": noRealTimerInEffectTest,
     "service-stub": serviceStub,
     "typed-fake": typedFake,

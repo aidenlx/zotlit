@@ -3,7 +3,9 @@ import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { AbortError } from "@/lib/abort-error";
+import * as m from "@/lib/i18n/generated/messages";
 import { PluginSettings } from "@/services/settings/service";
 import { TemplateMigration } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
@@ -97,5 +99,43 @@ it.effect(
       stopSecond();
       yield* Effect.promise(() => waitFor(() => expect(cancelled).toBe(2)));
       expect(yield* Effect.promise(() => rejectedB)).toBe(true);
+    }),
+);
+
+it.effect.each([false, true])(
+  "reports the conversion result through Notifier (retry: %s)",
+  (retry) =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      const converted = {
+        outcome: "converted" as const,
+        document: null,
+        trashed: [],
+        pendingCleanup: [],
+        kept: [],
+      };
+      const host = yield* Effect.acquireDisposable(
+        Effect.promise(() =>
+          makeWelcomeHost({
+            services: Layer.mergeAll(
+              notifier.layer,
+              Layer.mock(TemplateMigration, {
+                convert: Effect.succeed(converted),
+                retryCleanup: Effect.succeed(converted),
+              }),
+            ),
+          }),
+        ),
+      );
+      const command = makeConversionCommand();
+      const stop = host.registry.mount(command);
+      yield* Effect.addFinalizer(() => Effect.sync(stop));
+      const result =
+        Promise.withResolvers<LiteratureNoteTemplateMigrationResult>();
+      host.registry.set(command, { retry, result });
+      expect(yield* Effect.promise(() => result.promise)).toEqual(converted);
+      expect(notifier.notices.map((notice) => notice.messages)).toEqual([
+        [m.notice_literature_note_template_conversion_success()],
+      ]);
     }),
 );

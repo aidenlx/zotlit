@@ -2,6 +2,7 @@
 import { Effect, Layer, Stream } from "effect";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -62,6 +63,7 @@ export async function makeWelcomeHost<R = never>(
       layerUnreadViewServices,
       layerHost(options.sources),
       layerQueryClients,
+      testNotifier().layer,
       layerPluginSettings({
         loadData: async () => null,
         saveData: async () => {},

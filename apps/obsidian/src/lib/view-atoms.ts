@@ -64,6 +64,7 @@ export type ViewServices =
   | LibraryScope
   | UseLedger
   | MetadataCache
+   
   | PluginSettings
   | QueryClients
   | Release

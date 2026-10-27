@@ -2,6 +2,7 @@
 import { Effect } from "effect";
 import type { Context } from "effect";
 
+import { AbortError } from "@/lib/abort-error";
 import { exitOver } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
@@ -53,7 +54,7 @@ export interface NoteCitations {
  * The citation renders and the annotation insert over `context`, run through
  * `bridge`. A failure throws what the Template threw, as the Template's plain
  * callers saw it. An insert's signal interrupts it, and so does unload: the
- * insert rejects with the signal's reason, or with the interrupt.
+ * insert rejects with the signal's reason, or with an `AbortError`.
  */
 export function bindNoteCitations(
   bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">,
@@ -73,6 +74,9 @@ export function bindNoteCitations(
       settleAtEdge(
         await runExit(plain(prepareAnnotationInsert(options)), { signal }),
         signal,
+        () => {
+          throw new AbortError("The plugin unloaded during the run.");
+        },
       ),
   };
 }
