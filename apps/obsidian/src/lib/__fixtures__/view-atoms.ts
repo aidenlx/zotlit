@@ -1,6 +1,6 @@
 // The view services a test host leaves unread, so its registry context is
 // whole. Each member dies when called.
-import { Effect, FileSystem, Layer } from "effect";
+import { Effect, FileSystem, Layer, Stream } from "effect";
 import type { Context } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -26,6 +26,7 @@ import { LocalServer } from "@/services/local-server/service";
 import { NoteFeature } from "@/services/note-feature/service";
 import { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { NoteIndex } from "@/services/note-index/service";
+import { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
 import { Release } from "@/services/release/service";
@@ -42,6 +43,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  * it first: a service the test reads, merged after it, takes its place.
  */
 export const layerUnreadViewServices = Layer.mergeAll(
+  Layer.mock(PdfAnnotationEditor, { sessions: Stream.make(new Map()), sessionAdded: Stream.empty }),
   Layer.mock(CitationParse, {}),
   Layer.mock(PandocEngine, {}),
   Layer.mock(BibliographyRender, {}),

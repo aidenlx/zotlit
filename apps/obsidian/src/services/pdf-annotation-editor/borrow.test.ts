@@ -15,9 +15,9 @@ import type {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
+import { NoteIndex } from "@/services/note-index/service";
 
 import {
   annotationReads,
@@ -27,7 +27,7 @@ import {
   pdfReader,
   readerSettings,
 } from "./__fixtures__";
-import { PdfAnnotationEditor } from "./service";
+import { openPdfEditor as PdfAnnotationEditor } from "./__fixtures__/editor";
 
 /** The bytes a document holding the open file answers with. */
 const PDF_BYTES = new Uint8Array([37, 80, 68, 70]);
@@ -77,7 +77,9 @@ let noteIndexes = new AsyncDisposableStack();
 
 /** The real Note Index over a vault with no Literature Note. */
 async function emptyNoteIndex() {
-  return (await openNoteVault({}, noteIndexes)).noteIndex;
+  return (await openNoteVault({}, noteIndexes)).noteIndex.runtime.runSync(
+    NoteIndex,
+  );
 }
 
 /** A bound PDF view, and the registry that owns it. */
@@ -86,18 +88,15 @@ async function readerRegistry(
   attachments = attachmentReads(),
   annotations = annotationReads(),
 ) {
-  const service = new PdfAnnotationEditor({
+  const service = await PdfAnnotationEditor({
     app: workspace([{ view }]),
     attachments,
     annotations,
-    bridge: noteIndexes.use(openTestBridge()),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
     noteIndex: await emptyNoteIndex(),
-    libraryTagNames: async () => [],
   });
-  await service.ready;
   return service;
 }
 

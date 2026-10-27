@@ -183,7 +183,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     cleanup.defer(async () => {
       await obEval(
         vaultId!,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(saved)}).layout);app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');return true;})()`,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(saved)}).layout);app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');return true;})()`,
       );
       try {
         await authorizationFixture!.rdp.json(
@@ -1036,7 +1036,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       const stepSettled = () =>
         obEval(
           vaultId!,
-          "(async()=>{const editor=app.plugins.plugins.zotlit.services.pdfAnnotationEditor;await Promise.all(editor.bindings.map((binding)=>binding.stepped));return 'stepped';})()",
+          "(async()=>{const services=app.plugins.plugins.zotlit.services;await Promise.all(services.bridge.runSync(services.pdfAnnotationEditor.bindings).map((binding)=>binding.stepped));return 'stepped';})()",
         );
 
       /**
@@ -1499,7 +1499,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await drag([80, 400], [89, 300])).toEqual({ preview: "0.2" });
           await obEval(
             vaultId!,
-            `(async()=>{await app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).settled;return true;})()`,
+            `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).settled;return true;})()`,
           );
 
           expect(await annotationKeys()).toEqual(before);
@@ -2789,7 +2789,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           announced: string[];
         }>(
           vaultId!,
-          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.bridge.subscribe(s.annotationRepository.excerptPixelsChanged,({record})=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.bridge.runPromise(s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer'));return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.bridge.runSync(s.pdfAnnotationEditor.bindings).find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.bridge.subscribe(s.annotationRepository.excerptPixelsChanged,({record})=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.bridge.runPromise(s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer'));return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
         );
         expect(outcome.state.kind).toBe("idle");
         expect(outcome.announced).toEqual([imageKey]);
@@ -7236,7 +7236,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(
         await obEvalUntil(
           vaultId!,
-          `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
+          `String(!!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
           { expected: "true" },
         ),
       ).toBe(true);

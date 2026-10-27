@@ -43,6 +43,7 @@ import type {
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
+import type { NoteIndex } from "@/services/note-index/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
@@ -195,13 +196,11 @@ export interface CapabilityGestures {
 }
 
 /** The one read a rendered comment takes from the Note Index. */
-export interface CommentNotes {
-  getNotesByItemKey: (itemKey: string) => readonly { path: string }[];
-}
+export type CommentNotes = Pick<NoteIndex["Service"], "getNotesByItemKey">;
 
 export interface PdfViewBindingDeps {
   view: PDFFileView;
-  adapter: FileSystemAdapter;
+  adapter: Pick<FileSystemAdapter, "getFullPath">;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
   bridge: Pick<
@@ -393,7 +392,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     if (this.#attachment.kind !== "resolved") return "";
     const { itemKey } = this.#attachment;
     if (itemKey === null) return "";
-    return this.#noteIndex.getNotesByItemKey(itemKey)[0]?.path ?? "";
+    return (
+      this.#bridge.runSync(this.#noteIndex.getNotesByItemKey(itemKey))[0]
+        ?.path ?? ""
+    );
   }
 
   /**
@@ -1675,7 +1677,7 @@ function pagesDrawing(
  */
 function absolutePathOf(
   file: { path: string },
-  adapter: FileSystemAdapter,
+  adapter: Pick<FileSystemAdapter, "getFullPath">,
 ): string {
   return file instanceof TExternalFile
     ? file.getRealPath()

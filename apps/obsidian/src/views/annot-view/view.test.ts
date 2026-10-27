@@ -370,10 +370,6 @@ async function openSidebar(
       "libraries-changed": Stream.empty,
       current: null,
     }),
-    pdfReaders: stubService<AnnotViewDeps["pdfReaders"]>("PdfReaders", {
-      on: () => () => {},
-      sessionFor: () => null,
-    }),
     query: stubService<AnnotViewDeps["query"]>("Query", {
       run,
       on: () => () => {},

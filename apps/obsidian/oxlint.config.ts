@@ -468,7 +468,6 @@ export default defineConfig({
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
         "src/views/library/view.test.ts",
@@ -672,12 +671,6 @@ export default defineConfig({
         "src/views/template-workbench/view.test.ts",
       ],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
-    },
-    {
-      // Legacy services, written before the rule. A file moves off this list
-      // when its service converts to Effect (/obsidian-services).
-      files: ["src/services/pdf-annotation-editor/service.ts"],
-      rules: { "zotlit-services/no-legacy-service": "off" },
     },
     {
       // Tests written before the rule that assert zt: classes; a file moves off

@@ -138,7 +138,7 @@ export async function settledGesture(
 ): Promise<void> {
   await obEval(
     vaultId,
-    `(async()=>{await app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).gestured;return true;})()`,
+    `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).gestured;return true;})()`,
   );
 }
 
@@ -197,7 +197,7 @@ export async function openPdfWithAnnotationView(
   expect(
     await obEvalUntil(
       vaultId,
-      `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
+      `String(!!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
       { expected: "true" },
     ),
   ).toBe(true);
@@ -343,7 +343,7 @@ export async function recomputedSortIndex(
   return JSON.parse(
     await obEval(
       vaultId,
-      `(async()=>{const binding=app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${position}));})()`,
+      `(async()=>{const binding=app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${position}));})()`,
     ),
   ) as string;
 }
