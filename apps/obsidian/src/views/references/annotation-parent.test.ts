@@ -2,37 +2,23 @@
 import { Effect, Layer, Stream } from "effect";
 import type { EventRef, Workspace, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
-import {
-  beforeEach as beforeStreamTest,
-  afterEach as afterStreamTest,
-} from "vitest";
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { buildRuntime } from "@/lib/effect-layer";
 import {
   annotationRows,
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import { CitationIndex } from "@/services/citation-index/service";
 import {
   createCitationIndexHarness,
   harnessApp,
   KEY_A,
 } from "@/services/citation-index/test-harness";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
 
+import { makeReferencesHost } from "./__fixtures__";
 import { ReferencesView } from "./view";
-
-let streamStack: AsyncDisposableStack;
-let streamRuntime: ReturnType<typeof buildRuntime<never>>;
-beforeStreamTest(() => {
-  streamStack = new AsyncDisposableStack();
-  streamRuntime = buildRuntime(Layer.empty, streamStack);
-});
-afterStreamTest(() => streamStack.disposeAsync());
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 class TestReferencesView extends ReferencesView {
   open() {
@@ -51,7 +37,21 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
       settings: { "citation.annotation-citations": true },
     },
   );
-  const { draft, index, lookup, db, libraryScope } = harness;
+  const { draft, index, db } = harness;
+  const host = await makeReferencesHost({
+    sources: harness.host,
+    services: Layer.mergeAll(
+      Layer.succeed(CitationIndex, harness.runtime.runSync(CitationIndex)),
+      Layer.succeed(
+        CitationLookup,
+        harness.lookup.runtime.runSync(CitationLookup),
+      ),
+    ),
+    zoteroEvents: Stream.map(db.changed, () => ({ _tag: "changed" as const })),
+    render: () =>
+      Effect.succeed({ kind: "unavailable", reason: "engine-absent" }),
+  });
+  harness.workspace.open(draft);
   const app = harnessApp(
     harness.host,
     stubService<Workspace>("Workspace", {
@@ -65,36 +65,7 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
   Object.defineProperty(leaf, "app", { value: app });
   const view = new TestReferencesView(leaf, {
     app,
-    db,
-    libraryScope,
-    citationIndex: index,
-    citationLookup: lookup,
-    runtime: streamRuntime,
-    citationText: { peek: () => null, changed: Stream.empty },
-    citekeyEditor: { openIndexedKey: async () => {} },
-    profile: profileReader(
-      () => harness.settingsBridge.runSync(harness.settings.current),
-      app.metadataCache,
-    ),
-    pandocEngine: {
-      binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-        "PandocEngine",
-        {
-          getStatus: Effect.succeed({ kind: "absent" }),
-          changes: Stream.empty,
-          decline: Effect.void,
-        },
-      ),
-      runSync: Effect.runSync,
-    },
-    bibliographyRender: {
-      vaultPresentation: { styleId: null, locale: null },
-      render: async () => ({ kind: "unavailable", reason: "engine-absent" }),
-      changed: Stream.empty,
-      settled: Stream.empty,
-      invalidated: Stream.empty,
-      "style-missing": Stream.empty,
-    },
+    registry: host.registry,
     openSettings: () => {},
     openStyleSettings: () => {},
   });
@@ -120,5 +91,6 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
   } finally {
     await act(() => view.close());
     view.contentEl.remove();
+    await host.close();
   }
 });

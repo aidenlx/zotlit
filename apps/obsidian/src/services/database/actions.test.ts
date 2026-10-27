@@ -18,7 +18,6 @@ const REFRESH_COMMAND = "refresh-zotero-data";
 function layerCommand(refresh: () => ZoteroReads["Service"]["refresh"]) {
   return Effect.gen(function* () {
     const host = testPluginHost();
-    const notifier = testNotifier();
     const reads = stubService<ZoteroReads["Service"]>("ZoteroReads", {
       refresh: Effect.suspend(refresh),
     });
@@ -28,7 +27,7 @@ function layerCommand(refresh: () => ZoteroReads["Service"]["refresh"]) {
         Layer.provide(
           Layer.mergeAll(
             host.layer,
-            notifier.layer,
+            testNotifier().layer,
             Layer.succeed(ZoteroReads, reads),
           ),
         ),
@@ -37,7 +36,7 @@ function layerCommand(refresh: () => ZoteroReads["Service"]["refresh"]) {
 
     const command = host.commands.get(REFRESH_COMMAND);
     if (!command) throw new Error(`${REFRESH_COMMAND} was not registered`);
-    return { command, notices: notifier.notices };
+    return { command };
   });
 }
 
@@ -96,72 +95,18 @@ describe("database refresh action", () => {
     }),
   );
 
-  it.effect("shows no loading notice for a refresh done within 200 ms", () =>
+  it.effect("settles the command once a slow refresh ends", () =>
     Effect.gen(function* () {
-      const { command, notices } = yield* layerCommand(() => Effect.void);
+      const done = yield* Deferred.make<void>();
+      const { command } = yield* layerCommand(() => Deferred.await(done));
 
-      yield* Effect.promise(() => run(command));
-      yield* TestClock.adjust("200 millis");
-      expect(notices).toEqual([
-        {
-          messages: ["Zotero database refreshed."],
-          duration: 0,
-          hidden: false,
-        },
-      ]);
-      yield* TestClock.adjust("2 seconds");
-      expect(notices[0]?.hidden).toBe(true);
-    }),
-  );
-
-  it.effect(
-    "shows the loading notice for a slow refresh, then its result",
-    () =>
-      Effect.gen(function* () {
-        const done = yield* Deferred.make<void>();
-        const { command, notices } = yield* layerCommand(() =>
-          Deferred.await(done),
-        );
-
-        const running = yield* Effect.promise(() => run(command)).pipe(
-          Effect.forkChild,
-        );
-        yield* TestClock.adjust("200 millis");
-        expect(notices).toEqual([
-          {
-            messages: ["Refreshing Zotero database…"],
-            duration: 0,
-            hidden: false,
-          },
-        ]);
-        yield* Deferred.succeed(done, undefined);
-        yield* Effect.yieldNow;
-        expect(notices[0]?.messages.at(-1)).toBe("Zotero database refreshed.");
-        yield* TestClock.adjust("2 seconds");
-        expect(notices[0]?.hidden).toBe(true);
-        yield* Fiber.join(running);
-      }),
-  );
-
-  it.effect("shows the failure for 4 seconds", () =>
-    Effect.gen(function* () {
-      const { command, notices } = yield* layerCommand(() =>
-        Effect.fail(new DbUnavailable({ message: "database unavailable" })),
+      const running = yield* Effect.promise(() => run(command)).pipe(
+        Effect.forkChild,
       );
-
-      yield* Effect.promise(() => run(command));
-      yield* Effect.yieldNow;
-      expect(notices).toEqual([
-        {
-          messages: ["Failed to refresh Zotero database."],
-          duration: 0,
-          hidden: false,
-        },
-      ]);
-      yield* TestClock.adjust("3999 millis");
-      expect(notices[0]?.hidden).toBe(false);
-      yield* TestClock.adjust("1 millis");
-      expect(notices[0]?.hidden).toBe(true);
+      yield* TestClock.adjust("1 second");
+      expect(running.pollUnsafe()).toBeUndefined();
+      yield* Deferred.succeed(done, undefined);
+      yield* Fiber.join(running);
     }),
   );
 

@@ -6,14 +6,15 @@
 // that note for its own Item, whichever note the Note Index ranks first.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { Keymap, parseLinktext } from "obsidian";
 import type { App, TFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import { processLiveFrontMatter } from "@/lib/live-text";
 import type { LiveTextApp } from "@/lib/live-text";
 import {
@@ -24,13 +25,17 @@ import {
   propertyValues,
   vaultTags,
 } from "@/lib/obsidian-private/property-values";
-import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
-import type { NoteFeatureHandle } from "@/services/note-feature/operations";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import type { PlainProfile } from "@/services/profile/plain";
-import type { PlainTemplate } from "@/services/template/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { Workspace } from "@/lib/obsidian-workspace";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { createNoteInteractively } from "@/services/note-feature/creation-view";
+import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
+import { noteIndexSnapshotAtom } from "@/services/note-index/atoms";
+import { profileRevisionAtom } from "@/services/profile/atoms";
+import { templateRevisionAtom } from "@/services/template/atoms";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
+import { makeQueryOperations } from "./atoms";
+import { replacedKeysAtom } from "./note-atoms";
 import { LITERATURE_NOTE } from "./query-file";
 
 /** A Literature Note as the column links it. */
@@ -180,27 +185,11 @@ export interface LiteratureNotes {
   create(itemKey: string): Promise<void>;
 }
 
-export interface LiteratureNotesDeps extends InteractiveCreationDeps {
-  runtime: SubscriptionRuntime;
+export interface LiteratureNotesDeps {
+  registry: ViewRegistryHandle;
   app: App & LiveTextApp;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    | "getNotesByItemKey"
-    | "getIndexedItemKeys"
-    | "getPropertyNames"
-    | "changed"
-    | "indexed"
-    | "frontmatter-changed"
-  >;
-  noteFeature: InteractiveCreationDeps["noteFeature"] &
-    Pick<NoteFeatureHandle, "replacedKeys">;
-  profile: Pick<PlainProfile, "changed">;
-  template: Pick<PlainTemplate, "compile-status-changed">;
-  zoteroReads: Pick<PlainZoteroReads, "reads">;
+  creation: InteractiveCreationPorts;
 }
-
-/** The keys a note's Profile replaces, or the read of them under way. */
-type Replaced = ReadonlySet<string> | Promise<ReadonlySet<string>>;
 
 /**
  * What the vault properties read across many notes, kept until a note is
@@ -210,11 +199,9 @@ interface VaultMemo {
   names?: readonly string[];
   /** The type each name's first value infers. */
   inferred?: ReadonlyMap<string, VaultPropertyType>;
-  /** The keys each note's Profile replaces, by path. */
-  replaced: Map<string, Replaced>;
 }
 
-const freshMemo = (): VaultMemo => ({ replaced: new Map() });
+const freshMemo = (): VaultMemo => ({});
 
 interface VaultEvents {
   changed: () => void;
@@ -223,68 +210,61 @@ interface VaultEvents {
 
 /** The column's Literature Notes, from the Note Index and the usual creation. */
 export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
-  // Every source of a change clears what it makes stale, then tells the
-  // listeners, so a listener reads after the clear. The type Obsidian
-  // assigns is read live, so only what the notes give is kept. The Note
-  // Index, the Profiles and the templates live as long as these notes, so
-  // their subscriptions need no end.
-  let memo = freshMemo();
+  const { registry } = deps;
+  const operations = makeQueryOperations(registry);
+  const memoAtom = Atom.map(noteIndexSnapshotAtom, () => freshMemo());
   const events = createNanoEvents<VaultEvents>();
-  subscribe(deps.runtime, deps.noteIndex["changed"], () => {
-    memo = freshMemo();
-    events.emit("changed");
-  });
-  // The Full Scan reports no `changed` for each note it finds.
-  subscribe(deps.runtime, deps.noteIndex["indexed"], () => {
-    memo = freshMemo();
-    events.emit("changed");
-  });
-  subscribe(deps.runtime, deps.noteIndex["frontmatter-changed"], (file) => {
-    // A note's own frontmatter, its Profile stamp among it, decides what its
-    // Profile replaces; the other notes keep theirs.
-    memo = {
-      replaced: new Map(
-        [...memo.replaced].filter(([path]) => path !== file?.path),
-      ),
-    };
-    if (file === undefined) memo.replaced.clear();
-    events.emit("frontmatter-changed");
-  });
-  const profilesChanged = () => {
-    memo = { ...memo, replaced: new Map() };
-    events.emit("frontmatter-changed");
-  };
-  subscribe(deps.runtime, deps.profile["changed"], profilesChanged);
-  subscribe(
-    deps.runtime,
-    deps.template["compile-status-changed"],
-    profilesChanged,
-  );
-  // A read of what a note's Profile replaces settles after the cell asked;
-  // the cells read again once for all that settle together.
-  let telling = false;
-  const tellReplaced = () => {
-    if (telling) return;
-    telling = true;
-    queueMicrotask(() => {
-      telling = false;
-      events.emit("frontmatter-changed");
-    });
-  };
-  /** The keys the Profile of `file` replaces, read once until it changes. */
-  const replacedOf = (file: TFile): Replaced => {
-    const known = memo.replaced.get(file.path);
-    if (known !== undefined) return known;
-    const at = memo;
-    const reading = deps.noteFeature.replacedKeys(file).then((keys) => {
-      if (at.replaced.get(file.path) === reading) {
-        at.replaced.set(file.path, keys);
-        if (memo === at) tellReplaced();
+  let listeners = 0;
+  let offSources: (() => void) | null = null;
+  const replacedSubscriptions = new Map<
+    TFile,
+    { path: string; release: () => void }
+  >();
+  const listen = () => {
+    if (listeners++ === 0) {
+      const releases = [
+        registry.mount(noteIndexSnapshotAtom),
+        registry.subscribe(noteIndexSnapshotAtom, (snapshot) => {
+          events.emit(
+            snapshot.change?.type === "frontmatter-changed"
+              ? "frontmatter-changed"
+              : "changed",
+          );
+        }),
+      ];
+      for (const atom of [profileRevisionAtom, templateRevisionAtom]) {
+        releases.push(registry.mount(atom));
+        releases.push(
+          registry.subscribe(atom, () => events.emit("frontmatter-changed")),
+        );
       }
-      return keys;
-    });
-    at.replaced.set(file.path, reading);
-    return reading;
+      offSources = () => {
+        for (const release of releases) release();
+        for (const { release } of replacedSubscriptions.values()) release();
+        replacedSubscriptions.clear();
+      };
+    }
+    return () => {
+      if (--listeners === 0) {
+        offSources?.();
+        offSources = null;
+      }
+    };
+  };
+  const replacedOf = (file: TFile) => {
+    const atom = replacedKeysAtom(file.path);
+    const result = registry.get(atom);
+    const subscribed = replacedSubscriptions.get(file);
+    if (listeners > 0 && subscribed?.path !== file.path) {
+      subscribed?.release();
+      replacedSubscriptions.set(file, {
+        path: file.path,
+        release: registry.subscribe(atom, (result) => {
+          if (!result.waiting) events.emit("frontmatter-changed");
+        }),
+      });
+    }
+    return result;
   };
   // An assigned type is read live: listened to while any listener listens.
   let typeListeners = 0;
@@ -299,10 +279,11 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
     };
   };
   const inferredTypes = (): ReadonlyMap<string, VaultPropertyType> => {
+    const memo = registry.get(memoAtom);
     if (memo.inferred) return memo.inferred;
     const inferred = new Map<string, VaultPropertyType>();
-    for (const itemKey of deps.noteIndex.getIndexedItemKeys()) {
-      const note = deps.noteIndex.getNotesByItemKey(itemKey)[0];
+    for (const itemKey of registry.get(noteIndexSnapshotAtom).keys) {
+      const note = firstNote(itemKey);
       if (!note) continue;
       for (const [name, value] of Object.entries(frontmatterOf(note.path)))
         if (!inferred.has(name) && value !== undefined && value !== null)
@@ -313,32 +294,53 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   };
   const frontmatterOf = (path: string): Readonly<Record<string, unknown>> =>
     deps.app.metadataCache.getCache(path)?.frontmatter ?? {};
+  // Body edits change the ranking through the live file stats without an index event.
+  const firstNote = (itemKey: string) =>
+    registry
+      .get(noteIndexSnapshotAtom)
+      .notes.get(itemKey)
+      ?.toSorted(
+        (a, b) => b.stat.mtime - a.stat.mtime || a.path.localeCompare(b.path),
+      )[0];
   /** The path of the note an Item's vault properties are of. */
   const pathOf = (itemKey: string, host: VaultHost | null) =>
-    host?.itemKey === itemKey
-      ? host.path
-      : deps.noteIndex.getNotesByItemKey(itemKey)[0]?.path;
+    host?.itemKey === itemKey ? host.path : firstNote(itemKey)?.path;
   const fileOf = (itemKey: string, host: VaultHost | null) => {
     const path = pathOf(itemKey, host);
     return path === undefined ? null : deps.app.vault.getFileByPath(path);
   };
+  const createNote = Effect.fn("QueryView.createNote")(function* (
+    itemKey: string,
+  ) {
+    const { reads } = yield* ZoteroReads;
+    const item = (yield* reads.ItemsByIndexedKeys({
+      indexedKeys: [itemKey],
+    })).get(itemKey);
+    return item ? yield* createNoteInteractively(deps.creation, item) : null;
+  });
   return {
-    find: (itemKey) => deps.noteIndex.getNotesByItemKey(itemKey)[0] ?? null,
+    find: (itemKey) => firstNote(itemKey) ?? null,
     on: (event, listener) => {
       const off = events.on(event, listener);
-      if (event !== "frontmatter-changed") return off;
+      const offSource = listen();
+      if (event !== "frontmatter-changed")
+        return () => {
+          off();
+          offSource();
+        };
       // A change of an assigned type shows as a change of the frontmatter.
       const offTypes = listenTypes();
       return () => {
         off();
+        offSource();
         offTypes();
       };
     },
     propertyNames: () =>
-      (memo.names ??= deps.noteIndex
-        .getPropertyNames()
-        .filter((name) => `vault.${name}` !== LITERATURE_NOTE)),
-    itemKeys: () => deps.noteIndex.getIndexedItemKeys(),
+      (registry.get(memoAtom).names ??= registry
+        .get(noteIndexSnapshotAtom)
+        .names.filter((name) => `vault.${name}` !== LITERATURE_NOTE)),
+    itemKeys: () => registry.get(noteIndexSnapshotAtom).keys,
     propertyType: (name, value) => {
       const assigned = assignedWidget(deps.app, name);
       if (assigned !== null && ASSIGNABLE.has(assigned))
@@ -355,19 +357,35 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       const file = fileOf(itemKey, host);
       if (file === null) return false;
       const keys = replacedOf(file);
-      return !(keys instanceof Promise) && keys.has(name);
+      return (
+        !keys.waiting &&
+        Option.getOrElse(AsyncResult.value(keys), () => new Set<string>()).has(
+          name,
+        )
+      );
     },
-    write: async ({ itemKey, name, value, host }) => {
-      const found = fileOf(itemKey, host);
-      const file = found ?? (await createNote(itemKey));
-      if (file === null) return "cancelled";
-      // The Profile of a note just created is read as the note's own.
-      if ((await replacedOf(file)).has(name)) return "managed";
-      await processLiveFrontMatter(deps.app, file, (frontmatter) => {
-        frontmatter[name] = value;
-      });
-      return found === null ? "created" : "written";
-    },
+    write: (edit) =>
+      operations.run(
+        Effect.gen(function* () {
+          const { itemKey, name, value, host } = edit;
+          const found = fileOf(itemKey, host);
+          const file = found ?? (yield* createNote(itemKey));
+          if (file === null) return "cancelled" as const;
+          const keys = yield* AtomRegistry.getResult(
+            registry,
+            replacedKeysAtom(file.path),
+            { suspendOnWaiting: true },
+          );
+          if (keys.has(name)) return "managed" as const;
+          yield* Effect.tryPromise(() =>
+            processLiveFrontMatter(deps.app, file, (frontmatter) => {
+              frontmatter[name] = value;
+            }),
+          );
+          return found === null ? ("created" as const) : ("written" as const);
+        }),
+        "cancelled",
+      ),
     suggestions: (name, type) =>
       type === "tags" ? vaultTags(deps.app) : propertyValues(deps.app, name),
     resolves: ({ target, itemKey, host }) =>
@@ -375,32 +393,29 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
         parseLinktext(target).path,
         pathOf(itemKey, host) ?? "",
       ) !== null,
-    openLink: ({ target, itemKey, host }, event) =>
-      void deps.app.workspace.openLinkText(
-        target,
-        pathOf(itemKey, host) ?? "",
-        Keymap.isModEvent(event),
-      ),
-    open: (note, event) =>
-      void deps.app.workspace.openLinkText(
-        note.path,
-        "",
-        Keymap.isModEvent(event),
-      ),
-    create: async (itemKey) => {
-      await createNote(itemKey);
+    openLink: ({ target, itemKey, host }, event) => {
+      void operations.run(
+        Effect.flatMap(Workspace, (workspace) =>
+          workspace.openLinkText(target, pathOf(itemKey, host) ?? "", {
+            newLeaf: Keymap.isModEvent(event),
+          }),
+        ),
+        undefined,
+      );
     },
+    open: (note, event) => {
+      void operations.run(
+        Effect.flatMap(Workspace, (workspace) =>
+          workspace.openLinkText(note.path, "", {
+            newLeaf: Keymap.isModEvent(event),
+          }),
+        ),
+        undefined,
+      );
+    },
+    create: (itemKey) =>
+      operations.run(Effect.asVoid(createNote(itemKey)), undefined),
   };
-  /** The usual creation of an Item's note; `null` where none came of it. */
-  async function createNote(itemKey: string): Promise<TFile | null> {
-    const { reads } = deps.zoteroReads;
-    const item = (
-      await Effect.runPromise(
-        reads.ItemsByIndexedKeys({ indexedKeys: [itemKey] }),
-      )
-    ).get(itemKey);
-    return item ? deps.noteFeature.createNoteInteractively(item) : null;
-  }
 }
 
 /**

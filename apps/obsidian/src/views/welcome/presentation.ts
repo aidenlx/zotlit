@@ -1,7 +1,4 @@
-// Per-instance store for one Welcome View banner: the Migration Prompt flag, the pending update, the dismissal, the request to show it and its open steps, the connection readout, and the seeded literature-notes folder, with the one decision of which sections the banner shows.
-import { createContext, useContext } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
+// The state and section decisions of the Welcome banner.
 
 import type { Settings } from "@/services/settings/schema";
 
@@ -37,7 +34,7 @@ export interface WelcomeState {
    */
   converted: boolean;
   connection: ConnectionReadout;
-  /** Current `note.literature-folder` setting; seeded once by the view on open. */
+  /** Current `note.literature-folder` binding in the default profile. */
   literatureFolder: string;
   /** The literature-notes folder exists in the vault. */
   literatureFolderExists: boolean;
@@ -153,43 +150,4 @@ export function bannerBadge(
   if (state.migrationPending) return "upgraded";
   if (bannerSections(state)?.update) return "updated";
   return "get-started";
-}
-
-export type WelcomeStore = ReturnType<typeof createWelcomeStore>;
-
-export function createWelcomeStore() {
-  return createStore<WelcomeState>()(() => ({
-    migrationPending: false,
-    dismissed: false,
-    requested: false,
-    stepsShown: false,
-    requests: 0,
-    converted: false,
-    connection: { status: "checking" },
-    literatureFolder: "",
-    literatureFolderExists: false,
-    templateConversionPending: false,
-    templateFolder: "",
-    templateConversionResult: null,
-    v1TemplatesPresent: false,
-    notFound: false,
-    version: "",
-    updatePending: false,
-    noticesEnabled: true,
-  }));
-}
-
-const WelcomeStoreContext = createContext<WelcomeStore | null>(null);
-export const WelcomeStoreProvider = WelcomeStoreContext.Provider;
-
-function useWelcomeStoreApi(): WelcomeStore {
-  const store = useContext(WelcomeStoreContext);
-  if (!store) {
-    throw new Error("useWelcomeStore must be used within WelcomeStoreProvider");
-  }
-  return store;
-}
-
-export function useWelcomeStore<T>(selector: (s: WelcomeState) => T): T {
-  return useStore(useWelcomeStoreApi(), selector);
 }

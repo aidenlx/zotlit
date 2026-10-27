@@ -1,31 +1,6 @@
-import { MarkdownView } from "obsidian";
-import type { App, WorkspaceLeaf } from "obsidian";
+import type { MarkdownView } from "obsidian";
 
 import type { CitationOccurrence } from "@/services/citation-index/service";
-
-/**
- * Scroll one citation into view and flash it in an open Markdown document. A
- * document no editor holds open has nothing to reveal.
- */
-export function revealMarkdownOccurrence(options: {
-  app: App;
-  sourcePath: string;
-  occurrence: CitationOccurrence;
-  preferredLeaf?: WorkspaceLeaf | null;
-}): void {
-  const { app, sourcePath, occurrence, preferredLeaf } = options;
-  const leaf =
-    (preferredLeaf && markdownLeafAtPath(preferredLeaf, sourcePath)
-      ? preferredLeaf
-      : null) ||
-    app.workspace
-      .getLeavesOfType("markdown")
-      .find((candidate) => markdownLeafAtPath(candidate, sourcePath));
-  if (!leaf || !(leaf.view instanceof MarkdownView)) return;
-
-  app.workspace.setActiveLeaf(leaf, { focus: true });
-  flashOccurrence(leaf.view, occurrence);
-}
 
 /**
  * Scroll `occurrence` into view in `view` and flash it.
@@ -48,10 +23,4 @@ export function flashOccurrence(
     endLoc: end,
     line: start.line,
   });
-}
-
-function markdownLeafAtPath(leaf: WorkspaceLeaf, sourcePath: string): boolean {
-  return (
-    leaf.view instanceof MarkdownView && leaf.view.file?.path === sourcePath
-  );
 }
