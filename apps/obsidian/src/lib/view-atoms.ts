@@ -42,6 +42,7 @@ import type { AnnotationNoteActions } from "@/services/note-feature/view-actions
 import type { NoteIndex } from "@/services/note-index/service";
 import type { BibliographyRender } from "@/services/pandoc/render-cache";
 import type { PandocEngine } from "@/services/pandoc/service";
+import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { Profile } from "@/services/profile/service";
 import type { QueryClients } from "@/services/query-client/service";
 import type { Release } from "@/services/release/service";
@@ -59,6 +60,7 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
+  | PdfAnnotationEditor
   | CitationParse
   | PandocEngine
   | BibliographyRender

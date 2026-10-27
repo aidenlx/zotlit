@@ -58,7 +58,7 @@ export async function verifyPdfReadSource(
   }
   await obEval(
     vaultId,
-    `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());${services}.bridge.runSync(${services}.settings.update({'log.level':'trace','log.to-file':true}));await ${services}.bridge.runPromise(${services}.settings.flush);const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');await app.plugins.enablePlugin('zotlit');await app.vault.copy(app.vault.getFileByPath('attachments/rougier-2014.pdf'),'${oldPdf}');await ${services}.zoteroPref.setDataDir(${JSON.stringify(oldDir)});return true;})()`,
+    `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());${services}.bridge.runSync(${services}.settings.update({'log.level':'trace','log.to-file':true}));await ${services}.bridge.runPromise(${services}.settings.flush);const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');await app.plugins.enablePlugin('zotlit');await app.vault.copy(app.vault.getFileByPath('attachments/rougier-2014.pdf'),'${oldPdf}');await ${services}.zoteroPref.setDataDir(${JSON.stringify(oldDir)});return true;})()`,
   );
   const read = async () => {
     const reply = await zoteroFetch(api, "users/0/items/RGRPDF24");
@@ -87,7 +87,7 @@ export async function verifyPdfReadSource(
       async () =>
         (await obEval(
           vaultId,
-          `String(${services}.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${oldPdf}')?.session?.target?.attachmentKey==='RGRPDF24')`,
+          `String(${services}.bridge.runSync(${services}.pdfAnnotationEditor.bindings).find((b)=>b.filePath==='${oldPdf}')?.session?.target?.attachmentKey==='RGRPDF24')`,
         )) === "true",
     ),
   ).toBe(true);

@@ -66,7 +66,7 @@ const editedColor = "#2ea8e5";
 const editedComment = "Saved-edit acceptance";
 
 /** Where the reader owns the document excerpt work borrows from. */
-const borrowedDocument = `app.plugins.plugins.zotlit.services.pdfAnnotationEditor.borrowDocument(app.vault.adapter.getFullPath(${JSON.stringify(vaultPath)}))`;
+const borrowedDocument = `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.borrowDocument(app.vault.adapter.getFullPath(${JSON.stringify(vaultPath)})))`;
 
 /**
  * One renderer diagnostics instant, without the worker evidence a snapshot
