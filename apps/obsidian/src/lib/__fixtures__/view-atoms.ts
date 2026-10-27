@@ -4,6 +4,7 @@ import { Effect, Layer } from "effect";
 import type { Context } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Notifier } from "@/lib/notifier";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
@@ -25,6 +26,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  * it first: a service the test reads, merged after it, takes its place.
  */
 export const layerUnreadViewServices = Layer.mergeAll(
+  Layer.mock(Notifier, {}),
   Layer.mock(QueryService, {}),
   Layer.mock(CitationLookup, {}),
   Layer.mock(CitationParse, {}),

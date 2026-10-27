@@ -187,7 +187,7 @@ import {
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
 const logger = getLogger(["views", "template-workbench"]);
 export type OriginatingNoteUpdateOutcome =
-  | { outcome: "no-target" }
+  | { outcome: "no-target" | "released" }
   | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
   | { outcome: "updated" | "refused"; name: string; result: UpdateResult }
   | { outcome: "failed"; name: string; error: unknown };
@@ -200,6 +200,7 @@ export function originatingNoteUpdateNotice(
   const feedback = updateNoteToast("full", { app });
   switch (result.outcome) {
     case "no-target":
+    case "released":
       return null;
     case "unavailable":
       return m.template_workbench_update_unavailable({ name: result.name });
@@ -455,17 +456,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         result,
       };
     } catch (error) {
+      if (AbortError.test(error)) return { outcome: "released" };
       if (!available())
         return { outcome: "unavailable", name: origin.file.basename };
       if (error === unavailable)
         return { outcome: "unavailable", name: origin.file.basename };
       if (error === changed)
         return { outcome: "not-ready", name: origin.file.basename };
-      if (!AbortError.test(error))
-        logger.error("Failed to update originating note at {path}", {
-          path: origin.file.path,
-          error,
-        });
+      logger.error("Failed to update originating note at {path}", {
+        path: origin.file.path,
+        error,
+      });
       return { outcome: "failed", name: origin.file.basename, error };
     }
   }

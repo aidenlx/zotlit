@@ -19,6 +19,7 @@ import { createElement } from "react";
 import type { ReactNode } from "react";
 
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
+import type { Notifier } from "@/lib/notifier";
 import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
@@ -55,6 +56,7 @@ export type ViewServices =
   | CitationIndex
   | MetadataCache
   | TemplateDataReads
+  | Notifier
   | Vault
   | Workspace
   | ZoteroReads;

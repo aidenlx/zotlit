@@ -28,6 +28,7 @@ import {
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
@@ -329,7 +330,7 @@ describe("TemplateWorkbenchView", () => {
     },
   );
 
-  it.each(["deleted", "replaced", "closed"])(
+  it.each(["deleted", "replaced"])(
     "refuses an origin that is %s while the template compiles",
     async (change) => {
       const h = await originHarness();
@@ -337,13 +338,11 @@ describe("TemplateWorkbenchView", () => {
       h.waitUntilSettled.mockReturnValue(compilation.promise);
       const updating = h.view.updateOriginatingNote();
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
-      if (change === "closed") await h.view.close();
-      else
-        h.getFileByPath.mockReturnValue(
-          change === "deleted"
-            ? null!
-            : Object.assign(new TFile(), { path: h.file.path }),
-        );
+      h.getFileByPath.mockReturnValue(
+        change === "deleted"
+          ? null!
+          : Object.assign(new TFile(), { path: h.file.path }),
+      );
       compilation.resolve("settled");
       expect(await updating).toEqual({
         outcome: "unavailable",
@@ -378,6 +377,26 @@ describe("TemplateWorkbenchView", () => {
       error,
     });
   });
+
+  // #1819: unload releases a waiting update without a failure notice.
+  it.each(["settlement", "write", "closed"])(
+    "stays silent when unload stops the originating note update at %s",
+    async (stage) => {
+      const h = await originHarness();
+      const waiting = Promise.withResolvers<"settled">();
+      if (stage === "write")
+        h.updateNote.mockRejectedValueOnce(new AbortError());
+      else h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
+      const updating = h.view.updateOriginatingNote();
+      await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
+      if (stage === "closed") await h.view.close();
+      if (stage !== "write") waiting.reject(new AbortError());
+      const outcome = await updating;
+      expect.soft(outcome).toEqual({ outcome: "released" });
+      expect(originatingNoteUpdateNotice(h.app, outcome)).toBeNull();
+      expect(h.updateNote).toHaveBeenCalledTimes(stage === "write" ? 1 : 0);
+    },
+  );
 
   it("keeps the existing template diagnostic on a refused update", async () => {
     const h = await originHarness();
