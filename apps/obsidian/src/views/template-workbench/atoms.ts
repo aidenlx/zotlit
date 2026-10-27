@@ -37,7 +37,7 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
     ),
     builtIn: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
-        return yield* (yield* Profile).getBuiltInSource();
+        return yield* (yield* Profile).getBuiltInSource;
       }),
     ),
     profileOf: makeWorkbenchCommand(registry, (file: TFile) =>
@@ -52,13 +52,13 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
     ),
     materialize: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
-        return yield* (yield* Profile).materializeDefault();
+        return yield* (yield* Profile).materializeDefault;
       }),
     ),
     restore: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
         const profile = yield* Profile;
-        yield* profile.restoreDefault();
+        yield* profile.restoreDefault;
         return yield* profile.getSource("default");
       }),
     ),

@@ -191,7 +191,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }) => {
           await zotlit.services.bridge.runPromise(
-            zotlit.services.profileService.restoreDefault(),
+            zotlit.services.profileService.restoreDefault,
           );
         },
         undefined,

@@ -30,6 +30,7 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -1045,8 +1046,8 @@ An annotation.
             "templates/zotlit-profile.default.md",
           ),
           getSource: () => Effect.succeed(SOURCE),
-          getBuiltInSource: () => Effect.succeed(SOURCE),
-          materializeDefault,
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1087,7 +1088,16 @@ An annotation.
     const file = new TFile();
     const materializeDefault = vi
       .fn()
-      .mockReturnValueOnce(Effect.die(new Error("Disk full")))
+      .mockReturnValueOnce(
+        Effect.fail(
+          new VaultError({
+            operation: "create",
+            path: "templates/zotlit-profile.default.md",
+            message: "Disk full",
+            cause: null,
+          }),
+        ),
+      )
       .mockReturnValue(Effect.succeed({ file, created: true }));
     const { view, requestSave } = setup({
       runtime: testRuntime(),
@@ -1098,8 +1108,8 @@ An annotation.
             "templates/zotlit-profile.default.md",
           ),
           getSource: () => Effect.succeed(SOURCE),
-          getBuiltInSource: () => Effect.succeed(SOURCE),
-          materializeDefault,
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1128,8 +1138,8 @@ An annotation.
             "templates/zotlit-profile.default.md",
           ),
           getSource: () => Effect.succeed(SOURCE),
-          getBuiltInSource: () => Effect.succeed(SOURCE),
-          materializeDefault: () => Effect.succeed({ file, created: false }),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.succeed({ file, created: false }),
         },
       ),
     });
@@ -1146,9 +1156,16 @@ An annotation.
   });
 
   it("shows read-only source and one inline retry after the Customize action fails", async () => {
-    const materializeDefault = vi
-      .fn()
-      .mockReturnValue(Effect.die(new Error("Disk full")));
+    const materializeDefault = vi.fn().mockReturnValue(
+      Effect.fail(
+        new VaultError({
+          operation: "create",
+          path: "templates/zotlit-profile.default.md",
+          message: "Disk full",
+          cause: null,
+        }),
+      ),
+    );
     const { view } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
@@ -1158,8 +1175,8 @@ An annotation.
             "templates/zotlit-profile.default.md",
           ),
           getSource: () => Effect.succeed(SOURCE),
-          getBuiltInSource: () => Effect.succeed(SOURCE),
-          materializeDefault,
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1203,8 +1220,8 @@ An annotation.
             "templates/zotlit-profile.default.md",
           ),
           getSource: () => Effect.succeed(SOURCE),
-          getBuiltInSource: () => Effect.succeed(SOURCE),
-          materializeDefault: () => Effect.promise(() => pending.promise),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.promise(() => pending.promise),
         },
       ),
     });
@@ -1964,7 +1981,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
       "Profile",
       {
-        getBuiltInSource: () => Effect.succeed(builtin),
+        getBuiltInSource: Effect.succeed(builtin),
       },
     ),
   });

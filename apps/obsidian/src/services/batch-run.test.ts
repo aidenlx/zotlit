@@ -464,7 +464,9 @@ describe("a task that awaits a rejected Promise", () => {
       ]);
     }),
   );
+});
 
+describe("a task that dies with an abort-named error", () => {
   it.effect("reports an abort-named failure as a failed item", () =>
     Effect.gen(function* () {
       const { controls, settled } = makeRunControls();

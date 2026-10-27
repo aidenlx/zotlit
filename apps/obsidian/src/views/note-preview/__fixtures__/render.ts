@@ -226,7 +226,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   const deps = { runtime: settings.runtime, bridge: settings.bridge,
     citationParse: inProcessParseClient,
     app, settings, templates, templateData,
-    profile: stubService<PreviewHostDeps["profile"]>("Profile", { resolveProfile: () => Effect.succeed(undefined), getBuiltInSource: () => Effect.succeed(DEFAULT_PROFILE_SOURCE), profiles: Effect.succeed([]) }),
+    profile: stubService<PreviewHostDeps["profile"]>("Profile", { resolveProfile: () => Effect.succeed(undefined), getBuiltInSource: Effect.succeed(DEFAULT_PROFILE_SOURCE), profiles: Effect.succeed([]) }),
     zoteroReads,
     noteIndex: { getNotesByItemKey: notesOf },
     citationLookup: {
@@ -257,7 +257,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
       prepareLiteratureNoteTemplateSource: (source) => Effect.suspend(() => deps.templates.prepareLiteratureNoteTemplateSource(source)),
       compileEvents: Stream.unwrap(Effect.sync(() => deps.templates.compileEvents)),
     }),
-    Layer.mock(Profile, { resolveProfile: (selector) => Effect.suspend(() => deps.profile.resolveProfile(selector)), getBuiltInSource: () => Effect.suspend(() => deps.profile.getBuiltInSource()), changes: Stream.unwrap(Effect.suspend(() => Effect.map(deps.profile.profiles, (profiles) => Stream.make({ loaded: true, profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.bridge.runSync(templates.status) })))) }),
+    Layer.mock(Profile, { resolveProfile: (selector) => Effect.suspend(() => deps.profile.resolveProfile(selector)), getBuiltInSource: Effect.suspend(() => deps.profile.getBuiltInSource), changes: Stream.unwrap(Effect.suspend(() => Effect.map(deps.profile.profiles, (profiles) => Stream.make({ loaded: true, profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.bridge.runSync(templates.status) })))) }),
     Layer.mock(CitationParse, { parse: (request) => Effect.suspend(() => deps.citationParse.parse(request)) }),
     Layer.mock(CitationLookup, { read: (request) => Effect.tryPromise(() => deps.citationLookup.read(request)).pipe(Effect.orDie) }),
     Layer.mock(BibliographyRender, {

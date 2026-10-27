@@ -375,7 +375,7 @@ function restoreDefaultProfile(ctx: SettingTabContext) {
       },
       ctx.app,
     );
-    if (confirmed) yield* profile.restoreDefault();
+    if (confirmed) yield* profile.restoreDefault;
   });
 }
 

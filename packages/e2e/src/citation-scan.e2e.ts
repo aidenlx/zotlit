@@ -75,9 +75,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           const existing = app.vault.getFileByPath(profilePath);
           const original = existing
             ? await app.vault.read(existing)
-            : services.bridge.runSync(
-                services.profileService.getBuiltInSource(),
-              );
+            : services.bridge.runSync(services.profileService.getBuiltInSource);
           const header = "--- zotlit:annotation ---";
           if (!original.includes(header))
             throw Error("Default profile has no annotation section");

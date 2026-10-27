@@ -131,7 +131,7 @@ afterEach(() => {
 const NO_PROFILES: Awaited<
   ReturnType<typeof createRenderFixture>
 >["deps"]["profile"] = {
-  getBuiltInSource: () => Effect.succeed(DEFAULT_PROFILE_SOURCE),
+  getBuiltInSource: Effect.succeed(DEFAULT_PROFILE_SOURCE),
   profiles: Effect.succeed([]),
   resolveProfile: () => Effect.succeed(undefined),
 };

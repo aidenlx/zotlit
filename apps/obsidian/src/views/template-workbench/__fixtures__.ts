@@ -206,13 +206,11 @@ export function makeWorkbenchHost(
     state: profileState,
     changes: Stream.fromEffect(profileState),
     profileOf: (file) => Effect.suspend(() => deps.profile!.profileOf(file)),
-    getBuiltInSource: () =>
-      Effect.suspend(() => deps.profile!.getBuiltInSource()),
+    getBuiltInSource: Effect.suspend(() => deps.profile!.getBuiltInSource),
     getSource: (selector) =>
       Effect.suspend(() => deps.profile!.getSource(selector)),
-    materializeDefault: () =>
-      Effect.suspend(() => deps.profile!.materializeDefault()),
-    restoreDefault: () => Effect.suspend(() => deps.profile!.restoreDefault()),
+    materializeDefault: Effect.suspend(() => deps.profile!.materializeDefault),
+    restoreDefault: Effect.suspend(() => deps.profile!.restoreDefault),
   });
   const dbState = () => ({
     state: deps.zoteroReads.state,

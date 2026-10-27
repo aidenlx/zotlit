@@ -1688,7 +1688,7 @@ export class Profile extends Context.Service<
     profileOf(
       file?: TFile,
     ): Effect.Effect<NoteProfile, ProfileOperationErrors["profileOf"]>;
-    getBuiltInSource(): Effect.Effect<
+    readonly getBuiltInSource: Effect.Effect<
       string,
       ProfileOperationErrors["getBuiltInSource"]
     >;
@@ -1717,15 +1717,15 @@ export class Profile extends Context.Service<
       LiteratureNoteProfile,
       ProfileOperationErrors["duplicate"]
     >;
-    ejectDefault(): Effect.Effect<
+    readonly ejectDefault: Effect.Effect<
       TFile,
       ProfileOperationErrors["ejectDefault"]
     >;
-    materializeDefault(): Effect.Effect<
+    readonly materializeDefault: Effect.Effect<
       { file: TFile; created: boolean },
       ProfileOperationErrors["materializeDefault"]
     >;
-    restoreDefault(): Effect.Effect<
+    readonly restoreDefault: Effect.Effect<
       void,
       ProfileOperationErrors["restoreDefault"]
     >;
@@ -1840,7 +1840,7 @@ export const layerProfile = Layer.effect(
       defaultDocumentPath: engine.defaultDocumentPath(),
       resolveProfile: engine.resolveProfile,
       profileOf: engine.profileOf,
-      getBuiltInSource: engine.getBuiltInSource,
+      getBuiltInSource: engine.getBuiltInSource(),
       create: Effect.fn("Profile.create")(
         (...args: Parameters<Profile["Service"]["create"]>) =>
           owned(engine.create(...args)),
@@ -1861,14 +1861,14 @@ export const layerProfile = Layer.effect(
         (...args: Parameters<Profile["Service"]["duplicate"]>) =>
           owned(engine.duplicate(...args)),
       ),
-      ejectDefault: Effect.fn("Profile.ejectDefault")(() =>
-        owned(engine.ejectDefault()),
+      ejectDefault: owned(engine.ejectDefault()).pipe(
+        Effect.withSpan("Profile.ejectDefault"),
       ),
-      materializeDefault: Effect.fn("Profile.materializeDefault")(() =>
-        owned(engine.materializeDefault()),
+      materializeDefault: owned(engine.materializeDefault()).pipe(
+        Effect.withSpan("Profile.materializeDefault"),
       ),
-      restoreDefault: Effect.fn("Profile.restoreDefault")(() =>
-        owned(engine.restoreDefault()),
+      restoreDefault: owned(engine.restoreDefault()).pipe(
+        Effect.withSpan("Profile.restoreDefault"),
       ),
       prepareDelete: Effect.fn("Profile.prepareDelete")(
         (...args: Parameters<Profile["Service"]["prepareDelete"]>) =>
