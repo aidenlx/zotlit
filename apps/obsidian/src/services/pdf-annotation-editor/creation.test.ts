@@ -1631,6 +1631,33 @@ it("creates a Text Draft finished as the view closes, from the page it read at t
   expect(box![2]! - box![0]!).toBeCloseTo(40, 2);
 });
 
+it("creates a Text Draft the view closes on before the Page Label pass ends, with the page's own number", async () => {
+  // The page answers; the catalog read the label pass needs never does, as a
+  // PDF.js document closed under it.
+  const structure = new PdfTextStructure({
+    numPages: 1,
+    getViewBox: async () => [0, 0, 612, 792],
+    getTextItems: async () => [],
+    getCatalogPageLabels: () => new Promise(() => {}),
+  });
+  await using open = await toolReader("text", undefined, {
+    structure: () => structure,
+  });
+  {
+    using _closing = open;
+    typeDraft(open, "Typed");
+    await structure.page(0);
+  }
+  // The binding closes the structure as it lets the document go.
+  structure.close();
+  await open.creation.created;
+
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(open.drafts).toMatchObject([
+    { type: "text", comment: "Typed", pageLabel: "1" },
+  ]);
+});
+
 it("stops an image create waiting for PDF geometry when the runtime closes (#1860)", async () => {
   await using open = await imageReader();
   const read = Promise.withResolvers<string>();
