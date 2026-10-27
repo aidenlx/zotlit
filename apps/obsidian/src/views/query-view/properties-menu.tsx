@@ -11,7 +11,6 @@
 import type { IconName } from "obsidian";
 import { useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useStore } from "zustand";
 
 import {
   Chooser,
@@ -27,6 +26,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { composing } from "@/lib/ime";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { useQueryViewState } from "./model";
 import { propertyIcon } from "./property-icon";
 import { NewFormulaPage, PropertyPage } from "./property-page";
 import { LITERATURE_NOTE, vaultName, vaultProperty } from "./query-file";
@@ -56,7 +56,7 @@ function reordered(
 }
 
 export function PropertiesMenu({ view }: { view: QueryView }) {
-  const current = useStore(view.state, (s) => s.view);
+  const current = useQueryViewState(view, (s) => s.view);
   // The popover lists the names the Literature Notes give their properties.
   const { literatureNotes } = view.tableDeps;
   const names = useVaultPropertyNames(literatureNotes);

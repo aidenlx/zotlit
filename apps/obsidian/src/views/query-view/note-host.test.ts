@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 // A note holds a Query View in two ways: the Query File embed and the Query
 // Block. Both bind `this` to the note's Item, take the card keys, keep a click
 // from selecting them in Live Preview and settle as Export to PDF waits for
@@ -28,6 +27,8 @@ import type {
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
+// @vitest-environment happy-dom
+import { makeQueryHost } from "./__fixtures__/host";
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { registerQueryBlock } from "./block";
 import { QueryCardFocus } from "./card-focus";
@@ -62,10 +63,10 @@ const EMPTY: QueryViewOutcome = {
   },
 };
 
-let cleanup = new DisposableStack();
-afterEach(() => {
-  cleanup.dispose();
-  cleanup = new DisposableStack();
+let cleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   document.body.replaceChildren();
 });
 
@@ -78,7 +79,7 @@ interface Held {
 
 type HostKind = "embed" | "block";
 
-function setup(kind: HostKind) {
+async function setup(kind: HostKind) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({
@@ -123,6 +124,7 @@ function setup(kind: HostKind) {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(run),
     cardFocus,
@@ -148,6 +150,8 @@ function setup(kind: HostKind) {
     ),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
 
   type Plugin = Parameters<typeof registerQueryBlock>[0];
   type Processor = Parameters<Plugin["registerMarkdownCodeBlockProcessor"]>[1];
@@ -258,7 +262,7 @@ function setup(kind: HostKind) {
 
 describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
   it("binds `this.item` to the Item of its note", async () => {
-    const { hold, run } = setup(kind);
+    const { hold, run } = await setup(kind);
     await hold("notes/Lab.md");
     expect(run.mock.calls.at(-1)![0].context).toEqual({ item: "RUGIER24" });
     await hold("notes/Plain.md");
@@ -266,7 +270,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
   });
 
   it("runs again when the note's `zotero-key` changes, and for nothing else", async () => {
-    const { hold, run, host } = setup(kind);
+    const { hold, run, host } = await setup(kind);
     await hold("notes/Lab.md");
     const edit = async (path: string, text: string) => {
       await act(async () => {
@@ -290,7 +294,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
   });
 
   it("settles once the first rows show, as Export to PDF waits for it", async () => {
-    const { show, run } = setup(kind);
+    const { show, run } = await setup(kind);
     const answer = Promise.withResolvers<QueryViewOutcome>();
     run.mockReturnValueOnce(answer.promise);
     const print = document.body.createDiv({ cls: "print" });
@@ -318,13 +322,13 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
   });
 
   it("keeps a click inside it from selecting it in Live Preview", async () => {
-    const { hold } = setup(kind);
+    const { hold } = await setup(kind);
     const { el } = await hold();
     expect(el.classList.contains("interactive-child")).toBe(true);
   });
 
   it("keeps a drag that starts in it from the note's editor, which would drag the note's text", async () => {
-    const { hold } = setup(kind);
+    const { hold } = await setup(kind);
     const note = document.body.createDiv();
     const { el } = await hold();
     note.append(el);
@@ -345,7 +349,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     };
 
     it("are on the keymap while focus is in it, and leave with focus to the note", async () => {
-      const { hold, scopes } = setup(kind);
+      const { hold, scopes } = await setup(kind);
       const { el } = await hold();
       const note = document.body.createEl("textarea");
 
@@ -356,7 +360,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     });
 
     it("stay off the keymap while focus is in a text field of it", async () => {
-      const { hold, scopes } = setup(kind);
+      const { hold, scopes } = await setup(kind);
       const { el } = await hold();
       const field = el.createEl("input", { type: "text" });
 
@@ -365,7 +369,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     });
 
     it("leave the keymap when it unloads with focus in it", async () => {
-      const { hold, scopes } = setup(kind);
+      const { hold, scopes } = await setup(kind);
       const { el, unload } = await hold();
 
       control(el).focus();
@@ -374,7 +378,7 @@ describe.each<HostKind>(["embed", "block"])("a %s", (kind) => {
     });
 
     it("let the palette step the view focus was last in, through a modal over it", async () => {
-      const { hold, cardFocus } = setup(kind);
+      const { hold, cardFocus } = await setup(kind);
       const note = document.body.createDiv();
       const { el, view } = await hold();
       note.append(el);
@@ -408,7 +412,7 @@ describe("a Query Block that leaves the page", () => {
    * once the block has left it.
    */
   async function leaving({ replaceCode }: { replaceCode?: () => void }) {
-    const { block, host } = setup("block");
+    const { block, host } = await setup("block");
     host.vault.modifyFile(PATH, BLOCK_NOTE);
     let onPage = true;
     const ctx: Omit<MarkdownPostProcessorContext, "addChild"> = {

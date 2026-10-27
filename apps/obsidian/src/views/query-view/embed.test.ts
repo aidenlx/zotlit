@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 // A Query File embed shows one view of the file in a note. These tests drive
 // it as Obsidian does: the creator, the component it returns added to the note
 // and loaded, and the file's text on disk changing under it. What it shares
@@ -20,6 +19,8 @@ import type {
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
+// @vitest-environment happy-dom
+import { makeQueryHost } from "./__fixtures__/host";
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { openTextFileView } from "./__fixtures__/open-text-view";
 import { QueryCardFocus } from "./card-focus";
@@ -58,14 +59,14 @@ const EMPTY: QueryViewOutcome = {
   },
 };
 
-let cleanup = new DisposableStack();
-afterEach(() => {
-  cleanup.dispose();
-  cleanup = new DisposableStack();
+let cleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   document.body.replaceChildren();
 });
 
-function setup() {
+async function setup() {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({
@@ -104,6 +105,7 @@ function setup() {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(run),
     cardFocus: new QueryCardFocus(app),
@@ -129,6 +131,8 @@ function setup() {
     ),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
 
   /** Embed the Query File in `sourcePath` as Obsidian does, and load it. */
   async function embed(
@@ -192,7 +196,7 @@ const viewName = (el: HTMLElement) =>
   el.querySelector("[data-query-view-menu]")?.textContent;
 
 it("shows the first view, or the view the link names", async () => {
-  const { embed, run } = setup();
+  const { embed, run } = await setup();
   const plain = await embed("notes/Lab.md");
   expect(viewName(plain.el)).toBe("Yellow");
   const named = await embed("notes/Lab.md", "#Mine");
@@ -201,7 +205,7 @@ it("shows the first view, or the view the link names", async () => {
 });
 
 it("shows a placeholder named after the file in a note preview", async () => {
-  const { preview, run } = setup();
+  const { preview, run } = await setup();
   const plain = await preview();
   expect(
     plain.querySelector("[data-query-placeholder]")?.textContent,
@@ -214,7 +218,7 @@ it("shows a placeholder named after the file in a note preview", async () => {
 });
 
 it("saves through an open tab of the file, so the tab shows the change", async () => {
-  const { embed, host } = setup();
+  const { embed, host } = await setup();
   const tab = openTextFileView(host, host.file(FILE_PATH));
   const { view } = await embed("notes/Lab.md");
   await act(async () => {

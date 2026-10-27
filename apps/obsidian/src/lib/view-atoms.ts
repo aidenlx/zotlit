@@ -11,7 +11,7 @@
 // stops once no leaf reads it.
 import { RegistryContext } from "@effect/atom-react";
 import { Context, Effect, Layer, Option } from "effect";
-import type { Stream } from "effect";
+import type { FileSystem, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { Notifier } from "@/lib/notifier";
 import type { ObsidianEnv } from "@/lib/obsidian-env";
+import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
@@ -29,12 +30,15 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
 import type { LibraryScope } from "@/services/library-scope/service";
+import type { NoteFeature } from "@/services/note-feature/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { Profile } from "@/services/profile/service";
 import type { QueryClients } from "@/services/query-client/service";
 import type { Release } from "@/services/release/service";
 import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import type { TemplateMigration } from "@/services/template/migration";
+import type { Template } from "@/services/template/service";
 import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
@@ -47,14 +51,19 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
 export type ViewServices =
   | CitationIndex
   | CitationLookup
+  | FileManager
+  | FileSystem.FileSystem
   | ObsidianEnv
   | ItemLookup
   | NoteIndex
+  | NoteFeature
+  | Notifier
+  | Profile
+  | Template
   | QueryService
   | LibraryScope
   | UseLedger
   | MetadataCache
-  | Notifier
   | PluginSettings
   | QueryClients
   | Release

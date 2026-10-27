@@ -516,6 +516,7 @@ export default defineConfig({
       // Views on view atoms. A view joins when it migrates (ADR 0082).
       files: [
         "src/views/library/**",
+        "src/views/query-view/**",
         "src/views/cited-by/**",
         "src/views/welcome/**",
         "src/views/template-data-explorer/**",
@@ -536,6 +537,7 @@ export default defineConfig({
       // Explorer joins when the Template service converts.
       files: [
         "src/views/library/**",
+        "src/views/query-view/**",
         "src/views/cited-by/**",
         "src/views/welcome/**",
       ],

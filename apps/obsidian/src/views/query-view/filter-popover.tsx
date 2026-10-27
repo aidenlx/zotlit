@@ -10,7 +10,6 @@
 // take the browser's own suggestion list instead.
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useStore } from "zustand";
 
 import { foldFilterTree } from "@zotlit/filter-expression";
 import type { MatchTree } from "@zotlit/templates/facade";
@@ -41,6 +40,7 @@ import {
   expressionVocabulary,
   useFilterExpressions,
 } from "./expression-vocabulary";
+import { useQueryViewState } from "./model";
 import { propertyIcon } from "./property-icon";
 import { allViewsDataset, vaultProperty } from "./query-file";
 import type {
@@ -385,10 +385,10 @@ function conditionCount(tree: MatchFilter | undefined): number {
 
 /** The toolbar's Filter control: a button and the popover it opens. */
 export function FilterButton({ view }: { view: QueryView }) {
-  const file = useStore(view.state, (s) => s.file);
-  const shown = useStore(view.state, (s) => s.view);
-  const filterIssue = useStore(
-    view.state,
+  const file = useQueryViewState(view, (s) => s.file);
+  const shown = useQueryViewState(view, (s) => s.view);
+  const filterIssue = useQueryViewState(
+    view,
     (s) => s.failure?.filterIssue ?? null,
   );
   const { literatureNotes } = view.tableDeps;

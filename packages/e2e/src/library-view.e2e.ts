@@ -1651,6 +1651,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }[];
       /** The Item rows the expansion took out of the page. */
       removed: string[];
+      /** Attachment reads sent after the worker delay elapsed. */
+      delayedReads: number;
     }
     /** An Item row to expand: the view that shows it, its rows, and its key. */
     interface Target {
@@ -1659,17 +1661,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       item: string;
     }
     /**
-     * Click the expander of the target's Item, with each ZotLit Query run
-     * held `delay` ms first, and read each frame the window draws until half
+     * Click the expander of the target's Item, with its attachment request
+     * held at the worker boundary for `delay` ms, and read each frame until half
      * a second after that.
      */
-    const expand = async ({ view, rowSelector, item }: Target, delay: number) =>
-      JSON.parse(
+    const expand = async (
+      { view, rowSelector, item }: Target,
+      delay: number,
+    ) => {
+      const expansion = JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{${PAGE}const view=${view};await app.workspace.revealLeaf(view.leaf);await view.query.settled;const el=view.contentEl;const rowSel=${JSON.stringify(rowSelector)};const button=await until('expander',()=>el.querySelector('[data-query-expand="item:${item}"]'),10000);const frame=()=>new Promise(r=>requestAnimationFrame(r));button.scrollIntoView({block:'center',behavior:'instant'});await stands(button,'expander');await frame();await frame();const rows=()=>[...el.querySelectorAll(rowSel)];const own=button.closest(rowSel);const at=rows().indexOf(own);const removed=[];const observer=new MutationObserver(records=>{for(const record of records)for(const n of record.removedNodes)if(n.nodeType===1&&(n.matches(rowSel)||n.querySelector(rowSel)))removed.push(n.getAttribute('data-query-papers-row')??n.getAttribute('data-query-key')??n.nodeName);});observer.observe(el,{childList:true,subtree:true});const frames=[];const take=()=>{const list=rows();const boxes=list.map(n=>n.getBoundingClientRect());const box=own.getBoundingClientRect();const top=box.top;frames.push({rows:list.length,height:Math.round(box.height),next:list[at+1]?Math.round(boxes[at+1].top-top):null,overlaps:boxes.filter((b,i)=>i>0&&b.top<boxes[i-1].bottom-0.5).length,status:el.querySelectorAll('[data-query-table-status]').length,loading:(()=>{const text=el.querySelector('[data-query-loading]');return text?getComputedStyle(text).opacity:null;})()});};const service=app.plugins.plugins.zotlit.services.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};let expanded=null;try{take();press(button,'expander');take();const start=performance.now();while(performance.now()-start<${delay}+500){await frame();take();}expanded=button.getAttribute('aria-expanded');}finally{service.run=run;observer.disconnect();}press(button,'collapse');return JSON.stringify({expanded,frames,removed});})()`,
+          `(async()=>{${PAGE}const view=${view};await app.workspace.revealLeaf(view.leaf);await view.query.settled;const el=view.contentEl;const rowSel=${JSON.stringify(rowSelector)};const button=await until('expander',()=>el.querySelector('[data-query-expand="item:${item}"]'),10000);const frame=()=>new Promise(r=>requestAnimationFrame(r));button.scrollIntoView({block:'center',behavior:'instant'});await stands(button,'expander');await frame();await frame();const rows=()=>[...el.querySelectorAll(rowSel)];const own=button.closest(rowSel);const at=rows().indexOf(own);const removed=[];const observer=new MutationObserver(records=>{for(const record of records)for(const n of record.removedNodes)if(n.nodeType===1&&(n.matches(rowSel)||n.querySelector(rowSel)))removed.push(n.getAttribute('data-query-papers-row')??n.getAttribute('data-query-key')??n.nodeName);});observer.observe(el,{childList:true,subtree:true});const frames=[];const take=()=>{const list=rows();const boxes=list.map(n=>n.getBoundingClientRect());const box=own.getBoundingClientRect();const top=box.top;frames.push({rows:list.length,height:Math.round(box.height),next:list[at+1]?Math.round(boxes[at+1].top-top):null,overlaps:boxes.filter((b,i)=>i>0&&b.top<boxes[i-1].bottom-0.5).length,status:el.querySelectorAll('[data-query-table-status]').length,loading:(()=>{const text=el.querySelector('[data-query-loading]');return text?getComputedStyle(text).opacity:null;})()});};const post=Worker.prototype.postMessage;const pending=new Map();let delayedReads=0;if(${delay}>0)Worker.prototype.postMessage=function(...args){const request=args[0]?.[1];const query=request?.tag==='ItemQuery'?request.payload.job.view:null;const target=${JSON.stringify(item)};if(!query||query.from!=='attachments'||query.filter!=='item.indexedKey == '+JSON.stringify(target))return post.apply(this,args);const worker=this;const send=()=>post.apply(worker,args);const timer=setTimeout(()=>{pending.delete(timer);delayedReads++;send();},${delay});pending.set(timer,send);};let expanded=null;try{take();press(button,'expander');take();const start=performance.now();while(performance.now()-start<${delay}+500){await frame();take();}expanded=button.getAttribute('aria-expanded');}finally{Worker.prototype.postMessage=post;for(const [timer,send] of pending){clearTimeout(timer);send();}observer.disconnect();}press(button,'collapse');return JSON.stringify({expanded,frames,removed,delayedReads});})()`,
         ),
       ) as Expansion;
+      expect(
+        expansion.delayedReads > 0,
+        "the expansion attachment read crosses the delayed worker boundary when requested",
+      ).toBe(delay > 0 && item !== noteOnly.key);
+      return expansion;
+    };
     /**
      * The expansion draws the closed row, then the open one: the rows under
      * it move once, straight to where the open row puts them, and none is

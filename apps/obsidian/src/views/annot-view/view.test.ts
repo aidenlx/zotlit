@@ -2,7 +2,6 @@
 import { Menu, setMockPlatform } from "@mock/obsidian";
 import { delay } from "@std/async";
 import { Effect, Stream, SubscriptionRef } from "effect";
-import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { debounce, Scope } from "obsidian";
 import type { App, Menu as ObsidianMenu, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -30,10 +29,13 @@ import type {
   ReaderTarget,
 } from "@/services/local-server/service";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
+import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
+import { makeQueryHost } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
 import { serializeQueryFile } from "@/views/query-view/query-file";
+import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 
 import { editorApp } from "./__fixtures__/editor-app";
 import { AnnotationView } from "./view";
@@ -84,20 +86,30 @@ it("settles a pending attachment load without restarting a closed view", async (
     reads: stubService<AnnotViewDeps["reads"]>("ZoteroReads", {
       ...reads,
       state: "ready",
+      changed: Stream.empty,
+      degraded: Stream.empty,
+      "db-file-missing": Stream.empty,
     }),
     libraryScope: stubService<AnnotViewDeps["libraryScope"]>("LibraryScope", {
       libraryRows: [],
+      current: null,
+      changed: Stream.empty,
+      "libraries-changed": Stream.empty,
     }),
     annotations: stubService<AnnotViewDeps["annotations"]>(
       "AnnotationRepository",
       { read },
     ),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+    query: {
+      run: async () => ({ kind: "cancelled" }),
+      on: () => () => {},
+      customFieldNames: async () => [],
+    },
     literatureNotes: noLiteratureNotes(),
-    registry: readsCleanup.adopt(AtomRegistry.make(), (registry) =>
-      registry.dispose(),
-    ),
   });
+  const queryHost = readsCleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   const view = new TestView(
     stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
       app: deps.app,
@@ -343,10 +355,9 @@ async function openSidebar(
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
-    registry: readsCleanup.adopt(AtomRegistry.make(), (registry) =>
-      registry.dispose(),
-    ),
   });
+  const queryHost = readsCleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   const view = new OpenView(
     stubService<WorkspaceLeaf & { app: App }>("WorkspaceLeaf", {
       app: deps.app,
@@ -371,11 +382,21 @@ async function openSidebar(
       await view.read;
     });
   await settle();
+  await waitFor(() => expect(reads.subscribers("changed")).toBeGreaterThan(1));
   return {
     view,
     app,
     run,
-    reads,
+    reads: {
+      ...reads,
+      emit: async (...args: Parameters<typeof reads.emit>) => {
+        const before = deps.registry.get(zoteroRevisionAtom);
+        reads.emit(...args);
+        await waitFor(() =>
+          expect(deps.registry.get(zoteroRevisionAtom)).toBeGreaterThan(before),
+        );
+      },
+    },
     settle,
     repository,
     /** What the repository holds for the Attachment from now on. */

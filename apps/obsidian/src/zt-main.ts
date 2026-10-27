@@ -38,6 +38,10 @@ import {
 } from "./services/note-feature/actions";
 import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
+import {
+  createProfileDialog,
+  importProfileDialog,
+} from "./setting-tab/profile-dialogs";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
@@ -324,6 +328,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
+      registry: services.runtime.runSync(ViewRegistry),
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
@@ -341,13 +346,13 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
-        runtime: services.runtime,
+        registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        profile: services.profile,
-        template: services.template,
-        zoteroReads: services.zoteroReads,
+        creation: {
+          app: this.app,
+          createProfile: (options) => createProfileDialog(this.app, options),
+          importProfile: (options) => importProfileDialog(this.app, options),
+        },
       }),
       opener: services.targetOpener,
     };
@@ -367,7 +372,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
-      registry: services.runtime.runSync(ViewRegistry),
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
