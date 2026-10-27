@@ -1,24 +1,27 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
-import { TFile } from "obsidian";
-import type { App, CachedMetadata, WorkspaceLeaf } from "obsidian";
+import { Effect } from "effect";
+import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { yieldToMain } from "@/lib/yield-to-main";
+import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import { scanNote } from "@/services/citation-index/scan-note";
 import type {
   CitedByGroup,
   CitedBySnapshot,
 } from "@/services/citation-index/service";
+import { activeNoteAtom } from "@/services/note-index/atoms";
 
+import { makeCitedByHost } from "./__fixtures__";
+import type { CitedByHost } from "./__fixtures__";
+import { activePreviewsAtom } from "./atoms";
 import { SEARCH_DEBOUNCE } from "./CitedBy";
 import { CitedByView } from "./view";
-import type { CitedByViewDeps } from "./view";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 class TestCitedByView extends CitedByView {
   open(): Promise<void> {
@@ -38,183 +41,63 @@ function leafFor(app: App): WorkspaceLeaf {
 }
 
 let view: TestCitedByView | undefined;
+let host: CitedByHost | undefined;
 
 afterEach(async () => {
   vi.useRealTimers();
   await act(() => view?.close());
   view = undefined;
+  await host?.close();
+  host = undefined;
   document.body.replaceChildren();
 });
 
+/** Retries `assertion` across host turns until it holds. */
+async function waitFor(assertion: () => void): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      if (attempt === 999) throw error;
+      await yieldToMain();
+    }
+  }
+}
+
 describe("CitedByView", () => {
   it("follows an active Literature Note through rename and deletion", async () => {
-    const file = new TFile();
-    file.path = "Literature/Old.md";
-    file.name = "Old.md";
-    file.basename = "Old";
-    file.extension = "md";
-    file.stat = { ctime: 0, mtime: 1, size: 0 };
-    let activeFile: TFile | null = file;
-    let onActiveLeafChange: (() => void) | undefined;
-    let onMetadataChange: ((file: TFile) => void) | undefined;
-    let onRename: ((file: TFile, oldPath: string) => void) | undefined;
-    let onDelete: ((file: TFile) => void) | undefined;
-    const second = makeFile("Literature/Second.md");
-    const duplicate = makeFile("Literature/Duplicate.md");
-    const ordinary = makeFile("Notes/Ordinary.md");
-    const caches = new Map<TFile, CachedMetadata>([
-      [file, { frontmatter: { "zotero-key": "ABCD2345" } }],
-      [second, { frontmatter: { "zotero-key": "ZZZ99999g7" } }],
-      [duplicate, { frontmatter: { "zotero-key": "ABCD2345" } }],
-      [ordinary, {}],
-    ]);
-    const workspace = stubService<App["workspace"]>("Workspace", {
-      getActiveFile: () => activeFile,
-      on: (
-        event: string,
-        callback: (...args: never[]) => unknown,
-        _ctx?: unknown,
-      ) => {
-        if (event === "active-leaf-change")
-          onActiveLeafChange = () => callback();
-        return {};
-      },
-    });
-    const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
-      getFileCache: (target: TFile) => caches.get(target) ?? null,
-      on: (
-        event: string,
-        callback: (...args: never[]) => unknown,
-        _ctx?: unknown,
-      ) => {
-        if (event === "changed")
-          onMetadataChange = (target) => callback(...([target] as never[]));
-        return {};
-      },
-    });
-    const vault = stubService<App["vault"]>("Vault", {
-      getAbstractFileByPath: (path: string) =>
-        path === file.path ? file : null,
-      cachedRead: () => Promise.resolve(""),
-      on: (
-        event: string,
-        callback: (...args: never[]) => unknown,
-        _ctx?: unknown,
-      ) => {
-        if (event === "rename") {
-          onRename = (renamed, oldPath) =>
-            callback(...([renamed, oldPath] as never[]));
-        }
-        if (event === "delete")
-          onDelete = (deleted) => callback(...([deleted] as never[]));
-        return {};
-      },
-    });
-    const app = stubService<App>("App", { workspace, metadataCache, vault });
-    let publish: ((snapshot: CitedBySnapshot) => void) | undefined;
-    const dispose = vi.fn();
-    const observeCitedBy = vi.fn(
-      (_indexedKey: string, callback: (snapshot: CitedBySnapshot) => void) => {
-        publish = callback;
-        return dispose;
-      },
-    );
-    view = new TestCitedByView(leafFor(app), {
-      app,
-      citationIndex: stubService<CitedByViewDeps["citationIndex"]>(
-        "CitationIndex",
-        {
-          observeCitedBy,
-          getParsedNote: async () => new ParsedNote("", scanNote("")),
-        },
-      ),
-    });
+    const harness = await makeHarness();
+    view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     expect(view.getIcon()).toBe("file-input");
     expect(view.contentEl.classList).toContain("zt-cited-by-view");
     document.body.append(view.contentEl);
     await act(() => view!.open());
-
-    expect(observeCitedBy).toHaveBeenLastCalledWith(
-      "ABCD2345",
-      expect.any(Function),
-    );
-
-    activeFile = duplicate;
-    await act(() => onActiveLeafChange?.());
-    expect(observeCitedBy).toHaveBeenLastCalledWith(
-      "ABCD2345",
-      expect.any(Function),
-    );
-
-    activeFile = second;
-    await act(() => onActiveLeafChange?.());
-    expect(observeCitedBy).toHaveBeenLastCalledWith(
-      "ZZZ99999g7",
-      expect.any(Function),
-    );
-
-    activeFile = ordinary;
-    await act(() => onActiveLeafChange?.());
-    expect(
-      view.contentEl.querySelector("[data-cited-by-empty]")?.textContent,
-    ).toBe("Open a literature note to see citations.");
-
-    activeFile = null;
-    await act(() => onActiveLeafChange?.());
-    expect(
-      view.contentEl.querySelector("[data-cited-by-empty]")?.textContent,
-    ).toBe("Open a literature note to see citations.");
-
-    activeFile = file;
-    await act(() => onActiveLeafChange?.());
-
-    caches.set(file, {
-      frontmatter: { "zotero-key": "ZZZ99999g7" },
+    const selfCited = (path: string): CitedBySnapshot => ({
+      groups: [{ path, occurrences: [] }],
+      coverage: "complete",
+      resolution: "fresh",
     });
-    await act(() => onMetadataChange?.(file));
-    expect(observeCitedBy).toHaveBeenLastCalledWith(
-      "ZZZ99999g7",
-      expect.any(Function),
-    );
-
-    caches.set(file, {
-      frontmatter: { "zotero-key": "ABCD2345" },
-    });
-    await act(() => onMetadataChange?.(file));
-    expect(observeCitedBy).toHaveBeenLastCalledWith(
-      "ABCD2345",
-      expect.any(Function),
-    );
-
-    const oldPath = file.path;
-    file.path = "Literature/New.md";
-    file.name = "New.md";
-    file.basename = "New";
-    await act(() => onRename?.(file, oldPath));
-    await act(() =>
-      publish?.({
-        groups: [{ path: file.path, occurrences: [] }],
-        coverage: "complete",
-        resolution: "fresh",
-      }),
-    );
-
-    expect(activeFile).toBe(file);
-    // A same-key path change carries only activePath; the subscription
-    // stays, so only the four key changes above resubscribe.
-    expect(observeCitedBy).toHaveBeenCalledTimes(5);
-    expect(dispose).toHaveBeenCalledTimes(4);
+    await act(() => harness.publishSnapshot(selfCited(harness.note.path)));
     expect(view.contentEl.textContent).toContain("This note");
 
-    await act(() => onDelete?.(file));
+    await act(() => harness.rename(harness.note.path, "Literature/New.md"));
+    await act(() => harness.publishSnapshot(selfCited("Literature/New.md")));
+    expect(view.contentEl.textContent).toContain("This note");
+    // A same-key path change keeps the observer.
+    expect(harness.host.started).toEqual(["ABCD2345"]);
 
+    await act(() => harness.remove("Literature/New.md"));
     expect(
       view.contentEl.querySelector("[data-cited-by-empty]")?.textContent,
     ).toBe("Open a literature note to see citations.");
+    await act(() =>
+      waitFor(() => expect(harness.host.stopped).toEqual(["ABCD2345"])),
+    );
   });
 
   it("carries its controls into the workspace layout", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -248,7 +131,7 @@ describe("CitedByView", () => {
   });
 
   it("restores the controls the workspace layout holds", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     await view.setState(
       {
@@ -287,7 +170,7 @@ describe("CitedByView", () => {
   });
 
   it("ignores layout state it does not recognize", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     await view.setState({ search: 7, sort: "byWordCount" }, { history: false });
     await view.setState(null, { history: false });
@@ -301,7 +184,7 @@ describe("CitedByView", () => {
   });
 
   it("keeps its controls but not its collapse or expansions across a note switch", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     await view.setState(
       {
@@ -347,7 +230,7 @@ describe("CitedByView", () => {
   });
 
   it("keeps the toolbar node through a same-note leaf change that starts mid-press", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -367,7 +250,7 @@ describe("CitedByView", () => {
   });
 
   it("keeps the toolbar node through a transient empty snapshot", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -390,7 +273,7 @@ describe("CitedByView", () => {
   });
 
   it("keeps collapse and excerpt expansions across a same-note leaf change", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -416,7 +299,7 @@ describe("CitedByView", () => {
 
     await act(() => harness.activate(harness.note));
 
-    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(1);
+    expect(harness.host.started).toHaveLength(1);
     expect(view.contentEl.querySelectorAll("[data-occurrence]")).toHaveLength(
       1,
     );
@@ -424,7 +307,7 @@ describe("CitedByView", () => {
   });
 
   it("keeps its subscription across a switch to a duplicate Literature Note", async () => {
-    const harness = makeHarness();
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
@@ -440,26 +323,33 @@ describe("CitedByView", () => {
 
     await act(() => harness.activate(harness.duplicate));
 
-    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(1);
-    expect(harness.dispose).not.toHaveBeenCalled();
+    expect(harness.host.started).toHaveLength(1);
+    expect(harness.host.stopped).toEqual([]);
     expect(excerpt()).toBe(expanded);
     expect(sourceLabels(view.contentEl)).toContain(m.cited_by_this_note());
   });
 
-  it("resubscribes on a close then re-open", async () => {
-    const harness = makeHarness();
+  it("resubscribes on a close then re-open with no reader left between", async () => {
+    const harness = await makeHarness();
     view = new TestCitedByView(leafFor(harness.deps.app), harness.deps);
     document.body.append(view.contentEl);
     await act(() => view!.open());
     await act(() => harness.publish());
     await act(settle);
 
-    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(1);
+    expect(harness.host.started).toHaveLength(1);
 
+    // An unread observer stops on a later task (the plugin's registry waits a
+    // moment longer), so a reopen before then shares it.
     await act(() => view!.close());
+    await act(() =>
+      waitFor(() => expect(harness.host.stopped).toHaveLength(1)),
+    );
     await act(() => view!.open());
 
-    expect(harness.deps.citationIndex.observeCitedBy).toHaveBeenCalledTimes(2);
+    await act(() =>
+      waitFor(() => expect(harness.host.started).toHaveLength(2)),
+    );
 
     await act(() => harness.publish());
     await act(settle);
@@ -473,23 +363,26 @@ const CITING_BODY = "Alpha cites @doe2024 here.\nMore text follows.\n";
 const CITING_PATHS = ["Notes/alpha.md", "Notes/beta.md"] as const;
 
 /** A Cited By Sidebar over two citing notes that share one source body. */
-function makeHarness() {
-  const note = makeFile("Literature/Item.md");
-  const plain = makeFile("Notes/Plain.md");
-  const citing = CITING_PATHS.map((path) => makeFile(path));
+async function makeHarness() {
+  const current = (host = await makeCitedByHost({
+    getParsedNote: () =>
+      Effect.succeed(new ParsedNote(CITING_BODY, scanNote(CITING_BODY))),
+  }));
+  const { registry, vault } = current;
+  const note = { path: "Literature/Item.md", key: "ABCD2345" };
+  const plain = { path: "Notes/Plain.md", key: null };
   // A duplicate Literature Note of the same Item, at a path one citing group
   // already uses, so activating it exercises both the same-key/different-path
   // seam and the "This note" label switch.
-  const duplicate = makeFile(CITING_PATHS[0]);
-  const caches = new Map<TFile, CachedMetadata>([
-    [note, { frontmatter: { "zotero-key": "ABCD2345" } }],
-    [plain, {}],
-    [duplicate, { frontmatter: { "zotero-key": "ABCD2345" } }],
-    ...citing.map((file) => [file, {}] as const),
-  ]);
-  const files = new Map(citing.map((file) => [file.path, file]));
-  let activeFile: TFile | null = note;
-  let onActiveLeafChange: (() => void) | undefined;
+  const duplicate = { path: CITING_PATHS[0], key: "ABCD2345" };
+  for (const path of CITING_PATHS) {
+    const file = vault.add(path, CITING_BODY);
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    file.name = name;
+    file.basename = name.slice(0, -".md".length);
+    file.extension = "md";
+    file.stat = { ctime: 0, mtime: 1, size: CITING_BODY.length };
+  }
   const requestSaveLayout = Object.assign(
     vi.fn(() => requestSaveLayout),
     {
@@ -497,64 +390,50 @@ function makeHarness() {
       run: () => Promise.resolve(),
     },
   );
-  const workspace = stubService<App["workspace"]>("Workspace", {
-    getActiveFile: () => activeFile,
-    requestSaveLayout,
-    on: (
-      event: string,
-      callback: (...args: never[]) => unknown,
-      _ctx?: unknown,
-    ) => {
-      if (event === "active-leaf-change") onActiveLeafChange = () => callback();
-      return {};
-    },
+  const app = stubService<App>("App", {
+    workspace: stubService<App["workspace"]>("Workspace", {
+      requestSaveLayout,
+    }),
   });
-  const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
-    getFileCache: (target: TFile) => caches.get(target) ?? null,
-    on: () => ({}),
-  });
-  const vault = stubService<App["vault"]>("Vault", {
-    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-    cachedRead: () => Promise.resolve(CITING_BODY),
-    on: () => ({}),
-  });
-  const app = stubService<App>("App", { workspace, metadataCache, vault });
-  let publish: ((snapshot: CitedBySnapshot) => void) | undefined;
-  const dispose = vi.fn();
-  const observeCitedBy = vi.fn(
-    (_indexedKey: string, callback: (snapshot: CitedBySnapshot) => void) => {
-      publish = callback;
-      return dispose;
-    },
-  );
+  let followed: { path: string; key: string | null } = note;
+  current.follow(note.path, note.key);
+  /** Sends `snapshot` once the followed key's observer runs, and waits for it. */
+  const publishSnapshot = async (snapshot: CitedBySnapshot) => {
+    const key = followed.key;
+    if (key === null) throw new Error("the followed note has no key");
+    await waitFor(() => expect(current.publish(key, snapshot)).toBe(true));
+    await waitFor(() => expect(registry.get(activeCitedByAtom)).toBe(snapshot));
+  };
 
   return {
-    deps: {
-      app,
-      citationIndex: stubService<CitedByViewDeps["citationIndex"]>(
-        "CitationIndex",
-        {
-          observeCitedBy,
-          getParsedNote: async () =>
-            new ParsedNote(CITING_BODY, scanNote(CITING_BODY)),
-        },
-      ),
-    },
+    host: current,
+    deps: { app, registry },
     note,
     plain,
     duplicate,
-    dispose,
     requestSaveLayout,
     publish: () =>
-      publish?.({
-        groups: citing.map(({ path }) => citingGroup(path)),
+      publishSnapshot({
+        groups: CITING_PATHS.map((path) => citingGroup(path)),
         coverage: "complete",
         resolution: "fresh",
       }),
-    publishSnapshot: (snapshot: CitedBySnapshot) => publish?.(snapshot),
-    activate: (file: TFile) => {
-      activeFile = file;
-      onActiveLeafChange?.();
+    publishSnapshot,
+    /** Opens `target` and waits until the registry follows it. */
+    activate: async (target: { path: string; key: string | null }) => {
+      followed = target;
+      current.follow(target.path, target.key);
+      await waitFor(() => expect(registry.get(activeNoteAtom)).toEqual(target));
+    },
+    rename: async (path: string, next: string) => {
+      current.rename(path, next);
+      followed = { ...followed, path: next };
+      await waitFor(() => expect(registry.get(activeNoteAtom).path).toBe(next));
+    },
+    remove: async (path: string) => {
+      current.remove(path);
+      followed = { path, key: null };
+      await waitFor(() => expect(registry.get(activeNoteAtom).key).toBeNull());
     },
   };
 }
@@ -594,8 +473,14 @@ function citingGroup(path: string): CitedByGroup {
 }
 
 /** Settles the preview reads one published snapshot starts. */
-async function settle(): Promise<void> {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+/** Waits until the followed note's Cited By shows, every preview read. */
+function settle(): Promise<void> {
+  return waitFor(() => {
+    const registry = host!.registry;
+    expect(registry.get(activeCitedByAtom)).not.toBeNull();
+    const previews = Object.values(registry.get(activePreviewsAtom));
+    expect(previews.filter(({ status }) => status === "loading")).toEqual([]);
+  });
 }
 
 function click(root: HTMLElement, selector: string): void {
@@ -620,15 +505,4 @@ function sourceLabels(root: HTMLElement): (string | null)[] {
   return [...root.querySelectorAll("[data-cited-by-source-label]")].map(
     (label) => label.textContent,
   );
-}
-
-function makeFile(path: string): TFile {
-  const file = new TFile();
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  file.path = path;
-  file.name = name;
-  file.basename = name.slice(0, -3);
-  file.extension = "md";
-  file.stat = { ctime: 0, mtime: 1, size: 0 };
-  return file;
 }

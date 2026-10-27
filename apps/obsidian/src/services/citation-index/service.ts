@@ -10,6 +10,7 @@ import {
   Layer,
   Option,
   PubSub,
+  Queue,
   Scope,
   Stream,
   SubscriptionRef,
@@ -1654,6 +1655,19 @@ function makeCitationIndex(
       changes,
       events,
       observeCitedBy,
+      /**
+       * The Cited By of the Item `indexedKey` as `observeCitedBy` publishes
+       * it; interrupting the Stream stops the observer.
+       */
+      citedBy: (indexedKey: string): Stream.Stream<CitedBySnapshot> =>
+        Stream.callback<CitedBySnapshot>((queue) =>
+          Effect.gen(function* () {
+            const stop = yield* observeCitedBy(indexedKey, (snapshot) => {
+              Queue.offerUnsafe(queue, snapshot);
+            });
+            yield* Effect.addFinalizer(() => Effect.sync(stop));
+          }),
+        ),
       readAnnotationUses,
       readReferences,
       readCitedBy,

@@ -60,6 +60,10 @@ When adding or changing a CLI schema or downloadable resource, inspect `src/serv
 
 Import Effect from `effect`. The `effectEntry` Vite plugin (`scripts/effect-entry.ts`) resolves `effect` and `effect/Effect`, imported from plugin code, to the wrappers in `src/lib`, so the runtime entry points default to Chromium scheduling in the renderer and workers. Worker bundles resolve them to `src/lib/effect-worker.ts` and carry no LogTape; renderer entry points log through LogTape. `effectEntryCheck` fails a build whose entry chunk misses its wrapper, `no-restricted-imports` bans the wrapper paths, and `pnpm e2e:worker` checks real worker responsiveness.
 
+## Views
+
+A view reads Effect services through view atoms (`src/lib/view-atoms.ts`). Before you create or migrate a view, read [ADR 0082](docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md): its pattern catalogue names the reference for each piece, and its pitfalls list what broke the first migrations.
+
 ## Workers
 
 A new worker runs on `effect/rpc`; follow `src/services/zotero-reads/{rpc,worker,worker-launch,worker-host,in-process}.ts`.

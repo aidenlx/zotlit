@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import type { ItemView as MockItemView } from "@mock/obsidian";
 import { Effect } from "effect";
-import { Stream } from "effect";
 import type {
   App,
   EventRef,
@@ -11,14 +10,14 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 import { act } from "preact/test-utils";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { defaults } from "@/services/settings/schema";
-import { loadTemplateData } from "@/services/template-workbench/data";
+import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import {
   activeTemplateWorkbench,
   subscribeActiveTemplateWorkbench,
@@ -28,13 +27,12 @@ import type {
   TemplateWorkbenchView,
 } from "@/views/template-workbench/view";
 
+import { makeExplorerHost, waitFor } from "./__fixtures__";
+import type { ExplorerHost, ExplorerReads } from "./__fixtures__";
 import { TemplateDataExplorerView } from "./view";
 import type { ExplorerViewDeps } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-vi.mock("@/services/template-workbench/data", () => ({
-  loadTemplateData: vi.fn(),
-}));
 vi.mock("@/views/note-preview/register", () => ({
   onCompanionStateRestored: (
     app: App,
@@ -50,6 +48,14 @@ vi.mock("@/views/note-preview/register", () => ({
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
 }));
+const read = vi.fn<NonNullable<ExplorerReads["read"]>>();
+let explorerHost: ExplorerHost;
+beforeEach(async () => {
+  read.mockReset();
+  explorerHost = await makeExplorerHost({ read });
+});
+afterEach(() => explorerHost.close());
+
 class ExplorerView extends TemplateDataExplorerView {
   open() {
     return this.onOpen();
@@ -109,12 +115,9 @@ function host(events = new Map<EventRef, HostEvent>()) {
   return { app, events, leaf, trigger };
 }
 
-function viewDeps(
-  app: App,
-  zoteroReads: Partial<ExplorerViewDeps["zoteroReads"]>,
-): ExplorerViewDeps {
+function viewDeps(): ExplorerViewDeps {
   return stubService<ExplorerViewDeps>("ExplorerViewDeps", {
-    runtime: testRuntime(),
+    registry: explorerHost.registry,
     itemLookup: stubService<ExplorerViewDeps["itemLookup"]>("ItemLookup", {
       search: async () => [],
       openSession: () => ({
@@ -130,10 +133,6 @@ function viewDeps(
       runSync: Effect.runSync,
     }),
     pluginVersion: "test",
-    zoteroReads: stubService<ExplorerViewDeps["zoteroReads"]>(
-      "ZoteroReads",
-      zoteroReads,
-    ),
     templates: stubService<ExplorerViewDeps["templates"]>("Templates", {
       javascriptTemplatesEnabled: true,
     }),
@@ -173,26 +172,17 @@ it("binds copied context to its editor, addresses field requests, and releases w
       return unbind;
     },
   );
-  vi.mocked(loadTemplateData).mockResolvedValue({
+  read.mockResolvedValue({
     kind: "data",
     data: { title: "Native paper" },
   });
-  const unsubscribeDb = vi.fn();
-  const view = new ExplorerView(
-    leaf(),
-    viewDeps(app, {
-      changed: Stream.unwrap(
-        Effect.acquireRelease(Effect.succeed(Stream.never), () =>
-          Effect.sync(unsubscribeDb),
-        ),
-      ),
-    }),
-  );
+  const view = new ExplorerView(leaf(), viewDeps());
   Object.defineProperty(view, "app", { value: app });
   document.body.append(view.contentEl);
   try {
     await act(async () => view.open());
     expect(view.contentEl.textContent).toContain("Native paper");
+    expect(explorerHost.zoteroSubscribers()).toBe(1);
     const insertion = () =>
       [...view.contentEl.querySelectorAll<HTMLElement>('[role="button"]')].find(
         (button) =>
@@ -220,7 +210,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
       ),
     ).toHaveLength(insertions);
     vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
-    const before = vi.mocked(loadTemplateData).mock.calls.length;
+    const before = read.mock.calls.length;
     view.leaf.pinned = true;
     await act(async () =>
       trigger("zotlit:authoring-context", {
@@ -228,7 +218,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
         item: { id: "OTHER001", title: "Other" },
       }),
     );
-    expect(vi.mocked(loadTemplateData).mock.calls.length).toBe(before);
+    expect(read.mock.calls.length).toBe(before);
     view.leaf.pinned = false;
     await act(async () =>
       trigger("zotlit:authoring-context", {
@@ -237,7 +227,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
         item: { id: "OTHER001", title: "Other" },
       }),
     );
-    expect(vi.mocked(loadTemplateData).mock.calls.length).toBe(before);
+    expect(read.mock.calls.length).toBe(before);
     await act(async () =>
       trigger("zotlit:authoring-context", {
         ...context,
@@ -296,20 +286,23 @@ it("binds copied context to its editor, addresses field requests, and releases w
     launchResult.done?.();
     expect(view.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
     expect(view.getState()).not.toHaveProperty("zotlitLaunch");
-    expect(loadTemplateData).toHaveBeenLastCalledWith(
-      expect.anything(),
-      "PAPER002",
-      "note",
-    );
+    expect(read).toHaveBeenLastCalledWith("PAPER002", "note");
     expect(earlierPeer.authoringContext.item).toBeNull();
     expect(pickItem).not.toHaveBeenCalled();
+    // A Zotero change reads the shown Item again.
+    const reads = read.mock.calls.length;
+    await act(async () => explorerHost.changeZotero());
+    await act(() =>
+      waitFor(() => expect(read).toHaveBeenCalledTimes(reads + 1)),
+    );
+    expect(read).toHaveBeenLastCalledWith("PAPER002", "note");
   } finally {
     await act(async () => view.close());
     view.contentEl.remove();
   }
   expect(events.size).toBe(0);
   expect(unbind).toHaveBeenCalledOnce();
-  expect(unsubscribeDb).toHaveBeenCalledOnce();
+  await waitFor(() => expect(explorerHost.zoteroSubscribers()).toBe(0));
 });
 
 it("restores independent Explorer navigation after delayed data and keeps search out of workspace saves", async () => {
@@ -321,24 +314,12 @@ it("restores independent Explorer navigation after delayed data and keeps search
       return () => {};
     },
   );
-  let release!: (value: Awaited<ReturnType<typeof loadTemplateData>>) => void;
-  const data = new Promise<Awaited<ReturnType<typeof loadTemplateData>>>(
-    (resolve) => {
-      release = resolve;
-    },
-  );
-  vi.mocked(loadTemplateData).mockReturnValue(data);
-  const view = new ExplorerView(
-    leaf(),
-    viewDeps(app, {
-      changed: Stream.empty,
-      degraded: Stream.empty,
-      "refresh-failed": Stream.empty,
-      refreshing: Stream.empty,
-      "db-file-missing": Stream.empty,
-      "refresh-requested": Stream.empty,
-    }),
-  );
+  let release!: (value: TemplateDataLoadResult) => void;
+  const data = new Promise<TemplateDataLoadResult>((resolve) => {
+    release = resolve;
+  });
+  read.mockReturnValue(data);
+  const view = new ExplorerView(leaf(), viewDeps());
   Object.defineProperty(view, "app", { value: app });
   document.body.append(view.contentEl);
   const typing = document.createElement("input");
@@ -406,17 +387,7 @@ it("restores independent Explorer navigation after delayed data and keeps search
   ).toBe("true");
   expect(view.contentEl.textContent).toContain("42");
   expect(saves).not.toHaveBeenCalled();
-  const recreated = new ExplorerView(
-    leaf(),
-    viewDeps(app, {
-      changed: Stream.empty,
-      degraded: Stream.empty,
-      "refresh-failed": Stream.empty,
-      refreshing: Stream.empty,
-      "db-file-missing": Stream.empty,
-      "refresh-requested": Stream.empty,
-    }),
-  );
+  const recreated = new ExplorerView(leaf(), viewDeps());
   Object.defineProperty(recreated, "app", { value: app });
   cleanup.defer(() => act(async () => recreated.close()));
   await act(async () => recreated.open());
@@ -468,23 +439,13 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
       return () => {};
     },
   );
-  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key) => ({
+  read.mockImplementation(async (key) => ({
     kind: "data",
     data: { title: key === "PAPER001" ? "First paper" : "Second paper" },
   }));
   await using cleanup = new AsyncDisposableStack();
   const views = [0, 1].map(() => {
-    const view = new ExplorerView(
-      leaf(true),
-      viewDeps(app, {
-        changed: Stream.empty,
-        degraded: Stream.empty,
-        "refresh-failed": Stream.empty,
-        refreshing: Stream.empty,
-        "db-file-missing": Stream.empty,
-        "refresh-requested": Stream.empty,
-      }),
-    );
+    const view = new ExplorerView(leaf(true), viewDeps());
     Object.defineProperty(view, "app", { value: app });
     cleanup.defer(() => act(async () => view.close()));
     return view;
@@ -545,21 +506,11 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
       return () => {};
     },
   );
-  vi.mocked(loadTemplateData).mockResolvedValue({
+  read.mockResolvedValue({
     kind: "data",
     data: { title: "Native paper" },
   });
-  const view = new ExplorerView(
-    leaf(true),
-    viewDeps(app, {
-      changed: Stream.empty,
-      degraded: Stream.empty,
-      "refresh-failed": Stream.empty,
-      refreshing: Stream.empty,
-      "db-file-missing": Stream.empty,
-      "refresh-requested": Stream.empty,
-    }),
-  );
+  const view = new ExplorerView(leaf(true), viewDeps());
   Object.defineProperty(view, "app", { value: app });
   document.body.append(view.contentEl);
   try {
@@ -573,7 +524,7 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     });
     const before = view.getState();
     const ephemeral = view.getEphemeralState();
-    const loads = vi.mocked(loadTemplateData).mock.calls.length;
+    const loads = read.mock.calls.length;
     Object.assign(editor, {
       authoringContext: {
         ...context,
@@ -590,7 +541,7 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
       sourceFile: "profiles/renamed.md",
     });
     expect(view.getEphemeralState()).toEqual(ephemeral);
-    expect(vi.mocked(loadTemplateData).mock.calls.length).toBe(loads);
+    expect(read.mock.calls.length).toBe(loads);
     expect(view.contentEl.textContent).toContain("Native paper");
     const insert = [
       ...view.contentEl.querySelectorAll<HTMLElement>('[role="button"]'),

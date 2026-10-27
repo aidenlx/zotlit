@@ -23,6 +23,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type {
   AnnotationRecord,
@@ -56,6 +57,16 @@ import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
 import { SidebarFilterModal } from "./filter-modal";
 import type { AnnotationsLayout } from "./layout";
+import {
+  holdAnnotViewModel,
+  makeAnnotViewModel,
+  pinCurrentItem,
+  pinItem,
+  sameAnnotViewState,
+  setFollowMode,
+  unpin,
+} from "./model";
+import type { AnnotViewModel } from "./model";
 import { buildPaneMenu } from "./pane-menu";
 import { resolveLoadTarget } from "./resolve-target";
 import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
@@ -64,11 +75,9 @@ import { addSidebarQueryMenu, sidebarQueryText } from "./sidebar-query";
 import { INITIAL_FILTER_STATE, selectActiveAttachment } from "./store";
 import type { AnnotState, AnnotStore, FollowMode } from "./store";
 import {
-  DEFAULT_FOLLOW_MODE,
   parseAnnotViewState,
   readSidebarQuery,
   serializeAnnotViewState,
-  unpinnedMode,
 } from "./view-state";
 import type { AnnotViewState } from "./view-state";
 
@@ -165,6 +174,8 @@ export interface AnnotViewDeps extends QueryViewDeps {
   noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
   itemLookup: Pick<ItemLookupHandle, "openSession">;
   settings: Pick<PluginSettings["Service"], "current" | "update">;
+  /** The plugin's view registry, which holds each leaf's Follow Mode state. */
+  registry: ViewRegistryHandle;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {
@@ -182,6 +193,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
   readonly #layout: AnnotationsLayout;
   readonly #store: AnnotStore;
   readonly #deps: AnnotViewDeps;
+  /** This leaf's Follow Mode state, held in the plugin's view registry. */
+  readonly model: AnnotViewModel = makeAnnotViewModel();
+  #release: (() => void) | null;
   #loadDisposables: DisposableStack | null = null;
   /** The load whose reads run; a later load or a clear supersedes it. */
   #loading: object | null = null;
@@ -211,9 +225,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
     return this.#reading.then(() => this.#query.settled);
   }
 
-  /** Follow mode lives in the store (single source of truth); read it here. */
+  /** This leaf's Follow Mode state, as the registry holds it. */
+  get #followState(): AnnotViewState {
+    return this.#deps.registry.get(this.model.state);
+  }
+
   get #followMode(): FollowMode {
-    return this.#store.getState().followMode;
+    return this.#followState.followMode;
   }
 
   constructor(leaf: WorkspaceLeaf, deps: AnnotViewDeps) {
@@ -259,6 +277,26 @@ export class AnnotationView extends ItemView implements HistorySurface {
     });
     this.#layout = this.#query.layout;
     this.#store = this.#layout.store;
+    // Obsidian may set the workspace state before the view opens.
+    this.#release = this.#holdModel();
+  }
+
+  /**
+   * Holds the model until the returned release runs, and copies its state into
+   * the card store, which the React tree and the header menu read.
+   */
+  #holdModel(): () => void {
+    const { registry } = this.#deps;
+    const release = holdAnnotViewModel(registry, this.model);
+    const mirror = registry.subscribe(
+      this.model.state,
+      (state) => this.#store.setState(state),
+      { immediate: true },
+    );
+    return () => {
+      mirror();
+      release();
+    };
   }
 
   /** The sidebar's own gestures and list frame, which its cards answer through. */
@@ -316,10 +354,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   override getState(): Record<string, unknown> {
-    const { followMode, previousMode, pinnedItemKey } = this.#store.getState();
     const query = this.#queryText;
     return {
-      ...serializeAnnotViewState({ followMode, previousMode, pinnedItemKey }),
+      ...serializeAnnotViewState(this.#followState),
       ...(query !== null && { query }),
     };
   }
@@ -332,7 +369,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     // A mode this build cannot name, or a pin with no Item, takes the default
     // rather than a source that cannot answer. Every other stored mode is kept
     // whether or not its source answers right now.
-    this.#store.setState(parseAnnotViewState(state));
+    this.#deps.registry.set(this.model.state, parseAnnotViewState(state));
     // The restored Query File runs with the Attachment the reload shows.
     this.#queryText = readSidebarQuery(state);
     this.#reload();
@@ -444,6 +481,19 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   protected override async onOpen(): Promise<void> {
+    const { registry } = this.#deps;
+    this.#release ??= this.#holdModel();
+    // Nothing else saves the workspace when the Follow Mode changes, so the
+    // view asks for the save that carries it across a restart.
+    let saved = registry.get(this.model.state);
+    this.register(
+      registry.subscribe(this.model.state, (state) => {
+        if (sameAnnotViewState(state, saved)) return;
+        saved = state;
+        void this.#deps.app.workspace.requestSaveLayout();
+      }),
+    );
+
     this.#zoteroReader = new ZoteroReaderSession({
       liveUpdate: this.#deps.liveUpdate,
       bridge: this.#deps.bridge,
@@ -593,6 +643,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
     this.#leafSession = null;
     // The layout saves an open card editor and unmounts the cards.
     this.#query.unload();
+    this.#release?.();
+    this.#release = null;
   }
 
   // #region follow mode
@@ -605,12 +657,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
    */
   #setFollowMode(mode: Exclude<FollowMode, "pinned">): void {
-    if (this.#followMode === mode) return;
-    this.#commitMode({
-      followMode: mode,
-      previousMode: DEFAULT_FOLLOW_MODE,
-      pinnedItemKey: null,
-    });
+    this.#commitMode(setFollowMode(mode));
   }
 
   /**
@@ -624,7 +671,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
     if (selectedAttachmentKey !== null) {
       this.#saveAttachmentSelection(pinnable, selectedAttachmentKey);
     }
-    this.#pin(pinnable);
+    this.#commitMode(pinCurrentItem(pinnable));
   }
 
   /**
@@ -653,34 +700,23 @@ export class AnnotationView extends ItemView implements HistorySurface {
       // The item index the picker searches excludes every child item type, so
       // a hit is always an Item a pin can name.
       // @see packages/db/src/queries/index-items.ts
-      if (hit) this.#pin(hit.item.indexedKey);
-    });
-  }
-
-  #pin(itemKey: string): void {
-    this.#commitMode({
-      followMode: "pinned",
-      previousMode: unpinnedMode(this.#followMode),
-      pinnedItemKey: itemKey,
+      if (hit) this.#commitMode(pinItem(hit.item.indexedKey));
     });
   }
 
   #unpin(): void {
-    const { previousMode } = this.#store.getState();
-    this.#commitMode({
-      followMode: unpinnedMode(previousMode),
-      previousMode: DEFAULT_FOLLOW_MODE,
-      pinnedItemKey: null,
-    });
+    this.#commitMode(unpin);
   }
 
-  #commitMode(next: AnnotViewState): void {
+  #commitMode(transition: (state: AnnotViewState) => AnnotViewState): void {
+    const current = this.#followState;
+    const next = transition(current);
+    if (next === current) return;
     logger.debug("Follow mode changed by a gesture", { ...next });
     // A Follow Mode change clears the Card Selection; a reader the new mode
     // binds reports its own when the reload binds it.
     this.#layout.resetSelection();
-    this.#store.setState(next);
-    void this.#deps.app.workspace.requestSaveLayout();
+    this.#deps.registry.set(this.model.state, next);
     this.#reload();
   }
 
@@ -765,7 +801,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       case "pinned":
         return resolveLoadTarget({
           mode: "pinned",
-          pinnedItemKey: this.#store.getState().pinnedItemKey,
+          pinnedItemKey: this.#followState.pinnedItemKey,
           libraries,
         });
     }
@@ -1221,7 +1257,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
    */
   pinItem(itemKey: string): void {
-    this.#pin(itemKey);
+    this.#commitMode(pinItem(itemKey));
   }
 
   /** The reader this view's Follow Mode is driven by, while one answers. */
