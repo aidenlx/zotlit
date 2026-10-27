@@ -218,7 +218,6 @@ export default defineConfig({
       // Tests written before the rule that mock @/lib/notice. A file moves off
       // this list when its module moves behind the Notifier.
       files: [
-        "src/services/pdf-annotation-editor/selection.test.ts",
         "src/views/pandoc-export/register.test.ts",
         "src/views/template-workbench/register.test.ts",
       ],
