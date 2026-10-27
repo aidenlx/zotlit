@@ -5,15 +5,14 @@ import type { TFile } from "obsidian";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
+import type { CitationIndex } from "@/services/citation-index/service";
 
 export async function readDocumentCitedKeys(
   {
     citationIndex: index,
     bridge,
   }: {
-    citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
+    citationIndex: Pick<CitationIndex["Service"], "getDocumentCitationSet">;
     bridge: Pick<EffectBridge, "runPromise">;
   },
   file: TFile | null,
@@ -36,11 +35,7 @@ export async function readDocumentCitedKeys(
   const empty: readonly string[] = [];
   try {
     return await bridge.runPromise(
-      Effect.tryPromise((readSignal) =>
-        index.getDocumentCitationSet(file, {
-          signal: AbortSignal.any([signal, readSignal]),
-        }),
-      ).pipe(
+      index.getDocumentCitationSet(file).pipe(
         Effect.map((set) =>
           set.citations.flatMap(({ indexedKey }) =>
             indexedKey === null ? [] : [indexedKey],

@@ -46,6 +46,11 @@ pnpm fixture paths
 
 ## Use the Fixture Vault
 
+The **Citation search and insertion (#1857)** section in `citekey-smoke-test.md`
+checks both citation pickers: cited-item priority, main and alternate insertion,
+a changed destination, unload, the 150 ms index wait, and closing a pending picker.
+Use the `all` Scope Case and follow the action and expected-outcome table.
+
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
 
 ### Excerpt-rendering acceptance inputs
@@ -668,3 +673,7 @@ For a check that needs database writes, use a named copy of the built Zotero dat
    ```
 
 Rebuilding or discarding the Fixture also removes its forks. Restore the previous override before either operation.
+
+### Trial Explorer permissions
+
+Open `tools-for-thought.md` in the Fixture Vault and follow **Template Data Explorer permissions**. The cases check Liquid-only actions, enabling and removing JavaScript permission with an open Explorer, separate searches in two leaves, and cleanup after both leaves close.

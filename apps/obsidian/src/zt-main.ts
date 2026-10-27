@@ -290,9 +290,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteFeature: services.noteFeature,
       settings: services.settings,
       bridge: services.bridge,
-      citationLookup: services.citationLookup,
-      citationIndex: services.citationIndex,
-      useLedger: services.useLedger,
+      ...services.citationSuggestServices,
     });
     if (ANNOTATION_SUGGESTER_ENABLED) {
       registerAnnotationSuggest(this, {
@@ -416,7 +414,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       registry: services.runtime.runSync(ViewRegistry),
       itemLookup: services.itemLookup,
       settings: services.settings,
-      templates: services.template,
     });
 
     registerNotePreview(this, {

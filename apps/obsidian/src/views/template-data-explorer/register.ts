@@ -9,7 +9,6 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainTemplate } from "@/services/template/plain";
 import {
   activeTemplateWorkbench,
   openProfileExplorer,
@@ -28,7 +27,6 @@ export interface ExplorerRegistrationDeps {
   itemLookup: ItemLookupHandle;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
-  templates: Pick<PlainTemplate, "javascriptTemplatesEnabled">;
 }
 
 export function registerTemplateDataExplorer(

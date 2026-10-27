@@ -68,7 +68,7 @@ export type WorkbenchHostDeps = Omit<
     render?: WorkbenchHost["render"];
     nativePreview?: NativeRenderDeps;
     pluginVersion?: string;
-    templates: ExplorerViewDeps["templates"] &
+    templates: Pick<TemplateFixture, "javascriptTemplatesEnabled"> &
       Pick<
         TemplateFixture,
         | "waitUntilSettled"
@@ -114,6 +114,7 @@ export function makeWorkbenchHost(
     }),
     templates: stubService<WorkbenchHostDeps["templates"]>("Template", {
       loaded: true,
+      javascriptTemplatesEnabled: false,
       getPartialNames: () => [],
       getPartialDocuments: () => [],
       "compile-status-changed": Stream.empty,
@@ -121,6 +122,9 @@ export function makeWorkbenchHost(
     ...input,
   });
   const template = stubService<Template["Service"]>("Template", {
+    javascriptTemplatesEnabled: Effect.sync(
+      () => deps.templates.javascriptTemplatesEnabled,
+    ),
     status: Effect.sync(() => ({
       state: deps.templates.loaded ? "loaded" : "loading",
       compileErrors: new Map(),

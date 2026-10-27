@@ -33,3 +33,12 @@ export const partialNamesAtom = Atom.map(partialDocumentsAtom, (result) =>
     ? result.value.map((partial) => partial.name)
     : [],
 );
+
+/** JavaScript permission follows the template rebuild that applies it. */
+export const javascriptTemplatesEnabledAtom = viewRuntime.atom((get) => {
+  get(templateRevisionAtom);
+  return Effect.flatMap(
+    Template,
+    (template) => template.javascriptTemplatesEnabled,
+  );
+});

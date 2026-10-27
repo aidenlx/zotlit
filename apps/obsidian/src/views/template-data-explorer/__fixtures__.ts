@@ -19,6 +19,7 @@ import type {
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
 import { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import { Template } from "@/services/template/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
@@ -51,6 +52,8 @@ export interface ExplorerHost {
   zoteroSubscribers(): number;
   /** One more Explorer model, held until the session's dispose. */
   openSession(): ExplorerSessionHandle;
+  setJavascriptEnabled(enabled: boolean): void;
+  permissionSubscribers(): number;
   close(): Promise<void>;
 }
 
@@ -96,6 +99,8 @@ export async function makeExplorerHost(
   const stack = new AsyncDisposableStack();
   const zotero = new Set<() => void>();
   const cancelled: string[] = [];
+  const permissions = new Set<() => void>();
+  let javascriptEnabled = false;
   const runtime = buildRuntime(
     Layer.mergeAll(
       layerUnreadViewServices,
@@ -114,6 +119,21 @@ export async function makeExplorerHost(
               ? reads.readCitation(selector, variant)
               : Promise.reject(new Error("no Citation read")),
           ),
+      }),
+      Layer.mock(Template, {
+        javascriptTemplatesEnabled: Effect.sync(() => javascriptEnabled),
+        compileEvents: Stream.callback<void>((queue) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              const send = () => {
+                Queue.offerUnsafe(queue, undefined);
+              };
+              permissions.add(send);
+              return send;
+            }),
+            (send) => Effect.sync(() => permissions.delete(send)),
+          ),
+        ),
       }),
       Layer.mock(ZoteroReads, {
         reads: stubService<ZoteroReads["Service"]["reads"]>(
@@ -140,6 +160,11 @@ export async function makeExplorerHost(
   return {
     registry,
     cancelled,
+    setJavascriptEnabled: (enabled) => {
+      javascriptEnabled = enabled;
+      for (const send of permissions) send();
+    },
+    permissionSubscribers: () => permissions.size,
     changeZotero: () => {
       for (const send of zotero) send();
     },

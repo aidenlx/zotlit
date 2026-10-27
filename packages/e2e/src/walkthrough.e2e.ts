@@ -459,7 +459,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ]);
   });
 
-  it("keeps citation suggestions when a word reaches eight letters", async () => {
+  it("keeps citation suggestions for full words and inserts from both pickers", async () => {
     expect(
       await obEvalUntil(
         vaultId,
@@ -489,17 +489,33 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             await waitFor(()=>suggest.isOpen&&suggest.context?.query===query&&suggest.suggestEl.textContent.includes('Why Most Published Research Findings Are False'),true,'Citation suggestions for '+query);
             results.push({query,found:hits.some(hit=>hit.item.key==='DMIANART')});
           }
+          const key=(await app.plugins.plugins.zotlit.services.itemLookup.search('findings',{limit:5})).find(hit=>hit.item.key==='DMIANART').item.fields.citationKey;
+          const row=[...suggest.suggestEl.querySelectorAll('.suggestion-item')].find(el=>el.textContent.includes('Why Most Published Research Findings Are False'));
+          row.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+          await waitFor(()=>editor.getValue().includes('@'+key)&&!editor.getValue().includes('[@findings'),true,'Inline citation inserted');
+          const inline=editor.getValue();
+          editor.setCursor(editor.offsetToPos(inline.length));
+          app.commands.executeCommandById('zotlit:insert-citation');
+          await waitFor(()=>!!activeDocument.querySelector('.prompt-input'),true,'Insert citation modal');
+          const input=activeDocument.querySelector('.prompt-input');
+          input.value='findings';input.dispatchEvent(new Event('input',{bubbles:true}));
+          await waitFor(()=>!!activeDocument.querySelector('.prompt-results [data-indexed-key="DMIANART"]'),true,'Modal citation result');
+          activeDocument.querySelector('.prompt-results [data-indexed-key="DMIANART"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+          await waitFor(()=>editor.getValue().length>inline.length&&editor.getValue().split('@'+key).length===3,true,'Modal citation inserted');
+          const inserted=editor.getValue();
           await leaf.view.save();
-          return JSON.stringify(results);
+          return JSON.stringify({results,inline,inserted,key});
         })()`,
       ),
     );
-    expect(results).toEqual(
+    expect(results.results).toEqual(
       ["researc", "research", "finding", "findings"].map((query) => ({
         query,
         found: true,
       })),
     );
+    expect(results.inline).toContain(`@${results.key}`);
+    expect(results.inserted.split(`@${results.key}`)).toHaveLength(3);
   });
 
   it("keeps the citation suggester closed while entering a page locator", async () => {
@@ -755,6 +771,48 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         { expected: "true" },
       ),
     ).toBe(true);
+  });
+
+  // #1859: a live Explorer offers snippets for the permitted engines.
+  it("updates Explorer template actions when JavaScript permission changes", async () => {
+    const result = JSON.parse(
+      await obEval(
+        vaultId,
+        `(async()=>{
+      ${browserWaits}
+      const services=app.plugins.plugins.zotlit.services;
+      const template=(await services.runtime.context()).mapUnsafe.get("zotlit/template/Template");
+      const setPermission=enabled=>services.bridge.runPromise(template.setJavascriptTemplatesEnabled(enabled));
+      await using cleanup=new AsyncDisposableStack();
+      const previous=services.bridge.runSync(template.javascriptTemplatesEnabled);
+      cleanup.defer(()=>setPermission(previous));
+      for(const leaf of app.workspace.getLeavesOfType('zotlit-template-data-explorer'))leaf.detach();
+      const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+      await setPermission(false);
+      await leaf.setViewState({type:'zotlit-template-data-explorer',active:true,state:{itemIndexedKey:'DMRGRART',root:'note',zotlitLaunch:true}});
+      const element=leaf.view.contentEl;
+      const button=()=>element.querySelector('[aria-label="Template actions"]');
+      await waitFor(()=>!!button(),true,'Explorer field actions');
+      const labels=()=>Array.from(document.querySelectorAll('.menu .menu-item-title')).map(el=>el.textContent);
+      const closeMenu=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      cleanup.defer(closeMenu);
+      const menu=async()=>{button().click();await waitFor(()=>labels().length>0,true,'Explorer menu');return labels();};
+      const disabled=await menu();closeMenu();
+      await setPermission(true);
+      await waitFor(()=>{closeMenu();button().click();return labels().includes('Eta');},true,'Eta actions after permission');
+      const enabled=labels();closeMenu();
+      await setPermission(false);
+      await waitFor(()=>{closeMenu();button().click();return labels().includes('Copy output')&&!labels().includes('Eta');},true,'Liquid actions after permission is removed');
+      const revoked=labels();closeMenu();
+      return JSON.stringify({disabled,enabled,revoked});
+    })()`,
+      ),
+    );
+    expect(result.disabled).toContain("Copy output");
+    expect(result.disabled).not.toContain("Eta");
+    expect(result.enabled).toEqual(expect.arrayContaining(["Liquid", "Eta"]));
+    expect(result.revoked).toContain("Copy output");
+    expect(result.revoked).not.toContain("Eta");
   });
 
   it.each(["built-in", "customized"])(
