@@ -9,11 +9,10 @@ import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
-import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -179,6 +178,8 @@ async function makeHarness(
     {
       app: stubService<App>("App", {
         vault: stubService<App["vault"]>("Vault", {
+          ...eventMethods(new MemoryWorkspace()),
+          getAbstractFileByPath: (path: string) => files.get(path) ?? null,
           getFileByPath: (path: string) => files.get(path) ?? null,
           create,
         }),
@@ -333,6 +334,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         expect(harness.create).toHaveBeenCalledWith(
           "templates/zotlit-profile.default.md",
           "converted source",
+          undefined,
         );
         expect(
           harness.bridge.runSync(harness.settings.current)[
@@ -1520,8 +1522,13 @@ async function buildMigration(
   const template = options.template;
   const runtime = buildRuntime(
     layerTemplateMigration(options).pipe(
-      Layer.provide(Layer.succeed(ObsidianApp, options.app)),
-      Layer.provide(layerWorkspaceFrom(options.app.workspace)),
+      Layer.provide(
+        layerHost({
+          vault: options.app.vault,
+          fileManager: options.app.fileManager,
+          workspace: options.app.workspace,
+        }),
+      ),
       Layer.provide(templateSettings(options.settings)),
       Layer.provide(
         Layer.succeed(

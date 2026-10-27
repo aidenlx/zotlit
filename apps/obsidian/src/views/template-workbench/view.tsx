@@ -218,6 +218,9 @@ export type TemplateWorkbenchDeps = Omit<
 > &
   TemplateDataDeps & {
     runtime: SubscriptionRuntime;
+    citationTemplate: import("@/services/template/actions").CitationTemplateActions;
+    bridge: ExplorerViewDeps["bridge"] &
+      Pick<import("@/lib/effect-bridge").EffectBridge, "runPromise">;
     zoteroReads: Pick<
       PlainZoteroReads,
       | "state"
@@ -1533,7 +1536,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(
           () =>
             void runTemplateWorkbenchAction("open-citation", () =>
-              openCitationTemplate(this.app, this.#deps.templates),
+              this.#deps.bridge.runPromise(
+                openCitationTemplate(this.app, this.#deps.citationTemplate),
+              ),
             ),
         ),
     );

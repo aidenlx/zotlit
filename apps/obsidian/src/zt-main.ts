@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistry } from "@/lib/view-atoms";
+import { Template } from "@/services/template/service";
 
 import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
@@ -422,6 +423,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
+      citationTemplate: services.runtime.runSync(Template),
       runtime: services.runtime,
       bridge: services.bridge,
       noteFeature: services.noteFeature,
