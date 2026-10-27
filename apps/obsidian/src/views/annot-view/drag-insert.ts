@@ -4,145 +4,37 @@ import { MarkdownView } from "obsidian";
 import type { App, Editor, MarkdownFileInfo } from "obsidian";
 import type { DragEvent } from "react";
 
-import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
-
-import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
-  AnnotationRecord,
-  AnnotationSource,
-} from "@/services/annotation-repository/service";
-import type { NoteFeatureHandle } from "@/services/note-feature";
-import { ProfileAnnotationError } from "@/services/template/service";
+  AnnotationInsertRequest,
+  AnnotationInsertOutcome,
+  AnnotationSnapshot,
+} from "@/services/note-feature/insert-action";
+export type { AnnotationInsertOutcome } from "@/services/note-feature/insert-action";
 
 import { captureInsertion } from "./async-insert";
-import type { Placement } from "./async-insert";
 
-const logger = getLogger(["views", "annot-view"]);
 const SOURCE_TAG = "application/x-zotlit-annotation";
-
-interface AnnotationSnapshot {
-  source: AnnotationSource | null;
-  sourceScope: string | null;
-}
 
 interface AsyncInsertDeps {
   app: App;
-  noteFeature: Pick<NoteFeatureHandle, "prepareAnnotationInsert">;
+  execute: (
+    request: AnnotationInsertRequest,
+  ) => Promise<AnnotationInsertOutcome | undefined>;
   snapshot: (annotation: AnnotationRecord) => AnnotationSnapshot;
   notify: (message: string | DocumentFragment) => void;
 }
 
 export type InsertionTarget = ReturnType<typeof captureInsertion>;
 
-function fallbackText(annotation: AnnotationRecord): string {
-  const key = parseIndexedKey(annotation.key);
-  const parent = parseIndexedKey(annotation.parentKey);
-  return (
-    annotation.text ??
-    `${m.excerpt_image_unavailable()}${key && parent ? ` [Zotero](${annotationOpenUri({ annotationKey: key.key, attachmentKey: parent.key, groupID: key.groupID, pageLabel: annotation.pageLabel })})` : ""}`
-  );
-}
-
-/** What an Excerpt Image summary counts for one insert. */
-type InsertSummary = NonNullable<
-  Awaited<ReturnType<NoteFeatureHandle["prepareAnnotationInsert"]>>
->["summary"];
-
-/** How one asynchronous annotation insert ended. */
-export type AnnotationInsertOutcome =
-  /** No note in Source mode or Live Preview takes the insert. */
-  | { kind: "no-note" }
-  /** The annotation's source is gone, so nothing is inserted. */
-  | { kind: "source-unavailable" }
-  /** The template could not render, and the fallback text took its place. */
-  | { kind: "fallback"; landed: boolean }
-  | { kind: "inserted"; summary: InsertSummary }
-  /** A Profile error: the annotation's own text took the template's place. */
-  | { kind: "profile-error"; error: ProfileAnnotationError; landed: boolean }
-  /** The insert failed; the log keeps the error. */
-  | { kind: "failed" }
-  /** The target went away, or a newer insert took its place. */
-  | { kind: "cancelled" };
-
-/**
- * Render `annotation` through its note's template and commit it to `target`:
- * the fallback text where the template cannot render, the annotation's own
- * text for a Profile error. Whatever lands is placed by `placement`.
- */
-export async function commitAnnotation(
-  deps: Pick<AsyncInsertDeps, "noteFeature">,
-  options: {
-    annotation: AnnotationRecord;
-    snapshot: AnnotationSnapshot;
-    target: InsertionTarget;
-    notePath: string;
-    placement?: Placement;
-  },
-): Promise<AnnotationInsertOutcome> {
-  const { annotation, snapshot, target, notePath, placement } = options;
-  try {
-    const result = await deps.noteFeature.prepareAnnotationInsert({
-      annotation,
-      source: snapshot.source!,
-      sourceScope: snapshot.sourceScope!,
-      notePath,
-      signal: target.signal,
-      valid: target.valid,
-    });
-    if (!result && target.valid())
-      return {
-        kind: "fallback",
-        landed: target.commit(fallbackText(annotation), placement),
-      };
-    if (!result || !target.commit(result.text, placement))
-      return { kind: "cancelled" };
-    return { kind: "inserted", summary: result.summary };
-  } catch (error) {
-    if (target.signal.aborted || !target.valid() || AbortError.test(error))
-      return { kind: "cancelled" };
-    if (error instanceof ProfileAnnotationError)
-      return {
-        kind: "profile-error",
-        error,
-        landed: target.commit(annotation.text ?? annotation.key, placement),
-      };
-    logger.warn("Annotation insert failed", {
-      annotationKey: annotation.key,
-      error,
-    });
-    return { kind: "failed" };
-  }
-}
-
-/**
- * {@link commitAnnotation} with its outcome shown as a notice. Shared by every
- * asynchronous annotation insert: the card menu, a drop, and the Annotation
- * Suggester. Answers whether text landed.
- */
-export async function prepareAndCommit(
-  deps: Pick<AsyncInsertDeps, "app" | "noteFeature" | "notify">,
-  options: Parameters<typeof commitAnnotation>[1],
-): Promise<boolean> {
-  const outcome = report(deps, await commitAnnotation(deps, options));
-  switch (outcome.kind) {
-    case "inserted":
-      return true;
-    case "fallback":
-    case "profile-error":
-      return outcome.landed;
-    default:
-      return false;
-  }
-}
-
 /** Show the notice of `outcome`, if it has one, and answer `outcome`. */
 function report(
   deps: Pick<AsyncInsertDeps, "app" | "notify">,
-  outcome: AnnotationInsertOutcome,
-): AnnotationInsertOutcome {
+  outcome: AnnotationInsertOutcome | undefined,
+): AnnotationInsertOutcome | undefined {
+  if (!outcome) return;
   const message = insertOutcomeMessage(deps.app, outcome);
   if (message !== null) deps.notify(message);
   return outcome;
@@ -158,6 +50,8 @@ export function insertOutcomeMessage(
   outcome: AnnotationInsertOutcome,
 ): string | DocumentFragment | null {
   switch (outcome.kind) {
+    case "unavailable":
+      return m.annotation_suggest_unavailable();
     case "no-note":
       return m.annot_view_insert_no_note();
     case "source-unavailable":
@@ -207,7 +101,7 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
   const insertInto = async (
     annotation: AnnotationRecord,
     info: MarkdownFileInfo | null,
-  ): Promise<AnnotationInsertOutcome> => {
+  ): Promise<AnnotationInsertOutcome | undefined> => {
     cancel();
     const { workspace } = deps.app;
     const editor = info?.editor;
@@ -231,7 +125,7 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
     pending = target;
     return report(
       deps,
-      await commitAnnotation(deps, {
+      await deps.execute({
         annotation,
         snapshot,
         target,
@@ -363,10 +257,13 @@ async function insertDrop(
   options.current(target);
   using cleanup = new DisposableStack();
   cleanup.defer(() => options.settled(target));
-  await prepareAndCommit(deps, {
-    annotation: options.annotation,
-    snapshot: options.snapshot,
-    target,
-    notePath: file.path,
-  });
+  report(
+    deps,
+    await deps.execute({
+      annotation: options.annotation,
+      snapshot: options.snapshot,
+      target,
+      notePath: file.path,
+    }),
+  );
 }

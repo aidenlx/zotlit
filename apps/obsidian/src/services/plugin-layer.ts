@@ -28,6 +28,7 @@ import type { ViewRegistry } from "@/lib/view-atoms";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { layerAnnotationNoteActions } from "@/services/note-feature/view-actions";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
 import { layerSettingTab } from "@/setting-tab/layer";
 import { openLibraryView } from "@/views/library/register";
@@ -196,6 +197,7 @@ export function pluginLayer(
   | LocalBridge
   | Notifier
   | AnnotationRepository
+  | AnnotationNoteActions
   | CapabilityNotices
   | AnnotationPopover
   | CitekeyEditor
@@ -415,7 +417,7 @@ export function pluginLayer(
     ),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerViewRegistry.pipe(
-      Layer.provide(
+      Layer.provideMerge(
         Layer.mergeAll(layerTemplateDataReads, layerAnnotationNoteActions),
       ),
       startingAs("ViewRegistry"),

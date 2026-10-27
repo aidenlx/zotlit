@@ -1,39 +1,44 @@
 // Annotation note gestures as one tag for the view registry.
 import { Context, Effect, Layer } from "effect";
 
+import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { UseLedger } from "@/services/use-ledger/service";
+
 import { renderAnnotationCitation } from "./annotation-citation";
 import type { AnnotationCitation } from "./annotation-citation";
 import type { NoteCitationServices } from "./citations-handle";
-import { prepareAnnotationInsert } from "./insert-annotation";
+import { commitAnnotation } from "./insert-action";
 import type {
-  AnnotationInsert,
-  AnnotationInsertOptions,
-} from "./insert-annotation";
+  AnnotationInsertRequest,
+  AnnotationInsertOutcome,
+} from "./insert-action";
 
 export class AnnotationNoteActions extends Context.Service<
   AnnotationNoteActions,
   {
     citation(key: string): Effect.Effect<AnnotationCitation, unknown>;
-    prepare(
-      options: AnnotationInsertOptions,
-    ): Effect.Effect<AnnotationInsert | null, unknown>;
+    insert(
+      options: AnnotationInsertRequest,
+    ): Effect.Effect<AnnotationInsertOutcome, unknown>;
   }
 >()("zotlit/note-feature/AnnotationNoteActions") {}
 
 export const layerAnnotationNoteActions: Layer.Layer<
   AnnotationNoteActions,
   never,
-  NoteCitationServices
+  NoteCitationServices | AnnotationRepository | UseLedger
 > = Layer.effect(
   AnnotationNoteActions,
   Effect.gen(function* () {
-    const context = yield* Effect.context<NoteCitationServices>();
+    const context = yield* Effect.context<
+      NoteCitationServices | AnnotationRepository | UseLedger
+    >();
     return AnnotationNoteActions.of({
       citation: Effect.fn("AnnotationNoteActions.citation")((key) =>
         renderAnnotationCitation(key).pipe(Effect.provideContext(context)),
       ),
-      prepare: Effect.fn("AnnotationNoteActions.prepare")((options) =>
-        prepareAnnotationInsert(options).pipe(Effect.provideContext(context)),
+      insert: Effect.fn("AnnotationNoteActions.insert")((options) =>
+        commitAnnotation(options).pipe(Effect.provideContext(context)),
       ),
     });
   }),
