@@ -82,7 +82,7 @@
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
     "@effect/vitest": "catalog:",
-    "@electron/remote": "^2.1.3",
+    "@electron/remote": "catalog:",
     "@lezer/common": "catalog:",
     "@logtape/logtape": "catalog:",
     "@preact/preset-vite": "^2.10.6",

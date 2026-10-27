@@ -1380,7 +1380,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const tool = toolButtonOf(pdfView, "image");
         const clientOf = clientOfFirstPage(pdfView);
 
-        afterEach(() => disarmTool(vaultId!, { pdfView, tool: "image" }));
+        afterEach(() =>
+          disarmTool(vaultId!, { attachmentPath, tool: "image" }),
+        );
 
         /**
          * Brings page one on screen in a window that lays it out, with the
@@ -1389,7 +1391,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * nothing, and how much of page one shows depends on the window.
          */
         const armOnFirstPage = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "image", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "image", at });
 
         /**
          * Drags a rectangle between two PDF points on page one, clear of every
@@ -1568,7 +1570,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { expected: "true" },
             ),
           ).toBe(true);
-          await disarmTool(vaultId!, { pdfView, tool: "ink" });
+          await disarmTool(vaultId!, { attachmentPath, tool: "ink" });
         });
 
         /**
@@ -1577,7 +1579,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * from the Creation Toolbar.
          */
         const armInk = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "ink", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "ink", at });
 
         /**
          * Presses on the first PDF point and moves through the rest, with
@@ -2080,7 +2082,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         afterEach(async () => {
           await eraseAnnotations(rdp, await madeSince(held));
-          await disarmTool(vaultId!, { pdfView, tool: "note" });
+          await disarmTool(vaultId!, { attachmentPath, tool: "note" });
         });
 
         /**
@@ -2089,7 +2091,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * from the Creation Toolbar.
          */
         const armNote = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "note", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "note", at });
 
         /** A click at a PDF point on page one, as the browser delivers it. */
         const click = ([x, y]: readonly [number, number]) =>
@@ -2222,7 +2224,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         afterEach(async () => {
           const erased = await madeSince(held);
           await eraseAnnotations(rdp, erased);
-          await disarmTool(vaultId!, { pdfView, tool: "text" });
+          await disarmTool(vaultId!, { attachmentPath, tool: "text" });
           // The next click on the same spot finds no mark once the page has
           // let go of the erased ones.
           expect(
@@ -2240,7 +2242,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * from the Creation Toolbar.
          */
         const armText = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "text", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "text", at });
 
         /**
          * A click at a PDF point on page one, as the browser delivers it,
@@ -2416,7 +2418,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("creates the draft a tool change finishes", async () => {
           await using restore = new AsyncDisposableStack();
           restore.defer(async () => {
-            await disarmTool(vaultId!, { pdfView, tool: "note" });
+            await disarmTool(vaultId!, { attachmentPath, tool: "note" });
           });
           await armText(CLEAR);
           const before = await annotationKeys();
@@ -4953,7 +4955,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             /** Body text in the left column, clear of every seeded mark. */
             const CLEAR = [150, 250] as const;
             await armToolOnFirstPage(vaultId!, {
-              pdfView,
+              attachmentPath,
               tool: "note",
               at: CLEAR,
             });

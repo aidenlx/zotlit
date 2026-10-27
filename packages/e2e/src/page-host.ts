@@ -5,8 +5,28 @@ export interface RenameListener {
   fn: (file: TFile, oldPath: string) => unknown;
 }
 export type PageApp = App & {
+  commands: App["commands"] & {
+    commands: Record<string, import("obsidian").Command>;
+  };
+  workspace: App["workspace"] & {
+    editorSuggest: {
+      suggests: (import("obsidian").EditorSuggest<never> & {
+        isOpen: boolean;
+      })[];
+    };
+    protocolHandler: {
+      handlers: Map<
+        string,
+        (params: Record<string, string | undefined>) => void
+      >;
+    };
+    floatingSplit: { children: { win: Window }[] };
+    isAttached(leaf: import("obsidian").WorkspaceLeaf): boolean;
+  };
   plugins: App["plugins"] & {
-    plugins: App["plugins"]["plugins"] & { zotlit?: { _loaded: boolean } };
+    plugins: App["plugins"]["plugins"] & {
+      zotlit?: import("obsidian").Plugin & { _loaded: boolean };
+    };
     disablePlugin(id: string): Promise<void>;
     enablePlugin(id: string): Promise<void>;
   };
@@ -17,6 +37,7 @@ export type PageApp = App & {
   };
   vault: App["vault"] & {
     _: { rename?: RenameListener[] };
+    setConfig(key: "trashOption", value: "local" | "system" | "none"): void;
     getConfig(key: "nativeMenus" | "settingsPopoutWindow"): boolean;
     setConfig(
       key: "nativeMenus" | "settingsPopoutWindow",

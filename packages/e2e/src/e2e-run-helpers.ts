@@ -6,8 +6,9 @@ import { expect } from "vitest";
 import type { FixtureItem } from "@zotlit/scripts/fixture";
 
 import { readingState } from "./e2e-run-fixture.ts";
-import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { waitFor } from "./obsidian-cli.ts";
+import type { CodeMirrorElement, PagePdfView } from "./page-notes-types.ts";
 
 export async function availableLoopbackPort(): Promise<number> {
   await using server = createServer();
@@ -38,50 +39,97 @@ export async function openProfilesSettings(
     | "settings_page_advanced"
     | "settings_page_zotero",
 ) {
-  await obEval(
+  await obRun(
     vaultId,
-    "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true",
+    async ({ app }) => {
+      app.vault.setConfig("settingsPopoutWindow", false);
+      app.setting.open();
+      return String(true);
+    },
+    undefined,
   );
-  await obEval(vaultId, "app.setting.openTabById('zotlit');true");
-  await obEval(
+  await obRun(
     vaultId,
-    `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:[${JSON.stringify(pageId)}]});true`,
+    async ({ app }) => {
+      app.setting.openTabById("zotlit");
+      return String(true);
+    },
+    undefined,
+  );
+  await obRun(
+    vaultId,
+    async ({ app }, { __typedArg0 }) => {
+      app.setting.navigateToSearchResult({
+        tab: app.setting.activeTab!,
+        pagePath: [__typedArg0],
+      });
+      return String(true);
+    },
+    { __typedArg0: pageId },
   );
 }
 
 export async function changeNativeAnnotationCallout(
   vaultId: string,
   options: {
-    view: string;
+    view: { path?: string; originatingNote?: string };
     vaultPath: string;
     tabLabel: string;
     beforeEdit?: () => Promise<void>;
   },
 ): Promise<void> {
   const { view, vaultPath, tabLabel } = options;
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `(function(){${PAGE}const view=${view};const tab=Array.from(view?.contentEl.querySelectorAll('[role=tab]')??[]).find(element=>element.textContent.trim()===${JSON.stringify(tabLabel)});if(!tab)return false;press(tab,${JSON.stringify(tabLabel)});return true;})()`,
-      { expected: "true" },
-    ),
-  ).toBe(true);
-  const annotationEditor = `Array.from((${view})?.contentEl.querySelectorAll('.cm-content')??[]).find(element=>element.textContent.includes('[!note]'))?.cmTile?.root?.view`;
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `String(!!(${annotationEditor})?.state.doc.toString().includes('[!note]'))`,
-      { expected: "true" },
-    ),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    ({ page }, { view, tabLabel }) => {
+      const host = page.workbench(view);
+      const tab = Array.from(
+        host?.contentEl.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
+      ).find((element) => element.textContent.trim() === tabLabel);
+      if (!tab) return false;
+      page.press(tab, tabLabel);
+      return true;
+    },
+    { view, tabLabel },
+    { what: "annotation template tab" },
+  );
+  await obRunUntil(
+    vaultId,
+    ({ page }, { view }) => {
+      const host = page.workbench(view);
+      const editor = Array.from(
+        host?.contentEl.querySelectorAll<CodeMirrorElement>(".cm-content") ??
+          [],
+      ).find((element) => element.textContent.includes("[!note]"))?.cmTile?.root
+        ?.view;
+      return !!editor?.state.doc.toString().includes("[!note]");
+    },
+    { view },
+    { what: "annotation callout editor" },
+  );
   await options.beforeEdit?.();
-  const templatePath = await obEval(vaultId, `(${view}).file.path`);
-  expect(
-    await obEval(
-      vaultId,
-      `(function(){const editor=${annotationEditor};const from=editor.state.doc.toString().indexOf('[!note]');editor.dispatch({changes:{from,to:from+7,insert:'[!quote]'},userEvent:'input.type'});return true;})()`,
-    ),
-  ).toBe("true");
+  const templatePath = await obRun(
+    vaultId,
+    ({ page }, { view }) => page.workbench(view)!.file!.path,
+    { view },
+  );
+  await obRun(
+    vaultId,
+    ({ page }, { view }) => {
+      const editor = Array.from(
+        page
+          .workbench(view)!
+          .contentEl.querySelectorAll<CodeMirrorElement>(".cm-content"),
+      ).find((element) => element.textContent.includes("[!note]"))!.cmTile!.root
+        .view;
+      const from = editor.state.doc.toString().indexOf("[!note]");
+      editor.dispatch({
+        changes: { from, to: from + 7, insert: "[!quote]" },
+        userEvent: "input.type",
+      });
+    },
+    { view },
+  );
   expect(
     await waitFor(async () =>
       (await readFile(join(vaultPath, templatePath), "utf-8")).includes(
@@ -100,17 +148,57 @@ export interface ActiveTab {
 
 export async function activeTab(vaultId: string): Promise<ActiveTab> {
   return JSON.parse(
-    await obEval(
+    await obRun(
       vaultId,
-      "(()=>{const view=app.workspace.activeLeaf?.view;const file=view?.file??null;return JSON.stringify({type:view?.getViewType()??null,path:file?.path??null,key:file?app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']??null:null,opening:!!app.workspace.activeLeaf?.working});})()",
+      async ({ app }) => {
+        const view = app.workspace.activeLeaf?.view as
+          | import("obsidian").FileView
+          | undefined;
+        const file = view?.file ?? null;
+        return String(
+          JSON.stringify({
+            type: view?.getViewType() ?? null,
+            path: file?.path ?? null,
+            key: file
+              ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
+                  "zotero-key"
+                ] ?? null)
+              : null,
+            opening: !!(
+              app.workspace.activeLeaf as
+                | (import("obsidian").WorkspaceLeaf & { working?: boolean })
+                | null
+            )?.working,
+          }),
+        );
+      },
+      undefined,
     ),
   ) as ActiveTab;
 }
 
 export function pdfOpened(vaultId: string, path: string): Promise<boolean> {
-  return obEvalUntil(
-    vaultId,
-    `(()=>{const view=app.workspace.activeLeaf?.view;return String(view?.getViewType()==='pdf'&&view.file?.path===${JSON.stringify(path)}&&(view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0);})()`,
-    { expected: "true", tries: 120 },
-  );
+  return ((options: { expected: string; tries?: number }) =>
+    obRunUntil(
+      vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        const view = app.workspace.activeLeaf?.view as PagePdfView | undefined;
+        return String(
+          String(
+            view?.getViewType() === "pdf" &&
+              view.file?.path === __typedArg0 &&
+              (view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) > 0,
+          ),
+        );
+      },
+      { __typedArg0: path },
+      {
+        ready: (value) => value === options.expected,
+        tries: options.tries,
+        what: "e2e-run-helpers.ts:111",
+      },
+    ).then(
+      () => true,
+      () => false,
+    ))({ expected: "true", tries: 120 });
 }

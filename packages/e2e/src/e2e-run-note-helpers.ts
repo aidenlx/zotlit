@@ -92,7 +92,7 @@ async function recordFrames(vaultId: string): Promise<
           async ({ page }) => {
             var r = page.scratch.frames!;
             return String(
-              await JSON.stringify({
+              JSON.stringify({
                 frames: r.frames,
                 maxFrameGapMs: Math.round(r.maxFrameGapMs),
                 longTasks: r.longTasks,
@@ -142,7 +142,7 @@ function hasIndexedNotes(
       vaultId,
       async ({ zotlit }, { __typedArg0 }) => {
         return String(
-          await String(
+          String(
             zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
           ),
         );
@@ -327,18 +327,15 @@ async function pressPromptKey(
 function clickModalButton(
   vaultId: string,
   label: string,
-  documentExpression:
-    | "activeDocument"
-    | "document"
-    | "(app.setting.containerEl).ownerDocument" = "activeDocument",
+  documentTarget: "activeDocument" | "document" | "settings" = "activeDocument",
 ): Promise<boolean> {
   return obRunUntil(
     vaultId,
-    ({ app, page }, { label, documentExpression }) => {
+    ({ app, page }, { label, documentTarget }) => {
       const doc =
-        documentExpression === "document"
+        documentTarget === "document"
           ? document
-          : documentExpression === "(app.setting.containerEl).ownerDocument"
+          : documentTarget === "settings"
             ? app.setting.containerEl.ownerDocument
             : activeDocument;
       const modal = Array.from(doc.querySelectorAll(".modal")).at(-1);
@@ -349,7 +346,7 @@ function clickModalButton(
       page.press(button, label);
       return true;
     },
-    { label, documentExpression },
+    { label, documentTarget },
     { what: `modal button ${label}` },
   ).then(
     () => true,
@@ -390,7 +387,7 @@ async function observeNotices(vaultId: string) {
           vaultId,
           async ({ page }) => {
             return String(
-              await JSON.stringify([...page.scratch.notices!.values.values()]),
+              JSON.stringify([...page.scratch.notices!.values.values()]),
             );
           },
           undefined,
@@ -412,6 +409,7 @@ async function observeNotices(vaultId: string) {
 }
 
 /** The Chinese Segmenter's device-wide cache directory under OPFS `zotlit/`. */
+
 const SEGMENTER_CACHE_DIR = "chinese-segmenter";
 
 /** Items a synthetic sync adds: the scale ADR 0069 measured at. */
@@ -573,7 +571,7 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
         var services = zotlit.services;
         var settings = services.bridge.runSync(services.settings.current);
         return String(
-          await JSON.stringify({
+          JSON.stringify({
             hostname: settings["server.hostname"],
             port: services.bridge.runSync(services.localServer.effectivePort),
             sourceId: services.zoteroPref.sourceId,
@@ -613,7 +611,7 @@ async function rendererHeap(vaultId: string): Promise<number> {
         ) as () => void;
         gc();
         gc();
-        return String(await String(process.memoryUsage().heapUsed));
+        return String(String(process.memoryUsage().heapUsed));
       },
       undefined,
     ),

@@ -97,7 +97,6 @@ const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
 /** Whether the plugin under test was built with the Annotation Suggester. */
 const annotationSuggesterEnabled =
   process.env.ANNOTATION_SUGGESTER_ENABLED === "true";
-const settingsContent = "app.setting.containerEl";
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
 
 const LIBRARY_HEADING = `(h=>h?['[data-library-header]','[data-library-header-count]'].map(s=>h.querySelector(s)?.textContent??'').filter(t=>t!=='').join(' | '):null)(el.querySelector('[data-library-heading]'))`;
@@ -180,7 +179,6 @@ export {
   reachable,
   readingState,
   runVaultScript,
-  settingsContent,
   targetItem,
   webWorkbenchEnabled,
   workspaceRoot,

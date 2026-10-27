@@ -1,11 +1,12 @@
 import { expect } from "vitest";
+
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
 // The Obsidian half of a gesture on a PDF page in the Paired Run: the PDF
 // opened with the Annotation View beside it, the reader's view as an eval
 // expression, pointer events dispatched as the browser sends them, the window
 // raised so the page lays out, and the reads a Geometry Edit test takes of the
 // plugin around a gesture.
-
-import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import type { BackgroundWindow } from "./page-notes-types.ts";
 
 /**
  * The Obsidian PDF view showing `attachmentPath` in a laid-out leaf, as an
@@ -209,7 +210,7 @@ export async function openPdfWithAnnotationView(
   const layout = await obRun(
     vaultId,
     async ({ app }) => {
-      return String(await JSON.stringify(app.workspace.getLayout()));
+      return String(JSON.stringify(app.workspace.getLayout()));
     },
     undefined,
   );
@@ -238,7 +239,7 @@ export async function openPdfWithAnnotationView(
         vaultId,
         async ({ zotlit }, { __typedArg0 }) => {
           return String(
-            await String(
+            String(
               !!zotlit.services.pdfAnnotationEditor.bindings.find(
                 (b) => b.filePath === __typedArg0,
               )?.session,
@@ -301,7 +302,7 @@ export async function raiseWindow(vaultId: string): Promise<void> {
     ({ page }) => {
       const electronWindow = (
         require("@electron/remote") as {
-          getCurrentWindow(): import("./page-notes-types.ts").BackgroundWindow & {
+          getCurrentWindow(): BackgroundWindow & {
             isVisible(): boolean;
           };
         }
@@ -514,7 +515,7 @@ export async function watchExcerptPixels(
         await obRun(
           vaultId,
           async ({ page }) => {
-            return String(await JSON.stringify(page.scratch.pixels));
+            return String(JSON.stringify(page.scratch.pixels));
           },
           undefined,
         ),
