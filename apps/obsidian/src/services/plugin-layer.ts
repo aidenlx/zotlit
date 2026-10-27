@@ -459,6 +459,7 @@ export function pluginLayer(
     Layer.provideMerge(
       layerPdfAnnotationEditor(pdfEditor).pipe(
         startingAs("PdfAnnotationEditor"),
+        Layer.provide(layerNotifier),
         Layer.provideMerge(noteFeature),
       ),
     ),

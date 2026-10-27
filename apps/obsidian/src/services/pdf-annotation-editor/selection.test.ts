@@ -1812,3 +1812,69 @@ it("ends a geometry edit whose PDF read fails without sending a patch (#1860)", 
   expect(h.writes()).toEqual([]);
   expect(selectAdjust(h.store.getState())).toBeNull();
 });
+
+/** The notice a write whose reply was lost raises. */
+const LOST_REPLY = m.annot_view_write_failed({
+  reason: m.annot_view_write_reason_unknown_outcome(),
+});
+
+/** Zotero takes the next write and its reply never arrives. */
+function loseNextReply(h: Harness): void {
+  h.zotero.answerNextWrite(() =>
+    Promise.reject(new AbortError("The reply was lost")),
+  );
+}
+
+it("says why a colour key's recolour did not land", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  loseNextReply(h);
+
+  key(h, "3");
+
+  await vi.waitFor(() =>
+    expect(h.notices.map(({ messages }) => messages)).toEqual([[LOST_REPLY]]),
+  );
+});
+
+it("says why once for a group Delete that did not land", async () => {
+  await using h = await setup();
+  using _ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+  loseNextReply(h);
+
+  key(h, "Delete");
+
+  await vi.waitFor(() =>
+    expect(h.notices.map(({ messages }) => messages)).toEqual([[LOST_REPLY]]),
+  );
+});
+
+it("raises no notice for a Delete that landed", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+
+  key(h, "Delete");
+
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
+  await settled(h, "WRDS2222");
+  expect(h.notices).toEqual([]);
+});
+
+it("says why a Geometry Edit did not land, naming the edit", async () => {
+  await using h = await figureSelected();
+  loseNextReply(h);
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  await geometrySaved(h, "FIGR3333");
+
+  expect(h.notices.map(({ messages }) => messages)).toEqual([
+    [
+      m.pdf_adjust_failed({
+        reason: m.annot_view_write_reason_unknown_outcome(),
+      }),
+    ],
+  ]);
+});
