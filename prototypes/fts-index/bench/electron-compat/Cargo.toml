@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/ort_infer_core", "crates/ort_infer_napi", "zerocopy-probe"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3

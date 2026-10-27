@@ -1,0 +1,12 @@
+[package]
+name = "ort_infer_bench"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "ort_infer_bench"
+path = "src/main.rs"
+
+[dependencies]
+ort_infer_core = { path = "../ort_infer_core" }
+serde_json = "1"

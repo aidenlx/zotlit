@@ -1,0 +1,114 @@
+{
+  "ort_version": "1.31.1",
+  "note": "Python onnxruntime CPU; Rust ort static expected same kernels/latency \u00b1 few %",
+  "block_seg": {
+    "clusterer_t1": {
+      "init_ms": 100.12185999948997,
+      "p50_ms": 1.8553900008555502,
+      "p95_ms": 2.129780998075148,
+      "mean_ms": 1.8887090668916546,
+      "min_ms": 1.693502999842167,
+      "max_ms": 2.3660629994992632,
+      "threads": 1,
+      "model_bytes": 4362638
+    },
+    "repair_t1": {
+      "init_ms": 1.695630002359394,
+      "p50_ms": 0.05343799784895964,
+      "p95_ms": 0.07220499901450239,
+      "mean_ms": 0.055555299816963576,
+      "min_ms": 0.0514130006195046,
+      "max_ms": 0.07556899799965322,
+      "threads": 1,
+      "model_bytes": 358150
+    },
+    "classifier_t1": {
+      "init_ms": 26.25729200008209,
+      "p50_ms": 1.2964210000063758,
+      "p95_ms": 1.4535789996443782,
+      "mean_ms": 1.318881999880735,
+      "min_ms": 1.2080950000381563,
+      "max_ms": 1.4869299993733875,
+      "threads": 1,
+      "model_bytes": 4367485
+    },
+    "sum_p50_t1": 3.2052489987108856,
+    "clusterer_t4": {
+      "init_ms": 92.63314599957084,
+      "p50_ms": 2.3205199977383018,
+      "p95_ms": 2.751867999904789,
+      "mean_ms": 2.3649774003085136,
+      "min_ms": 2.144997000868898,
+      "max_ms": 2.797050001390744,
+      "threads": 4,
+      "model_bytes": 4362638
+    },
+    "repair_t4": {
+      "init_ms": 1.9764310018217657,
+      "p50_ms": 0.07023099897196516,
+      "p95_ms": 0.09044499893207103,
+      "mean_ms": 0.0732555670159248,
+      "min_ms": 0.06331899930955842,
+      "max_ms": 0.09155000225291587,
+      "threads": 4,
+      "model_bytes": 358150
+    },
+    "classifier_t4": {
+      "init_ms": 25.760822001757333,
+      "p50_ms": 0.916674001928186,
+      "p95_ms": 1.1858600009873044,
+      "mean_ms": 4.162372566497652,
+      "min_ms": 0.8529709994036239,
+      "max_ms": 97.94561399758095,
+      "threads": 4,
+      "model_bytes": 4367485
+    },
+    "sum_p50_t4": 3.307424998638453
+  },
+  "PP-DocLayout-S": {
+    "t1": {
+      "init_ms": 43.76937000051839,
+      "p50_ms": 24.03558700098074,
+      "p95_ms": 26.4646530013124,
+      "mean_ms": 24.297972050226235,
+      "min_ms": 22.190878000401426,
+      "max_ms": 26.4646530013124,
+      "threads": 1,
+      "model_bytes": 4917852
+    },
+    "t4": {
+      "init_ms": 44.616303999646334,
+      "p50_ms": 8.80043000142905,
+      "p95_ms": 9.921779001160758,
+      "mean_ms": 8.869598049932392,
+      "min_ms": 8.37356600095518,
+      "max_ms": 9.921779001160758,
+      "threads": 4,
+      "model_bytes": 4917852
+    }
+  },
+  "handoff": {
+    "rgba_480_bytes": 921600,
+    "rgba_480_kib": 900.0,
+    "clusterer_line_features_bytes": 5632,
+    "note": "Node-API can pass Buffer/TypedArray; WASM needs copy into wasm heap via ort.Tensor"
+  },
+  "peak_rss_mb_after": 111.2890625,
+  "rss_delta_mb": 66.1640625,
+  "rust_binaries": {
+    "ort_bench_strip_mb": 24.0,
+    "tract_bench_strip_mb": 15.0,
+    "ort_ldd": [
+      "libstdc++.so.6",
+      "libgcc_s.so.1",
+      "libm.so.6",
+      "libc.so.6"
+    ],
+    "tract_ldd": [
+      "libgcc_s.so.1",
+      "libm.so.6",
+      "libc.so.6"
+    ],
+    "source": "static-infer prior build; re-verified this session via ls/ldd"
+  }
+}

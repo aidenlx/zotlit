@@ -1,0 +1,19 @@
+{
+  "name": "e45",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "electron": "^45.0.0"
+  },
+  "allowScripts": {
+    "electron@45.0.0": true
+  }
+}

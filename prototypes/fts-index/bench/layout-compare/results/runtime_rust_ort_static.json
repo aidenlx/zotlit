@@ -1,0 +1,86 @@
+{
+  "binary_bytes": 24725024,
+  "binary_path": "BENCH_ROOT/layout-compare/native-ort/target/release/ort_infer_bench",
+  "ort_crate": "2.0.0-rc.15",
+  "rss_kb_end": 110432,
+  "rss_kb_start": 6916,
+  "runtime": "rust-ort-static",
+  "t1": {
+    "block_seg_sum_p50_ms": 3.904146,
+    "classifier": {
+      "max_abs_diff_flow_vs_ref": 0.0,
+      "max_abs_diff_type_vs_ref": 0.0,
+      "p50_ms": 1.324281,
+      "p95_ms": 1.6412499999999999,
+      "threads": 1
+    },
+    "clusterer": {
+      "max_abs_diff_emissions_vs_ref": 0.0,
+      "max_abs_diff_object_vs_ref": 0.0,
+      "timing": {
+        "init_ms": 178.559508,
+        "max_ms": 2.8815899999999997,
+        "mean_ms": 2.398619866666667,
+        "min_ms": 1.947189,
+        "p50_ms": 2.527285,
+        "p95_ms": 2.775011,
+        "runs": 30,
+        "threads": 1
+      }
+    },
+    "doclayout_s_synthetic": {
+      "init_ms_first_run": 102.75836000000001,
+      "p50_ms": 23.647879,
+      "p95_ms": 34.708674,
+      "preprocess_ms": 3.036806,
+      "threads": 1
+    },
+    "repair": {
+      "init_ms": 0.0,
+      "max_abs_diff_vs_ref": 0.0,
+      "p50_ms": 0.05258,
+      "p95_ms": 0.062365000000000004,
+      "threads": 1
+    },
+    "rss_kb": 106572
+  },
+  "t4": {
+    "block_seg_sum_p50_ms": 3.357826,
+    "classifier": {
+      "max_abs_diff_flow_vs_ref": 0.0,
+      "max_abs_diff_type_vs_ref": 0.0,
+      "p50_ms": 1.1007149999999999,
+      "p95_ms": 1.3247149999999999,
+      "threads": 4
+    },
+    "clusterer": {
+      "max_abs_diff_emissions_vs_ref": 0.0,
+      "max_abs_diff_object_vs_ref": 0.0,
+      "timing": {
+        "init_ms": 84.951264,
+        "max_ms": 85.687953,
+        "mean_ms": 5.016092466666667,
+        "min_ms": 1.8505369999999999,
+        "p50_ms": 2.1838740000000003,
+        "p95_ms": 2.6515190000000004,
+        "runs": 30,
+        "threads": 4
+      }
+    },
+    "doclayout_s_synthetic": {
+      "init_ms_first_run": 57.075829,
+      "p50_ms": 10.188725,
+      "p95_ms": 14.376002,
+      "preprocess_ms": 1.450901,
+      "threads": 4
+    },
+    "repair": {
+      "init_ms": 0.0,
+      "max_abs_diff_vs_ref": 0.0,
+      "p50_ms": 0.07323700000000001,
+      "p95_ms": 0.088055,
+      "threads": 4
+    },
+    "rss_kb": 110432
+  }
+}

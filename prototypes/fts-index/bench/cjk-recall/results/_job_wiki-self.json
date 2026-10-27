@@ -1,0 +1,1 @@
+{"id":"wiki-self","type":"eval","name":"fixed-icu-wiki-self","extPath":"BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so","tokenize":"zotlit_cjk","pagesFile":"BENCH_ROOT/cjk-recall/out/wiki-pages.json","queriesFile":"BENCH_ROOT/cjk-recall/out/wiki-queries.json","falseFile":"BENCH_ROOT/cjk-recall/out/wiki-false.json"}

@@ -1,0 +1,1 @@
+{"id":"ja-trigram","type":"eval","name":"trigram","extPath":null,"tokenize":"trigram","pagesFile":"BENCH_ROOT/jk-corpus/progit-ja.pages.json","queriesFile":"BENCH_ROOT/cjk-recall/out/ja-queries.json","falseFile":"BENCH_ROOT/cjk-recall/out/ja-false.json"}

@@ -1,0 +1,1 @@
+{"id":"zh-fixed-icu","type":"eval","name":"fixed-icu","extPath":"BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so","tokenize":"zotlit_cjk","pagesFile":"BENCH_ROOT/progit-zh.clean.json","queriesFile":"BENCH_ROOT/cjk-recall/out/zh-queries.json","falseFile":"BENCH_ROOT/cjk-recall/out/zh-false.json"}

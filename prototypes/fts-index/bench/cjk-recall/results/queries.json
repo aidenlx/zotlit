@@ -1,0 +1,221 @@
+{
+  "zh": {
+    "hand": 23,
+    "terms": 80,
+    "substr": 200,
+    "falseN": 40,
+    "sampleSub": [
+      {
+        "q": "为自己推",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "你可以下载",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "合并冲突",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "一门课程去年没",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "果你想启用它们",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "中有两栏",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "我们想找",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "软件包一同提供",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "这个程序",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "示的顺序是相反",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "企业环境中",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "不需要任何访",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "關於外在世",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "分支名字展",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      },
+      {
+        "q": "使用一个名叫",
+        "kind": "cjk-substr",
+        "lang": "zh"
+      }
+    ],
+    "sampleTerms": [
+      {
+        "q": "的内容",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "执行",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "可以通过",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "可以运行",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "一个",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "引用",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "工具",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "我们将会",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "设置",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "仓库",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "操作",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "因为",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "首先",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "远程仓库",
+        "kind": "zh-term",
+        "lang": "zh"
+      },
+      {
+        "q": "工作流程",
+        "kind": "zh-term",
+        "lang": "zh"
+      }
+    ]
+  },
+  "ja": {
+    "hand": 14,
+    "terms": 40,
+    "substr": 80,
+    "falseN": 30,
+    "sampleSub": [
+      {
+        "q": "ーザーにとっては",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "用すれば",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "を使うこ",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "らはたどれる",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "する必要があり",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "も見ていきま",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "のコメント内",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "へプッシュする準",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "ちらを使えばいい",
+        "kind": "ja-substr",
+        "lang": "ja"
+      },
+      {
+        "q": "と同じような",
+        "kind": "ja-substr",
+        "lang": "ja"
+      }
+    ]
+  },
+  "note": "Queries sampled from asciidoc/wiki SOURCE, not PDF/SDT extraction"
+}

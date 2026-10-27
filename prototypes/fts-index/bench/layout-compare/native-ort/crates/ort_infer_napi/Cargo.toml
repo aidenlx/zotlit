@@ -1,0 +1,17 @@
+[package]
+name = "ort_infer_napi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi4", "serde-json"] }
+napi-derive = "2"
+ort_infer_core = { path = "../ort_infer_core" }
+parking_lot = "0.12"
+serde_json = "1"
+
+[build-dependencies]
+napi-build = "2"

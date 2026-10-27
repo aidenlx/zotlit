@@ -12,9 +12,10 @@
 //! - no args — Auto routing + default zh mode (jieba if built-in, else icu)
 //! Conceptual choice is still "zh ∈ {jieba, icu}".
 //!
-//! Index extras: jieba DAG colocated (when jieba), Han/kana/Hangul bigrams
-//! colocated, KO particle-stem colocated. Query: primaries (+ KO stem
-//! colocated; ambiguous short-Han dual emit under jieba Auto).
+//! Index: overlapping Han/kana/Hangul bigrams as PRIMARY (sequential) +
+//! ICU/jieba words COLOCATED at the start bigram; KO particle-stem colocated.
+//! Query: CJK bigram primaries (so mid-word substrings hit the indexed
+//! bigrams); KO stem colocated; jieba Auto still dual-emits ICU word colo.
 
 use icu_segmenter::options::WordBreakInvariantOptions;
 use icu_segmenter::WordSegmenter;
@@ -509,7 +510,16 @@ fn emit_routed_jieba(
 }
 
 
-/// ICU word breaks as primary; optional Han/kana bigram colocated on index.
+/// CJK run tokenization (ICU words + overlapping char bigrams).
+///
+/// **Index:** overlapping Han/kana/Hangul bigrams as PRIMARY at sequential
+/// positions; ICU word segments as COLOCATED on the bigram that starts at the
+/// same character (so word queries still hit). Single-char runs emit the char.
+///
+/// **Query:** overlapping bigrams as PRIMARY only (no bare ICU singles). This
+/// makes mid-word / cross-boundary substrings reachable — the previous query
+/// path emitted ICU segments without bigrams, so indexed colocated bigrams
+/// were unsearchable whenever ICU split a 2-gram into two chars.
 fn emit_icu_cjk(
     out: &mut Vec<EmitToken>,
     run: &str,
@@ -518,32 +528,108 @@ fn emit_icu_cjk(
     han_bigrams: bool,
 ) {
     let segs = icu_segments(run);
-    if segs.is_empty() {
-        let t = run.trim();
-        if !t.is_empty() {
-            out.push(EmitToken {
-                text: t.to_string(),
-                start: base as i32,
-                end: (base + run.len()) as i32,
-                flags: 0,
-            });
-        }
-    } else {
-        for (s, e) in &segs {
+    let words: Vec<(usize, usize, &str)> = segs
+        .iter()
+        .filter_map(|(s, e)| {
             let w = run[*s..*e].trim();
             if w.is_empty() {
-                continue;
+                None
+            } else {
+                Some((*s, *e, w))
             }
+        })
+        .collect();
+
+    if !han_bigrams {
+        // Latin-adjacent fallback: words only
+        for (s, e, w) in &words {
             out.push(EmitToken {
-                text: w.to_string(),
+                text: (*w).to_string(),
                 start: (base + *s) as i32,
                 end: (base + *e) as i32,
                 flags: 0,
             });
         }
+        if words.is_empty() {
+            let t = run.trim();
+            if !t.is_empty() {
+                out.push(EmitToken {
+                    text: t.to_string(),
+                    start: base as i32,
+                    end: (base + run.len()) as i32,
+                    flags: 0,
+                });
+            }
+        }
+        return;
     }
-    if !is_query && han_bigrams {
-        emit_cjk_run_bigrams(out, run, base);
+
+    emit_cjk_bigram_primaries(out, run, base, &words, is_query);
+}
+
+/// Overlapping CJK char-bigrams as primary; optional word colocated at start.
+fn emit_cjk_bigram_primaries(
+    out: &mut Vec<EmitToken>,
+    run: &str,
+    base: usize,
+    words: &[(usize, usize, &str)],
+    is_query: bool,
+) {
+    let chars: Vec<(usize, char)> = run
+        .char_indices()
+        .filter(|(_, c)| is_han(*c) || is_kana(*c) || is_hangul(*c) || is_cjk_ja_glue(*c))
+        .collect();
+
+    if chars.is_empty() {
+        for (s, e, w) in words {
+            out.push(EmitToken {
+                text: (*w).to_string(),
+                start: (base + *s) as i32,
+                end: (base + *e) as i32,
+                flags: 0,
+            });
+        }
+        return;
+    }
+
+    if chars.len() == 1 {
+        let (b0, c0) = chars[0];
+        out.push(EmitToken {
+            text: c0.to_string(),
+            start: (base + b0) as i32,
+            end: (base + b0 + c0.len_utf8()) as i32,
+            flags: 0,
+        });
+        return;
+    }
+
+    for i in 0..chars.len() - 1 {
+        let (b0, c0) = chars[i];
+        let (_b1, c1) = chars[i + 1];
+        let end = chars[i + 1].0 + c1.len_utf8();
+        let gram: String = [c0, c1].iter().collect();
+        out.push(EmitToken {
+            text: gram,
+            start: (base + b0) as i32,
+            end: (base + end) as i32,
+            flags: 0,
+        });
+        // Attach dictionary/ICU words that start at this char as colocated
+        // synonyms (index + query). On query this lets a whole-word token
+        // match when the caller passes pre-segmented words; on index it makes
+        // `MATCH '控制系统'` hit via colo even if the user somehow skips bigrams.
+        for (s, e, w) in words {
+            if *s == b0 && han_len(w) >= 2 {
+                out.push(EmitToken {
+                    text: (*w).to_string(),
+                    start: (base + *s) as i32,
+                    end: (base + *e) as i32,
+                    flags: FTS5_TOKEN_COLOCATED,
+                });
+            }
+        }
+        // On query, also colo the full remaining suffix? No — keeps precision.
+        let _ = is_query;
     }
 }
 
@@ -583,24 +669,6 @@ fn emit_other(out: &mut Vec<EmitToken>, run: &str, base: usize, _is_query: bool)
     }
 }
 
-fn emit_cjk_run_bigrams(out: &mut Vec<EmitToken>, run: &str, base: usize) {
-    let chars: Vec<(usize, char)> = run
-        .char_indices()
-        .filter(|(_, c)| is_han(*c) || is_kana(*c) || is_hangul(*c) || is_cjk_ja_glue(*c))
-        .collect();
-    for i in 0..chars.len().saturating_sub(1) {
-        let (b0, c0) = chars[i];
-        let (_b1, c1) = chars[i + 1];
-        let end = chars[i + 1].0 + c1.len_utf8();
-        let gram: String = [c0, c1].iter().collect();
-        out.push(EmitToken {
-            text: gram,
-            start: (base + b0) as i32,
-            end: (base + end) as i32,
-            flags: FTS5_TOKEN_COLOCATED,
-        });
-    }
-}
 
 fn emit_char_bigrams(out: &mut Vec<EmitToken>, w: &str, abs_start: usize, flags: i32) {
     let chars: Vec<char> = w.chars().collect();
@@ -628,58 +696,31 @@ fn emit_zh_query(
     base: usize,
     opts: TokOpts,
 ) {
+    // Bigram-primary query (same as ICU path) so mid-word substrings hit.
+    // Jieba/ICU dictionary words hang as colocated for word-style MATCH.
     let cuts: Vec<_> = jieba
         .cut(run, true)
         .into_iter()
         .filter(|t| !t.word.trim().is_empty())
         .collect();
-    let multi: Vec<_> = cuts.iter().filter(|t| han_len(t.word.trim()) >= 2).collect();
-    if multi.is_empty() {
-        out.push(EmitToken {
-            text: run.to_string(),
-            start: base as i32,
-            end: (base + run.len()) as i32,
-            flags: 0,
-        });
-    } else {
-        for t in &multi {
-            let w = t.word.trim();
-            out.push(EmitToken {
-                text: w.to_string(),
-                start: (base + t.byte_start) as i32,
-                end: (base + t.byte_end) as i32,
-                flags: 0,
-            });
-        }
-    }
-    // Ambiguous Auto: also hang ICU segments as colocated for JA-indexed Han
+    let mut words: Vec<(usize, usize, &str)> = cuts
+        .iter()
+        .filter(|t| han_len(t.word.trim()) >= 2)
+        .map(|t| (t.byte_start, t.byte_end, t.word.trim()))
+        .collect();
+    // Ambiguous Auto: also hang ICU segments as word colo candidates
     if opts.force.is_none() && run.chars().all(is_han) {
-        let existing: std::collections::HashSet<String> =
-            out.iter().map(|t| t.text.clone()).collect();
+        let existing: std::collections::HashSet<&str> =
+            words.iter().map(|(_, _, w)| *w).collect();
         for (s, e) in icu_segments(run) {
             let w = run[s..e].trim();
-            if w.is_empty() || existing.contains(w) {
+            if w.is_empty() || existing.contains(w) || han_len(w) < 2 {
                 continue;
             }
-            out.push(EmitToken {
-                text: w.to_string(),
-                start: (base + s) as i32,
-                end: (base + e) as i32,
-                flags: FTS5_TOKEN_COLOCATED,
-            });
-        }
-        if han_len(run) <= 6
-            && !multi.is_empty()
-            && !(multi.len() == 1 && multi[0].word.trim() == run)
-        {
-            out.push(EmitToken {
-                text: run.to_string(),
-                start: base as i32,
-                end: (base + run.len()) as i32,
-                flags: FTS5_TOKEN_COLOCATED,
-            });
+            words.push((s, e, w));
         }
     }
+    emit_cjk_bigram_primaries(out, run, base, &words, true);
 }
 
 #[cfg(feature = "jieba")]
@@ -690,49 +731,26 @@ fn emit_han_index(
     base: usize,
     oov_bigram: bool,
 ) {
-    let primaries: Vec<_> = jieba.cut(run, true).into_iter().collect();
+    let _ = oov_bigram; // bigram primaries cover OOV; cut_all still as colo words
     let all: Vec<_> = jieba
         .cut_all(run)
         .into_iter()
-        .filter(|t| han_len(t.word) >= 2)
+        .filter(|t| han_len(t.word.trim()) >= 2)
         .collect();
-    let dict_spans: std::collections::HashSet<(usize, usize)> =
-        all.iter().map(|t| (t.byte_start, t.byte_end)).collect();
-
-    for p in &primaries {
-        let w = p.word.trim();
-        if w.is_empty() {
+    // Also max-prob cut words (may include HMM spans not in cut_all)
+    let cuts: Vec<_> = jieba.cut(run, true).into_iter().collect();
+    let mut words: Vec<(usize, usize, &str)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for t in all.iter().chain(cuts.iter()) {
+        let w = t.word.trim();
+        if w.is_empty() || han_len(w) < 2 {
             continue;
         }
-        let p_start = base + p.byte_start;
-        let p_end = base + p.byte_end;
-        out.push(EmitToken {
-            text: w.to_string(),
-            start: p_start as i32,
-            end: p_end as i32,
-            flags: 0,
-        });
-        for sub in &all {
-            if sub.byte_start >= p.byte_start
-                && sub.byte_start < p.byte_end
-                && !(sub.byte_start == p.byte_start && sub.byte_end == p.byte_end)
-            {
-                let sw = sub.word.trim();
-                if sw.is_empty() || sw == w {
-                    continue;
-                }
-                out.push(EmitToken {
-                    text: sw.to_string(),
-                    start: (base + sub.byte_start) as i32,
-                    end: (base + sub.byte_end) as i32,
-                    flags: FTS5_TOKEN_COLOCATED,
-                });
-            }
-        }
-        if oov_bigram && !dict_spans.contains(&(p.byte_start, p.byte_end)) && han_len(w) >= 2 {
-            emit_char_bigrams(out, w, p_start, FTS5_TOKEN_COLOCATED);
+        if seen.insert((t.byte_start, t.byte_end)) {
+            words.push((t.byte_start, t.byte_end, w));
         }
     }
+    emit_cjk_bigram_primaries(out, run, base, &words, false);
 }
 
 const KO_PARTICLES: &[&str] = &[
@@ -860,10 +878,12 @@ mod tests {
             .filter(|t| t.flags == 0)
             .map(|t| t.text.clone())
             .collect();
+        let texts: Vec<_> = toks.iter().map(|t| t.text.as_str()).collect();
         assert!(
-            primary.iter().any(|t| t == "バージョン"),
-            "got {primary:?}"
+            texts.iter().any(|t| *t == "バージョン") || primary.iter().any(|t| t == "バー"),
+            "expected バージョン (colo) or kana bigrams, got texts={texts:?}"
         );
+        assert!(texts.iter().any(|t| *t == "バージョン"), "word colo missing in {texts:?}");
     }
 
     #[test]
@@ -885,7 +905,8 @@ mod tests {
         assert!(toks.iter().any(|t| t.text == "控制"));
         let q = e.tokenize("版本控制系统", true, true);
         let primary: Vec<_> = q.iter().filter(|t| t.flags == 0).map(|t| t.text.as_str()).collect();
-        assert_eq!(primary, vec!["版本", "控制系统"]);
+        // Query is now bigram-primary for substring recall
+        assert_eq!(primary, vec!["版本", "本控", "控制", "制系", "系统"]);
     }
 
     #[test]
@@ -907,7 +928,25 @@ mod tests {
             .map(|t| t.text.clone())
             .collect();
         println!("icu zh primary={primary:?} colo_sample={:?}", &colo[..colo.len().min(6)]);
-        assert!(!primary.is_empty());
-        assert!(colo.iter().any(|t| t.chars().count() == 2), "expected Han bigrams");
+        assert!(primary.iter().all(|t| t.chars().count() == 2), "expected bigram primaries, got {primary:?}");
+        assert!(primary.iter().any(|t| t == "版本"), "{primary:?}");
+        assert!(primary.iter().any(|t| t == "本控"), "{primary:?}");
+        assert!(colo.iter().any(|t| t.chars().count() >= 2), "expected word colo");
+    }
+
+    #[test]
+    fn query_midword_bigrams() {
+        let e = CjkEngine::new();
+        let opts = TokOpts {
+            zh: ZhMode::Icu,
+            force: None,
+        };
+        let q = e.tokenize_opts("本控制系统", true, true, opts);
+        let primary: Vec<_> = q
+            .iter()
+            .filter(|t| t.flags == 0)
+            .map(|t| t.text.clone())
+            .collect();
+        assert_eq!(primary, vec!["本控", "控制", "制系", "系统"]);
     }
 }

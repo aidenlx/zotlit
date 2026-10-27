@@ -1,0 +1,113 @@
+{
+  "ort_version": "1.31.1",
+  "cpu_only": true,
+  "models": {
+    "clusterer": {
+      "threads_1": {
+        "median_ms": 1.6439975006505847,
+        "mean_ms": 1.671412933380149,
+        "min_ms": 1.4944759968784638,
+        "max_ms": 1.9557250016077887
+      },
+      "threads_4": {
+        "median_ms": 1.4907734985172283,
+        "mean_ms": 1.5054243664053502,
+        "min_ms": 1.33950300005381,
+        "max_ms": 1.750240997353103
+      }
+    },
+    "repair": {
+      "threads_1": {
+        "median_ms": 0.04703799822891597,
+        "mean_ms": 0.0481050664044839,
+        "min_ms": 0.04656199962482788,
+        "max_ms": 0.06488100189017132
+      },
+      "threads_4": {
+        "median_ms": 0.04975649972038809,
+        "mean_ms": 0.05011713340839682,
+        "min_ms": 0.04495000030146912,
+        "max_ms": 0.0559759973839391
+      }
+    },
+    "classifier": {
+      "threads_1": {
+        "median_ms": 1.4113630004430888,
+        "mean_ms": 1.4191195332386997,
+        "min_ms": 1.343735999398632,
+        "max_ms": 1.523177998024039
+      },
+      "threads_4": {
+        "median_ms": 0.9576624997862382,
+        "mean_ms": 0.9217153998179128,
+        "min_ms": 0.7449730001098942,
+        "max_ms": 1.0570560007181484
+      }
+    },
+    "PP-DocLayout-S": {
+      "threads_1": {
+        "median_ms": 23.423951999575365,
+        "mean_ms": 23.844046050180623,
+        "min_ms": 21.03656499821227,
+        "max_ms": 34.19117799785454,
+        "input_hw": [
+          480,
+          480
+        ],
+        "model_bytes": 4917852
+      },
+      "threads_4": {
+        "median_ms": 14.716742500240798,
+        "mean_ms": 16.171865949763742,
+        "min_ms": 12.690617997577647,
+        "max_ms": 25.878240001475206,
+        "input_hw": [
+          480,
+          480
+        ],
+        "model_bytes": 4917852
+      }
+    }
+  },
+  "page_render": {
+    "engine": "pdftoppm",
+    "dpi": 72,
+    "median_ms": 69.89731549947464,
+    "dpi150_median_ms": 113.53371149925806
+  },
+  "per_page_ms": {
+    "block_seg_t1": 3.1023984993225895,
+    "block_seg_t4": 2.4981924980238546,
+    "doclayout_s_t1": 23.423951999575365,
+    "doclayout_s_t4": 14.716742500240798,
+    "render_dpi72_ms": 69.89731549947464,
+    "doclayout_s_plus_render72_t1": 93.32126749905001,
+    "doclayout_s_plus_render72_t4": 84.61405799971544
+  },
+  "library_1000_pages": {
+    "block_seg_t1": {
+      "seconds": 3.1,
+      "minutes": 0.05
+    },
+    "block_seg_t4": {
+      "seconds": 2.5,
+      "minutes": 0.04
+    },
+    "doclayout_s_t1": {
+      "seconds": 23.4,
+      "minutes": 0.39
+    },
+    "doclayout_s_t4": {
+      "seconds": 14.7,
+      "minutes": 0.25
+    },
+    "doclayout_s_plus_render72_t1": {
+      "seconds": 93.3,
+      "minutes": 1.56
+    },
+    "doclayout_s_plus_render72_t4": {
+      "seconds": 84.6,
+      "minutes": 1.41
+    }
+  }
+}

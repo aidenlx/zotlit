@@ -1,0 +1,7 @@
+{
+  "worker_only_fresh_process": {
+    "ok": true,
+    "inferMs": 0.32950999999999997,
+    "logits": 32
+  }
+}

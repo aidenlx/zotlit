@@ -1,0 +1,112 @@
+{
+  "runtime": "rust-ort-static-napi",
+  "addonPath": "BENCH_ROOT/layout-compare/native-ort/ort_infer.linux-x64-gnu.node",
+  "addonInfo": {
+    "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+    "feature_extraction": "JS (document-worker); tensors handed to native",
+    "name": "ort_infer_napi",
+    "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+  },
+  "rss_kb_start": 63376,
+  "binary_bytes": 24734712,
+  "t1": {
+    "threads": 1,
+    "repair": {
+      "p50_ms": 0.052512,
+      "p95_ms": 0.067073,
+      "handoff_ms": 0.000748,
+      "max_abs_diff_vs_ref": 0
+    },
+    "clusterer": {
+      "p50_ms": 1.726986,
+      "p95_ms": 1.923552,
+      "handoff_ms": 0.001044,
+      "max_abs_diff_emissions_vs_ref": 0,
+      "max_abs_diff_object_vs_ref": 0
+    },
+    "classifier": {
+      "p50_ms": 1.28277,
+      "p95_ms": 1.413779,
+      "handoff_ms": 0.007339,
+      "max_abs_diff_type_vs_ref": 0,
+      "max_abs_diff_flow_vs_ref": 0
+    },
+    "doclayout_s_rgba": {
+      "p50_ms": 22.770755,
+      "p95_ms": 24.177802000000003,
+      "handoff_ms": 1.906846,
+      "preprocess_ms": 1.906846,
+      "out_shape": [
+        7,
+        6
+      ],
+      "n_boxes": 7
+    },
+    "doclayout_s_page1": {
+      "p50_ms": 24.239535,
+      "p95_ms": 28.96691,
+      "preprocess_ms": 2.175354,
+      "handoff_ms": 2.175354,
+      "width": 480,
+      "height": 622,
+      "out_len": 600
+    },
+    "block_seg_sum_p50_ms": 3.0622679999999995,
+    "rss_kb": 175240
+  },
+  "t4": {
+    "threads": 4,
+    "repair": {
+      "p50_ms": 0.077567,
+      "p95_ms": 0.094552,
+      "handoff_ms": 0.0535,
+      "max_abs_diff_vs_ref": 0
+    },
+    "clusterer": {
+      "p50_ms": 2.319729,
+      "p95_ms": 2.743696,
+      "handoff_ms": 0.001604,
+      "max_abs_diff_emissions_vs_ref": 0,
+      "max_abs_diff_object_vs_ref": 0
+    },
+    "classifier": {
+      "p50_ms": 1.4381140000000001,
+      "p95_ms": 1.573021,
+      "handoff_ms": 0.007855000000000001,
+      "max_abs_diff_type_vs_ref": 0,
+      "max_abs_diff_flow_vs_ref": 0
+    },
+    "doclayout_s_rgba": {
+      "p50_ms": 11.240654,
+      "p95_ms": 13.491372,
+      "handoff_ms": 1.772672,
+      "preprocess_ms": 1.772672,
+      "out_shape": [
+        7,
+        6
+      ],
+      "n_boxes": 7
+    },
+    "doclayout_s_page1": {
+      "p50_ms": 12.97463,
+      "p95_ms": 13.161212,
+      "preprocess_ms": 2.293799,
+      "handoff_ms": 2.293799,
+      "width": 480,
+      "height": 622,
+      "out_len": 600
+    },
+    "block_seg_sum_p50_ms": 3.8354100000000004,
+    "rss_kb": 182120
+  },
+  "worker_thread_same_process": {
+    "ok": false,
+    "reason": "ort: only one environment is allowed per process"
+  },
+  "child_process": {
+    "ok": true,
+    "inferMs": 40.938145,
+    "out_len": 36
+  },
+  "rss_kb_end": 182740
+}

@@ -1,0 +1,16 @@
+{
+  "name": "electron-compat",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build:probe": "napi build --platform --release -p zerocopy_probe --cargo-cwd . --manifest-path zerocopy-probe/Cargo.toml",
+    "build:ort-static-cxx": "napi build --platform --release -p ort_infer_napi --cargo-cwd . --manifest-path crates/ort_infer_napi/Cargo.toml"
+  },
+  "napi": {
+    "binaryName": "zerocopy_probe",
+    "targets": ["x86_64-unknown-linux-gnu"]
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.9"
+  }
+}

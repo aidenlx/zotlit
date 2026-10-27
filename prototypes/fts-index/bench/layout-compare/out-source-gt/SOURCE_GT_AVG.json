@@ -1,0 +1,299 @@
+{
+  "methodology": "Queries/furniture/adjacency from authoring sources (arXiv LaTeX, Pro Git AsciiDoc) or hand-label for authored demo. NOT from Zotero SDT (C). A/B/C/D scored equally.",
+  "dropped_no_source": {
+    "frai-xai": "No authoring source; dropped.",
+    "plos-meta": "No manuscript source; dropped.",
+    "stroke-2col": "No manuscript source; dropped."
+  },
+  "primary_docs": [
+    "sample-cjk",
+    "progit-en",
+    "progit-zh",
+    "arxiv-attention",
+    "arxiv-lora"
+  ],
+  "avg": {
+    "A": {
+      "nDocs": 5,
+      "phraseRecall": 0.623,
+      "andRecall": 0.543,
+      "furnitureFalseHits": 0.8,
+      "readingOrderAdj": 0.6267,
+      "hyphenArtifacts": 0.6,
+      "blockOverlapTop1": 1,
+      "chars": 13343
+    },
+    "B": {
+      "nDocs": 5,
+      "phraseRecall": 0.593,
+      "andRecall": 0.543,
+      "furnitureFalseHits": 0.8,
+      "readingOrderAdj": 0.5333,
+      "hyphenArtifacts": 0.6,
+      "blockOverlapTop1": 1,
+      "chars": 13266
+    },
+    "C-page": {
+      "nDocs": 5,
+      "phraseRecall": 0.6211,
+      "andRecall": 0.5315,
+      "furnitureFalseHits": 0.4,
+      "readingOrderAdj": 0.64,
+      "hyphenArtifacts": 0.8,
+      "blockOverlapTop1": 1,
+      "chars": 10783
+    },
+    "C-block": {
+      "nDocs": 5,
+      "phraseRecall": 0.6211,
+      "andRecall": 0.5169,
+      "furnitureFalseHits": 0.4,
+      "readingOrderAdj": 0.64,
+      "hyphenArtifacts": 0.8,
+      "blockOverlapTop1": 0.95,
+      "chars": 10783
+    },
+    "D-page": {
+      "nDocs": 5,
+      "phraseRecall": 0.6267,
+      "andRecall": 0.5467,
+      "furnitureFalseHits": 0.2,
+      "readingOrderAdj": 0.57,
+      "hyphenArtifacts": 0.6,
+      "blockOverlapTop1": 1,
+      "chars": 14965
+    },
+    "D-block": {
+      "nDocs": 5,
+      "phraseRecall": 0.6267,
+      "andRecall": 0.5255,
+      "furnitureFalseHits": 0.2,
+      "readingOrderAdj": 0.57,
+      "hyphenArtifacts": 0.6,
+      "blockOverlapTop1": 0.95,
+      "chars": 14965
+    }
+  },
+  "perDoc": [
+    {
+      "id": "sample-cjk",
+      "source_kind": "hand-label-authored",
+      "phrase": {
+        "A": 1,
+        "B": 1,
+        "C-page": 0.8571,
+        "C-block": 0.8571,
+        "D-page": 1,
+        "D-block": 1
+      },
+      "and": {
+        "A": 0.5714,
+        "B": 0.5714,
+        "C-page": 0.4286,
+        "C-block": 0.4286,
+        "D-page": 0.5714,
+        "D-block": 0.5714
+      },
+      "furnitureFalseHits": {
+        "A": 1,
+        "B": 1,
+        "C-page": 1,
+        "C-block": 1,
+        "D-page": 1,
+        "D-block": 1
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 1,
+        "C-page": 1,
+        "C-block": 1,
+        "D-page": 1,
+        "D-block": 1
+      },
+      "blockOverlapTop1": {
+        "A": null,
+        "B": null,
+        "C-page": null,
+        "C-block": 0.8,
+        "D-page": null,
+        "D-block": 0.8
+      }
+    },
+    {
+      "id": "progit-en",
+      "source_kind": "progit-asciidoc",
+      "phrase": {
+        "A": 0.0545,
+        "B": 0.0545,
+        "C-page": 0.0727,
+        "C-block": 0.0727,
+        "D-page": 0.0727,
+        "D-block": 0.0727
+      },
+      "and": {
+        "A": 0.1636,
+        "B": 0.1636,
+        "C-page": 0.1818,
+        "C-block": 0.1091,
+        "D-page": 0.1818,
+        "D-block": 0.1091
+      },
+      "furnitureFalseHits": {
+        "A": 0,
+        "B": 0,
+        "C-page": 0,
+        "C-block": 0,
+        "D-page": 0,
+        "D-block": 0
+      },
+      "readingOrderAdj": {
+        "A": 0,
+        "B": 0,
+        "C-page": 0,
+        "C-block": 0,
+        "D-page": 0,
+        "D-block": 0
+      },
+      "blockOverlapTop1": {
+        "A": null,
+        "B": null,
+        "C-page": null,
+        "C-block": null,
+        "D-page": null,
+        "D-block": null
+      }
+    },
+    {
+      "id": "progit-zh",
+      "source_kind": "progit-asciidoc",
+      "phrase": {
+        "A": 0.5273,
+        "B": 0.5273,
+        "C-page": 0.5091,
+        "C-block": 0.5091,
+        "D-page": 0.5273,
+        "D-block": 0.5273
+      },
+      "and": {
+        "A": 0.1636,
+        "B": 0.1636,
+        "C-page": 0.1636,
+        "C-block": 0.1636,
+        "D-page": 0.1636,
+        "D-block": 0.1636
+      },
+      "furnitureFalseHits": {
+        "A": 0,
+        "B": 0,
+        "C-page": 0,
+        "C-block": 0,
+        "D-page": 0,
+        "D-block": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.6667,
+        "B": 0.6667,
+        "C-page": 0.6667,
+        "C-block": 0.6667,
+        "D-page": 0.5833,
+        "D-block": 0.5833
+      },
+      "blockOverlapTop1": {
+        "A": null,
+        "B": null,
+        "C-page": null,
+        "C-block": 1,
+        "D-page": null,
+        "D-block": 1
+      }
+    },
+    {
+      "id": "arxiv-attention",
+      "source_kind": "arxiv-latex",
+      "phrase": {
+        "A": 0.8333,
+        "B": 0.6833,
+        "C-page": 0.8333,
+        "C-block": 0.8333,
+        "D-page": 0.8333,
+        "D-block": 0.8333
+      },
+      "and": {
+        "A": 0.9833,
+        "B": 0.9833,
+        "C-page": 0.9833,
+        "C-block": 0.9833,
+        "D-page": 0.9833,
+        "D-block": 0.9833
+      },
+      "furnitureFalseHits": {
+        "A": 2,
+        "B": 2,
+        "C-page": 1,
+        "C-block": 1,
+        "D-page": 0,
+        "D-block": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.6667,
+        "B": 0.4,
+        "C-page": 0.6667,
+        "C-block": 0.6667,
+        "D-page": 0.5333,
+        "D-block": 0.5333
+      },
+      "blockOverlapTop1": {
+        "A": 1,
+        "B": 1,
+        "C-page": 1,
+        "C-block": 1,
+        "D-page": 1,
+        "D-block": 1
+      }
+    },
+    {
+      "id": "arxiv-lora",
+      "source_kind": "arxiv-latex",
+      "phrase": {
+        "A": 0.7,
+        "B": 0.7,
+        "C-page": 0.8333,
+        "C-block": 0.8333,
+        "D-page": 0.7,
+        "D-block": 0.7
+      },
+      "and": {
+        "A": 0.8333,
+        "B": 0.8333,
+        "C-page": 0.9,
+        "C-block": 0.9,
+        "D-page": 0.8333,
+        "D-block": 0.8
+      },
+      "furnitureFalseHits": {
+        "A": 1,
+        "B": 1,
+        "C-page": 0,
+        "C-block": 0,
+        "D-page": 0,
+        "D-block": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.8,
+        "B": 0.6,
+        "C-page": 0.8667,
+        "C-block": 0.8667,
+        "D-page": 0.7333,
+        "D-block": 0.7333
+      },
+      "blockOverlapTop1": {
+        "A": 1,
+        "B": 1,
+        "C-page": 1,
+        "C-block": 1,
+        "D-page": 1,
+        "D-block": 1
+      }
+    }
+  ]
+}

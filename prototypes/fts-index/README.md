@@ -95,3 +95,9 @@ Large corpora, `target/`, `node_modules`, and upstream checkouts (zotero-src, pd
 ## License
 
 Prototype code: MIT (unless noted). Upstream licenses as in the table above; AGPL document-worker must remain an external optional dependency.
+
+## Recent updates (2026-10-27)
+
+- **CJK tokenizer fix:** overlapping Han/kana/Hangul bigrams as PRIMARY + ICU/jieba words COLOCATED; queries emit bigrams. See `crates/zotlit-cjk-core/src/lib.rs` and `bench/cjk-recall/`.
+- **glibc 2.28 floor for ORT:** `crates/glibc_compat/isoc23_shim.c` + zigbuild notes under `bench/electron-compat/`.
+- **Benches added under `bench/`:** `layout-compare` (v3 source-GT only), `cjk-recall`, `electron-compat`, `static-infer`. Each has an English `README.md`. Model weights, PDFs, corpora, and binaries are not shipped — see each README for fetch/rebuild steps.

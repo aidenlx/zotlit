@@ -1,0 +1,59 @@
+{
+  "runtime": "onnxruntime-web",
+  "version": "1.27.0",
+  "numThreads": 1,
+  "simd": true,
+  "sharedArrayBufferAvailable": true,
+  "crossOriginIsolated": false,
+  "node": "v24.22.1",
+  "wasmAssets": {
+    "ort-wasm-simd-threaded.wasm_mb": 13.48,
+    "ort-wasm-simd-threaded.jsep.wasm_mb": 26.83
+  },
+  "note": "Multi-thread WASM needs SharedArrayBuffer (COOP/COEP in Electron). Plain Node typically single-thread.",
+  "block_seg": {
+    "clusterer": {
+      "name": "clusterer",
+      "init_ms": 565.3,
+      "p50_ms": 11.299,
+      "p95_ms": 12.424,
+      "mean_ms": 11.521,
+      "handoff_p50_ms": 0.012,
+      "model_bytes": 4362638,
+      "threads": 1
+    },
+    "repair": {
+      "name": "repair",
+      "init_ms": 5.13,
+      "p50_ms": 0.449,
+      "p95_ms": 0.561,
+      "mean_ms": 0.479,
+      "handoff_p50_ms": 0.002,
+      "model_bytes": 358150,
+      "threads": 1
+    },
+    "classifier": {
+      "name": "classifier",
+      "init_ms": 74.24,
+      "p50_ms": 8.942,
+      "p95_ms": 10.466,
+      "mean_ms": 9.081,
+      "handoff_p50_ms": 0.01,
+      "model_bytes": 4367485,
+      "threads": 1
+    },
+    "sum_p50": 20.69
+  },
+  "doclayout_s": {
+    "name": "PP-DocLayout-S",
+    "init_ms": 125.05,
+    "p50_ms": 189.411,
+    "p95_ms": 198.551,
+    "mean_ms": 188.95,
+    "handoff_p50_ms": 0.004,
+    "model_bytes": 4917852,
+    "threads": 1
+  },
+  "handoff_rgba_to_tensor_p50_ms": 3.02,
+  "handoff_rgba_bytes": 921600
+}

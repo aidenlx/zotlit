@@ -1,0 +1,1 @@
+{"id":"zh-trigram","type":"eval","name":"trigram","extPath":null,"tokenize":"trigram","pagesFile":"BENCH_ROOT/progit-zh.clean.json","queriesFile":"BENCH_ROOT/cjk-recall/out/zh-queries.json","falseFile":"BENCH_ROOT/cjk-recall/out/zh-false.json"}

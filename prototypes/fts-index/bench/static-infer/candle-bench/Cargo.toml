@@ -1,0 +1,13 @@
+[package]
+name = "candle_bench"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+candle-core = "0.8"
+candle-onnx = "0.8"
+serde_json = "1"
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3

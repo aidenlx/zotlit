@@ -1,0 +1,495 @@
+{
+  "electron": "43.8.3",
+  "node": "24.22.0",
+  "contexts": {
+    "main": {
+      "ctx": "main",
+      "results": [
+        {
+          "name": "process.versions",
+          "ok": true,
+          "detail": {
+            "electron": "43.8.3",
+            "node": "24.22.0",
+            "modules": "148",
+            "napi": "10",
+            "sqlite": "3.53.4",
+            "chrome": "150.0.7871.250",
+            "type": "browser"
+          }
+        },
+        {
+          "name": "ort_infer",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/ort_infer.linux-x64-gnu.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.297608,
+            "repair_wall_ms": 7.086017,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 39.51943,
+            "doclayout_n": 42
+          },
+          "ctx": "main"
+        },
+        {
+          "name": "ort_infer_static_cxx",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/addons/ort_infer_static_cxx.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.27426300000000003,
+            "repair_wall_ms": 7.388442,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 33.192657,
+            "doclayout_n": 42
+          }
+        },
+        {
+          "name": "better_sqlite3_expected_fail",
+          "ok": true,
+          "detail": {
+            "mismatch": true,
+            "message": "The module 'BENCH_ROOT/electron-compat/addons/better_sqlite3.node'\nwas compiled against a different Node.js version using\nNODE_MODULE_VERSION 115. This version of Node.js requires\nNODE_MODULE_VERSION 148. Please try re-compiling or re-installing\nthe module (for instance, using `npm rebuild` or"
+          }
+        },
+        {
+          "name": "node_sqlite_fts",
+          "ok": true,
+          "detail": {
+            "sqlite_version": "3.53.4",
+            "require_ok": true,
+            "keys": [
+              "DatabaseSync",
+              "StatementSync",
+              "Session",
+              "constants",
+              "backup"
+            ],
+            "allowExtension_open": true,
+            "loadExtension": true,
+            "cjk_phrase": [
+              1
+            ],
+            "cjk_subword": [
+              1
+            ],
+            "ja_query": [
+              2
+            ],
+            "tokenizer_works": true,
+            "allowExtension_false_rejected": true,
+            "allowExtension_false_msg": "extension loading is not allowed"
+          }
+        },
+        {
+          "name": "zerocopy",
+          "ok": true,
+          "detail": {
+            "external_arraybuffer": {
+              "ok": false,
+              "status": 22,
+              "len": 4096,
+              "error": "napi_create_external_arraybuffer status=22 (napi_no_external_buffers_allowed is typically 25)"
+            },
+            "js_buffer_into_native_ms": 0.193665,
+            "js_buffer_wall_ms": 0.213353,
+            "sum": 131064401,
+            "alloc_rust_buffer_ms": 1.921368,
+            "alloc_len": 1048576,
+            "roundtrip_copy_ms": 1.110761,
+            "roundtrip_len": 1048576,
+            "note": "Electron>=21 V8 memory cage typically rejects napi_create_external_arraybuffer; JS-allocated Buffer into native remains fine (may copy under cage)."
+          }
+        },
+        {
+          "name": "ort_worker_threads",
+          "ok": false,
+          "error": "Error: ort: only one environment is allowed per process\n    at BENCH_ROOT/electron-compat/harness/suite.js:176:19\n    at new Promise (<anonymous>)\n    at testOrtWorkerThread (BENCH_ROOT/electron-compat/harness/suite.js:171:10)\n    at runSuite (BENCH_ROOT/electron-compat/harness/suite.js:257:24)\n    at runMain (BENCH_ROOT/electron-compat/harness/main.js:13:32)\n    at BENCH_ROOT/electron-compat/harness/main.js:107:11"
+        }
+      ],
+      "at": "2026-10-27T13:03:10.667Z"
+    },
+    "renderer": {
+      "ctx": "renderer",
+      "results": [
+        {
+          "name": "process.versions",
+          "ok": true,
+          "detail": {
+            "electron": "43.8.3",
+            "node": "24.22.0",
+            "modules": "148",
+            "napi": "10",
+            "sqlite": "3.53.4",
+            "chrome": "150.0.7871.250",
+            "type": "renderer"
+          }
+        },
+        {
+          "name": "ort_infer",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/ort_infer.linux-x64-gnu.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.23395100000000002,
+            "repair_wall_ms": 5.758821,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 51.219164,
+            "doclayout_n": 42
+          },
+          "ctx": "renderer"
+        },
+        {
+          "name": "ort_infer_static_cxx",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/addons/ort_infer_static_cxx.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.248828,
+            "repair_wall_ms": 6.031657,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 33.604306,
+            "doclayout_n": 42
+          }
+        },
+        {
+          "name": "better_sqlite3_expected_fail",
+          "ok": true,
+          "detail": {
+            "mismatch": true,
+            "message": "The module 'BENCH_ROOT/electron-compat/addons/better_sqlite3.node'\nwas compiled against a different Node.js version using\nNODE_MODULE_VERSION 115. This version of Node.js requires\nNODE_MODULE_VERSION 148. Please try re-compiling or re-installing\nthe module (for instance, using `npm rebuild` or"
+          }
+        },
+        {
+          "name": "node_sqlite_fts",
+          "ok": true,
+          "detail": {
+            "sqlite_version": "3.53.4",
+            "require_ok": true,
+            "keys": [
+              "DatabaseSync",
+              "StatementSync",
+              "Session",
+              "constants",
+              "backup"
+            ],
+            "allowExtension_open": true,
+            "loadExtension": true,
+            "cjk_phrase": [
+              1
+            ],
+            "cjk_subword": [
+              1
+            ],
+            "ja_query": [
+              2
+            ],
+            "tokenizer_works": true,
+            "allowExtension_false_rejected": true,
+            "allowExtension_false_msg": "extension loading is not allowed"
+          }
+        },
+        {
+          "name": "zerocopy",
+          "ok": true,
+          "detail": {
+            "external_arraybuffer": {
+              "ok": false,
+              "status": 22,
+              "len": 4096,
+              "error": "napi_create_external_arraybuffer status=22 (napi_no_external_buffers_allowed is typically 25)"
+            },
+            "js_buffer_into_native_ms": 0.20575300000000002,
+            "js_buffer_wall_ms": 0.225091,
+            "sum": 131064401,
+            "alloc_rust_buffer_ms": 1.906029,
+            "alloc_len": 1048576,
+            "roundtrip_copy_ms": 1.044152,
+            "roundtrip_len": 1048576,
+            "note": "Electron>=21 V8 memory cage typically rejects napi_create_external_arraybuffer; JS-allocated Buffer into native remains fine (may copy under cage)."
+          }
+        }
+      ],
+      "at": "2026-10-27T13:03:11.088Z"
+    },
+    "utilityProcess": {
+      "ctx": "utilityProcess",
+      "results": [
+        {
+          "name": "process.versions",
+          "ok": true,
+          "detail": {
+            "electron": "43.8.3",
+            "node": "24.22.0",
+            "modules": "148",
+            "napi": "10",
+            "sqlite": "3.53.4",
+            "chrome": "150.0.7871.250",
+            "type": "utility"
+          }
+        },
+        {
+          "name": "ort_infer",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/ort_infer.linux-x64-gnu.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.21819100000000002,
+            "repair_wall_ms": 5.692361,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 35.687992,
+            "doclayout_n": 42
+          },
+          "ctx": "utilityProcess"
+        },
+        {
+          "name": "ort_infer_static_cxx",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/addons/ort_infer_static_cxx.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.21191100000000002,
+            "repair_wall_ms": 5.947873,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 34.969255999999994,
+            "doclayout_n": 42
+          }
+        },
+        {
+          "name": "better_sqlite3_expected_fail",
+          "ok": true,
+          "detail": {
+            "mismatch": true,
+            "message": "The module 'BENCH_ROOT/electron-compat/addons/better_sqlite3.node'\nwas compiled against a different Node.js version using\nNODE_MODULE_VERSION 115. This version of Node.js requires\nNODE_MODULE_VERSION 148. Please try re-compiling or re-installing\nthe module (for instance, using `npm rebuild` or"
+          }
+        },
+        {
+          "name": "node_sqlite_fts",
+          "ok": true,
+          "detail": {
+            "sqlite_version": "3.53.4",
+            "require_ok": true,
+            "keys": [
+              "DatabaseSync",
+              "StatementSync",
+              "Session",
+              "constants",
+              "backup"
+            ],
+            "allowExtension_open": true,
+            "loadExtension": true,
+            "cjk_phrase": [
+              1
+            ],
+            "cjk_subword": [
+              1
+            ],
+            "ja_query": [
+              2
+            ],
+            "tokenizer_works": true,
+            "allowExtension_false_rejected": true,
+            "allowExtension_false_msg": "extension loading is not allowed"
+          }
+        },
+        {
+          "name": "zerocopy",
+          "ok": true,
+          "detail": {
+            "external_arraybuffer": {
+              "ok": false,
+              "status": 22,
+              "len": 4096,
+              "error": "napi_create_external_arraybuffer status=22 (napi_no_external_buffers_allowed is typically 25)"
+            },
+            "js_buffer_into_native_ms": 0.19126500000000002,
+            "js_buffer_wall_ms": 0.211734,
+            "sum": 131064401,
+            "alloc_rust_buffer_ms": 1.883193,
+            "alloc_len": 1048576,
+            "roundtrip_copy_ms": 0.990246,
+            "roundtrip_len": 1048576,
+            "note": "Electron>=21 V8 memory cage typically rejects napi_create_external_arraybuffer; JS-allocated Buffer into native remains fine (may copy under cage)."
+          }
+        }
+      ],
+      "at": "2026-10-27T13:03:11.444Z"
+    },
+    "child_process_run_as_node": {
+      "ctx": "child_process_ELECTRON_RUN_AS_NODE",
+      "results": [
+        {
+          "name": "process.versions",
+          "ok": true,
+          "detail": {
+            "electron": "43.8.3",
+            "node": "24.22.0",
+            "modules": "148",
+            "napi": "10",
+            "sqlite": "3.53.4",
+            "chrome": "150.0.7871.250",
+            "type": "node"
+          }
+        },
+        {
+          "name": "ort_infer",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/ort_infer.linux-x64-gnu.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.223047,
+            "repair_wall_ms": 5.457869,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 32.712867,
+            "doclayout_n": 42
+          },
+          "ctx": "child_process_ELECTRON_RUN_AS_NODE"
+        },
+        {
+          "name": "ort_infer_static_cxx",
+          "ok": true,
+          "detail": {
+            "addonPath": "BENCH_ROOT/electron-compat/addons/ort_infer_static_cxx.node",
+            "info": {
+              "bitmap_path": "PDF.js + node-canvas RGBA Buffer → Rust preprocess or NCHW Float32Array",
+              "feature_extraction": "JS (document-worker); tensors handed to native",
+              "name": "ort_infer_napi",
+              "ort": "static-linked via ort 2.0.0-rc.15 download-binaries"
+            },
+            "repair_infer_ms": 0.220555,
+            "repair_wall_ms": 5.307415,
+            "logits_len": 32,
+            "doclayout_boxes": [
+              7,
+              6
+            ],
+            "doclayout_infer_ms": 33.321305,
+            "doclayout_n": 42
+          }
+        },
+        {
+          "name": "better_sqlite3_expected_fail",
+          "ok": true,
+          "detail": {
+            "mismatch": true,
+            "message": "The module 'BENCH_ROOT/electron-compat/addons/better_sqlite3.node'\nwas compiled against a different Node.js version using\nNODE_MODULE_VERSION 115. This version of Node.js requires\nNODE_MODULE_VERSION 148. Please try re-compiling or re-installing\nthe module (for instance, using `npm rebuild` or"
+          }
+        },
+        {
+          "name": "node_sqlite_fts",
+          "ok": true,
+          "detail": {
+            "sqlite_version": "3.53.4",
+            "require_ok": true,
+            "keys": [
+              "DatabaseSync",
+              "StatementSync",
+              "Session",
+              "constants",
+              "backup"
+            ],
+            "allowExtension_open": true,
+            "loadExtension": true,
+            "cjk_phrase": [
+              1
+            ],
+            "cjk_subword": [
+              1
+            ],
+            "ja_query": [
+              2
+            ],
+            "tokenizer_works": true,
+            "allowExtension_false_rejected": true,
+            "allowExtension_false_msg": "extension loading is not allowed"
+          }
+        },
+        {
+          "name": "zerocopy",
+          "ok": true,
+          "detail": {
+            "external_arraybuffer": {
+              "ok": false,
+              "status": 22,
+              "len": 4096,
+              "error": "napi_create_external_arraybuffer status=22 (napi_no_external_buffers_allowed is typically 25)"
+            },
+            "js_buffer_into_native_ms": 0.184273,
+            "js_buffer_wall_ms": 0.201704,
+            "sum": 131064401,
+            "alloc_rust_buffer_ms": 1.800928,
+            "alloc_len": 1048576,
+            "roundtrip_copy_ms": 1.052144,
+            "roundtrip_len": 1048576,
+            "note": "Electron>=21 V8 memory cage typically rejects napi_create_external_arraybuffer; JS-allocated Buffer into native remains fine (may copy under cage)."
+          }
+        }
+      ],
+      "at": "2026-10-27T13:03:11.775Z"
+    }
+  }
+}

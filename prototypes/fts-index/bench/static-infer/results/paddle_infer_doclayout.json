@@ -1,0 +1,20 @@
+{
+  "DocLayout-S_t1": {
+    "ok": true,
+    "median_ms": 25.423314998988644,
+    "mean_ms": 25.9066176990018
+  },
+  "DocLayout-S_t4": {
+    "ok": true,
+    "median_ms": 12.26091450007516,
+    "mean_ms": 12.471198099592584
+  },
+  "DocLayout_plus-L_t1": {
+    "ok": false,
+    "error": "In user code:\n\n\n    InvalidArgumentError: Broadcast dimension mismatch. Operands could not be broadcast together with the shape of X = [1, 225, 256] and the shape of Y = [1, 625, 256]. Received [225] in X is not equal to [625] in Y at i:1.\n      [Hint: Expected x_dims_array[i] == y_dims_array[i] || (x_dims_array[i] <= 1 && x_dims_array[i] != 0) || (y_dims_array[i] <= 1 && y_dims_array[i] != 0) == "
+  },
+  "DocLayout_plus-L_t4": {
+    "ok": false,
+    "error": "In user code:\n\n\n    InvalidArgumentError: Broadcast dimension mismatch. Operands could not be broadcast together with the shape of X = [1, 225, 256] and the shape of Y = [1, 625, 256]. Received [225] in X is not equal to [625] in Y at i:1.\n      [Hint: Expected x_dims_array[i] == y_dims_array[i] || (x_dims_array[i] <= 1 && x_dims_array[i] != 0) || (y_dims_array[i] <= 1 && y_dims_array[i] != 0) == "
+  }
+}

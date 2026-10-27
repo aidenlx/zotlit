@@ -1,0 +1,23 @@
+{
+  "classifier": {
+    "latency_ms_median": 1.158874,
+    "max_abs_diff_flow": 0.0,
+    "max_abs_diff_type": 0.0,
+    "ok": true
+  },
+  "clusterer": {
+    "latency_ms_median": 1.940091,
+    "max_abs_diff_emissions": 0.0,
+    "max_abs_diff_object": 0.0,
+    "ok": true
+  },
+  "ocr_det_v5_mobile": {
+    "latency_ms_median": 40.30553,
+    "ok": true
+  },
+  "repair": {
+    "latency_ms_median": 0.037814,
+    "max_abs_diff": 0.0,
+    "ok": true
+  }
+}

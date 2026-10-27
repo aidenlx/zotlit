@@ -1,0 +1,59 @@
+{
+  "clusterer": {
+    "latency_ms_median": 1.6468100002384745,
+    "latency_ms_mean": 1.681438699051796,
+    "latency_ms_min": 1.50224199751392,
+    "latency_ms_max": 2.0078989982721396,
+    "shapes": {
+      "emissions": [
+        1,
+        64,
+        18
+      ],
+      "object_rule_logits": [
+        1,
+        8,
+        2
+      ]
+    },
+    "providers": [
+      "CPUExecutionProvider"
+    ]
+  },
+  "repair": {
+    "latency_ms_median": 0.05384150063036941,
+    "latency_ms_mean": 0.053565950292977504,
+    "latency_ms_min": 0.04881000131717883,
+    "latency_ms_max": 0.05604499892797321,
+    "shapes": {
+      "logits": [
+        32
+      ]
+    }
+  },
+  "classifier": {
+    "latency_ms_median": 1.2590544993145159,
+    "latency_ms_mean": 1.2690697998550604,
+    "latency_ms_min": 1.0954869976558257,
+    "latency_ms_max": 1.4478970006166492,
+    "shapes": {
+      "type_logits": [
+        1,
+        48,
+        7
+      ],
+      "flow_logits": [
+        1,
+        48,
+        3
+      ]
+    }
+  },
+  "model_sizes_bytes": {
+    "clusterer": 4362638,
+    "repair": 358150,
+    "classifier": 4367485
+  },
+  "ort_version": "1.31.1",
+  "threads": 1
+}

@@ -1,0 +1,4 @@
+# Host (non-zig) builds: use g++ so -static-libstdc++ works with libort.
+# cargo-zigbuild overrides the linker for *.2.31 targets.
+[target.x86_64-unknown-linux-gnu]
+linker = "g++"

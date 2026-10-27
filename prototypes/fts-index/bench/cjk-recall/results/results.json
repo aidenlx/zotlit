@@ -1,0 +1,2175 @@
+{
+  "date": "2026-10-27T12:24:31.483Z",
+  "methodology": {
+    "queries": "sampled from progit2-zh/ja asciidoc + zh/ja Wikipedia extracts (CC BY-SA); NOT from SDT/PDF extraction",
+    "index": "progit-zh.clean.json / progit-ja.pages.json (PDF-extracted page text)",
+    "fix": "CJK overlapping bigrams as PRIMARY (sequential) + ICU/jieba words COLOCATED; query emits bigram primaries",
+    "isolation": "each .so loaded in a fresh Node process (SQLite tokenizer symbol collision)"
+  },
+  "diagnostics": {
+    "baseline": [
+      {
+        "q": "版本控制",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式",
+          "式协",
+          "控制",
+          "是",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "控制",
+          "本控",
+          "版本"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": false,
+        "andBiMatch": "\"版本\" AND \"本控\" AND \"控制\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": [
+          "and_bigram_harness_query_split"
+        ]
+      },
+      {
+        "q": "本控制系统",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式",
+          "式协",
+          "控制",
+          "是",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "制系",
+          "控制",
+          "本",
+          "本控",
+          "系统"
+        ],
+        "phraseHit": false,
+        "bareHit": false,
+        "andBiHit": false,
+        "andBiMatch": "\"本控\" AND \"控制\" AND \"制系\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": [
+          "query_tokenize_mismatch_or_position",
+          "substring_mid_word_likely",
+          "and_bigram_harness_query_split"
+        ]
+      },
+      {
+        "q": "制系统是",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式",
+          "式协",
+          "控制",
+          "是",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "制",
+          "制系",
+          "是",
+          "系统",
+          "统是"
+        ],
+        "phraseHit": false,
+        "bareHit": false,
+        "andBiHit": false,
+        "andBiMatch": "\"制系\" AND \"系统\" AND \"统是\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": [
+          "query_tokenize_mismatch_or_position",
+          "substring_mid_word_likely",
+          "and_bigram_harness_query_split"
+        ]
+      },
+      {
+        "q": "软件工程",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式",
+          "式协",
+          "控制",
+          "是",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "件工",
+          "工程",
+          "软件"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": false,
+        "andBiMatch": "\"软件\" AND \"件工\" AND \"工程\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": [
+          "and_bigram_harness_query_split"
+        ]
+      },
+      {
+        "q": "件工程的",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式",
+          "式协",
+          "控制",
+          "是",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "件",
+          "件工",
+          "工程",
+          "的",
+          "程的"
+        ],
+        "phraseHit": false,
+        "bareHit": false,
+        "andBiHit": false,
+        "andBiMatch": "\"件工\" AND \"工程\" AND \"程的\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": [
+          "query_tokenize_mismatch_or_position",
+          "substring_mid_word_likely",
+          "and_bigram_harness_query_split"
+        ]
+      },
+      {
+        "q": "分布式",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式",
+          "式协",
+          "控制",
+          "是",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "分布",
+          "布式",
+          "式"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": false,
+        "andBiMatch": "\"分布\" AND \"布式\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": [
+          "and_bigram_harness_query_split"
+        ]
+      }
+    ],
+    "fixed": [
+      {
+        "q": "版本控制",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式协",
+          "控制",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "控制",
+          "本控",
+          "版本"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": true,
+        "andBiMatch": "\"版本\" AND \"本控\" AND \"控制\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": []
+      },
+      {
+        "q": "本控制系统",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式协",
+          "控制",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "制系",
+          "控制",
+          "本控",
+          "系统"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": true,
+        "andBiMatch": "\"本控\" AND \"控制\" AND \"制系\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": []
+      },
+      {
+        "q": "制系统是",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式协",
+          "控制",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "制系",
+          "系统",
+          "统是"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": true,
+        "andBiMatch": "\"制系\" AND \"系统\" AND \"统是\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": []
+      },
+      {
+        "q": "软件工程",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式协",
+          "控制",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "件工",
+          "工程",
+          "软件"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": true,
+        "andBiMatch": "\"软件\" AND \"件工\" AND \"工程\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": []
+      },
+      {
+        "q": "件工程的",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式协",
+          "控制",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "件工",
+          "工程",
+          "程的"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": true,
+        "andBiMatch": "\"件工\" AND \"工程\" AND \"程的\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": []
+      },
+      {
+        "q": "分布式",
+        "docSnippet": "版本控制系统是软件工程的基础工具，广泛用于分布式协作。",
+        "vocabSample": [
+          "于分",
+          "件工",
+          "分布",
+          "制系",
+          "协作",
+          "基础",
+          "工具",
+          "工程",
+          "布式",
+          "广泛",
+          "式协",
+          "控制",
+          "是软",
+          "本控",
+          "泛用",
+          "版本",
+          "用于",
+          "的基",
+          "础工",
+          "程的",
+          "系统",
+          "统是",
+          "软件"
+        ],
+        "qAsDocTokens": [
+          "分布",
+          "布式"
+        ],
+        "phraseHit": true,
+        "bareHit": true,
+        "andBiHit": true,
+        "andBiMatch": "\"分布\" AND \"布式\"",
+        "phraseErr": null,
+        "andBiErr": null,
+        "causes": []
+      }
+    ]
+  },
+  "zh": [
+    {
+      "name": "baseline-icu",
+      "extPath": "BENCH_ROOT/cjk-recall/dist/baseline/zotlit_cjk_icu.so",
+      "tokenize": "zotlit_cjk",
+      "pages": 501,
+      "indexMs": 131.6,
+      "openMs": 0.8,
+      "tokSampleMs": 7.5,
+      "size": {
+        "terms": 33425,
+        "termChars": 97931
+      },
+      "falseQueries": 40,
+      "falseHitRate": 0.025,
+      "falseHits": 1,
+      "byKind": {
+        "zh-hand": {
+          "n": 17,
+          "skippedNoGt": 6,
+          "phraseRecall": 0.9800292043273693,
+          "bareRecall": 0.9800292043273693,
+          "andBiRecall": 0.6406054114411788,
+          "phrasePrec": 0.9871807101218866,
+          "barePrec": 0.9871807101218866
+        },
+        "zh-term": {
+          "n": 80,
+          "skippedNoGt": 0,
+          "phraseRecall": 0.9468575067262431,
+          "bareRecall": 0.9468575067262431,
+          "andBiRecall": 0.615264759255401,
+          "phrasePrec": 0.9544243313590173,
+          "barePrec": 0.9544243313590173
+        },
+        "cjk-substr": {
+          "n": 184,
+          "skippedNoGt": 16,
+          "phraseRecall": 0.43721693840579706,
+          "bareRecall": 0.43721693840579706,
+          "andBiRecall": 0.03260869565217391,
+          "phrasePrec": 0.4390651896274085,
+          "barePrec": 0.4390651896274085
+        }
+      },
+      "failures": [
+        {
+          "q": "分布式",
+          "kind": "zh-hand",
+          "phraseR": 0.923,
+          "bareR": 0.923,
+          "andR": 0.077,
+          "gt": 13,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "变基",
+          "kind": "zh-hand",
+          "phraseR": 0.981,
+          "bareR": 0.981,
+          "andR": 0.981,
+          "gt": 53,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "快进",
+          "kind": "zh-hand",
+          "phraseR": 0.895,
+          "bareR": 0.895,
+          "andR": 0.895,
+          "gt": 19,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "子模块",
+          "kind": "zh-hand",
+          "phraseR": 0.938,
+          "bareR": 0.938,
+          "andR": 0.938,
+          "gt": 32,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "Git",
+          "kind": "zh-hand",
+          "phraseR": 0.924,
+          "bareR": 0.924,
+          "andR": 0,
+          "gt": 395,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "的内容",
+          "kind": "zh-term",
+          "phraseR": 0.933,
+          "bareR": 0.933,
+          "andR": 0,
+          "gt": 89,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "可以通过",
+          "kind": "zh-term",
+          "phraseR": 0.894,
+          "bareR": 0.894,
+          "andR": 0,
+          "gt": 94,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "可以运行",
+          "kind": "zh-term",
+          "phraseR": 0.94,
+          "bareR": 0.94,
+          "andR": 0,
+          "gt": 50,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "这意味着",
+          "kind": "zh-term",
+          "phraseR": 0.963,
+          "bareR": 0.963,
+          "andR": 0,
+          "gt": 27,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "可以使用",
+          "kind": "zh-term",
+          "phraseR": 0.933,
+          "bareR": 0.933,
+          "andR": 0,
+          "gt": 104,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "你可以通",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 32,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "的提交",
+          "kind": "zh-term",
+          "phraseR": 0.888,
+          "bareR": 0.888,
+          "andR": 0,
+          "gt": 179,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "在本例中",
+          "kind": "zh-term",
+          "phraseR": 0.952,
+          "bareR": 0.952,
+          "andR": 0.952,
+          "gt": 21,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "的文件",
+          "kind": "zh-term",
+          "phraseR": 0.917,
+          "bareR": 0.917,
+          "andR": 0.008,
+          "gt": 121,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "服务器上",
+          "kind": "zh-term",
+          "phraseR": 0.907,
+          "bareR": 0.907,
+          "andR": 0.019,
+          "gt": 54,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "你可以使",
+          "kind": "zh-term",
+          "phraseR": 0.024,
+          "bareR": 0.024,
+          "andR": 0,
+          "gt": 42,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "一个分支",
+          "kind": "zh-term",
+          "phraseR": 0.593,
+          "bareR": 0.593,
+          "andR": 0,
+          "gt": 54,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "一节中",
+          "kind": "zh-term",
+          "phraseR": 0.933,
+          "bareR": 0.933,
+          "andR": 0.2,
+          "gt": 15,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "一节中我",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 8,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "服务器",
+          "kind": "zh-term",
+          "phraseR": 0.992,
+          "bareR": 0.992,
+          "andR": 0.042,
+          "gt": 119,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "你可以在",
+          "kind": "zh-term",
+          "phraseR": 0.88,
+          "bareR": 0.88,
+          "andR": 0,
+          "gt": 50,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "为自己推",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "果你想启用它们",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "我们想找",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "示的顺序是相反",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    },
+    {
+      "name": "baseline-jieba",
+      "extPath": "BENCH_ROOT/cjk-recall/dist/baseline/zotlit_cjk_icu_jieba.so",
+      "tokenize": "zotlit_cjk",
+      "pages": 501,
+      "indexMs": 73.8,
+      "openMs": 94.9,
+      "tokSampleMs": 5.2,
+      "size": {
+        "terms": 11605,
+        "termChars": 55881
+      },
+      "falseQueries": 40,
+      "falseHitRate": 0.425,
+      "falseHits": 17,
+      "byKind": {
+        "zh-hand": {
+          "n": 17,
+          "skippedNoGt": 6,
+          "phraseRecall": 0.9913265370256309,
+          "bareRecall": 0.9913265370256309,
+          "andBiRecall": 0.7134412056779018,
+          "phrasePrec": 0.8760988899953366,
+          "barePrec": 0.8760988899953366
+        },
+        "zh-term": {
+          "n": 80,
+          "skippedNoGt": 0,
+          "phraseRecall": 0.9875,
+          "bareRecall": 0.9875,
+          "andBiRecall": 0.7895213017328503,
+          "phrasePrec": 0.796907408178914,
+          "barePrec": 0.796907408178914
+        },
+        "cjk-substr": {
+          "n": 184,
+          "skippedNoGt": 16,
+          "phraseRecall": 0.9184782608695652,
+          "bareRecall": 0.9184782608695652,
+          "andBiRecall": 0.42586147774327127,
+          "phrasePrec": 0.42843823693433825,
+          "barePrec": 0.42843823693433825
+        }
+      },
+      "failures": [
+        {
+          "q": "变基",
+          "kind": "zh-hand",
+          "phraseR": 0.981,
+          "bareR": 0.981,
+          "andR": 0.981,
+          "gt": 53,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "快进",
+          "kind": "zh-hand",
+          "phraseR": 0.947,
+          "bareR": 0.947,
+          "andR": 0.947,
+          "gt": 19,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "Git",
+          "kind": "zh-hand",
+          "phraseR": 0.924,
+          "bareR": 0.924,
+          "andR": 0,
+          "gt": 395,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "你的",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 230,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "互式变基工具",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 2,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "交到我们自",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "当多的这两种",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "加至任何提交记",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "视化这个过程",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "默认会尝试更新",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "想要从所有地方",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "照是完全一",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "合你的数",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "文件而把项目弄",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "本库都有读写的",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "了解到这些",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "统的集中式版本",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "项来完成同",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "代码是基本稳定",
+          "kind": "cjk-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 1,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    },
+    {
+      "name": "fixed-icu",
+      "extPath": "BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so",
+      "tokenize": "zotlit_cjk",
+      "pages": 501,
+      "indexMs": 106.7,
+      "openMs": 0.8,
+      "tokSampleMs": 7.5,
+      "size": {
+        "terms": 32744,
+        "termChars": 97250
+      },
+      "falseQueries": 40,
+      "falseHitRate": 0,
+      "falseHits": 0,
+      "byKind": {
+        "zh-hand": {
+          "n": 17,
+          "skippedNoGt": 6,
+          "phraseRecall": 0.9955323901712584,
+          "bareRecall": 0.9955323901712584,
+          "andBiRecall": 0.9411764705882353,
+          "phrasePrec": 0.9895336512983571,
+          "barePrec": 0.9895336512983571
+        },
+        "zh-term": {
+          "n": 80,
+          "skippedNoGt": 0,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        },
+        "cjk-substr": {
+          "n": 184,
+          "skippedNoGt": 16,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        }
+      },
+      "failures": [
+        {
+          "q": "Git",
+          "kind": "zh-hand",
+          "phraseR": 0.924,
+          "bareR": 0.924,
+          "andR": 0,
+          "gt": 395,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    },
+    {
+      "name": "fixed-jieba",
+      "extPath": "BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu_jieba.so",
+      "tokenize": "zotlit_cjk",
+      "pages": 501,
+      "indexMs": 113.8,
+      "openMs": 89.6,
+      "tokSampleMs": 6.8,
+      "size": {
+        "terms": 33574,
+        "termChars": 100124
+      },
+      "falseQueries": 40,
+      "falseHitRate": 0,
+      "falseHits": 0,
+      "byKind": {
+        "zh-hand": {
+          "n": 17,
+          "skippedNoGt": 6,
+          "phraseRecall": 0.9955323901712584,
+          "bareRecall": 0.9955323901712584,
+          "andBiRecall": 0.9411764705882353,
+          "phrasePrec": 0.9895336512983571,
+          "barePrec": 0.9895336512983571
+        },
+        "zh-term": {
+          "n": 80,
+          "skippedNoGt": 0,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        },
+        "cjk-substr": {
+          "n": 184,
+          "skippedNoGt": 16,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        }
+      },
+      "failures": [
+        {
+          "q": "Git",
+          "kind": "zh-hand",
+          "phraseR": 0.924,
+          "bareR": 0.924,
+          "andR": 0,
+          "gt": 395,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    },
+    {
+      "name": "trigram",
+      "extPath": null,
+      "tokenize": "trigram",
+      "pages": 501,
+      "indexMs": 118.8,
+      "openMs": 0.6,
+      "tokSampleMs": null,
+      "size": {
+        "terms": 110024,
+        "termChars": 330072
+      },
+      "falseQueries": 40,
+      "falseHitRate": 0,
+      "falseHits": 0,
+      "byKind": {
+        "zh-hand": {
+          "n": 17,
+          "skippedNoGt": 6,
+          "phraseRecall": 0.4117647058823529,
+          "bareRecall": 0.4117647058823529,
+          "andBiRecall": 0,
+          "phrasePrec": 0.4018575851393189,
+          "barePrec": 0.4018575851393189
+        },
+        "zh-term": {
+          "n": 80,
+          "skippedNoGt": 0,
+          "phraseRecall": 0.4125,
+          "bareRecall": 0.4125,
+          "andBiRecall": 0,
+          "phrasePrec": 0.4125,
+          "barePrec": 0.4125
+        },
+        "cjk-substr": {
+          "n": 184,
+          "skippedNoGt": 16,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 0,
+          "phrasePrec": 1,
+          "barePrec": 1
+        }
+      },
+      "failures": [
+        {
+          "q": "版本",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 171,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "控制",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 61,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "系统",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 107,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "仓库",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 166,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "分支",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 248,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "提交",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 330,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "合并",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 176,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "变基",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 53,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "快进",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 19,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "索引",
+          "kind": "zh-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 34,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "执行",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 91,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "一个",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 429,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "引用",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 95,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "工具",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 100,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "设置",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 115,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "仓库",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 166,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "操作",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 118,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "因为",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 152,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "首先",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 68,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "运行",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 216,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "然而",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 59,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "请求",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 57,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "使用",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 321,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "提交",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 330,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "你的",
+          "kind": "zh-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 230,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    }
+  ],
+  "ja": [
+    {
+      "name": "baseline-icu",
+      "extPath": "BENCH_ROOT/cjk-recall/dist/baseline/zotlit_cjk_icu.so",
+      "tokenize": "zotlit_cjk",
+      "pages": 447,
+      "indexMs": 103.8,
+      "openMs": 0.8,
+      "tokSampleMs": 18.8,
+      "size": {
+        "terms": 17066,
+        "termChars": 45043
+      },
+      "falseQueries": 30,
+      "falseHitRate": 0,
+      "falseHits": 0,
+      "byKind": {
+        "ja-hand": {
+          "n": 11,
+          "skippedNoGt": 3,
+          "phraseRecall": 0.9820917767695686,
+          "bareRecall": 0.9820917767695686,
+          "andBiRecall": 0.9090909090909091,
+          "phrasePrec": 1,
+          "barePrec": 1
+        },
+        "ja-term": {
+          "n": 40,
+          "skippedNoGt": 0,
+          "phraseRecall": 0.9664865872912252,
+          "bareRecall": 0.9664865872912252,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        },
+        "ja-substr": {
+          "n": 70,
+          "skippedNoGt": 10,
+          "phraseRecall": 0.36800175631702725,
+          "bareRecall": 0.36800175631702725,
+          "andBiRecall": 0.13505747126436782,
+          "phrasePrec": 0.41045454545454546,
+          "barePrec": 0.41045454545454546
+        }
+      },
+      "failures": [
+        {
+          "q": "ブランチ",
+          "kind": "ja-hand",
+          "phraseR": 0.937,
+          "bareR": 0.937,
+          "andR": 1,
+          "gt": 205,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "リポジトリ",
+          "kind": "ja-hand",
+          "phraseR": 0.97,
+          "bareR": 0.97,
+          "andR": 1,
+          "gt": 198,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "コミット",
+          "kind": "ja-hand",
+          "phraseR": 0.943,
+          "bareR": 0.943,
+          "andR": 1,
+          "gt": 261,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "マージ",
+          "kind": "ja-hand",
+          "phraseR": 0.954,
+          "bareR": 0.954,
+          "andR": 1,
+          "gt": 131,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "オプション",
+          "kind": "ja-term",
+          "phraseR": 0.98,
+          "bareR": 0.98,
+          "andR": 1,
+          "gt": 100,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "サーバー",
+          "kind": "ja-term",
+          "phraseR": 0.88,
+          "bareR": 0.88,
+          "andR": 1,
+          "gt": 117,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "データ",
+          "kind": "ja-term",
+          "phraseR": 0.71,
+          "bareR": 0.71,
+          "andR": 1,
+          "gt": 124,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "ユーザー",
+          "kind": "ja-term",
+          "phraseR": 0.937,
+          "bareR": 0.937,
+          "andR": 1,
+          "gt": 63,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "ブランチ",
+          "kind": "ja-term",
+          "phraseR": 0.937,
+          "bareR": 0.937,
+          "andR": 1,
+          "gt": 205,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "コミット",
+          "kind": "ja-term",
+          "phraseR": 0.943,
+          "bareR": 0.943,
+          "andR": 1,
+          "gt": 261,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "システム",
+          "kind": "ja-term",
+          "phraseR": 0.838,
+          "bareR": 0.838,
+          "andR": 1,
+          "gt": 80,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "プロジェクト",
+          "kind": "ja-term",
+          "phraseR": 0.952,
+          "bareR": 0.952,
+          "andR": 1,
+          "gt": 186,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "ディレクトリ",
+          "kind": "ja-term",
+          "phraseR": 0.947,
+          "bareR": 0.947,
+          "andR": 1,
+          "gt": 132,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "アクセス",
+          "kind": "ja-term",
+          "phraseR": 0.953,
+          "bareR": 0.953,
+          "andR": 1,
+          "gt": 64,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "オブジェクト",
+          "kind": "ja-term",
+          "phraseR": 0.763,
+          "bareR": 0.763,
+          "andR": 1,
+          "gt": 59,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "リポジトリ",
+          "kind": "ja-term",
+          "phraseR": 0.97,
+          "bareR": 0.97,
+          "andR": 1,
+          "gt": 198,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "コマンド",
+          "kind": "ja-term",
+          "phraseR": 0.946,
+          "bareR": 0.946,
+          "andR": 1,
+          "gt": 240,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "ファイル",
+          "kind": "ja-term",
+          "phraseR": 0.952,
+          "bareR": 0.952,
+          "andR": 1,
+          "gt": 230,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "マージ",
+          "kind": "ja-term",
+          "phraseR": 0.954,
+          "bareR": 0.954,
+          "andR": 1,
+          "gt": 131,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "ーザーにとっては",
+          "kind": "ja-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "用すれば",
+          "kind": "ja-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 5,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "を使うこ",
+          "kind": "ja-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 38,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "らはたどれる",
+          "kind": "ja-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 2,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "する必要があり",
+          "kind": "ja-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 33,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "も見ていきま",
+          "kind": "ja-substr",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 1,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    },
+    {
+      "name": "fixed-icu",
+      "extPath": "BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so",
+      "tokenize": "zotlit_cjk",
+      "pages": 447,
+      "indexMs": 103.6,
+      "openMs": 0.7,
+      "tokSampleMs": 9,
+      "size": {
+        "terms": 16650,
+        "termChars": 44627
+      },
+      "falseQueries": 30,
+      "falseHitRate": 0,
+      "falseHits": 0,
+      "byKind": {
+        "ja-hand": {
+          "n": 11,
+          "skippedNoGt": 3,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        },
+        "ja-term": {
+          "n": 40,
+          "skippedNoGt": 0,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        },
+        "ja-substr": {
+          "n": 70,
+          "skippedNoGt": 10,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 1,
+          "phrasePrec": 1,
+          "barePrec": 1
+        }
+      },
+      "failures": []
+    },
+    {
+      "name": "trigram",
+      "extPath": null,
+      "tokenize": "trigram",
+      "pages": 447,
+      "indexMs": 83.2,
+      "openMs": 0.6,
+      "tokSampleMs": null,
+      "size": {
+        "terms": 62887,
+        "termChars": 188661
+      },
+      "falseQueries": 30,
+      "falseHitRate": 0,
+      "falseHits": 0,
+      "byKind": {
+        "ja-hand": {
+          "n": 11,
+          "skippedNoGt": 3,
+          "phraseRecall": 0.8181818181818182,
+          "bareRecall": 0.8181818181818182,
+          "andBiRecall": 0,
+          "phrasePrec": 0.8181818181818182,
+          "barePrec": 0.8181818181818182
+        },
+        "ja-term": {
+          "n": 40,
+          "skippedNoGt": 0,
+          "phraseRecall": 0.425,
+          "bareRecall": 0.425,
+          "andBiRecall": 0,
+          "phrasePrec": 0.425,
+          "barePrec": 0.425
+        },
+        "ja-substr": {
+          "n": 70,
+          "skippedNoGt": 10,
+          "phraseRecall": 1,
+          "bareRecall": 1,
+          "andBiRecall": 0,
+          "phrasePrec": 1,
+          "barePrec": 1
+        }
+      },
+      "failures": [
+        {
+          "q": "変更",
+          "kind": "ja-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 197,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "管理",
+          "kind": "ja-hand",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 82,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "変更",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 197,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "作成",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 136,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "削除",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 68,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "機能",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 94,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "設定",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 140,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "必要",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 167,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "歴史",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 86,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "使用",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 119,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "状態",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 134,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "表示",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 120,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "場合",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 288,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "指定",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 149,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "取得",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 95,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "方法",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 166,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "処理",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 87,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "内容",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 179,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "簡単",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 102,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "実行",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 235,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "追加",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 151,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "情報",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 95,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "説明",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 120,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "参照",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 107,
+          "phraseErr": null,
+          "andErr": null
+        },
+        {
+          "q": "作業",
+          "kind": "ja-term",
+          "phraseR": 0,
+          "bareR": 0,
+          "andR": 0,
+          "gt": 213,
+          "phraseErr": null,
+          "andErr": null
+        }
+      ]
+    }
+  ],
+  "wikiSelf": {
+    "name": "fixed-icu-wiki-self",
+    "extPath": "BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so",
+    "tokenize": "zotlit_cjk",
+    "pages": 69,
+    "indexMs": 9.7,
+    "openMs": 0.8,
+    "tokSampleMs": 4.3,
+    "size": {
+      "terms": 6799,
+      "termChars": 15752
+    },
+    "falseQueries": 30,
+    "falseHitRate": 0,
+    "falseHits": 0,
+    "byKind": {
+      "cjk-substr": {
+        "n": 60,
+        "skippedNoGt": 0,
+        "phraseRecall": 1,
+        "bareRecall": 1,
+        "andBiRecall": 1,
+        "phrasePrec": 1,
+        "barePrec": 1
+      },
+      "zh-hand": {
+        "n": 16,
+        "skippedNoGt": 6,
+        "phraseRecall": 1,
+        "bareRecall": 1,
+        "andBiRecall": 1,
+        "phrasePrec": 1,
+        "barePrec": 1
+      }
+    },
+    "failures": []
+  }
+}

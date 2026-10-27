@@ -1,0 +1,11 @@
+{
+  "twice_in_main": {
+    "ok": false,
+    "error": "ort: only one environment is allowed per process"
+  },
+  "worker_after_main": {
+    "ok": false,
+    "error": "ort: only one environment is allowed per process"
+  },
+  "worker_only": null
+}

@@ -1,0 +1,3468 @@
+{
+  "version": "v3",
+  "tokenizer": "BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so",
+  "methodology": {
+    "version": 3,
+    "methodology": "Source GT (LaTeX/AsciiDoc/hand) aligned to PDF via soft/fuzzy. Queries never from A/B/C/D. Tokenizer fixed zotlit_cjk bigram-primary. Inference Rust static ort napi.",
+    "tokenizer": "BENCH_ROOT/cjk-recall/dist/fixed/zotlit_cjk_icu.so",
+    "pdf_dir": "BENCH_ROOT/layout-compare/corpus-v3/pdfs-cap",
+    "n_docs": 29,
+    "n_2col": 20,
+    "n_1col": 9,
+    "mean_alignment_coverage": 0.4556,
+    "total_queries": 623,
+    "total_cross_line": 466
+  },
+  "nDocs": 29,
+  "nTwoCol": 20,
+  "nOneCol": 9,
+  "totalQueries": 623,
+  "meanAlignCoverage": 0.4556,
+  "avg_all": {
+    "A": {
+      "nDocs": 29,
+      "phraseRecall": {
+        "mean": 0.9389,
+        "lo": 0.9091,
+        "hi": 0.9639,
+        "n": 29
+      },
+      "andRecall": {
+        "mean": 0.9561,
+        "lo": 0.9248,
+        "hi": 0.9812,
+        "n": 29
+      },
+      "crossLineRecall": {
+        "mean": 0.9325,
+        "lo": 0.9009,
+        "hi": 0.963,
+        "n": 28
+      },
+      "crossColRecall": {
+        "mean": 0.9206,
+        "lo": 0.8333,
+        "hi": 0.9881,
+        "n": 21
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 4.2555,
+        "lo": 1.9045,
+        "hi": 7.4117,
+        "n": 29
+      },
+      "readingOrderAdj": {
+        "mean": 0.7529,
+        "lo": 0.6695,
+        "hi": 0.8333,
+        "n": 29
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "indexBytes": 86581,
+      "indexMs": 5.98,
+      "meanChars": 21557,
+      "meanUnits": 5.9
+    },
+    "B": {
+      "nDocs": 29,
+      "phraseRecall": {
+        "mean": 0.7414,
+        "lo": 0.6536,
+        "hi": 0.826,
+        "n": 29
+      },
+      "andRecall": {
+        "mean": 0.9106,
+        "lo": 0.8621,
+        "hi": 0.953,
+        "n": 29
+      },
+      "crossLineRecall": {
+        "mean": 0.6708,
+        "lo": 0.5519,
+        "hi": 0.7815,
+        "n": 28
+      },
+      "crossColRecall": {
+        "mean": 0.7048,
+        "lo": 0.5476,
+        "hi": 0.8476,
+        "n": 21
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 3.6286,
+        "lo": 1.5679,
+        "hi": 6.6514,
+        "n": 29
+      },
+      "readingOrderAdj": {
+        "mean": 0.546,
+        "lo": 0.4224,
+        "hi": 0.6638,
+        "n": 29
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "indexBytes": 86298,
+      "indexMs": 5.25,
+      "meanChars": 21327,
+      "meanUnits": 5.9
+    },
+    "C-block": {
+      "nDocs": 29,
+      "phraseRecall": {
+        "mean": 0.8446,
+        "lo": 0.7712,
+        "hi": 0.8963,
+        "n": 29
+      },
+      "andRecall": {
+        "mean": 0.8791,
+        "lo": 0.8381,
+        "hi": 0.9162,
+        "n": 29
+      },
+      "crossLineRecall": {
+        "mean": 0.8197,
+        "lo": 0.7406,
+        "hi": 0.8813,
+        "n": 28
+      },
+      "crossColRecall": {
+        "mean": 0.8397,
+        "lo": 0.7111,
+        "hi": 0.9444,
+        "n": 21
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 1.2772,
+        "lo": 0.3138,
+        "hi": 2.5766,
+        "n": 29
+      },
+      "readingOrderAdj": {
+        "mean": 0.7586,
+        "lo": 0.6695,
+        "hi": 0.8448,
+        "n": 29
+      },
+      "blockTop1": {
+        "mean": 0.9915,
+        "lo": 0.9762,
+        "hi": 1,
+        "n": 29
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "indexBytes": 84604,
+      "indexMs": 26.69,
+      "meanChars": 17510,
+      "meanUnits": 53.1
+    },
+    "C-page": {
+      "nDocs": 29,
+      "phraseRecall": {
+        "mean": 0.8524,
+        "lo": 0.7884,
+        "hi": 0.9044,
+        "n": 29
+      },
+      "andRecall": {
+        "mean": 0.8885,
+        "lo": 0.847,
+        "hi": 0.9263,
+        "n": 29
+      },
+      "crossLineRecall": {
+        "mean": 0.8301,
+        "lo": 0.7528,
+        "hi": 0.8921,
+        "n": 28
+      },
+      "crossColRecall": {
+        "mean": 0.8397,
+        "lo": 0.7087,
+        "hi": 0.9405,
+        "n": 21
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 1.2772,
+        "lo": 0.3138,
+        "hi": 2.5545,
+        "n": 29
+      },
+      "readingOrderAdj": {
+        "mean": 0.7586,
+        "lo": 0.6781,
+        "hi": 0.842,
+        "n": 29
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "indexBytes": 73446,
+      "indexMs": 4.76,
+      "meanChars": 17510,
+      "meanUnits": 5.9
+    },
+    "D-block": {
+      "nDocs": 29,
+      "phraseRecall": {
+        "mean": 0.6189,
+        "lo": 0.5486,
+        "hi": 0.6872,
+        "n": 29
+      },
+      "andRecall": {
+        "mean": 0.7114,
+        "lo": 0.6379,
+        "hi": 0.7765,
+        "n": 29
+      },
+      "crossLineRecall": {
+        "mean": 0.5779,
+        "lo": 0.5077,
+        "hi": 0.6445,
+        "n": 28
+      },
+      "crossColRecall": {
+        "mean": 0.6079,
+        "lo": 0.423,
+        "hi": 0.7778,
+        "n": 21
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 4.0986,
+        "lo": 1.6131,
+        "hi": 7.3679,
+        "n": 29
+      },
+      "readingOrderAdj": {
+        "mean": 0.4396,
+        "lo": 0.3506,
+        "hi": 0.5345,
+        "n": 29
+      },
+      "blockTop1": {
+        "mean": 0.9906,
+        "lo": 0.9739,
+        "hi": 1,
+        "n": 29
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "indexBytes": 92372,
+      "indexMs": 28.1,
+      "meanChars": 20660,
+      "meanUnits": 52.3
+    },
+    "D-page": {
+      "nDocs": 29,
+      "phraseRecall": {
+        "mean": 0.6267,
+        "lo": 0.5486,
+        "hi": 0.6973,
+        "n": 29
+      },
+      "andRecall": {
+        "mean": 0.7568,
+        "lo": 0.6892,
+        "hi": 0.8238,
+        "n": 29
+      },
+      "crossLineRecall": {
+        "mean": 0.5883,
+        "lo": 0.513,
+        "hi": 0.6567,
+        "n": 28
+      },
+      "crossColRecall": {
+        "mean": 0.6413,
+        "lo": 0.4802,
+        "hi": 0.7992,
+        "n": 21
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 4.0986,
+        "lo": 1.7248,
+        "hi": 7.3907,
+        "n": 29
+      },
+      "readingOrderAdj": {
+        "mean": 0.4396,
+        "lo": 0.3419,
+        "hi": 0.5373,
+        "n": 29
+      },
+      "blockTop1": {
+        "mean": 0.9931,
+        "lo": 0.9793,
+        "hi": 1,
+        "n": 29
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 29
+      },
+      "indexBytes": 80508,
+      "indexMs": 5.11,
+      "meanChars": 20660,
+      "meanUnits": 5.9
+    }
+  },
+  "avg_2col": {
+    "A": {
+      "nDocs": 20,
+      "phraseRecall": {
+        "mean": 0.9432,
+        "lo": 0.9159,
+        "hi": 0.9682,
+        "n": 20
+      },
+      "andRecall": {
+        "mean": 0.9636,
+        "lo": 0.9409,
+        "hi": 0.9818,
+        "n": 20
+      },
+      "crossLineRecall": {
+        "mean": 0.9355,
+        "lo": 0.9018,
+        "hi": 0.9664,
+        "n": 20
+      },
+      "crossColRecall": {
+        "mean": 0.9333,
+        "lo": 0.85,
+        "hi": 1,
+        "n": 15
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 4.546,
+        "lo": 1.591,
+        "hi": 8.6365,
+        "n": 20
+      },
+      "readingOrderAdj": {
+        "mean": 0.7125,
+        "lo": 0.625,
+        "hi": 0.8,
+        "n": 20
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "indexBytes": 91546,
+      "indexMs": 5.21,
+      "meanChars": 23104,
+      "meanUnits": 6
+    },
+    "B": {
+      "nDocs": 20,
+      "phraseRecall": {
+        "mean": 0.7477,
+        "lo": 0.6409,
+        "hi": 0.8432,
+        "n": 20
+      },
+      "andRecall": {
+        "mean": 0.9091,
+        "lo": 0.8454,
+        "hi": 0.9591,
+        "n": 20
+      },
+      "crossLineRecall": {
+        "mean": 0.6901,
+        "lo": 0.5567,
+        "hi": 0.8049,
+        "n": 20
+      },
+      "crossColRecall": {
+        "mean": 0.6978,
+        "lo": 0.5111,
+        "hi": 0.86,
+        "n": 15
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 3.637,
+        "lo": 0.91,
+        "hi": 7.727,
+        "n": 20
+      },
+      "readingOrderAdj": {
+        "mean": 0.5125,
+        "lo": 0.3958,
+        "hi": 0.6292,
+        "n": 20
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "indexBytes": 91546,
+      "indexMs": 5.51,
+      "meanChars": 22862,
+      "meanUnits": 6
+    },
+    "C-block": {
+      "nDocs": 20,
+      "phraseRecall": {
+        "mean": 0.85,
+        "lo": 0.7954,
+        "hi": 0.8955,
+        "n": 20
+      },
+      "andRecall": {
+        "mean": 0.875,
+        "lo": 0.8295,
+        "hi": 0.9182,
+        "n": 20
+      },
+      "crossLineRecall": {
+        "mean": 0.8238,
+        "lo": 0.7642,
+        "hi": 0.8767,
+        "n": 20
+      },
+      "crossColRecall": {
+        "mean": 0.82,
+        "lo": 0.66,
+        "hi": 0.9433,
+        "n": 15
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 0.91,
+        "lo": 0.2275,
+        "hi": 1.82,
+        "n": 20
+      },
+      "readingOrderAdj": {
+        "mean": 0.725,
+        "lo": 0.6333,
+        "hi": 0.8125,
+        "n": 20
+      },
+      "blockTop1": {
+        "mean": 0.9977,
+        "lo": 0.9932,
+        "hi": 1,
+        "n": 20
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "indexBytes": 86221,
+      "indexMs": 27.45,
+      "meanChars": 18297,
+      "meanUnits": 53.9
+    },
+    "C-page": {
+      "nDocs": 20,
+      "phraseRecall": {
+        "mean": 0.8523,
+        "lo": 0.7932,
+        "hi": 0.9,
+        "n": 20
+      },
+      "andRecall": {
+        "mean": 0.8773,
+        "lo": 0.8318,
+        "hi": 0.9182,
+        "n": 20
+      },
+      "crossLineRecall": {
+        "mean": 0.8266,
+        "lo": 0.7665,
+        "hi": 0.8806,
+        "n": 20
+      },
+      "crossColRecall": {
+        "mean": 0.82,
+        "lo": 0.6667,
+        "hi": 0.94,
+        "n": 15
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 0.91,
+        "lo": 0.2275,
+        "hi": 1.82,
+        "n": 20
+      },
+      "readingOrderAdj": {
+        "mean": 0.725,
+        "lo": 0.6333,
+        "hi": 0.8167,
+        "n": 20
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "indexBytes": 75162,
+      "indexMs": 5.01,
+      "meanChars": 18297,
+      "meanUnits": 6
+    },
+    "D-block": {
+      "nDocs": 20,
+      "phraseRecall": {
+        "mean": 0.6432,
+        "lo": 0.5614,
+        "hi": 0.7205,
+        "n": 20
+      },
+      "andRecall": {
+        "mean": 0.7364,
+        "lo": 0.6591,
+        "hi": 0.8091,
+        "n": 20
+      },
+      "crossLineRecall": {
+        "mean": 0.6097,
+        "lo": 0.5318,
+        "hi": 0.6874,
+        "n": 20
+      },
+      "crossColRecall": {
+        "mean": 0.6022,
+        "lo": 0.3711,
+        "hi": 0.8244,
+        "n": 15
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 4.546,
+        "lo": 1.364,
+        "hi": 8.8635,
+        "n": 20
+      },
+      "readingOrderAdj": {
+        "mean": 0.4333,
+        "lo": 0.35,
+        "hi": 0.5167,
+        "n": 20
+      },
+      "blockTop1": {
+        "mean": 0.9964,
+        "lo": 0.9893,
+        "hi": 1,
+        "n": 20
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "indexBytes": 95437,
+      "indexMs": 30.35,
+      "meanChars": 21556,
+      "meanUnits": 54
+    },
+    "D-page": {
+      "nDocs": 20,
+      "phraseRecall": {
+        "mean": 0.6523,
+        "lo": 0.5682,
+        "hi": 0.7273,
+        "n": 20
+      },
+      "andRecall": {
+        "mean": 0.7841,
+        "lo": 0.7114,
+        "hi": 0.8568,
+        "n": 20
+      },
+      "crossLineRecall": {
+        "mean": 0.6213,
+        "lo": 0.5354,
+        "hi": 0.7027,
+        "n": 20
+      },
+      "crossColRecall": {
+        "mean": 0.6356,
+        "lo": 0.4189,
+        "hi": 0.8389,
+        "n": 15
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 4.546,
+        "lo": 1.364,
+        "hi": 8.8635,
+        "n": 20
+      },
+      "readingOrderAdj": {
+        "mean": 0.4333,
+        "lo": 0.3458,
+        "hi": 0.5167,
+        "n": 20
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 20
+      },
+      "indexBytes": 84173,
+      "indexMs": 5.56,
+      "meanChars": 21556,
+      "meanUnits": 6
+    }
+  },
+  "avg_1col": {
+    "A": {
+      "nDocs": 9,
+      "phraseRecall": {
+        "mean": 0.9293,
+        "lo": 0.8485,
+        "hi": 0.9848,
+        "n": 9
+      },
+      "andRecall": {
+        "mean": 0.9394,
+        "lo": 0.8586,
+        "hi": 1,
+        "n": 9
+      },
+      "crossLineRecall": {
+        "mean": 0.9249,
+        "lo": 0.8438,
+        "hi": 0.9853,
+        "n": 8
+      },
+      "crossColRecall": {
+        "mean": 0.8889,
+        "lo": 0.6666,
+        "hi": 1,
+        "n": 6
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 3.61,
+        "lo": 1.0111,
+        "hi": 6.7856,
+        "n": 9
+      },
+      "readingOrderAdj": {
+        "mean": 0.8426,
+        "lo": 0.6574,
+        "hi": 0.9722,
+        "n": 9
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "indexBytes": 75548,
+      "indexMs": 7.71,
+      "meanChars": 18119,
+      "meanUnits": 5.6
+    },
+    "B": {
+      "nDocs": 9,
+      "phraseRecall": {
+        "mean": 0.7273,
+        "lo": 0.5455,
+        "hi": 0.899,
+        "n": 9
+      },
+      "andRecall": {
+        "mean": 0.9141,
+        "lo": 0.8232,
+        "hi": 0.9798,
+        "n": 9
+      },
+      "crossLineRecall": {
+        "mean": 0.6225,
+        "lo": 0.3523,
+        "hi": 0.8463,
+        "n": 8
+      },
+      "crossColRecall": {
+        "mean": 0.7222,
+        "lo": 0.3889,
+        "hi": 1,
+        "n": 6
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 3.61,
+        "lo": 1.0111,
+        "hi": 6.7856,
+        "n": 9
+      },
+      "readingOrderAdj": {
+        "mean": 0.6204,
+        "lo": 0.3426,
+        "hi": 0.8704,
+        "n": 9
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "indexBytes": 74638,
+      "indexMs": 4.67,
+      "meanChars": 17915,
+      "meanUnits": 5.6
+    },
+    "C-block": {
+      "nDocs": 9,
+      "phraseRecall": {
+        "mean": 0.8326,
+        "lo": 0.6558,
+        "hi": 0.9495,
+        "n": 9
+      },
+      "andRecall": {
+        "mean": 0.8881,
+        "lo": 0.8066,
+        "hi": 0.9589,
+        "n": 9
+      },
+      "crossLineRecall": {
+        "mean": 0.8095,
+        "lo": 0.5834,
+        "hi": 0.9623,
+        "n": 8
+      },
+      "crossColRecall": {
+        "mean": 0.8889,
+        "lo": 0.6666,
+        "hi": 1,
+        "n": 6
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 2.0933,
+        "lo": 0,
+        "hi": 5.2689,
+        "n": 9
+      },
+      "readingOrderAdj": {
+        "mean": 0.8333,
+        "lo": 0.6482,
+        "hi": 0.9722,
+        "n": 9
+      },
+      "blockTop1": {
+        "mean": 0.9778,
+        "lo": 0.9333,
+        "hi": 1,
+        "n": 9
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "indexBytes": 81010,
+      "indexMs": 25.01,
+      "meanChars": 15761,
+      "meanUnits": 51.4
+    },
+    "C-page": {
+      "nDocs": 9,
+      "phraseRecall": {
+        "mean": 0.8528,
+        "lo": 0.6746,
+        "hi": 0.9596,
+        "n": 9
+      },
+      "andRecall": {
+        "mean": 0.9134,
+        "lo": 0.8174,
+        "hi": 0.9798,
+        "n": 9
+      },
+      "crossLineRecall": {
+        "mean": 0.839,
+        "lo": 0.6124,
+        "hi": 0.977,
+        "n": 8
+      },
+      "crossColRecall": {
+        "mean": 0.8889,
+        "lo": 0.6666,
+        "hi": 1,
+        "n": 6
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 2.0933,
+        "lo": 0,
+        "hi": 5.7744,
+        "n": 9
+      },
+      "readingOrderAdj": {
+        "mean": 0.8333,
+        "lo": 0.6482,
+        "hi": 0.9815,
+        "n": 9
+      },
+      "blockTop1": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "indexBytes": 69632,
+      "indexMs": 4.21,
+      "meanChars": 15761,
+      "meanUnits": 5.6
+    },
+    "D-block": {
+      "nDocs": 9,
+      "phraseRecall": {
+        "mean": 0.5649,
+        "lo": 0.4192,
+        "hi": 0.6897,
+        "n": 9
+      },
+      "andRecall": {
+        "mean": 0.6558,
+        "lo": 0.5144,
+        "hi": 0.7655,
+        "n": 9
+      },
+      "crossLineRecall": {
+        "mean": 0.4986,
+        "lo": 0.3516,
+        "hi": 0.6112,
+        "n": 8
+      },
+      "crossColRecall": {
+        "mean": 0.6222,
+        "lo": 0.4222,
+        "hi": 0.8333,
+        "n": 6
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 3.1044,
+        "lo": 0.5056,
+        "hi": 6.28,
+        "n": 9
+      },
+      "readingOrderAdj": {
+        "mean": 0.4537,
+        "lo": 0.2315,
+        "hi": 0.6759,
+        "n": 9
+      },
+      "blockTop1": {
+        "mean": 0.9778,
+        "lo": 0.9333,
+        "hi": 1,
+        "n": 9
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "indexBytes": 85561,
+      "indexMs": 23.1,
+      "meanChars": 18668,
+      "meanUnits": 48.4
+    },
+    "D-page": {
+      "nDocs": 9,
+      "phraseRecall": {
+        "mean": 0.57,
+        "lo": 0.4242,
+        "hi": 0.6998,
+        "n": 9
+      },
+      "andRecall": {
+        "mean": 0.6962,
+        "lo": 0.5556,
+        "hi": 0.8131,
+        "n": 9
+      },
+      "crossLineRecall": {
+        "mean": 0.506,
+        "lo": 0.3672,
+        "hi": 0.6181,
+        "n": 8
+      },
+      "crossColRecall": {
+        "mean": 0.6555,
+        "lo": 0.4611,
+        "hi": 0.85,
+        "n": 6
+      },
+      "furnitureFalseHitsPer100q": {
+        "mean": 3.1044,
+        "lo": 0.5056,
+        "hi": 6.28,
+        "n": 9
+      },
+      "readingOrderAdj": {
+        "mean": 0.4537,
+        "lo": 0.2315,
+        "hi": 0.6667,
+        "n": 9
+      },
+      "blockTop1": {
+        "mean": 0.9778,
+        "lo": 0.9333,
+        "hi": 1,
+        "n": 9
+      },
+      "blockTop3": {
+        "mean": 1,
+        "lo": 1,
+        "hi": 1,
+        "n": 9
+      },
+      "indexBytes": 72363,
+      "indexMs": 4.11,
+      "meanChars": 18668,
+      "meanUnits": 5.6
+    }
+  },
+  "paired_significance": {
+    "A_vs_B": {
+      "phrase": {
+        "pos": 21,
+        "neg": 1,
+        "ties": 7,
+        "p": 0,
+        "meanDiff": 0.1975,
+        "n": 22
+      },
+      "crossLine": {
+        "pos": 21,
+        "neg": 1,
+        "ties": 7,
+        "p": 0,
+        "meanDiff": 0.2527,
+        "n": 22
+      },
+      "furniture": {
+        "pos": 3,
+        "neg": 0,
+        "ties": 26,
+        "p": 0.25,
+        "meanDiff": 0.6269,
+        "n": 3
+      }
+    },
+    "A_vs_C-block": {
+      "phrase": {
+        "pos": 19,
+        "neg": 1,
+        "ties": 9,
+        "p": 0,
+        "meanDiff": 0.0943,
+        "n": 20
+      },
+      "crossLine": {
+        "pos": 19,
+        "neg": 1,
+        "ties": 9,
+        "p": 0,
+        "meanDiff": 0.1138,
+        "n": 20
+      },
+      "furniture": {
+        "pos": 9,
+        "neg": 0,
+        "ties": 20,
+        "p": 0.0039,
+        "meanDiff": 2.9783,
+        "n": 9
+      }
+    },
+    "A_vs_D-block": {
+      "phrase": {
+        "pos": 29,
+        "neg": 0,
+        "ties": 0,
+        "p": 0,
+        "meanDiff": 0.32,
+        "n": 29
+      },
+      "crossLine": {
+        "pos": 29,
+        "neg": 0,
+        "ties": 0,
+        "p": 0,
+        "meanDiff": 0.3472,
+        "n": 29
+      },
+      "furniture": {
+        "pos": 3,
+        "neg": 2,
+        "ties": 24,
+        "p": 1,
+        "meanDiff": 0.1569,
+        "n": 5
+      }
+    },
+    "B_vs_C-block": {
+      "phrase": {
+        "pos": 8,
+        "neg": 17,
+        "ties": 4,
+        "p": 0.1078,
+        "meanDiff": -0.1032,
+        "n": 25
+      },
+      "crossLine": {
+        "pos": 9,
+        "neg": 16,
+        "ties": 4,
+        "p": 0.2295,
+        "meanDiff": -0.1389,
+        "n": 25
+      },
+      "furniture": {
+        "pos": 8,
+        "neg": 0,
+        "ties": 21,
+        "p": 0.0078,
+        "meanDiff": 2.3514,
+        "n": 8
+      }
+    },
+    "B_vs_D-block": {
+      "phrase": {
+        "pos": 20,
+        "neg": 8,
+        "ties": 1,
+        "p": 0.0357,
+        "meanDiff": 0.1225,
+        "n": 28
+      },
+      "crossLine": {
+        "pos": 20,
+        "neg": 8,
+        "ties": 1,
+        "p": 0.0357,
+        "meanDiff": 0.0946,
+        "n": 28
+      },
+      "furniture": {
+        "pos": 3,
+        "neg": 3,
+        "ties": 23,
+        "p": 1,
+        "meanDiff": -0.47,
+        "n": 6
+      }
+    },
+    "C-block_vs_D-block": {
+      "phrase": {
+        "pos": 26,
+        "neg": 1,
+        "ties": 2,
+        "p": 0,
+        "meanDiff": 0.2257,
+        "n": 27
+      },
+      "crossLine": {
+        "pos": 23,
+        "neg": 1,
+        "ties": 5,
+        "p": 0,
+        "meanDiff": 0.2334,
+        "n": 24
+      },
+      "furniture": {
+        "pos": 0,
+        "neg": 6,
+        "ties": 23,
+        "p": 0.0313,
+        "meanDiff": -2.8214,
+        "n": 6
+      }
+    }
+  },
+  "perDoc": [
+    {
+      "id": "1409.1556",
+      "layout": "2col",
+      "short_name": "vgg",
+      "alignment_coverage": 0.4414,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9091,
+        "B": 0.9091,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.6364,
+        "D-page": 0.7273
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9545,
+        "C-block": 0.9091,
+        "C-page": 0.9545,
+        "D-block": 0.9091,
+        "D-page": 0.9091
+      },
+      "crossLine": {
+        "A": 0.8824,
+        "B": 0.8824,
+        "C-block": 0.8824,
+        "C-page": 0.8824,
+        "D-block": 0.5882,
+        "D-page": 0.7059
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 9.09,
+        "B": 9.09,
+        "C-block": 4.55,
+        "C-page": 4.55,
+        "D-block": 4.55,
+        "D-page": 4.55
+      },
+      "readingOrderAdj": {
+        "A": 0.5833,
+        "B": 0.6667,
+        "C-block": 0.5833,
+        "C-page": 0.5833,
+        "D-block": 0.5833,
+        "D-page": 0.5833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 94208,
+        "B": 94208,
+        "C-block": 90112,
+        "C-page": 81920,
+        "D-block": 90112,
+        "D-page": 81920
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 53,
+        "C-page": 6,
+        "D-block": 42,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1502.03167",
+      "layout": "1col",
+      "short_name": "batchnorm",
+      "alignment_coverage": 0.5978,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 0.3182,
+        "C-block": 0.9091,
+        "C-page": 0.9545,
+        "D-block": 0.6818,
+        "D-page": 0.6818
+      },
+      "and": {
+        "A": 1,
+        "B": 0.8636,
+        "C-block": 0.9545,
+        "C-page": 1,
+        "D-block": 0.7273,
+        "D-page": 0.7727
+      },
+      "crossLine": {
+        "A": 0.9375,
+        "B": 0.0625,
+        "C-block": 0.875,
+        "C-page": 0.9375,
+        "D-block": 0.5625,
+        "D-page": 0.5625
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 0.0833,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.6667,
+        "D-page": 0.6667
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 110592,
+        "B": 110592,
+        "C-block": 110592,
+        "C-page": 102400,
+        "D-block": 118784,
+        "D-page": 106496
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 89,
+        "C-page": 6,
+        "D-block": 79,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1506.02640",
+      "layout": "2col",
+      "short_name": "yolo",
+      "alignment_coverage": 0.5923,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.5909,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.8182,
+        "D-page": 0.8182
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.8636,
+        "D-page": 0.9545
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.4706,
+        "C-block": 0.8824,
+        "C-page": 0.8824,
+        "D-block": 0.7647,
+        "D-page": 0.7647
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 0.25,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.75,
+        "D-page": 0.75
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 106496,
+        "B": 106496,
+        "C-block": 98304,
+        "C-page": 86016,
+        "D-block": 110592,
+        "D-page": 102400
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 91,
+        "C-page": 6,
+        "D-block": 91,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1511.06434",
+      "layout": "1col",
+      "short_name": "dcgan",
+      "alignment_coverage": 0.6667,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8636,
+        "C-page": 0.9091,
+        "D-block": 0.6818,
+        "D-page": 0.6818
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.9091,
+        "C-page": 1,
+        "D-block": 0.6818,
+        "D-page": 0.6818
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.875,
+        "C-page": 0.9375,
+        "D-block": 0.75,
+        "D-page": 0.75
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.9167,
+        "C-page": 0.9167,
+        "D-block": 0.1667,
+        "D-page": 0.1667
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 77824,
+        "B": 77824,
+        "C-block": 81920,
+        "C-page": 69632,
+        "D-block": 73728,
+        "D-page": 65536
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 49,
+        "C-page": 6,
+        "D-block": 43,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1512.03385",
+      "layout": "2col",
+      "short_name": "resnet",
+      "alignment_coverage": 0.5231,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9091,
+        "B": 0.7727,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.5909,
+        "D-page": 0.5909
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.8182,
+        "D-page": 0.9545
+      },
+      "crossLine": {
+        "A": 0.8824,
+        "B": 0.7059,
+        "C-block": 0.8824,
+        "C-page": 0.8824,
+        "D-block": 0.5882,
+        "D-page": 0.5882
+      },
+      "crossCol": {
+        "A": 0.75,
+        "B": 0.5,
+        "C-block": 0.75,
+        "C-page": 0.75,
+        "D-block": 0.75,
+        "D-page": 0.75
+      },
+      "furniturePer100": {
+        "A": 13.64,
+        "B": 9.09,
+        "C-block": 4.55,
+        "C-page": 4.55,
+        "D-block": 18.18,
+        "D-page": 18.18
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.8333,
+        "C-block": 0.8333,
+        "C-page": 0.8333,
+        "D-block": 0.5833,
+        "D-page": 0.5833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 102400,
+        "B": 98304,
+        "C-block": 106496,
+        "C-page": 90112,
+        "D-block": 118784,
+        "D-page": 102400
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 66,
+        "C-page": 6,
+        "D-block": 77,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1603.05027",
+      "layout": "2col",
+      "short_name": "resnetv2",
+      "alignment_coverage": 0.4177,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9091,
+        "B": 0.8636,
+        "C-block": 0.8636,
+        "C-page": 0.8636,
+        "D-block": 0.5455,
+        "D-page": 0.5455
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8636,
+        "C-page": 0.8636,
+        "D-block": 0.5909,
+        "D-page": 0.5909
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.9375,
+        "C-block": 0.875,
+        "C-page": 0.875,
+        "D-block": 0.5625,
+        "D-page": 0.5625
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 9.09,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 13.64,
+        "D-page": 13.64
+      },
+      "readingOrderAdj": {
+        "A": 0.4167,
+        "B": 0.4167,
+        "C-block": 0.4167,
+        "C-page": 0.4167,
+        "D-block": 0.1667,
+        "D-page": 0.1667
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 73728,
+        "B": 73728,
+        "C-block": 65536,
+        "C-page": 57344,
+        "D-block": 61440,
+        "D-page": 57344
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 39,
+        "C-page": 6,
+        "D-block": 43,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1607.06450",
+      "layout": "1col",
+      "short_name": "layernorm",
+      "alignment_coverage": 0.4876,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.9545,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5455,
+        "D-page": 0.5455
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5909,
+        "D-page": 0.6818
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.9375,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.4375,
+        "D-page": 0.4375
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.75,
+        "D-page": 0.75
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 77824,
+        "B": 73728,
+        "C-block": 86016,
+        "C-page": 73728,
+        "D-block": 90112,
+        "D-page": 77824
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 50,
+        "C-page": 6,
+        "D-block": 62,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1612.03144",
+      "layout": "2col",
+      "short_name": "fpn",
+      "alignment_coverage": 0.6228,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 0.6364,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.8636,
+        "D-page": 0.9091
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9091,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.9091,
+        "D-page": 0.9091
+      },
+      "crossLine": {
+        "A": 0.9412,
+        "B": 0.5294,
+        "C-block": 0.9412,
+        "C-page": 0.9412,
+        "D-block": 0.8235,
+        "D-page": 0.8824
+      },
+      "crossCol": {
+        "A": 0.5,
+        "B": 0.5,
+        "C-block": 0.5,
+        "C-page": 0.5,
+        "D-block": 0,
+        "D-page": 0.5
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 4.55,
+        "C-page": 4.55,
+        "D-block": 4.55,
+        "D-page": 4.55
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.25,
+        "C-block": 0.8333,
+        "C-page": 0.8333,
+        "D-block": 0.6667,
+        "D-page": 0.6667
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 110592,
+        "B": 110592,
+        "C-block": 114688,
+        "C-page": 94208,
+        "D-block": 126976,
+        "D-page": 98304
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 74,
+        "C-page": 6,
+        "D-block": 68,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1703.06870",
+      "layout": "2col",
+      "short_name": "maskrcnn",
+      "alignment_coverage": 0.5294,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.1818,
+        "C-block": 0.8636,
+        "C-page": 0.9091,
+        "D-block": 0.7273,
+        "D-page": 0.7273
+      },
+      "and": {
+        "A": 0.9091,
+        "B": 0.5455,
+        "C-block": 0.8636,
+        "C-page": 0.8636,
+        "D-block": 0.7273,
+        "D-page": 0.8182
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0,
+        "C-block": 0.8333,
+        "C-page": 0.8889,
+        "D-block": 0.6667,
+        "D-page": 0.6667
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 0,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "furniturePer100": {
+        "A": 36.36,
+        "B": 36.36,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 36.36,
+        "D-page": 36.36
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.0833,
+        "C-block": 0.8333,
+        "C-page": 0.8333,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 114688,
+        "B": 114688,
+        "C-block": 90112,
+        "C-page": 86016,
+        "D-block": 143360,
+        "D-page": 110592
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 58,
+        "C-page": 6,
+        "D-block": 69,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1706.03762",
+      "layout": "2col",
+      "short_name": "attention",
+      "alignment_coverage": 0.3429,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.7727,
+        "C-block": 0.8636,
+        "C-page": 0.8636,
+        "D-block": 0.4545,
+        "D-page": 0.4545
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8636,
+        "C-page": 0.8636,
+        "D-block": 0.5455,
+        "D-page": 0.5909
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.6875,
+        "C-block": 0.875,
+        "C-page": 0.875,
+        "D-block": 0.375,
+        "D-page": 0.375
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.5,
+        "C-block": 0.8333,
+        "C-page": 0.8333,
+        "D-block": 0.5833,
+        "D-page": 0.5833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 73728,
+        "B": 73728,
+        "C-block": 73728,
+        "C-page": 65536,
+        "D-block": 65536,
+        "D-page": 61440
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 51,
+        "C-page": 6,
+        "D-block": 47,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1706.08500",
+      "layout": "1col",
+      "short_name": "wgan_gp",
+      "alignment_coverage": 0.2235,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 0.9091,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.4545,
+        "D-page": 0.4545
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9545,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.6364,
+        "D-page": 0.6364
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.9375,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 4.55,
+        "D-page": 4.55
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 86016,
+        "B": 81920,
+        "C-block": 102400,
+        "C-page": 81920,
+        "D-block": 98304,
+        "D-page": 86016
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 48,
+        "C-page": 6,
+        "D-block": 47,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1802.05394",
+      "layout": "1col",
+      "short_name": "glow_ish",
+      "alignment_coverage": 0.7308,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.2727,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.6364,
+        "D-page": 0.6818
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.7727,
+        "D-page": 0.8182
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.0588,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5882,
+        "D-page": 0.6471
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 0,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.4,
+        "D-page": 0.6
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 4.55,
+        "D-page": 4.55
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 0.0833,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.8333,
+        "D-page": 0.8333
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 102400,
+        "B": 102400,
+        "C-block": 118784,
+        "C-page": 90112,
+        "D-block": 155648,
+        "D-page": 110592
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 70,
+        "C-page": 6,
+        "D-block": 76,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1807.03247",
+      "layout": "2col",
+      "short_name": "mobilenetv2",
+      "alignment_coverage": 0.4968,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.5455,
+        "C-page": 0.5455,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.6818,
+        "C-page": 0.6818,
+        "D-block": 0.7273,
+        "D-page": 0.7273
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.5,
+        "C-page": 0.5,
+        "D-block": 0.5625,
+        "D-page": 0.5625
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.9167,
+        "B": 0.9167,
+        "C-block": 0.9167,
+        "C-page": 0.9167,
+        "D-block": 0.75,
+        "D-page": 0.75
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 81920,
+        "B": 81920,
+        "C-block": 86016,
+        "C-page": 73728,
+        "D-block": 86016,
+        "D-page": 81920
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 36,
+        "C-page": 6,
+        "D-block": 40,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1810.04805",
+      "layout": "2col",
+      "short_name": "bert",
+      "alignment_coverage": 0.456,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 0.5,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.8636,
+        "D-page": 0.8636
+      },
+      "and": {
+        "A": 1,
+        "B": 0.7727,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.9545,
+        "D-page": 1
+      },
+      "crossLine": {
+        "A": 0.9444,
+        "B": 0.3889,
+        "C-block": 0.8889,
+        "C-page": 0.8889,
+        "D-block": 0.8889,
+        "D-page": 0.8889
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 0.5,
+        "C-block": 0.5,
+        "C-page": 0.5,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.6667,
+        "B": 0.4167,
+        "C-block": 0.6667,
+        "C-page": 0.6667,
+        "D-block": 0.4167,
+        "D-page": 0.4167
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 106496,
+        "B": 110592,
+        "C-block": 106496,
+        "C-page": 73728,
+        "D-block": 94208,
+        "D-page": 86016
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 64,
+        "C-page": 6,
+        "D-block": 55,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1907.11692",
+      "layout": "2col",
+      "short_name": "roberta",
+      "alignment_coverage": 0.6061,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.8182,
+        "B": 0.4091,
+        "C-block": 0.7727,
+        "C-page": 0.7727,
+        "D-block": 0.6818,
+        "D-page": 0.7273
+      },
+      "and": {
+        "A": 0.8182,
+        "B": 0.5909,
+        "C-block": 0.7273,
+        "C-page": 0.7273,
+        "D-block": 0.7273,
+        "D-page": 0.7727
+      },
+      "crossLine": {
+        "A": 0.7778,
+        "B": 0.2778,
+        "C-block": 0.7222,
+        "C-page": 0.7222,
+        "D-block": 0.6111,
+        "D-page": 0.6667
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 0,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.6667,
+        "B": 0,
+        "C-block": 0.5833,
+        "C-page": 0.5833,
+        "D-block": 0.3333,
+        "D-page": 0.3333
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 98304,
+        "B": 106496,
+        "C-block": 94208,
+        "C-page": 73728,
+        "D-block": 110592,
+        "D-page": 98304
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 84,
+        "C-page": 6,
+        "D-block": 73,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "1910.10683",
+      "layout": "2col",
+      "short_name": "t5",
+      "alignment_coverage": 0.1009,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 1,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.9091,
+        "D-page": 0.9091
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.9091,
+        "D-page": 0.9091
+      },
+      "crossLine": {
+        "A": 0.9375,
+        "B": 1,
+        "C-block": 0.875,
+        "C-page": 0.875,
+        "D-block": 0.875,
+        "D-page": 0.875
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.8333,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.0833,
+        "D-page": 0.0833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 73728,
+        "B": 73728,
+        "C-block": 69632,
+        "C-page": 73728,
+        "D-block": 94208,
+        "D-page": 73728
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 29,
+        "C-page": 6,
+        "D-block": 33,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2003.08934",
+      "layout": "2col",
+      "short_name": "detr",
+      "alignment_coverage": 0.3146,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.8636,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.7273,
+        "D-page": 0.7273
+      },
+      "and": {
+        "A": 1,
+        "B": 0.9545,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.9091,
+        "D-page": 0.9091
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.8125,
+        "C-block": 0.875,
+        "C-page": 0.875,
+        "D-block": 0.6875,
+        "D-page": 0.6875
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.75,
+        "B": 0.6667,
+        "C-block": 0.9167,
+        "C-page": 0.9167,
+        "D-block": 0.4167,
+        "D-page": 0.4167
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 73728,
+        "B": 73728,
+        "C-block": 81920,
+        "C-page": 65536,
+        "D-block": 81920,
+        "D-page": 69632
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 33,
+        "C-page": 6,
+        "D-block": 32,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2005.11401",
+      "layout": "2col",
+      "short_name": "rag",
+      "alignment_coverage": 0.5714,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9091,
+        "B": 0.8636,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.7727,
+        "D-page": 0.7727
+      },
+      "and": {
+        "A": 0.9091,
+        "B": 0.9091,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.8636,
+        "D-page": 0.8636
+      },
+      "crossLine": {
+        "A": 0.875,
+        "B": 0.8125,
+        "C-block": 0.875,
+        "C-page": 0.875,
+        "D-block": 0.6875,
+        "D-page": 0.6875
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.5833,
+        "B": 0.5833,
+        "C-block": 0.5833,
+        "C-page": 0.5833,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 90112,
+        "B": 90112,
+        "C-block": 90112,
+        "C-page": 81920,
+        "D-block": 81920,
+        "D-page": 86016
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 58,
+        "C-page": 6,
+        "D-block": 44,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2006.11239",
+      "layout": "2col",
+      "short_name": "ddpm",
+      "alignment_coverage": 0.4307,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.6364,
+        "D-page": 0.6364
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.7273,
+        "D-page": 0.9545
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5625,
+        "D-page": 0.5625
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.9545,
+        "C-page": 1,
+        "D-block": 0.9286,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 86016,
+        "B": 86016,
+        "C-block": 77824,
+        "C-page": 73728,
+        "D-block": 90112,
+        "D-page": 77824
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 54,
+        "C-page": 6,
+        "D-block": 53,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2010.11929",
+      "layout": "2col",
+      "short_name": "vit",
+      "alignment_coverage": 0.4512,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.8636,
+        "B": 0.7273,
+        "C-block": 0.9091,
+        "C-page": 0.9091,
+        "D-block": 0.4091,
+        "D-page": 0.4091
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9545,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.5455,
+        "D-page": 0.5909
+      },
+      "crossLine": {
+        "A": 0.8125,
+        "B": 0.625,
+        "C-block": 0.875,
+        "C-page": 0.875,
+        "D-block": 0.3125,
+        "D-page": 0.3125
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 0.6667,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.3333,
+        "D-page": 0.3333
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.6667,
+        "C-block": 0.8333,
+        "C-page": 0.8333,
+        "D-block": 0.3333,
+        "D-page": 0.3333
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 94208,
+        "B": 94208,
+        "C-block": 90112,
+        "C-page": 73728,
+        "D-block": 81920,
+        "D-page": 77824
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 51,
+        "C-page": 6,
+        "D-block": 46,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2103.14030",
+      "layout": "2col",
+      "short_name": "swin",
+      "alignment_coverage": 0.5635,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.8182,
+        "B": 0.4091,
+        "C-block": 0.7727,
+        "C-page": 0.7727,
+        "D-block": 0.6364,
+        "D-page": 0.6364
+      },
+      "and": {
+        "A": 0.9091,
+        "B": 0.7727,
+        "C-block": 0.8636,
+        "C-page": 0.8636,
+        "D-block": 0.6364,
+        "D-page": 0.6818
+      },
+      "crossLine": {
+        "A": 0.7778,
+        "B": 0.2778,
+        "C-block": 0.7222,
+        "C-page": 0.7222,
+        "D-block": 0.6111,
+        "D-page": 0.6111
+      },
+      "crossCol": {
+        "A": 0.75,
+        "B": 0.5,
+        "C-block": 0.75,
+        "C-page": 0.75,
+        "D-block": 0.75,
+        "D-page": 0.75
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 4.55,
+        "C-page": 4.55,
+        "D-block": 4.55,
+        "D-page": 4.55
+      },
+      "readingOrderAdj": {
+        "A": 0.8333,
+        "B": 0.4167,
+        "C-block": 0.8333,
+        "C-page": 0.8333,
+        "D-block": 0.5833,
+        "D-page": 0.5833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 106496,
+        "B": 106496,
+        "C-block": 114688,
+        "C-page": 86016,
+        "D-block": 135168,
+        "D-page": 110592
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 66,
+        "C-page": 6,
+        "D-block": 69,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2106.09685",
+      "layout": "2col",
+      "short_name": "lora",
+      "alignment_coverage": 0.3618,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 0.9545,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.3636,
+        "D-page": 0.3636
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9545,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.5,
+        "D-page": 0.5909
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 0.9412,
+        "C-block": 0.9412,
+        "C-page": 0.9412,
+        "D-block": 0.3529,
+        "D-page": 0.3529
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 0.8,
+        "C-block": 0.8,
+        "C-page": 0.8,
+        "D-block": 0.2,
+        "D-page": 0.2
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.5833,
+        "B": 0.5833,
+        "C-block": 0.5833,
+        "C-page": 0.5833,
+        "D-block": 0.25,
+        "D-page": 0.25
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 102400,
+        "B": 98304,
+        "C-block": 86016,
+        "C-page": 73728,
+        "D-block": 86016,
+        "D-page": 81920
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 47,
+        "C-page": 6,
+        "D-block": 43,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2205.14135",
+      "layout": "2col",
+      "short_name": "flashattention",
+      "alignment_coverage": 0.2359,
+      "nQueries": 22,
+      "phrase": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8182,
+        "C-page": 0.8182,
+        "D-block": 0.8636,
+        "D-page": 0.8636
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9545,
+        "C-block": 0.8182,
+        "C-page": 0.8182,
+        "D-block": 0.9545,
+        "D-page": 0.9545
+      },
+      "crossLine": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8125,
+        "C-page": 0.8125,
+        "D-block": 0.8125,
+        "D-page": 0.8125
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "furniturePer100": {
+        "A": 9.09,
+        "B": 4.55,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 9.09,
+        "D-page": 9.09
+      },
+      "readingOrderAdj": {
+        "A": 0.5,
+        "B": 0.5,
+        "C-block": 0.5,
+        "C-page": 0.5,
+        "D-block": 0.3333,
+        "D-page": 0.3333
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 94208,
+        "B": 90112,
+        "C-block": 69632,
+        "C-page": 73728,
+        "D-block": 118784,
+        "D-page": 90112
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 62,
+        "C-page": 6,
+        "D-block": 65,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2302.13971",
+      "layout": "1col",
+      "short_name": "llama",
+      "alignment_coverage": 0.3934,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 0.6818,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.6818,
+        "D-page": 0.6818
+      },
+      "and": {
+        "A": 1,
+        "B": 0.9545,
+        "C-block": 0.9545,
+        "C-page": 0.9545,
+        "D-block": 0.8636,
+        "D-page": 0.9545
+      },
+      "crossLine": {
+        "A": 0.9412,
+        "B": 0.5882,
+        "C-block": 0.9412,
+        "C-page": 0.9412,
+        "D-block": 0.5882,
+        "D-page": 0.5882
+      },
+      "crossCol": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.1667,
+        "B": 0,
+        "C-block": 0.1667,
+        "C-page": 0.1667,
+        "D-block": 0.0833,
+        "D-page": 0.0833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 90112,
+        "B": 90112,
+        "C-block": 86016,
+        "C-page": 81920,
+        "D-block": 114688,
+        "D-page": 90112
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 63,
+        "C-page": 6,
+        "D-block": 66,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2307.09288",
+      "layout": "2col",
+      "short_name": "llama2",
+      "alignment_coverage": 0.1012,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9545,
+        "B": 0.7727,
+        "C-block": 0.5455,
+        "C-page": 0.5455,
+        "D-block": 0.2727,
+        "D-page": 0.2727
+      },
+      "and": {
+        "A": 1,
+        "B": 0.9545,
+        "C-block": 0.6364,
+        "C-page": 0.6364,
+        "D-block": 0.3182,
+        "D-page": 0.4091
+      },
+      "crossLine": {
+        "A": 0.9412,
+        "B": 0.7647,
+        "C-block": 0.5294,
+        "C-page": 0.5294,
+        "D-block": 0.2353,
+        "D-page": 0.2353
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.25,
+        "B": 0.25,
+        "C-block": 0.25,
+        "C-page": 0.25,
+        "D-block": 0.0833,
+        "D-page": 0.0833
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 73728,
+        "B": 73728,
+        "C-block": 53248,
+        "C-page": 57344,
+        "D-block": 61440,
+        "D-page": 61440
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 26,
+        "C-page": 6,
+        "D-block": 31,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "2310.06825",
+      "layout": "2col",
+      "short_name": "mistral",
+      "alignment_coverage": 0.8548,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.9091,
+        "B": 0.7273,
+        "C-block": 0.7727,
+        "C-page": 0.7727,
+        "D-block": 0.5909,
+        "D-page": 0.5909
+      },
+      "and": {
+        "A": 0.9545,
+        "B": 0.9545,
+        "C-block": 0.7727,
+        "C-page": 0.7727,
+        "D-block": 0.5909,
+        "D-page": 0.5909
+      },
+      "crossLine": {
+        "A": 0.9375,
+        "B": 0.6875,
+        "C-block": 0.6875,
+        "C-page": 0.6875,
+        "D-block": 0.625,
+        "D-page": 0.625
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.5,
+        "B": 0.4167,
+        "C-block": 0.5,
+        "C-page": 0.5,
+        "D-block": 0.25,
+        "D-page": 0.25
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 73728,
+        "B": 73728,
+        "C-block": 65536,
+        "C-page": 61440,
+        "D-block": 69632,
+        "D-page": 73728
+      },
+      "units": {
+        "A": 6,
+        "B": 6,
+        "C-block": 36,
+        "C-page": 6,
+        "D-block": 59,
+        "D-page": 6
+      }
+    },
+    {
+      "id": "progit-en",
+      "layout": "1col",
+      "short_name": "progit-en",
+      "alignment_coverage": 0.0404,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.8636,
+        "B": 0.8636,
+        "C-block": 0.7727,
+        "C-page": 0.8636,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "and": {
+        "A": 0.8636,
+        "B": 0.8636,
+        "C-block": 0.7727,
+        "C-page": 0.8636,
+        "D-block": 0.5909,
+        "D-page": 0.6818
+      },
+      "crossLine": {
+        "A": 0.8333,
+        "B": 0.8333,
+        "C-block": 0.7222,
+        "C-page": 0.8333,
+        "D-block": 0.5,
+        "D-page": 0.5
+      },
+      "crossCol": {
+        "A": 0.3333,
+        "B": 0.3333,
+        "C-block": 0.3333,
+        "C-page": 0.3333,
+        "D-block": 0.3333,
+        "D-page": 0.3333
+      },
+      "furniturePer100": {
+        "A": 0,
+        "B": 0,
+        "C-block": 0,
+        "C-page": 0,
+        "D-block": 0,
+        "D-page": 0
+      },
+      "readingOrderAdj": {
+        "A": 0.6667,
+        "B": 0.6667,
+        "C-block": 0.6667,
+        "C-page": 0.6667,
+        "D-block": 0.3333,
+        "D-page": 0.3333
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 49152,
+        "B": 49152,
+        "C-block": 53248,
+        "C-page": 49152,
+        "D-block": 49152,
+        "D-page": 45056
+      },
+      "units": {
+        "A": 5,
+        "B": 5,
+        "C-block": 40,
+        "C-page": 5,
+        "D-block": 31,
+        "D-page": 5
+      }
+    },
+    {
+      "id": "progit-zh",
+      "layout": "1col",
+      "short_name": "progit-zh",
+      "alignment_coverage": 0.059,
+      "nQueries": 22,
+      "phrase": {
+        "A": 0.6364,
+        "B": 0.5455,
+        "C-block": 0.1818,
+        "C-page": 0.1818,
+        "D-block": 0.0455,
+        "D-page": 0.0455
+      },
+      "and": {
+        "A": 0.6364,
+        "B": 0.5909,
+        "C-block": 0.5909,
+        "C-page": 0.5909,
+        "D-block": 0.1818,
+        "D-page": 0.1818
+      },
+      "crossLine": {
+        "A": 0.6875,
+        "B": 0.5625,
+        "C-block": 0.0625,
+        "C-page": 0.0625,
+        "D-block": 0.0625,
+        "D-page": 0.0625
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 4.55,
+        "B": 4.55,
+        "C-block": 4.55,
+        "C-page": 4.55,
+        "D-block": 4.55,
+        "D-page": 4.55
+      },
+      "readingOrderAdj": {
+        "A": 0.75,
+        "B": 0.75,
+        "C-block": 0.75,
+        "C-page": 0.75,
+        "D-block": 0.25,
+        "D-page": 0.25
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "indexBytes": {
+        "A": 61440,
+        "B": 61440,
+        "C-block": 57344,
+        "C-page": 53248,
+        "D-block": 45056,
+        "D-page": 45056
+      },
+      "units": {
+        "A": 5,
+        "B": 5,
+        "C-block": 30,
+        "C-page": 5,
+        "D-block": 26,
+        "D-page": 5
+      }
+    },
+    {
+      "id": "sample-cjk",
+      "layout": "1col",
+      "short_name": "sample-cjk",
+      "alignment_coverage": 1,
+      "nQueries": 7,
+      "phrase": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8571,
+        "C-page": 0.8571,
+        "D-block": 0.8571,
+        "D-page": 0.8571
+      },
+      "and": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8571,
+        "C-page": 0.8571,
+        "D-block": 0.8571,
+        "D-page": 0.8571
+      },
+      "crossLine": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "crossCol": {
+        "A": null,
+        "B": null,
+        "C-block": null,
+        "C-page": null,
+        "D-block": null,
+        "D-page": null
+      },
+      "furniturePer100": {
+        "A": 14.29,
+        "B": 14.29,
+        "C-block": 14.29,
+        "C-page": 14.29,
+        "D-block": 14.29,
+        "D-page": 14.29
+      },
+      "readingOrderAdj": {
+        "A": 1,
+        "B": 1,
+        "C-block": 1,
+        "C-page": 1,
+        "D-block": 1,
+        "D-page": 1
+      },
+      "blockTop1": {
+        "A": 1,
+        "B": 1,
+        "C-block": 0.8,
+        "C-page": 1,
+        "D-block": 0.8,
+        "D-page": 0.8
+      },
+      "indexBytes": {
+        "A": 24576,
+        "B": 24576,
+        "C-block": 32768,
+        "C-page": 24576,
+        "D-block": 24576,
+        "D-page": 24576
+      },
+      "units": {
+        "A": 4,
+        "B": 4,
+        "C-block": 24,
+        "C-page": 4,
+        "D-block": 6,
+        "D-page": 4
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "classifier": {
+    "latency_ms_median": 5.85863,
+    "max_abs_diff_flow": 0.000015974044799804688,
+    "max_abs_diff_type": 0.000020742416381835938,
+    "ok": true
+  },
+  "clusterer": {
+    "latency_ms_median": 18.981603,
+    "max_abs_diff_emissions": 0.00001239776611328125,
+    "max_abs_diff_object": 4.76837158203125e-7,
+    "ok": true
+  },
+  "ocr_det_v5_mobile": {
+    "error": "Failed analyse for node #239 \"Conv.0\" ConvHir",
+    "ok": false
+  },
+  "repair": {
+    "latency_ms_median": 0.09310800000000001,
+    "max_abs_diff": 0.0,
+    "ok": true
+  }
+}

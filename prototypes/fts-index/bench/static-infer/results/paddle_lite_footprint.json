@@ -1,0 +1,22 @@
+{
+  "release": "v2.14-rc",
+  "published": "2024-07-19",
+  "libpaddle_api_light_bundled_a_mb": 94,
+  "libpaddle_light_api_shared_so_mb": 18,
+  "mklml_so_mb": 127,
+  "iomp5_so_mb": 2.1,
+  "cli_static_stripped_mb": 18,
+  "cli_static_ldd": [
+    "libiomp5.so",
+    "libstdc++",
+    "libm",
+    "libgcc_s",
+    "libc",
+    "libpthread",
+    "libdl"
+  ],
+  "cli_shared_stripped_kb": 108,
+  "block_seg_conversion": "X2Paddle produces PIR model.json; paddle_lite_opt requires classic pdmodel \u2014 FAIL",
+  "license": "Apache-2.0",
+  "platforms": "Android/iOS/Linux x86/arm, macOS x86 historically; Windows limited; macOS arm64 opt existed in 2.13"
+}
