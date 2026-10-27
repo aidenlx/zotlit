@@ -439,10 +439,11 @@ describe("Excerpt request verification", () => {
               if (entry) cache.hits++;
               return entry;
             },
-            put: async (key, entry) => {
-              cache.writes++;
-              entries.set(key, entry);
-            },
+            put: (key, entry) =>
+              Effect.sync(() => {
+                cache.writes++;
+                entries.set(key, entry);
+              }),
           },
         });
         expect(
@@ -490,9 +491,10 @@ describe("Excerpt request verification", () => {
         render,
         cache: {
           get: async (key) => entries.get(key),
-          put: async (key, entry) => {
-            entries.set(key, entry);
-          },
+          put: (key, entry) =>
+            Effect.sync(() => {
+              entries.set(key, entry);
+            }),
         },
       });
       yield* Effect.promise(() => service.resolve(user));

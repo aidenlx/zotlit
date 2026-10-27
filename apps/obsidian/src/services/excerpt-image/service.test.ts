@@ -13,6 +13,7 @@ import type { DatabaseAnnotationSource } from "@/services/annotation-repository/
 
 import { excerptImageFixture } from "./__fixtures__/effect-service";
 import { redPng, corruptPng } from "./__fixtures__/png";
+import { ExcerptCacheWriteError } from "./error";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import {
@@ -103,9 +104,10 @@ const fixture = Effect.fnUntraced(function* () {
   const service = yield* excerptImageFixture({
     cache: {
       get: async (key) => entries.get(key),
-      put: async (key, entry) => {
-        entries.set(key, entry);
-      },
+      put: (key, entry) =>
+        Effect.sync(() => {
+          entries.set(key, entry);
+        }),
       latest: async (identity) => references.get(identity),
       putLatest: async (identity, reference) => {
         references.set(identity, reference);
@@ -559,9 +561,11 @@ describe("Excerpt Image resolution", () => {
         const gate = Promise.withResolvers<ExcerptImage>();
         const started = Promise.withResolvers<void>();
         const entries = new Map<string, ExcerptEntry>();
-        const put = vi.fn(async (key: string, entry: ExcerptEntry) => {
-          entries.set(key, entry);
-        });
+        const put = vi.fn((key: string, entry: ExcerptEntry) =>
+          Effect.sync(() => {
+            entries.set(key, entry);
+          }),
+        );
         const render = vi
           .fn(async () => rendered)
           .mockImplementationOnce(() => {
@@ -616,7 +620,7 @@ describe("Excerpt Image resolution", () => {
             format: PNG_FORMAT,
             pdf: { size: 100, mtimeMs: 10 },
           }),
-          put: async () => {},
+          put: () => Effect.sync(() => {}),
         },
       });
       expect(yield* service.resolve(request)).toMatchObject({
@@ -654,7 +658,7 @@ describe("Excerpt Image resolution", () => {
         const get = vi.fn(async (): Promise<ExcerptEntry | undefined> => {
           throw new Error("read failed");
         });
-        const put = vi.fn(async () => {});
+        const put = vi.fn(() => Effect.void);
         const service = yield* excerptImageFixture({
           render,
           stamp: async () => ({ size: 1, mtimeMs: 1 }),
@@ -810,9 +814,10 @@ describe("Excerpt Image resolution", () => {
           render,
           cache: {
             get: async (key) => entries.get(key),
-            put: async (key, entry) => {
-              entries.set(key, entry);
-            },
+            put: (key, entry) =>
+              Effect.sync(() => {
+                entries.set(key, entry);
+              }),
           },
         });
         const lateRequest: ExcerptRequest = {
@@ -868,7 +873,7 @@ describe("Excerpt Image resolution", () => {
             format: PNG_FORMAT,
             pdf: { size: 100, mtimeMs: 10 },
           }),
-          put: async () => {},
+          put: () => Effect.sync(() => {}),
         },
       });
       expect(yield* service.resolve(request)).toMatchObject({
@@ -1181,7 +1186,7 @@ describe("Excerpt Image resolution", () => {
         },
         cache: {
           get: async () => ({ ...rendered, pdf: { size: 100, mtimeMs: 10 } }),
-          put: async () => {},
+          put: () => Effect.sync(() => {}),
         },
       });
       expect(yield* unreadable.resolve(request)).toMatchObject({
@@ -1240,9 +1245,14 @@ describe("Excerpt Image resolution", () => {
           render: async () => rendered,
           cache: {
             get: async () => undefined,
-            put: async () => {
-              throw new Error("quota");
-            },
+            put: () =>
+              Effect.try(() => {
+                throw new Error("quota");
+              }).pipe(
+                Effect.mapError(
+                  (error) => new ExcerptCacheWriteError({ cause: error.cause }),
+                ),
+              ),
           },
         });
         expect(yield* working.resolve(request)).toMatchObject({
@@ -1436,9 +1446,10 @@ describe("Excerpt latest references", () => {
           read: async () => fallback,
           cache: {
             get: async (key) => entries.get(key),
-            put: async (key, entry) => {
-              entries.set(key, entry);
-            },
+            put: (key, entry) =>
+              Effect.sync(() => {
+                entries.set(key, entry);
+              }),
             latest: async (identity) => references.get(identity),
             putLatest: async (identity, reference) => {
               references.set(identity, reference);
@@ -1496,9 +1507,10 @@ describe("Excerpt latest references", () => {
               if (stale && key === excerptKey(inkRequest)) await gate.promise;
               return entries.get(key);
             },
-            put: async (key, entry) => {
-              entries.set(key, entry);
-            },
+            put: (key, entry) =>
+              Effect.sync(() => {
+                entries.set(key, entry);
+              }),
             latest: async (identity) => references.get(identity),
             putLatest: async (identity, reference) => {
               references.set(identity, reference);
@@ -1554,9 +1566,10 @@ describe("Excerpt latest references", () => {
           read: async () => fallback,
           cache: {
             get: async (key) => entries.get(key),
-            put: async (key, entry) => {
-              entries.set(key, entry);
-            },
+            put: (key, entry) =>
+              Effect.sync(() => {
+                entries.set(key, entry);
+              }),
             latest: async (identity) => references.get(identity),
             putLatest: async (identity, reference) => {
               references.set(identity, reference);
@@ -1685,7 +1698,10 @@ describe("Excerpt latest references", () => {
         f.entries.clear();
         expect(yield* service.stored(inkRequest)).toBeNull();
         const bare = yield* excerptImageFixture({
-          cache: { get: async () => undefined, put: async () => {} },
+          cache: {
+            get: async () => undefined,
+            put: () => Effect.sync(() => {}),
+          },
         });
         const _bare = bare;
         expect(yield* bare.stored(inkRequest)).toBeNull();
@@ -1810,7 +1826,7 @@ it.effect(
       const service = yield* excerptImageFixture({
         cache: {
           get,
-          put: async () => {},
+          put: () => Effect.sync(() => {}),
           clear: () => {
             started.resolve();
             return release.promise;

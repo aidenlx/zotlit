@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 // Runs the production Excerpt Display and Excerpt Image service over Chromium's
 // own IndexedDB, so a saved edit's replacement, a restart, an eviction, and a
 // manual clear are the plugin's own code and the plugin's own store.
@@ -411,11 +413,13 @@ export async function run(): Promise<RefreshReport> {
     });
     try {
       const oldest = request("#ff0000");
-      await app.store.put(excerptKey(oldest), {
-        bytes: measured.bytes,
-        format: measured.format,
-        pdf: PDF,
-      });
+      await Effect.runPromise(
+        app.store.put(excerptKey(oldest), {
+          bytes: measured.bytes,
+          format: measured.format,
+          pdf: PDF,
+        }),
+      );
       await app.store.putLatest(excerptAnnotationRecord(oldest), {
         key: excerptKey(oldest),
         fingerprint: "F1",
@@ -438,22 +442,26 @@ export async function run(): Promise<RefreshReport> {
           fingerprint: `F${index}`,
           pdf: null,
         });
-      await app.store.put("replacement", {
-        bytes: measured.bytes,
-        format: measured.format,
-        pdf: PDF,
-      });
+      await Effect.runPromise(
+        app.store.put("replacement", {
+          bytes: measured.bytes,
+          format: measured.format,
+          pdf: PDF,
+        }),
+      );
       check(
         (await app.store.get("replacement")) !== undefined,
         "References charged the image budget",
       );
 
       // The next crop pushes the oldest image out, and its reference with it.
-      await app.store.put("newest", {
-        bytes: measured.bytes,
-        format: measured.format,
-        pdf: PDF,
-      });
+      await Effect.runPromise(
+        app.store.put("newest", {
+          bytes: measured.bytes,
+          format: measured.format,
+          pdf: PDF,
+        }),
+      );
       check(
         (await app.store.get(excerptKey(oldest))) === undefined &&
           (await app.store.latest(excerptAnnotationRecord(oldest))) ===

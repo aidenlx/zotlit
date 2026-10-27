@@ -573,6 +573,32 @@ export default defineConfig({
       },
     },
     {
+      // IndexedDB transactions must finish their request microtasks before a task yield.
+      files: [
+        "src/services/excerpt-image/store.ts",
+        "src/services/excerpt-image/store.browser-test.ts",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: runtimeImports.paths.map((path) =>
+              path.name === "effect/Scheduler"
+                ? {
+                    ...path,
+                    allowImportNames: [
+                      "PreventSchedulerYield",
+                      "MaxOpsBeforeYield",
+                    ],
+                  }
+                : path,
+            ),
+          },
+        ],
+      },
+    },
+    {
       // The wrappers, which reach the real package (NATIVE in scripts/effect-entry.ts).
       files: [
         "src/lib/browser-scheduler.ts",

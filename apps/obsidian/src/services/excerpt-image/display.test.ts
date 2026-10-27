@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { open } from "node:fs/promises";
 // The live display read of one Annotation, as a card demands it and a saved
 // edit replaces it.
@@ -141,9 +142,10 @@ function harness(): Live {
       read: async () => redPng,
       cache: {
         get: async (key) => entries.get(key),
-        put: async (key, entry) => {
-          entries.set(key, entry);
-        },
+        put: (key, entry) =>
+          Effect.sync(() => {
+            entries.set(key, entry);
+          }),
         latest: async (identity) => references.get(identity),
         putLatest: async (identity, reference) => {
           references.set(identity, reference);

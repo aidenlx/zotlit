@@ -18,6 +18,7 @@ import {
   excerptKey,
 } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import type { ExcerptCacheWriteError } from "./error";
 import { ExcerptImageError } from "./error";
 import { openExcerptFile, pdfStamp, readBounded } from "./file";
 import { PNG_FORMAT } from "./format";
@@ -54,7 +55,10 @@ export interface ExcerptEntry extends ExcerptImage {
 }
 export interface ExcerptCache {
   get(key: string, pdf?: PdfStamp): Promise<ExcerptEntry | undefined>;
-  put(key: string, entry: ExcerptEntry): Promise<void>;
+  put(
+    key: string,
+    entry: ExcerptEntry,
+  ): Effect.Effect<void, ExcerptCacheWriteError>;
   /**
    * The image one verified Annotation last displayed on this device, as the
    * reference that locates it. Absent from a cache that keeps no references.
@@ -358,9 +362,7 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
                 .pipe(Effect.provideService(FileSystem.FileSystem, fs));
           evidence.pdf = pdf;
           if (pdf && context.generation === generation && persistent) {
-            const stored = yield* Effect.tryPromise(() =>
-              persistent.put(key, { ...image, pdf }),
-            ).pipe(
+            const stored = yield* persistent.put(key, { ...image, pdf }).pipe(
               Effect.as(true),
               Effect.catch((error) =>
                 debug("Excerpt cache write failed", { key, error }).pipe(

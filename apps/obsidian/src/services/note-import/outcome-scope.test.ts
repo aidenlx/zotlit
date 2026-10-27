@@ -32,6 +32,7 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { bluePng } from "@/services/excerpt-image/__fixtures__/png";
+import { ExcerptCacheWriteError } from "@/services/excerpt-image/error";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
@@ -136,10 +137,15 @@ async function setupFixture(
     new ExcerptImageService({
       cache: {
         get: async (key) => entries.get(key),
-        put: async (key, entry) => {
-          if (options.failWrites) throw new Error("store write failed");
-          entries.set(key, entry);
-        },
+        put: (key, entry) =>
+          Effect.try(() => {
+            if (options.failWrites) throw new Error("store write failed");
+            entries.set(key, entry);
+          }).pipe(
+            Effect.mapError(
+              (error) => new ExcerptCacheWriteError({ cause: error.cause }),
+            ),
+          ),
       },
       stamp: options.unreadablePdf
         ? async () => {

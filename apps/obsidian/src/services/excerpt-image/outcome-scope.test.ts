@@ -8,6 +8,7 @@ import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excer
 
 import { availableOutcome } from "./__fixtures__/outcome";
 import { redPng } from "./__fixtures__/png";
+import { ExcerptCacheWriteError } from "./error";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import { ExcerptOutcomeScope } from "./outcome-scope";
@@ -64,10 +65,15 @@ function fixture(options: { bytes?: number; failWrites?: boolean } = {}) {
   const service = new ExcerptImageService({
     cache: {
       get: async (key) => entries.get(key),
-      put: async (key, entry) => {
-        if (options.failWrites) throw new Error("store write failed");
-        entries.set(key, entry);
-      },
+      put: (key, entry) =>
+        Effect.tryPromise(async () => {
+          if (options.failWrites) throw new Error("store write failed");
+          entries.set(key, entry);
+        }).pipe(
+          Effect.mapError(
+            (error) => new ExcerptCacheWriteError({ cause: error.cause }),
+          ),
+        ),
     },
     stamp: async () => pdf,
     render,
@@ -114,9 +120,10 @@ describe("Excerpt outcome scope", () => {
     await using service = new ExcerptImageService({
       cache: {
         get: stored,
-        put: async (key, entry) => {
-          entries.set(key, entry);
-        },
+        put: (key, entry) =>
+          Effect.sync(() => {
+            entries.set(key, entry);
+          }),
       },
       stamp: async () => ({ size: 100, mtimeMs: 10 }),
       render,
