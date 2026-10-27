@@ -416,7 +416,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       registry: services.runtime.runSync(ViewRegistry),
       itemLookup: services.itemLookup,
       settings: services.settings,
-      templates: services.template,
     });
 
     registerNotePreview(this, {

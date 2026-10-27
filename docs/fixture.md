@@ -667,3 +667,7 @@ For a check that needs database writes, use a named copy of the built Zotero dat
    ```
 
 Rebuilding or discarding the Fixture also removes its forks. Restore the previous override before either operation.
+
+### Trial Explorer permissions
+
+Open `tools-for-thought.md` in the Fixture Vault and follow **Template Data Explorer permissions**. The cases check Liquid-only actions, enabling and removing JavaScript permission with an open Explorer, separate searches in two leaves, and cleanup after both leaves close.

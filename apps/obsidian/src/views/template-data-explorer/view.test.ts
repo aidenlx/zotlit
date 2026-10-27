@@ -133,9 +133,6 @@ function viewDeps(): ExplorerViewDeps {
       runSync: Effect.runSync,
     }),
     pluginVersion: "test",
-    templates: stubService<ExplorerViewDeps["templates"]>("Templates", {
-      javascriptTemplatesEnabled: true,
-    }),
   });
 }
 
