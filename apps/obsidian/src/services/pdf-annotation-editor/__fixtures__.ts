@@ -600,6 +600,9 @@ export function readerSurfaces({
     capability,
     now: READER_NOW,
   });
+  // The view holds its Attachment's list while it is open, as the binding
+  // does.
+  const viewHold = bridge.runSync(annotations.hold(["RGRPDF24"]));
   let held = records;
   ingestAnnotations(store, held, { annotations, bridge });
   const listening = listenAnnotationEvents(store, annotations, bridge);
@@ -755,6 +758,7 @@ export function readerSurfaces({
       host[Symbol.dispose]();
       session[Symbol.dispose]();
       listening.dispose();
+      viewHold[Symbol.dispose]();
     },
   };
 }
