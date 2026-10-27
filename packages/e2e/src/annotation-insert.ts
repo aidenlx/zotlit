@@ -80,7 +80,6 @@ export async function verifyAnnotationInsert(
         s.assets = app.vault
           .getFiles()
           .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
-        return String(true);
       },
       {
         effectPath,
@@ -105,14 +104,14 @@ export async function verifyAnnotationInsert(
       await obRun(
         vaultId,
         async ({ page }) => {
-          return String(
+          return (
             page.scratch.__zotlitInsertTrial!.leaf.view.editor.cm.dom
-              .ownerDocument.defaultView === window,
+              .ownerDocument.defaultView === window
           );
         },
         undefined,
       ),
-    ).toBe(String(host === "main"));
+    ).toBe(host === "main");
     await obRunUntil(
       vaultId,
       async ({ page }) => {
@@ -126,16 +125,16 @@ export async function verifyAnnotationInsert(
       await obRun(
         vaultId,
         async ({ app, page }) => {
-          return String(
+          return (
             app.vault
               .getFiles()
               .filter((f) => f.name.startsWith("zotlit-excerpt-")).length ===
-              page.scratch.__zotlitInsertTrial!.assets,
+            page.scratch.__zotlitInsertTrial!.assets
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     // The cards render once the read lands, a frame after the snapshot.
     await obRunUntil(
       vaultId,
@@ -316,17 +315,13 @@ export async function verifyAnnotationInsert(
               },
               undefined,
             )
-          : (JSON.parse(
-              await obRun(
-                vaultId,
-                async ({ page }) => {
-                  return JSON.stringify(
-                    page.scratch.__zotlitInsertTrial!.editor.getValue(),
-                  );
-                },
-                undefined,
-              ),
-            ) as string);
+          : ((await obRun(
+              vaultId,
+              async ({ page }) => {
+                return page.scratch.__zotlitInsertTrial!.editor.getValue();
+              },
+              undefined,
+            )) as string);
       if (mode === "escape" || mode === "switch" || mode === "close") {
         expect(text).toBe("before TARGET after");
       } else if (mode === "disabled") {
@@ -383,7 +378,6 @@ export async function verifyAnnotationInsert(
           vaultId,
           async ({ page }) => {
             page.scratch.__zotlitInsertTrial!.editor.undo();
-            return String(true);
           },
           undefined,
         );
@@ -404,7 +398,6 @@ export async function verifyAnnotationInsert(
           vaultId,
           async ({ page }) => {
             page.scratch.__zotlitInsertTrial!.other!.detach();
-            return String(true);
           },
           undefined,
         );
@@ -414,7 +407,7 @@ export async function verifyAnnotationInsert(
       vaultId,
       async ({ app, page }) => {
         const s = page.scratch.__zotlitInsertTrial!;
-        if (!s) return String(true);
+        if (!s) return;
         try {
           page.restoreAnnotationPreparation(s);
           if (s.link) app.fileManager.generateMarkdownLink = s.link;
@@ -431,7 +424,6 @@ export async function verifyAnnotationInsert(
             delete page.scratch.__zotlitInsertTrial;
           }
         }
-        return String(true);
       },
       undefined,
     );

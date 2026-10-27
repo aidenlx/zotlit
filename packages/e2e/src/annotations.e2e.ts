@@ -42,7 +42,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.commands.executeCommandById(
             "zotlit:annot-view-follow-active-tab",
           );
-          return String(true);
         },
         { annotationAttachmentPath: annotationAttachment.path! },
       );
@@ -68,22 +67,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
       );
       expect(
-        JSON.parse(
-          await obRun(
-            run.vaultId,
-            async ({ zotlit }, { annotationAttachmentKey }) => {
-              const { annotationRepository: repository, bridge } =
-                zotlit.services;
-              const list = await bridge.runPromise(
-                repository.read(annotationAttachmentKey),
-              );
-              return JSON.stringify({
-                source: list?.source.kind ?? null,
-                keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
-              });
-            },
-            { annotationAttachmentKey: annotationAttachment.key },
-          ),
+        await obRun(
+          run.vaultId,
+          async ({ zotlit }, { annotationAttachmentKey }) => {
+            const { annotationRepository: repository, bridge } =
+              zotlit.services;
+            const list = await bridge.runPromise(
+              repository.read(annotationAttachmentKey),
+            );
+            return {
+              source: list?.source.kind ?? null,
+              keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
+            };
+          },
+          { annotationAttachmentKey: annotationAttachment.key },
         ),
       ).toEqual({
         source: "zotero-db",
@@ -163,29 +160,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(
-        JSON.parse(
-          await obRun(
-            run.vaultId,
-            async ({ app }) => {
-              return JSON.stringify(
-                (() => {
-                  const annotationView = (
-                    app.workspace.getLeavesOfType(
-                      "zotero-annotation-view",
-                    ) as AnnotationLeaf[]
-                  )[0]?.view;
-                  const cards = Array.from(
-                    annotationView?.containerEl.querySelectorAll<HTMLElement>(
-                      ".zt-annot-card[data-zotero-annotation-key]",
-                    ) ?? [],
-                    (el) => el.getAttribute("data-zotero-annotation-key"),
-                  ).filter(Boolean);
-                  return [...new Set(cards)].sort();
-                })(),
-              );
-            },
-            undefined,
-          ),
+        await obRun(
+          run.vaultId,
+          async ({ app }) => {
+            return (() => {
+              const annotationView = (
+                app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[]
+              )[0]?.view;
+              const cards = Array.from(
+                annotationView?.containerEl.querySelectorAll<HTMLElement>(
+                  ".zt-annot-card[data-zotero-annotation-key]",
+                ) ?? [],
+                (el) => el.getAttribute("data-zotero-annotation-key"),
+              ).filter(Boolean);
+              return [...new Set(cards)].sort();
+            })();
+          },
+          undefined,
         ),
       ).toEqual(expected);
       // Wait for the card's growing excerpt to settle before starting a transition.
@@ -193,68 +186,66 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // Seek each transition to its midpoint so a late timer cannot sample its end.
       // Under reduced motion neither property has an intermediate value.
 
-      const { motion, ...eased } = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }) => {
-            const { until } = page;
-            const card = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as AnnotationLeaf[]
-            )[0]!.view.containerEl.querySelector<HTMLElement>(
-              ".zt-annot-card:not([data-selected])",
-            )!;
-            const read = () => {
-              const s = getComputedStyle(card);
-              return { fill: s.backgroundColor, ring: s.boxShadow };
-            };
-            let height = -1,
-              since = 0;
-            await until(
-              "excerpt height settles",
-              () => {
-                if (card!.offsetHeight !== height) {
-                  height = card!.offsetHeight;
-                  since = Temporal.Now.instant().epochMilliseconds;
-                }
-                return Temporal.Now.instant().epochMilliseconds - since >= 300;
-              },
-              10000,
-            );
-            const probe = (on: boolean) => {
-              const start = read();
-              card!.toggleAttribute("data-selected", on);
-              read();
-              const transitions = card!
-                .getAnimations()
-                .filter((animation): animation is CSSTransition =>
-                  ["background-color", "box-shadow"].includes(
-                    (animation as CSSTransition).transitionProperty,
-                  ),
-                );
-              for (const animation of transitions) {
-                animation.pause();
-                animation.currentTime =
-                  Number(animation.effect!.getComputedTiming().activeDuration) /
-                  2;
+      const { motion, ...eased } = (await obRun(
+        run.vaultId,
+        async ({ app, page }) => {
+          const { until } = page;
+          const card = (
+            app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            ) as AnnotationLeaf[]
+          )[0]!.view.containerEl.querySelector<HTMLElement>(
+            ".zt-annot-card:not([data-selected])",
+          )!;
+          const read = () => {
+            const s = getComputedStyle(card);
+            return { fill: s.backgroundColor, ring: s.boxShadow };
+          };
+          let height = -1,
+            since = 0;
+          await until(
+            "excerpt height settles",
+            () => {
+              if (card!.offsetHeight !== height) {
+                height = card!.offsetHeight;
+                since = Temporal.Now.instant().epochMilliseconds;
               }
-              const mid = read();
-              for (const animation of transitions) animation.finish();
-              const end = read();
-              const eases = (name: "fill" | "ring") =>
-                mid[name] !== start[name] && mid[name] !== end[name];
-              return { fill: eases("fill"), ring: eases("ring") };
-            };
-            const motion = !matchMedia("(prefers-reduced-motion: reduce)")
-              .matches;
-            const select = probe(true);
-            const deselect = probe(false);
-            return JSON.stringify({ motion, select, deselect });
-          },
-          undefined,
-        ),
-      ) as { motion: boolean };
+              return Temporal.Now.instant().epochMilliseconds - since >= 300;
+            },
+            10000,
+          );
+          const probe = (on: boolean) => {
+            const start = read();
+            card!.toggleAttribute("data-selected", on);
+            read();
+            const transitions = card!
+              .getAnimations()
+              .filter((animation): animation is CSSTransition =>
+                ["background-color", "box-shadow"].includes(
+                  (animation as CSSTransition).transitionProperty,
+                ),
+              );
+            for (const animation of transitions) {
+              animation.pause();
+              animation.currentTime =
+                Number(animation.effect!.getComputedTiming().activeDuration) /
+                2;
+            }
+            const mid = read();
+            for (const animation of transitions) animation.finish();
+            const end = read();
+            const eases = (name: "fill" | "ring") =>
+              mid[name] !== start[name] && mid[name] !== end[name];
+            return { fill: eases("fill"), ring: eases("ring") };
+          };
+          const motion = !matchMedia("(prefers-reduced-motion: reduce)")
+            .matches;
+          const select = probe(true);
+          const deselect = probe(false);
+          return { motion, select, deselect };
+        },
+        undefined,
+      )) as { motion: boolean };
       expect(eased).toEqual({
         select: { fill: motion, ring: motion },
         deselect: { fill: motion, ring: motion },
@@ -351,7 +342,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )!,
               "tag Chooser",
             );
-          return String(true);
         },
         {
           tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
@@ -519,7 +509,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               : null;
           })();
           popup?.hidePopover();
-          return String(true);
         },
         {
           tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
@@ -661,7 +650,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { layout }) => {
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { layout },
       );
@@ -682,7 +670,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { layout }) => {
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { layout },
       );
@@ -696,7 +683,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.commands.executeCommandById("zotlit:open-annot-view");
         app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
-        return String(true);
       },
       { annotationAttachmentPath: annotationAttachment.path! },
     );
@@ -784,7 +770,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "More options",
         );
-        return String(true);
       },
       undefined,
     );
@@ -816,7 +801,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         item!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
         press(item, "Group by");
-        return String(true);
       },
       { groupByLabel: run.m.annot_view_group_by() },
     );
@@ -848,7 +832,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Color",
         );
-        return String(true);
       },
       { propertyColorLabel: run.m.query_view_property_color() },
     );
@@ -920,7 +903,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Filter",
         );
-        return String(true);
       },
       { filterLabel: run.m.annot_view_filter() },
     );
@@ -963,210 +945,200 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A key typed straight after Enter or Tab takes an option lands in the
     // field, which keeps focus (#1651). The condition goes again before the
     // eval answers.
-    const escapes = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async (
-          { app, page },
-          { addConditionLabel, removeConditionLabel, editExpressionLabel },
-        ) => {
-          const { press, until } = page;
-          await using cleanup = new AsyncDisposableStack();
-          const contents = (
-            require("@electron/remote") as typeof import("@electron/remote")
-          ).getCurrentWebContents();
-          const key = async (keyCode: string) => {
-            const up = new Promise<Event>((r) =>
-              window.addEventListener("keyup", r, {
-                once: true,
-                capture: true,
-              }),
-            );
-            contents.sendInputEvent({ type: "keyDown", keyCode });
-            if (keyCode.length === 1)
-              contents.sendInputEvent({ type: "char", keyCode });
-            contents.sendInputEvent({ type: "keyUp", keyCode });
-            await up;
-          };
-          const modal = () =>
-            document.querySelector<HTMLElement>(
-              ".modal.zt-annot-filter-modal",
+    const escapes = await obRun(
+      run.vaultId,
+      async (
+        { app, page },
+        { addConditionLabel, removeConditionLabel, editExpressionLabel },
+      ) => {
+        const { press, until } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const contents = (
+          require("@electron/remote") as typeof import("@electron/remote")
+        ).getCurrentWebContents();
+        const key = async (keyCode: string) => {
+          const up = new Promise<Event>((r) =>
+            window.addEventListener("keyup", r, {
+              once: true,
+              capture: true,
+            }),
+          );
+          contents.sendInputEvent({ type: "keyDown", keyCode });
+          if (keyCode.length === 1)
+            contents.sendInputEvent({ type: "char", keyCode });
+          contents.sendInputEvent({ type: "keyUp", keyCode });
+          await up;
+        };
+        const modal = () =>
+          document.querySelector<HTMLElement>(".modal.zt-annot-filter-modal")!;
+        const section = modal()!.querySelector<HTMLElement>(
+          '[data-filter-section="view"]',
+        )!;
+        const before = section!.querySelectorAll<HTMLElement>(
+          "[data-condition-row]",
+        ).length;
+        press(
+          [...section!.querySelectorAll<HTMLButtonElement>("button")].find(
+            (button) => button.textContent.trim() === addConditionLabel,
+          ),
+          "Add condition",
+        );
+        const row = await until(
+          "new row",
+          () =>
+            section!.querySelectorAll<HTMLElement>("[data-condition-row]")[
+              before
+            ],
+        );
+        cleanup.defer(() => {
+          const remove = modal()
+            ?.querySelectorAll<HTMLElement>(
+              '[data-filter-section="view"] [data-condition-row]',
+            )
+            [before]?.querySelector<HTMLElement>(
+              `button[aria-label=${JSON.stringify(removeConditionLabel)}]`,
             )!;
-          const section = modal()!.querySelector<HTMLElement>(
-            '[data-filter-section="view"]',
-          )!;
-          const before = section!.querySelectorAll<HTMLElement>(
-            "[data-condition-row]",
-          ).length;
-          press(
-            [...section!.querySelectorAll<HTMLButtonElement>("button")].find(
-              (button) => button.textContent.trim() === addConditionLabel,
-            ),
-            "Add condition",
-          );
-          const row = await until(
-            "new row",
-            () =>
-              section!.querySelectorAll<HTMLElement>("[data-condition-row]")[
-                before
-              ],
-          );
-          cleanup.defer(() => {
-            const remove = modal()
-              ?.querySelectorAll<HTMLElement>(
-                '[data-filter-section="view"] [data-condition-row]',
-              )
-              [before]?.querySelector<HTMLElement>(
-                `button[aria-label=${JSON.stringify(removeConditionLabel)}]`,
-              )!;
-            if (remove) press(remove, "Remove condition");
+          if (remove) press(remove, "Remove condition");
+        });
+        press(
+          row.querySelector<HTMLElement>(
+            `button[aria-label=${JSON.stringify(editExpressionLabel)}]`,
+          )!,
+          "Edit as expression",
+        );
+        const content = await until("expression field", () =>
+          section!
+            .querySelectorAll<HTMLElement>("[data-condition-row]")
+            [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
+        );
+        const editor = content.cmTile!.root!.view;
+        window.focus();
+        editor.focus();
+        await until(
+          "focus in the field",
+          () => document.activeElement === content && document.hasFocus(),
+          5000,
+        );
+        const type = (text: string) => {
+          editor.dispatch({
+            selection: { anchor: 0, head: editor.state.doc.length },
           });
-          press(
-            row.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(editExpressionLabel)}]`,
-            )!,
-            "Edit as expression",
-          );
-          const content = await until("expression field", () =>
-            section!
-              .querySelectorAll<HTMLElement>("[data-condition-row]")
-              [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
-          );
-          const editor = content.cmTile!.root!.view;
-          window.focus();
-          editor.focus();
-          await until(
-            "focus in the field",
-            () => document.activeElement === content && document.hasFocus(),
-            5000,
-          );
-          const type = (text: string) => {
-            editor.dispatch({
-              selection: { anchor: 0, head: editor.state.doc.length },
-            });
-            document.execCommand("insertText", false, text);
-          };
-          type("te");
-          await until("list opens", () =>
-            document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
-          );
+          document.execCommand("insertText", false, text);
+        };
+        type("te");
+        await until("list opens", () =>
+          document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+        );
+        await key("Escape");
+        await until(
+          "Escape closes the list",
+          () =>
+            !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+        );
+        const list = { dialog: !!modal() };
+        if (!modal()) return { list };
+        type("text.slice(1, ");
+        await until("Signature Hint", () =>
+          document.querySelector<HTMLElement>(".zt-signature-hint")!,
+        );
+        await new Promise((r) => setTimeout(r, 200));
+        if (document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!) {
           await key("Escape");
           await until(
-            "Escape closes the list",
+            "Escape closes the list over the hint",
             () =>
               !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
           );
-          const list = { dialog: !!modal() };
-          if (!modal()) return JSON.stringify({ list });
-          type("text.slice(1, ");
-          await until("Signature Hint", () =>
-            document.querySelector<HTMLElement>(".zt-signature-hint")!,
-          );
-          await new Promise((r) => setTimeout(r, 200));
-          if (
-            document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!
-          ) {
-            await key("Escape");
-            await until(
-              "Escape closes the list over the hint",
-              () =>
-                !document.querySelector<HTMLElement>(
-                  ".cm-tooltip-autocomplete",
-                )!,
-            );
-          }
-          await key("Escape");
-          await until(
-            "Escape closes the hint",
-            () => !document.querySelector<HTMLElement>(".zt-signature-hint")!,
-          );
-          const hint = { dialog: !!modal() };
-          type("text.sli");
-          await until("list opens", () =>
+        }
+        await key("Escape");
+        await until(
+          "Escape closes the hint",
+          () => !document.querySelector<HTMLElement>(".zt-signature-hint")!,
+        );
+        const hint = { dialog: !!modal() };
+        type("text.sli");
+        await until("list opens", () =>
+          document.querySelector<HTMLElement>(
+            ".cm-tooltip-autocomplete li[aria-selected]",
+          )!,
+        );
+        await new Promise((r) => setTimeout(r, 200));
+        await key("Tab");
+        await until(
+          "Tab closes the list",
+          () =>
+            !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+        );
+        const tab = {
+          hintClosed: false,
+          doc: editor.state.doc.toString(),
+          dialog: !!modal(),
+          focus: document.activeElement === content,
+        };
+        await until("Signature Hint of the method", () =>
+          document.querySelector<HTMLElement>(".zt-signature-hint")!,
+        );
+        await key("Escape");
+        await until(
+          "Escape closes the hint",
+          () => !document.querySelector<HTMLElement>(".zt-signature-hint")!,
+        );
+        tab.hintClosed = !!modal();
+        const saved = () =>
+          ((
+            app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            ) as AnnotationLeaf[]
+          )[0]?.view.getState().query as string) ?? "";
+        const settled = () =>
+          new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r)));
+        const typed: Record<
+          string,
+          { doc: string; focus: boolean; dialog: boolean }
+        > = {};
+        for (const [name, keyCode] of [
+          ["enter", "Enter"],
+          ["tab", "Tab"],
+        ] as const) {
+          type("te");
+          await until(`${name} list opens`, () =>
             document.querySelector<HTMLElement>(
               ".cm-tooltip-autocomplete li[aria-selected]",
             )!,
           );
           await new Promise((r) => setTimeout(r, 200));
-          await key("Tab");
-          await until(
-            "Tab closes the list",
-            () =>
-              !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+          await key(keyCode);
+          await key(".");
+          await until(`${name} saves the typed text`, () =>
+            saved()
+              .split(String.fromCharCode(10))
+              .some((line) => /text[.]["']?$/.test(line.trimEnd())),
           );
-          const tab = {
-            hintClosed: false,
+          await settled();
+          typed[name] = {
             doc: editor.state.doc.toString(),
-            dialog: !!modal(),
             focus: document.activeElement === content,
+            dialog: !!modal(),
           };
-          await until("Signature Hint of the method", () =>
-            document.querySelector<HTMLElement>(".zt-signature-hint")!,
-          );
-          await key("Escape");
-          await until(
-            "Escape closes the hint",
-            () => !document.querySelector<HTMLElement>(".zt-signature-hint")!,
-          );
-          tab.hintClosed = !!modal();
-          const saved = () =>
-            ((
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as AnnotationLeaf[]
-            )[0]?.view.getState().query as string) ?? "";
-          const settled = () =>
-            new Promise<void>((r) =>
-              requestAnimationFrame(() => setTimeout(r)),
-            );
-          const typed: Record<
-            string,
-            { doc: string; focus: boolean; dialog: boolean }
-          > = {};
-          for (const [name, keyCode] of [
-            ["enter", "Enter"],
-            ["tab", "Tab"],
-          ] as const) {
-            type("te");
-            await until(`${name} list opens`, () =>
-              document.querySelector<HTMLElement>(
-                ".cm-tooltip-autocomplete li[aria-selected]",
-              )!,
-            );
-            await new Promise((r) => setTimeout(r, 200));
-            await key(keyCode);
-            await key(".");
-            await until(`${name} saves the typed text`, () =>
-              saved()
-                .split(String.fromCharCode(10))
-                .some((line) => /text[.]["']?$/.test(line.trimEnd())),
-            );
-            await settled();
-            typed[name] = {
-              doc: editor.state.doc.toString(),
-              focus: document.activeElement === content,
-              dialog: !!modal(),
-            };
-            for (
-              let left = 5;
-              document.querySelector<HTMLElement>(
-                ".cm-tooltip-autocomplete, .zt-signature-hint",
-              )!;
-              left--
-            ) {
-              if (left === 0)
-                throw new Error(`Escape leaves a popup open after ${name}`);
-              await key("Escape");
-            }
+          for (
+            let left = 5;
+            document.querySelector<HTMLElement>(
+              ".cm-tooltip-autocomplete, .zt-signature-hint",
+            )!;
+            left--
+          ) {
+            if (left === 0)
+              throw new Error(`Escape leaves a popup open after ${name}`);
+            await key("Escape");
           }
-          return JSON.stringify({ list, hint, tab, typed });
-        },
-        {
-          addConditionLabel: run.m.workbench_match_add_condition(),
-          removeConditionLabel: run.m.workbench_match_remove_condition(),
-          editExpressionLabel: run.m.workbench_match_edit_as_expression(),
-        },
-      ),
+        }
+        return { list, hint, tab, typed };
+      },
+      {
+        addConditionLabel: run.m.workbench_match_add_condition(),
+        removeConditionLabel: run.m.workbench_match_remove_condition(),
+        editExpressionLabel: run.m.workbench_match_edit_as_expression(),
+      },
     );
     expect(escapes).toEqual({
       list: { dialog: true },
@@ -1193,7 +1165,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             bubbles: true,
           }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -1310,7 +1281,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.vault.modify(app.vault.getFileByPath(notePath)!, noteText);
           const saved = app.vault.getFileByPath(savedPath)!;
           if (saved) await app.vault.delete(saved);
-          return String(true);
         },
         { layout, notePath, noteText, savedPath },
       );
@@ -1324,7 +1294,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.commands.executeCommandById("zotlit:open-annot-view");
         app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
-        return String(true);
       },
       { annotationAttachmentPath: annotationAttachment.path! },
     );
@@ -1396,27 +1365,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // side dock hides the view header, so the reader presses the header
     // row's own "More options".
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }) => {
-            const { press } = page;
-            const button = press(
-              (
-                app.workspace.getLeavesOfType(
-                  "zotero-annotation-view",
-                ) as AnnotationLeaf[]
-              )[0]?.view.contentEl.querySelector<HTMLElement>(
-                "[data-annot-view-more-options]",
-              )!,
-              "More options",
-            );
-            return JSON.stringify({
-              label: button.getAttribute("aria-label"),
-            });
-          },
-          undefined,
-        ),
+      await obRun(
+        run.vaultId,
+        async ({ app, page }) => {
+          const { press } = page;
+          const button = press(
+            (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view.contentEl.querySelector<HTMLElement>(
+              "[data-annot-view-more-options]",
+            )!,
+            "More options",
+          );
+          return {
+            label: button.getAttribute("aria-label"),
+          };
+        },
+        undefined,
       ),
     ).toEqual({ label: run.m.annot_view_more_tooltip() });
 
@@ -1448,47 +1415,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Save as query file",
         );
-        return String(true);
       },
       { saveQueryLabel: run.m.annot_view_save_as_query_file() },
     );
 
     // The dialog asks the name, the folder, and which records the file shows.
 
-    const dialog = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async (_context) => {
-          const modal = document.querySelector<HTMLElement>(
-            ".modal.zt-save-query-file-modal",
-          )!;
-          return JSON.stringify(
-            modal
-              ? {
-                  title:
-                    modal!.querySelector<HTMLElement>(".modal-title")
-                      ?.textContent ?? null,
-                  fields: [
-                    ...modal!.querySelectorAll<HTMLElement>(
-                      "[data-save-field]",
-                    ),
-                  ].map((n) => n.getAttribute("data-save-field")),
-                  records: [
-                    ...modal!.querySelectorAll<HTMLInputElement>(
-                      "[data-save-records]",
-                    ),
-                  ].map((n) => ({
-                    value: n.getAttribute("data-save-records"),
-                    label: n.closest("label")!.textContent,
-                    checked: n.checked,
-                  })),
-                }
-              : null,
-          );
-        },
-        undefined,
-      ),
-    ) as {
+    const dialog = (await obRun(
+      run.vaultId,
+      async (_context) => {
+        const modal = document.querySelector<HTMLElement>(
+          ".modal.zt-save-query-file-modal",
+        )!;
+        return modal
+          ? {
+              title:
+                modal!.querySelector<HTMLElement>(".modal-title")
+                  ?.textContent ?? null,
+              fields: [
+                ...modal!.querySelectorAll<HTMLElement>("[data-save-field]"),
+              ].map((n) => n.getAttribute("data-save-field")),
+              records: [
+                ...modal!.querySelectorAll<HTMLInputElement>(
+                  "[data-save-records]",
+                ),
+              ].map((n) => ({
+                value: n.getAttribute("data-save-records"),
+                label: n.closest("label")!.textContent,
+                checked: n.checked,
+              })),
+            }
+          : null;
+      },
+      undefined,
+    )) as {
       title: string;
       fields: string[];
       records: { value: string; label: string; checked: boolean }[];
@@ -1539,7 +1499,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Save",
         );
-        return String(true);
       },
       undefined,
     );
@@ -1596,7 +1555,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file, { state: { mode: "preview" } });
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       {
         notePath,

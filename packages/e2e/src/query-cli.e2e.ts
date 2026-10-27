@@ -336,13 +336,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit, page: pageHelpers }) => {
           const state = pageHelpers.scratch.__zotlitQuerySource;
-          if (!state) return String(true);
+          if (!state) return;
           const services = zotlit.services;
           services.zoteroPref.setDataDir(state.previous);
           await state.lease?.[Symbol.asyncDispose]();
           delete pageHelpers.scratch.__zotlitQuerySource;
           await services.zoteroReads.refresh();
-          return String(true);
         },
         undefined,
       );
@@ -370,7 +369,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         services.zoteroPref.setDataDir(otherDir);
         await services.zoteroReads.refresh();
-        return String(true);
       },
       { otherDir },
     );
@@ -1566,7 +1564,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({ "zotero.auto-refresh": false }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -1579,7 +1576,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "zotero.auto-refresh": autoRefreshEnabled,
             }),
           );
-          return String(true);
         },
         { autoRefreshEnabled: autoRefresh === "true" },
       );
@@ -1595,7 +1591,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               pageHelpers.scratch.zotlitE2EChanged!++;
             },
           );
-        return String(true);
       },
       undefined,
     );
@@ -1606,7 +1601,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pageHelpers.scratch.zotlitE2EOffChanged!();
           delete pageHelpers.scratch.zotlitE2EOffChanged;
           delete pageHelpers.scratch.zotlitE2EChanged;
-          return String(true);
         },
         undefined,
       );
@@ -1618,7 +1612,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ page: pageHelpers }) => {
           await pageHelpers.scratch.zotlitE2ESidebar?.cleanup.disposeAsync();
           delete pageHelpers.scratch.zotlitE2ESidebar;
-          return String(true);
         },
         undefined,
       );
@@ -1658,11 +1651,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             cleanup: cleanup.move(),
           };
           pageHelpers.scratch.zotlitE2ESidebar = watch;
-          return String(watch.before);
+          return watch.before;
         },
         { annotationItemKey: annotationItem.key },
       ),
-    ).toBe(String(attachmentAnnotations.length));
+    ).toBe(attachmentAnnotations.length);
     const signal = () => signalDatabaseUpdated(run.vaultId);
     // A Zotero edit moves the Item's title and its modification time.
     const edit = (title: string, dateModified: string) => {
@@ -1741,18 +1734,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }, { searchQuery, annotationItemId }) => {
           var hits = await zotlit.services.itemLookup.search(searchQuery);
-          return String(
-            hits.some(function (hit) {
-              return hit.item.itemID === annotationItemId;
-            }),
-          );
+          return hits.some(function (hit) {
+            return hit.item.itemID === annotationItemId;
+          });
         },
         {
           searchQuery: "simple rules",
           annotationItemId: annotationItem.itemID,
         },
       ),
-    ).toBe("true");
+    ).toBe(true);
     await using cleanup = new AsyncDisposableStack();
 
     // A sync lands a large Library: the worker builds its index while the
@@ -1785,50 +1776,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Until the build completes, the held index answers: a known Item stays
     // found. The new Items show once it completes. The 10 ms pause is the
     // sampling cadence of the measurement, not a wait for a state.
-    const rebuild = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async (
-          { zotlit },
-          { lastTitleQuery, lastItemID, annotationItemId },
-        ) => {
-          var lookup = zotlit.services.itemLookup;
-          var has = function (
-            hits: Awaited<ReturnType<typeof lookup.search>>,
-            id: number,
-          ) {
-            return hits.some(function (hit) {
-              return hit.item.itemID === id;
-            });
-          };
-          var start = performance.now();
-          var waits = [];
-          var staleMisses = 0;
-          while (performance.now() - start < 60000) {
-            if (has(await lookup.search(lastTitleQuery), lastItemID))
-              return JSON.stringify({
-                builtMs: Math.round(performance.now() - start),
-                polls: waits.length,
-                staleMisses: staleMisses,
-                waitMedianMs: waits.sort(function (a, b) {
-                  return a - b;
-                })[waits.length >> 1],
-                waitMaxMs: waits.at(-1),
-              });
-            var t0 = performance.now();
-            if (!has(await lookup.search("simple rules"), annotationItemId))
-              staleMisses++;
-            waits.push(Math.round((performance.now() - t0) * 10) / 10);
-            await new Promise(function (resolve) {
-              setTimeout(resolve, 10);
-            });
-          }
-          return JSON.stringify({ builtMs: null });
-        },
-        { lastTitleQuery, lastItemID, annotationItemId: annotationItem.itemID },
-        { timeoutMs: 90000 },
-      ),
-    ) as {
+    const rebuild = (await obRun(
+      run.vaultId,
+      async ({ zotlit }, { lastTitleQuery, lastItemID, annotationItemId }) => {
+        var lookup = zotlit.services.itemLookup;
+        var has = function (
+          hits: Awaited<ReturnType<typeof lookup.search>>,
+          id: number,
+        ) {
+          return hits.some(function (hit) {
+            return hit.item.itemID === id;
+          });
+        };
+        var start = performance.now();
+        var waits = [];
+        var staleMisses = 0;
+        while (performance.now() - start < 60000) {
+          if (has(await lookup.search(lastTitleQuery), lastItemID))
+            return {
+              builtMs: Math.round(performance.now() - start),
+              polls: waits.length,
+              staleMisses: staleMisses,
+              waitMedianMs: waits.sort(function (a, b) {
+                return a - b;
+              })[waits.length >> 1],
+              waitMaxMs: waits.at(-1),
+            };
+          var t0 = performance.now();
+          if (!has(await lookup.search("simple rules"), annotationItemId))
+            staleMisses++;
+          waits.push(Math.round((performance.now() - t0) * 10) / 10);
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 10);
+          });
+        }
+        return { builtMs: null };
+      },
+      { lastTitleQuery, lastItemID, annotationItemId: annotationItem.itemID },
+      { timeoutMs: 90000 },
+    )) as {
       builtMs: number | null;
       polls: number;
       staleMisses: number;
@@ -1865,38 +1851,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `Synthauthor${added.firstItemID + 12}`,
       lastTitleQuery,
     ];
-    const timings = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ zotlit }, { queries }) => {
-          var lookup = zotlit.services.itemLookup;
-          var out: Record<
-            string,
-            { hits: number; medianMs: number; p95Ms: number }
-          > = {};
-          for (var query of queries) {
-            var times = [];
-            var hits = 0;
-            for (var i = 0; i < 21; i++) {
-              var t0 = performance.now();
-              hits = (await lookup.search(query)).length;
-              times.push(performance.now() - t0);
-            }
-            times.sort(function (a, b) {
-              return a - b;
-            });
-            out[query] = {
-              hits: hits,
-              medianMs: Math.round(times[10]! * 10) / 10,
-              p95Ms: Math.round(times[19]! * 10) / 10,
-            };
+    const timings = (await obRun(
+      run.vaultId,
+      async ({ zotlit }, { queries }) => {
+        var lookup = zotlit.services.itemLookup;
+        var out: Record<
+          string,
+          { hits: number; medianMs: number; p95Ms: number }
+        > = {};
+        for (var query of queries) {
+          var times = [];
+          var hits = 0;
+          for (var i = 0; i < 21; i++) {
+            var t0 = performance.now();
+            hits = (await lookup.search(query)).length;
+            times.push(performance.now() - t0);
           }
-          return JSON.stringify(out);
-        },
-        { queries },
-        { timeoutMs: 90000 },
-      ),
-    ) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
+          times.sort(function (a, b) {
+            return a - b;
+          });
+          out[query] = {
+            hits: hits,
+            medianMs: Math.round(times[10]! * 10) / 10,
+            p95Ms: Math.round(times[19]! * 10) / 10,
+          };
+        }
+        return out;
+      },
+      { queries },
+      { timeoutMs: 90000 },
+    )) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
     console.info("Item Index queries, 10,000 Items", timings);
     for (const query of queries)
       expect(timings[query]!.hits).toBeGreaterThan(0);
@@ -1925,7 +1909,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             Worker.prototype.postMessage = original;
           },
         };
-        return String(true);
       },
       undefined,
     );
@@ -1934,13 +1917,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:update-all-notes"),
-            );
+            return app.commands.executeCommandById("zotlit:update-all-notes");
           },
           undefined,
         ),
-      ).toBe("true");
+      ).toBe(true);
       await obRunUntil(
         run.vaultId,
         async (_context, { confirmButtonLabel }) => {
@@ -1951,17 +1932,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { confirmButtonLabel: run.m.batch_update_confirm_button() },
         { what: "the modal button labelled with the confirm label to appear" },
       );
-      const requests = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ page: pageHelpers }) => {
-            return JSON.stringify(
-              pageHelpers.scratch.zotlitE2EClassifyRequests!.requests,
-            );
-          },
-          undefined,
-        ),
-      ) as { count: number; snapshot: string }[];
+      const requests = (await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          return pageHelpers.scratch.zotlitE2EClassifyRequests!.requests;
+        },
+        undefined,
+      )) as { count: number; snapshot: string }[];
       expect(
         requests.reduce((total, request) => total + request.count, 0),
       ).toBeGreaterThanOrEqual(SYNTHETIC_CORPUS_SIZE);
@@ -1975,7 +1952,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ page: pageHelpers }) => {
           pageHelpers.scratch.zotlitE2EClassifyRequests!.restore();
           delete pageHelpers.scratch.zotlitE2EClassifyRequests;
-          return String(true);
         },
         undefined,
       );
@@ -1992,7 +1968,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         var leaf = app.workspace.getLeaf(true);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.focus();
-        return String(true);
       },
       { notePath: source },
     );
@@ -2005,7 +1980,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             if ((leaf.view as import("obsidian").FileView).file === file)
               leaf.detach();
           await app.fileManager.trashFile(file!);
-          return String(true);
         },
         { source },
       );
@@ -2116,7 +2090,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             bubbles: true,
           }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -2165,7 +2138,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if ((error as Error).name !== "NotFoundError") throw error;
         }
         pageHelpers.scratch.zotlitE2ESegmenterCache = saved;
-        return String(true);
       },
       { SEGMENTER_CACHE_DIR },
     );
@@ -2195,7 +2167,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }
           }
           delete pageHelpers.scratch.zotlitE2ESegmenterCache;
-          return String(true);
         },
         { SEGMENTER_CACHE_DIR },
       );
@@ -2204,13 +2175,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          await zotlit.services.chineseSegmenter
-            .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
-            .then(function () {
-              return true;
-            }),
-        );
+        return await zotlit.services.chineseSegmenter
+          .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
+          .then(function () {
+            return true;
+          });
       },
       undefined,
     );
@@ -2242,21 +2211,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }, { searchTerm, firstItemID }) => {
           var hits = await zotlit.services.itemLookup.search(searchTerm);
-          return String(
-            hits.some(function (hit) {
-              return hit.item.itemID === firstItemID;
-            }),
-          );
+          return hits.some(function (hit) {
+            return hit.item.itemID === firstItemID;
+          });
         },
         { searchTerm: "流域", firstItemID: added.firstItemID },
       ),
-    ).toBe("false");
+    ).toBe(false);
 
     await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
         pageHelpers.scratch.zotlitE2EPlugin = app.plugins.plugins.zotlit;
-        return String(true);
       },
       undefined,
     );
@@ -2265,7 +2231,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page: pageHelpers }) => {
           delete pageHelpers.scratch.zotlitE2EPlugin;
-          return String(true);
         },
         undefined,
       );
@@ -2303,13 +2268,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          await zotlit.services.chineseSegmenter
-            .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
-            .then(function () {
-              return true;
-            }),
-        );
+        return await zotlit.services.chineseSegmenter
+          .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
+          .then(function () {
+            return true;
+          });
       },
       undefined,
     );
@@ -2332,26 +2295,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }, { searchTerm, firstItemID }) => {
           var hits = await zotlit.services.itemLookup.search(searchTerm);
-          return String(
-            hits.some(function (hit) {
-              return hit.item.itemID === firstItemID;
-            }),
-          );
+          return hits.some(function (hit) {
+            return hit.item.itemID === firstItemID;
+          });
         },
         { searchTerm: "长江流域", firstItemID: added.firstItemID },
       ),
-    ).toBe("true");
+    ).toBe(true);
     expect(
       await obRun(
         run.vaultId,
         async ({ app, page: pageHelpers }) => {
-          return String(
-            pageHelpers.scratch.zotlitE2EPlugin === app.plugins.plugins.zotlit,
+          return (
+            pageHelpers.scratch.zotlitE2EPlugin === app.plugins.plugins.zotlit
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
   }, 180_000);
 
   it("writes the database worker's log records to the plugin's log file at the configured level", async () => {
@@ -2374,7 +2335,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )
           ).length;
           await zotlit.services.zoteroReads.refresh();
-          return String(true);
         },
         undefined,
       );
@@ -2441,7 +2401,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "log.to-file": true,
             }),
           );
-          return String(true);
         },
         undefined,
       );
@@ -2476,7 +2435,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({ "log.level": "info" }),
           );
-          return String(true);
         },
         undefined,
       );
@@ -2493,7 +2451,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update(previous),
           );
-          return String(true);
         },
         { previous },
       );

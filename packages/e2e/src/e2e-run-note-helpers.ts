@@ -80,27 +80,24 @@ async function recordFrames(vaultId: string): Promise<
       });
       record.observer.observe({ type: "longtask" });
       page.scratch.frames = record;
-      return String(true);
     },
     undefined,
   );
   return {
     async read() {
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page }) => {
-            var r = page.scratch.frames!;
-            return JSON.stringify({
-              frames: r.frames,
-              maxFrameGapMs: Math.round(r.maxFrameGapMs),
-              longTasks: r.longTasks,
-              longestTaskMs: Math.round(r.longestTaskMs),
-            });
-          },
-          undefined,
-        ),
-      ) as {
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          var r = page.scratch.frames!;
+          return {
+            frames: r.frames,
+            maxFrameGapMs: Math.round(r.maxFrameGapMs),
+            longTasks: r.longTasks,
+            longestTaskMs: Math.round(r.longestTaskMs),
+          };
+        },
+        undefined,
+      )) as {
         frames: number;
         maxFrameGapMs: number;
         longTasks: number;
@@ -115,7 +112,6 @@ async function recordFrames(vaultId: string): Promise<
           r.live = false;
           r.observer!.disconnect();
           delete page.scratch.frames;
-          return String(true);
         },
         undefined,
       );
@@ -272,7 +268,6 @@ async function selectItemSuggestion(
       input.dispatchEvent(
         new input.ownerDocument.defaultView!.Event("input", { bubbles: true }),
       );
-      return String(true);
     },
     { query },
   );
@@ -304,7 +299,6 @@ async function pressPromptKey(
             keyEventInit,
           ),
         );
-      return String(true);
     },
     {
       keyEventInit: {
@@ -371,21 +365,18 @@ async function observeNotices(vaultId: string) {
         observer.observe(doc.body, { childList: true, subtree: true });
       }
       page.scratch.notices = { observers: observers.move(), values };
-      return String(true);
     },
     undefined,
   );
   return {
     async read(): Promise<string[]> {
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page }) => {
-            return JSON.stringify([...page.scratch.notices!.values.values()]);
-          },
-          undefined,
-        ),
-      ) as string[];
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          return [...page.scratch.notices!.values.values()];
+        },
+        undefined,
+      )) as string[];
     },
     async [Symbol.asyncDispose]() {
       await obRun(
@@ -393,7 +384,6 @@ async function observeNotices(vaultId: string) {
         async ({ page }) => {
           page.scratch.notices!.observers[Symbol.dispose]();
           delete page.scratch.notices;
-          return String(true);
         },
         undefined,
       );
@@ -557,21 +547,19 @@ function zoteroKey(itemID: number): string {
 
 /** Tells the plugin the Zotero database changed, as the Companion's Freshness Signal does. */
 async function signalDatabaseUpdated(vaultId: string): Promise<void> {
-  const server = JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ zotlit }) => {
-        var services = zotlit.services;
-        var settings = services.bridge.runSync(services.settings.current);
-        return JSON.stringify({
-          hostname: settings["server.hostname"],
-          port: services.bridge.runSync(services.localServer.effectivePort),
-          sourceId: services.zoteroPref.sourceId,
-        });
-      },
-      undefined,
-    ),
-  ) as { hostname: string; port: number; sourceId: string };
+  const server = (await obRun(
+    vaultId,
+    async ({ zotlit }) => {
+      var services = zotlit.services;
+      var settings = services.bridge.runSync(services.settings.current);
+      return {
+        hostname: settings["server.hostname"],
+        port: services.bridge.runSync(services.localServer.effectivePort),
+        sourceId: services.zoteroPref.sourceId,
+      };
+    },
+    undefined,
+  )) as { hostname: string; port: number; sourceId: string };
   const response = await fetch(
     `http://${server.hostname}:${server.port}/notify`,
     {
@@ -592,20 +580,18 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
  * collection. A Web Worker's heap is its own and stays out of this figure.
  */
 async function rendererHeap(vaultId: string): Promise<number> {
-  return Number(
-    await obRun(
-      vaultId,
-      async (_context) => {
-        require("v8").setFlagsFromString("--expose-gc");
-        var gc = (require("vm") as typeof import("node:vm")).runInNewContext(
-          "gc",
-        ) as () => void;
-        gc();
-        gc();
-        return String(process.memoryUsage().heapUsed);
-      },
-      undefined,
-    ),
+  return await obRun(
+    vaultId,
+    async (_context) => {
+      require("v8").setFlagsFromString("--expose-gc");
+      var gc = (require("vm") as typeof import("node:vm")).runInNewContext(
+        "gc",
+      ) as () => void;
+      gc();
+      gc();
+      return process.memoryUsage().heapUsed;
+    },
+    undefined,
   );
 }
 

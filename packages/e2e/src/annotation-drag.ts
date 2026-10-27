@@ -79,7 +79,6 @@ export async function verifyAnnotationDrag(
         await s.view.read;
         app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
         page.resetAnnotationPreparation(s);
-        return String(true);
       },
       {
         effectPath,
@@ -103,73 +102,71 @@ export async function verifyAnnotationDrag(
     // The unrelated drop enters through CodeMirror's DOM input handler. The
     // tagged drop enters at Obsidian's editor-drop event, the plugin's public
     // consumer boundary, so core focus handling cannot activate the target.
-    const native = JSON.parse(
-      await obRun(
-        vaultId,
-        async ({ app, page }) => {
-          const s = page.scratch.__zotlitDragTrial!;
-          const card = s.view.contentEl.querySelector<HTMLElement>(
-            '[data-zotero-annotation-key="FDRFQ7C2"]',
-          );
-          s.button = card!.querySelector<HTMLElement>("[draggable]")!;
-          s.sourceWin = s.button.ownerDocument.defaultView!;
-          s.targetWin = s.editor.cm.dom.ownerDocument.defaultView!;
-          s.transfer = new s.sourceWin.DataTransfer();
-          const start = new s.sourceWin.DragEvent("dragstart", {
-            bubbles: true,
-            cancelable: true,
-            dataTransfer: s.transfer,
-          });
-          s.assetsBeforeStart = app.vault
+    const native = (await obRun(
+      vaultId,
+      async ({ app, page }) => {
+        const s = page.scratch.__zotlitDragTrial!;
+        const card = s.view.contentEl.querySelector<HTMLElement>(
+          '[data-zotero-annotation-key="FDRFQ7C2"]',
+        );
+        s.button = card!.querySelector<HTMLElement>("[draggable]")!;
+        s.sourceWin = s.button.ownerDocument.defaultView!;
+        s.targetWin = s.editor.cm.dom.ownerDocument.defaultView!;
+        s.transfer = new s.sourceWin.DataTransfer();
+        const start = new s.sourceWin.DragEvent("dragstart", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: s.transfer,
+        });
+        s.assetsBeforeStart = app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
+        s.sourceWin.focus();
+        app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
+        s.button.dispatchEvent(start);
+        s.assetsAfterStart = app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
+        s.prepareCallsAfterStart = s.prepareCalls;
+        s.activeAtStart = app.workspace.activeLeaf === s.viewLeaf;
+        s.nativeAssetsBefore = app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
+        const rect = s.editor.cm.coordsAtPos(0);
+        if (!rect) throw new Error("Native drop coordinates unavailable");
+        s.nativeCoords = {
+          x: Math.floor(rect.left + 1),
+          y: Math.floor((rect.top + rect.bottom) / 2),
+        };
+        s.nativePosition = s.editor.cm.posAtCoords(s.nativeCoords);
+        s.nativeTransfer = new s.targetWin.DataTransfer();
+        s.nativeTransfer.setData("text/plain", "NATIVE");
+        const nativeDrop = new s.targetWin.DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: s.nativeTransfer,
+          clientX: s.nativeCoords.x,
+          clientY: s.nativeCoords.y,
+        });
+        s.editor.cm.contentDOM.dispatchEvent(nativeDrop);
+        const result = {
+          afterUndo: "",
+          value: s.editor.getValue(),
+          position: s.nativePosition,
+          prepareCalls: s.prepareCalls,
+          assetCount: app.vault
             .getFiles()
-            .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
-          s.sourceWin.focus();
-          app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
-          s.button.dispatchEvent(start);
-          s.assetsAfterStart = app.vault
-            .getFiles()
-            .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
-          s.prepareCallsAfterStart = s.prepareCalls;
-          s.activeAtStart = app.workspace.activeLeaf === s.viewLeaf;
-          s.nativeAssetsBefore = app.vault
-            .getFiles()
-            .filter((f) => f.name.startsWith("zotlit-excerpt-")).length;
-          const rect = s.editor.cm.coordsAtPos(0);
-          if (!rect) throw new Error("Native drop coordinates unavailable");
-          s.nativeCoords = {
-            x: Math.floor(rect.left + 1),
-            y: Math.floor((rect.top + rect.bottom) / 2),
-          };
-          s.nativePosition = s.editor.cm.posAtCoords(s.nativeCoords);
-          s.nativeTransfer = new s.targetWin.DataTransfer();
-          s.nativeTransfer.setData("text/plain", "NATIVE");
-          const nativeDrop = new s.targetWin.DragEvent("drop", {
-            bubbles: true,
-            cancelable: true,
-            dataTransfer: s.nativeTransfer,
-            clientX: s.nativeCoords.x,
-            clientY: s.nativeCoords.y,
-          });
-          s.editor.cm.contentDOM.dispatchEvent(nativeDrop);
-          const result = {
-            afterUndo: "",
-            value: s.editor.getValue(),
-            position: s.nativePosition,
-            prepareCalls: s.prepareCalls,
-            assetCount: app.vault
-              .getFiles()
-              .filter((f) => f.name.startsWith("zotlit-excerpt-")).length,
-            assetsBefore: s.nativeAssetsBefore,
-          };
-          s.editor.undo();
-          result.afterUndo = s.editor.getValue();
-          s.sourceWin.focus();
-          app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
-          return JSON.stringify(result);
-        },
-        undefined,
-      ),
-    ) as {
+            .filter((f) => f.name.startsWith("zotlit-excerpt-")).length,
+          assetsBefore: s.nativeAssetsBefore,
+        };
+        s.editor.undo();
+        result.afterUndo = s.editor.getValue();
+        s.sourceWin.focus();
+        app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
+        return result;
+      },
+      undefined,
+    )) as {
       value: string;
       position: number;
       prepareCalls: number;
@@ -190,7 +187,6 @@ export async function verifyAnnotationDrag(
         const s = page.scratch.__zotlitDragTrial!;
         s.sourceWin.focus();
         app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
-        return String(true);
       },
       undefined,
     );
@@ -230,7 +226,6 @@ export async function verifyAnnotationDrag(
         });
         app.workspace.trigger("editor-drop", drop, s.editor, s.targetLeaf.view);
         s.dropPrevented = drop.defaultPrevented;
-        return String(true);
       },
       undefined,
     );
@@ -242,42 +237,40 @@ export async function verifyAnnotationDrag(
       undefined,
       { what: "the drag trial prepare step to run once" },
     );
-    const capture = JSON.parse(
-      await obRun(
-        vaultId,
-        async ({ app, page }) => {
-          return JSON.stringify({
-            sourceMain:
-              page.scratch.__zotlitDragTrial!.sourceWin ===
-              page.scratch.__zotlitDragTrial!.mainWin,
-            targetMain:
-              page.scratch.__zotlitDragTrial!.targetWin ===
-              page.scratch.__zotlitDragTrial!.mainWin,
-            separate:
-              page.scratch.__zotlitDragTrial!.sourceWin !==
-              page.scratch.__zotlitDragTrial!.targetWin,
-            noAsset:
-              page.scratch.__zotlitDragTrial!.assetsAfterStart ===
-              page.scratch.__zotlitDragTrial!.assetsBeforeStart,
-            prepareCallsAfterStart:
-              page.scratch.__zotlitDragTrial!.prepareCallsAfterStart,
-            activeAtStart: page.scratch.__zotlitDragTrial!.activeAtStart,
-            activeAfterCapture:
-              app.workspace.activeLeaf ===
-              page.scratch.__zotlitDragTrial!.viewLeaf,
-            targetInactive:
-              app.workspace.activeLeaf !==
-              page.scratch.__zotlitDragTrial!.targetLeaf,
-            dropPrevented: page.scratch.__zotlitDragTrial!.dropPrevented,
-            calls: page.scratch.__zotlitDragTrial!.coordinateCalls,
-            expected: page.scratch.__zotlitDragTrial!.expectedCoords,
-            directPosition: page.scratch.__zotlitDragTrial!.directPosition,
-            notePath: page.scratch.__zotlitDragTrial!.options!.notePath,
-          });
-        },
-        undefined,
-      ),
-    ) as {
+    const capture = (await obRun(
+      vaultId,
+      async ({ app, page }) => {
+        return {
+          sourceMain:
+            page.scratch.__zotlitDragTrial!.sourceWin ===
+            page.scratch.__zotlitDragTrial!.mainWin,
+          targetMain:
+            page.scratch.__zotlitDragTrial!.targetWin ===
+            page.scratch.__zotlitDragTrial!.mainWin,
+          separate:
+            page.scratch.__zotlitDragTrial!.sourceWin !==
+            page.scratch.__zotlitDragTrial!.targetWin,
+          noAsset:
+            page.scratch.__zotlitDragTrial!.assetsAfterStart ===
+            page.scratch.__zotlitDragTrial!.assetsBeforeStart,
+          prepareCallsAfterStart:
+            page.scratch.__zotlitDragTrial!.prepareCallsAfterStart,
+          activeAtStart: page.scratch.__zotlitDragTrial!.activeAtStart,
+          activeAfterCapture:
+            app.workspace.activeLeaf ===
+            page.scratch.__zotlitDragTrial!.viewLeaf,
+          targetInactive:
+            app.workspace.activeLeaf !==
+            page.scratch.__zotlitDragTrial!.targetLeaf,
+          dropPrevented: page.scratch.__zotlitDragTrial!.dropPrevented,
+          calls: page.scratch.__zotlitDragTrial!.coordinateCalls,
+          expected: page.scratch.__zotlitDragTrial!.expectedCoords,
+          directPosition: page.scratch.__zotlitDragTrial!.directPosition,
+          notePath: page.scratch.__zotlitDragTrial!.options!.notePath,
+        };
+      },
+      undefined,
+    )) as {
       sourceMain: boolean;
       targetMain: boolean;
       separate: boolean;
@@ -317,7 +310,6 @@ export async function verifyAnnotationDrag(
           changes: { from: 0, insert: "user " },
         });
         page.scratch.__zotlitDragTrial!.release();
-        return String(true);
       },
       undefined,
     );
@@ -333,16 +325,16 @@ export async function verifyAnnotationDrag(
       await obRun(
         vaultId,
         async ({ app, page }) => {
-          return String(
+          return (
             app.workspace.activeLeaf ===
               page.scratch.__zotlitDragTrial!.viewLeaf &&
-              app.workspace.activeLeaf !==
-                page.scratch.__zotlitDragTrial!.targetLeaf,
+            app.workspace.activeLeaf !==
+              page.scratch.__zotlitDragTrial!.targetLeaf
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     await obRunUntil(
       vaultId,
       async ({ page }) => {
@@ -353,17 +345,13 @@ export async function verifyAnnotationDrag(
       undefined,
       { what: "the editor to contain a zotlit-excerpt embed after the drop" },
     );
-    const text = JSON.parse(
-      await obRun(
-        vaultId,
-        async ({ page }) => {
-          return JSON.stringify(
-            page.scratch.__zotlitDragTrial!.editor.getValue(),
-          );
-        },
-        undefined,
-      ),
-    ) as string;
+    const text = (await obRun(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch.__zotlitDragTrial!.editor.getValue();
+      },
+      undefined,
+    )) as string;
     expect(text).toContain("![[zotlit-excerpt-");
     expect(text.split("FDRFQ7C2")).toHaveLength(2);
     // The one mention of the Annotation is its Durable Annotation Link.
@@ -399,7 +387,6 @@ export async function verifyAnnotationDrag(
       vaultId,
       async ({ page }) => {
         page.scratch.__zotlitDragTrial!.editor.undo();
-        return String(true);
       },
       undefined,
     );
@@ -417,7 +404,7 @@ export async function verifyAnnotationDrag(
       vaultId,
       async ({ app, page }) => {
         const s = page.scratch.__zotlitDragTrial!;
-        if (!s) return String(true);
+        if (!s) return;
         try {
           page.restoreAnnotationPreparation(s);
           if (s.link) app.fileManager.generateMarkdownLink = s.link;
@@ -436,7 +423,6 @@ export async function verifyAnnotationDrag(
             delete page.scratch.__zotlitDragTrial;
           }
         }
-        return String(true);
       },
       undefined,
     );

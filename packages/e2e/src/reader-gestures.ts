@@ -105,7 +105,6 @@ export async function settledGesture(
       await zotlit.services.pdfAnnotationEditor.bindings.find(
         (candidate) => candidate.filePath === attachmentPath,
       )!.gestured;
-      return String(true);
     },
     { attachmentPath },
   );
@@ -168,7 +167,6 @@ export async function openPdfWithAnnotationView(
       vaultId,
       async ({ app }, { layout }) => {
         await app.workspace.changeLayout(JSON.parse(layout));
-        return String(true);
       },
       { layout },
     );
@@ -178,7 +176,6 @@ export async function openPdfWithAnnotationView(
     async ({ app }, { attachmentPath }) => {
       const file = app.vault.getFileByPath(attachmentPath)!;
       await app.workspace.getLeaf("tab").openFile(file);
-      return String(true);
     },
     { attachmentPath },
   );
@@ -198,7 +195,6 @@ export async function openPdfWithAnnotationView(
     vaultId,
     async ({ app }) => {
       app.commands.executeCommandById("zotlit:open-annot-view");
-      return String(true);
     },
     undefined,
   );
@@ -206,7 +202,6 @@ export async function openPdfWithAnnotationView(
     vaultId,
     async ({ app }) => {
       app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
-      return String(true);
     },
     undefined,
   );
@@ -423,21 +418,18 @@ export async function watchExcerptPixels(
         zotlit.services.annotationRepository.excerptPixelsChanged,
         ({ record }) => page.scratch.pixels!.push(record.key),
       );
-      return String(true);
     },
     undefined,
   );
   return {
     async keys() {
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page }) => {
-            return JSON.stringify(page.scratch.pixels);
-          },
-          undefined,
-        ),
-      ) as string[];
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          return page.scratch.pixels;
+        },
+        undefined,
+      )) as string[];
     },
     async [Symbol.asyncDispose]() {
       await obRun(
@@ -446,7 +438,6 @@ export async function watchExcerptPixels(
           page.scratch.pixelsOff?.();
           delete page.scratch.pixelsOff;
           delete page.scratch.pixels;
-          return String(true);
         },
         undefined,
       );

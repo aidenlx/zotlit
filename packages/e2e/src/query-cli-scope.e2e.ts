@@ -35,11 +35,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          await zotlit.services.bridge
-            .runPromise(zotlit.services.settings.flush)
-            .then(() => true),
-        );
+        return await zotlit.services.bridge
+          .runPromise(zotlit.services.settings.flush)
+          .then(() => true);
       },
       undefined,
     );
@@ -79,7 +77,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         });
         pageHelpers.scratch.zotlitE2EWorkers = record;
-        return String(true);
       },
       undefined,
     );
@@ -90,35 +87,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page: pageHelpers }) => {
           var record = pageHelpers.scratch.zotlitE2EWorkers;
-          return String(
-            (function () {
-              if (record!.held) {
-                record!.held.worker.postMessage = record!.held.post;
-                if (!record!.ended.has(record!.held.worker))
-                  for (var args of record!.held.pending)
-                    record!.held.post.apply(record!.held.worker, args);
-              }
-              window.Worker = record!.Original;
-              record!.Original.prototype.terminate = record!.terminate;
-              delete pageHelpers.scratch.zotlitE2EWorkers;
-              return true;
-            })(),
-          );
+          return (function () {
+            if (record!.held) {
+              record!.held.worker.postMessage = record!.held.post;
+              if (!record!.ended.has(record!.held.worker))
+                for (var args of record!.held.pending)
+                  record!.held.post.apply(record!.held.worker, args);
+            }
+            window.Worker = record!.Original;
+            record!.Original.prototype.terminate = record!.terminate;
+            delete pageHelpers.scratch.zotlitE2EWorkers;
+            return true;
+          })();
         },
         undefined,
       );
       await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(
-            await (
-              app.plugins.plugins.zotlit
-                ? Promise.resolve()
-                : app.plugins.enablePlugin("zotlit")
-            ).then(function () {
-              return true;
-            }),
-          );
+          return await (
+            app.plugins.plugins.zotlit
+              ? Promise.resolve()
+              : app.plugins.enablePlugin("zotlit")
+          ).then(function () {
+            return true;
+          });
         },
         undefined,
       );
@@ -192,15 +185,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ page: pageHelpers }) => {
             var record = pageHelpers.scratch.zotlitE2EWorkers;
-            return String(
-              record!.spawned.filter(function (entry) {
-                return entry.name === "zotlit-zotero-reads";
-              }).length,
-            );
+            return record!.spawned.filter(function (entry) {
+              return entry.name === "zotlit-zotero-reads";
+            }).length;
           },
           undefined,
         ),
-      ).toBe("1");
+      ).toBe(1);
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }) => {
@@ -232,13 +223,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page: pageHelpers }) => {
           var record = pageHelpers.scratch.zotlitE2EWorkers;
-          return String(
-            (record!.spawned
+          return (
+            record!.spawned
               .find(function (entry) {
                 return entry.name === "zotlit-zotero-reads";
               })!
               .worker.terminate(),
-            true),
+            true
           );
         },
         undefined,
@@ -258,11 +249,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            await zotlit.services.zoteroReads.refresh().then(function () {
-              return true;
-            }),
-          );
+          return await zotlit.services.zoteroReads.refresh().then(function () {
+            return true;
+          });
         },
         undefined,
       );
@@ -332,30 +321,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit, page: pageHelpers }) => {
           var record = pageHelpers.scratch.zotlitE2EWorkers;
-          return String(
-            await (function () {
-              var entry = record!.spawned.findLast(function (entry) {
-                return entry.name === "zotlit-zotero-reads";
-              });
-              var post = entry!.worker.postMessage;
-              record!.held = { worker: entry!.worker, post: post, pending: [] };
-              entry!.worker.postMessage = new Proxy(post, {
-                apply(target, receiver, args) {
-                  if (args[0]?.[1]?.tag === "CitationLookup") {
-                    record!.heldSnapshot = true;
-                    record!.held!.pending.push(
-                      args as [unknown, StructuredSerializeOptions?],
-                    );
-                    return;
-                  }
-                  return Reflect.apply(target, receiver, args);
-                },
-              });
-              return zotlit.services.zoteroReads.refresh().then(function () {
-                return true;
-              });
-            })(),
-          );
+          return await (function () {
+            var entry = record!.spawned.findLast(function (entry) {
+              return entry.name === "zotlit-zotero-reads";
+            });
+            var post = entry!.worker.postMessage;
+            record!.held = { worker: entry!.worker, post: post, pending: [] };
+            entry!.worker.postMessage = new Proxy(post, {
+              apply(target, receiver, args) {
+                if (args[0]?.[1]?.tag === "CitationLookup") {
+                  record!.heldSnapshot = true;
+                  record!.held!.pending.push(
+                    args as [unknown, StructuredSerializeOptions?],
+                  );
+                  return;
+                }
+                return Reflect.apply(target, receiver, args);
+              },
+            });
+            return zotlit.services.zoteroReads.refresh().then(function () {
+              return true;
+            });
+          })();
         },
         undefined,
       );
@@ -372,11 +359,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(
-            await app.plugins.disablePlugin("zotlit").then(function () {
-              return true;
-            }),
-          );
+          return await app.plugins.disablePlugin("zotlit").then(function () {
+            return true;
+          });
         },
         undefined,
       );

@@ -58,7 +58,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             if (file) await app.vault.delete(file);
           }
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { filePath: path, original, created, layout },
       );
@@ -70,7 +69,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       { path },
     );
@@ -199,7 +197,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .dispatchEvent(
             new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
           );
-        return String(true);
       },
       undefined,
     );
@@ -232,7 +229,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .querySelector<HTMLSelectElement>("[data-query-view-dataset]")!;
         select!.value = "items";
         select!.dispatchEvent(new Event("change", { bubbles: true }));
-        return String(true);
       },
       undefined,
     );
@@ -292,7 +288,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .querySelector<HTMLElement>("[data-chooser-page-close]")!,
           "Close",
         );
-        return String(true);
       },
       undefined,
     );
@@ -382,22 +377,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const pdfName = annotationAttachment.path!.split("/").pop()!;
 
-    const before = Number(
-      await obRun(
-        run.vaultId,
-        async ({ app }, { pdfName }) => {
-          return String(
-            app.workspace
-              .getLeavesOfType("pdf")
-              .filter(
-                (l) =>
-                  (l.view as import("obsidian").FileView).file?.name ===
-                  pdfName,
-              ).length,
-          );
-        },
-        { pdfName },
-      ),
+    const before = await obRun(
+      run.vaultId,
+      async ({ app }, { pdfName }) => {
+        return app.workspace
+          .getLeavesOfType("pdf")
+          .filter(
+            (l) =>
+              (l.view as import("obsidian").FileView).file?.name === pdfName,
+          ).length;
+      },
+      { pdfName },
     );
     await obRun(
       run.vaultId,
@@ -419,7 +409,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }),
           );
         }
-        return String(true);
       },
       { annotationAttachmentKey: annotationAttachment.key },
     );
@@ -457,7 +446,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }),
           );
         }
-        return String(true);
       },
       { annotationAttachmentKey: annotationAttachment.key },
     );
@@ -481,13 +469,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(
-            app.workspace.getLeavesOfType("zotlit-query-file").length,
-          );
+          return app.workspace.getLeavesOfType("zotlit-query-file").length;
         },
         undefined,
       ),
-    ).toBe("1");
+    ).toBe(1);
 
     // An Annotation link opens the PDF at the Annotation's page, with the
     // Annotation Anchor that lands on its mark.
@@ -496,31 +482,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )!;
     expect(anchored, "an Annotation has a PDF page").toBeDefined();
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page }, { key }) =>
-            JSON.stringify(
-              await page.annotationOpenSubpath(() => {
-                const el = (
-                  app.workspace.getLeavesOfType("zotlit-query-file")[0]!
-                    .view as import("obsidian").ItemView
-                ).contentEl.querySelector<HTMLElement>(
-                  `[data-query-table-row="annotation"][data-query-key="${key}"] [data-query-open="annotation"]`,
-                )!;
-                el.dispatchEvent(
-                  new (
-                    el.ownerDocument.defaultView as Window & typeof globalThis
-                  ).MouseEvent("auxclick", {
-                    bubbles: true,
-                    cancelable: true,
-                    button: 1,
-                  }),
-                );
+      await obRun(
+        run.vaultId,
+        async ({ app, page }, { key }) =>
+          await page.annotationOpenSubpath(() => {
+            const el = (
+              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(
+              `[data-query-table-row="annotation"][data-query-key="${key}"] [data-query-open="annotation"]`,
+            )!;
+            el.dispatchEvent(
+              new (
+                el.ownerDocument.defaultView as Window & typeof globalThis
+              ).MouseEvent("auxclick", {
+                bubbles: true,
+                cancelable: true,
+                button: 1,
               }),
-            ),
-          { key: anchored.indexedKey },
-        ),
+            );
+          }),
+        { key: anchored.indexedKey },
       ),
     ).toEqual(
       annotationOpenKeys({
@@ -537,7 +519,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.workspace.getLeavesOfType("zotlit-query-file")[0]!,
           { focus: true },
         );
-        return String(true);
       },
       undefined,
     );
@@ -712,21 +693,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
     const seeded = [notePath(tieFirst), notePath(tieSecond)];
-    const originals = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app }, { seeded }) => {
-          return JSON.stringify(
-            await Promise.all(
-              seeded.map((path) =>
-                app.vault.read(app.vault.getFileByPath(path)!),
-              ),
-            ),
-          );
-        },
-        { seeded },
-      ),
-    ) as string[];
+    const originals = (await obRun(
+      run.vaultId,
+      async ({ app }, { seeded }) => {
+        return await Promise.all(
+          seeded.map((path) => app.vault.read(app.vault.getFileByPath(path)!)),
+        );
+      },
+      { seeded },
+    )) as string[];
     const created: string[] = [path];
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
@@ -745,7 +720,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               originals[at]!,
             );
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { created, originals, seeded, layout },
       );
@@ -773,7 +747,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         });
         await set(secondNotePath, { "zt-done": true, "zt-rank": 2 });
         await app.vault.create(newFilePath, newFileContent);
-        return String(true);
       },
       {
         firstNotePath: notePath(tieFirst),
@@ -815,7 +788,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       { path },
     );
@@ -873,18 +845,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     await tableWhen((table) => table.rows.length === 3);
     const frontmatter = async (path: string) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app }, { path }) => {
-            return JSON.stringify(
-              app.metadataCache.getFileCache(app.vault.getFileByPath(path)!)
-                ?.frontmatter ?? null,
-            );
-          },
-          { path },
-        ),
-      ) as Record<string, unknown> | null;
+      (await obRun(
+        run.vaultId,
+        async ({ app }, { path }) => {
+          return (
+            app.metadataCache.getFileCache(app.vault.getFileByPath(path)!)
+              ?.frontmatter ?? null
+          );
+        },
+        { path },
+      )) as Record<string, unknown> | null;
     const frontmatterWhen = async (
       path: string,
       ready: (properties: Record<string, unknown>) => boolean,
@@ -1031,59 +1001,57 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     /** Open the edit of the cell `name`, and compare its first line with the cell's at rest. */
     const sameLine = async (name: string) => {
-      const restLine = Number(
-        await obRun(
-          run.vaultId,
-          async ({ app }, { tieFirst, name }) => {
-            const el = (
-              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
-                .view as import("obsidian").ItemView
-            ).contentEl.querySelector<HTMLElement>(
-              `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
-            )!;
-            const row = el!
-              .closest<HTMLTableRowElement>("tr")!
-              .getBoundingClientRect().top;
-            const editor = el!.querySelector<HTMLElement>(
-              "[data-query-vault-editor]",
-            )!;
-            const chip = (editor ?? el)!.querySelector<HTMLElement>(
-              "[data-query-vault-chip]",
-            )!;
-            if (chip) return String(chip.getBoundingClientRect().top - row);
-            const field = editor
-              ? editor.querySelector<HTMLInputElement>("textarea,input")!
-              : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
-            if (field) {
-              const style = getComputedStyle(field);
-              return String(
-                field.getBoundingClientRect().top +
-                  Number.parseFloat(style.borderTopWidth) +
-                  Number.parseFloat(style.paddingTop) -
-                  row,
-              );
-            }
-            const walker = activeDocument.createTreeWalker(
-              el!,
-              NodeFilter.SHOW_TEXT,
-              { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
+      const restLine = await obRun(
+        run.vaultId,
+        async ({ app }, { tieFirst, name }) => {
+          const el = (
+            app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
+          )!;
+          const row = el!
+            .closest<HTMLTableRowElement>("tr")!
+            .getBoundingClientRect().top;
+          const editor = el!.querySelector<HTMLElement>(
+            "[data-query-vault-editor]",
+          )!;
+          const chip = (editor ?? el)!.querySelector<HTMLElement>(
+            "[data-query-vault-chip]",
+          )!;
+          if (chip) return chip.getBoundingClientRect().top - row;
+          const field = editor
+            ? editor.querySelector<HTMLInputElement>("textarea,input")!
+            : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
+          if (field) {
+            const style = getComputedStyle(field);
+            return (
+              field.getBoundingClientRect().top +
+              Number.parseFloat(style.borderTopWidth) +
+              Number.parseFloat(style.paddingTop) -
+              row
             );
-            const text = walker.nextNode();
-            const range = activeDocument.createRange();
-            range.selectNodeContents(text!);
-            const rect = range.getClientRects()[0];
-            return String(
-              rect!.top -
-                (Number.parseFloat(
-                  getComputedStyle(text!.parentElement!).lineHeight,
-                ) -
-                  rect!.height) /
-                  2 -
-                row,
-            );
-          },
-          { tieFirst, name },
-        ),
+          }
+          const walker = activeDocument.createTreeWalker(
+            el!,
+            NodeFilter.SHOW_TEXT,
+            { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
+          );
+          const text = walker.nextNode();
+          const range = activeDocument.createRange();
+          range.selectNodeContents(text!);
+          const rect = range.getClientRects()[0];
+          return (
+            rect!.top -
+            (Number.parseFloat(
+              getComputedStyle(text!.parentElement!).lineHeight,
+            ) -
+              rect!.height) /
+              2 -
+            row
+          );
+        },
+        { tieFirst, name },
       );
       await click({ key: tieFirst, name });
       await obRunUntil(
@@ -1099,59 +1067,57 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           what: "the vault property input in the Table to take focus after the first edit",
         },
       );
-      const editLine = Number(
-        await obRun(
-          run.vaultId,
-          async ({ app }, { tieFirst, name }) => {
-            const el = (
-              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
-                .view as import("obsidian").ItemView
-            ).contentEl.querySelector<HTMLElement>(
-              `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
-            )!;
-            const row = el!
-              .closest<HTMLTableRowElement>("tr")!
-              .getBoundingClientRect().top;
-            const editor = el!.querySelector<HTMLElement>(
-              "[data-query-vault-editor]",
-            )!;
-            const chip = (editor ?? el)!.querySelector<HTMLElement>(
-              "[data-query-vault-chip]",
-            )!;
-            if (chip) return String(chip.getBoundingClientRect().top - row);
-            const field = editor
-              ? editor.querySelector<HTMLInputElement>("textarea,input")!
-              : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
-            if (field) {
-              const style = getComputedStyle(field);
-              return String(
-                field.getBoundingClientRect().top +
-                  Number.parseFloat(style.borderTopWidth) +
-                  Number.parseFloat(style.paddingTop) -
-                  row,
-              );
-            }
-            const walker = activeDocument.createTreeWalker(
-              el!,
-              NodeFilter.SHOW_TEXT,
-              { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
+      const editLine = await obRun(
+        run.vaultId,
+        async ({ app }, { tieFirst, name }) => {
+          const el = (
+            app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
+          )!;
+          const row = el!
+            .closest<HTMLTableRowElement>("tr")!
+            .getBoundingClientRect().top;
+          const editor = el!.querySelector<HTMLElement>(
+            "[data-query-vault-editor]",
+          )!;
+          const chip = (editor ?? el)!.querySelector<HTMLElement>(
+            "[data-query-vault-chip]",
+          )!;
+          if (chip) return chip.getBoundingClientRect().top - row;
+          const field = editor
+            ? editor.querySelector<HTMLInputElement>("textarea,input")!
+            : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
+          if (field) {
+            const style = getComputedStyle(field);
+            return (
+              field.getBoundingClientRect().top +
+              Number.parseFloat(style.borderTopWidth) +
+              Number.parseFloat(style.paddingTop) -
+              row
             );
-            const text = walker.nextNode();
-            const range = activeDocument.createRange();
-            range.selectNodeContents(text!);
-            const rect = range.getClientRects()[0];
-            return String(
-              rect!.top -
-                (Number.parseFloat(
-                  getComputedStyle(text!.parentElement!).lineHeight,
-                ) -
-                  rect!.height) /
-                  2 -
-                row,
-            );
-          },
-          { tieFirst, name },
-        ),
+          }
+          const walker = activeDocument.createTreeWalker(
+            el!,
+            NodeFilter.SHOW_TEXT,
+            { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
+          );
+          const text = walker.nextNode();
+          const range = activeDocument.createRange();
+          range.selectNodeContents(text!);
+          const rect = range.getClientRects()[0];
+          return (
+            rect!.top -
+            (Number.parseFloat(
+              getComputedStyle(text!.parentElement!).lineHeight,
+            ) -
+              rect!.height) /
+              2 -
+            row
+          );
+        },
+        { tieFirst, name },
       );
       expect(
         Math.abs(editLine - restLine),
@@ -1244,7 +1210,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async (_context) => {
         (activeDocument.activeElement as HTMLInputElement).select();
-        return String(true);
       },
       undefined,
     );
@@ -1324,7 +1289,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { tieFirst }) => {
-          return String(
+          return (
             !!(
               app.workspace.getLeavesOfType("zotlit-query-file")[0]!
                 .view as import("obsidian").ItemView
@@ -1333,12 +1298,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="zt-projects"]`,
               )!
               .querySelector<HTMLElement>('[data-query-vault-chip="c"]')! &&
-              !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
+            !!activeDocument.querySelector<HTMLElement>("body > .menu")!
           );
         },
         { tieFirst },
       ),
-    ).toBe("true");
+    ).toBe(true);
     await key("Escape");
     await obRunUntil(
       run.vaultId,
@@ -1355,15 +1320,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(
+          return (
             activeDocument.activeElement?.matches(
               '[data-query-vault-chip="c"]',
-            ) ?? false,
+            ) ?? false
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     await key("Escape");
     await obRunUntil(
       run.vaultId,
@@ -1592,7 +1557,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }, { path, viewYaml }) => {
         await app.vault.modify(app.vault.getFileByPath(path)!, viewYaml);
-        return String(true);
       },
       {
         path,
@@ -1639,7 +1603,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             if (file) await app.vault.delete(file);
           }
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { paths, layout },
       );
@@ -1741,7 +1704,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const leaf = app.workspace.getLeaf("tab");
           await leaf.openFile(file);
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          return String(true);
         },
         { path, text },
       );

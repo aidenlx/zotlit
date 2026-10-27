@@ -87,7 +87,6 @@ export async function verifyRecentUses(
         await app.workspace.changeLayout(saved.layout);
         const file = app.vault.getFileByPath(sourcepath);
         if (file) await app.vault.delete(file);
-        return String(true);
       },
       {
         targetpath: targetPath,
@@ -126,7 +125,6 @@ export async function verifyRecentUses(
             ) as (WorkspaceLeaf & { view: LibraryView })[]
           )[0]?.view.query,
       );
-      return String(true);
     },
     { sourcepath: sourcePath, sourcetext: sourceText },
   );
@@ -251,7 +249,6 @@ export async function verifyRecentUses(
           "switcher closes",
           () => !activeDocument.querySelector<HTMLElement>(".prompt"),
         );
-        return String(true);
       },
       {
         choose: choose,
@@ -275,7 +272,6 @@ export async function verifyRecentUses(
       async ({ app }) => {
         await app.workspace.openLinkText("literatures/CCCC3333.md", "");
         app.workspace.requestActiveLeafEvents.run();
-        return String(true);
       },
       undefined,
     );
@@ -289,7 +285,6 @@ export async function verifyRecentUses(
         });
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.workspace.requestActiveLeafEvents.run();
-        return String(true);
       },
       {
         sourcepath: sourcePath,
@@ -321,7 +316,6 @@ export async function verifyRecentUses(
           row.dispatchEvent(
             new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
           );
-          return String(true);
         },
         undefined,
       );
@@ -337,7 +331,6 @@ export async function verifyRecentUses(
             ),
           );
           link.click();
-          return String(true);
         },
         undefined,
       );
@@ -364,7 +357,6 @@ export async function verifyRecentUses(
           row.dispatchEvent(
             new MouseEvent("click", { bubbles: true, detail: 1 }),
           );
-          return String(true);
         },
         { targetpath: targetPath },
       );
@@ -377,7 +369,6 @@ export async function verifyRecentUses(
             ch: 8,
           });
           app.commands.executeCommandById("zotlit:open-citekey");
-          return String(true);
         },
         undefined,
       );
@@ -400,7 +391,6 @@ export async function verifyRecentUses(
       await app.workspace.revealLeaf(target!);
       app.workspace.setActiveLeaf(target!, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { targetpath: targetPath },
   );
@@ -416,11 +406,11 @@ export async function verifyRecentUses(
   const local = await obRun(
     vaultId,
     async ({ app }) => {
-      return JSON.stringify(app.loadLocalStorage("zotlit-use-ledger"));
+      return app.loadLocalStorage("zotlit-use-ledger");
     },
     undefined,
   );
-  expect(JSON.parse(local)).toMatchObject({ AAAAAAAA: { kind: "opened" } });
+  expect(local).toMatchObject({ AAAAAAAA: { kind: "opened" } });
   const pluginData = await readFile(
     join(vaultPath, ".obsidian/plugins/zotlit/data.json"),
     "utf8",
@@ -468,7 +458,6 @@ export async function verifyRecentUses(
       )[0];
       await app.workspace.revealLeaf(leaf!);
       app.workspace.setActiveLeaf(leaf!, { focus: true });
-      return String(true);
     },
     undefined,
   );
@@ -481,7 +470,6 @@ export async function verifyRecentUses(
     async ({ app }) => {
       await app.workspace.openLinkText("literatures/CCCC3333.md", "");
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -495,7 +483,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -530,7 +517,6 @@ export async function verifyRecentUses(
       row.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
       row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await until("citation inserted", () => editor.getValue() === valueInput);
-      return String(true);
     },
     {
       value: `[@${targetTitle}`,
@@ -615,7 +601,6 @@ export async function verifyRecentUses(
         }),
       );
       await until("Citation Suggester closes", () => !popup.isConnected);
-      return String(true);
     },
     {
       sourcepath: sourcePath,
@@ -632,7 +617,6 @@ export async function verifyRecentUses(
     async ({ app }) => {
       await app.workspace.openLinkText("literatures/CCCC3333.md", "");
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -647,7 +631,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -727,7 +710,6 @@ export async function verifyRecentUses(
         }),
       );
       await until("Citation Suggester closes", () => !popup.isConnected);
-      return String(true);
     },
     {
       sourcepath: sourcePath,
@@ -747,7 +729,6 @@ export async function verifyRecentUses(
     async ({ app }) => {
       await app.workspace.openLinkText("literatures/CCCC3333.md", "");
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -801,7 +782,6 @@ export async function verifyRecentUses(
         "dragged citation inserted",
         () => editor.getValue() === value,
       );
-      return String(true);
     },
     { sourcepath: sourcePath, target: target, value: `[@${targetCitekey}]` },
   );
@@ -882,7 +862,6 @@ export async function verifyRecentUses(
         }),
       );
       await until("Citation Suggester closes", () => !popup.isConnected);
-      return String(true);
     },
     {
       sourcepath: sourcePath,
@@ -904,7 +883,6 @@ export async function verifyRecentUses(
       ).filter((l) => l.view.file?.path === sourcepath);
       for (const leaf of leaves) leaf.view.editor.setValue(sourcetext);
       for (const leaf of leaves) await leaf.view.save();
-      return String(true);
     },
     { sourcepath: sourcePath, sourcetext: sourceText },
   );
@@ -934,7 +912,6 @@ export async function verifyRecentUses(
           .querySelector<HTMLElement>("[data-library-card]")
           ?.checkVisibility(),
       );
-      return String(true);
     },
     undefined,
   );
@@ -948,7 +925,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, preview: "preview", enabled: false },
   );
@@ -987,7 +963,6 @@ export async function verifyRecentUses(
       if (popover)
         if (typeof popover.hide === "function") popover.hide();
         else popover.unload();
-      return String(true);
     },
     { sourcepath: sourcePath },
   );
@@ -1006,7 +981,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -1029,7 +1003,6 @@ export async function verifyRecentUses(
         () => file!.stat.mtime !== modified,
         10000,
       );
-      return String(true);
     },
     { targetpath: targetPath },
   );
@@ -1043,7 +1016,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -1062,7 +1034,6 @@ export async function verifyRecentUses(
         () => app.workspace.getActiveFile()?.path === `${targetpath}`,
       );
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { targetpath: targetPath },
   );

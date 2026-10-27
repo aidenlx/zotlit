@@ -142,21 +142,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app, zotlit, page }, { defaultPath }) => {
-            return String(
+            return (
               !!app.vault.getFileByPath(defaultPath) &&
-                page.workbench()?.controller.readOnly === false &&
-                page.scratch.workbenchLaunch === undefined &&
-                !zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.enabled"] &&
-                !zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.workbench"],
+              page.workbench()?.controller.readOnly === false &&
+              page.scratch.workbenchLaunch === undefined &&
+              !zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "server.enabled"
+              ] &&
+              !zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "server.workbench"
+              ]
             );
           },
           { defaultPath },
         ),
-      ).toBe("true");
+      ).toBe(true);
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
       await obRunUntil(
@@ -179,22 +179,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ zotlit, page }) => {
-            return String(
+            return (
               page.scratch.workbenchLaunch === undefined &&
-                !zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.enabled"],
+              !zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "server.enabled"
+              ]
             );
           },
           undefined,
         ),
-      ).toBe("true");
+      ).toBe(true);
       // The web save cases start from the built-in Default again.
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
           await zotlit.services.profile.restoreDefault();
-          return String(true);
         },
         undefined,
       );
@@ -212,7 +211,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }) => {
           app.saveLocalStorage("zotlit-profile-customization", "ask");
-          return String(true);
         },
         undefined,
       );
@@ -306,7 +304,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }) => {
           app.setting.close();
-          return String(true);
         },
         undefined,
       );
@@ -366,7 +363,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }) => {
           app.setting.close();
-          return String(true);
         },
         undefined,
       );
@@ -381,7 +377,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             app.vault.getFileByPath(defaultPath)!,
             changed,
           );
-          return String(true);
         },
         { defaultPath, changed },
       );
@@ -455,7 +450,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }) => {
           app.setting.close();
-          return String(true);
         },
         undefined,
       );
@@ -484,7 +478,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               unsupported,
             );
             delete page.scratch.workbenchLaunch;
-            return String(true);
           },
           { defaultPath, unsupported },
         );
@@ -536,16 +529,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ page }) => {
-              return String(page.scratch.workbenchLaunch === undefined);
+              return page.scratch.workbenchLaunch === undefined;
             },
             undefined,
           ),
-        ).toBe("true");
+        ).toBe(true);
         await obRun(
           run.vaultId,
           async ({ app }) => {
             app.setting.close();
-            return String(true);
           },
           undefined,
         );

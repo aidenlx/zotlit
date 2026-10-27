@@ -49,7 +49,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({ "server.live-update": false }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -73,7 +72,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         await app.workspace
           .getLeaf(false)
           .openFile(app.vault.getFileByPath(firstPath)!);
-        return String(true);
       },
       { firstPath: first.path },
     );
@@ -112,7 +110,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
             );
           await app.workspace.revealLeaf(leaf!);
           leaf!.getContainer().focus();
-          return String(true);
         },
         { firstPath: first.path },
       );
@@ -155,11 +152,11 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          return String(zotlit.services.profile.profiles.length);
+          return zotlit.services.profile.profiles.length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
     expect(
       (await readdir(vaultPath, { recursive: true }))
         .filter(
@@ -181,12 +178,12 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           var folder = labels
             .find((el) => el.textContent === folderLabel)
             ?.querySelector("input");
-          return String(
+          return (
             !!name &&
-              !!folder &&
-              name.tabIndex === 0 &&
-              folder.tabIndex === 0 &&
-              name === name.ownerDocument.activeElement,
+            !!folder &&
+            name.tabIndex === 0 &&
+            folder.tabIndex === 0 &&
+            name === name.ownerDocument.activeElement
           );
         },
         {
@@ -194,7 +191,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           folderLabel: m.settings_profile_folder_name(),
         },
       ),
-    ).toBe("true");
+    ).toBe(true);
     const fill = async (name: string, folder: string) => {
       await obRun(
         vaultId,
@@ -204,7 +201,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
             input.value = values[i]!;
             input.dispatchEvent(new Event("input", { bubbles: true }));
           });
-          return String(true);
         },
         { values: [name, folder] },
       );
@@ -246,17 +242,15 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       undefined,
       { what: "the Books profile to be saved in the profile list" },
     );
-    const books = JSON.parse(
-      await obRun(
-        vaultId,
-        async ({ zotlit }) => {
-          return JSON.stringify(
-            zotlit.services.profile.profiles.find((p) => p.label === "Books"),
-          );
-        },
-        undefined,
-      ),
-    ) as { id: string; path: string };
+    const books = (await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return zotlit.services.profile.profiles.find(
+          (p) => p.label === "Books",
+        );
+      },
+      undefined,
+    )) as { id: string; path: string };
     const saved = await readFile(join(vaultPath, books.path), "utf-8");
     expect(saved).toContain("[!quote]");
     expect(saved).toContain("folder: books");
@@ -295,7 +289,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           );
         await app.workspace.revealLeaf(leaf!);
         leaf!.getContainer().focus();
-        return String(true);
       },
       { firstPath: first.path },
     );
@@ -310,9 +303,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await obRun(
       vaultId,
       async ({ app }) => {
-        return String(
-          app.commands.executeCommandById("zotlit:note-quick-switcher"),
-        );
+        return app.commands.executeCommandById("zotlit:note-quick-switcher");
       },
       undefined,
     );

@@ -133,7 +133,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           s.editor = s.leaf!.view.editor;
           s.editor!.setValue(body);
           await s.leaf!.view.save();
-          return String(true);
         },
         {
           templateText: "\n![]({{ zt.backlink }})\n",
@@ -190,7 +189,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           app.workspace.trigger("editor-drop", drop, s.editor, s.leaf!.view);
           if (!drop.defaultPrevented)
             throw Error("ZotLit did not accept the annotation drag");
-          return String(true);
         },
         undefined,
       );
@@ -217,7 +215,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           ) as WorkspaceLeaf & { view: ReferencesView };
           await s.references!.setViewState({ type: "zotlit-references" });
           app.workspace.setActiveLeaf(s.leaf!, { focus: true });
-          return String(true);
         },
         undefined,
       );
@@ -370,7 +367,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             },
             s.sessions[0],
           );
-          return String(true);
         },
         undefined,
       );
@@ -394,7 +390,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           const s = page.scratch.citationScan!;
           s.editor!.setValue(prependText + s.editor!.getValue());
           await s.leaf!.view.save();
-          return String(true);
         },
         { prependText: "After restart.\n\n" },
       );
@@ -441,7 +436,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           } finally {
             delete page.scratch.citationScan;
           }
-          return String(true);
         },
         undefined,
       );

@@ -82,7 +82,6 @@ export async function verifyPdfReads(
         await s.bridge.runPromise(s.settings.flush);
         await app.workspace.changeLayout(saved.layout);
         await s.zoteroReads.refresh();
-        return String(true);
       },
       { savedJson: saved },
     );
@@ -120,7 +119,6 @@ export async function verifyPdfReads(
             })[]
           )[0]?.view.query,
       );
-      return String(true);
     },
     undefined,
   );
@@ -134,7 +132,6 @@ export async function verifyPdfReads(
         item: itemId,
         "source-id": s.zoteroPref.sourceId!,
       });
-      return String(true);
     },
     { itemId: String(attachment.itemID) },
   );
@@ -163,7 +160,6 @@ export async function verifyPdfReads(
         },
         20000,
       );
-      return String(true);
     },
     { notePath: path, attachmentKey },
   );
@@ -246,7 +242,6 @@ export async function verifyPdfReads(
           bubbles: true,
         }),
       );
-      return String(true);
     },
     undefined,
   );
@@ -283,7 +278,6 @@ export async function verifyPdfReads(
       reader.on("pagechanging", () => page.scratch.pageChanges!++);
       reader.applySubpath("#page=2");
       await until("real page change", () => page.scratch.pageChanges! > 0);
-      return String(true);
     },
     undefined,
   );
@@ -329,7 +323,6 @@ export async function verifyPdfReads(
         },
         20000,
       );
-      return String(true);
     },
     { notePath: path, attachmentKey },
   );
@@ -375,7 +368,6 @@ export async function verifyPdfReads(
         },
         20000,
       );
-      return String(true);
     },
     { notePath: path, attachmentKey },
   );
@@ -410,7 +402,6 @@ export async function verifyPdfReads(
       );
       pdfPage!.reset();
       await pdfPage!.draw();
-      return String(true);
     },
     undefined,
   );
@@ -453,7 +444,6 @@ export async function verifyPdfReads(
         "page read",
         () => s.useLedger.get(itemKey)?.instant.toString() !== firstInstant,
       );
-      return String(true);
     },
     { itemKey, firstInstant: firstRead.instant },
   );
@@ -482,7 +472,6 @@ export async function verifyPdfReads(
         })[]
       ).forEach((l) => l.detach());
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -536,7 +525,6 @@ export async function verifyPdfReads(
         () => leaf.view.fileItems[path]?.selfEl,
       );
       row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
-      return String(true);
     },
     { path },
   );
@@ -565,7 +553,6 @@ export async function verifyPdfReads(
         },
         20000,
       );
-      return String(true);
     },
     { notePath: path, attachmentKey },
   );
@@ -596,7 +583,6 @@ export async function verifyPdfReads(
         })[]
       ).forEach((l) => l.detach());
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -622,7 +608,6 @@ export async function verifyPdfReads(
     vaultId,
     async ({ app }, { path }) => {
       await app.workspace.openLinkText(path, "", true);
-      return String(true);
     },
     { path },
   );
@@ -651,7 +636,6 @@ export async function verifyPdfReads(
         },
         20000,
       );
-      return String(true);
     },
     { notePath: path, attachmentKey },
   );
@@ -676,7 +660,6 @@ export async function verifyPdfReads(
           view: PagePdfView;
         })[]
       )[0]!.view.viewer.child.applySubpath("#page=2");
-      return String(true);
     },
     undefined,
   );
@@ -691,7 +674,6 @@ export async function verifyPdfReads(
         })[]
       ).forEach((l) => l.detach());
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );

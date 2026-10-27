@@ -30,7 +30,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await leaf.setViewState({ type: type, active: true });
         }
         void app.workspace.revealLeaf(leaf!);
-        return String(true);
       },
       undefined,
     );
@@ -60,7 +59,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Annotation View header",
         );
-        return String(true);
       },
       undefined,
     );
@@ -77,44 +75,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { what: "the header menu popup to open in the Annotation View document" },
     );
 
-    const report = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app }) => {
-          var popup = (
-            app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
-              | AnnotationView
-              | undefined
-          )?.contentEl.doc.querySelector<HTMLElement>(".menu")!;
-          var box = popup.getBoundingClientRect();
-          var anchor = (
-            app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
-              | AnnotationView
-              | undefined
-          )?.contentEl
-            .querySelector<HTMLElement>("button.zt-annot-header")!
-            .getBoundingClientRect()!;
-          var items = Array.from(popup.querySelectorAll(".menu-item"));
-          return JSON.stringify({
-            labels: items.map(function (item) {
-              return item.textContent!.trim();
-            }),
-            covered: items.filter(function (item) {
-              var rect = item.getBoundingClientRect();
-              return (
-                rect.height > 0 &&
-                rect.top >= box.top - 1 &&
-                rect.bottom <= box.bottom + 1
-              );
-            }).length,
-            belowTriggerBy: Math.round(box.top - anchor.bottom),
-            overlapsTriggerX:
-              box.left < anchor.right && box.right > anchor.left,
-          });
-        },
-        undefined,
-      ),
-    ) as {
+    const report = (await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        var popup = (
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.doc.querySelector<HTMLElement>(".menu")!;
+        var box = popup.getBoundingClientRect();
+        var anchor = (
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl
+          .querySelector<HTMLElement>("button.zt-annot-header")!
+          .getBoundingClientRect()!;
+        var items = Array.from(popup.querySelectorAll(".menu-item"));
+        return {
+          labels: items.map(function (item) {
+            return item.textContent!.trim();
+          }),
+          covered: items.filter(function (item) {
+            var rect = item.getBoundingClientRect();
+            return (
+              rect.height > 0 &&
+              rect.top >= box.top - 1 &&
+              rect.bottom <= box.bottom + 1
+            );
+          }).length,
+          belowTriggerBy: Math.round(box.top - anchor.bottom),
+          overlapsTriggerX: box.left < anchor.right && box.right > anchor.left,
+        };
+      },
+      undefined,
+    )) as {
       labels: string[];
       covered: number;
       belowTriggerBy: number;
@@ -157,7 +152,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "Annotation View header",
         );
-        return String(true);
       },
       undefined,
     );
@@ -188,7 +182,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
         );
         app.workspace.detachLeavesOfType("zotero-annotation-view");
-        return String(true);
       },
       undefined,
     );
@@ -219,7 +212,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await zotlit.services.bridge.runPromise(
           zotlit.services.excerptImage.clear,
         );
-        return String(true);
       },
       undefined,
     );
@@ -274,23 +266,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect((await readFile(rendered.path)).subarray(0, 8)).toEqual(
         Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
       );
-      const dimensions = JSON.parse(
-        await obRun(
-          imageVaultId,
-          async (_context, { renderedPath }) => {
-            const bytes = (
-              require("node:fs") as typeof import("node:fs")
-            ).readFileSync(renderedPath);
-            const bitmap = await createImageBitmap(
-              new Blob([bytes], { type: "image/png" }),
-            );
-            const result = { width: bitmap.width, height: bitmap.height };
-            bitmap.close();
-            return JSON.stringify(result);
-          },
-          { renderedPath: rendered.path },
-        ),
-      ) as { width: number; height: number };
+      const dimensions = (await obRun(
+        imageVaultId,
+        async (_context, { renderedPath }) => {
+          const bytes = (
+            require("node:fs") as typeof import("node:fs")
+          ).readFileSync(renderedPath);
+          const bitmap = await createImageBitmap(
+            new Blob([bytes], { type: "image/png" }),
+          );
+          const result = { width: bitmap.width, height: bitmap.height };
+          bitmap.close();
+          return result;
+        },
+        { renderedPath: rendered.path },
+      )) as { width: number; height: number };
       expect(dimensions.width).toBeGreaterThan(0);
       expect(dimensions.height).toBeGreaterThan(0);
       const reused = await answer(inkKey);

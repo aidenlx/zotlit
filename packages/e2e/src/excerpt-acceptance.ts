@@ -237,11 +237,11 @@ async function installUrlProbe(vaultId: string): Promise<void> {
           return revoke(url);
         };
         helpers.scratch.__zotlitExcerptUrlProbe = state;
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
 }
 
 /** Take the object-URL probe away, restoring both browser APIs as they were. */
@@ -250,11 +250,10 @@ async function removeUrlProbe(vaultId: string): Promise<void> {
     vaultId,
     async ({ page: helpers }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
-      if (!state) return String(true);
+      if (!state) return;
       URL.createObjectURL = state.create;
       URL.revokeObjectURL = state.revoke;
       delete helpers.scratch.__zotlitExcerptUrlProbe;
-      return String(true);
     },
     undefined,
   );
@@ -328,7 +327,6 @@ export async function verifyReaderBackedExcerpts(
         vaultId,
         async ({ app }, { storageKey, storageValue }) => {
           app.saveLocalStorage(storageKey, storageValue);
-          return String(true);
         },
         {
           storageKey: JSON.parse(filterKey),
@@ -343,7 +341,6 @@ export async function verifyReaderBackedExcerpts(
         vaultId,
         async ({ app }, { layout }) => {
           await app.workspace.changeLayout(JSON.parse(layout!));
-          return String(true);
         },
         { layout },
       );
@@ -371,11 +368,11 @@ export async function verifyReaderBackedExcerpts(
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
+        return true;
       },
       { vaultPath },
     ),
-  ).toBe("true");
+  ).toBe(true);
   await obRunUntil(
     vaultId,
     async ({ app, zotlit }, { vaultPath, pageNumber }) => {
@@ -655,7 +652,6 @@ export async function verifyReaderBackedExcerpts(
         async ({ app }, { importedNotePath, source }) => {
           const file = app.vault.getFileByPath(importedNotePath!);
           if (file) await app.vault.modify(file, source);
-          return String(true);
         },
         { importedNotePath: importedNote.path, source: importedNote.source },
       );
@@ -672,7 +668,6 @@ export async function verifyReaderBackedExcerpts(
               { "note.import-annotations-as-template": enabled },
             ),
           );
-          return String(true);
         },
         { enabled: templateBinding.enabled },
       );
@@ -695,7 +690,6 @@ export async function verifyReaderBackedExcerpts(
           for (const file of app.vault.getFiles()) {
             if (!known.has(file.path)) await app.vault.delete(file);
           }
-          return String(true);
         },
         { knownKeys: JSON.parse(known) },
       );
@@ -792,7 +786,6 @@ export async function verifyReaderBackedExcerpts(
             ".modal-container .modal .modal-close-button",
           ))
             button.click();
-          return String(true);
         },
         undefined,
       );
@@ -886,11 +879,11 @@ export async function verifyReaderBackedExcerpts(
             state.settledAt = performance.now();
             state.settled = true;
           });
-        return String(true);
+        return true;
       },
       { itemID: noteItem.itemID },
     ),
-  ).toBe("true");
+  ).toBe(true);
   await settleImport();
   const imported = await obRun(
     vaultId,
@@ -964,7 +957,6 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     async ({ app }) => {
       app.commands.executeCommandById("zotlit:open-annot-view");
-      return String(true);
     },
     undefined,
   );
@@ -1138,7 +1130,6 @@ export async function verifyReaderBackedExcerpts(
         vaultId,
         async ({ zotlit }) => {
           zotlit.services.excerptImage.rendererDiagnostics!.release();
-          return String(true);
         },
         undefined,
       );
@@ -1192,11 +1183,11 @@ export async function verifyReaderBackedExcerpts(
         zotlit.services.excerptImage.rendererDiagnostics!.hold(
           "document-loading",
         );
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   expect(
     await obRun(
       vaultId,
@@ -1205,11 +1196,11 @@ export async function verifyReaderBackedExcerpts(
           zotlit.services.excerptImage.clear,
         );
         for (const leaf of app.workspace.getLeavesOfType("pdf")) leaf.detach();
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   await obRunUntil(
     vaultId,
     async ({ app, zotlit }, { vaultPath }) => {
@@ -1235,11 +1226,11 @@ export async function verifyReaderBackedExcerpts(
           app.workspace.getLeavesOfType("zotero-annotation-view")[0]!
             .view as AnnotationView
         ).gestures!.onRefresh();
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   await obRunUntil(
     vaultId,
     async ({ zotlit }) => {
@@ -1309,7 +1300,6 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     async ({ zotlit }) => {
       zotlit.services.excerptImage.rendererDiagnostics!.release();
-      return String(true);
     },
     undefined,
   );
@@ -1777,7 +1767,6 @@ export async function verifyMultiPdfExcerptBatch(
       const services = zotlit.services;
       await services.noteIndex.whenIndexed();
       await services.bridge.runPromise(services.excerptImage.clear);
-      return String(true);
     },
     undefined,
     {
@@ -1969,7 +1958,6 @@ export async function verifySavedEditDisplay(
       await zotlit.services.bridge.runPromise(
         zotlit.services.excerptImage.clear,
       );
-      return String(true);
     },
     undefined,
   );
@@ -1981,7 +1969,6 @@ export async function verifySavedEditDisplay(
         vaultId,
         async ({ zotlit }) => {
           zotlit.services.excerptImage.rendererDiagnostics!.release();
-          return String(true);
         },
         undefined,
       );
@@ -2008,7 +1995,6 @@ export async function verifySavedEditDisplay(
           );
           if (color.kind !== "idle")
             throw new Error("The saved colour was not restored");
-          return String(true);
         },
         {
           targetKey: target.key,
@@ -2161,11 +2147,11 @@ export async function verifySavedEditDisplay(
         zotlit.services.excerptImage.rendererDiagnostics!.hold(
           "page-rendering",
         );
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   const saved = await obRun(
     vaultId,
     async ({ zotlit }, { targetKey, editedColor }) => {
@@ -2244,7 +2230,6 @@ export async function verifySavedEditDisplay(
     vaultId,
     async ({ zotlit }) => {
       zotlit.services.excerptImage.rendererDiagnostics!.release();
-      return String(true);
     },
     undefined,
   );
@@ -2771,11 +2756,11 @@ export async function verifySavedEditDisplay(
         await leaf.setViewState(
           Object.assign({}, JSON.parse(state), { active: true }),
         );
-        return String(true);
+        return true;
       },
       { state: viewState.state },
     ),
-  ).toBe("true");
+  ).toBe(true);
   await obRunUntil(
     vaultId,
     async ({ app }, { cardSelector }) => {

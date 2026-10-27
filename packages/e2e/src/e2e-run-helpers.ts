@@ -44,7 +44,6 @@ export async function openProfilesSettings(
     async ({ app }) => {
       app.vault.setConfig("settingsPopoutWindow", false);
       app.setting.open();
-      return String(true);
     },
     undefined,
   );
@@ -52,7 +51,6 @@ export async function openProfilesSettings(
     vaultId,
     async ({ app }) => {
       app.setting.openTabById("zotlit");
-      return String(true);
     },
     undefined,
   );
@@ -63,7 +61,6 @@ export async function openProfilesSettings(
         tab: app.setting.activeTab!,
         pagePath: [pageId],
       });
-      return String(true);
     },
     { pageId },
   );
@@ -147,32 +144,30 @@ export interface ActiveTab {
 }
 
 export async function activeTab(vaultId: string): Promise<ActiveTab> {
-  return JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ app }) => {
-        const view = app.workspace.activeLeaf?.view as
-          | import("obsidian").FileView
-          | undefined;
-        const file = view?.file ?? null;
-        return JSON.stringify({
-          type: view?.getViewType() ?? null,
-          path: file?.path ?? null,
-          key: file
-            ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
-                "zotero-key"
-              ] ?? null)
-            : null,
-          opening: !!(
-            app.workspace.activeLeaf as
-              | (import("obsidian").WorkspaceLeaf & { working?: boolean })
-              | null
-          )?.working,
-        });
-      },
-      undefined,
-    ),
-  ) as ActiveTab;
+  return (await obRun(
+    vaultId,
+    async ({ app }) => {
+      const view = app.workspace.activeLeaf?.view as
+        | import("obsidian").FileView
+        | undefined;
+      const file = view?.file ?? null;
+      return {
+        type: view?.getViewType() ?? null,
+        path: file?.path ?? null,
+        key: file
+          ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
+              "zotero-key"
+            ] ?? null)
+          : null,
+        opening: !!(
+          app.workspace.activeLeaf as
+            | (import("obsidian").WorkspaceLeaf & { working?: boolean })
+            | null
+        )?.working,
+      };
+    },
+    undefined,
+  )) as ActiveTab;
 }
 
 export function pdfOpened(vaultId: string, path: string): Promise<boolean> {

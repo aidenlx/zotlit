@@ -34,7 +34,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ app, page: pageHelpers }, { layout }) => {
           delete pageHelpers.scratch.zotlitE2EPanes;
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { layout },
       );
@@ -71,7 +70,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }
         ).setDimension(20);
         pageHelpers.scratch.zotlitE2EPanes = { wide, narrow };
-        return String(true);
       },
       undefined,
     );
@@ -102,111 +100,107 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ]),
       );
 
-    const narrow = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { hookNames }) => {
-          const { until } = pageHelpers;
-          const bar = (
-            pageHelpers.scratch.zotlitE2EPanes!.narrow
-              .view as import("obsidian").ItemView
-          ).contentEl.querySelector<HTMLElement>('[role="toolbar"]')!;
-          let last = -1,
-            steady = 0;
-          await until("toolbar width settles", async () => {
-            await new Promise((r) => requestAnimationFrame(r));
-            const width = bar!.clientWidth;
-            steady = width > 0 && width === last ? steady + 1 : 0;
-            last = width;
-            return steady >= 3;
-          });
-          const button = (hook: string) =>
-            hook === "properties"
-              ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
-              : bar!.querySelector<HTMLElement>(
-                  `[data-query-toolbar="${hook}"]`,
-                )!;
-          const out = {
-            width: bar!.clientWidth,
-            overflow: bar!.scrollWidth > bar!.clientWidth,
-            buttons: {} as Record<
-              string,
-              { tooltip: string | null; nameShown: boolean; iconShown: boolean }
-            >,
+    const narrow = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { hookNames }) => {
+        const { until } = pageHelpers;
+        const bar = (
+          pageHelpers.scratch.zotlitE2EPanes!.narrow
+            .view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>('[role="toolbar"]')!;
+        let last = -1,
+          steady = 0;
+        await until("toolbar width settles", async () => {
+          await new Promise((r) => requestAnimationFrame(r));
+          const width = bar!.clientWidth;
+          steady = width > 0 && width === last ? steady + 1 : 0;
+          last = width;
+          return steady >= 3;
+        });
+        const button = (hook: string) =>
+          hook === "properties"
+            ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
+            : bar!.querySelector<HTMLElement>(
+                `[data-query-toolbar="${hook}"]`,
+              )!;
+        const out = {
+          width: bar!.clientWidth,
+          overflow: bar!.scrollWidth > bar!.clientWidth,
+          buttons: {} as Record<
+            string,
+            { tooltip: string | null; nameShown: boolean; iconShown: boolean }
+          >,
+        };
+        for (const hook of hookNames) {
+          const el = button(hook);
+          const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
+            (s) => s.textContent.trim() !== "",
+          );
+          out.buttons[hook] = {
+            tooltip: el!.getAttribute("aria-label"),
+            nameShown: !!name && getComputedStyle(name).display !== "none",
+            iconShown:
+              !!el!.querySelector<SVGSVGElement>("svg")! &&
+              el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
+                .width > 0,
           };
-          for (const hook of hookNames) {
-            const el = button(hook);
-            const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
-              (s) => s.textContent.trim() !== "",
-            );
-            out.buttons[hook] = {
-              tooltip: el!.getAttribute("aria-label"),
-              nameShown: !!name && getComputedStyle(name).display !== "none",
-              iconShown:
-                !!el!.querySelector<SVGSVGElement>("svg")! &&
-                el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
-                  .width > 0,
-            };
-          }
-          return JSON.stringify(out);
-        },
-        { hookNames: Object.keys(names) },
-      ),
-    ) as Pane;
+        }
+        return out;
+      },
+      { hookNames: Object.keys(names) },
+    )) as Pane;
     expect(narrow.width).toBeLessThan(400);
     expect(narrow).toMatchObject({ overflow: false, buttons: each(false) });
 
-    const wide = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { hookNames }) => {
-          const { until } = pageHelpers;
-          const bar = (
-            pageHelpers.scratch.zotlitE2EPanes!.wide
-              .view as import("obsidian").ItemView
-          ).contentEl.querySelector<HTMLElement>('[role="toolbar"]')!;
-          let last = -1,
-            steady = 0;
-          await until("toolbar width settles", async () => {
-            await new Promise((r) => requestAnimationFrame(r));
-            const width = bar!.clientWidth;
-            steady = width > 0 && width === last ? steady + 1 : 0;
-            last = width;
-            return steady >= 3;
-          });
-          const button = (hook: string) =>
-            hook === "properties"
-              ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
-              : bar!.querySelector<HTMLElement>(
-                  `[data-query-toolbar="${hook}"]`,
-                )!;
-          const out = {
-            width: bar!.clientWidth,
-            overflow: bar!.scrollWidth > bar!.clientWidth,
-            buttons: {} as Record<
-              string,
-              { tooltip: string | null; nameShown: boolean; iconShown: boolean }
-            >,
+    const wide = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { hookNames }) => {
+        const { until } = pageHelpers;
+        const bar = (
+          pageHelpers.scratch.zotlitE2EPanes!.wide
+            .view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>('[role="toolbar"]')!;
+        let last = -1,
+          steady = 0;
+        await until("toolbar width settles", async () => {
+          await new Promise((r) => requestAnimationFrame(r));
+          const width = bar!.clientWidth;
+          steady = width > 0 && width === last ? steady + 1 : 0;
+          last = width;
+          return steady >= 3;
+        });
+        const button = (hook: string) =>
+          hook === "properties"
+            ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
+            : bar!.querySelector<HTMLElement>(
+                `[data-query-toolbar="${hook}"]`,
+              )!;
+        const out = {
+          width: bar!.clientWidth,
+          overflow: bar!.scrollWidth > bar!.clientWidth,
+          buttons: {} as Record<
+            string,
+            { tooltip: string | null; nameShown: boolean; iconShown: boolean }
+          >,
+        };
+        for (const hook of hookNames) {
+          const el = button(hook);
+          const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
+            (s) => s.textContent.trim() !== "",
+          );
+          out.buttons[hook] = {
+            tooltip: el!.getAttribute("aria-label"),
+            nameShown: !!name && getComputedStyle(name).display !== "none",
+            iconShown:
+              !!el!.querySelector<SVGSVGElement>("svg")! &&
+              el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
+                .width > 0,
           };
-          for (const hook of hookNames) {
-            const el = button(hook);
-            const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
-              (s) => s.textContent.trim() !== "",
-            );
-            out.buttons[hook] = {
-              tooltip: el!.getAttribute("aria-label"),
-              nameShown: !!name && getComputedStyle(name).display !== "none",
-              iconShown:
-                !!el!.querySelector<SVGSVGElement>("svg")! &&
-                el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
-                  .width > 0,
-            };
-          }
-          return JSON.stringify(out);
-        },
-        { hookNames: Object.keys(names) },
-      ),
-    ) as Pane;
+        }
+        return out;
+      },
+      { hookNames: Object.keys(names) },
+    )) as Pane;
     expect(wide.width).toBeGreaterThan(700);
     expect(wide).toMatchObject({ overflow: false, buttons: each(true) });
 
@@ -266,7 +260,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             pageHelpers.scratch.zotlitE2EPastEdge?.detach();
             delete pageHelpers.scratch.zotlitE2EPastEdge;
             await app.workspace.changeLayout(JSON.parse(layout));
-            return String(true);
           },
           { layout },
         );
@@ -295,7 +288,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           } else {
           }
-          return String(true);
         },
         { isPopout: host === "popout" },
       );
@@ -372,7 +364,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await app.workspace.changeLayout(JSON.parse(layout));
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
-            return String(true);
           },
           { layout, path },
         );
@@ -410,7 +401,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           } else {
           }
-          return String(true);
         },
         {
           path,
@@ -462,125 +452,121 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(hint.text).not.toContain("The elements of the list");
       };
 
-      const inFilter = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { page: pageHelpers },
-            { shouldSelect, undefined, cursorAnchor },
-          ) => {
-            const { press, until } = pageHelpers;
-            const el = (
-              pageHelpers.scratch.zotlitE2EHint!
-                .view as import("obsidian").ItemView
-            ).contentEl;
-            const popover = el.querySelector<HTMLElement>(
-              '[data-query-popover="filter"]',
-            )!;
-            press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-              "Filter",
+      const inFilter = (await obRun(
+        run.vaultId,
+        async (
+          { page: pageHelpers },
+          { shouldSelect, undefined, cursorAnchor },
+        ) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            pageHelpers.scratch.zotlitE2EHint!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+          await until("Filter popover", () => popover.matches(":popover-open"));
+          try {
+            const content = await until(
+              "expression field",
+              () =>
+                popover
+                  .querySelector<HTMLElement>(
+                    '[data-filter-section="view"] [data-condition-row]',
+                  )
+                  ?.querySelector<CodeMirrorContent>(".cm-content")!,
+              5000,
             );
-            await until("Filter popover", () =>
-              popover.matches(":popover-open"),
-            );
-            try {
-              const content = await until(
-                "expression field",
-                () =>
-                  popover
-                    .querySelector<HTMLElement>(
-                      '[data-filter-section="view"] [data-condition-row]',
-                    )
-                    ?.querySelector<CodeMirrorContent>(".cm-content")!,
-                5000,
-              );
-              const root = content.closest<HTMLElement>("[popover]")!;
-              const doc = content.ownerDocument;
-              const win = doc.defaultView;
-              const view = content.cmTile.root.view;
-              if (shouldSelect) {
-              } else {
-                view.dispatch({
-                  changes: {
-                    from: 0,
-                    to: view.state.doc.length,
-                    insert: undefined,
-                  },
-                  userEvent: "input.type",
-                });
-              }
-              view.dispatch({ selection: { anchor: cursorAnchor } });
-              content.focus();
-              const hint = await until(
-                "Signature Hint",
-                () => {
-                  const shown =
-                    doc.querySelector<HTMLElement>(".zt-signature-hint")!;
-                  return shown && !shown.hidden && shown;
+            const root = content.closest<HTMLElement>("[popover]")!;
+            const doc = content.ownerDocument;
+            const win = doc.defaultView;
+            const view = content.cmTile.root.view;
+            if (shouldSelect) {
+            } else {
+              view.dispatch({
+                changes: {
+                  from: 0,
+                  to: view.state.doc.length,
+                  insert: undefined,
                 },
-                5000,
-              );
-              await until(
-                "hint placed in the surface and measured",
-                () =>
-                  hint.closest<HTMLElement>("[popover]")! === root &&
-                  hint.style.top !== "-10000px" &&
-                  hint.getBoundingClientRect().width > 0,
-                5000,
-              );
-              const r = hint.getBoundingClientRect();
-              const corners = [
-                [r.left + 2, r.top + 2],
-                [r.right - 2, r.top + 2],
-                [r.left + 2, r.bottom - 2],
-                [r.right - 2, r.bottom - 2],
-              ] as const;
-              const domSelection = doc.getSelection();
-              const out = {
-                closed: false,
-                caret: view.state.selection.main.head,
-                domCaret:
-                  domSelection!.anchorNode &&
-                  content.contains(domSelection!.anchorNode)
-                    ? view.posAtDOM(
-                        domSelection!.anchorNode,
-                        domSelection!.anchorOffset,
-                      )
-                    : null,
-                marked:
-                  hint.querySelector<HTMLElement>("mark")?.textContent ?? null,
-                text: hint.textContent,
-                inSurface: hint.closest<HTMLElement>("[popover]")! === root,
-                inWindow:
-                  r.width > 0 &&
-                  r.left >= 0 &&
-                  r.top >= 0 &&
-                  r.right <= win!.innerWidth &&
-                  r.bottom <= win!.innerHeight,
-                shown: corners.every(([x, y]) => {
-                  const hit = doc.elementFromPoint(x, y);
-                  return !!hit && hint.contains(hit);
-                }),
-              };
-              view.dispatch({ selection: { anchor: view.state.doc.length } });
-              out.closed = await until(
-                "hint closes",
-                () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
-                5000,
-              );
-              return JSON.stringify(out);
-            } finally {
-              popover.hidePopover();
+                userEvent: "input.type",
+              });
             }
-          },
-          {
-            shouldSelect: undefined === undefined,
-            undefined,
-            cursorAnchor: "title.slice(0, ".length,
-          },
-        ),
-      ) as Hint;
+            view.dispatch({ selection: { anchor: cursorAnchor } });
+            content.focus();
+            const hint = await until(
+              "Signature Hint",
+              () => {
+                const shown =
+                  doc.querySelector<HTMLElement>(".zt-signature-hint")!;
+                return shown && !shown.hidden && shown;
+              },
+              5000,
+            );
+            await until(
+              "hint placed in the surface and measured",
+              () =>
+                hint.closest<HTMLElement>("[popover]")! === root &&
+                hint.style.top !== "-10000px" &&
+                hint.getBoundingClientRect().width > 0,
+              5000,
+            );
+            const r = hint.getBoundingClientRect();
+            const corners = [
+              [r.left + 2, r.top + 2],
+              [r.right - 2, r.top + 2],
+              [r.left + 2, r.bottom - 2],
+              [r.right - 2, r.bottom - 2],
+            ] as const;
+            const domSelection = doc.getSelection();
+            const out = {
+              closed: false,
+              caret: view.state.selection.main.head,
+              domCaret:
+                domSelection!.anchorNode &&
+                content.contains(domSelection!.anchorNode)
+                  ? view.posAtDOM(
+                      domSelection!.anchorNode,
+                      domSelection!.anchorOffset,
+                    )
+                  : null,
+              marked:
+                hint.querySelector<HTMLElement>("mark")?.textContent ?? null,
+              text: hint.textContent,
+              inSurface: hint.closest<HTMLElement>("[popover]")! === root,
+              inWindow:
+                r.width > 0 &&
+                r.left >= 0 &&
+                r.top >= 0 &&
+                r.right <= win!.innerWidth &&
+                r.bottom <= win!.innerHeight,
+              shown: corners.every(([x, y]) => {
+                const hit = doc.elementFromPoint(x, y);
+                return !!hit && hint.contains(hit);
+              }),
+            };
+            view.dispatch({ selection: { anchor: view.state.doc.length } });
+            out.closed = await until(
+              "hint closes",
+              () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
+              5000,
+            );
+            return out;
+          } finally {
+            popover.hidePopover();
+          }
+        },
+        {
+          shouldSelect: undefined === undefined,
+          undefined,
+          cursorAnchor: "title.slice(0, ".length,
+        },
+      )) as Hint;
       // The focus keeps the caret where it was, in the state and on screen.
       expect(inFilter).toMatchObject({
         ...expected,
@@ -589,133 +575,131 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
       isStringSlice(inFilter);
 
-      const inFormula = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { page: pageHelpers },
-            { buttonLabel, shouldClear, insertText, cursorAnchor },
-          ) => {
-            const { press, until } = pageHelpers;
-            const el = (
-              pageHelpers.scratch.zotlitE2EHint!
-                .view as import("obsidian").ItemView
-            ).contentEl;
-            press(
-              el.querySelector<HTMLElement>("[data-query-properties]")!,
-              "Properties",
+      const inFormula = (await obRun(
+        run.vaultId,
+        async (
+          { page: pageHelpers },
+          { buttonLabel, shouldClear, insertText, cursorAnchor },
+        ) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            pageHelpers.scratch.zotlitE2EHint!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          press(
+            el.querySelector<HTMLElement>("[data-query-properties]")!,
+            "Properties",
+          );
+          const popup = await until("Properties popover", () =>
+            el.ownerDocument
+              .querySelector<HTMLElement>(
+                "[data-query-properties-popup]:popover-open [data-query-property]",
+              )
+              ?.closest<HTMLElement>("[data-query-properties-popup]")!,
+          );
+          press(
+            [...popup.querySelectorAll<HTMLElement>('[role="option"]')].find(
+              (n) => n.textContent === buttonLabel,
+            ),
+            "Add formula",
+          );
+          try {
+            const content = await until(
+              "expression field",
+              () =>
+                popup
+                  .querySelector<HTMLElement>(
+                    "[data-chooser-page] [data-query-formula-expression]",
+                  )
+                  ?.querySelector<CodeMirrorContent>(".cm-content")!,
+              5000,
             );
-            const popup = await until("Properties popover", () =>
-              el.ownerDocument
-                .querySelector<HTMLElement>(
-                  "[data-query-properties-popup]:popover-open [data-query-property]",
-                )
-                ?.closest<HTMLElement>("[data-query-properties-popup]")!,
-            );
-            press(
-              [...popup.querySelectorAll<HTMLElement>('[role="option"]')].find(
-                (n) => n.textContent === buttonLabel,
-              ),
-              "Add formula",
-            );
-            try {
-              const content = await until(
-                "expression field",
-                () =>
-                  popup
-                    .querySelector<HTMLElement>(
-                      "[data-chooser-page] [data-query-formula-expression]",
-                    )
-                    ?.querySelector<CodeMirrorContent>(".cm-content")!,
-                5000,
-              );
-              const root = content.closest<HTMLElement>("[popover]")!;
-              const doc = content.ownerDocument;
-              const win = doc.defaultView;
-              const view = content.cmTile.root.view;
-              if (shouldClear) {
-              } else {
-                view.dispatch({
-                  changes: {
-                    from: 0,
-                    to: view.state.doc.length,
-                    insert: insertText,
-                  },
-                  userEvent: "input.type",
-                });
-              }
-              view.dispatch({ selection: { anchor: cursorAnchor } });
-              content.focus();
-              const hint = await until(
-                "Signature Hint",
-                () => {
-                  const shown =
-                    doc.querySelector<HTMLElement>(".zt-signature-hint")!;
-                  return shown && !shown.hidden && shown;
+            const root = content.closest<HTMLElement>("[popover]")!;
+            const doc = content.ownerDocument;
+            const win = doc.defaultView;
+            const view = content.cmTile.root.view;
+            if (shouldClear) {
+            } else {
+              view.dispatch({
+                changes: {
+                  from: 0,
+                  to: view.state.doc.length,
+                  insert: insertText,
                 },
-                5000,
-              );
-              await until(
-                "hint placed in the surface and measured",
-                () =>
-                  hint.closest<HTMLElement>("[popover]")! === root &&
-                  hint.style.top !== "-10000px" &&
-                  hint.getBoundingClientRect().width > 0,
-                5000,
-              );
-              const r = hint.getBoundingClientRect();
-              const corners = [
-                [r.left + 2, r.top + 2],
-                [r.right - 2, r.top + 2],
-                [r.left + 2, r.bottom - 2],
-                [r.right - 2, r.bottom - 2],
-              ] as const;
-              const domSelection = doc.getSelection();
-              const out = {
-                closed: false,
-                caret: view.state.selection.main.head,
-                domCaret:
-                  domSelection!.anchorNode &&
-                  content.contains(domSelection!.anchorNode)
-                    ? view.posAtDOM(
-                        domSelection!.anchorNode,
-                        domSelection!.anchorOffset,
-                      )
-                    : null,
-                marked:
-                  hint.querySelector<HTMLElement>("mark")?.textContent ?? null,
-                text: hint.textContent,
-                inSurface: hint.closest<HTMLElement>("[popover]")! === root,
-                inWindow:
-                  r.width > 0 &&
-                  r.left >= 0 &&
-                  r.top >= 0 &&
-                  r.right <= win!.innerWidth &&
-                  r.bottom <= win!.innerHeight,
-                shown: corners.every(([x, y]) => {
-                  const hit = doc.elementFromPoint(x, y);
-                  return !!hit && hint.contains(hit);
-                }),
-              };
-              view.dispatch({ selection: { anchor: view.state.doc.length } });
-              out.closed = await until(
-                "hint closes",
-                () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
-                5000,
-              );
-              return JSON.stringify(out);
-            } finally {
-              popup.hidePopover();
+                userEvent: "input.type",
+              });
             }
-          },
-          {
-            buttonLabel: run.m.query_view_formula_add(),
-            shouldClear: "title.slice(1, )" === undefined,
-            insertText: "title.slice(1, )",
-            cursorAnchor: "title.slice(1, ".length,
-          },
-        ),
-      ) as Hint;
+            view.dispatch({ selection: { anchor: cursorAnchor } });
+            content.focus();
+            const hint = await until(
+              "Signature Hint",
+              () => {
+                const shown =
+                  doc.querySelector<HTMLElement>(".zt-signature-hint")!;
+                return shown && !shown.hidden && shown;
+              },
+              5000,
+            );
+            await until(
+              "hint placed in the surface and measured",
+              () =>
+                hint.closest<HTMLElement>("[popover]")! === root &&
+                hint.style.top !== "-10000px" &&
+                hint.getBoundingClientRect().width > 0,
+              5000,
+            );
+            const r = hint.getBoundingClientRect();
+            const corners = [
+              [r.left + 2, r.top + 2],
+              [r.right - 2, r.top + 2],
+              [r.left + 2, r.bottom - 2],
+              [r.right - 2, r.bottom - 2],
+            ] as const;
+            const domSelection = doc.getSelection();
+            const out = {
+              closed: false,
+              caret: view.state.selection.main.head,
+              domCaret:
+                domSelection!.anchorNode &&
+                content.contains(domSelection!.anchorNode)
+                  ? view.posAtDOM(
+                      domSelection!.anchorNode,
+                      domSelection!.anchorOffset,
+                    )
+                  : null,
+              marked:
+                hint.querySelector<HTMLElement>("mark")?.textContent ?? null,
+              text: hint.textContent,
+              inSurface: hint.closest<HTMLElement>("[popover]")! === root,
+              inWindow:
+                r.width > 0 &&
+                r.left >= 0 &&
+                r.top >= 0 &&
+                r.right <= win!.innerWidth &&
+                r.bottom <= win!.innerHeight,
+              shown: corners.every(([x, y]) => {
+                const hit = doc.elementFromPoint(x, y);
+                return !!hit && hint.contains(hit);
+              }),
+            };
+            view.dispatch({ selection: { anchor: view.state.doc.length } });
+            out.closed = await until(
+              "hint closes",
+              () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
+              5000,
+            );
+            return out;
+          } finally {
+            popup.hidePopover();
+          }
+        },
+        {
+          buttonLabel: run.m.query_view_formula_add(),
+          shouldClear: "title.slice(1, )" === undefined,
+          insertText: "title.slice(1, )",
+          cursorAnchor: "title.slice(1, ".length,
+        },
+      )) as Hint;
       expect(inFormula).toMatchObject({
         ...expected,
         caret: "title.slice(1, ".length,
@@ -747,300 +731,281 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // the list below the caret and the call's Signature Hint above it,
       // apart. A click on the row writes it while the Filter popover stays
       // open. The eval restores the vault and the layout before it answers.
-      const { formula, filter } = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { app, page: pageHelpers },
-            { path, source, isPopout, buttonLabel },
+      const { formula, filter } = await obRun(
+        run.vaultId,
+        async (
+          { app, page: pageHelpers },
+          { path, source, isPopout, buttonLabel },
+        ) => {
+          const { press, until } = pageHelpers;
+          const listOf = async (
+            root: HTMLElement,
+            content: import("./page-query-types.ts").CodeMirrorContent,
+            text: string,
           ) => {
-            const { press, until } = pageHelpers;
-            const listOf = async (
-              root: HTMLElement,
-              content: import("./page-query-types.ts").CodeMirrorContent,
-              text: string,
-            ) => {
-              const doc = content.ownerDocument;
-              const field = content.cmTile.root.view;
-              field.focus();
-              await until(
-                "focus in the field",
-                () => doc.activeElement === content && doc.hasFocus(),
-              );
-              doc.execCommand("insertText", false, text);
-              const list = await until("list opens", () =>
-                root.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
-              );
-              await until(
-                "list placed and measured",
-                () =>
-                  list.style.top !== "-10000px" &&
-                  list.getBoundingClientRect().width > 0,
-                5000,
-              );
-              const r = list.getBoundingClientRect();
-              const edge = root.getBoundingClientRect().bottom;
-              const y =
-                r.bottom > edge + 8
-                  ? Math.min(edge + 4, r.bottom - 4)
-                  : r.top + r.height / 2;
-              const hit = doc.elementFromPoint(r.left + r.width / 2, y);
-              const row = list.querySelector<HTMLElement>("li")!;
-              return {
-                list,
-                skin:
-                  list.classList.contains("suggestion-container") &&
-                  row.classList.contains("suggestion-item"),
-                shown: !!hit && list.contains(hit),
-                first: {
-                  label: row.querySelector<HTMLElement>(".cm-completionLabel")
-                    ?.textContent,
-                  type:
-                    row.querySelector<HTMLElement>(
-                      ".zt-template-completion-type",
-                    )?.textContent ?? null,
-                  note:
-                    row.querySelector<HTMLElement>(".suggestion-note")
-                      ?.textContent ?? null,
-                },
-              };
+            const doc = content.ownerDocument;
+            const field = content.cmTile.root.view;
+            field.focus();
+            await until(
+              "focus in the field",
+              () => doc.activeElement === content && doc.hasFocus(),
+            );
+            doc.execCommand("insertText", false, text);
+            const list = await until("list opens", () =>
+              root.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+            );
+            await until(
+              "list placed and measured",
+              () =>
+                list.style.top !== "-10000px" &&
+                list.getBoundingClientRect().width > 0,
+              5000,
+            );
+            const r = list.getBoundingClientRect();
+            const edge = root.getBoundingClientRect().bottom;
+            const y =
+              r.bottom > edge + 8
+                ? Math.min(edge + 4, r.bottom - 4)
+                : r.top + r.height / 2;
+            const hit = doc.elementFromPoint(r.left + r.width / 2, y);
+            const row = list.querySelector<HTMLElement>("li")!;
+            return {
+              list,
+              skin:
+                list.classList.contains("suggestion-container") &&
+                row.classList.contains("suggestion-item"),
+              shown: !!hit && list.contains(hit),
+              first: {
+                label: row.querySelector<HTMLElement>(".cm-completionLabel")
+                  ?.textContent,
+                type:
+                  row.querySelector<HTMLElement>(".zt-template-completion-type")
+                    ?.textContent ?? null,
+                note:
+                  row.querySelector<HTMLElement>(".suggestion-note")
+                    ?.textContent ?? null,
+              },
             };
-            const { trusted } = pageHelpers;
-            const picked = (list: HTMLElement) =>
-              [...list.querySelectorAll<HTMLElement>("li")].findIndex(
-                (li) => li.getAttribute("aria-selected") === "true",
-              );
-            const ready = async (
-              input: ReturnType<
-                import("./page-context.ts").ObsidianContext["page"]["trusted"]
-              >,
-              list: HTMLElement,
-            ) => {
-              const end = Temporal.Now.instant().epochMilliseconds + 2000;
-              while (Temporal.Now.instant().epochMilliseconds < end) {
-                await input.key("Down");
-                if (picked(list) > 0) {
-                  await input.key("Up");
-                  await until(
-                    "first row picked again",
-                    () => picked(list) === 0,
-                  );
-                  return;
-                }
+          };
+          const { trusted } = pageHelpers;
+          const picked = (list: HTMLElement) =>
+            [...list.querySelectorAll<HTMLElement>("li")].findIndex(
+              (li) => li.getAttribute("aria-selected") === "true",
+            );
+          const ready = async (
+            input: ReturnType<
+              import("./page-context.ts").ObsidianContext["page"]["trusted"]
+            >,
+            list: HTMLElement,
+          ) => {
+            const end = Temporal.Now.instant().epochMilliseconds + 2000;
+            while (Temporal.Now.instant().epochMilliseconds < end) {
+              await input.key("Down");
+              if (picked(list) > 0) {
+                await input.key("Up");
+                await until("first row picked again", () => picked(list) === 0);
+                return;
               }
-              throw new Error("Timed out: the list takes keys");
-            };
-            await using cleanup = new AsyncDisposableStack();
-            const layout = app.workspace.getLayout();
-            cleanup.defer(() => app.workspace.changeLayout(layout));
-            const file = cleanup.adopt(
-              await app.vault.create(path, source),
-              (file) => app.vault.delete(file),
-            );
-            const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
-              leaf.detach(),
-            );
-            cleanup.defer(() => {
-              for (const popup of (
-                (leaf.view as import("obsidian").ItemView)?.contentEl?.doc ??
-                document
-              ).querySelectorAll<HTMLElement>("[popover]:popover-open"))
-                popup.hidePopover();
-            });
-            await leaf.openFile(file);
-            app.workspace.setActiveLeaf(leaf, { focus: true });
-            await (
-              leaf.view as import("@/views/query-view/file-view").QueryFileView
-            ).query.settled;
-            if (isPopout) {
-              app.workspace.moveLeafToPopout(leaf);
-              await until(
-                "view in the popout",
-                () =>
-                  (leaf.view as import("obsidian").ItemView).contentEl
-                    .ownerDocument !== document,
-                10000,
-              );
-              (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
-              await until(
-                "popout focused",
-                () =>
-                  (
-                    leaf.view as import("obsidian").ItemView
-                  ).contentEl.doc.hasFocus(),
-                5000,
-              );
-            } else {
             }
-            const formula = await (async () => {
-              const view = leaf.view;
-              const el = (view as import("obsidian").ItemView).contentEl;
-              const input = trusted(el.win);
-              await until(
-                "the window takes keys",
-                () => activeWindow === el.win,
-              );
-              press(
-                await until("Properties button", () =>
-                  el.querySelector<HTMLElement>("[data-query-properties]")!,
-                ),
-                "Properties",
-              );
-              const popup = await until("Properties popover", () =>
-                el.doc.querySelector<HTMLElement>(
-                  "[data-query-properties-popup]:popover-open",
-                )!,
-              );
-              press(
-                await until("Add formula", () =>
-                  [
-                    ...popup.querySelectorAll<HTMLElement>('[role="option"]'),
-                  ].find((n) => n.textContent === buttonLabel),
-                ),
-                "Add formula",
-              );
-              const page = await until("formula page", () =>
-                popup.querySelector<HTMLElement>(
-                  "[data-chooser-page] [data-query-formula-page]",
-                )!,
-              );
-              const content = await until("editor", () =>
-                page.querySelector<CodeMirrorContent>(
-                  "[data-query-formula-expression] .cm-content",
-                )!,
-              );
-              const editor = content.cmTile.root.view;
-              const offered = await listOf(popup, content, "mi");
-              await ready(input, offered.list);
-              await input.key("Return");
-              await until(
-                "Enter writes the entry",
-                () => editor.state.doc.toString() !== "mi",
-              );
-              const accepted = {
-                doc: editor.state.doc.toString(),
-                caret: editor.state.selection.main.head,
-              };
-              await listOf(popup, content, "ti");
-              await new Promise((r) => setTimeout(r, 200));
-              await input.key("Tab");
-              await until(
-                "Tab writes the entry",
-                () => editor.state.doc.toString() !== "min(ti)",
-              );
-              const tabbed = {
-                doc: editor.state.doc.toString(),
-                list: !!popup.querySelector<HTMLElement>(
-                  ".cm-tooltip-autocomplete",
-                )!,
-                focus: el.doc.activeElement === content,
-              };
-              await listOf(popup, content, ", ti");
-              await input.key("Escape");
-              await until(
-                "Escape closes the list",
-                () =>
-                  !popup.querySelector<HTMLElement>(
-                    ".cm-tooltip-autocomplete",
-                  )!,
-              );
-              const first = {
-                page: !!popup.querySelector<HTMLElement>(
-                  "[data-chooser-page]",
-                )!,
-                hint: !!popup.querySelector<HTMLElement>(".zt-signature-hint")!,
-              };
-              await input.key("Escape");
-              await until(
-                "Escape closes the hint",
-                () => !popup.querySelector<HTMLElement>(".zt-signature-hint")!,
-              );
-              const second = {
-                page: !!popup.querySelector<HTMLElement>(
-                  "[data-chooser-page]",
-                )!,
-              };
-              await input.key("Escape");
-              await until(
-                "Escape leaves the page",
-                () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
-              );
-              const third = { open: popup.matches(":popover-open") };
+            throw new Error("Timed out: the list takes keys");
+          };
+          await using cleanup = new AsyncDisposableStack();
+          const layout = app.workspace.getLayout();
+          cleanup.defer(() => app.workspace.changeLayout(layout));
+          const file = cleanup.adopt(
+            await app.vault.create(path, source),
+            (file) => app.vault.delete(file),
+          );
+          const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+            leaf.detach(),
+          );
+          cleanup.defer(() => {
+            for (const popup of (
+              (leaf.view as import("obsidian").ItemView)?.contentEl?.doc ??
+              document
+            ).querySelectorAll<HTMLElement>("[popover]:popover-open"))
               popup.hidePopover();
-              return {
-                offered: { ...offered, list: undefined },
-                accepted,
-                tabbed,
-                first,
-                second,
-                third,
-              };
-            })();
-            const filter = await (async () => {
-              const el = (leaf.view as import("obsidian").ItemView).contentEl;
-              const input = trusted(el.win);
-              press(
-                await until("Filter button", () =>
-                  el.querySelector<HTMLElement>(
-                    '[data-query-toolbar="filter"]',
-                  )!,
-                ),
-                "Filter",
-              );
-              const popup = await until("Filter popover", () =>
-                el.doc.querySelector<HTMLElement>(
-                  '[data-query-popover="filter"]:popover-open',
-                )!,
-              );
-              const content = await until("expression row", () =>
-                popup.querySelector<CodeMirrorContent>(
-                  '[data-filter-section="view"] [data-condition-row] .cm-content',
-                )!,
-              );
-              const editor = content.cmTile.root.view;
-              editor.dispatch({
-                selection: { anchor: editor.state.doc.length },
-              });
-              const offered = await listOf(popup, content, " && max(tit");
-              const hint = await until("Signature Hint", () =>
-                popup.querySelector<HTMLElement>(".zt-signature-hint")!,
-              );
-              const caret = editor.coordsAtPos(
-                editor.state.selection.main.head,
-              );
-              const h = hint.getBoundingClientRect();
-              const l = offered.list.getBoundingClientRect();
-              const apart = {
-                hintAbove: h.bottom <= caret!.top + 1,
-                listBelow: l.top >= caret!.bottom - 1,
-              };
-              const row = [
-                ...offered.list.querySelectorAll<HTMLElement>("li"),
-              ].find(
-                (li) =>
-                  li.querySelector<HTMLElement>(".cm-completionLabel")
-                    ?.textContent === "title",
-              );
-              await input.click(row!);
-              await until("the click writes the entry", () =>
-                editor.state.doc.toString().endsWith("(title"),
-              );
-              const after = {
-                doc: editor.state.doc.toString(),
-                open: popup.matches(":popover-open"),
-              };
-              popup.hidePopover();
-              return { offered: { ...offered, list: undefined }, apart, after };
-            })();
-            return JSON.stringify({ formula, filter });
-          },
-          {
-            path,
-            source,
-            isPopout: host === "popout",
-            buttonLabel: run.m.query_view_formula_add(),
-          },
-        ),
+          });
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          if (isPopout) {
+            app.workspace.moveLeafToPopout(leaf);
+            await until(
+              "view in the popout",
+              () =>
+                (leaf.view as import("obsidian").ItemView).contentEl
+                  .ownerDocument !== document,
+              10000,
+            );
+            (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
+            await until(
+              "popout focused",
+              () =>
+                (
+                  leaf.view as import("obsidian").ItemView
+                ).contentEl.doc.hasFocus(),
+              5000,
+            );
+          } else {
+          }
+          const formula = await (async () => {
+            const view = leaf.view;
+            const el = (view as import("obsidian").ItemView).contentEl;
+            const input = trusted(el.win);
+            await until("the window takes keys", () => activeWindow === el.win);
+            press(
+              await until("Properties button", () =>
+                el.querySelector<HTMLElement>("[data-query-properties]")!,
+              ),
+              "Properties",
+            );
+            const popup = await until("Properties popover", () =>
+              el.doc.querySelector<HTMLElement>(
+                "[data-query-properties-popup]:popover-open",
+              )!,
+            );
+            press(
+              await until("Add formula", () =>
+                [
+                  ...popup.querySelectorAll<HTMLElement>('[role="option"]'),
+                ].find((n) => n.textContent === buttonLabel),
+              ),
+              "Add formula",
+            );
+            const page = await until("formula page", () =>
+              popup.querySelector<HTMLElement>(
+                "[data-chooser-page] [data-query-formula-page]",
+              )!,
+            );
+            const content = await until("editor", () =>
+              page.querySelector<CodeMirrorContent>(
+                "[data-query-formula-expression] .cm-content",
+              )!,
+            );
+            const editor = content.cmTile.root.view;
+            const offered = await listOf(popup, content, "mi");
+            await ready(input, offered.list);
+            await input.key("Return");
+            await until(
+              "Enter writes the entry",
+              () => editor.state.doc.toString() !== "mi",
+            );
+            const accepted = {
+              doc: editor.state.doc.toString(),
+              caret: editor.state.selection.main.head,
+            };
+            await listOf(popup, content, "ti");
+            await new Promise((r) => setTimeout(r, 200));
+            await input.key("Tab");
+            await until(
+              "Tab writes the entry",
+              () => editor.state.doc.toString() !== "min(ti)",
+            );
+            const tabbed = {
+              doc: editor.state.doc.toString(),
+              list: !!popup.querySelector<HTMLElement>(
+                ".cm-tooltip-autocomplete",
+              )!,
+              focus: el.doc.activeElement === content,
+            };
+            await listOf(popup, content, ", ti");
+            await input.key("Escape");
+            await until(
+              "Escape closes the list",
+              () =>
+                !popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+            );
+            const first = {
+              page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+              hint: !!popup.querySelector<HTMLElement>(".zt-signature-hint")!,
+            };
+            await input.key("Escape");
+            await until(
+              "Escape closes the hint",
+              () => !popup.querySelector<HTMLElement>(".zt-signature-hint")!,
+            );
+            const second = {
+              page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+            };
+            await input.key("Escape");
+            await until(
+              "Escape leaves the page",
+              () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+            );
+            const third = { open: popup.matches(":popover-open") };
+            popup.hidePopover();
+            return {
+              offered: { ...offered, list: undefined },
+              accepted,
+              tabbed,
+              first,
+              second,
+              third,
+            };
+          })();
+          const filter = await (async () => {
+            const el = (leaf.view as import("obsidian").ItemView).contentEl;
+            const input = trusted(el.win);
+            press(
+              await until("Filter button", () =>
+                el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              ),
+              "Filter",
+            );
+            const popup = await until("Filter popover", () =>
+              el.doc.querySelector<HTMLElement>(
+                '[data-query-popover="filter"]:popover-open',
+              )!,
+            );
+            const content = await until("expression row", () =>
+              popup.querySelector<CodeMirrorContent>(
+                '[data-filter-section="view"] [data-condition-row] .cm-content',
+              )!,
+            );
+            const editor = content.cmTile.root.view;
+            editor.dispatch({
+              selection: { anchor: editor.state.doc.length },
+            });
+            const offered = await listOf(popup, content, " && max(tit");
+            const hint = await until("Signature Hint", () =>
+              popup.querySelector<HTMLElement>(".zt-signature-hint")!,
+            );
+            const caret = editor.coordsAtPos(editor.state.selection.main.head);
+            const h = hint.getBoundingClientRect();
+            const l = offered.list.getBoundingClientRect();
+            const apart = {
+              hintAbove: h.bottom <= caret!.top + 1,
+              listBelow: l.top >= caret!.bottom - 1,
+            };
+            const row = [
+              ...offered.list.querySelectorAll<HTMLElement>("li"),
+            ].find(
+              (li) =>
+                li.querySelector<HTMLElement>(".cm-completionLabel")
+                  ?.textContent === "title",
+            );
+            await input.click(row!);
+            await until("the click writes the entry", () =>
+              editor.state.doc.toString().endsWith("(title"),
+            );
+            const after = {
+              doc: editor.state.doc.toString(),
+              open: popup.matches(":popover-open"),
+            };
+            popup.hidePopover();
+            return { offered: { ...offered, list: undefined }, apart, after };
+          })();
+          return { formula, filter };
+        },
+        {
+          path,
+          source,
+          isPopout: host === "popout",
+          buttonLabel: run.m.query_view_formula_add(),
+        },
       );
       expect(formula).toEqual({
         offered: {
@@ -1079,108 +1044,106 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // its "…" opens the page menu. Escape closes the menu and keeps the
       // page; Escape again steps back to the rows, the popup still open.
       // The eval restores the layout before it answers.
-      const escapes = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page: pageHelpers }, { isPopout }) => {
-            const { until } = pageHelpers;
-            const { trusted } = pageHelpers;
-            await using cleanup = new AsyncDisposableStack();
-            const layout = app.workspace.getLayout();
-            cleanup.defer(() => app.workspace.changeLayout(layout));
-            const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
-              leaf.detach(),
-            );
-            cleanup.defer(() => {
-              for (const popup of (
-                (leaf.view as import("obsidian").ItemView)?.contentEl?.doc ??
-                document
-              ).querySelectorAll<HTMLElement>("[popover]:popover-open"))
-                popup.hidePopover();
-            });
-            await leaf.openFile(
-              app.vault.getFileByPath("query-files/Reading list.zotquery")!,
-            );
-            app.workspace.setActiveLeaf(leaf, { focus: true });
-            await (
-              leaf.view as import("@/views/query-view/file-view").QueryFileView
-            ).query.settled;
-            if (isPopout) {
-              app.workspace.moveLeafToPopout(leaf);
-              await until(
-                "view in the popout",
-                () =>
-                  (leaf.view as import("obsidian").ItemView).contentEl
-                    .ownerDocument !== document,
-                10000,
-              );
-              (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
-              await until(
-                "popout focused",
-                () =>
-                  (
-                    leaf.view as import("obsidian").ItemView
-                  ).contentEl.doc.hasFocus(),
-                5000,
-              );
-            } else {
-            }
-            const el = (leaf.view as import("obsidian").ItemView).contentEl;
-            const input = trusted(el.win);
-            await until("the window takes keys", () => activeWindow === el.win);
-            await input.click(
-              await until("View menu", () =>
-                el.querySelector<HTMLElement>("[data-query-view-menu]")!,
-              ),
-            );
-            const popup = await until("view menu opens", () =>
-              el.doc.querySelector<HTMLElement>(
-                "[data-query-view-list]:popover-open",
-              )!,
-            );
-            const row = await until("a view row", () =>
-              popup.querySelector<HTMLElement>("[data-query-view-row]")!,
-            );
-            row.dispatchEvent(
-              new MouseEvent("contextmenu", {
-                bubbles: true,
-                cancelable: true,
-                clientX: 200,
-                clientY: 200,
-              }),
-            );
-            const page = await until("Configure view", () =>
-              popup
-                .querySelector<HTMLElement>("[data-query-configure-view]")
-                ?.closest<HTMLElement>("[data-chooser-page]")!,
-            );
-            await input.click(
-              page.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
-            );
-            const menu = await until("page menu opens", () =>
-              page.querySelector<HTMLElement>('[role="menu"]:popover-open')!,
-            );
-            await input.key("Escape");
+      const escapes = await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { isPopout }) => {
+          const { until } = pageHelpers;
+          const { trusted } = pageHelpers;
+          await using cleanup = new AsyncDisposableStack();
+          const layout = app.workspace.getLayout();
+          cleanup.defer(() => app.workspace.changeLayout(layout));
+          const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+            leaf.detach(),
+          );
+          cleanup.defer(() => {
+            for (const popup of (
+              (leaf.view as import("obsidian").ItemView)?.contentEl?.doc ??
+              document
+            ).querySelectorAll<HTMLElement>("[popover]:popover-open"))
+              popup.hidePopover();
+          });
+          await leaf.openFile(
+            app.vault.getFileByPath("query-files/Reading list.zotquery")!,
+          );
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          if (isPopout) {
+            app.workspace.moveLeafToPopout(leaf);
             await until(
-              "Escape closes the menu",
-              () => !menu.matches(":popover-open"),
+              "view in the popout",
+              () =>
+                (leaf.view as import("obsidian").ItemView).contentEl
+                  .ownerDocument !== document,
+              10000,
             );
-            await new Promise((r) => setTimeout(r, 200));
-            const first = {
-              menu: menu.matches(":popover-open"),
-              page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
-              open: popup.matches(":popover-open"),
-            };
-            await input.key("Escape");
+            (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
             await until(
-              "Escape leaves the page",
-              () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+              "popout focused",
+              () =>
+                (
+                  leaf.view as import("obsidian").ItemView
+                ).contentEl.doc.hasFocus(),
+              5000,
             );
-            const second = { open: popup.matches(":popover-open") };
-            return JSON.stringify({ first, second });
-          },
-          { isPopout: host === "popout" },
-        ),
+          } else {
+          }
+          const el = (leaf.view as import("obsidian").ItemView).contentEl;
+          const input = trusted(el.win);
+          await until("the window takes keys", () => activeWindow === el.win);
+          await input.click(
+            await until("View menu", () =>
+              el.querySelector<HTMLElement>("[data-query-view-menu]")!,
+            ),
+          );
+          const popup = await until("view menu opens", () =>
+            el.doc.querySelector<HTMLElement>(
+              "[data-query-view-list]:popover-open",
+            )!,
+          );
+          const row = await until("a view row", () =>
+            popup.querySelector<HTMLElement>("[data-query-view-row]")!,
+          );
+          row.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: 200,
+              clientY: 200,
+            }),
+          );
+          const page = await until("Configure view", () =>
+            popup
+              .querySelector<HTMLElement>("[data-query-configure-view]")
+              ?.closest<HTMLElement>("[data-chooser-page]")!,
+          );
+          await input.click(
+            page.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
+          );
+          const menu = await until("page menu opens", () =>
+            page.querySelector<HTMLElement>('[role="menu"]:popover-open')!,
+          );
+          await input.key("Escape");
+          await until(
+            "Escape closes the menu",
+            () => !menu.matches(":popover-open"),
+          );
+          await new Promise((r) => setTimeout(r, 200));
+          const first = {
+            menu: menu.matches(":popover-open"),
+            page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+            open: popup.matches(":popover-open"),
+          };
+          await input.key("Escape");
+          await until(
+            "Escape leaves the page",
+            () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+          );
+          const second = { open: popup.matches(":popover-open") };
+          return { first, second };
+        },
+        { isPopout: host === "popout" },
       );
       expect(escapes).toEqual({
         first: { menu: false, page: true, open: true },
@@ -1208,86 +1171,84 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // What the list offers for each text typed over the expression row's
     // text; the row is never left empty, which would remove it. The eval
     // restores the vault and the layout before it answers.
-    const offered = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }, { path, source, texts }) => {
-          const { press, until } = pageHelpers;
-          await using cleanup = new AsyncDisposableStack();
-          const layout = app.workspace.getLayout();
-          cleanup.defer(() => app.workspace.changeLayout(layout));
-          const file = cleanup.adopt(
-            await app.vault.create(path, source),
-            (file) => app.vault.delete(file),
+    const offered = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { path, source, texts }) => {
+        const { press, until } = pageHelpers;
+        await using cleanup = new AsyncDisposableStack();
+        const layout = app.workspace.getLayout();
+        cleanup.defer(() => app.workspace.changeLayout(layout));
+        const file = cleanup.adopt(
+          await app.vault.create(path, source),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        cleanup.defer(() => {
+          for (const popup of document.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+        });
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        await (
+          leaf.view as import("@/views/query-view/file-view").QueryFileView
+        ).query.settled;
+        const el = (leaf.view as import("obsidian").ItemView).contentEl;
+        press(
+          await until("Filter button", () =>
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          ),
+          "Filter",
+        );
+        const popup = await until("Filter popover", () =>
+          el.doc.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]:popover-open',
+          )!,
+        );
+        const content = await until("expression row", () =>
+          popup.querySelector<CodeMirrorContent>(
+            '[data-filter-section="view"] [data-condition-row] .cm-content',
+          )!,
+        );
+        const editor = content.cmTile.root.view;
+        const out: Record<string, string[]> = {};
+        for (const text of texts) {
+          editor.contentDOM.blur();
+          await until(
+            "the list closes",
+            () =>
+              !popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
           );
-          const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
-            leaf.detach(),
-          );
-          cleanup.defer(() => {
-            for (const popup of document.querySelectorAll<HTMLElement>(
-              "[popover]:popover-open",
-            ))
-              popup.hidePopover();
+          editor.dispatch({
+            selection: { anchor: 0, head: editor.state.doc.length },
           });
-          await leaf.openFile(file);
-          app.workspace.setActiveLeaf(leaf, { focus: true });
-          await (
-            leaf.view as import("@/views/query-view/file-view").QueryFileView
-          ).query.settled;
-          const el = (leaf.view as import("obsidian").ItemView).contentEl;
-          press(
-            await until("Filter button", () =>
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-            ),
-            "Filter",
+          editor.focus();
+          await until(
+            "focus in the field",
+            () => el.doc.activeElement === content && el.doc.hasFocus(),
           );
-          const popup = await until("Filter popover", () =>
-            el.doc.querySelector<HTMLElement>(
-              '[data-query-popover="filter"]:popover-open',
-            )!,
+          el.doc.execCommand("insertText", false, text);
+          const list = await until(
+            `list for ${text}`,
+            () =>
+              editor.state.doc.toString() === text &&
+              popup.querySelector<HTMLElement>(
+                ".cm-tooltip-autocomplete li",
+              )! &&
+              popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
           );
-          const content = await until("expression row", () =>
-            popup.querySelector<CodeMirrorContent>(
-              '[data-filter-section="view"] [data-condition-row] .cm-content',
-            )!,
-          );
-          const editor = content.cmTile.root.view;
-          const out: Record<string, string[]> = {};
-          for (const text of texts) {
-            editor.contentDOM.blur();
-            await until(
-              "the list closes",
-              () =>
-                !popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
-            );
-            editor.dispatch({
-              selection: { anchor: 0, head: editor.state.doc.length },
-            });
-            editor.focus();
-            await until(
-              "focus in the field",
-              () => el.doc.activeElement === content && el.doc.hasFocus(),
-            );
-            el.doc.execCommand("insertText", false, text);
-            const list = await until(
-              `list for ${text}`,
-              () =>
-                editor.state.doc.toString() === text &&
-                popup.querySelector<HTMLElement>(
-                  ".cm-tooltip-autocomplete li",
-                )! &&
-                popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
-            );
-            out[text] = [
-              ...list.querySelectorAll<HTMLElement>(".cm-completionLabel"),
-            ].map((n) => n.textContent);
-          }
-          popup.hidePopover();
-          return JSON.stringify(out);
-        },
-        { path, source, texts },
-      ),
-    ) as Record<string, string[]>;
+          out[text] = [
+            ...list.querySelectorAll<HTMLElement>(".cm-completionLabel"),
+          ].map((n) => n.textContent);
+        }
+        popup.hidePopover();
+        return out;
+      },
+      { path, source, texts },
+    )) as Record<string, string[]>;
     const has = (text: string, names: string[], not: string[] = []) => {
       expect(offered[text], text).toEqual(expect.arrayContaining(names));
       for (const name of not) expect(offered[text], text).not.toContain(name);
@@ -1328,7 +1289,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(notePath)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         { layout, notePath },
       );
@@ -1499,7 +1459,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         { layout, path },
       );
@@ -1590,7 +1549,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       {
         path,
@@ -1614,47 +1572,44 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The popover opens with the two sections; the view's tag condition
     // shows as a visual row, and the empty "All views" section shows one
     // placeholder row.
-    const sections = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }, { filterLabel }) => {
-          const { press } = pageHelpers;
-          const el = (
-            app.workspace.getMostRecentLeaf()!
-              .view as import("obsidian").ItemView
-          ).contentEl;
-          const popover = el.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]',
+    const sections = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { filterLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
           )!;
-          if (!popover.matches(":popover-open"))
-            press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-              "Filter",
-            );
-          const section = (name: string) =>
-            popover.querySelector<HTMLElement>(
-              `[data-filter-section="${name}"]`,
-            )!;
 
-          return JSON.stringify({
-            open: popover.matches(":popover-open"),
-            all: section("all").querySelector<HTMLElement>(
-              "[data-filter-heading]",
-            )!.textContent,
-            allRows: section("all").querySelectorAll<HTMLElement>(
-              "[data-condition-row]",
-            ).length,
-            view: section("view").querySelector<HTMLElement>(
-              "[data-filter-heading]",
-            )!.textContent,
-            tag: section("view").querySelector<HTMLInputElement>(
-              `[data-condition-row] input[aria-label="${filterLabel}"]`,
-            )!.value,
-          });
-        },
-        { filterLabel: run.m.workbench_filter_value() },
-      ),
-    ) as Record<string, unknown>;
+        return {
+          open: popover.matches(":popover-open"),
+          all: section("all").querySelector<HTMLElement>(
+            "[data-filter-heading]",
+          )!.textContent,
+          allRows: section("all").querySelectorAll<HTMLElement>(
+            "[data-condition-row]",
+          ).length,
+          view: section("view").querySelector<HTMLElement>(
+            "[data-filter-heading]",
+          )!.textContent,
+          tag: section("view").querySelector<HTMLInputElement>(
+            `[data-condition-row] input[aria-label="${filterLabel}"]`,
+          )!.value,
+        };
+      },
+      { filterLabel: run.m.workbench_filter_value() },
+    )) as Record<string, unknown>;
     expect(sections).toEqual({
       open: true,
       all: run.m.query_view_filter_all_views(),
@@ -1697,7 +1652,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "methodology",
         );
-        return String(true);
       },
       { filterLabel: run.m.workbench_filter_value() },
     );
@@ -1749,7 +1703,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "yellow",
           "Value",
         );
-        return String(true);
       },
       { filterLabel: run.m.workbench_filter_value() },
     );
@@ -1810,7 +1763,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
           "nosuchfield == 1",
         );
-        return String(true);
       },
       { editButtonLabel: run.m.workbench_match_edit_as_expression() },
     );
@@ -1872,51 +1824,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await underlines(["nosuchfield"])).toEqual(["nosuchfield"]);
     // The condition shows no tooltip over the underline, not even an empty
     // one, well past CodeMirror's hover delay.
-    const hovered = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }) => {
-          const { press } = pageHelpers;
-          const el = (
-            app.workspace.getMostRecentLeaf()!
-              .view as import("obsidian").ItemView
-          ).contentEl;
-          const popover = el.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]',
+    const hovered = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
           )!;
-          if (!popover.matches(":popover-open"))
-            press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-              "Filter",
-            );
-          const section = (name: string) =>
-            popover.querySelector<HTMLElement>(
-              `[data-filter-section="${name}"]`,
-            )!;
 
-          const mark = section("view").querySelector<HTMLElement>(
-            "[data-condition-row] .cm-lintRange-error",
-          )!;
-          const r = mark.getBoundingClientRect();
-          mark.dispatchEvent(
-            new MouseEvent("mousemove", {
-              bubbles: true,
-              clientX: r.left + r.width / 2,
-              clientY: r.top + r.height / 2,
-            }),
-          );
-          await new Promise((r) => setTimeout(r, 800));
-          return JSON.stringify(
-            [
-              ...mark.ownerDocument.querySelectorAll<HTMLElement>(
-                ".cm-tooltip-hover, .cm-tooltip-lint",
-              ),
-            ].map((n) => n.className),
-          );
-        },
-        undefined,
-      ),
-    ) as string[];
+        const mark = section("view").querySelector<HTMLElement>(
+          "[data-condition-row] .cm-lintRange-error",
+        )!;
+        const r = mark.getBoundingClientRect();
+        mark.dispatchEvent(
+          new MouseEvent("mousemove", {
+            bubbles: true,
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+          }),
+        );
+        await new Promise((r) => setTimeout(r, 800));
+        return [
+          ...mark.ownerDocument.querySelectorAll<HTMLElement>(
+            ".cm-tooltip-hover, .cm-tooltip-lint",
+          ),
+        ].map((n) => n.className);
+      },
+      undefined,
+    )) as string[];
     expect(hovered).toEqual([]);
 
     // The expression field colors each kind of token with Obsidian's code
@@ -1929,83 +1876,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       operator: "==",
       punctuation: ".",
     };
-    const colors = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }, { tokens }) => {
-          const { press, until } = pageHelpers;
-          const el = (
-            app.workspace.getMostRecentLeaf()!
-              .view as import("obsidian").ItemView
-          ).contentEl;
-          const popover = el.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]',
-          )!;
-          if (!popover.matches(":popover-open"))
-            press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-              "Filter",
-            );
-          const section = (name: string) =>
-            popover.querySelector<HTMLElement>(
-              `[data-filter-section="${name}"]`,
-            )!;
-
-          const write = (field: HTMLElement, text: string) => {
-            const view =
-              field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
-                .view;
-            view.dispatch({
-              changes: { from: 0, to: view.state.doc.length, insert: text },
-              userEvent: "input.type",
-            });
-          };
-          const row = section("view").querySelector<HTMLElement>(
-            "[data-condition-row]",
-          )!;
-          write(row, 'title.lower().contains("fig") == true');
-          const hook = (kind: string) =>
-            `.zt-template-${kind === "function" ? "filter" : kind}`;
-          const token = (kind: string, text: string) =>
-            [
-              ...row.querySelectorAll<HTMLElement>(`.cm-line ${hook(kind)}`),
-            ].find((n) => n.textContent === text);
-          await until("token hooks", () =>
-            Object.entries(tokens).every(([kind, text]) => token(kind, text)),
+    const colors = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { tokens }) => {
+        const { press, until } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
           );
-          const doc = row.ownerDocument;
-          const read = () =>
-            Object.fromEntries(
-              Object.entries(tokens).map(([kind, text]) => {
-                const probe = doc.createElement("span");
-                probe.style.color = `var(--code-${kind})`;
-                popover.append(probe);
-                const code = getComputedStyle(probe).color;
-                probe.remove();
-                return [
-                  kind,
-                  { token: getComputedStyle(token(kind, text)!).color, code },
-                ];
-              }),
-            );
-          const body = doc.body;
-          const wasDark = body.classList.contains("theme-dark");
-          const theme = (dark: boolean) => {
-            body.classList.toggle("theme-dark", dark);
-            body.classList.toggle("theme-light", !dark);
-          };
-          try {
-            theme(false);
-            const light = read();
-            theme(true);
-            return JSON.stringify({ light, dark: read() });
-          } finally {
-            theme(wasDark);
-          }
-        },
-        { tokens },
-      ),
-    ) as Record<
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
+          });
+        };
+        const row = section("view").querySelector<HTMLElement>(
+          "[data-condition-row]",
+        )!;
+        write(row, 'title.lower().contains("fig") == true');
+        const hook = (kind: string) =>
+          `.zt-template-${kind === "function" ? "filter" : kind}`;
+        const token = (kind: string, text: string) =>
+          [...row.querySelectorAll<HTMLElement>(`.cm-line ${hook(kind)}`)].find(
+            (n) => n.textContent === text,
+          );
+        await until("token hooks", () =>
+          Object.entries(tokens).every(([kind, text]) => token(kind, text)),
+        );
+        const doc = row.ownerDocument;
+        const read = () =>
+          Object.fromEntries(
+            Object.entries(tokens).map(([kind, text]) => {
+              const probe = doc.createElement("span");
+              probe.style.color = `var(--code-${kind})`;
+              popover.append(probe);
+              const code = getComputedStyle(probe).color;
+              probe.remove();
+              return [
+                kind,
+                { token: getComputedStyle(token(kind, text)!).color, code },
+              ];
+            }),
+          );
+        const body = doc.body;
+        const wasDark = body.classList.contains("theme-dark");
+        const theme = (dark: boolean) => {
+          body.classList.toggle("theme-dark", dark);
+          body.classList.toggle("theme-light", !dark);
+        };
+        try {
+          theme(false);
+          const light = read();
+          theme(true);
+          return { light, dark: read() };
+        } finally {
+          theme(wasDark);
+        }
+      },
+      { tokens },
+    )) as Record<
       "light" | "dark",
       Record<keyof typeof tokens, { token: string; code: string }>
     >;
@@ -2022,85 +1966,82 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "text" | "caret" | "field" | "line" | "box",
       number
     >;
-    const aligned = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }) => {
-          const { press } = pageHelpers;
-          const el = (
-            app.workspace.getMostRecentLeaf()!
-              .view as import("obsidian").ItemView
-          ).contentEl;
-          const popover = el.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]',
-          )!;
-          if (!popover.matches(":popover-open"))
-            press(
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-              "Filter",
-            );
-          const section = (name: string) =>
-            popover.querySelector<HTMLElement>(
-              `[data-filter-section="${name}"]`,
-            )!;
-
-          const write = (field: HTMLElement, text: string) => {
-            const view =
-              field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
-                .view;
-            view.dispatch({
-              changes: { from: 0, to: view.state.doc.length, insert: text },
-              userEvent: "input.type",
-            });
-          };
-          const row = section("view").querySelector<HTMLElement>(
-            "[data-condition-row]",
-          )!;
-          const field = row.querySelector<HTMLElement>(
-            '[data-part="expression"]',
-          )!;
-          const box = () =>
-            field.closest<HTMLElement>('[data-part="statement"]')!;
-          const centre = (el: HTMLElement) => {
-            const r = el.getBoundingClientRect();
-            return r.top + r.height / 2;
-          };
-          const height = (el: HTMLElement) => el.getBoundingClientRect().height;
-          const measure = async (text: string) => {
-            write(row, text);
-            await new Promise((r) =>
-              requestAnimationFrame(() => requestAnimationFrame(r)),
-            );
-            const view =
-              field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
-                .view;
-            const line = field.querySelector<HTMLElement>(".cm-line")!;
-            const caret = view.coordsAtPos(0);
-            return {
-              text: centre(line) - centre(box()),
-              caret: (caret!.top + caret!.bottom) / 2 - centre(box()),
-              field: height(field) - height(box()),
-              line:
-                Number.parseFloat(getComputedStyle(line).lineHeight) -
-                Number.parseFloat(getComputedStyle(field).lineHeight),
-              box: height(box()),
-            };
-          };
-          const one = await measure('title.contains("fig")');
-          const wrapped = await measure(
-            `${'title.contains("fig") || '.repeat(12)}true`,
+    const aligned = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
           );
-          return JSON.stringify({
-            one,
-            wrapped,
-            input: Number.parseFloat(
-              getComputedStyle(field).getPropertyValue("--input-height"),
-            ),
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
           });
-        },
-        undefined,
-      ),
-    ) as { one: Alignment; wrapped: Alignment; input: number };
+        };
+        const row = section("view").querySelector<HTMLElement>(
+          "[data-condition-row]",
+        )!;
+        const field = row.querySelector<HTMLElement>(
+          '[data-part="expression"]',
+        )!;
+        const box = () =>
+          field.closest<HTMLElement>('[data-part="statement"]')!;
+        const centre = (el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          return r.top + r.height / 2;
+        };
+        const height = (el: HTMLElement) => el.getBoundingClientRect().height;
+        const measure = async (text: string) => {
+          write(row, text);
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          const line = field.querySelector<HTMLElement>(".cm-line")!;
+          const caret = view.coordsAtPos(0);
+          return {
+            text: centre(line) - centre(box()),
+            caret: (caret!.top + caret!.bottom) / 2 - centre(box()),
+            field: height(field) - height(box()),
+            line:
+              Number.parseFloat(getComputedStyle(line).lineHeight) -
+              Number.parseFloat(getComputedStyle(field).lineHeight),
+            box: height(box()),
+          };
+        };
+        const one = await measure('title.contains("fig")');
+        const wrapped = await measure(
+          `${'title.contains("fig") || '.repeat(12)}true`,
+        );
+        return {
+          one,
+          wrapped,
+          input: Number.parseFloat(
+            getComputedStyle(field).getPropertyValue("--input-height"),
+          ),
+        };
+      },
+      undefined,
+    )) as { one: Alignment; wrapped: Alignment; input: number };
     expect(aligned.one.box).toBeCloseTo(aligned.input, 0);
     expect(Math.abs(aligned.one.field)).toBeLessThanOrEqual(1);
     expect(Math.abs(aligned.one.text)).toBeLessThanOrEqual(1);
@@ -2146,7 +2087,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           section("view").querySelector<HTMLElement>("[data-condition-row]")!,
           "place !=",
         );
-        return String(true);
       },
       undefined,
     );
@@ -2205,7 +2145,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }),
           "Edit visually",
         );
-        return String(true);
       },
       { editButtonLabel: run.m.workbench_match_edit_visually() },
     );
@@ -2291,7 +2230,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             `[data-condition-row] select[aria-label="${filterLabel}"]`,
           )!,
         );
-        return String(true);
       },
       {
         addConditionLabel: run.m.workbench_match_add_condition(),
@@ -2363,7 +2301,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "red",
           "Value",
         );
-        return String(true);
       },
       { filterLabel: run.m.workbench_filter_value() },
     );
@@ -2426,8 +2363,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return took;
         };
         const top = (r: DOMRect) => r.top + 2;
-        return String(
-          drag("1", grip("0").closest<HTMLElement>('[data-part="row"]')!, top),
+        return drag(
+          "1",
+          grip("0").closest<HTMLElement>('[data-part="row"]')!,
+          top,
         );
       },
       undefined,
@@ -2460,7 +2399,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         section("view")
           .querySelector<HTMLElement>('[data-reorder-handle="0"]')!
           .focus();
-        return String(true);
       },
       undefined,
     );
@@ -2584,7 +2522,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "red",
           "Value",
         );
-        return String(true);
       },
       {
         addGroupLabel: run.m.workbench_match_add_group(),
@@ -2652,13 +2589,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               '[data-part="group"][data-state="nested"] > [data-part="actions"]',
             ),
           ].at(-1);
-          return String(
-            drag("1", footer!, (r: DOMRect) => r.top + r.height / 2),
-          );
+          return drag("1", footer!, (r: DOMRect) => r.top + r.height / 2);
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     await tabWhen((tab) =>
       tab.text.includes(
         viewFilters(added, "        - and:", nested(added), nested(figureLine)),
@@ -2715,17 +2650,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             return took;
           };
           const top = (r: DOMRect) => r.top + 2;
-          return String(
-            drag(
-              "1",
-              grip("1.0").closest<HTMLElement>('[data-part="row"]')!,
-              top,
-            ),
+          return drag(
+            "1",
+            grip("1.0").closest<HTMLElement>('[data-part="row"]')!,
+            top,
           );
         },
         undefined,
       ),
-    ).toBe("false");
+    ).toBe(false);
     await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
@@ -2775,12 +2708,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return took;
         };
         const top = (r: DOMRect) => r.top + 2;
-        return String(
-          drag(
-            "1.1",
-            grip("0").closest<HTMLElement>('[data-part="row"]')!,
-            top,
-          ),
+        return drag(
+          "1.1",
+          grip("0").closest<HTMLElement>('[data-part="row"]')!,
+          top,
         );
       },
       undefined,
@@ -2831,7 +2762,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!,
           "none",
         );
-        return String(true);
       },
       { matchLabel: run.m.workbench_match_match() },
     );
@@ -2884,7 +2814,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "blue",
           "Value",
         );
-        return String(true);
       },
       {
         addConditionLabel: run.m.workbench_match_add_condition(),
@@ -2897,38 +2826,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     );
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app, page: pageHelpers }) => {
-            const { press } = pageHelpers;
-            const el = (
-              app.workspace.getMostRecentLeaf()!
-                .view as import("obsidian").ItemView
-            ).contentEl;
-            const popover = el.querySelector<HTMLElement>(
-              '[data-query-popover="filter"]',
-            )!;
-            if (!popover.matches(":popover-open"))
-              press(
-                el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-                "Filter",
-              );
-            const section = (name: string) =>
-              popover.querySelector<HTMLElement>(
-                `[data-filter-section="${name}"]`,
-              )!;
-
-            return JSON.stringify(
-              [
-                ...section("view").querySelectorAll<HTMLElement>(
-                  '[data-part="group"][data-state="nested"] [data-part="conjunction"]',
-                ),
-              ].map((label) => label.textContent),
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
             );
-          },
-          undefined,
-        ),
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          return [
+            ...section("view").querySelectorAll<HTMLElement>(
+              '[data-part="group"][data-state="nested"] [data-part="conjunction"]',
+            ),
+          ].map((label) => label.textContent);
+        },
+        undefined,
       ),
     ).toEqual([
       run.m.workbench_match_conjunction_where(),
@@ -2968,7 +2893,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!,
           "Remove condition",
         );
-        return String(true);
       },
       { removeConditionLabel: run.m.workbench_match_remove_condition() },
     );
@@ -3005,7 +2929,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!,
           "Remove condition",
         );
-        return String(true);
       },
       { removeConditionLabel: run.m.workbench_match_remove_condition() },
     );
@@ -3036,15 +2959,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `[data-filter-section="${name}"]`,
             )!;
 
-          return String(
+          return (
             section("view").querySelector<HTMLElement>(
               '[data-part="group"][data-state="nested"]',
-            )! === null,
+            )! === null
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }, { removeConditionLabel }) => {
@@ -3071,7 +2994,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Remove condition",
         );
-        return String(true);
       },
       { removeConditionLabel: run.m.workbench_match_remove_condition() },
     );
@@ -3101,7 +3023,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Remove condition",
         );
-        return String(true);
       },
       { removeConditionLabel: run.m.workbench_match_remove_condition() },
     );
@@ -3128,15 +3049,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `[data-filter-section="${name}"]`,
             )!;
 
-          return String(
-            section("view").querySelectorAll<HTMLElement>(
-              "[data-condition-row]",
-            ).length,
-          );
+          return section("view").querySelectorAll<HTMLElement>(
+            "[data-condition-row]",
+          ).length;
         },
         undefined,
       ),
-    ).toBe("1");
+    ).toBe(1);
   }, 180000);
 
   it("underlines a condition's Fault in the Filter popover of a Query File tab in a popout window", async () => {
@@ -3161,7 +3080,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(filePath)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         { filePath: path, layout },
       );
@@ -3173,7 +3091,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.moveLeafToPopout(leaf);
-        return String(true);
       },
       {
         path,
@@ -3187,62 +3104,59 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ].join("\n"),
       },
     );
-    const shown = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }, { notePath }) => {
-          const { press, until } = pageHelpers;
-          const view = await until(
-            "the tab in a popout",
-            () =>
-              app.workspace
-                .getLeavesOfType("zotlit-query-file")
-                .map((leaf) => leaf.view)
-                .find(
-                  (view) =>
-                    (view as import("obsidian").FileView).file?.path ===
-                      notePath && view.containerEl.win !== window,
-                ),
-            20000,
-          );
-          await (view as import("@/views/query-view/file-view").QueryFileView)
-            .query.settled;
-          const el = (view as import("obsidian").ItemView).contentEl;
-          const doc = el.ownerDocument;
-          const button = await until(
-            "Filter button",
-            () =>
-              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-            20000,
-          );
-          const popover = el.querySelector<HTMLElement>(
-            '[data-query-popover="filter"]',
-          )!;
-          press(button, "Filter");
-          const mark = await until(
-            "underline",
-            () =>
-              popover!.querySelector<HTMLElement>(
-                '[data-filter-section="view"] [data-condition-row] .cm-lintRange-error',
-              )!,
-            20000,
-          );
-          const probe = doc.createElement("span");
-          probe.style.color = "var(--text-error)";
-          popover!.append(probe);
-          const error = getComputedStyle(probe).color;
-          probe.remove();
-          const style = getComputedStyle(mark);
-          return JSON.stringify({
-            popout: doc !== document,
-            text: mark.textContent,
-            line: style.textDecorationStyle,
-            color: style.textDecorationColor === error,
-          });
-        },
-        { notePath: path },
-      ),
-    ) as { popout: boolean; text: string; line: string; color: boolean };
+    const shown = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { notePath }) => {
+        const { press, until } = pageHelpers;
+        const view = await until(
+          "the tab in a popout",
+          () =>
+            app.workspace
+              .getLeavesOfType("zotlit-query-file")
+              .map((leaf) => leaf.view)
+              .find(
+                (view) =>
+                  (view as import("obsidian").FileView).file?.path ===
+                    notePath && view.containerEl.win !== window,
+              ),
+          20000,
+        );
+        await (view as import("@/views/query-view/file-view").QueryFileView)
+          .query.settled;
+        const el = (view as import("obsidian").ItemView).contentEl;
+        const doc = el.ownerDocument;
+        const button = await until(
+          "Filter button",
+          () => el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          20000,
+        );
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        press(button, "Filter");
+        const mark = await until(
+          "underline",
+          () =>
+            popover!.querySelector<HTMLElement>(
+              '[data-filter-section="view"] [data-condition-row] .cm-lintRange-error',
+            )!,
+          20000,
+        );
+        const probe = doc.createElement("span");
+        probe.style.color = "var(--text-error)";
+        popover!.append(probe);
+        const error = getComputedStyle(probe).color;
+        probe.remove();
+        const style = getComputedStyle(mark);
+        return {
+          popout: doc !== document,
+          text: mark.textContent,
+          line: style.textDecorationStyle,
+          color: style.textDecorationColor === error,
+        };
+      },
+      { notePath: path },
+    )) as { popout: boolean; text: string; line: string; color: boolean };
     expect(shown).toEqual({
       popout: true,
       text: "nosuchfield",
@@ -3277,7 +3191,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(deep)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         { layout, deep },
       );
@@ -3286,7 +3199,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }, { deep, fileContent }) => {
         await app.vault.create(deep, fileContent);
-        return String(true);
       },
       {
         deep,
@@ -3325,82 +3237,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * value takes.
      */
     const rowsOf = async (path: string, view: string) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (
-            { app, page: pageHelpers },
-            { path, viewName, conditionKindLabel },
-          ) => {
-            const { press, until } = pageHelpers;
-            const leaf = app.workspace.getLeaf("tab");
-            await leaf.openFile(app.vault.getFileByPath(path)!);
-            app.workspace.setActiveLeaf(leaf, { focus: true });
-            (
-              leaf.view as import("@/views/query-view/file-view").QueryFileView
-            ).query.selectView(viewName);
-            await (
-              leaf.view as import("@/views/query-view/file-view").QueryFileView
-            ).query.settled;
-            const el = (leaf.view as import("obsidian").ItemView).contentEl;
-            const button = await until(
-              "Filter button",
-              () =>
-                el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
-              20000,
-            );
-            const popover = el.querySelector<HTMLElement>(
-              '[data-query-popover="filter"]',
+      (await obRun(
+        run.vaultId,
+        async (
+          { app, page: pageHelpers },
+          { path, viewName, conditionKindLabel },
+        ) => {
+          const { press, until } = pageHelpers;
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(path)!);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.selectView(viewName);
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          const el = (leaf.view as import("obsidian").ItemView).contentEl;
+          const button = await until(
+            "Filter button",
+            () =>
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            20000,
+          );
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          press(button, "Filter");
+          await until("Filter popover", () =>
+            popover!.matches(":popover-open"),
+          );
+          const pickers = () => [
+            ...popover!.querySelectorAll<HTMLElement>(
+              `[data-filter-section="view"] [data-condition-row] [aria-label=${JSON.stringify(conditionKindLabel)}]`,
+            ),
+          ];
+          await until("condition rows", () => pickers().length > 0, 5000);
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const lines = (node: HTMLElement) => {
+            const range = node.ownerDocument.createRange();
+            range.selectNodeContents(node);
+            return new Set(
+              [...range.getClientRects()].map((r) => Math.round(r.top)),
+            ).size;
+          };
+          const rows = pickers().map((picker) => {
+            const label = picker.querySelector<HTMLElement>(
+              ":scope > span:not([data-select-icon])",
             )!;
-            press(button, "Filter");
-            await until("Filter popover", () =>
-              popover!.matches(":popover-open"),
-            );
-            const pickers = () => [
-              ...popover!.querySelectorAll<HTMLElement>(
-                `[data-filter-section="view"] [data-condition-row] [aria-label=${JSON.stringify(conditionKindLabel)}]`,
+            const row = picker.closest<HTMLElement>("[data-condition-row]")!;
+            return {
+              kind: picker.dataset.value,
+              label: Math.round(label!.getBoundingClientRect().width),
+              clipped: label!.scrollWidth > label!.clientWidth,
+              chips: Object.fromEntries(
+                [
+                  ...row!.querySelectorAll<HTMLInputElement>(
+                    "[data-chip-input] .multi-select-pill-content",
+                  ),
+                ].map((content) => [content.textContent, lines(content)]),
               ),
-            ];
-            await until("condition rows", () => pickers().length > 0, 5000);
-            await new Promise((r) =>
-              requestAnimationFrame(() => requestAnimationFrame(r)),
-            );
-            const lines = (node: HTMLElement) => {
-              const range = node.ownerDocument.createRange();
-              range.selectNodeContents(node);
-              return new Set(
-                [...range.getClientRects()].map((r) => Math.round(r.top)),
-              ).size;
             };
-            const rows = pickers().map((picker) => {
-              const label = picker.querySelector<HTMLElement>(
-                ":scope > span:not([data-select-icon])",
-              )!;
-              const row = picker.closest<HTMLElement>("[data-condition-row]")!;
-              return {
-                kind: picker.dataset.value,
-                label: Math.round(label!.getBoundingClientRect().width),
-                clipped: label!.scrollWidth > label!.clientWidth,
-                chips: Object.fromEntries(
-                  [
-                    ...row!.querySelectorAll<HTMLInputElement>(
-                      "[data-chip-input] .multi-select-pill-content",
-                    ),
-                  ].map((content) => [content.textContent, lines(content)]),
-                ),
-              };
-            });
-            popover!.hidePopover();
-            leaf.detach();
-            return JSON.stringify(rows);
-          },
-          {
-            path,
-            viewName: view,
-            conditionKindLabel: run.m.workbench_match_condition_kind(),
-          },
-        ),
-      ) as Row[];
+          });
+          popover!.hidePopover();
+          leaf.detach();
+          return rows;
+        },
+        {
+          path,
+          viewName: view,
+          conditionKindLabel: run.m.workbench_match_condition_kind(),
+        },
+      )) as Row[];
     const whole = (rows: Row[]) =>
       rows.map(({ kind, chips }) => ({
         kind,
@@ -3471,7 +3381,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           }
-          return String(true);
         },
         { layout, notePath, original, scratchFiles },
       );
@@ -3555,7 +3464,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               : { mode: "preview" },
           });
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          return String(true);
         },
         { path, isLive: mode === "live" },
       );
@@ -3587,7 +3495,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!,
           "Sort",
         );
-        return String(true);
       },
       { liveView },
     );
@@ -3602,7 +3509,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Add sort",
         );
-        return String(true);
       },
       { liveView },
     );
@@ -3632,7 +3538,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             value,
             `${control}`,
           );
-          return String(true);
         },
         { liveView, control, value },
       );
@@ -3680,7 +3585,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             fm["zotero-key"] = "RUGIER24";
           },
         );
-        return String(true);
       },
       { notePath },
     );
@@ -3698,7 +3602,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app }, { notePath, written, embedPath }) => {
         await app.vault.modify(app.vault.getFileByPath(notePath)!, written);
         await app.vault.create(embedPath, "![[SAKIMA22#Sakima’s song]]\n");
-        return String(true);
       },
       { notePath, written, embedPath },
     );
@@ -3719,7 +3622,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!,
           "Sort",
         );
-        return String(true);
       },
       { sectionView },
     );
@@ -3732,7 +3634,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )!;
         select!.value = "ASC";
         select!.dispatchEvent(new Event("change", { bubbles: true }));
-        return String(true);
       },
       { sectionView },
     );
@@ -3772,7 +3673,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }, { plainPath, fileContent }) => {
         await app.vault.create(plainPath, fileContent);
-        return String(true);
       },
       {
         plainPath,
@@ -3816,7 +3716,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ app }, { layout, notePath, original }) => {
           await app.workspace.changeLayout(JSON.parse(layout));
           await app.vault.modify(app.vault.getFileByPath(notePath)!, original);
-          return String(true);
         },
         { layout, notePath, original },
       );
@@ -3843,7 +3742,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ app }, { layout, notePath, original }) => {
           await app.workspace.changeLayout(JSON.parse(layout));
           await app.vault.modify(app.vault.getFileByPath(notePath)!, original);
-          return String(true);
         },
         { layout, notePath, original },
       );
@@ -3858,7 +3756,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
           app.workspace.setActiveLeaf(leaf, { focus: true });
           pageHelpers.scratch.zotlitE2EBlockLeaf = leaf;
-          return String(true);
         },
         { notePath, isLive: mode === "live" },
       );
@@ -3908,7 +3805,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           }
           delete pageHelpers.scratch.zotlitE2EBlockLeaf;
-          return String(true);
         },
         { block, limit, closeOnLeave: leave === "close", notePath },
       );
@@ -3951,7 +3847,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             leaf.detach();
           await app.vault.modify(app.vault.getFileByPath(path)!, original);
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { path, original, layout },
       );
@@ -3993,29 +3888,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         for (const other of old) other.detach();
-        return String(true);
       },
       { path },
     );
     expect(await shown("All annotations")).toBe(true);
     // A page number takes "p."; a named page label reads as it is.
-    const shownPages: string[] = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app }) => {
-          return JSON.stringify(
-            [
-              ...(
-                app.workspace.getMostRecentLeaf()!
-                  .view as import("obsidian").ItemView
-              ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
-            ]
-              .map((n) => n.textContent)
-              .filter(Boolean),
-          );
-        },
-        undefined,
-      ),
+    const shownPages: string[] = await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+        ]
+          .map((n) => n.textContent)
+          .filter(Boolean);
+      },
+      undefined,
     );
     expect(shownPages).toContain("p. 1");
     expect(shownPages).toContain("Chapter 1");
@@ -4032,7 +3922,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
           "View menu",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4065,7 +3954,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )!;
         input!.value = inputText;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { inputText: "fig" },
     );
@@ -4097,7 +3985,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )!;
         input!.value = inputText;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { inputText: "" },
     );
@@ -4117,7 +4004,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Add view",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4164,7 +4050,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         input!.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -4172,25 +4057,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // "Show page" off takes the page labels off the cards at once.
     expect(
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app }) => {
-            return JSON.stringify(
-              [
-                ...(
-                  app.workspace.getMostRecentLeaf()!
-                    .view as import("obsidian").ItemView
-                ).contentEl.querySelectorAll<HTMLElement>(
-                  ".zt-annot-page-chip",
-                ),
-              ]
-                .map((n) => n.textContent)
-                .filter(Boolean),
-            );
-          },
-          undefined,
-        ),
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return [
+            ...(
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+          ]
+            .map((n) => n.textContent)
+            .filter(Boolean);
+        },
+        undefined,
       ),
     ).not.toEqual([]);
     await obRun(
@@ -4210,7 +4089,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           page!.querySelector<HTMLElement>("[data-chooser-page-close]")!,
           "Close",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4246,7 +4124,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
           "View menu",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4307,7 +4184,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           page.querySelector<HTMLElement>("[data-chooser-page-close]")!,
           "Close",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4343,7 +4219,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         for (const other of old) other.detach();
-        return String(true);
       },
       { path },
     );
@@ -4377,7 +4252,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
           "View menu",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4416,7 +4290,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Configure Figures",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4444,7 +4317,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "Close",
         );
-        return String(true);
       },
       undefined,
     );
@@ -4482,7 +4354,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             leaf.detach();
           await app.vault.modify(app.vault.getFileByPath(path)!, original);
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { path, original, layout },
       );
@@ -4493,7 +4364,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       { path },
     );
@@ -4611,7 +4481,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )!;
         select!.value = "number";
         select!.dispatchEvent(new Event("change", { bubbles: true }));
-        return String(true);
       },
       undefined,
     );
@@ -4661,7 +4530,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
           await app.workspace.changeLayout(JSON.parse(layout));
-          return String(true);
         },
         { path, layout },
       );
@@ -4673,7 +4541,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       {
         path,
@@ -4877,64 +4744,59 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // and a card stays for each Item with nothing in it.
     await pickLayout("table");
     await tabWhen((tab) => tab.layout === "table" && tab.rows.length === total);
-    const hidden = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }) => {
-          const { press, until } = pageHelpers;
-          const view = app.workspace.getMostRecentLeaf()!.view;
-          const el = (view as import("obsidian").ItemView).contentEl;
-          press(
-            el.querySelector<HTMLElement>("[data-query-properties]")!,
-            "Properties",
-          );
-          const popup = () =>
-            activeDocument.querySelector<HTMLElement>(
-              "[data-query-properties-popup]",
-            )!;
-          const selected = () => [
-            ...popup()!.querySelectorAll<HTMLElement>(
-              '[data-query-property][aria-selected="true"]',
+    const hidden = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press, until } = pageHelpers;
+        const view = app.workspace.getMostRecentLeaf()!.view;
+        const el = (view as import("obsidian").ItemView).contentEl;
+        press(
+          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          "Properties",
+        );
+        const popup = () =>
+          activeDocument.querySelector<HTMLElement>(
+            "[data-query-properties-popup]",
+          )!;
+        const selected = () => [
+          ...popup()!.querySelectorAll<HTMLElement>(
+            '[data-query-property][aria-selected="true"]',
+          ),
+        ];
+        await until(
+          "Properties popover opens",
+          () => popup()?.matches(":popover-open") && selected().length > 0,
+        );
+        press(
+          popup()!.querySelector<HTMLElement>(
+            '[data-query-properties-action="hide-all"]',
+          )!,
+          "Hide all",
+        );
+        await until("Hide all clears the ticks", () => selected().length === 0);
+        const ticks = selected().length;
+        popup()!.hidePopover();
+        await until(
+          "Table drops the columns",
+          () =>
+            !el.querySelector<HTMLTableCellElement>("th[data-query-column]")!,
+        );
+        await (view as import("@/views/query-view/file-view").QueryFileView)
+          .query.settled;
+        return {
+          header: [
+            ...el.querySelectorAll<HTMLTableCellElement>(
+              "[data-query-table] thead th",
             ),
-          ];
-          await until(
-            "Properties popover opens",
-            () => popup()?.matches(":popover-open") && selected().length > 0,
-          );
-          press(
-            popup()!.querySelector<HTMLElement>(
-              '[data-query-properties-action="hide-all"]',
-            )!,
-            "Hide all",
-          );
-          await until(
-            "Hide all clears the ticks",
-            () => selected().length === 0,
-          );
-          const ticks = selected().length;
-          popup()!.hidePopover();
-          await until(
-            "Table drops the columns",
-            () =>
-              !el.querySelector<HTMLTableCellElement>("th[data-query-column]")!,
-          );
-          await (view as import("@/views/query-view/file-view").QueryFileView)
-            .query.settled;
-          return JSON.stringify({
-            header: [
-              ...el.querySelectorAll<HTMLTableCellElement>(
-                "[data-query-table] thead th",
-              ),
-            ].map((n) => n.textContent.trim()),
-            rows: el.querySelectorAll<HTMLTableRowElement>(
-              'tr[data-query-table-row="item"]',
-            ).length,
-            ticks,
-          });
-        },
-        undefined,
-      ),
-    ) as { header: string[]; rows: number; ticks: number };
+          ].map((n) => n.textContent.trim()),
+          rows: el.querySelectorAll<HTMLTableRowElement>(
+            'tr[data-query-table-row="item"]',
+          ).length,
+          ticks,
+        };
+      },
+      undefined,
+    )) as { header: string[]; rows: number; ticks: number };
     expect(hidden).toEqual({
       header: [""],
       rows: total,
@@ -4965,7 +4827,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         { layout, path },
       );
@@ -4975,7 +4836,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }, { path, fileContent }) => {
         await app.vault.create(path, fileContent);
-        return String(true);
       },
       {
         path,
@@ -4990,7 +4850,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       { path },
     );
@@ -5125,7 +4984,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           `group row ${hidden}`,
         );
         popover!.hidePopover();
-        return String(true);
       },
       { hidden },
     );
@@ -5140,7 +4998,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.workspace.getMostRecentLeaf()!.detach();
-        return String(true);
       },
       undefined,
     );
@@ -5168,7 +5025,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       { path },
     );
@@ -5197,7 +5053,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           }
-          return String(true);
         },
         { layout, filePaths: [colourPath, tagPath] },
       );
@@ -5221,7 +5076,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const leaf = app.workspace.getLeaf("tab");
           await leaf.openFile(file);
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          return String(true);
         },
         { path, text },
       );
@@ -5287,34 +5141,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       active: string | null;
     }
     const selection = async () =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ app }) => {
-            const view = app.workspace.getMostRecentLeaf()!.view;
-            const sel = (
-              view as import("@/views/query-view/file-view").QueryFileView
-            ).query.layout.store.getState().cardSelection;
-            const el = (view as import("obsidian").ItemView).contentEl;
-            const at = [
-              ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
-            ].find((n) => n.getAttribute("data-card-place") === sel.focus);
-            return JSON.stringify({
-              focus: sel.focus,
-              selected: sel.selected,
-              drawn:
-                !!at &&
-                at.getClientRects().length > 0 &&
-                at.hasAttribute("data-selected"),
-              active:
-                el.ownerDocument.activeElement
-                  ?.closest?.(".zt-annot-card")
-                  ?.getAttribute("data-card-place") ?? null,
-            });
-          },
-          undefined,
-        ),
-      ) as Selection;
+      (await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          const view = app.workspace.getMostRecentLeaf()!.view;
+          const sel = (
+            view as import("@/views/query-view/file-view").QueryFileView
+          ).query.layout.store.getState().cardSelection;
+          const el = (view as import("obsidian").ItemView).contentEl;
+          const at = [
+            ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+          ].find((n) => n.getAttribute("data-card-place") === sel.focus);
+          return {
+            focus: sel.focus,
+            selected: sel.selected,
+            drawn:
+              !!at &&
+              at.getClientRects().length > 0 &&
+              at.hasAttribute("data-selected"),
+            active:
+              el.ownerDocument.activeElement
+                ?.closest?.(".zt-annot-card")
+                ?.getAttribute("data-card-place") ?? null,
+          };
+        },
+        undefined,
+      )) as Selection;
     /** Click the card at one place, as a pointer does. */
     const clickAt = (place: string) =>
       obRun(
@@ -5406,7 +5258,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "group heading",
         );
-        return String(true);
       },
       { secondKey: second!.key },
     );
@@ -5440,7 +5291,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "group heading",
         );
-        return String(true);
       },
       { secondKey: second!.key },
     );
@@ -5462,7 +5312,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )!,
           "group heading",
         );
-        return String(true);
       },
       { secondKey: second!.key },
     );
@@ -5534,7 +5383,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ app }, { layout, queryPath, original }) => {
           await app.workspace.changeLayout(JSON.parse(layout));
           await app.vault.modify(app.vault.getFileByPath(queryPath)!, original);
-          return String(true);
         },
         { layout, queryPath, original },
       );
@@ -5559,7 +5407,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await open(labNote, { mode: "preview" });
         await open(overview, { mode: "source", source: false });
         await open(queryPath);
-        return String(true);
       },
       { labNote, overview, queryPath },
     );
@@ -5734,7 +5581,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         el.querySelector<HTMLElement>(
           '[data-query-popover="filter"]',
         )!.hidePopover();
-        return String(true);
       },
       {
         labEmbed,
@@ -5768,86 +5614,82 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(after[labNote]![0]!.cards).toEqual(myFigures);
 
     // The count in each pane opens that pane's own Results menu.
-    const results = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }, { labEmbed, overviewEmbed }) => {
-          const { press, until } = pageHelpers;
-          const out = [];
-          for (const view of [
-            async () => await pageHelpers.revealQueryView(labEmbed),
-            async () => await pageHelpers.revealQueryView(overviewEmbed),
-            ...app.workspace
-              .getLeavesOfType("zotlit-query-file")
-              .map(
-                (l) => () => (l.view as import("obsidian").ItemView).contentEl,
-              ),
-          ]) {
-            const el = await view();
-            press(
-              el.querySelector<HTMLElement>("[data-query-results]")!,
-              "Results",
-            );
-            const popup = el.querySelector<HTMLElement>(
-              "[data-query-results-popup]",
-            )!;
-            out.push(
-              await until(
-                "Results opens",
-                () => popup!.matches(":popover-open"),
-                1000,
-              ).catch(() => false),
-            );
-            activeDocument
-              .querySelectorAll<HTMLElement>(":popover-open")
-              .forEach((p) => p.hidePopover());
-          }
-          return JSON.stringify(out);
-        },
-        { labEmbed, overviewEmbed },
-      ),
-    ) as boolean[];
+    const results = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { labEmbed, overviewEmbed }) => {
+        const { press, until } = pageHelpers;
+        const out = [];
+        for (const view of [
+          async () => await pageHelpers.revealQueryView(labEmbed),
+          async () => await pageHelpers.revealQueryView(overviewEmbed),
+          ...app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .map(
+              (l) => () => (l.view as import("obsidian").ItemView).contentEl,
+            ),
+        ]) {
+          const el = await view();
+          press(
+            el.querySelector<HTMLElement>("[data-query-results]")!,
+            "Results",
+          );
+          const popup = el.querySelector<HTMLElement>(
+            "[data-query-results-popup]",
+          )!;
+          out.push(
+            await until(
+              "Results opens",
+              () => popup!.matches(":popover-open"),
+              1000,
+            ).catch(() => false),
+          );
+          activeDocument
+            .querySelectorAll<HTMLElement>(":popover-open")
+            .forEach((p) => p.hidePopover());
+        }
+        return out;
+      },
+      { labEmbed, overviewEmbed },
+    )) as boolean[];
     expect(results).toEqual([true, true, true]);
 
     // A click in the Live Preview embed leaves the editor's selection alone.
     // The 400 ms after the click is the window an absent selection change is
     // checked over; no event marks "nothing happened".
-    const selection = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }, { overview, overviewEmbed }) => {
-          const leaf = app.workspace
-            .getLeavesOfType("markdown")
-            .find(
-              (l) =>
-                (l.view as import("obsidian").FileView).file!.path === overview,
-            );
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          const cm = (leaf!.view as import("obsidian").MarkdownView).editor.cm;
-          cm.dispatch({ selection: { anchor: 0 } });
-          const target = (
-            await pageHelpers.revealQueryView(overviewEmbed)
-          ).querySelector<HTMLElement>("[role=toolbar]")!;
-          const rect = target!.getBoundingClientRect();
-          const init = {
-            bubbles: true,
-            cancelable: true,
-            clientX: rect.left + rect.width / 2,
-            clientY: rect.top + rect.height / 2,
-            button: 0,
-            detail: 1,
-          };
-          target!.dispatchEvent(new MouseEvent("mousedown", init));
-          target!.dispatchEvent(new MouseEvent("mouseup", init));
-          target!.dispatchEvent(new MouseEvent("click", init));
-          await new Promise((r) => setTimeout(r, 400));
+    const selection = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { overview, overviewEmbed }) => {
+        const leaf = app.workspace
+          .getLeavesOfType("markdown")
+          .find(
+            (l) =>
+              (l.view as import("obsidian").FileView).file!.path === overview,
+          );
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        const cm = (leaf!.view as import("obsidian").MarkdownView).editor.cm;
+        cm.dispatch({ selection: { anchor: 0 } });
+        const target = (
+          await pageHelpers.revealQueryView(overviewEmbed)
+        ).querySelector<HTMLElement>("[role=toolbar]")!;
+        const rect = target!.getBoundingClientRect();
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+          button: 0,
+          detail: 1,
+        };
+        target!.dispatchEvent(new MouseEvent("mousedown", init));
+        target!.dispatchEvent(new MouseEvent("mouseup", init));
+        target!.dispatchEvent(new MouseEvent("click", init));
+        await new Promise((r) => setTimeout(r, 400));
 
-          const { from, to } = cm.state.selection.main;
-          return JSON.stringify({ from, to });
-        },
-        { overview, overviewEmbed },
-      ),
-    ) as { from: number; to: number };
+        const { from, to } = cm.state.selection.main;
+        return { from, to };
+      },
+      { overview, overviewEmbed },
+    )) as { from: number; to: number };
     expect(selection).toEqual({ from: 0, to: 0 });
 
     // A hover popover over a link to the file shows the embed's first view.
@@ -5948,7 +5790,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).querySelector<HTMLElement>("[data-query-open-file]")!,
           "Open query file",
         );
-        return String(true);
       },
       { labNote, labEmbed },
     );
@@ -5994,7 +5835,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await app.workspace.changeLayout(JSON.parse(layout));
           const file = app.vault.getFileByPath(notePath)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
         { layout, notePath },
       );
@@ -6010,7 +5850,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           state: { file: notePath, mode: "preview" },
           active: true,
         });
-        return String(true);
       },
       { notePath, fileContent: `![[${queryPath}]]\n\n![[${queryPath}]]\n` },
     );
@@ -6043,51 +5882,49 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The second embed's Results menu opens with its limit field focused;
     // focus leaves it, and its label brings it back.
-    const focus = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { first, second }) => {
-          const { press, until } = pageHelpers;
-          const views = [
-            await pageHelpers.revealQueryView(first),
-            await pageHelpers.revealQueryView(second),
-          ];
-          const el = views[1];
-          press(
-            el!.querySelector<HTMLElement>("[data-query-results]")!,
-            "Results",
-          );
-          const popup = el!.querySelector<HTMLElement>(
-            "[data-query-results-popup]",
-          )!;
-          const field = await until("limit field", () =>
-            popup!.querySelector<HTMLInputElement>("[data-query-limit]")!,
-          );
-          const label = popup!.querySelector<HTMLLabelElement>("label")!;
-          field.blur();
-          const blurred = activeDocument.activeElement !== field;
-          press(label, "limit label");
-          await until(
-            "label focuses the limit field",
-            () => activeDocument.activeElement === field,
-          );
-          const out = {
-            blurred,
-            sameId: label!.htmlFor === field.id,
-            unique:
-              activeDocument.querySelectorAll<HTMLElement>(
-                `#${CSS.escape(field.id)}`,
-              ).length === 1,
-            focused: activeDocument.activeElement === field,
-          };
-          activeDocument
-            .querySelectorAll<HTMLElement>(":popover-open")
-            .forEach((p) => p.hidePopover());
-          return JSON.stringify(out);
-        },
-        { first, second },
-      ),
-    ) as Record<string, boolean>;
+    const focus = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { first, second }) => {
+        const { press, until } = pageHelpers;
+        const views = [
+          await pageHelpers.revealQueryView(first),
+          await pageHelpers.revealQueryView(second),
+        ];
+        const el = views[1];
+        press(
+          el!.querySelector<HTMLElement>("[data-query-results]")!,
+          "Results",
+        );
+        const popup = el!.querySelector<HTMLElement>(
+          "[data-query-results-popup]",
+        )!;
+        const field = await until("limit field", () =>
+          popup!.querySelector<HTMLInputElement>("[data-query-limit]")!,
+        );
+        const label = popup!.querySelector<HTMLLabelElement>("label")!;
+        field.blur();
+        const blurred = activeDocument.activeElement !== field;
+        press(label, "limit label");
+        await until(
+          "label focuses the limit field",
+          () => activeDocument.activeElement === field,
+        );
+        const out = {
+          blurred,
+          sameId: label!.htmlFor === field.id,
+          unique:
+            activeDocument.querySelectorAll<HTMLElement>(
+              `#${CSS.escape(field.id)}`,
+            ).length === 1,
+          focused: activeDocument.activeElement === field,
+        };
+        activeDocument
+          .querySelectorAll<HTMLElement>(":popover-open")
+          .forEach((p) => p.hidePopover());
+        return out;
+      },
+      { first, second },
+    )) as Record<string, boolean>;
     expect(focus).toEqual({
       blurred: true,
       sameId: true,

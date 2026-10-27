@@ -304,7 +304,6 @@ export async function verifyExternalAnnotationLock({
             .querySelector<HTMLElement>(node)!,
           verb,
         );
-        return String(true);
       },
       { annotationKey, node, verb },
     );
@@ -328,39 +327,33 @@ export async function verifyExternalAnnotationLock({
       await obRun(
         vaultId,
         async ({ page }, { reason }) => {
-          return String(
-            page
-              .windowDocuments()
-              .flatMap((doc) => [
-                ...doc.querySelectorAll<HTMLElement>(".notice"),
-              ])
-              .filter((node) => node.textContent.includes(reason))[0]!
-              .querySelectorAll<HTMLButtonElement>("button").length,
-          );
+          return page
+            .windowDocuments()
+            .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+            .filter((node) => node.textContent.includes(reason))[0]!
+            .querySelectorAll<HTMLButtonElement>("button").length;
         },
         { reason },
       ),
       `a press on ${verb} offers a button`,
-    ).toBe("0");
+    ).toBe(0);
   }
   // No press opened an editor on the card!.
   expect(
     await obRun(
       vaultId,
       async ({ app }, { annotationKey }) => {
-        return String(
-          !!(app.workspace
-            .getLeavesOfType("zotero-annotation-view")[0]
-            ?.view?.containerEl.querySelector<HTMLElement>(
-              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                annotationKey,
-              )}]`,
-            )!).querySelector<HTMLElement>(".cm-content, input")!,
-        );
+        return !!(app.workspace
+          .getLeavesOfType("zotero-annotation-view")[0]
+          ?.view?.containerEl.querySelector<HTMLElement>(
+            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+              annotationKey,
+            )}]`,
+          )!).querySelector<HTMLElement>(".cm-content, input")!;
       },
       { annotationKey },
     ),
-  ).toBe("false");
+  ).toBe(false);
 
   // A press on the card menu's delete entry gives the Lock Reason, and asks
   // nothing.
@@ -383,7 +376,6 @@ export async function verifyExternalAnnotationLock({
         )!,
         "card menu",
       );
-      return String(true);
     },
     { annotationKey },
   );
@@ -408,7 +400,6 @@ export async function verifyExternalAnnotationLock({
         ),
         "delete entry",
       );
-      return String(true);
     },
     { menuItemLabel: m.annot_view_menu_delete() },
   );
@@ -452,7 +443,6 @@ export async function verifyExternalAnnotationLock({
           cancelable: true,
         }),
       );
-      return String(true);
     },
     undefined,
   );
@@ -500,7 +490,6 @@ export async function verifyExternalAnnotationLock({
           )}]`,
         )!).getBoundingClientRect();
       tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      return String(true);
     },
     { attachmentPath, annotationKey },
   );
@@ -554,17 +543,15 @@ export async function verifyExternalAnnotationLock({
     await obRun(
       vaultId,
       async ({ page }, { attachmentPath }) => {
-        return String(
-          page
-            .pdfView(attachmentPath)!
-            .containerEl.querySelectorAll<HTMLElement>(
-              ".zt-pdf-annotation-handle",
-            ).length,
-        );
+        return page
+          .pdfView(attachmentPath)!
+          .containerEl.querySelectorAll<HTMLElement>(
+            ".zt-pdf-annotation-handle",
+          ).length;
       },
       { attachmentPath },
     ),
-  ).toBe("0");
+  ).toBe(0);
   // Each dimmed verb takes its press and runs nothing: it opens no menu, no
   // tag section and no confirmation, and it shows no notice, since its
   // tooltip already names the Lock Reason. The popup stays on the mark.
@@ -580,7 +567,6 @@ export async function verifyExternalAnnotationLock({
           )!,
           `popup ${verb}`,
         );
-        return String(true);
       },
       { verb },
     );
@@ -623,14 +609,14 @@ export async function verifyExternalAnnotationLock({
             "zotero-annotation-view",
           ) as AnnotationLeaf[]
         )[0]!;
-        if (!leaf) return String(false);
+        if (!leaf) return false;
         leaf.view.gestures!.onPinCurrentItem();
         app.workspace.moveLeafToPopout(leaf);
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   cleanup.defer(async () => {
     await obRun(
       vaultId,
@@ -639,7 +625,6 @@ export async function verifyExternalAnnotationLock({
           "zotero-annotation-view",
         ) as AnnotationLeaf[])
           if (leaf.view.containerEl.win !== window) leaf.detach();
-        return String(true);
       },
       undefined,
     );
@@ -706,7 +691,6 @@ export async function verifyExternalAnnotationLock({
           .querySelector<HTMLElement>(colour)!,
         "colour",
       );
-      return String(true);
     },
     { annotationKey, colour: cardVerbs.colour },
   );

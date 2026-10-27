@@ -78,7 +78,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       async ({ app }) => {
         app.saveLocalStorage("zotlit-profile-customization", "native");
-        return String(true);
       },
       undefined,
     );
@@ -86,11 +85,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ zotlit }) => {
-          return String(zotlit.services.profile.profiles.length);
+          return zotlit.services.profile.profiles.length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
     // A default Profile that lists the Annotations in the note puts one
     // callout for each of them in the body, where the customized callout
     // must arrive.
@@ -130,7 +129,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await app.vault.append(file, personal);
         await indexed;
         await app.workspace.getLeaf(false).openFile(file);
-        return String(true);
       },
       { notePath: note.path!, personal },
     );
@@ -140,13 +138,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ app }) => {
-          return String(
-            app.commands.executeCommandById("zotlit:customize-note-template"),
+          return app.commands.executeCommandById(
+            "zotlit:customize-note-template",
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
 
     await obRunUntil(
       freshId,
@@ -260,7 +258,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
               "Help",
             );
-            return String(true);
           },
           { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
         );
@@ -327,7 +324,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 { key: "Escape", bubbles: true },
               ),
             );
-            return String(true);
           },
           {
             notePath: note.path!,
@@ -407,7 +403,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .getLeaf("tab")
           .openFile(app.vault.getFileByPath(otherPath)!);
         app.workspace.rootSplit.focus();
-        return String(true);
       },
       { otherPath: other.path },
     );
@@ -429,7 +424,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await app.workspace.revealLeaf(view.leaf);
         view.contentEl.ownerDocument.defaultView!.focus();
         app.workspace.setActiveLeaf(view.leaf, { focus: true });
-        return String(true);
       },
       { notePath: note.path! },
     );
@@ -498,7 +492,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             delete fm.collections;
           },
         );
-        return String(true);
       },
       { notePath: note.path! },
     );
@@ -524,7 +517,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).find((button) => button.innerText.trim() === updateButtonText),
           "Update this note",
         );
-        return String(true);
       },
       {
         notePath: note.path!,
@@ -689,24 +681,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Set the Item's seeded notes aside, so the default Profile writes a new
     // one; the cleanup puts them back.
     await using cleanup = new AsyncDisposableStack();
-    const seeded = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, zotlit }, { itemKey }) => {
-          await zotlit.services.noteIndex.whenIndexed();
-          const notes = [];
-          for (const note of zotlit.services.noteIndex.getNotesByItemKey(
-            itemKey,
-          )) {
-            const file = app.vault.getFileByPath(note.path)!;
-            notes.push({ path: note.path, text: await app.vault.read(file) });
-            await app.vault.delete(file);
-          }
-          return JSON.stringify(notes);
-        },
-        { itemKey: item.key },
-      ),
-    ) as { path: string; text: string }[];
+    const seeded = (await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { itemKey }) => {
+        await zotlit.services.noteIndex.whenIndexed();
+        const notes = [];
+        for (const note of zotlit.services.noteIndex.getNotesByItemKey(
+          itemKey,
+        )) {
+          const file = app.vault.getFileByPath(note.path)!;
+          notes.push({ path: note.path, text: await app.vault.read(file) });
+          await app.vault.delete(file);
+        }
+        return notes;
+      },
+      { itemKey: item.key },
+    )) as { path: string; text: string }[];
     let created = "";
     cleanup.defer(async () => {
       await obRun(
@@ -716,7 +706,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if (created) await app.vault.delete(created);
           for (const { path, text } of seeded)
             await app.vault.create(path, text);
-          return String(true);
         },
         { createdNotePath: created, seeded },
       );
@@ -764,27 +753,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }, { created, personal }) => {
         await app.vault.append(app.vault.getFileByPath(created)!, personal);
-        return String(true);
       },
       { created, personal },
     );
     const before = await readFile(join(e2eVaultPath, created), "utf-8");
-    const update = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, zotlit }, { created, itemKey }) => {
-          const result = await zotlit.services.noteFeature.updateNote(
-            app.vault.getFileByPath(created)!,
-            { indexedKey: itemKey, scope: "full" },
-          );
-          return JSON.stringify({
-            bodyUpdated: result.bodyUpdated,
-            diagnostic: result.diagnostic ?? null,
-          });
-        },
-        { created, itemKey: item.key },
-      ),
-    ) as { bodyUpdated: boolean; diagnostic: unknown };
+    const update = (await obRun(
+      run.vaultId,
+      async ({ app, zotlit }, { created, itemKey }) => {
+        const result = await zotlit.services.noteFeature.updateNote(
+          app.vault.getFileByPath(created)!,
+          { indexedKey: itemKey, scope: "full" },
+        );
+        return {
+          bodyUpdated: result.bodyUpdated,
+          diagnostic: result.diagnostic ?? null,
+        };
+      },
+      { created, itemKey: item.key },
+    )) as { bodyUpdated: boolean; diagnostic: unknown };
     expect(update).toEqual({ bodyUpdated: false, diagnostic: null });
     const after = await readFile(join(e2eVaultPath, created), "utf-8");
     expect(noteBody(after)).toBe(noteBody(before));
@@ -822,7 +808,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           line: 0,
           ch: 5,
         });
-        return String(true);
       },
       { citationText: `[@${booksProfileTargetItem.citationKey}]\n` },
     );
@@ -850,7 +835,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           activeDocument.querySelector<HTMLInputElement>(".prompt input");
         input!.value = booksProfileLabel;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { booksProfileLabel: booksProfile.label },
     );
@@ -930,7 +914,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         var leaf = app.workspace.getLeaf(false);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.setValue(edited);
-        return String(app.commands.executeCommandById("zotlit:update-note"));
+        return app.commands.executeCommandById("zotlit:update-note");
       },
       { booksNotePath: run.booksNotePath, edited },
     );
@@ -954,15 +938,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { edited }) => {
-          return String(
+          return (
             (
               app.workspace.getActiveFileView() as import("obsidian").MarkdownView
-            )?.getViewData() === edited,
+            )?.getViewData() === edited
           );
         },
         { edited },
       ),
-    ).toBe("true");
+    ).toBe(true);
     // Put the stamp back, so the scenarios below find the note as it was.
     await obRun(
       run.vaultId,
@@ -971,7 +955,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.workspace.getActiveFileView() as import("obsidian").MarkdownView;
         view.editor.setValue(original);
         await view.save();
-        return String(true);
       },
       { original },
     );
@@ -1222,7 +1205,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        return String(true);
       },
       undefined,
     );
@@ -1239,11 +1221,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(!!activeDocument.querySelector<HTMLElement>(".prompt"));
+          return !!activeDocument.querySelector<HTMLElement>(".prompt");
         },
         undefined,
       ),
-    ).toBe("false");
+    ).toBe(false);
     await expect
       .poll(() => notices.read(), { timeout: 5000 })
       .toContain(
@@ -1275,7 +1257,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           line: 0,
           ch: 5,
         });
-        return String(true);
       },
       { fileContent: `[@${bookItem.citationKey}]\n` },
     );
@@ -1300,11 +1281,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(!!activeDocument.querySelector<HTMLElement>(".prompt"));
+          return !!activeDocument.querySelector<HTMLElement>(".prompt");
         },
         undefined,
       ),
-    ).toBe("false");
+    ).toBe(false);
     await expect
       .poll(() => notices.read(), { timeout: 5000 })
       .toContain(
@@ -1334,7 +1315,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "zotlit-note-preview",
           ])
             app.workspace.detachLeavesOfType(type);
-          return String(true);
         },
         undefined,
       );
@@ -1384,27 +1364,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     let rows: (string | null)[] = [];
     expect(
       await waitFor(async () => {
-        rows = JSON.parse(
-          await obRun(
-            run.vaultId,
-            async ({ page }) => {
-              return JSON.stringify(
-                Array.from(
-                  page
-                    .workbench()
-                    ?.contentEl?.querySelectorAll<HTMLElement>(
-                      "[data-condition-row]",
-                    ) ?? [],
-                ).map(
-                  (row) =>
-                    row.querySelector<HTMLElement>("[role=alert]")
-                      ?.textContent ?? null,
-                ),
-              );
-            },
-            undefined,
-          ),
-        ) as (string | null)[];
+        rows = (await obRun(
+          run.vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page
+                .workbench()
+                ?.contentEl?.querySelectorAll<HTMLElement>(
+                  "[data-condition-row]",
+                ) ?? [],
+            ).map(
+              (row) =>
+                row.querySelector<HTMLElement>("[role=alert]")?.textContent ??
+                null,
+            );
+          },
+          undefined,
+        )) as (string | null)[];
         return rows.length === 2 && rows[1] !== null;
       }),
     ).toBe(true);
@@ -1418,27 +1394,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const underlines = async (expected: string) => {
       let marks: string[][] = [];
       await waitFor(async () => {
-        marks = JSON.parse(
-          await obRun(
-            run.vaultId,
-            async ({ page }) => {
-              return JSON.stringify(
-                Array.from(
-                  page
-                    .workbench()
-                    ?.contentEl?.querySelectorAll<HTMLElement>(
-                      "[data-condition-row]",
-                    ) ?? [],
-                ).map((row) =>
-                  Array.from(
-                    row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
-                  ).map((n) => n.textContent),
-                ),
-              );
-            },
-            undefined,
-          ),
-        ) as string[][];
+        marks = (await obRun(
+          run.vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page
+                .workbench()
+                ?.contentEl?.querySelectorAll<HTMLElement>(
+                  "[data-condition-row]",
+                ) ?? [],
+            ).map((row) =>
+              Array.from(
+                row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
+              ).map((n) => n.textContent),
+            );
+          },
+          undefined,
+        )) as string[][];
         return marks[1]?.join() === expected;
       });
       return marks;
@@ -1514,11 +1486,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const kept = view.controller.source === before;
           await input.key("Escape");
-          return String(kept);
+          return kept;
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
   });
 
   it("keeps per-Item matches in a mixed-Library batch with one unmatched-or-overlap fallback", async () => {
@@ -1569,21 +1541,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         labMatch,
       ],
     });
-    const server = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ zotlit }) => {
-          var services = zotlit.services;
-          var settings = services.bridge.runSync(services.settings.current);
-          return JSON.stringify({
-            hostname: settings["server.hostname"],
-            port: services.bridge.runSync(services.localServer.effectivePort),
-            sourceId: services.zoteroPref.sourceId,
-          });
-        },
-        undefined,
-      ),
-    ) as { hostname: string; port: number; sourceId: string };
+    const server = (await obRun(
+      run.vaultId,
+      async ({ zotlit }) => {
+        var services = zotlit.services;
+        var settings = services.bridge.runSync(services.settings.current);
+        return {
+          hostname: settings["server.hostname"],
+          port: services.bridge.runSync(services.localServer.effectivePort),
+          sourceId: services.zoteroPref.sourceId,
+        };
+      },
+      undefined,
+    )) as { hostname: string; port: number; sourceId: string };
     const pushed = await fetch(
       `http://${server.hostname}:${server.port}/literature-notes`,
       {
@@ -1642,16 +1612,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           (_context, { scope }) =>
-            String(
-              Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
-                .at(-1)!
-                .querySelectorAll<HTMLElement>(
-                  `[data-profile-choice-scope=${scope}]`,
-                ).length,
-            ),
+            Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+              .at(-1)!
+              .querySelectorAll<HTMLElement>(
+                `[data-profile-choice-scope=${scope}]`,
+              ).length,
           { scope },
         ),
-      ).toBe("1");
+      ).toBe(1);
     expect(confirmation).not.toContain(run.m.batch_profile_recovery_help());
     await obRun(
       run.vaultId,
@@ -1665,7 +1633,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ),
           "unresolved Profile choice",
         );
-        return String(true);
       },
       undefined,
     );
@@ -1686,7 +1653,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .querySelector<HTMLInputElement>("input");
         input!.value = booksProfileLabel;
         input!.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       { booksProfileLabel: booksProfile.label },
     );
@@ -1864,7 +1830,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "contains",
           "Operator",
         );
-        return String(true);
       },
       { filterOperator: run.m.workbench_filter_operator() },
     );
@@ -1882,7 +1847,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        return String(true);
       },
       undefined,
     );
@@ -1922,29 +1886,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         app.vault.setConfig("trashOption", "local");
         var file = app.vault.getFileByPath(booksNotePath)!;
         await app.vault.append(file, appendedContent);
-        return String(true);
       },
       { booksNotePath: run.booksNotePath, appendedContent: `\n${exterior}\n` },
     );
     await openProfilesSettings(run.vaultId, "settings_page_profiles");
-    const profileNoteCount = Number(
-      await obRun(
-        run.vaultId,
-        async ({ app }, { profileLabelPrefix }) => {
-          return String(
-            app.vault
-              .getMarkdownFiles()
-              .filter((file) =>
-                String(
-                  app.metadataCache.getFileCache(file)?.frontmatter?.[
-                    "zotlit-profile"
-                  ] ?? "",
-                ).startsWith(profileLabelPrefix),
-              ).length,
-          );
-        },
-        { profileLabelPrefix: `${booksProfile.label} (` },
-      ),
+    const profileNoteCount = await obRun(
+      run.vaultId,
+      async ({ app }, { profileLabelPrefix }) => {
+        return app.vault
+          .getMarkdownFiles()
+          .filter((file) =>
+            String(
+              app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotlit-profile"
+              ] ?? "",
+            ).startsWith(profileLabelPrefix),
+          ).length;
+      },
+      { profileLabelPrefix: `${booksProfile.label} (` },
     );
     expect(profileNoteCount).toBeGreaterThan(0);
     const beforeMove = await readFile(
@@ -2036,9 +1995,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           var checkbox = label?.querySelector<HTMLInputElement>(
             "input[type=checkbox]",
           );
-          if (!checkbox || checkbox.checked) return String(false);
+          if (!checkbox || checkbox.checked) return false;
           press(label!, "Move files");
-          return String(checkbox.checked);
+          return checkbox.checked;
         },
         {
           moveFilesLabel: run.m.settings_profile_delete_move_files({
@@ -2046,7 +2005,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }),
         },
       ),
-    ).toBe("true");
+    ).toBe(true);
     const deletionDialog = await obRun(
       run.vaultId,
       async ({ app }) => {
@@ -2121,7 +2080,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           frontmatter.title = "Not the Zotero title";
         });
         await app.workspace.getLeaf(false).openFile(file);
-        return String(true);
       },
       { movedPath },
     );
@@ -2188,7 +2146,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app }) => {
         app.setting.close();
-        return String(true);
       },
       undefined,
     );
@@ -2203,7 +2160,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ app }) => {
             app.setting.close();
-            return String(true);
           },
           undefined,
         );
@@ -2220,7 +2176,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "server.workbench": true,
             }),
           );
-          return String(true);
         },
         undefined,
       );
@@ -2236,21 +2191,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         { what: "the local server port to resolve through the bridge" },
       );
-      const server = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ zotlit }) => {
-            var services = zotlit.services;
-            var settings = services.bridge.runSync(services.settings.current);
-            return JSON.stringify({
-              port: services.bridge.runSync(services.localServer.effectivePort),
-              sourceId: services.zoteroPref.sourceId,
-              workbench: settings["server.workbench"],
-            });
-          },
-          undefined,
-        ),
-      ) as { port: number; sourceId: string; workbench: boolean };
+      const server = (await obRun(
+        run.vaultId,
+        async ({ zotlit }) => {
+          var services = zotlit.services;
+          var settings = services.bridge.runSync(services.settings.current);
+          return {
+            port: services.bridge.runSync(services.localServer.effectivePort),
+            sourceId: services.zoteroPref.sourceId,
+            workbench: settings["server.workbench"],
+          };
+        },
+        undefined,
+      )) as { port: number; sourceId: string; workbench: boolean };
       expect(server.workbench).toBe(true);
       const headers = {
         [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
@@ -2286,11 +2239,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
               (el) => el.textContent,
             );
-            return String(
+            return (
               names.includes(localServerSettingName) &&
-                !names.includes(workbenchSettingName) &&
-                !names.includes(templateSettingName) &&
-                !app.commands.commands["zotlit:open-profile-web-workbench"],
+              !names.includes(workbenchSettingName) &&
+              !names.includes(templateSettingName) &&
+              !app.commands.commands["zotlit:open-profile-web-workbench"]
             );
           },
           {
@@ -2299,7 +2252,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             templateSettingName: run.m.template_workbench_preference_name(),
           },
         ),
-      ).toBe("true");
+      ).toBe(true);
 
       // Live updates answer the Companion, so their switch sits on the Zotero
       // page beside it rather than with the server that carries them.
@@ -2314,9 +2267,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
               (el) => el.textContent,
             );
-            return String(
+            return (
               names.includes(liveUpdatesSettingName) &&
-                names.includes(advancedHeadingText),
+              names.includes(advancedHeadingText)
             );
           },
           {
@@ -2324,7 +2277,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             advancedHeadingText: run.m.settings_advanced_local_server_heading(),
           },
         ),
-      ).toBe("true");
+      ).toBe(true);
 
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
@@ -2352,7 +2305,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({ "server.workbench": false }),
           );
-          return String(true);
         },
         undefined,
       );

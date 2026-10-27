@@ -572,7 +572,6 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
       const hits = await zotlit.services.itemLookup.search("", { limit: 1 });
       if (hits.length !== 1)
         throw new Error("Search index did not produce its first result");
-      return String(true);
     },
     undefined,
     { timeoutMs: 600000 },
@@ -583,7 +582,6 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
     vaultId,
     async ({ zotlit }) => {
       await zotlit.services.citationLookup.whenResolved();
-      return String(true);
     },
     undefined,
     { timeoutMs: 600000 },
@@ -744,16 +742,14 @@ async function measureTier(raw: RawTier): Promise<void> {
     const running = measure(exportSpec.args);
     await delay(cancelDelayMs);
     const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
-    const arrivedAtEpochMs = Number(
-      await obRun(
-        vaultId,
-        async ({ app }) => {
-          const at = Temporal.Now.instant().epochMilliseconds;
-          await app.plugins.disablePlugin("zotlit");
-          return String(at);
-        },
-        undefined,
-      ),
+    const arrivedAtEpochMs = await obRun(
+      vaultId,
+      async ({ app }) => {
+        const at = Temporal.Now.instant().epochMilliseconds;
+        await app.plugins.disablePlugin("zotlit");
+        return at;
+      },
+      undefined,
     );
     const report = await running.catch((error: unknown) => {
       log(`the run did not report after the unload: ${String(error)}`);
@@ -776,7 +772,6 @@ async function measureTier(raw: RawTier): Promise<void> {
       vaultId,
       async ({ app }) => {
         await app.plugins.enablePlugin("zotlit");
-        return String(true);
       },
       undefined,
     );

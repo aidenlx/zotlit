@@ -387,7 +387,6 @@ async function startRenderProbe(
           state.settled = true;
         });
       void state.completion;
-      return String(true);
     },
     {
       phase,
@@ -418,7 +417,6 @@ async function startRenderProbe(
         vaultId,
         async ({ page: helpers }) => {
           helpers.scratch.__zotlitExcerptProbe!.controller.abort();
-          return String(true);
         },
         undefined,
       );
@@ -428,7 +426,6 @@ async function startRenderProbe(
         vaultId,
         async ({ page: helpers }) => {
           helpers.scratch.__zotlitExcerptProbe!.diagnostics.release();
-          return String(true);
         },
         undefined,
       );
@@ -519,8 +516,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       vaultId,
       async ({ page: helpers }, { expectedOwner }) => {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
-        if (!acceptance || acceptance.owner !== expectedOwner)
-          return String(true);
+        if (!acceptance || acceptance.owner !== expectedOwner) return;
         acceptance.controller.abort();
         if (acceptance.timer !== null) {
           clearTimeout(acceptance.timer);
@@ -535,7 +531,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
           delete helpers.scratch.__zotlitExcerptAcceptance;
         if (!settled)
           throw new Error("Excerpt acceptance did not settle after abort");
-        return String(true);
       },
       { expectedOwner: owner },
     );
@@ -556,11 +551,11 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
           error: null,
           cases: EXCERPT_RENDERING_CASES,
         };
-        return String(true);
+        return true;
       },
       { ownerName: owner, EXCERPT_RENDERING_CASES },
     ),
-  ).toBe("true");
+  ).toBe(true);
   expect(
     await obRun(
       vaultId,
@@ -799,7 +794,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
               acceptance.settled = true;
             });
         }, 0);
-        return String(true);
+        return true;
       },
       {
         failuresToCheck: EXCERPT_RENDERING_PDFS.filter(
@@ -809,7 +804,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         EXCERPT_RENDERING_VAULT_DIR,
       },
     ),
-  ).toBe("true");
+  ).toBe(true);
   await obRunUntil(
     vaultId,
     async ({ page: helpers }) => {
@@ -1021,7 +1016,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       vaultId,
       async ({ app }) => {
         await app.plugins.disablePlugin("zotlit");
-        return String(true);
       },
       undefined,
     );
@@ -1042,7 +1036,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       vaultId,
       async ({ app }) => {
         await app.plugins.enablePlugin("zotlit");
-        return String(true);
       },
       undefined,
     );

@@ -37,7 +37,6 @@ async function bootstrap(): Promise<void> {
     run.vaultId,
     async ({ app }) => {
       app.vault.setConfig("nativeMenus", false);
-      return String(true);
     },
     undefined,
   );
@@ -52,7 +51,6 @@ async function bootstrap(): Promise<void> {
           "server.port": serverPort,
         }),
       );
-      return String(true);
     },
     { serverPort },
   );
@@ -79,7 +77,6 @@ async function bootstrap(): Promise<void> {
       zotlit.services.bridge.runSync(
         zotlit.services.settings.update({ "server.enabled": true }),
       );
-      return String(true);
     },
     undefined,
   );
@@ -178,13 +175,10 @@ export function registerEndToEndRunHooks(): void {
           },
           5000,
         );
-        return JSON.stringify(left);
+        return left;
       },
       undefined,
     );
-    expect(
-      JSON.parse(left),
-      "menus, dialogs and popovers the case left open",
-    ).toEqual([]);
+    expect(left, "menus, dialogs and popovers the case left open").toEqual([]);
   });
 }

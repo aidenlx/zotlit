@@ -46,7 +46,6 @@ export async function verifyPdfReadSource(
         await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
         const file = app.vault.getFileByPath("old-source.pdf")!;
         if (file) await app.vault.delete(file);
-        return String(true);
       },
       { override: saved.override, log: saved.log },
     );
@@ -99,7 +98,6 @@ export async function verifyPdfReadSource(
         "old-source.pdf",
       );
       zotlit.services.zoteroPref.setDataDir(oldDir);
-      return String(true);
     },
     { oldDir },
   );
@@ -134,7 +132,6 @@ export async function verifyPdfReadSource(
       await app.workspace
         .getLeaf("tab")
         .openFile(app.vault.getFileByPath("old-source.pdf")!);
-      return String(true);
     },
     undefined,
   );
@@ -161,7 +158,6 @@ export async function verifyPdfReadSource(
       await zotlit.services.bridge.runPromise(
         zotlit.services.zoteroLocalApi.probe,
       );
-      return String(true);
     },
     { dataDir: saved.dataDir },
   );
@@ -194,7 +190,6 @@ export async function verifyPdfReadSource(
     vaultId,
     async ({ app }) => {
       app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
-      return String(true);
     },
     undefined,
   );

@@ -18,11 +18,9 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
   const size = await obRun(
     run.vaultId,
     async (_context) => {
-      return JSON.stringify(
-        (require("@electron/remote") as typeof import("@electron/remote"))
-          .getCurrentWindow()
-          .getSize(),
-      );
+      return (require("@electron/remote") as typeof import("@electron/remote"))
+        .getCurrentWindow()
+        .getSize();
     },
     undefined,
   );
@@ -33,9 +31,8 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
         (require("@electron/remote") as typeof import("@electron/remote"))
           .getCurrentWindow()
           .setSize(...(windowSize as [number, number]));
-        return String(true);
       },
-      { windowSize: JSON.parse(size) },
+      { windowSize: size },
     );
   });
   await obRun(
@@ -46,7 +43,6 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
       (require("@electron/remote") as typeof import("@electron/remote"))
         .getCurrentWindow()
         .setSize(1600, 1000);
-      return String(true);
     },
     undefined,
   );
@@ -218,7 +214,6 @@ async function addLibraryCondition(selector: string): Promise<void> {
         ),
         "Add condition",
       );
-      return String(true);
     },
     { addConditionLabel: run.m.workbench_match_add_condition() },
   );
@@ -281,7 +276,6 @@ async function mainSettings() {
     run.vaultId,
     async (_context) => {
       window.focus();
-      return String(true);
     },
     undefined,
   );
@@ -304,7 +298,6 @@ async function mainSettings() {
       app.vault.setConfig("settingsPopoutWindow", false);
       app.setting.open();
       app.setting.openTabById("zotlit");
-      return String(true);
     },
     undefined,
   );
@@ -435,11 +428,11 @@ async function quickSwitchCreate(
           });
         }
         window.focus();
-        return String(true);
+        return true;
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   // Native layout completion can focus a companion leaf in the popout.
   // Transfer emulated focus afterwards, before a modal chooses its document.
   await expect
@@ -479,11 +472,11 @@ async function quickSwitchCreate(
         var modal = Array.from(
           activeDocument.querySelectorAll(".modal-container"),
         ).at(-1)!;
-        return String(activeWindow.getComputedStyle(modal).opacity === "0");
+        return activeWindow.getComputedStyle(modal).opacity === "0";
       },
       undefined,
     ),
-  ).toBe("true");
+  ).toBe(true);
   await obRunUntil(
     targetVaultId,
     async (_context) => {
