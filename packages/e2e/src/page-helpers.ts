@@ -19,6 +19,10 @@ import type {
   PagePdfView,
   BackgroundWindow,
 } from "./page-notes-types.ts";
+import type {
+  WalkthroughLeaf,
+  WalkthroughViews,
+} from "./page-walkthrough-types.ts";
 
 /** JSON handle for a Query View embedded in a Markdown note. */
 export interface NoteQueryView {
@@ -358,6 +362,61 @@ export function createPageHelpers(app: PageApp) {
     if (trial.originalPreparation)
       trial.preparation.forCard = trial.originalPreparation;
   }
+  function leavesOfType<K extends keyof WalkthroughViews>(
+    type: K,
+  ): WalkthroughLeaf<K>[] {
+    return app.workspace.getLeavesOfType(type) as WalkthroughLeaf<K>[];
+  }
+  // Walkthrough waits use native layout completion where available; waitFor
+  // compares arrivals at the existing 25 ms polling interval.
+  function measure(
+    cm: import("obsidian").MarkdownView["editor"]["cm"],
+  ): Promise<void> {
+    return new Promise((resolve) =>
+      cm.requestMeasure({ read: () => null, write: () => resolve() }),
+    );
+  }
+  async function waitFor<T>(
+    read: () => T,
+    expected: T,
+    label: string,
+  ): Promise<T> {
+    using timers = new DisposableStack();
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const actual = read();
+      if (JSON.stringify(actual) === JSON.stringify(expected)) return actual;
+      lastError = new Error(
+        `${label}: expected ${JSON.stringify(
+          expected,
+        )}, received ${JSON.stringify(actual)}`,
+      );
+      await new Promise<void>((resolve) =>
+        timers.adopt(setTimeout(resolve, 25), clearTimeout),
+      );
+    }
+    throw lastError;
+  }
+  async function pressKey(
+    debugger_: {
+      sendCommand(method: string, params: object): Promise<unknown>;
+    },
+    key: string,
+    code: number,
+  ) {
+    await debugger_.sendCommand("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key,
+      code: key,
+      windowsVirtualKeyCode: code,
+    });
+    await debugger_.sendCommand("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key,
+      code: key,
+      windowsVirtualKeyCode: code,
+    });
+  }
   async function annotationOpenSubpath(
     gesture: () => void | Promise<void>,
   ): Promise<Record<string, string>> {
@@ -444,6 +503,15 @@ export function createPageHelpers(app: PageApp) {
   function pageContainer(view: PagePdfView) {
     return view.viewer.child.pdfViewer.pdfViewer.container;
   }
+  /**
+   * Shows the Electron window and leaves the OS focus
+   * and the developer's windows alone. `showInactive` keeps the focus but puts the
+   * window in front of every other app's windows on macOS; `blur` there orders it
+   * behind them. A minimized window comes back from the Dock in front for the
+   * length of the animation, so it stays transparent until it is restored and
+   * ordered back. Restore a minimized window with this, not `restore()`.
+   * The run preparation keeps a covered window rendering.
+   */
   function showBehind(win: BackgroundWindow) {
     if (process.platform !== "darwin") {
       win.showInactive();
@@ -804,6 +872,10 @@ export function createPageHelpers(app: PageApp) {
   }
 
   return {
+    leavesOfType,
+    measure,
+    waitFor,
+    pressKey,
     scratch,
     revealQueryView,
     annotationLinkTools,

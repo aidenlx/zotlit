@@ -179,30 +179,6 @@ export async function readUntil<T>(
 }
 
 /**
- * `obEval`, retried until its reply equals `expected`. A window that just
- * opened or reloaded can answer a stray console line ahead of its `=> `
- * reply (or none at all, mid-reload) before its command registry settles —
- * mirrors the `.catch(() => "")` around the "loaded" check in
- * obsidian-vault.ts's own `create()` — so a failed parse here means "not
- * ready yet", not "give up".
- *
- * An unanswered call counts as "not ready yet" too. The stall is per call,
- * not per window: a traced run showed one `navigateToSearchResult` never
- * answer while the identical call on the same vault answered in 12 ms right
- * afterwards. So the deadline ends the call, and the next try goes on.
- */
-export async function obEvalUntil(
-  vaultId: string,
-  code: string,
-  options: { expected: string; tries?: number },
-): Promise<boolean> {
-  return waitFor(async () => {
-    const answer = await obEval(vaultId, code).catch(() => "");
-    return answer === options.expected;
-  }, options.tries);
-}
-
-/**
  * The JSON callback boundary; all imports used by its code must be type-only.
  * Service reads follow the current plugin when a callback restarts it.
  */
@@ -229,7 +205,13 @@ export async function obRun<A = undefined, R = void>(
   return (JSON.parse(reply) as { value: Awaited<R> }).value;
 }
 
-/** Poll a typed page callback; reloads and missing replies count as not ready. */
+/**
+ * Poll a typed page callback; reloads and missing replies count as not ready.
+ * A new or reloaded window can answer a stray console line before its command
+ * registry settles, so a failed parse is retried too. An unanswered call is a
+ * per-call stall: a traced navigateToSearchResult never answered while the next
+ * identical call answered in 12 ms. Its deadline ends that call; polling goes on.
+ */
 // oxlint-disable-next-line max-params -- The approved callback API keeps options fourth (#1848).
 export async function obRunUntil<A = undefined, R = boolean>(
   vaultId: string,
