@@ -14,11 +14,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { NoteIndex } from "@/services/note-index/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import type { ReadsAnswers } from "@/services/zotero-reads/__fixtures__";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
@@ -35,6 +37,7 @@ import type {
   CreationProfileSelection,
   InteractiveCreationPorts,
 } from "./index";
+import { openLiteratureNote } from "./navigation";
 import { NoteFeature } from "./service";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
@@ -99,6 +102,9 @@ function flowLayer({
     }),
     Layer.mock(ZoteroReads, {
       reads: readsAnswering(readItems ? { ItemsByIndexedKeys: readItems } : {}),
+      snapshot: Effect.succeed(
+        readsAnswering(readItems ? { ItemsByIndexedKeys: readItems } : {}),
+      ),
     }),
     Layer.mock(ZoteroPref, {
       current: Effect.succeed(
@@ -124,7 +130,7 @@ function openedAt(
 function creationHarness(selection: CreationProfileSelection) {
   const file = noteAt("Papers/Study.md");
   const item = { ...REF, fields: { title: "A Study" } } as Item;
-  const readItems = vi.fn(() =>
+  const readItems = vi.fn<NonNullable<ReadsAnswers["ItemsByIndexedKeys"]>>(() =>
     Effect.succeed(new Map([[REF.indexedKey, item]])),
   );
   const create = vi.fn(() =>
@@ -584,3 +590,96 @@ function noteAt(path: string): TFile {
   file.path = path;
   return file;
 }
+
+// #1829: interactive entry points report the same operation outcome as links.
+it.effect("opens an indexed Literature Note without planning a creation", () =>
+  Effect.gen(function* () {
+    const harness = creationHarness({
+      selector: PAPERS,
+      source: "asked",
+      shouldAsk: true,
+    });
+    const outcome = yield* openLiteratureNote(harness.deps, REF.indexedKey, {
+      source: "interactive",
+      paneType: "tab",
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          harness.layer,
+          Layer.mock(NoteIndex, {
+            whenIndexed: Effect.void,
+            getNotesByItemKey: () => Effect.succeed([harness.file]),
+          }),
+        ),
+      ),
+    );
+    expect(outcome).toEqual({ outcome: "opened", file: harness.file });
+    expect(harness.planCreations).not.toHaveBeenCalled();
+    expect(harness.workspace.opened).toEqual([
+      openedAt(harness.file.path, "tab"),
+    ]);
+  }),
+);
+
+// #1829: callers observe the file created through the selected Profile.
+it.effect(
+  "creates and opens an interactive Literature Note through its matched Profile",
+  () =>
+    Effect.gen(function* () {
+      const harness = creationHarness({
+        selector: PAPERS,
+        source: "match",
+        shouldAsk: false,
+        reason: "Papers match",
+      });
+      const outcome = yield* openLiteratureNote(harness.deps, REF.indexedKey, {
+        source: "interactive",
+        paneType: "tab",
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            harness.layer,
+            Layer.mock(NoteIndex, {
+              whenIndexed: Effect.void,
+              getNotesByItemKey: () => Effect.succeed([]),
+            }),
+          ),
+        ),
+      );
+      expect(outcome).toEqual({ outcome: "created", file: harness.file });
+      expect(harness.workspace.opened).toEqual([
+        openedAt(harness.file.path, "tab"),
+      ]);
+    }),
+);
+
+// #1829: Library navigation keeps the existing unavailable-database fallback.
+it.effect("opens nothing when the interactive Item read is unavailable", () =>
+  Effect.gen(function* () {
+    const harness = creationHarness({
+      selector: PAPERS,
+      source: "asked",
+      shouldAsk: true,
+    });
+    harness.readItems.mockImplementation(() =>
+      Effect.fail(new DbUnavailable({ message: "Database unavailable" })),
+    );
+    const outcome = yield* openLiteratureNote(harness.deps, REF.indexedKey, {
+      source: "interactive",
+      paneType: "tab",
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          harness.layer,
+          Layer.mock(NoteIndex, {
+            whenIndexed: Effect.void,
+            getNotesByItemKey: () => Effect.succeed([]),
+          }),
+        ),
+      ),
+    );
+    expect(outcome).toEqual({ outcome: "item-not-found" });
+    expect(harness.workspace.opened).toEqual([]);
+    expect(harness.planCreations).not.toHaveBeenCalled();
+  }),
+);

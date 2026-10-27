@@ -151,6 +151,8 @@ export class MemoryWorkspace implements WorkspaceSource {
   }
 
   /** Records the leaf; the active file stays. */
+  async revealLeaf(_leaf: WorkspaceLeaf): Promise<void> {}
+
   setActiveLeaf(leaf: WorkspaceLeaf): void {
     this.activated.push(leaf);
   }
