@@ -121,7 +121,7 @@ interface DialogModal<A> extends ClosableModal {
  * work its callbacks started: the user's close stops it with `UserCancelled`.
  * An interrupt closes the modal, and stops that work as unload does.
  */
-export function runDialog<A, R = DialogServices>(
+function runDialog<A, R = DialogServices>(
   open: (run: DialogRun<R>) => DialogModal<A>,
 ) {
   return Effect.scoped(

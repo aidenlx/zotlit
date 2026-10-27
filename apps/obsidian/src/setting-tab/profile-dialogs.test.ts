@@ -23,11 +23,7 @@ import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { Template } from "@/services/template/service";
 
 import { ProfileDestinationModal } from "./profile-destination-modal";
-import {
-  addProfileDestination,
-  runDialog,
-  shareProfile,
-} from "./profile-dialogs";
+import { addProfileDestination, shareProfile } from "./profile-dialogs";
 import { ShareProfileModal } from "./share-profile-modal";
 
 const BOOKS: LiteratureNoteProfile = {
@@ -146,57 +142,84 @@ it.effect("keeps Share open until it closes, and an interrupt closes it", () =>
 );
 
 /**
- * A dialog over a plain modal whose callback starts work that never ends,
- * with the reason that work's Promise settles with.
+ * Add profile with its save started and never done, and the reason the
+ * dialog's save rejects with, as the modal tests it.
  */
-function pendingWorkDialog() {
-  const answer = Promise.withResolvers<string>();
-  let closed = false;
-  let settled: Promise<unknown> | undefined;
-  const dialog = runDialog<string, never>((run) => {
-    settled = run(Effect.never).then(
-      () => "resolved",
-      (reason: unknown) => reason,
-    );
-    return { open() {}, close: () => (closed = true), result: answer.promise };
+const savingDestination = Effect.gen(function* () {
+  const opened = yield* spy(() => vi.spyOn(Modal.prototype, "open"));
+  const tested = yield* spy(() => vi.spyOn(AbortError, "test"));
+  let started = false;
+  const reader = profileReader();
+  const services = Layer.mergeAll(
+    Layer.mock(Profile, {
+      resolveProfile: () => Effect.succeed(reader.resolveProfile("default")),
+      prepareCreate: () =>
+        Effect.succeed({
+          profile: reader.resolveProfile("default")!,
+          source: "",
+          inherited: [],
+          create: () =>
+            Effect.suspend(() => {
+              started = true;
+              return Effect.never;
+            }),
+        }),
+    }),
+    Layer.mock(Template, {}),
+    Layer.mock(NoteFeature, {}),
+    Layer.mock(Vault, {}),
+    Layer.succeed(
+      PluginHost,
+      stubService<PluginHost["Service"]>("PluginHost", {}),
+    ),
+    testNotifier().layer,
+  );
+  const pending = yield* addProfileDestination(
+    stubService<App>("App", {}),
+  ).pipe(
+    Effect.provide(services),
+    Effect.forkChild({ startImmediately: true }),
+  );
+  yield* until(() => opened.mock.calls.length === 1);
+  const modal = Modal.instances.at(-1)!;
+  modal.onOpen();
+  const add = footerButton(modal, m.settings_profile_add());
+  yield* until(() => {
+    add.click();
+    return started;
   });
   return {
-    dialog,
-    /** The user closes the modal: it answers its dismiss value. */
-    dismiss: () => answer.resolve("dismissed"),
-    closed: () => closed,
-    reason: () => settled!,
+    pending,
+    modal,
+    /** What the save's rejection was, once the modal's catch tests it. */
+    reason: Effect.gen(function* () {
+      yield* until(() => tested.mock.calls.length > 0);
+      return tested.mock.calls[0]![0];
+    }),
   };
-}
+});
 
 // #1824: the user's close stops the work it started with a typed reason.
 it.effect(
-  "stops a callback's work with UserCancelled when the user closes the dialog",
+  "stops the save with UserCancelled when the user closes Add profile",
   () =>
     Effect.gen(function* () {
-      const d = pendingWorkDialog();
-      const pending = yield* Effect.forkChild(d.dialog, {
-        startImmediately: true,
-      });
-      d.dismiss();
-      expect(yield* Fiber.join(pending)).toBe("dismissed");
-      expect(yield* Effect.promise(() => d.reason())).toBeInstanceOf(
-        UserCancelled,
-      );
+      const dialog = yield* savingDestination;
+      dialog.modal.close();
+      dialog.modal.onClose();
+      expect(yield* Fiber.join(dialog.pending)).toBeUndefined();
+      expect(yield* dialog.reason).toBeInstanceOf(UserCancelled);
     }),
 );
 
 it.effect(
-  "stops a callback's work with an AbortError when an interrupt closes the dialog",
+  "stops the save with an AbortError when unload closes Add profile",
   () =>
     Effect.gen(function* () {
-      const d = pendingWorkDialog();
-      const pending = yield* Effect.forkChild(d.dialog, {
-        startImmediately: true,
-      });
-      yield* Fiber.interrupt(pending);
-      expect(d.closed()).toBe(true);
-      const reason = yield* Effect.promise(() => d.reason());
+      const dialog = yield* savingDestination;
+      yield* Fiber.interrupt(dialog.pending);
+      expect(dialog.modal.isOpen).toBe(false);
+      const reason = yield* dialog.reason;
       expect(AbortError.test(reason)).toBe(true);
       expect(reason).not.toBeInstanceOf(UserCancelled);
     }),

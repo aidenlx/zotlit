@@ -207,8 +207,7 @@ export interface OutcomeCopy<A> {
  * Run `task` and report its outcome as {@link reportProgress} does, without a
  * loading message: the success message for 2 s, or the error message for 4 s
  * with the error logged. An abort or the user's cancel shows nothing. The
- * notice does not hold the
- * run, and an interrupt passes on without a notice.
+ * notice does not hold the run, and an interrupt passes on without a notice.
  */
 export const reportOutcome = Effect.fn("Notifier.reportOutcome")(function* <
   A,
