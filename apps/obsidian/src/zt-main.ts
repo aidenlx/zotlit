@@ -369,25 +369,16 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerLibraryView(this, {
       useLedger: services.useLedger,
       ...queryViewDeps,
+      reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       settings: services.settings,
       welcome: {
-        runtime: services.runtime,
-        bridge: services.bridge,
-        app: this.app,
-        reads: services.zoteroReads,
-        queries: services.queryClient,
-        zoteroPref: services.zoteroPref,
-        settings: services.settings,
+        registry: services.runtime.runSync(ViewRegistry),
         setupActions: createSetupActions({
           app: this.app,
-          settings: services.settings,
-          bridge: services.bridge,
-          zoteroPref: services.zoteroPref,
+          registry: services.runtime.runSync(ViewRegistry),
           pluginId: this.manifest.id,
         }),
-        templateMigration: services.templateMigration,
-        release: services.release,
       },
       items: itemActions({
         app: this.app,
@@ -555,11 +546,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     registerWelcomeView(this, {
-      runtime: services.runtime,
-      reads: services.zoteroReads,
-      queries: services.queryClient,
-      settings: services.settings,
-      bridge: services.bridge,
+      registry: services.runtime.runSync(ViewRegistry),
     });
 
     // The companion's Freshness Signal means the database changed and its

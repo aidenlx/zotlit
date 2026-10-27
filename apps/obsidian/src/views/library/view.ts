@@ -22,6 +22,7 @@ import type { LibraryScope } from "@/services/library-scope/scope";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
@@ -81,6 +82,8 @@ const logger = getLogger(["library-view"]);
 export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
+  reads: QueryViewDeps["reads"] &
+    Pick<PlainZoteroReads, "state" | "error" | "moved">;
   useLedger: Pick<PlainUseLedger, "get">;
   settings: Pick<PluginSettings["Service"], "update" | "flush" | "current">;
   libraryScope: QueryViewDeps["libraryScope"] &
@@ -331,7 +334,7 @@ export class LibraryView extends ItemView {
         this.#keep();
       },
       // ZotLit cannot read Zotero's database: the search box asks nothing.
-      readable: () => !unavailable(deps.welcome),
+      readable: () => !unavailable({ reads: deps.reads }),
     });
   }
 
@@ -503,7 +506,11 @@ export class LibraryView extends ItemView {
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(
       new ZoteroNotFound(
-        this.#deps.welcome,
+        {
+          runtime: this.#deps.runtime,
+          reads: this.#deps.reads,
+          setupActions: this.#deps.welcome.setupActions,
+        },
         {
           shell,
           tree: treeEl.createDiv({ cls: shown }),

@@ -384,9 +384,9 @@ export async function buildServices(
         ),
     })
     .useValue({
-      templateMigration: ({ settings }) => {
+      templateMigration: () => {
         bindMigration({
-          openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
+          openPrompt: () => openWelcomeView(plugin.app),
         });
         return plainTemplateMigration(runtime);
       },
