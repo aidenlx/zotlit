@@ -24,7 +24,7 @@
 // once its move has applied, not when it is asked for: until then Chromium
 // holds back the focus events of the elements focused in it, and CodeMirror
 // takes the caret the browser puts at the start of a field for the user's. A popout opens with
-// {@link showBehind} in place of Obsidian's `show`, and `window.focus()` and
+// `page.showBehind` in place of Obsidian's `show`, and `window.focus()` and
 // `electronWindow.focus()` move only the emulation: each would take the OS
 // focus and put the window in front. A walk that needs a new popout active calls
 // its `window.focus()`. The run thus leaves the OS focus to the developer and to
@@ -44,18 +44,6 @@ type RunWindow = Window &
 
 import { installMemoryClipboard } from "./memory-clipboard.ts";
 import { obRun } from "./obsidian-cli.ts";
-
-/**
- * Eval code that shows the Electron window `win` names and leaves the OS focus
- * and the developer's windows alone. `showInactive` keeps the focus but puts the
- * window in front of every other app's windows on macOS; `blur` there orders it
- * behind them. A minimized window comes back from the Dock in front for the
- * length of the animation, so it stays transparent until it is restored and
- * ordered back. Restore a minimized window with this, not `restore()`.
- * `prepareRunWindow` keeps a covered window rendering.
- */
-export const showBehind = (win: string): string =>
-  `((w)=>{if(process.platform!=='darwin'){w.showInactive();return;}if(!w.isMinimized()){w.showInactive();w.blur();return;}const opacity=w.getOpacity();w.setOpacity(0);w.once('restore',()=>{w.blur();setTimeout(()=>w.setOpacity(opacity),100);});w.showInactive();})(${win});`;
 
 /** Global the restore function lives on in the vault window between calls. */
 
