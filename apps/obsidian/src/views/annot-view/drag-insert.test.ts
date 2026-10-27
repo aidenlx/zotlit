@@ -20,7 +20,11 @@ import type { NoteFeatureHandle } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import { stateEditor } from "./__fixtures__/editor";
-import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
+import {
+  createDragInsertHandler,
+  createInsertHandler,
+  insertFailureMessage,
+} from "./drag-insert";
 
 const card: AnnotationRecord = {
   key: "PUPR5FG5",
@@ -99,7 +103,6 @@ function fixture() {
     pending.push(request);
     return request.promise;
   });
-  const notify = vi.fn();
   const insert = createInsertHandler({
     app: stubService<App>("App", { workspace }),
     noteFeature: stubService<
@@ -107,7 +110,7 @@ function fixture() {
     >("NoteFeatureHandle", {
       prepareAnnotationInsert: prepare,
     }),
-    notify,
+    notify: () => undefined,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
       sourceScope: "/zotero",
@@ -118,7 +121,6 @@ function fixture() {
     info,
     workspace,
     prepare,
-    notify,
     insert,
     pending,
     changed,
@@ -141,10 +143,9 @@ it("inserts at the note's selection after the annotation sidebar takes focus", a
   f.pending[0]!.resolve(result("EXCERPT"));
   await operation;
   expect(f.cm.state.doc.toString()).toBe("one EXCERPT ");
-  expect(f.notify).not.toHaveBeenCalled();
 });
 
-it("offers no insert into a note in Reading view, and says to open one", async () => {
+it("offers no insert into a note in Reading view", async () => {
   using f = fixture();
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
   const reading = Object.assign(new MarkdownView(leaf), f.info, {
@@ -158,7 +159,6 @@ it("offers no insert into a note in Reading view, and says to open one", async (
   await f.insert(card);
   expect(f.prepare).not.toHaveBeenCalled();
   expect(f.cm.state.doc.toString()).toBe("one two");
-  expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_no_note());
 });
 
 it("keeps a menu offer bound to its note if another tab becomes active", async () => {
@@ -192,15 +192,23 @@ it("keeps the established text fallback for a Profile error", async () => {
   );
   await operation;
   expect(f.cm.state.doc.toString()).toBe("one Original highlight ");
-  expect(f.notify).toHaveBeenCalledTimes(1);
 });
 
-it("keeps internal insertion errors out of the notice", async () => {
+it("leaves the note unchanged where the insertion fails", async () => {
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.reject(new Error("private failure detail"));
   await operation;
-  expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_failed());
+  expect(f.cm.state.doc.toString()).toBe("one two");
+});
+
+it("keeps internal insertion errors out of the notice", () => {
+  expect(
+    insertFailureMessage(
+      stubService<App>("App", {}),
+      new Error("private failure detail"),
+    ),
+  ).toBe(m.annot_view_insert_failed());
 });
 
 it("supersedes the pending action and inserts once with one undo", async () => {
@@ -214,7 +222,6 @@ it("supersedes the pending action and inserts once with one undo", async () => {
   f.pending[0]!.resolve(result("STALE"));
   await first;
   expect(f.cm.state.doc.toString()).toBe("user one EXCERPT ");
-  expect(f.notify).not.toHaveBeenCalled();
   undo(f.cm);
   expect(f.cm.state.doc.toString()).toBe("user one two");
 });
@@ -241,10 +248,9 @@ it.each(["switch", "close", "cancel"])(
     f.pending[0]!.resolve(result("late"));
     await operation;
     expect(f.cm.state.doc.toString()).toBe("one two");
-    expect(f.notify).not.toHaveBeenCalled();
   },
 );
-it("reports an unavailable result once after insertion", async () => {
+it("inserts an unavailable-image result", async () => {
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.resolve({
@@ -255,7 +261,6 @@ it("reports an unavailable result once after insertion", async () => {
   expect(f.cm.state.doc.toString()).toBe(
     "one Image unavailable [Zotero](zotero://open) ",
   );
-  expect(f.notify).toHaveBeenCalledTimes(1);
 });
 it("uses a source-link fallback when preparation cannot build template context", async () => {
   using f = fixture();
@@ -263,7 +268,6 @@ it("uses a source-link fallback when preparation cannot build template context",
   f.pending[0]!.resolve(null);
   await operation;
   expect(f.cm.state.doc.toString()).toContain("annotation=PUPR5FG5");
-  expect(f.notify).toHaveBeenCalledTimes(1);
 });
 
 function dragFixture() {
@@ -318,7 +322,6 @@ function dragFixture() {
     pending.push(request);
     return request.promise;
   });
-  const notify = vi.fn();
   const handler = createDragInsertHandler({
     app: stubService<App>("App", { workspace }),
     noteFeature: stubService<
@@ -326,7 +329,7 @@ function dragFixture() {
     >("NoteFeatureHandle", {
       prepareAnnotationInsert: prepare,
     }),
-    notify,
+    notify: () => undefined,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
       sourceScope: "/zotero",
@@ -376,7 +379,6 @@ function dragFixture() {
         (count, callbacks) => count + callbacks.size,
         0,
       ),
-    notify,
     start,
     drop,
     emit,
@@ -421,7 +423,6 @@ it("inserts where CodeMirror's own drop would when no exact position is under th
   await vi.waitFor(() =>
     expect(f.cm.state.doc.toString()).toBe("one EXCERPT two"),
   );
-  expect(f.notify).not.toHaveBeenCalled();
 });
 
 it("leaves unrelated editor drops native while a ZotLit drag is active", () => {

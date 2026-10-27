@@ -90,20 +90,32 @@ export async function prepareAndCommit(
   } catch (error) {
     if (target.signal.aborted || !target.valid()) return false;
     if (error instanceof ProfileAnnotationError) {
-      deps.notify(
-        error.diagnostic.code === "unknown-literature-note-profile"
-          ? profileRecoveryNotice(deps.app, error.diagnostic)
-          : error.message,
-      );
+      deps.notify(insertFailureMessage(deps.app, error));
       return target.commit(annotation.text ?? annotation.key, placement);
     }
     logger.warn("Annotation insert failed", {
       annotationKey: annotation.key,
       error,
     });
-    deps.notify(m.annot_view_insert_failed());
+    deps.notify(insertFailureMessage(deps.app, error));
     return false;
   }
+}
+
+/**
+ * The notice for an insert that failed with `error`: a Profile error names
+ * itself, and any other error reads as the generic failure, its detail kept
+ * for the log.
+ */
+export function insertFailureMessage(
+  app: App,
+  error: unknown,
+): string | DocumentFragment {
+  if (!(error instanceof ProfileAnnotationError))
+    return m.annot_view_insert_failed();
+  return error.diagnostic.code === "unknown-literature-note-profile"
+    ? profileRecoveryNotice(app, error.diagnostic)
+    : error.message;
 }
 
 /**
