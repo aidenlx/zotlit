@@ -9,13 +9,13 @@ import { Fragment, useSyncExternalStore } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { useStore } from "zustand";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { SaveAsButton, SortButton } from "@/views/query-view/view";
 import type { QueryView } from "@/views/query-view/view";
 
@@ -23,6 +23,7 @@ import type { LibraryNode, ReadingStateFacet } from "./document";
 import { FACET_LABELS, nodeIcon, nodeLabel } from "./library-tree";
 import type { LibraryTree } from "./library-tree";
 import { TextAction } from "./text-action";
+import { TreeModelProvider, useTreeState } from "./tree-model";
 
 /** What a search on screen puts in the heading. */
 export interface HeaderSearch {
@@ -54,7 +55,13 @@ export function renderHeading(el: HTMLElement, host: LibraryHeadingHost): Root {
   const root = createRoot(el);
   // Sort is the Query View's own control, drawn outside the Query View's
   // root, so it gets the context that root gives its controls.
-  root.render(host.query.layout.provide(<LibraryHeading host={host} />));
+  root.render(
+    <ViewRegistryProvider registry={host.tree.registry}>
+      <TreeModelProvider value={host.tree.model}>
+        {host.query.layout.provide(<LibraryHeading host={host} />)}
+      </TreeModelProvider>
+    </ViewRegistryProvider>,
+  );
   return root;
 }
 
@@ -88,13 +95,16 @@ const SEPARATOR = (
 
 function LibraryHeading({ host }: { host: LibraryHeadingHost }) {
   const { tree, query, search } = host;
-  const libraries = useStore(tree.store, (s) => s.libraries);
-  const node = useStore(tree.store, (s) => s.node);
-  const unread = useStore(tree.store, (s) => s.unread);
-  const facets = useStore(tree.store, (s) => s.facets);
-  const tags = useStore(tree.store, (s) => s.tags);
-  const total = useStore(tree.store, () => tree.count);
-  const results = useStore(query.state, (s) => s.results);
+  const libraries = useTreeState((s) => s.libraries);
+  const node = useTreeState((s) => s.node);
+  const unread = useTreeState((s) => s.unread);
+  const facets = useTreeState((s) => s.facets);
+  const tags = useTreeState((s) => s.tags);
+  const total = useTreeState(() => tree.count);
+  const results = useSyncExternalStore(
+    query.state.subscribe,
+    () => query.state.getState().results,
+  );
   const searchTitle = useSyncExternalStore(search.subscribe, search.title);
   const everywhere = useSyncExternalStore(search.subscribe, search.everywhere);
   const name = nameOf(libraries, node);

@@ -2,6 +2,7 @@
 // The Library View tab runs the query its Library View Document derives: the
 // document plugin data holds when the tab opens, and after a toolbar change,
 // the same query when the tab opens again.
+import { it as effectIt } from "@effect/vitest";
 import {
   Menu,
   controlsOf,
@@ -11,14 +12,22 @@ import {
   TextComponent,
 } from "@mock/obsidian";
 import { Effect, Layer, Stream } from "effect";
-import type { App, WorkspaceItem, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  Plugin,
+  TFile,
+  WorkspaceItem,
+  WorkspaceLeaf,
+} from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Item } from "@zotlit/db";
+import { makeItem } from "@zotlit/db/test-utils";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { testEvents } from "@/lib/__fixtures__/event-stream";
+import { testEvent, testEvents } from "@/lib/__fixtures__/event-stream";
 import { keymapApp, pressTop } from "@/lib/__fixtures__/keymap";
 import {
   createObsidianHost,
@@ -30,11 +39,14 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
+import { ItemLookup } from "@/services/item-lookup/service";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
   QueryViewValue,
 } from "@/services/item-query/query-view";
+import { QueryService } from "@/services/item-query/service";
+import { resolvedLibraryScopeAtom } from "@/services/library-scope/atoms";
 import type {
   AvailableLibrary,
   LibraryScope,
@@ -42,10 +54,20 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
+import { LibraryScope as LibraryScopeService } from "@/services/library-scope/service";
+import { notedItemKeysAtom } from "@/services/note-index/atoms";
+import { NoteIndex } from "@/services/note-index/service";
+import type { NoteIndexChange } from "@/services/note-index/service";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
-import type { UseKind } from "@/services/use-ledger/service";
+import { useLedgerAtom } from "@/services/use-ledger/atoms";
+import { UseLedger } from "@/services/use-ledger/service";
+import type { Ledger, UseKind } from "@/services/use-ledger/service";
+import {
+  zoteroRevisionAtom,
+  zoteroStateAtom,
+} from "@/services/zotero-reads/atoms";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
@@ -55,13 +77,14 @@ import {
   fakeQuery,
   requested,
 } from "@/views/query-view/__fixtures__/query-run";
-import { makeWelcomeHost } from "@/views/welcome/__fixtures__";
+import { waitFor } from "@/views/welcome/__fixtures__";
 import { openWelcomeView } from "@/views/welcome/register";
 
-import { holdNow, useAt } from "./__fixtures__";
+import { holdNow, useAt, makeLibraryHost } from "./__fixtures__";
 import { nodeKey } from "./document";
 import type { LibraryNode } from "./document";
-import { openLibraryView } from "./register";
+import { itemActions } from "./item-actions";
+import { openLibraryView, registerLibraryView } from "./register";
 import { LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
@@ -435,7 +458,7 @@ const GROUPS: Readonly<Record<string, (item: SeedItem) => readonly string[]>> =
   };
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
-async function pluginData(stored?: unknown) {
+async function pluginData(stored?: unknown, actionItem?: Item) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
@@ -483,7 +506,13 @@ async function pluginData(stored?: unknown) {
   vi.spyOn(sourceReads.reads, "ConnectionReadout").mockImplementation(() =>
     Effect.succeed({ itemCount: 8 }),
   );
+  vi.spyOn(sourceReads.reads, "ItemsByIndexedKeys").mockImplementation(() =>
+    Effect.succeed(
+      new Map(actionItem ? [[actionItem.indexedKey, actionItem]] : []),
+    ),
+  );
   const readApi = stubService<ZoteroReads["Service"]["reads"]>("ZoteroReads", {
+    ItemsByIndexedKeys: sourceReads.reads.ItemsByIndexedKeys,
     CollectionPaths: sourceReads.reads.CollectionPaths,
     ConnectionReadout: sourceReads.reads.ConnectionReadout,
   });
@@ -516,6 +545,7 @@ async function pluginData(stored?: unknown) {
     locateZotero: vi.fn(),
   };
   const notes = new Set(NOTED);
+  const nativeNotes = testEvent<NoteIndexChange>();
   const notesChanged = createNanoEvents<{ changed: () => void }>();
   const literatureNotes = {
     ...noLiteratureNotes(),
@@ -561,7 +591,11 @@ async function pluginData(stored?: unknown) {
    * the list's own order.
    */
   const searches: { query: string; libraries: number[] }[] = [];
-  const search = (query: string, opts?: SearchOptions) => {
+  const search = (
+    query: string,
+    opts?: SearchOptions,
+    _signal?: AbortSignal,
+  ) => {
     const libraries = (opts?.libraries ?? []).map((l) => l.libraryID);
     searches.push({ query, libraries });
     const words = query.toLowerCase().split(" ");
@@ -599,35 +633,81 @@ async function pluginData(stored?: unknown) {
     dbFileMissing: false,
     activeReadMode: null,
   }));
-  const events = Stream.mergeAll<ZoteroReadsEvent, never, never>(
-    [
-      Stream.map(reads.streams.changed!, () => ({ _tag: "changed" as const })),
-      Stream.map(reads.streams.degraded!, () => ({
-        _tag: "degraded" as const,
-        error: database_.error!,
-      })),
-      Stream.map(reads.streams["refresh-failed"]!, () => ({
-        _tag: "refresh-failed" as const,
-        error: database_.error!,
-        moved: database_.moved,
-      })),
-      Stream.map(reads.streams["db-file-missing"]!, () => ({
-        _tag: "db-file-missing" as const,
-      })),
-    ],
-    { concurrency: "unbounded" },
-  );
+  const nativeEvents = testEvent<ZoteroReadsEvent>();
+  const nativeStates =
+    testEvent<import("@/services/zotero-reads/service").ZoteroReadsState>();
+  const events = nativeEvents.stream;
+  const publish = (event: ZoteroReadsEvent) => {
+    nativeStates.emit({
+      ...database_,
+      dbFileMissing: false,
+      activeReadMode: null,
+    });
+    nativeEvents.emit(event);
+  };
+  const uses = { current: {} as Ledger };
+  const usesChanged = testEvent<Ledger>();
+  const searchRun = { search };
   const welcomeHost = cleanup.use(
-    await makeWelcomeHost({
+    await makeLibraryHost({
       services: Layer.mergeAll(
         layerHost({ vault: app.vault }),
         Layer.succeed(PluginSettings, settings),
+        Layer.mock(NoteIndex, {
+          whenIndexed: Effect.void,
+          getNotesByItemKey: () => Effect.succeed([]),
+          getIndexedItemKeys: Effect.sync(() => [...notes]),
+          changes: nativeNotes.stream,
+        }),
+        Layer.mock(UseLedger, {
+          changes: Stream.concat(
+            Stream.suspend(() => Stream.make(uses.current)),
+            usesChanged.stream,
+          ),
+        }),
+        Layer.mock(ItemLookup, {
+          search: (words, options) =>
+            Effect.promise((signal) =>
+              searchRun.search(words, options, signal),
+            ),
+        }),
+        Layer.mock(QueryService, {
+          run: (request) => Effect.promise((signal) => run(request, signal)),
+        }),
+        Layer.mock(LibraryScopeService, {
+          libraries: Effect.sync(() => libraryScope.libraries),
+          changes: Stream.concat(
+            Stream.suspend(() =>
+              Stream.make({
+                current: libraryScope.current,
+                all: {
+                  ...libraryScope.current,
+                  available: libraryScope.libraries,
+                },
+                invalid: false,
+                effective: libraryScope.effective,
+                libraryRows: null,
+              }),
+            ),
+            Stream.map(scopeEvents.streams.changed, () => ({
+              current: libraryScope.current,
+              all: {
+                ...libraryScope.current,
+                available: libraryScope.libraries,
+              },
+              invalid: false,
+              effective: libraryScope.effective,
+              libraryRows: null,
+            })),
+          ),
+        }),
         Layer.mock(ZoteroReads, {
           current,
           reads: readApi,
+          snapshot: Effect.succeed(readApi),
           changes: Stream.concat(
             Stream.fromEffect(current),
-            Stream.mapEffect(events, () => current),
+            nativeStates.stream,
           ),
           events,
         }),
@@ -635,12 +715,22 @@ async function pluginData(stored?: unknown) {
     }),
   );
 
+  cleanup.defer(welcomeHost.registry.mount(notedItemKeysAtom));
+  cleanup.defer(welcomeHost.registry.mount(zoteroRevisionAtom));
+  cleanup.defer(welcomeHost.registry.mount(zoteroStateAtom));
+  cleanup.defer(welcomeHost.registry.mount(resolvedLibraryScopeAtom));
+  await waitFor(() =>
+    expect(welcomeHost.registry.get(resolvedLibraryScopeAtom)).toBe(
+      libraryScope.current,
+    ),
+  );
+
+  await waitFor(() => expect(nativeEvents.subscribers).toBeGreaterThan(0));
+
   const deps = stubService<LibraryViewDeps>("LibraryViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
-    useLedger: stubService<LibraryViewDeps["useLedger"]>("UseLedger", {
-      get: () => undefined,
-    }),
+    registry: welcomeHost.registry,
     app,
     reads: readsDeps,
     libraryScope: stubService<LibraryViewDeps["libraryScope"]>("LibraryScope", {
@@ -649,22 +739,11 @@ async function pluginData(stored?: unknown) {
         () => libraryScope.current,
       ),
       "libraries-changed": scopeEvents.streams["libraries-changed"],
-      get effective() {
-        return libraryScope.effective;
-      },
       get current() {
         return libraryScope.current;
       },
-      libraries: libraryScope.libraries,
     }),
     query: fakeQuery(run),
-    lookup: {
-      openSession: () => ({
-        search,
-        close: () => {},
-        [Symbol.dispose]: () => {},
-      }),
-    },
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
     annotations: stubService<LibraryViewDeps["annotations"]>(
       "AnnotationRepository",
@@ -683,56 +762,96 @@ async function pluginData(stored?: unknown) {
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),
     items,
-    settings,
     welcome: { registry: welcomeHost.registry, setupActions },
     literatureNotes,
     opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
   });
   /** Zotero's database changes to hold `items`, and says so. */
-  const change = (items: readonly SeedItem[]) => {
+  const change = async (items: readonly SeedItem[]) => {
+    const revision = welcomeHost.registry.get(zoteroRevisionAtom);
     database.items = items;
     reads.emit("changed");
+    publish({ _tag: "changed" });
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(zoteroRevisionAtom)).toBeGreaterThan(
+        revision,
+      ),
+    );
   };
   /** The data folder ZotLit reads can no longer be found. */
-  const lose = () => {
+  const lose = async () => {
     database_.state = "degraded";
     database_.error = new DbUnavailable({
       message: "No zotero.sqlite in the data folder",
     });
     reads.emit("degraded");
+    publish({ _tag: "degraded", error: database_.error });
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(zoteroStateAtom).state).toBe("degraded"),
+    );
   };
   /** A refresh of the database fails; the earlier connection still reads. */
-  const refreshFails = () => {
+  const refreshFails = async () => {
     database_.error = new DbUnavailable({ message: "EACCES: zotero.sqlite" });
     database_.moved = false;
     reads.emit("refresh-failed");
+    publish({
+      _tag: "refresh-failed",
+      error: database_.error,
+      moved: database_.moved,
+    });
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(zoteroStateAtom).error).toBe(
+        database_.error,
+      ),
+    );
   };
   /**
    * The researcher points ZotLit at a data folder that does not read; the
    * earlier database still serves.
    */
-  const moveFails = () => {
+  const moveFails = async () => {
     database_.error = new DbUnavailable({ message: "ENOENT: zotero.sqlite" });
     database_.moved = true;
     reads.emit("refresh-failed");
+    publish({
+      _tag: "refresh-failed",
+      error: database_.error,
+      moved: database_.moved,
+    });
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(zoteroStateAtom).error).toBe(
+        database_.error,
+      ),
+    );
   };
   /** The researcher pointed ZotLit at the data folder, and it reads again. */
-  const locate = () => {
+  const locate = async () => {
     database_.state = "ready";
     database_.error = null;
     database_.moved = false;
     reads.emit("changed");
+    publish({ _tag: "changed" });
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(zoteroStateAtom).state).toBe("ready"),
+    );
   };
   /** The vault gains a Literature Note for `itemKey`. */
-  const addNote = (itemKey: string) => {
+  const addNote = async (itemKey: string) => {
     notes.add(itemKey);
     notesChanged.emit("changed");
+    nativeNotes.emit({ type: "indexed" });
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(notedItemKeysAtom).has(itemKey)).toBe(
+        true,
+      ),
+    );
   };
   /**
    * The researcher saves a Library Scope of the Libraries `available` and
    * those `missing` from the database.
    */
-  const rescope = (
+  const rescope = async (
     available: readonly AvailableLibrary[],
     missing: readonly LibrarySelector[] = [],
   ) => {
@@ -746,6 +865,11 @@ async function pluginData(stored?: unknown) {
       unavailable: missing,
     };
     scopeEvents.emit("changed");
+    await waitFor(() =>
+      expect(welcomeHost.registry.get(resolvedLibraryScopeAtom)).toBe(
+        libraryScope.current,
+      ),
+    );
   };
   return {
     deps,
@@ -762,6 +886,15 @@ async function pluginData(stored?: unknown) {
     moveFails,
     locate,
     setupActions,
+    uses,
+    setUse: async (key: string, kind: UseKind, iso: string) => {
+      uses.current = { ...uses.current, [key]: useAt(kind, iso) };
+      usesChanged.emit(uses.current);
+      await waitFor(() =>
+        expect(welcomeHost.registry.get(useLedgerAtom)).toBe(uses.current),
+      );
+    },
+    searchRun,
   };
 }
 
@@ -797,6 +930,7 @@ function row(view: LibraryView, node: LibraryNode): HTMLElement {
 async function press(view: LibraryView, el: HTMLElement) {
   await act(async () => {
     el.click();
+    await view.searched;
     await view.query.settled;
     await view.tree.settled;
   });
@@ -908,7 +1042,7 @@ it("opens on Recent, every Library in the Library Scope newest activity first, w
 // projections.
 it("shows the newest Zotero activity only on Recent and stops requesting it on other nodes", async () => {
   const { deps, change, run } = await pluginData();
-  change([
+  await change([
     {
       ...SEED[0]!,
       fields: {
@@ -990,15 +1124,37 @@ async function recentRow(
 ): Promise<Element> {
   const now = holdNow("2025-01-02T00:00:00Z");
   cleanup.defer(() => now.mockRestore());
-  const { deps, change } = await pluginData();
+  const { deps, change, uses } = await pluginData();
   const item = SEED[0]!;
-  change([{ ...item, fields }]);
-  deps.useLedger = {
-    get: () => (kind ? useAt(kind, "2025-01-01T00:00:00Z") : undefined),
-  };
+  await change([{ ...item, fields }]);
+  uses.current = kind
+    ? { [item.key]: useAt(kind, "2025-01-01T00:00:00Z") }
+    : {};
   const view = await openTab(deps);
   return view.contentEl.querySelector(`[data-query-papers-row="${item.key}"]`)!;
 }
+
+it("updates a Recent reason on a Use change without another list read", async () => {
+  const now = holdNow("2025-01-02T00:00:00Z");
+  cleanup.defer(() => now.mockRestore());
+  const { deps, change, uses, setUse, run } = await pluginData();
+  const item = SEED[0]!;
+  const iso = "2025-01-01T00:00:00Z";
+  await change([
+    { ...item, fields: { lastActivity: iso, lastActivitySource: "use" } },
+  ]);
+  uses.current = { [item.key]: useAt("opened", iso) };
+  const view = await openTab(deps);
+  const before = listRuns(run).length;
+  expect(itemRow(view, item.key).textContent).toContain(
+    m.library_recent_opened({ time: "1 day ago" }),
+  );
+  await act(() => setUse(item.key, "cited", iso));
+  expect(itemRow(view, item.key).textContent).toContain(
+    m.library_recent_cited({ time: "1 day ago" }),
+  );
+  expect(listRuns(run)).toHaveLength(before);
+});
 
 it("opens on the document plugin data holds, once it has loaded", async () => {
   const { deps, run } = await pluginData({
@@ -1227,13 +1383,13 @@ it("lets go of Show all libraries once the Library Scope holds every Library, an
   await press(view, all()!);
   expect(all()?.dataset.libraryAll).toBe("on");
   await act(async () => {
-    rescope(LIBRARIES);
+    await rescope(LIBRARIES);
     await view.tree.settled;
   });
   // No Library lies outside the scope, so there is nothing to show or hide.
   expect(all()).toBeNull();
   await act(async () => {
-    rescope(LIBRARIES.slice(0, 1));
+    await rescope(LIBRARIES.slice(0, 1));
     await view.tree.settled;
   });
   expect(all()?.dataset.libraryAll).toBe("off");
@@ -1256,7 +1412,7 @@ it("counts again after a database change", async () => {
   const { deps, change } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
-    change([
+    await change([
       ...SEED,
       { key: "JJJJJJJJ", libraryID: 1, collections: ["Thesis/Chapter 1"] },
     ]);
@@ -1338,7 +1494,7 @@ it("puts the open tree away on Escape from inside it, on a Scope above the list'
     "[data-library-tags-filter]",
   )!;
   expect((await escape(filter)).defaultPrevented).toBe(true);
-  expect(view.tree.store.getState().tagFilter).toBe("");
+  expect(view.tree.state.tagFilter).toBe("");
   expect(shell.hasAttribute("data-tree-open")).toBe(true);
 
   // An Escape that drops a composition stays the input method's.
@@ -1353,7 +1509,7 @@ it("puts the open tree away on Escape from inside it, on a Scope above the list'
 
 it("says where Zotero's data folder cannot be found, offers to locate it, and lists the papers once it is set", async () => {
   const { deps, lose, locate, setupActions } = await pluginData();
-  lose();
+  await lose();
   const view = await openTab(deps);
   const shell = view.contentEl.querySelector(
     "[data-library-tree]",
@@ -1394,7 +1550,7 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   expect(view.contentEl.textContent).not.toMatch(/Companion|Better BibTeX/);
 
   await act(async () => {
-    locate();
+    await locate();
     await view.tree.settled;
     await view.query.settled;
   });
@@ -1412,14 +1568,14 @@ it("keeps the last rows with a note where a refresh of the database fails, and d
   const note = () =>
     view.contentEl.querySelector<HTMLElement>("[data-library-refresh-failed]");
   await act(async () => {
-    refreshFails();
+    await refreshFails();
     await view.query.settled;
   });
   expect(shell.hasAttribute("data-zotero-missing")).toBe(false);
   expect(shown(view)).toEqual(rows);
   expect(note()?.textContent).toContain("Couldn't refresh from Zotero");
   await act(async () => {
-    locate();
+    await locate();
     await view.query.settled;
   });
   expect(note()).toBeNull();
@@ -1432,7 +1588,7 @@ it("says Zotero is not found where the data folder changes to one that does not 
     "[data-library-tree]",
   )!.parentElement!;
   await act(async () => {
-    moveFails();
+    await moveFails();
     await view.query.settled;
   });
   expect(shell.hasAttribute("data-zotero-missing")).toBe(true);
@@ -1445,7 +1601,7 @@ it("reads the new Library Scope on Recent once the researcher changes it", async
   const { deps, run, rescope } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
-    rescope([LIBRARIES[1]!]);
+    await rescope([LIBRARIES[1]!]);
     await view.query.settled;
   });
   expect(listRuns(run).at(-1)!.libraries).toEqual({
@@ -1458,7 +1614,7 @@ it("reads the saved Library Scope on Recent where the database holds none of its
   const { deps, run, rescope } = await pluginData();
   const view = await openTab(deps);
   await act(async () => {
-    rescope([], [GONE]);
+    await rescope([], [GONE]);
     await view.query.settled;
   });
   expect(listRuns(run).at(-1)!.libraries).toEqual({
@@ -1575,7 +1731,7 @@ it("marks the Sort button again on a switch between Recent and My Library that l
   });
   const view = await openTab(deps);
   await act(async () => {
-    rescope([LIBRARIES[0]!]);
+    await rescope([LIBRARIES[0]!]);
     await view.query.settled;
   });
   const set = () =>
@@ -1742,7 +1898,7 @@ describe("Reading State facets", () => {
     expect(listed(view)).toEqual(["BBBBBBBB"]);
     // A new Literature Note takes B out of the unread Items.
     await act(async () => {
-      addNote("BBBBBBBB");
+      await addNote("BBBBBBBB");
       await view.query.settled;
       await view.tree.settled;
     });
@@ -1899,11 +2055,11 @@ it("selects the row the keyboard enters the list at, with no Reading Card, so it
   const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).focus());
-  expect(view.selection.getState()).toEqual({ key: A, card: false });
+  expect(view.selected).toEqual({ key: A, card: false });
   expect(await pressKey(view, itemRow(view, A), ["Enter"])).toBe(true);
   expect(items.openNote).toHaveBeenLastCalledWith(A, false);
   expect(await pressKey(view, itemRow(view, A), [" "])).toBe(true);
-  expect(view.selection.getState()).toEqual({ key: A, card: true });
+  expect(view.selected).toEqual({ key: A, card: true });
 });
 
 it("selects a row whose expand button is clicked, and asks for no Reading Card", async () => {
@@ -1913,7 +2069,7 @@ it("selects a row whose expand button is clicked, and asks for no Reading Card",
     "button[data-query-expand]",
   )!;
   await act(() => expand.click());
-  expect(view.selection.getState()).toEqual({ key: A, card: false });
+  expect(view.selected).toEqual({ key: A, card: false });
 });
 
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
@@ -1988,7 +2144,7 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
   // The menu acts on the row it opened over, which it selects without
   // opening its Reading Card.
   expect(itemRows(view)[1]).toBe(`${B} *`);
-  expect(view.selection.getState()).toEqual({ key: B, card: false });
+  expect(view.selected).toEqual({ key: B, card: false });
   menu.items[1]!.click();
   expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(B, "split");
   menu.items[5]!.click();
@@ -2026,7 +2182,7 @@ it("shows an Item in its first Collection, selected, with its Reading Card", asy
   expect(header(view)).toBe("My Library›Thesis› | Chapter 1 | 1 paper");
   expect(itemRows(view)).toContain(`${A} *`);
   // Show in Library asks for the Item's Reading Card, as a click does.
-  expect(view.selection.getState()).toEqual({ key: A, card: true });
+  expect(view.selected).toEqual({ key: A, card: true });
 });
 
 it("turns the Reading State facets off to show an Item they leave out", async () => {
@@ -2062,7 +2218,7 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
     libraryID: 1,
     collections: [] as string[],
   }));
-  change([...many, { key: "YYYYYYYY", libraryID: 1, collections: [] }]);
+  await change([...many, { key: "YYYYYYYY", libraryID: 1, collections: [] }]);
   const view = await openTab(deps);
   // The second time the list already shows My Library, and runs nothing.
   for (const _ of [1, 2]) {
@@ -2071,7 +2227,7 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
       outcome = await view.reveal("YYYYYYYY");
     });
     expect(outcome).toBe("not-listed");
-    expect(view.selection.getState()).toEqual({ key: null, card: false });
+    expect(view.selected).toEqual({ key: null, card: false });
   }
 });
 
@@ -2352,7 +2508,7 @@ it("asks the search again after a database change, so a renamed Item joins its h
   await type(view, "figures");
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
   await act(async () => {
-    change(
+    await change(
       SEED.map((item) =>
         item.key === B ? { ...item, title: "Figures of attention" } : item,
       ),
@@ -2475,21 +2631,13 @@ it("keeps a search of all libraries inside the active facets", async () => {
 });
 
 it("lists nothing more once the tab closed during a search", async () => {
-  const { deps, run } = await pluginData();
-  // The worker answers once the tab has closed.
+  const { deps, run, searchRun } = await pluginData();
   const gate = Promise.withResolvers<void>();
-  const open = deps.lookup.openSession.bind(deps.lookup);
-  deps.lookup = {
-    openSession: () => {
-      const session = open();
-      return {
-        ...session,
-        search: async (query, opts) => {
-          await gate.promise;
-          return session.search(query, opts);
-        },
-      };
-    },
+  const search = searchRun.search;
+  searchRun.search = async (words, options, signal) => {
+    await gate.promise;
+    if (signal?.aborted) return [];
+    return search(words, options);
   };
   const view = await openTab(deps);
   const before = listRuns(run).length;
@@ -2643,14 +2791,14 @@ describe("Welcome View banner once setup is complete", () => {
 it("asks the database nothing from the search box while Zotero's data folder is missing, and searches once it is set", async () => {
   const { deps, searches, lose, locate } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
-  lose();
+  await lose();
   await act(async () => {
     view.search.type("figures");
     await view.searched;
   });
   expect(searches).toEqual([]);
   await act(async () => {
-    locate();
+    await locate();
     await view.searched;
     await view.query.settled;
   });
@@ -2662,10 +2810,10 @@ it("lets go of the selected row once a search leaves it out, and hides its Readi
   const { deps } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).click());
-  expect(view.selection.getState().key).toBe(A);
+  expect(view.selected.key).toBe(A);
   await type(view, "attention");
   expect(itemRows(view)).toEqual([B]);
-  expect(view.selection.getState().key).toBeNull();
+  expect(view.selected.key).toBeNull();
   expect(
     view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
   ).toBe(true);
@@ -2686,7 +2834,7 @@ it("opens again on the paper the researcher selected, scrolled into view, with i
   expect(itemRows(view).slice(0, 3)).toEqual([A, B, `${C} *`]);
   // Selected as the arrow keys select: a wide pane shows the card beside
   // the list, and a narrow one leaves the list uncovered.
-  expect(view.selection.getState()).toEqual({ key: C, card: false });
+  expect(view.selected).toEqual({ key: C, card: false });
   expect(
     view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
   ).toBe(false);
@@ -2713,7 +2861,7 @@ it("opens with no paper selected where the list no longer holds the one it kept,
     selected: "1:ZZZZZZZZ",
   });
   const view = await openTab(deps);
-  expect(view.selection.getState().key).toBeNull();
+  expect(view.selected.key).toBeNull();
   expect(itemRows(view).some((key) => key.endsWith("*"))).toBe(false);
   await act(() => settings.bridge.runPromise(settings.flush));
   expect(
@@ -2779,7 +2927,7 @@ describe("Reading Card", () => {
       await view.card.settled;
     });
     await act(async () => {
-      change(
+      await change(
         SEED.map((item) =>
           item.key === B ? { ...item, title: "Attention, renamed" } : item,
         ),
@@ -2812,7 +2960,7 @@ describe("Reading Card", () => {
       item.key === B ? { ...item, annotations: 1 } : item,
     );
     await act(async () => {
-      change(annotated);
+      await change(annotated);
       await view.query.settled;
     });
     await select(view, A);
@@ -2830,7 +2978,7 @@ describe("Reading Card", () => {
     await act(() => itemRow(view, B).click());
     // Once B's fields and preview land, A's cards go while B's are read.
     await vi.waitFor(() =>
-      expect(view.card.store.getState().item?.title).toBe("Notes on attention"),
+      expect(view.card.state.item?.title).toBe("Notes on attention"),
     );
     expect(view.card.query.state.getState().results).toBeNull();
     await act(async () => {
@@ -2951,7 +3099,7 @@ describe("Reading Card", () => {
     )!;
     expect(close.getAttribute("aria-label")).toBe(m.library_view_card_close());
     await act(() => close.click());
-    expect(view.selection.getState()).toEqual({ key: B, card: false });
+    expect(view.selected).toEqual({ key: B, card: false });
     expect(document.activeElement).toBe(itemRow(view, B));
     // A pane wide enough for the card beside the list hides it too.
     expect(shownCard(view)).toBeNull();
@@ -2975,7 +3123,7 @@ describe("Reading Card", () => {
         .click(),
     );
     expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
-    expect(view.selection.getState()).toEqual({ key: C, card: false });
+    expect(view.selected).toEqual({ key: C, card: false });
     expect(shownCard(view)).toBeNull();
     await act(async () => {
       itemRow(view, C).click();
@@ -2998,9 +3146,9 @@ describe("Reading Card", () => {
     });
     const view = await openTab(deps);
     expect(await pressKey(view, itemRow(view, A), ["ArrowDown"])).toBe(true);
-    expect(view.selection.getState().key).not.toBeNull();
+    expect(view.selected.key).not.toBeNull();
     expect(shownCard(view)).toBeNull();
-    const key = view.selection.getState().key!;
+    const key = view.selected.key!;
     expect(await pressKey(view, itemRow(view, key), [" "])).toBe(true);
     expect(shownCard(view)).not.toBeNull();
   });
@@ -3011,16 +3159,16 @@ describe("Reading Card", () => {
     // Space with no row selected leaves the list to scroll.
     expect(await pressKey(view, itemRow(view, A), [" "])).toBe(false);
     await act(() => itemRow(view, B).click());
-    expect(view.selection.getState()).toEqual({ key: B, card: true });
+    expect(view.selected).toEqual({ key: B, card: true });
     expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
-    expect(view.selection.getState()).toEqual({ key: C, card: false });
+    expect(view.selected).toEqual({ key: C, card: false });
     expect(document.activeElement).toBe(itemRow(view, C));
     // Space on a button inside the row is the button's.
     const inside = itemRow(view, C).createEl("button");
     expect(await pressKey(view, inside, [" "])).toBe(false);
-    expect(view.selection.getState()).toEqual({ key: C, card: false });
+    expect(view.selected).toEqual({ key: C, card: false });
     expect(await pressKey(view, itemRow(view, C), [" "])).toBe(true);
-    expect(view.selection.getState()).toEqual({ key: C, card: true });
+    expect(view.selected).toEqual({ key: C, card: true });
     // Space only opens the card.
     expect(items.openNote).not.toHaveBeenCalled();
     expect(items.openPdf).not.toHaveBeenCalled();
@@ -3144,7 +3292,7 @@ describe("Reading Card", () => {
     const { deps, run, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(FILLED);
+      await change(FILLED);
       await view.query.settled;
     });
     await select(view, A);
@@ -3206,7 +3354,7 @@ describe("Reading Card", () => {
     Object.assign(deps, { opener: { open } });
     const view = await openTab(deps);
     await act(async () => {
-      change(FILLED);
+      await change(FILLED);
       await view.query.settled;
     });
     await select(view, A);
@@ -3278,7 +3426,7 @@ describe("Reading Card", () => {
     const { deps, change, items } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(FILLED);
+      await change(FILLED);
       await view.query.settled;
     });
     await select(view, B);
@@ -3321,7 +3469,7 @@ describe("Reading Card", () => {
       literal: null,
     }));
     await act(async () => {
-      change(
+      await change(
         SEED.map((item) =>
           item.key === C ? { ...item, fields: { creators: authors } } : item,
         ),
@@ -3342,7 +3490,7 @@ describe("Reading Card", () => {
     const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(FILLED);
+      await change(FILLED);
       await view.query.settled;
     });
     await select(view, D);
@@ -3388,7 +3536,7 @@ describe("Reading Card", () => {
     const { deps, settings, run, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(FILLED);
+      await change(FILLED);
       await view.query.settled;
     });
     await select(view, A);
@@ -3470,7 +3618,7 @@ describe("Reading Card", () => {
     const { deps, run, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(MARKED);
+      await change(MARKED);
       await view.query.settled;
     });
     await select(view, A);
@@ -3520,7 +3668,7 @@ describe("Reading Card", () => {
     const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(
+      await change(
         MARKED.map((item) =>
           item.key === A
             ? {
@@ -3563,7 +3711,7 @@ describe("Reading Card", () => {
     const { deps, change } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
-      change(
+      await change(
         SEED.map((item) =>
           item.key === B
             ? {
@@ -3878,7 +4026,7 @@ describe("Tag Selector", () => {
     const { deps, change } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     await act(async () => {
-      change([
+      await change([
         ...SEED,
         { key: "JJJJJJJJ", libraryID: 1, collections: [], tags: ["pitfall"] },
       ]);
@@ -3935,3 +4083,61 @@ describe("Tag Selector", () => {
     expect(pressed(view)).toEqual(["method"]);
   });
 });
+
+// #1710: a shared item gesture finishes after the last Library tab closes.
+effectIt.live(
+  "opens the created note after the last Library tab closes during the Profile prompt",
+  () =>
+    Effect.promise(async () => {
+      const item = makeItem({ itemType: "journalArticle", title: "Paper" });
+      const { deps, host } = await pluginData(undefined, item);
+      const pluginLifetime = new DisposableStack();
+      cleanup.defer(() => pluginLifetime.dispose());
+      registerLibraryView(
+        stubService<Plugin>("Plugin", {
+          app: deps.app,
+          register: (release) => pluginLifetime.defer(release),
+          registerView: () => {},
+          addCommand: (command) => command,
+          addRibbonIcon: () => document.createElement("div"),
+        }),
+        deps,
+      );
+      const view = await openTab(deps);
+      const created = Promise.withResolvers<TFile>();
+      const createNoteInteractively = vi.fn(() => created.promise);
+      const openLinkText = vi.fn(async () => {});
+      Object.assign(deps.app.workspace, { openLinkText });
+      const actions = itemActions({
+        app: deps.app,
+        registry: deps.registry,
+        opener: deps.opener,
+        noteFeature: { createNoteInteractively, renderCitation: () => "" },
+      });
+      const opening = actions.openNote(item.indexedKey, "tab");
+      await waitFor(() =>
+        expect(createNoteInteractively).toHaveBeenCalledOnce(),
+      );
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      cleanup.defer(() => void vi.useRealTimers());
+      await view.close();
+      await vi.advanceTimersByTimeAsync(10);
+      const file = host.vault.addFile("literatures/paper.md", "Paper");
+      created.resolve(file);
+      await opening;
+      expect(openLinkText).toHaveBeenCalledWith(file.path, "", "tab", {
+        active: true,
+      });
+      const next = Promise.withResolvers<TFile>();
+      createNoteInteractively.mockImplementation(() => next.promise);
+      const interrupted = actions.openNote(item.indexedKey, "tab");
+      await waitFor(() =>
+        expect(createNoteInteractively).toHaveBeenCalledTimes(2),
+      );
+      pluginLifetime.dispose();
+      await vi.advanceTimersByTimeAsync(10);
+      await interrupted;
+      next.resolve(file);
+      expect(openLinkText).toHaveBeenCalledOnce();
+    }),
+);

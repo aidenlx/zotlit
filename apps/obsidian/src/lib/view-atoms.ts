@@ -20,15 +20,22 @@ import type { ReactNode } from "react";
 
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { Notifier } from "@/lib/notifier";
+import type { ObsidianEnv } from "@/lib/obsidian-env";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { ItemLookup } from "@/services/item-lookup/service";
+import type { QueryService } from "@/services/item-query/service";
+import type { LibraryScope } from "@/services/library-scope/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import type { QueryClients } from "@/services/query-client/service";
 import type { Release } from "@/services/release/service";
 import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataReads } from "@/services/template-workbench/data-reads";
 import type { TemplateMigration } from "@/services/template/migration";
+import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -39,6 +46,13 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  */
 export type ViewServices =
   | CitationIndex
+  | CitationLookup
+  | ObsidianEnv
+  | ItemLookup
+  | NoteIndex
+  | QueryService
+  | LibraryScope
+  | UseLedger
   | MetadataCache
   | Notifier
   | PluginSettings
