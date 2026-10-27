@@ -1,9 +1,14 @@
-import type { BackgroundWindow } from "./page-notes-types.ts";
+import type { App, MarkdownView } from "obsidian";
+
+import type { QueryView } from "@/views/query-view/view";
+
+import type { RenameListener } from "./page-host.ts";
+import type { BackgroundWindow, PagePdfView } from "./page-notes-types.ts";
 
 /** Page state between calls. Migration batches augment this interface with their slots. */
 export interface PageScratch {
   windowBeforeReload?: boolean;
-  listenersBeforeReload?: Set<import("./page-host.ts").RenameListener>;
+  listenersBeforeReload?: Set<RenameListener>;
 }
 
 /** JSON handle for a Query View embedded in a Markdown note. */
@@ -21,14 +26,14 @@ export interface NoteQueryView {
   };
 }
 export type QueryViewElement = HTMLElement & {
-  zotlitQueryView?: import("@/views/query-view/view").QueryView;
+  zotlitQueryView?: QueryView;
 };
 
 /**
  * Self-contained: serialized into each receiving window. Keep all runtime
  * dependencies inside this function; type-only imports are erased.
  */
-export function createPageHelpers(app: import("obsidian").App) {
+export function createPageHelpers(app: App) {
   const scratch: PageScratch = {};
   async function annotationOpenSubpath(
     gesture: () => void | Promise<void>,
@@ -89,13 +94,11 @@ export function createPageHelpers(app: import("obsidian").App) {
   async function revealQueryView({ path, kind }: NoteQueryView) {
     const leaves = app.workspace
       .getLeavesOfType("markdown")
-      .filter(
-        (l) => (l.view as import("obsidian").MarkdownView).file?.path === path,
-      );
+      .filter((l) => (l.view as MarkdownView).file?.path === path);
     const leaf =
       leaves.find((l) => l === app.workspace.getMostRecentLeaf()) ?? leaves[0];
     if (!leaf) throw new Error(`Cannot reveal: note not open: ${path}`);
-    const view = leaf.view as import("obsidian").MarkdownView & {
+    const view = leaf.view as MarkdownView & {
       previewMode: {
         renderer: { sections: { el: HTMLElement; lines: number }[] };
       };
@@ -401,11 +404,44 @@ export function createPageHelpers(app: import("obsidian").App) {
     if (end < 0) throw new Error("Default Profile has no Query Block");
     return `${source.slice(0, start)}{% managed %}\n{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n{% endmanaged %}\n${source.slice(end + 4)}`;
   }
+  function pdfView(path: string): PagePdfView | undefined {
+    return app.workspace
+      .getLeavesOfType("pdf")
+      .map(({ view }) => view as PagePdfView)
+      .find(
+        (view) =>
+          view.file?.path === path &&
+          view.containerEl.getBoundingClientRect().width > 0,
+      );
+  }
+  function clientOfFirstPage(view: PagePdfView, x: number, y: number) {
+    const overlay = view.viewer.child
+      .getPage(1)!
+      .div.querySelector<SVGSVGElement>(".zt-pdf-annotation-overlay")!;
+    const box = overlay.getBoundingClientRect();
+    const frame = overlay.viewBox.baseVal;
+    return {
+      x: box.left + ((x - frame.x) * box.width) / frame.width,
+      y: box.top + ((frame.y + frame.height - y) * box.height) / frame.height,
+    };
+  }
+  function toolButton(view: PagePdfView, tool: string) {
+    return view.containerEl.querySelector<HTMLButtonElement>(
+      `[data-zt-tool="${CSS.escape(tool)}"]`,
+    );
+  }
+  function pageContainer(view: PagePdfView) {
+    return view.viewer.child.pdfViewer.pdfViewer.container;
+  }
   return {
     annotationOpenSubpath,
     showBehind,
     revealQueryView,
     scratch,
+    pdfView,
+    clientOfFirstPage,
+    toolButton,
+    pageContainer,
     press,
     until,
     stands,

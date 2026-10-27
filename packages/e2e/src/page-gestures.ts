@@ -49,13 +49,3 @@ export const MENU_READY =
  * light dismiss, and Obsidian's keymap in the window that has the key.
  */
 export const TRUSTED = `const trusted=(win)=>{const contents=win.electronWindow.webContents;const zoom=require('electron').webFrame.getZoomFactor();const delivered=(type)=>new Promise(r=>win.addEventListener(type,r,{once:true,capture:true}));return {key:async(keyCode,modifiers=[])=>{const up=delivered('keyup');contents.sendInputEvent({type:'keyDown',keyCode,modifiers});contents.sendInputEvent({type:'keyUp',keyCode,modifiers});await up;},click:async(el)=>{const b=el.getBoundingClientRect();const at={x:Math.round((b.left+b.width/2)*zoom),y:Math.round((b.top+b.height/2)*zoom),button:'left',clickCount:1};const up=delivered('mouseup');contents.sendInputEvent({type:'mouseDown',...at});contents.sendInputEvent({type:'mouseUp',...at});await up;}};};`;
-
-/**
- * Picks the view `name` in the view menu of a Query View, as a reader does:
- * presses the menu, waits for the view's row, and presses it. `view` is an
- * expression of the eval for the view; put it after `PAGE` in an `async` body.
- */
-export function pickQueryView(view: string, name: string): string {
-  const row = `[data-query-view-list]:popover-open [data-query-view-row=${JSON.stringify(name)}]`;
-  return `{const host=${view};press(host.contentEl.querySelector('[data-query-view-menu]'),'View menu');const row=await until(${JSON.stringify(`view menu row ${name}`)},()=>host.contentEl.querySelector(${JSON.stringify(row)}));press(row,${JSON.stringify(name)});}`;
-}
