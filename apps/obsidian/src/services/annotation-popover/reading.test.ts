@@ -47,9 +47,9 @@ async function harness(stack: AsyncDisposableStack) {
       read: (key) => bridge.runPromise(repository.read(key)),
       bridge,
       excerptDisplay: {
-        open: () => {
-          throw new Error("The hovered Annotation has no Excerpt Image");
-        },
+        open: Effect.die(
+          new Error("The hovered Annotation has no Excerpt Image"),
+        ),
       },
       excerptRequest: () =>
         Promise.reject(new Error("No Excerpt Image is asked for")),

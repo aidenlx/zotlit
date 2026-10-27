@@ -12,7 +12,7 @@ import type { HeldReadEvents } from "./service";
 import { layerQueryClients } from "./service";
 import type { TestClock as QueryTestClock } from "./test-clock";
 
-/** A plain test client with the Effect surface `ExcerptDisplayService` reads. */
+/** A plain test client with the Effect surface `ExcerptDisplays` reads. */
 export function taggedQueryClients(
   queries: PlainQueryClients,
 ): Pick<

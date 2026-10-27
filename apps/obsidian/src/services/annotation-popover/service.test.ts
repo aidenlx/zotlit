@@ -20,12 +20,12 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { ExcerptDisplayFixture } from "@/services/excerpt-image/__fixtures__/display";
 import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import {
   EXCERPT_DISPLAY,
   ExcerptDisplays,
-  ExcerptDisplayService,
 } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import { taggedQueryClients } from "@/services/query-client/__fixtures__";
@@ -62,9 +62,9 @@ async function harness(stack: AsyncDisposableStack) {
       read: (key) => bridge.runPromise(annotations.read(key)),
       bridge,
       excerptDisplay: {
-        open: () => {
-          throw new Error("No hovered Annotation here has an Excerpt Image");
-        },
+        open: Effect.die(
+          new Error("No hovered Annotation here has an Excerpt Image"),
+        ),
       },
       excerptRequest: () =>
         Promise.reject(new Error("No Excerpt Image is asked for")),
@@ -159,12 +159,10 @@ describe("AnnotationPopover", () => {
             Layer.succeed(AnnotationRepository, repository),
             Layer.succeed(
               ExcerptDisplays,
-              stubService<ExcerptDisplayService>("ExcerptDisplays", {
-                open: () => {
-                  throw new Error(
-                    "No hovered Annotation here has an Excerpt Image",
-                  );
-                },
+              stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
+                open: Effect.die(
+                  new Error("No hovered Annotation here has an Excerpt Image"),
+                ),
               }),
             ),
             Layer.succeed(ZoteroReads, reads),
@@ -225,7 +223,7 @@ describe("AnnotationPopover", () => {
               }),
               Layer.succeed(
                 ExcerptDisplays,
-                stubService<ExcerptDisplayService>("ExcerptDisplays", {}),
+                stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {}),
               ),
               Layer.succeed(
                 ZoteroReads,
@@ -314,12 +312,10 @@ describe("AnnotationPopover", () => {
             Layer.succeed(AnnotationRepository, repository),
             Layer.succeed(
               ExcerptDisplays,
-              stubService<ExcerptDisplayService>("ExcerptDisplays", {
-                open: () => {
-                  throw new Error(
-                    "No hovered Annotation here has an Excerpt Image",
-                  );
-                },
+              stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
+                open: Effect.die(
+                  new Error("No hovered Annotation here has an Excerpt Image"),
+                ),
               }),
             ),
             Layer.succeed(ZoteroReads, reads),
@@ -426,9 +422,9 @@ describe("AnnotationPopover", () => {
         },
         bridge,
         excerptDisplay: {
-          open: () => {
-            throw new Error("No hovered Annotation here has an Excerpt Image");
-          },
+          open: Effect.die(
+            new Error("No hovered Annotation here has an Excerpt Image"),
+          ),
         },
         excerptRequest: () =>
           Promise.reject(new Error("No Excerpt Image is asked for")),
@@ -496,9 +492,8 @@ describe("AnnotationPopover with an Excerpt Image", () => {
       new ExcerptImageService({ read: async () => redPng }),
     );
     const display = stack.use(
-      new ExcerptDisplayService({
+      new ExcerptDisplayFixture({
         queries: taggedQueryClients(queryClient),
-        bridge,
         resolve: (request, signal) => images.resolve(request, signal),
         stored: (request) => images.stored(request),
       }),
@@ -508,7 +503,7 @@ describe("AnnotationPopover with an Excerpt Image", () => {
         annotations,
         read: (key) => bridge.runPromise(annotations.read(key)),
         bridge,
-        excerptDisplay: display,
+        excerptDisplay: display.service,
         excerptRequest: ({ annotation, source }) =>
           savedExcerptRequest({
             annotation,
