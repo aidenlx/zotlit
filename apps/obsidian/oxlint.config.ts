@@ -673,12 +673,6 @@ export default defineConfig({
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
     },
     {
-      // Legacy services, written before the rule. A file moves off this list
-      // when its service converts to Effect (/obsidian-services).
-      files: ["src/services/excerpt-image/display.ts"],
-      rules: { "zotlit-services/no-legacy-service": "off" },
-    },
-    {
       // Tests written before the rule that assert zt: classes; a file moves off
       // this list when its assertions move to behavior.
       files: [

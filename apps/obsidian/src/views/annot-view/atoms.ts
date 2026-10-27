@@ -368,14 +368,10 @@ export const makeLibraryTagNamesCommand = () =>
   );
 
 export const openExcerptDemandCommand = viewRuntime.fn(() =>
-  Effect.flatMap(ExcerptDisplays, (display) =>
-    Effect.sync(() => display.open()),
-  ),
+  Effect.flatMap(ExcerptDisplays, (display) => display.open),
 );
 export const refreshExcerptDisplayCommand = viewRuntime.fn(() =>
-  Effect.flatMap(ExcerptDisplays, (display) =>
-    Effect.sync(() => display.refresh()),
-  ),
+  Effect.flatMap(ExcerptDisplays, (display) => display.refresh),
 );
 
 /** Two card menus can copy citations without cancelling each other's read. */

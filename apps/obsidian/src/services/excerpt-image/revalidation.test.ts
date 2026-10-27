@@ -65,7 +65,6 @@ const register = Effect.fn("test.register")(function* (
     source: AnnotationSource;
   }>();
   const revalidated = yield* Queue.unbounded<ExcerptRequest>();
-  const run = Effect.runSyncWith(yield* Effect.context<never>());
   yield* Layer.build(
     layerExcerptRevalidation.pipe(
       Layer.provide(
@@ -76,9 +75,8 @@ const register = Effect.fn("test.register")(function* (
           Layer.succeed(
             ExcerptDisplays,
             stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
-              revalidate: (request) => {
-                run(Queue.offer(revalidated, request));
-              },
+              revalidate: (request) =>
+                Queue.offer(revalidated, request).pipe(Effect.asVoid),
             }),
           ),
           Layer.succeed(

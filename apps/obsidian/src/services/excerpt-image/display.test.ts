@@ -5,7 +5,6 @@ import type { FileHandle } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -17,13 +16,14 @@ import {
 } from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 
+import { ExcerptDisplayFixture } from "./__fixtures__/display";
 import { settledDisplay } from "./__fixtures__/display-state";
 import { layerExcerptFiles } from "./__fixtures__/files";
 import { redPng } from "./__fixtures__/png";
 import { renderGate } from "./__fixtures__/render-gate";
 import type { GatedRender } from "./__fixtures__/render-gate";
 import { sizedWebp } from "./__fixtures__/webp";
-import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
+import { EXCERPT_DISPLAY } from "./display";
 import type { ExcerptDisplayDemand, ExcerptImageDisplay } from "./display";
 import { PNG_FORMAT, WEBP_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
@@ -101,7 +101,7 @@ function image(byte: number): ExcerptImage {
 interface Live extends AsyncDisposable {
   readonly queries: PlainQueryClients;
   readonly service: ExcerptImageService;
-  readonly display: ExcerptDisplayService;
+  readonly display: ExcerptDisplayFixture;
   readonly renders: GatedRender[];
   /** The store's own view of the devices images: what is cached, and its references. */
   readonly entries: Map<string, ExcerptEntry>;
@@ -152,12 +152,10 @@ function harness(): Live {
     }),
   );
   const queries = stack.use(queryClientsFixture());
-  const bridge = stack.use(openTestBridge());
   const storedReads: Promise<void>[] = [];
   const display = stack.use(
-    new ExcerptDisplayService({
+    new ExcerptDisplayFixture({
       queries: taggedQueryClients(queries),
-      bridge,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored: (storedRequest) => {
@@ -325,11 +323,9 @@ function resident(): Resident {
     ),
   );
   const queries = stack.use(queryClientsFixture());
-  const bridge = stack.use(openTestBridge());
   const display = stack.use(
-    new ExcerptDisplayService({
+    new ExcerptDisplayFixture({
       queries: taggedQueryClients(queries),
-      bridge,
       resolve: (request, signal) => service.resolve(request, signal),
       stored: (storedRequest) => service.stored(storedRequest),
     }),
@@ -749,11 +745,9 @@ describe("Excerpt Image live display", () => {
   it("leaves the stored fallback unread when the Held Read holds an image", async () => {
     await using service = new ExcerptImageService({ read: async () => redPng });
     await using queries = queryClientsFixture();
-    await using bridge = openTestBridge();
     const stored = vi.fn(async () => null);
-    await using display = new ExcerptDisplayService({
+    await using display = new ExcerptDisplayFixture({
       queries: taggedQueryClients(queries),
-      bridge,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored,

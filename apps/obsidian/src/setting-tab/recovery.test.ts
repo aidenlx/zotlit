@@ -39,7 +39,7 @@ describe("clearExcerptCache", () => {
               Context.add(
                 ExcerptDisplays,
                 stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
-                  clear: () => void calls.push("displays"),
+                  clear: Effect.sync(() => void calls.push("displays")),
                 }),
               ),
               Context.add(
@@ -152,7 +152,7 @@ describe("recovery notices", () => {
           Context.add(
             ExcerptDisplays,
             stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
-              clear: () => {},
+              clear: Effect.void,
             }),
           ),
           Context.add(

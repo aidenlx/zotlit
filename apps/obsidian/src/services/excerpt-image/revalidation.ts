@@ -33,9 +33,7 @@ export const layerExcerptRevalidation: Layer.Layer<
         record.key,
         savedExcerptRequestFor({ annotation: record, source }).pipe(
           Effect.tap((request) =>
-            request
-              ? Effect.sync(() => displays.revalidate(request))
-              : Effect.void,
+            request ? displays.revalidate(request) : Effect.void,
           ),
         ),
       ),
