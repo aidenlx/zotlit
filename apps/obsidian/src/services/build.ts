@@ -106,6 +106,7 @@ import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
 import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
+import { ZoteroReads } from "./zotero-reads/service";
 
 /** What the protocol handlers open: the note import's modals and the Attachment opener. */
 type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
