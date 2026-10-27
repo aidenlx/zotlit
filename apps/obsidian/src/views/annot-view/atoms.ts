@@ -282,7 +282,8 @@ export const makeRefreshCommand = () =>
     }).pipe(Effect.onExit(() => Effect.sync(request.complete))),
   );
 
-export const makeHistoryCommand = () =>
+/** History owns the confirmed write and its stack update until plugin unload. */
+export const annotationHistoryCommand = Atom.keepAlive(
   viewRuntime.fn(
     (request: {
       key: string;
@@ -298,7 +299,9 @@ export const makeHistoryCommand = () =>
           : repository.redo(request.key);
         yield* Effect.sync(() => request.complete(outcome));
       }),
-  );
+    { concurrent: true },
+  ),
+);
 
 export const enableLiveUpdatesCommand = viewRuntime.fn(() =>
   Effect.flatMap(PluginSettings, (settings) =>

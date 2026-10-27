@@ -3,16 +3,24 @@ import { Effect, Layer } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 
 import { AbortError } from "@/lib/abort-error";
+import {
+  scopedStack,
+  writable,
+  zoteroHolding,
+} from "@/services/annotation-repository/__fixtures__";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
+import type { HistoryOutcome } from "@/services/annotation-repository/service";
 import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
 import type { AnnotationInsertRequest } from "@/services/note-feature/citations-handle";
 import type { AnnotationInsert } from "@/services/note-feature/insert-annotation";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
+import { waitFor } from "@/views/welcome/__fixtures__";
 
 import { makeAnnotHost } from "./__fixtures__/host";
 import {
   annotationWriteCommand,
+  annotationHistoryCommand,
   makeExcerptRequestCommand,
   makeLibraryTagNamesCommand,
   editingCapabilityCommand,
@@ -469,4 +477,172 @@ it.effect("finishes a submitted card write after the last leaf closes", () =>
       { kind: "idle" },
     ]);
   }),
+);
+
+// #1710: another history key must leave the repository's pending step intact.
+it.effect(
+  "ignores a second history press without losing the first undo's redo",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* scopedStack;
+      const zotero = zoteroHolding("PUPR5FG5");
+      const sent = Promise.withResolvers<void>();
+      const answer = Promise.withResolvers<void>();
+      let hold = false;
+      stack.defer(() => answer.resolve());
+      const { service } = yield* Effect.promise(() =>
+        writable(stack, {
+          ...zotero.answers,
+          write: async (request) => {
+            if (hold) {
+              sent.resolve();
+              await answer.promise;
+            }
+            return zotero.answers.write(request);
+          },
+        }),
+      );
+      yield* service.openHistory("RGRPDF24");
+      yield* service.patchColor("PUPR5FG5", "#ff6666");
+      hold = true;
+      const host = yield* Effect.acquireDisposable(
+        Effect.sync(() => makeAnnotHost({ annotations: service })),
+      );
+      const command = annotationHistoryCommand;
+      const release = host.registry.mount(command);
+      yield* Effect.addFinalizer(() => Effect.sync(release));
+      const outcomes: HistoryOutcome[] = [];
+      const request = {
+        key: "RGRPDF24",
+        direction: "undo" as const,
+        complete: (outcome: HistoryOutcome) => outcomes.push(outcome),
+      };
+      host.registry.set(command, request);
+      yield* Effect.promise(() => sent.promise);
+      host.registry.set(command, request);
+      yield* Effect.promise(() =>
+        waitFor(() => expect(outcomes).toEqual([{ kind: "idle" }])),
+      );
+      answer.resolve();
+      yield* Effect.promise(() =>
+        waitFor(() => expect(outcomes).toHaveLength(2)),
+      );
+      expect(outcomes[1]).toEqual({
+        kind: "stepped",
+        annotationKey: "PUPR5FG5",
+      });
+      expect(yield* service.canRedo("RGRPDF24")).toBe(true);
+      expect(zotero.held?.color).toBe("#2ea8e5");
+    }),
+);
+
+it.effect(
+  "runs history steps for different attachments in one Query layout",
+  () =>
+    Effect.gen(function* () {
+      const answers = [
+        Promise.withResolvers<void>(),
+        Promise.withResolvers<void>(),
+      ];
+      const started: string[] = [];
+      const cancelled: string[] = [];
+      const host = yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          makeAnnotHost({
+            annotations: {
+              undo: (key) =>
+                Effect.promise((signal) => {
+                  const index = started.push(key) - 1;
+                  signal.addEventListener("abort", () => cancelled.push(key));
+                  return answers[index]!.promise.then(() => ({
+                    kind: "stepped" as const,
+                    annotationKey: key,
+                  }));
+                }),
+            },
+          }),
+        ),
+      );
+      const command = annotationHistoryCommand;
+      const release = host.registry.mount(command);
+      yield* Effect.addFinalizer(() => Effect.sync(release));
+      const outcomes: HistoryOutcome[] = [];
+      for (const key of ["PDFAAAAA", "PDFBBBBB"])
+        host.registry.set(command, {
+          key,
+          direction: "undo",
+          complete: (outcome) => outcomes.push(outcome),
+        });
+      expect(started).toEqual(["PDFAAAAA", "PDFBBBBB"]);
+      expect(cancelled).toEqual([]);
+      for (const answer of answers) answer.resolve();
+      yield* Effect.promise(() =>
+        waitFor(() => expect(outcomes).toHaveLength(2)),
+      );
+    }),
+);
+
+it.effect(
+  "keeps history after the last layout closes and interrupts it on plugin unload",
+  () =>
+    Effect.gen(function* () {
+      const answer = Promise.withResolvers<void>();
+      const expired = Promise.withResolvers<void>();
+      let cancelled = 0;
+      const host = yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          makeAnnotHost({
+            annotations: {
+              undo: () =>
+                Effect.promise((signal) => {
+                  signal.addEventListener("abort", () => {
+                    cancelled++;
+                  });
+                  return answer.promise.then(() => ({
+                    kind: "stepped" as const,
+                    annotationKey: "ANNOTAAA",
+                  }));
+                }),
+              redo: () =>
+                Effect.promise((signal) => {
+                  signal.addEventListener("abort", () => {
+                    cancelled++;
+                  });
+                  return new Promise<never>(() => {});
+                }),
+            },
+          }),
+        ),
+      );
+      const command = annotationHistoryCommand;
+      const release = host.registry.mount(command);
+      const outcomes: HistoryOutcome[] = [];
+      host.registry.set(command, {
+        key: "PDFAAAAA",
+        direction: "undo",
+        complete: (outcome) => outcomes.push(outcome),
+      });
+      release();
+      const sentinel = Atom.make(null);
+      host.registry.onNodeRemoved = (node) => {
+        if (node.atom === sentinel) expired.resolve();
+      };
+      host.registry.get(sentinel);
+      yield* Effect.promise(() => expired.promise);
+      expect(cancelled).toBe(0);
+      answer.resolve();
+      yield* Effect.promise(() =>
+        waitFor(() => expect(outcomes).toHaveLength(1)),
+      );
+      host.registry.set(command, {
+        key: "PDFAAAAA",
+        direction: "redo",
+        complete: (outcome) => outcomes.push(outcome),
+      });
+      host.registry.dispose();
+      yield* Effect.promise(() => waitFor(() => expect(cancelled).toBe(1)));
+      expect(outcomes).toEqual([
+        { kind: "stepped", annotationKey: "ANNOTAAA" },
+      ]);
+    }),
 );

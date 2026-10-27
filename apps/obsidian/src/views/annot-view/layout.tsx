@@ -50,7 +50,7 @@ import {
   makeAttachmentRead,
   makeHoldAttachmentsCommand,
   makeRefreshCommand,
-  makeHistoryCommand,
+  annotationHistoryCommand,
   annotationWriteCommand,
   annotationDraftCommand,
   editingCapabilityCommand,
@@ -262,7 +262,6 @@ export class AnnotationsLayout extends Component {
   readonly #insertCommand = makePrepareInsertCommand();
   readonly #excerptCommand = makeExcerptRequestCommand();
   readonly #tagNamesCommand = makeLibraryTagNamesCommand();
-  readonly #historyCommand = makeHistoryCommand();
   #reading: Promise<void> = Promise.resolve();
   #closed = false;
   /** The reader the Card Selection is kept in step with, while the host binds one. */
@@ -399,7 +398,7 @@ export class AnnotationsLayout extends Component {
       this.#tagNamesCommand,
       this.#holdAttachmentsCommand,
       this.#refreshCommand,
-      this.#historyCommand,
+      annotationHistoryCommand,
     ];
     for (const command of commands)
       subscriptions.defer(deps.registry.mount(command));
@@ -1075,7 +1074,7 @@ export class AnnotationsLayout extends Component {
    * @see apps/obsidian/policies/ui-seams.md
    */
   stepHistory(direction: HistoryDirection, attachmentKey: string): void {
-    this.#deps.registry.set(this.#historyCommand, {
+    this.#deps.registry.set(annotationHistoryCommand, {
       key: attachmentKey,
       direction,
       complete: (outcome) => {

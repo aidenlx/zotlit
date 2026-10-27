@@ -12,6 +12,7 @@ import type { Root } from "react-dom/client";
 import { AppContext } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { viewRuntime, ViewRegistryProvider } from "@/lib/view-atoms";
+import { readFilterValues } from "@/views/query-view/atoms";
 import { useFilterExpressions } from "@/views/query-view/expression-vocabulary";
 import { FilterEditor } from "@/views/query-view/filter-popover";
 import type { FilterValues } from "@/views/query-view/filter-popover";
@@ -26,7 +27,7 @@ const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
 const makeFilterModel = (query: QueryView) => ({
   state: Atom.make(query.state.getState()),
   values: viewRuntime.atom(
-    Effect.tryPromise((_signal) => query.filterValues()).pipe(
+    readFilterValues.pipe(
       Effect.catch((error) =>
         Effect.logWarning("The filter values could not be read", error).pipe(
           Effect.as(NO_VALUES),
