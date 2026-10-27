@@ -16,6 +16,7 @@ import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
+import { interruptedWithin } from "./__fixtures__/interrupt";
 import {
   awaitProfileSwitchConsent,
   switchNoteProfileInteractively,
@@ -57,10 +58,13 @@ function observeDialog() {
   };
 }
 
-/** Open the consent dialog for `options` on a fiber of its own. */
+/**
+ * Open the consent dialog for `options` on a detached fiber of its own, for
+ * {@link interruptedWithin}.
+ */
 const consentFor = (options: Parameters<typeof awaitProfileSwitchConsent>[1]) =>
   awaitProfileSwitchConsent(stubService<App>("App", {}), options).pipe(
-    Effect.forkChild({ startImmediately: true }),
+    Effect.forkDetach({ startImmediately: true }),
   );
 
 it.effect(
@@ -166,7 +170,7 @@ it.effect("closes the consent dialog when the switch is interrupted", () =>
       requested: "Papers",
       importedCount: 0,
     });
-    yield* Fiber.interrupt(decision);
+    expect(yield* interruptedWithin(decision)).toBe(true);
     expect(dialog.closed).toHaveBeenCalledOnce();
   }),
 );
@@ -349,12 +353,11 @@ it.effect.each(["new", "import"] as const)(
         noteAt("Books/2024/My title.md"),
       ).pipe(
         Effect.provide(harness.layer),
-        Effect.forkChild({ startImmediately: true }),
+        Effect.forkDetach({ startImmediately: true }),
       );
       yield* Deferred.await(opened);
-      yield* Fiber.interrupt(task);
+      expect(yield* interruptedWithin(task)).toBe(true);
       expect(close).toHaveBeenCalledOnce();
-      expect(Exit.hasInterrupts(yield* Fiber.await(task))).toBe(true);
       expect(switchNoteProfile).not.toHaveBeenCalled();
     }),
 );

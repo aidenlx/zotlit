@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Layer } from "effect";
+import { Deferred, Effect, Layer } from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
@@ -19,8 +19,14 @@ import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { ProfilePick } from "@/views/quick-switch/profile-picker";
 
+import { interruptedWithin } from "./__fixtures__/interrupt";
 import type { PlannedCreationProfile } from "./creation-planning";
-import { createdNoteNotice, createNoteInteractively } from "./creation-view";
+import {
+  createdNoteNotice,
+  createThroughSelection,
+  profilePickNotice,
+  resolveProfilePick,
+} from "./creation-view";
 import type {
   InteractiveCreationOptions,
   InteractiveCreationPorts,
@@ -131,14 +137,18 @@ const run = Effect.fnUntraced(function* (
   options?: InteractiveCreationOptions,
 ) {
   const context = yield* Layer.build(harness.layer);
-  const file = yield* createNoteInteractively(
+  const created = yield* createThroughSelection(
     harness.ports,
     ITEM,
     options,
   ).pipe(Effect.provideContext(context));
   yield* Effect.yieldNow;
-  return file;
+  return created;
 });
+
+/** Start {@link run} on a detached fiber, for {@link interruptedWithin}. */
+const start = (harness: ReturnType<typeof creation>) =>
+  run(harness).pipe(Effect.forkDetach({ startImmediately: true }));
 
 it.effect(
   "creates a note from the New profile dialog's prepared callback without re-resolving its path",
@@ -162,7 +172,10 @@ it.effect(
         { createProfile },
       );
       pickerAnswers(async () => ({ action: "new" }));
-      expect(yield* run(harness)).toBe(file);
+      expect(yield* run(harness)).toEqual({
+        file,
+        under: { label: "Reading" },
+      });
       expect(createProfile).toHaveBeenCalledWith({
         indexedKey: "ABCD2345",
         useForNote: true,
@@ -202,11 +215,9 @@ it.effect(
         { createProfile },
       );
       pickerAnswers(async () => ({ action: "new" }));
-      const fiber = yield* run(harness).pipe(
-        Effect.forkChild({ startImmediately: true }),
-      );
+      const fiber = yield* start(harness);
       yield* Deferred.await(entered);
-      yield* Fiber.interrupt(fiber);
+      expect(yield* interruptedWithin(fiber)).toBe(true);
       expect(stopped).toBe(true);
     }),
 );
@@ -231,7 +242,10 @@ it.effect(
         [preview],
       );
       pickerAnswers(async () => ({ id: BOOKS, label: "Books" }));
-      expect(yield* run(harness)).toMatchObject({ path: "Books/Paper.md" });
+      expect(yield* run(harness)).toEqual({
+        file: expect.objectContaining({ path: "Books/Paper.md" }),
+        under: { label: "Books" },
+      });
       expect(harness.feature.planCreations).toHaveBeenCalledExactlyOnceWith(
         [ITEM.indexedKey],
         {},
@@ -267,8 +281,9 @@ it.effect.each([false, true])(
         },
         [booksPreview({ selector: "default", label: undefined }), preview],
       );
-      expect(yield* run(harness, { direct })).toMatchObject({
-        path: "Books/Paper.md",
+      expect(yield* run(harness, { direct })).toEqual({
+        file: expect.objectContaining({ path: "Books/Paper.md" }),
+        under: { label: "Books", reason: MATCH_REASON },
       });
       expect(harness.feature.planCreations).toHaveBeenCalledExactlyOnceWith(
         [ITEM.indexedKey],
@@ -292,9 +307,11 @@ it.effect("creates directly under an explicit Profile, Default included", () =>
       { selector: "default", source: "headless", shouldAsk: true },
       [preview, booksPreview()],
     );
-    expect(
-      yield* run(harness, { headless: "default", direct: true }),
-    ).toMatchObject({ path: "Literature/Paper.md" });
+    // No label: the notice names Default.
+    expect(yield* run(harness, { headless: "default", direct: true })).toEqual({
+      file: expect.objectContaining({ path: "Literature/Paper.md" }),
+      under: { label: undefined, reason: undefined },
+    });
     expect(harness.feature.planCreations).toHaveBeenCalledWith(["ABCD2345"], {
       headless: "default",
     });
@@ -314,7 +331,8 @@ it.effect("creates under the bound Profile with no question", () =>
     harness.feature.createNote.mockReturnValue(
       Effect.succeed({ outcome: "created", file }),
     );
-    expect(yield* run(harness)).toBe(file);
+    // No `under`: the bound create shows the plain notice.
+    expect(yield* run(harness)).toStrictEqual({ file });
     expect(harness.feature.createNote).toHaveBeenCalledExactlyOnceWith(ITEM, {
       profile: "default",
     });
@@ -457,12 +475,10 @@ it.effect("closes the picker when the creation is interrupted", () =>
       { selector: "default", source: "bound", shouldAsk: true },
       [booksPreview()],
     );
-    const fiber = yield* run(harness).pipe(
-      Effect.forkChild({ startImmediately: true }),
-    );
+    const fiber = yield* start(harness);
     yield* Effect.yieldNow;
     expect(openLiteratureNoteProfile).toHaveBeenCalled();
-    yield* Fiber.interrupt(fiber);
+    expect(yield* interruptedWithin(fiber)).toBe(true);
     expect(close).toHaveBeenCalledOnce();
   }),
 );
@@ -484,16 +500,46 @@ it.effect.each(["new", "import"] as const)(
         { createProfile: () => dialog, importProfile: () => dialog },
       );
       pickerAnswers(async () => ({ action }));
-      const fiber = yield* run(harness).pipe(
-        Effect.forkChild({ startImmediately: true }),
-      );
+      const fiber = yield* start(harness);
       yield* Deferred.await(opened);
-      yield* Fiber.interrupt(fiber);
+      expect(yield* interruptedWithin(fiber)).toBe(true);
       expect(close).toHaveBeenCalledOnce();
-      expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true);
       expect(harness.feature.createNote).not.toHaveBeenCalled();
     }),
 );
+
+it.effect(
+  "settles a New profile dialog that failed as failed, with no choice",
+  () =>
+    Effect.gen(function* () {
+      const settled = yield* resolveProfilePick(
+        {
+          createProfile: () =>
+            Effect.fail(
+              new ProfileOperationError({
+                message: "broken",
+                cause: undefined,
+              }),
+            ),
+          importProfile: vi.fn(),
+        },
+        { action: "new" },
+        { indexedKey: "ABCD2345", useForNote: true },
+      ).pipe(Effect.provide(unimplementedProfileDialogServices));
+      expect(settled).toEqual({
+        choice: undefined,
+        created: undefined,
+        failed: true,
+      });
+    }),
+);
+
+it("tells the user only of a New profile dialog that failed", () => {
+  expect(profilePickNotice({ failed: true })).toBe(
+    m.notice_profile_action_failed(),
+  );
+  expect(profilePickNotice({ failed: false })).toBeUndefined();
+});
 
 it.effect("creates no note when the New profile dialog fails", () =>
   Effect.gen(function* () {

@@ -90,6 +90,8 @@ import { layerNoteFeature, NoteFeature } from "./service";
 import {
   batchCreateOutcome,
   BatchCreateRefusedError,
+  batchUpdateItems,
+  batchUpdateResultNotice,
   runBatchUpdate as runBatchUpdateEffect,
   runBatchUpdateAll as runBatchUpdateAllEffect,
 } from "./update-batch";
@@ -1176,15 +1178,24 @@ describe("one item without additional Profiles", () => {
           view: stubService<BatchUpdatePorts["view"]>("NoteImportView", {}),
         };
 
-        const result = yield* runBatchUpdateEffect(ports, [1], {
+        const result = yield* batchUpdateItems(ports, [1], {
           scope: "metadata",
         }).pipe(Effect.provide(layer));
 
-        expect(result).toEqual({ outcome: "single-update" });
+        expect(result).toEqual({ outcome: "metadata-no-note" });
         expect(createNote).not.toHaveBeenCalled();
         expect(opened).toEqual([]);
       }),
   );
+
+  it("tells the user of a metadata update that found no note, and of nothing else", () => {
+    expect(batchUpdateResultNotice({ outcome: "metadata-no-note" })).toBe(
+      m.notice_update_metadata_no_note(),
+    );
+    expect(
+      batchUpdateResultNotice({ outcome: "single-update" }),
+    ).toBeUndefined();
+  });
 
   it.effect("returns only after the note update has settled", () =>
     Effect.gen(function* () {

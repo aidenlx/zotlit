@@ -24,11 +24,12 @@ import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
+import { companionLinkNotice, followCompanionLink } from "./companion-view";
 import type {
   PlannedCreation,
   PlannedCreationProfile,
 } from "./creation-planning";
-import { companionNoteNotice, openCompanionNote } from "./index";
+import { companionNoteNotice } from "./index";
 import type {
   CompanionNoteTarget,
   CreationProfileSelection,
@@ -214,7 +215,7 @@ it.effect.each(["open", "update"] as const)(
           }),
         );
       });
-      yield* openCompanionNote(harness.deps, REF, {
+      yield* followCompanionLink(harness.deps, REF, {
         action,
         profile: PAPERS,
       }).pipe(Effect.provide(harness.layer));
@@ -247,7 +248,7 @@ it.effect(
         reason: m.profile_match_selected({ profile: "Papers" }),
       });
       vi.mocked(openLiteratureNoteProfile).mockClear();
-      yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
+      yield* followCompanionLink(harness.deps, REF, { action: "open" }).pipe(
         Effect.provide(harness.layer),
       );
       expect(harness.planCreations).toHaveBeenCalledExactlyOnceWith(
@@ -273,7 +274,7 @@ it.effect("asks when the selected Profile is unavailable", () =>
       problem: { kind: "unavailable-profile", selector: BOOKS },
     });
     pickerAnswersOnce(undefined);
-    yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
+    yield* followCompanionLink(harness.deps, REF, { action: "open" }).pipe(
       Effect.provide(harness.layer),
     );
     expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
@@ -297,7 +298,7 @@ it.effect("leaves a cancelled picker without a note or navigation", () =>
       shouldAsk: true,
     });
     pickerAnswersOnce(undefined);
-    yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
+    yield* followCompanionLink(harness.deps, REF, { action: "open" }).pipe(
       Effect.provide(harness.layer),
     );
     expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
@@ -318,7 +319,7 @@ it.effect("creates directly when only Default is available", () =>
       shouldAsk: false,
     });
     vi.mocked(openLiteratureNoteProfile).mockClear();
-    yield* openCompanionNote(harness.deps, REF, { action: "update" }).pipe(
+    yield* followCompanionLink(harness.deps, REF, { action: "update" }).pipe(
       Effect.provide(harness.layer),
     );
     expect(harness.create).toHaveBeenCalledExactlyOnceWith(harness.item, {
@@ -339,10 +340,12 @@ it.effect(
         source: "bound",
         shouldAsk: false,
       });
-      yield* openCompanionNote(harness.deps, REF, {
-        action: "update",
-        scope: "metadata",
-      }).pipe(Effect.provide(harness.layer));
+      expect(
+        yield* followCompanionLink(harness.deps, REF, {
+          action: "update",
+          scope: "metadata",
+        }).pipe(Effect.provide(harness.layer)),
+      ).toEqual({ outcome: "metadata-no-note" });
       expect(harness.readItems).not.toHaveBeenCalled();
       expect(harness.planCreations).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
@@ -366,10 +369,12 @@ it.effect(
       harness.feature.resolveCompanionNote.mockReturnValue(
         Effect.succeed(target),
       );
-      yield* openCompanionNote(harness.deps, REF, {
-        action: "open",
-        profile: PAPERS,
-      }).pipe(Effect.provide(harness.layer));
+      expect(
+        yield* followCompanionLink(harness.deps, REF, {
+          action: "open",
+          profile: PAPERS,
+        }).pipe(Effect.provide(harness.layer)),
+      ).toEqual({ outcome: "refused", target });
       expect(harness.workspace.opened).toEqual([]);
       expect(harness.readItems).not.toHaveBeenCalled();
       expect(companionNoteNotice(harness.deps.app, target)).toBe(
@@ -388,7 +393,7 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
     harness.feature.resolveCompanionNote.mockReturnValue(
       Effect.succeed({ outcome: "existing", files: [harness.file] }),
     );
-    yield* openCompanionNote(harness.deps, REF, {
+    yield* followCompanionLink(harness.deps, REF, {
       action: "update",
       profile: BOOKS,
       scope: "metadata",
@@ -423,10 +428,12 @@ it.effect(
       harness.feature.resolveCompanionNote.mockReturnValue(
         Effect.succeed(target),
       );
-      yield* openCompanionNote(harness.deps, REF, {
-        action: "update",
-        profile: "default",
-      }).pipe(Effect.provide(harness.layer));
+      expect(
+        yield* followCompanionLink(harness.deps, REF, {
+          action: "update",
+          profile: "default",
+        }).pipe(Effect.provide(harness.layer)),
+      ).toEqual({ outcome: "opened-as-is", target });
       expect(harness.workspace.opened).toHaveLength(1);
       expect(harness.feature.updateNote).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
@@ -455,7 +462,7 @@ it.effect.each(["tab"] as const)(
       harness.feature.resolveCompanionNote.mockReturnValue(
         Effect.succeed({ outcome: "existing", files: [harness.file] }),
       );
-      yield* openCompanionNote(harness.deps, REF, {
+      yield* followCompanionLink(harness.deps, REF, {
         action: "open",
         paneType,
       }).pipe(Effect.provide(harness.layer));
@@ -472,7 +479,7 @@ it.effect("opens a note it just created in the pane the link names", () =>
       source: "bound",
       shouldAsk: false,
     });
-    yield* openCompanionNote(harness.deps, REF, {
+    yield* followCompanionLink(harness.deps, REF, {
       action: "open",
       paneType: "window",
     }).pipe(Effect.provide(harness.layer));
@@ -519,7 +526,10 @@ it.effect.each(["open", "update"] as const)(
       const workspace = new MemoryWorkspace({ layoutReady: true });
       vi.mocked(openLiteratureNoteProfile).mockClear();
 
-      yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
+      const outcome = yield* followCompanionLink(deps, REF, {
+        action,
+        profile: PAPERS,
+      }).pipe(
         Effect.provide(
           flowLayer({
             workspace,
@@ -530,6 +540,7 @@ it.effect.each(["open", "update"] as const)(
         ),
       );
 
+      expect(outcome).toEqual({ outcome: "opened-as-is", target });
       expect(workspace.opened).toEqual([openedAt("Books/Paper.md", false)]);
       expect(resolveCompanionNote).toHaveBeenCalledWith("ABCD2345", {
         profile: PAPERS,
@@ -542,6 +553,31 @@ it.effect.each(["open", "update"] as const)(
       );
     }),
 );
+
+it("tells the user of a refused link, a note kept as is, and a metadata update with no note", () => {
+  const app = stubService<App>("App", {});
+  const refused = {
+    outcome: "refused" as const,
+    diagnostic: unknownProfileDiagnostic(PAPERS),
+  };
+  const kept = {
+    outcome: "existing" as const,
+    files: [noteAt("Books/Paper.md")] as [TFile],
+    keptProfile: { selector: BOOKS, label: "Books" },
+  };
+  expect(
+    companionLinkNotice(app, { outcome: "refused", target: refused }),
+  ).toBe(m.notice_literature_note_profile_unknown({ stamp: PAPERS }));
+  expect(
+    companionLinkNotice(app, { outcome: "opened-as-is", target: kept }),
+  ).toBe(m.notice_literature_note_profile_kept({ label: "Books" }));
+  expect(companionLinkNotice(app, { outcome: "metadata-no-note" })).toBe(
+    m.notice_update_metadata_no_note(),
+  );
+  expect(
+    companionLinkNotice(app, { outcome: "opened", file: noteAt("Paper.md") }),
+  ).toBeUndefined();
+});
 
 function noteAt(path: string): TFile {
   const file = new TFile();
