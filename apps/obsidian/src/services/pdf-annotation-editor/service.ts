@@ -12,6 +12,7 @@ import type { PDFFileView, View, WorkspaceLeaf } from "obsidian";
 
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { fromInstant, instantClock } from "@/lib/effect-clock";
+import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -132,7 +133,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       const unbind = (
         view: PDFFileView,
         binding: PdfViewBinding,
-        open: boolean,
+        { open }: { open: boolean },
       ) => {
         if (trackOpens) binding.close();
         if (!open || binding.filePath !== null) restoredViews.delete(view);
@@ -152,7 +153,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             binding.filePath === (openFileOf(view)?.path ?? null)
           )
             continue;
-          unbind(view, binding, open.has(view));
+          unbind(view, binding, { open: open.has(view) });
           changed = true;
         }
         for (const view of views) {
@@ -210,9 +211,14 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
         }
         yield* Effect.logDebug(
           "An open named another Attachment of the bound file",
-          { path: binding.filePath, bound: binding.historyAttachment },
+        ).pipe(
+          withLogCategory("pdf-annotation-editor"),
+          Effect.annotateLogs({
+            path: binding.filePath,
+            bound: binding.historyAttachment,
+          }),
         );
-        unbind(view, binding, true);
+        unbind(view, binding, { open: true });
         yield* reconcile;
       });
       const run = Effect.runSyncWith(yield* Effect.context<never>());
