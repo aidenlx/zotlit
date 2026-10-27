@@ -2,6 +2,7 @@
 // its frontmatter names. Read through `@/lib/view-atoms`.
 import { Effect, Stream } from "effect";
 import * as Atom from "effect/reactivity/Atom";
+import type { TFile } from "obsidian";
 
 import { filterTag } from "@/lib/effect-stream";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -9,6 +10,9 @@ import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { held } from "@/lib/view-atoms";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
+
+import { NoteIndex } from "./service";
+import type { NoteIndexChange } from "./service";
 
 /** The active file's path, and the key of the Item it is a note of. */
 export interface ActiveNote {
@@ -76,4 +80,110 @@ export const activeNoteAtom: Atom.Atom<ActiveNote> = held(activeNote, NO_NOTE);
 export const activeKeyAtom: Atom.Atom<string | null> = Atom.map(
   activeNoteAtom,
   (note) => note.key,
+);
+
+/** The Item keys that have a Literature Note, now and after each index change. */
+export const notedItemKeysAtom = held<ReadonlySet<string>>(
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const index = yield* NoteIndex;
+      return Stream.concat(
+        Stream.make(null),
+        index.changes.pipe(
+          Stream.filter((change) => change.type !== "frontmatter-changed"),
+        ),
+      ).pipe(
+        Stream.mapEffect(() =>
+          Effect.map(index.getIndexedItemKeys, (keys) => new Set(keys)),
+        ),
+      );
+    }),
+  ),
+  new Set<string>(),
+);
+
+/** The index facts that table cells and vault conditions read synchronously. */
+export interface NoteIndexSnapshot {
+  readonly keys: readonly string[];
+  readonly names: readonly string[];
+  readonly notes: ReadonlyMap<string, readonly TFile[]>;
+  readonly paths: Readonly<Record<string, number>>;
+  readonly structureRevision: number;
+  readonly change: NoteIndexChange | null;
+  readonly ready: boolean;
+}
+
+const EMPTY_INDEX_SNAPSHOT: NoteIndexSnapshot = {
+  keys: [],
+  names: [],
+  notes: new Map(),
+  paths: {},
+  structureRevision: 0,
+  change: null,
+  ready: false,
+};
+
+export const noteIndexSnapshotAtom = held<NoteIndexSnapshot>(
+  Stream.unwrap(
+    Effect.map(NoteIndex, (index) =>
+      Stream.concat(Stream.make(null), index.changes).pipe(
+        Stream.mapEffect((change) =>
+          Effect.gen(function* () {
+            const keys = yield* index.getIndexedItemKeys;
+            const names = yield* index.getPropertyNames;
+            const notes = new Map<string, readonly TFile[]>();
+            for (const key of keys)
+              notes.set(key, yield* index.getNotesByItemKey(key));
+            return { keys, names, notes, change };
+          }),
+        ),
+        Stream.scan(
+          () => EMPTY_INDEX_SNAPSHOT,
+          (previous, snapshot): NoteIndexSnapshot => ({
+            ...snapshot,
+            paths:
+              snapshot.change && snapshot.change.type !== "indexed"
+                ? {
+                    ...previous.paths,
+                    [snapshot.change.file.path]:
+                      (previous.paths[snapshot.change.file.path] ?? 0) + 1,
+                  }
+                : previous.paths,
+            structureRevision:
+              previous.structureRevision +
+              (snapshot.change && snapshot.change.type !== "frontmatter-changed"
+                ? 1
+                : 0),
+            ready: true,
+          }),
+        ),
+      ),
+    ),
+  ),
+  EMPTY_INDEX_SNAPSHOT,
+);
+
+export const noteIndexStructureRevisionAtom = Atom.map(
+  noteIndexSnapshotAtom,
+  (snapshot) => snapshot.structureRevision,
+);
+
+/** The most recent Literature Note of an Item, used to resolve comment links. */
+export const noteSourceAtom = Atom.family((key: string) =>
+  held(
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const index = yield* NoteIndex;
+        return Stream.concat(Stream.make(null), index.changes).pipe(
+          Stream.mapEffect(() =>
+            Effect.map(
+              index.getNotesByItemKey(key),
+              (notes) => notes[0]?.path ?? "",
+            ),
+          ),
+        );
+      }),
+    ),
+    "",
+  ),
 );

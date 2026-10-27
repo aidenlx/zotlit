@@ -3,24 +3,26 @@ import { Menu } from "@mock/obsidian";
 import { DateTime, Effect } from "effect";
 import type { App } from "obsidian";
 import type { MouseEvent } from "react";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
 import { toInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
+  AnnotationRepository,
   AnnotationRecord,
   TagDraft,
   TextFieldDraft,
 } from "@/services/annotation-repository/service";
-import type { ExcerptDisplayDemand } from "@/services/excerpt-image/display";
-import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
+import { makeAnnotHost } from "./__fixtures__/host";
 import { createAnnotActions } from "./actions";
-import type { AnnotActionDeps } from "./actions";
+import type { AnnotActionDeps as ActionDeps } from "./actions";
+type AnnotActionDeps = ActionDeps & {
+  annotations: AnnotationRepository["Service"];
+};
 import { hasQuotedText } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 import type { AnnotState } from "./store";
@@ -56,16 +58,20 @@ const LOCKED: CardControl = {
   },
 };
 
-const bridge = openTestBridge();
-afterAll(() => bridge[Symbol.asyncDispose]());
+let hosts = new AsyncDisposableStack();
+afterEach(async () => {
+  await hosts.disposeAsync();
+  hosts = new AsyncDisposableStack();
+});
+function testActions(deps: AnnotActionDeps) {
+  const host = hosts.use(makeAnnotHost({ annotations: deps.annotations }));
+  return createAnnotActions({ ...deps, registry: host.registry });
+}
 
 function inertActionDeps(): Partial<AnnotActionDeps> {
   return {
     now: () => toInstant(DateTime.nowUnsafe()),
     opener: stubService<AnnotActionDeps["opener"]>("TargetOpener", {}),
-    excerptDisplay: {
-      open: () => stubService<ExcerptDisplayDemand>("ExcerptDisplayDemand", {}),
-    },
     excerptImageRequest: async () => null,
     controls: () => stubService<CardControls>("CardControls", {}),
     selectedCards: () => [],
@@ -74,13 +80,6 @@ function inertActionDeps(): Partial<AnnotActionDeps> {
     setSelectedAttachmentKey: () => {},
     toggleSelectedTag: () => {},
     refresh: async () => {},
-    noteFeature: stubService<AnnotActionDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {
-        renderAnnotationCitation: async () =>
-          stubService<AnnotationCitation>("AnnotationCitation", {}),
-      },
-    ),
     onDragStart: () => {},
     renderComment: () => () => {},
     fillViewMenu: () => {},
@@ -146,7 +145,6 @@ function setup(
       }),
     }),
     annotations,
-    bridge,
     // Only a highlight or underline has a Quoted Text, as `cardControls` rules.
     controls: (annot: AnnotationRecord) => ({
       ...controls,
@@ -161,7 +159,7 @@ function setup(
     ...overrides,
   });
   return {
-    actions: createAnnotActions(deps),
+    actions: testActions(deps),
     selectAlone,
     openEditor,
     annotations,
@@ -511,9 +509,8 @@ describe("opening a card editor", () => {
           },
         },
       ),
-      bridge,
     });
-    return { actions: createAnnotActions(deps), calls };
+    return { actions: testActions(deps), calls };
   }
 
   it("saves and closes the open editor before the other opens", () => {
@@ -561,9 +558,8 @@ describe("the verbs that end a text field's draft", () => {
           discardConflict: call("discard conflict"),
         },
       ),
-      bridge,
     });
-    return { actions: createAnnotActions(deps), calls };
+    return { actions: testActions(deps), calls };
   }
 
   it("end the named field's draft, and leave the other field's", () => {

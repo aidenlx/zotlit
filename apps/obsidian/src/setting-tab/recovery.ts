@@ -18,14 +18,9 @@ import { LanguagePack } from "@/services/language-pack/service";
  */
 export const resetCitationIndex = Effect.fn("SettingTab.resetCitationIndex")(
   function* (confirm: Effect.Effect<boolean>) {
-    if (!(yield* confirm)) return;
-    yield* reportOutcome(
-      CitationIndex.use((index) => index.reset()),
-      {
-        success: () => m.notice_citation_index_reset(),
-        error: () => m.notice_citation_index_reset_failed(),
-      },
-    );
+    if (!(yield* confirm)) return "cancelled" as const;
+    yield* CitationIndex.use((index) => index.reset);
+    return "completed" as const;
   },
   withLogCategory("setting-tab", "advanced"),
 );
@@ -33,25 +28,37 @@ export const resetCitationIndex = Effect.fn("SettingTab.resetCitationIndex")(
 /** Empty the Excerpt Image store and release every display that paints from it. */
 export const clearExcerptCache = Effect.fn("SettingTab.clearExcerptCache")(
   function* (confirm: Effect.Effect<boolean>) {
-    if (!(yield* confirm)) return;
+    if (!(yield* confirm)) return "cancelled" as const;
     const displays = yield* ExcerptDisplays;
     const images = yield* ExcerptImageService;
-    yield* reportOutcome(
-      // The Held Reads go first: a card that repainted from the store while
-      // it emptied would hold an image the clear removed.
-      Effect.try({
-        try: () => displays.clear(),
-        catch: (cause) =>
-          new LegacyPortError({ step: "clear-excerpt-displays", cause }),
-      }).pipe(Effect.andThen(images.clear)),
-      {
-        success: () => m.notice_excerpt_cache_cleared(),
-        error: () => m.notice_excerpt_cache_clear_failed(),
-      },
-    );
+    // The Held Reads go first: a card that repainted from the store while
+    // it emptied would hold an image the clear removed.
+    yield* Effect.try({
+      try: () => displays.clear(),
+      catch: (cause) =>
+        new LegacyPortError({ step: "clear-excerpt-displays", cause }),
+    });
+    yield* images.clear;
+    return "completed" as const;
   },
   withLogCategory("setting-tab", "advanced"),
 );
+
+/** Report a confirmed index reset, preserving silence on cancellation. */
+export const reportResetCitationIndex = (confirm: Effect.Effect<boolean>) =>
+  reportOutcome(resetCitationIndex(confirm), {
+    success: (outcome) =>
+      outcome === "completed" ? m.notice_citation_index_reset() : undefined,
+    error: () => m.notice_citation_index_reset_failed(),
+  });
+
+/** Report a confirmed cache clear, preserving silence on cancellation. */
+export const reportClearExcerptCache = (confirm: Effect.Effect<boolean>) =>
+  reportOutcome(clearExcerptCache(confirm), {
+    success: (outcome) =>
+      outcome === "completed" ? m.notice_excerpt_cache_cleared() : undefined,
+    error: () => m.notice_excerpt_cache_clear_failed(),
+  });
 
 /**
  * Clear every downloaded Language Pack and the consent behind it. The pack

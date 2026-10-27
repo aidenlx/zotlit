@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 // The Query File tab writes a toolbar change to its file at once, through
 // its own save, and the toolbar says when the write failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
@@ -11,11 +10,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
-import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
+import { testAnnotHost } from "@/views/annot-view/__fixtures__/host";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
+// @vitest-environment happy-dom
+import { makeQueryHost } from "./__fixtures__/host";
 import { noLiteratureNotes } from "./__fixtures__/literature-notes";
 import { QueryFileView } from "./file-view";
 import type { QueryViewDeps } from "./view";
@@ -41,10 +41,10 @@ const EMPTY: QueryViewOutcome = {
   },
 };
 
-let cleanup = new DisposableStack();
-afterEach(() => {
-  cleanup.dispose();
-  cleanup = new DisposableStack();
+let cleanup = new AsyncDisposableStack();
+afterEach(async () => {
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   document.body.replaceChildren();
 });
 
@@ -68,7 +68,7 @@ async function openTab() {
   });
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
-    bridge: effectBridge(runtime),
+    registry: testAnnotHost().registry,
     app,
     reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
@@ -81,33 +81,17 @@ async function openTab() {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: stubService<QueryViewDeps["cardFocus"]>("QueryCardFocus", {
       hold: () => ({ [Symbol.dispose]: () => {} }),
     }),
-    annotations: stubService<QueryViewDeps["annotations"]>(
-      "Annotations",
-      annotationReads(),
-    ),
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
-    libraryTagNames: async () => [],
-    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: "/Zotero",
-      baseAttachmentPath: null,
-    }),
-    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      { open: vi.fn(), refresh: vi.fn() },
-    ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {},
-    ),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     updateHeader: vi.fn(),
   });

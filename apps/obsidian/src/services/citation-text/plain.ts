@@ -1,13 +1,11 @@
 /** Document citation text for the editor and reading surfaces. */
-import { Effect, Stream } from "effect";
+import { Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
 import { effectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 
 import { CitationText } from "./service";
-
-export type PlainCitationText = ReturnType<typeof plainCitationText>;
 
 export function plainCitationText(
   runtime: ManagedRuntime.ManagedRuntime<CitationText, never>,
@@ -36,8 +34,7 @@ export function plainCitationText(
     async read(path: string, { signal }: { signal?: AbortSignal } = {}) {
       if (bridge.closed()) return null;
       const exit = await bridge.runPromiseExit(
-        // The read is a `tryPromise`: reject with what the read rejected with.
-        service.read(path).pipe(Effect.mapError(({ cause }) => cause)),
+        service.read(path),
         signal === undefined ? undefined : { signal },
       );
       // The caller's signal interrupts the read and rejects with its reason.

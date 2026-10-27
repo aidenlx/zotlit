@@ -8,7 +8,6 @@ import { expect, it, vi } from "vitest";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
-import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -33,12 +32,11 @@ const OPTIONS = { itemKey: "ABCD2345", scope: "full" } as const;
 
 /** The note actions over `updateNote`, bound as `build.ts` binds them. */
 function actionsOver(updateNote: NoteFeature["Service"]["updateNote"]) {
-  const notifier = testNotifier();
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, { updateNote }),
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(LibraryScope, {}),
       Layer.mock(MetadataCache, {}),
       Layer.mock(NoteImporter, {}),
@@ -62,7 +60,7 @@ function actionsOver(updateNote: NoteFeature["Service"]["updateNote"]) {
       notices: stubService<BatchUpdateNotices>("BatchUpdateNotices", {}),
     },
   );
-  return { runtime, actions, notifier };
+  return { runtime, actions };
 }
 
 function noteAt(path: string): TFile {
@@ -71,21 +69,18 @@ function noteAt(path: string): TFile {
   return file;
 }
 
-it("resolves when the action ends, after its notice tells the outcome", async () => {
+it("resolves when the action ends, after it updated the note", async () => {
   const file = noteAt("Books/Paper.md");
   const updateNote = vi.fn<NoteFeature["Service"]["updateNote"]>(() =>
     Effect.succeed(UPDATED),
   );
-  const { runtime, actions, notifier } = actionsOver(updateNote);
+  const { runtime, actions } = actionsOver(updateNote);
 
   await expect(actions.updateNote(file, OPTIONS)).resolves.toBeUndefined();
   expect(updateNote).toHaveBeenCalledWith(file, {
     indexedKey: "ABCD2345",
     scope: "full",
   });
-  expect(notifier.notices.map(({ messages }) => messages.at(-1))).toEqual([
-    m.notice_updated_note(),
-  ]);
   await runtime.dispose();
 });
 
@@ -93,7 +88,7 @@ it("resolves when the action ends, after its notice tells the outcome", async ()
 // action stops at its first wait.
 it("resolves an action called after unload and stops it at its first wait", async () => {
   let finished = false;
-  const { runtime, actions, notifier } = actionsOver(() =>
+  const { runtime, actions } = actionsOver(() =>
     Effect.yieldNow.pipe(
       Effect.andThen(
         Effect.sync(() => {
@@ -109,9 +104,6 @@ it("resolves an action called after unload and stops it at its first wait", asyn
     actions.updateNote(noteAt("Books/Paper.md"), OPTIONS),
   ).resolves.toBeUndefined();
   expect(finished).toBe(false);
-  expect(notifier.notices.map(({ messages }) => messages.at(-1))).not.toContain(
-    m.notice_updated_note(),
-  );
 });
 
 it("interrupts an action in flight at unload and resolves", async () => {

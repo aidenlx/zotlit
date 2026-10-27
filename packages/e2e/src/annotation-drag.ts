@@ -1,6 +1,11 @@
 // Real Annotation View drag insertion across main and pop-out windows.
 import { expect } from "vitest";
 
+import {
+  annotationPreparationProbe,
+  resetAnnotationPreparation,
+  restoreAnnotationPreparation,
+} from "./annotation-preparation.ts";
 import { obEval, obEvalUntil } from "./obsidian-cli.ts";
 
 export async function verifyAnnotationDrag(
@@ -9,13 +14,14 @@ export async function verifyAnnotationDrag(
   targetHost: "main" | "popout",
 ) {
   const state = "app.__zotlitDragTrial";
+  const probe = await annotationPreparationProbe();
   try {
     await obEval(
       vaultId,
       `(async()=>{
       const s=app.__zotlitDragTrial={layout:app.workspace.getLayout(),mainWin:app.workspace.rootSplit.containerEl.win};
       const services=app.plugins.plugins.zotlit.services;s.services=services;
-      s.original=services.noteFeature.prepareAnnotationInsert;
+      ${probe}
       s.link=app.fileManager.generateMarkdownLink;
       app.fileManager.generateMarkdownLink=function(file,...args){if(file.name?.startsWith('zotlit-excerpt-')&&!app.vault.getFileByPath(file.path))throw new Error('Excerpt link rendered before vault registration');return s.link.call(this,file,...args);};
       s.importEnabled=services.bridge.runSync(services.settings.current)['attachment.import'];services.bridge.runSync(services.settings.update({'attachment.import':true}));
@@ -24,8 +30,7 @@ export async function verifyAnnotationDrag(
       s.editor=s.targetLeaf.view.editor;s.editor.setValue('LEFT RIGHT');
       s.viewLeaf=app.workspace.getRightLeaf(false);await s.viewLeaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:'RUGIER24'}});${sourceHost === "popout" ? "app.workspace.moveLeafToPopout(s.viewLeaf);" : ""}
       s.view=s.viewLeaf.view;await s.view.read;app.workspace.setActiveLeaf(s.viewLeaf,{focus:true});
-      s.prepareCalls=0;s.finished=0;s.gate=new Promise(resolve=>s.release=resolve);
-      services.noteFeature.prepareAnnotationInsert=async options=>{s.prepareCalls++;s.options=options;await s.gate;try{return await s.original(options);}finally{s.finished++;}};
+      ${resetAnnotationPreparation}
       return true;
     })()`,
     );
@@ -148,6 +153,13 @@ export async function verifyAnnotationDrag(
         `String(app.workspace.activeLeaf===${state}.viewLeaf&&app.workspace.activeLeaf!==${state}.targetLeaf)`,
       ),
     ).toBe("true");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(${state}.editor.getValue().includes('![[zotlit-excerpt-'))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const text = JSON.parse(
       await obEval(vaultId, `JSON.stringify(${state}.editor.getValue())`),
     ) as string;
@@ -179,7 +191,7 @@ export async function verifyAnnotationDrag(
   } finally {
     await obEval(
       vaultId,
-      `(async()=>{const s=${state};if(!s)return true;try{s.release?.();if(s.original)s.services.noteFeature.prepareAnnotationInsert=s.original;if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.editor?.cm&&s.posAtCoords)s.editor.cm.posAtCoords=s.posAtCoords;if(s.importEnabled!==undefined)s.services.bridge.runSync(s.services.settings.update({'attachment.import':s.importEnabled}));}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete app.__zotlitDragTrial;}}return true;})()`,
+      `(async()=>{const s=${state};if(!s)return true;try{${restoreAnnotationPreparation}if(s.link)app.fileManager.generateMarkdownLink=s.link;if(s.editor?.cm&&s.posAtCoords)s.editor.cm.posAtCoords=s.posAtCoords;if(s.importEnabled!==undefined)s.services.bridge.runSync(s.services.settings.update({'attachment.import':s.importEnabled}));}finally{try{if(s.layout)await app.workspace.changeLayout(s.layout);}finally{delete app.__zotlitDragTrial;}}return true;})()`,
     );
   }
 }

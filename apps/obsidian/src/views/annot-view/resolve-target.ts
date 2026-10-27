@@ -4,7 +4,7 @@ import type { Library } from "@zotlit/db";
 
 import type { ReaderSessionTarget } from "@/services/reader-session/session";
 
-import type { AttachmentLock } from "./store";
+import type { AttachmentLock } from "./state";
 
 /** What the view reads, in the one identity every surface shares. */
 export interface LoadTarget {

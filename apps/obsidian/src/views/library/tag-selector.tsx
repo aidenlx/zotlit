@@ -6,7 +6,6 @@
 // @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
-import { useStore } from "zustand";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -14,6 +13,7 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import { TAG_CHIP_CLASS } from "./chip";
 import type { LibraryTree } from "./library-tree";
+import { useTreeState } from "./tree-model";
 
 /**
  * The tag names to show out of `names`: those that hold `filter`, whatever
@@ -42,9 +42,9 @@ const STEPS: Readonly<Record<string, (at: number, last: number) => number>> = {
 };
 
 export function TagSelector({ tree }: { tree: LibraryTree }) {
-  const names = useStore(tree.store, (s) => s.tagList);
-  const selected = useStore(tree.store, (s) => s.tags);
-  const filter = useStore(tree.store, (s) => s.tagFilter);
+  const names = useTreeState((s) => s.tagList);
+  const selected = useTreeState((s) => s.tags);
+  const filter = useTreeState((s) => s.tagFilter);
   const headingId = useUniqueId();
   const filterLabel = useUniqueId();
   // The chip Tab lands on: the last one the keyboard reached, else the first.

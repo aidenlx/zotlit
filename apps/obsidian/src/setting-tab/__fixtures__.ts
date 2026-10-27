@@ -1,6 +1,15 @@
 // The tab service over a test's own services, for builders and the tab class.
 
-import { Context, Effect, Exit, FileSystem, Layer, Queue, Scope } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  FileSystem,
+  Layer,
+  Queue,
+  Scope,
+} from "effect";
 import { onTestFinished } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -159,6 +168,33 @@ export const rebuildingSettingTab = Effect.fnUntraced(function* (
   });
   return { tab, notices, rebuilt };
 });
+
+/** A handler Effect that `run` received: how it ended, and its label. */
+export interface RecordedRun {
+  readonly exit: Exit.Exit<unknown, unknown>;
+  readonly label: string | undefined;
+}
+
+/**
+ * `tab` with a `run` that also records each handler's Exit and label, for a
+ * row test that tells a failed action from a done one. The label's notice is
+ * `run`'s own behavior, which effect-tab.test.ts covers.
+ */
+export function recordingRuns(tab: SettingTabShape) {
+  const runs: RecordedRun[] = [];
+  const run: SettingTabShape["run"] = (effect, label) =>
+    tab.run(
+      effect.pipe(
+        Effect.onExit((exit) => Effect.sync(() => runs.push({ exit, label }))),
+      ),
+      label,
+    );
+  return { tab: { ...tab, run }, runs: runs as readonly RecordedRun[] };
+}
+
+/** The error a recorded run failed with, or `undefined` when it succeeded. */
+export const failureOf = ({ exit }: RecordedRun) =>
+  Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
 
 /** `scopedSettingTab` for a plain test: its fibers end when the test finishes. */
 export function testSettingTab(...args: Parameters<typeof scopedSettingTab>) {

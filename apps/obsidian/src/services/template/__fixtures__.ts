@@ -5,10 +5,11 @@ import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { layerHost, layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { buildRuntime } from "@/lib/effect-layer";
+import { loadedTextFileView } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
-import { layerVaultFrom } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -61,11 +62,17 @@ export async function buildTemplate(
   await using stack = new AsyncDisposableStack();
   const runtime = buildRuntime(
     layerTemplate.pipe(
-      // A host that stubs only the vault: the tags the layer reads, no others.
       Layer.provide(
         Layer.mergeAll(
           Layer.succeed(ObsidianApp, options.app),
-          layerVaultFrom(options.app.vault),
+          layerHost({
+            vault: options.app.vault,
+            fileManager: options.app.fileManager,
+          }),
+          Layer.mock(Workspace, {
+            loadedTextView: (file) =>
+              Effect.sync(() => loadedTextFileView(options.app, file)),
+          }),
         ),
       ),
       Layer.provide(templateSettings(options.settings)),

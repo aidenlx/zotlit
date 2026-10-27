@@ -34,7 +34,6 @@ export { itemKeyFromFrontmatter, noteKeyFromFrontmatter };
 export {
   isLiteratureNote,
   resolveIndexedKey,
-  resolveLiteratureNote,
   type ResolvedLiteratureNote,
 } from "./literature-note";
 

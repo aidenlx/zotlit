@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
 import { passAborted } from "@/lib/abort-error";
@@ -235,6 +235,7 @@ export async function buildServices(
   return container
     .useValue({ runtime: () => runtime })
     .useValue({ bridge: () => bridge })
+    .useValue({ fileSystem: () => runtime.runSync(FileSystem.FileSystem) })
     .useValue({
       settings: () => runtime.runSync(PluginSettings),
     })
@@ -384,9 +385,9 @@ export async function buildServices(
         ),
     })
     .useValue({
-      templateMigration: ({ settings }) => {
+      templateMigration: () => {
         bindMigration({
-          openPrompt: () => openWelcomeView(plugin.app, settings, bridge),
+          openPrompt: () => openWelcomeView(plugin.app),
         });
         return plainTemplateMigration(runtime);
       },

@@ -35,7 +35,6 @@ describe("Duplicate Profile workbench handoff", () => {
           expect(close).toHaveBeenCalledOnce();
         });
         const duplicate = vi.fn(() => Effect.succeed(COPY));
-        const notifier = testNotifier();
 
         yield* duplicateProfileToWorkbench(id as ProfileSelector).pipe(
           Effect.provide(
@@ -45,10 +44,7 @@ describe("Duplicate Profile workbench handoff", () => {
               }),
               Layer.mock(Profile, {
                 resolveProfile: () =>
-                  Effect.succeed({
-                    ...profileReader().resolveProfile("default")!,
-                    label: "Reading",
-                  }),
+                  Effect.succeed(profileReader().resolveProfile("default")!),
                 duplicate,
               }),
               Layer.succeed(
@@ -57,7 +53,7 @@ describe("Duplicate Profile workbench handoff", () => {
                   closeSettings: Effect.sync(close),
                 }),
               ),
-              notifier.layer,
+              testNotifier().layer,
             ),
           ),
         );
@@ -66,9 +62,6 @@ describe("Duplicate Profile workbench handoff", () => {
         expect(customize).toHaveBeenCalledExactlyOnceWith({
           profileId: COPY.id,
         });
-        expect(notifier.notices.map(({ messages: [text] }) => text)).toEqual([
-          m.notice_profile_duplicated({ label: "Reading" }),
-        ]);
       }),
   );
 });

@@ -1,12 +1,42 @@
+import { TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { InertTemplateError } from "@/services/template/errors";
 
+import { NotePathUnavailable } from "./note-path";
 import {
+  createNoteToast,
   duplicateLiteratureNoteWarning,
   updateNoteToast,
 } from "./update-single";
+
+describe("createNoteToast", () => {
+  const file = new TFile();
+  file.path = "Books/Paper.md";
+
+  it("reports a created note, in the caller's words when it gives them", () => {
+    const created = { outcome: "created", file } as const;
+
+    expect(createNoteToast({}).success(created)).toBe(m.notice_created_note());
+    expect(
+      createNoteToast({ created: (note) => `Made ${note.path}` }).success(
+        created,
+      ),
+    ).toBe("Made Books/Paper.md");
+  });
+
+  it("reports a create that failed", () => {
+    expect(
+      createNoteToast({}).error(
+        new NotePathUnavailable({
+          message: "The filename template rendered nothing",
+          cause: new Error("The filename template rendered nothing"),
+        }),
+      ),
+    ).toBe(m.notice_create_note_failed());
+  });
+});
 
 describe("updateNoteToast", () => {
   it("surfaces a Profile refusal for a metadata-only update", () => {

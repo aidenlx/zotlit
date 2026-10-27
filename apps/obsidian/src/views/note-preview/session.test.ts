@@ -307,10 +307,10 @@ describe("native preview load boundaries", () => {
     });
     const changed = vi.fn();
     session.state.subscribe(changed);
+    expect(session.state.getState().snapshot).toBeNull();
     session[Symbol.dispose]();
     pending.resolve(await acquire());
     await session.ready;
     expect(changed).not.toHaveBeenCalled();
-    expect(session.state.getState().snapshot).toBeNull();
   });
 });

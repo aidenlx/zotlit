@@ -16,9 +16,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { yieldToMain } from "@/lib/yield-to-main";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -26,16 +26,11 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 
-import { registerPandocExport } from "./register";
-import type { PandocExportDeps } from "./register";
+import { exportWithCitations, registerPandocExport } from "./register";
+import type { PandocExportDeps, PandocExportOutcome } from "./register";
 
 /** The styles Zotero has installed while the export dialog is open. */
 const zotero = vi.hoisted(() => ({ styles: [] as InstalledCslStyle[] }));
-const notices = vi.hoisted(() => ({
-  showExportFailure: vi.fn(),
-  /** Every message a finished export showed. */
-  shown: [] as string[],
-}));
 /** How the stubbed export run ends. */
 const exportRun = vi.hoisted(() => ({
   /** Interrupt the run, as unloading the plugin does. */
@@ -47,7 +42,6 @@ vi.mock("@/services/pandoc/styles", async (importOriginal) => {
     await importOriginal<typeof import("@/services/pandoc/styles")>();
   return {
     ...actual,
-    listInstalledStylesOrNone: () => Promise.resolve(zotero.styles),
     // An installed style resolves as Zotero lists it; anything else takes the
     // real resolver's answer for a data directory that holds no styles.
     resolveInstalledStyle: (
@@ -55,7 +49,7 @@ vi.mock("@/services/pandoc/styles", async (importOriginal) => {
     ) => {
       const listed = zotero.styles.find(({ id }) => id === args[1].styleId);
       return listed
-        ? Promise.resolve({
+        ? Effect.succeed({
             kind: "installed" as const,
             styleId: listed.id,
             title: listed.title,
@@ -73,23 +67,9 @@ vi.mock("@/services/pandoc/export", async (importOriginal) => ({
       ? Effect.interrupt
       : Effect.succeed({ output: new Uint8Array() }),
 }));
-vi.mock("@/lib/notice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/notice")>();
-  return {
-    ...actual,
-    BaseNotice: class extends actual.BaseNotice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        if (typeof message === "string") notices.shown.push(message);
-      }
-    },
-  };
-});
-vi.mock("./notices", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./notices")>()),
-  showExportFailure: notices.showExportFailure,
+vi.mock("@/services/pandoc/installed-styles", () => ({
+  listInstalledStylesOrNone: () => Effect.succeed(zotero.styles),
 }));
-
 const DATA_DIR = "/zotero";
 const BASE_PATH = "/vault";
 const NOTE_STYLE = {
@@ -164,6 +144,58 @@ function openVault({
     }),
   });
 
+  const deps = stubService<PandocExportDeps>("PandocExportDeps", {
+    fileSystem: nodeFileSystem,
+    app,
+    pandocEngine: {
+      binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
+        getStatus: Effect.succeed(
+          engineInstalled
+            ? {
+                kind: "installed",
+                version: "test",
+                binary: {
+                  directory: "pandoc-engine",
+                  name: "pandoc.wasm",
+                },
+              }
+            : { kind: "absent" },
+        ),
+        getEngine: Effect.promise(() => getEngine()).pipe(
+          Effect.map(() =>
+            stubService<CitationEngine>("CitationEngine", {
+              [Symbol.asyncDispose]: async () => {},
+            }),
+          ),
+        ),
+      }),
+      runSync: Effect.runSync,
+      runPromise: Effect.runPromise,
+    },
+    zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
+      dataDir: DATA_DIR,
+      httpPort: 23119,
+      get: () => undefined,
+    }),
+    db: stubService<PandocExportDeps["db"]>("ZoteroReads", {}),
+    citationParse: stubService<PandocExportDeps["citationParse"]>(
+      "CitationParse",
+      {},
+    ),
+    zoteroHttp: stubService<PandocExportDeps["zoteroHttp"]>("ZoteroHttp", {}),
+    citationLookup: {
+      read: async () => lookupAnswer(),
+    },
+    settings: { current: Effect.succeed(resolvedSettings) },
+    bridge: {
+      runSync: Effect.runSync,
+      runPromiseExit: Effect.runPromiseExit,
+    },
+    profile: profileReader(resolvedSettings, {
+      getFileCache: () => ({ frontmatter }),
+    }),
+    openSettings: () => undefined,
+  });
   registerPandocExport(
     stubService<Pick<Plugin, "addCommand" | "app">>("Plugin", {
       app,
@@ -172,105 +204,69 @@ function openVault({
         return added;
       },
     }),
-    stubService<PandocExportDeps>("PandocExportDeps", {
-      app,
-      pandocEngine: {
-        binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
-          getStatus: Effect.succeed(
-            engineInstalled
-              ? {
-                  kind: "installed",
-                  version: "test",
-                  binary: {
-                    directory: "pandoc-engine",
-                    name: "pandoc.wasm",
-                  },
-                }
-              : { kind: "absent" },
-          ),
-          getEngine: Effect.promise(() => getEngine()).pipe(
-            Effect.map(() =>
-              stubService<CitationEngine>("CitationEngine", {
-                [Symbol.asyncDispose]: async () => {},
-              }),
-            ),
-          ),
-        }),
-        runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
-      },
-      zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
-        dataDir: DATA_DIR,
-        httpPort: 23119,
-        get: () => undefined,
-      }),
-      db: stubService<PandocExportDeps["db"]>("ZoteroReads", {}),
-      citationParse: stubService<PandocExportDeps["citationParse"]>(
-        "CitationParse",
-        {},
-      ),
-      zoteroHttp: stubService<PandocExportDeps["zoteroHttp"]>("ZoteroHttp", {}),
-      citationLookup: {
-        read: async () => lookupAnswer(),
-      },
-      settings: { current: Effect.succeed(resolvedSettings) },
-      bridge: {
-        runSync: Effect.runSync,
-        runPromiseExit: Effect.runPromiseExit,
-      },
-      profile: profileReader(resolvedSettings, {
-        getFileCache: () => ({ frontmatter }),
-      }),
-      openSettings: () => undefined,
-    }),
+    deps,
   );
 
   if (!command) throw new Error("the export registered no command");
   const palette = command;
   return {
     file,
-    command: palette,
     /** Whether the engine was ever asked to convert anything. */
     converted: () => getEngine.mock.calls.length > 0,
     /** The command palette entry, as the palette offers it. */
     offered: () => palette.checkCallback?.(true) === true,
+    /** Run one export of the note, as the palette entry does. */
+    export: () => exportWithCitations(file, deps),
+    /** Run one export, and read the dialog it opens. */
+    openDialog: () => dialog(exportWithCitations(file, deps)),
     /** Run the command from the palette, and read the dialog it opens. */
-    async openDialog() {
+    openDialogFromPalette() {
       palette.checkCallback?.(false);
-      await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
-      const modal = Modal.instances.at(-1)!;
-      const rows = settingsOf(modal.contentEl);
-      const [format, style] = rows
-        .flatMap((row) => row.components)
-        .filter((component) => component instanceof DropdownComponent);
-      // The listing lands after the dialog is built, so the entries the user
-      // reads are the ones the resolved listing left in the picker.
-      await vi.waitFor(() => expect(style!.options.length).toBeGreaterThan(1));
-      return {
-        format: format!,
-        style: style!,
-        /** What the dialog says under the style picker. */
-        styleNote: () =>
-          rows.find((row) => row.name === m.pandoc_export_style_name())?.desc,
-        /** The destination the dialog names, as the user reads it. */
-        destination: () =>
-          rows.find((row) => row.name === m.pandoc_export_destination_name())
-            ?.desc,
-        /** Dismiss the dialog without answering, as closing its window does. */
-        dismiss: () => modal.close(),
-        confirm: () =>
-          rows
-            .flatMap((row) => row.components)
-            .find(
-              (component): component is ButtonComponent =>
-                component instanceof ButtonComponent &&
-                component.text === m.pandoc_export_confirm(),
-            )
-            ?.click(),
-        title: modal.title,
-      };
+      return dialog(null);
     },
   };
+
+  /**
+   * The dialog an export opened.
+   *
+   * @param outcome how the export ends, where the test holds it.
+   */
+  async function dialog(outcome: Promise<PandocExportOutcome> | null) {
+    await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
+    const modal = Modal.instances.at(-1)!;
+    const rows = settingsOf(modal.contentEl);
+    const [format, style] = rows
+      .flatMap((row) => row.components)
+      .filter((component) => component instanceof DropdownComponent);
+    // The listing lands after the dialog is built, so the entries the user
+    // reads are the ones the resolved listing left in the picker.
+    await vi.waitFor(() => expect(style!.options.length).toBeGreaterThan(1));
+    return {
+      format: format!,
+      style: style!,
+      /** What the dialog says under the style picker. */
+      styleNote: () =>
+        rows.find((row) => row.name === m.pandoc_export_style_name())?.desc,
+      /** The destination the dialog names, as the user reads it. */
+      destination: () =>
+        rows.find((row) => row.name === m.pandoc_export_destination_name())
+          ?.desc,
+      /** Dismiss the dialog without answering, as closing its window does. */
+      dismiss: () => modal.close(),
+      confirm: () =>
+        rows
+          .flatMap((row) => row.components)
+          .find(
+            (component): component is ButtonComponent =>
+              component instanceof ButtonComponent &&
+              component.text === m.pandoc_export_confirm(),
+          )
+          ?.click(),
+      title: modal.title,
+      /** How the export ended. */
+      outcome,
+    };
+  }
 }
 
 function markdownFile(path: string): TFile {
@@ -283,8 +279,6 @@ function markdownFile(path: string): TFile {
 beforeEach(() => {
   Modal.instances.length = 0;
   zotero.styles = [NOTE_STYLE, VAULT_STYLE];
-  notices.showExportFailure.mockClear();
-  notices.shown.length = 0;
   exportRun.unload = false;
 });
 
@@ -346,9 +340,12 @@ describe("the Export note with citations command", () => {
   it("opens no dialog for a note whose own style property holds no ID", async () => {
     const vault = openVault({ note: { "zotlit-csl": ["a-list"] } });
 
-    vault.command.checkCallback?.(false);
-    await vi.waitFor(() => expect(vault.converted()).toBe(false));
+    expect(await vault.export()).toEqual({
+      kind: "failed",
+      problem: { kind: "document-style-invalid" },
+    });
 
+    expect(vault.converted()).toBe(false);
     expect(Modal.instances).toHaveLength(0);
   });
 
@@ -420,18 +417,31 @@ describe("the Export note with citations command", () => {
     const dialog = await vault.openDialog();
     dialog.confirm();
 
-    await vi.waitFor(() =>
-      expect(notices.shown).toContain(
-        m.notice_pandoc_export_done({
-          file: "draft.docx",
-          style: VAULT_STYLE.title,
-        }),
-      ),
-    );
+    expect(await dialog.outcome).toEqual({
+      kind: "exported",
+      destination: join(basePath, "draft.docx"),
+      styleTitle: VAULT_STYLE.title,
+    });
     expect(await readFile(join(basePath, "draft.docx"))).toHaveLength(0);
   });
 
-  it("ends without a notice or a file where the export run is interrupted", async () => {
+  it("writes the export the palette entry runs", async () => {
+    await using stack = new AsyncDisposableStack();
+    const basePath = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({ note: {}, basePath });
+
+    const dialog = await vault.openDialogFromPalette();
+    dialog.confirm();
+
+    await vi.waitFor(async () =>
+      expect(await readdir(basePath)).toEqual(["draft.docx"]),
+    );
+  });
+
+  it("stops without a file where the export run is interrupted", async () => {
     exportRun.unload = true;
     await using stack = new AsyncDisposableStack();
     const basePath = stack.adopt(
@@ -442,12 +452,9 @@ describe("the Export note with citations command", () => {
 
     const dialog = await vault.openDialog();
     dialog.confirm();
-    await vi.waitFor(() => expect(vault.converted()).toBe(true));
-    // The interrupted run settles in microtasks, before this macrotask yield.
-    await yieldToMain();
 
-    expect(notices.showExportFailure).not.toHaveBeenCalled();
-    expect(notices.shown).toEqual([]);
+    expect(await dialog.outcome).toEqual({ kind: "stopped" });
+    expect(vault.converted()).toBe(true);
     expect(await readdir(basePath)).toEqual([]);
   });
 
@@ -460,12 +467,10 @@ describe("the Export note with citations command", () => {
     const dialog = await vault.openDialog();
     dialog.confirm();
 
-    await vi.waitFor(() =>
-      expect(notices.showExportFailure).toHaveBeenCalledWith({
-        kind: "style-invalid",
-        style: MISSING_STYLE_ID,
-      }),
-    );
+    expect(await dialog.outcome).toEqual({
+      kind: "failed",
+      problem: { kind: "style-invalid", style: MISSING_STYLE_ID },
+    });
     expect(vault.converted()).toBe(false);
   });
 
@@ -490,12 +495,10 @@ describe("the Export note with citations command", () => {
     expect(dialog.style.getValue()).toBe(MISSING_STYLE_ID);
     dialog.confirm();
 
-    await vi.waitFor(() =>
-      expect(notices.showExportFailure).toHaveBeenCalledWith({
-        kind: "profile-style-invalid",
-        styleId: MISSING_STYLE_ID,
-      }),
-    );
+    expect(await dialog.outcome).toEqual({
+      kind: "failed",
+      problem: { kind: "profile-style-invalid", styleId: MISSING_STYLE_ID },
+    });
     expect(vault.converted()).toBe(false);
   });
 });

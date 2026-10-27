@@ -1,4 +1,5 @@
-// A run waits for the OS to report room and for the previous run to settle.
+// Runs use available memory and wait in arrival order while pressure is high.
+import { regex } from "arkregex";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
@@ -27,17 +28,30 @@ import {
 const SCRIPT = new URL("../scripts/memory-gate.ts", import.meta.url).pathname;
 const GiB = 1024 * 1024;
 
+const children: ReturnType<typeof spawn>[] = [];
 let dir: string;
 let journal: string;
 let lastStart: string;
+let pressure: string;
+let probes: string;
 beforeEach(async () => {
   const root = await mkdtemp(join(tmpdir(), "memory-gate-"));
   dir = join(root, "state");
   await mkdir(dir);
   journal = join(root, "journal");
   lastStart = join(dir, "last-start");
+  pressure = join(root, "pressure");
+  probes = join(root, "probes");
+  await writeFile(pressure, "1");
 });
 afterEach(async () => {
+  for (const child of children.splice(0)) {
+    if (child.exitCode === null && child.signalCode === null) {
+      const exit = once(child, "exit");
+      child.kill("SIGKILL");
+      await exit;
+    }
+  }
   await rm(join(dir, ".."), { recursive: true, force: true });
 });
 
@@ -48,11 +62,21 @@ function gated(env: NodeJS.ProcessEnv = {}, body?: string) {
     `require("node:fs").appendFileSync(${JSON.stringify(journal)}, "ran\\n")`;
   const child = spawn(
     process.execPath,
-    [SCRIPT, "--", process.execPath, "-e", command],
+    [
+      "--import",
+      new URL("./__fixtures__/memory-pressure.ts", import.meta.url).href,
+      SCRIPT,
+      "--",
+      process.execPath,
+      "-e",
+      command,
+    ],
     {
       env: {
         ...process.env,
         [DESKTOP_DIR_ENV]: dir,
+        ZOTLIT_TEST_PRESSURE: pressure,
+        ZOTLIT_TEST_PROBES: probes,
         [MEMORY_GATE_ENV]: "",
         [MEMORY_GATE_ADMITTED_ENV]: "",
         ...env,
@@ -60,6 +84,7 @@ function gated(env: NodeJS.ProcessEnv = {}, body?: string) {
       stdio: ["ignore", "ignore", "pipe"],
     },
   );
+  children.push(child);
   let stderr = "";
   const exit = once(child, "exit").then(([code]) => code as number | null);
   /** Resolve once stderr matches, or with all of it at exit. */
@@ -80,39 +105,66 @@ async function ran(): Promise<string> {
 
 const now = () => Temporal.Now.instant().toString();
 
-it("waits while another gated run started under 30 s ago", async () => {
+it("starts consecutive runs while pressure is normal, even after a recent start", async () => {
   await writeFile(lastStart, now());
-  const waiting = gated();
-  expect(await waiting.until(/waiting/)).toMatch(
-    /waiting: another run started under 30 s ago/,
-  );
-  waiting.child.kill();
-  await waiting.exit;
-  expect(await ran()).toBe("");
+  const first = gated({ [DESKTOP_WAIT_ENV]: "1s" });
+  expect(await first.exit).toBe(0);
+  const second = gated({ [DESKTOP_WAIT_ENV]: "1s" });
+  expect(await second.exit).toBe(0);
+  expect(await ran()).toBe("ran\nran\n");
 });
 
 it("expires a lock left by a killed run", async () => {
   const lock = join(dir, "last-start.lock");
   await mkdir(lock);
   await utimes(lock, 0, 0);
-  await writeFile(lastStart, now());
   const waiting = gated();
-  // Past the lock, the next check is the settle time.
-  expect(await waiting.until(/started under/)).toMatch(
-    /started under 30 s ago/,
-  );
-  waiting.child.kill();
-  await waiting.exit;
+  expect(await waiting.exit).toBe(0);
+  expect(await ran()).toBe("ran\n");
 });
 
-it("gives up at the Admission Deadline with exit 75 and runs nothing", async () => {
-  await writeFile(lastStart, now());
+it("gives up under memory pressure with exit 75 and runs nothing", async () => {
+  await writeFile(pressure, "2");
   const blocked = gated({ [DESKTOP_WAIT_ENV]: "1s" });
-  expect(await blocked.until(/blocked by the Memory Gate/)).toMatch(
-    /still closed at the Admission Deadline: another run started under 30 s ago/,
+  expect(await blocked.until(regex("blocked by the Memory Gate"))).toContain(
+    "still closed at the Admission Deadline: macOS memory pressure is warning",
   );
   expect(await blocked.exit).toBe(EXIT_ADMISSION_BLOCKED);
   expect(await ran()).toBe("");
+  await writeFile(pressure, "1");
+  expect(await gated().exit).toBe(0);
+});
+
+it("admits the oldest waiter before a newer run", async () => {
+  await writeFile(pressure, "2");
+  const older = gated(
+    {},
+    `require("node:fs").appendFileSync(${JSON.stringify(journal)}, "older\\n")`,
+  );
+  await older.until(regex("macOS memory pressure"));
+  const newer = gated();
+  expect(await newer.until(regex("waiting behind pid"))).toContain(
+    "waiting behind pid",
+  );
+  await writeFile(pressure, "1");
+  expect(await older.exit).toBe(0);
+  expect(await newer.exit).toBe(0);
+  expect(await readFile(probes, "utf8")).toBe(
+    `${older.child.pid}\n${newer.child.pid}\n`,
+  );
+  expect((await ran()).trim().split("\n").sort()).toEqual(["older", "ran"]);
+});
+
+it("removes a killed waiter so the next run can start", async () => {
+  await writeFile(pressure, "2");
+  const killed = gated();
+  await killed.until(regex("macOS memory pressure"));
+  killed.child.kill("SIGKILL");
+  await killed.exit;
+  await writeFile(pressure, "1");
+  const next = gated({ [DESKTOP_WAIT_ENV]: "2s" });
+  expect(await next.exit).toBe(0);
+  expect(await ran()).toBe("ran\n");
 });
 
 it("runs at once with the gate off, with the command's exit code", async () => {
