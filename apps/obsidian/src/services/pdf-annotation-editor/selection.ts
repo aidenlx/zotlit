@@ -126,6 +126,7 @@ import type {
 import type { MarkPopupHost } from "./mark-popup-host";
 import { tagSectionShows } from "./mark-popup-tags";
 import type { MarkPopupTagSectionProps } from "./mark-popup-tags";
+import { saveGeometry } from "./operations";
 import {
   beginAdjust,
   cancelAdjust,
@@ -1053,25 +1054,19 @@ export class MarkSelection implements Disposable {
       this.#deps.gestures.reportBlockedGesture();
       return;
     }
-    const sortIndex = await this.#deps.sortIndex(proposal);
-    if (sortIndex === null) {
-      end();
-      return;
-    }
-    const outcome = this.#deps.bridge.runPromise(
-      this.#deps.annotations.patchGeometry(
-        key,
-        {
-          position: proposal,
-          sortIndex,
-          ...(text !== undefined && { text }),
-        },
-        input,
-      ),
-    );
-    // The write's proposal is drawn from here on.
-    end();
+    const outcome = this.#deps.bridge
+      .runPromise(
+        saveGeometry(this.#deps.annotations, this.#deps.sortIndex, {
+          key,
+          proposal,
+          text,
+          input,
+          onRead: end,
+        }),
+      )
+      .finally(end);
     this.#write(outcome, geometryFailureMessage);
+    await outcome.then(() => undefined).catch(passAborted);
   }
 
   /**

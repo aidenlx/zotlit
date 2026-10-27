@@ -77,6 +77,7 @@ import { CLICK_SLOP, distance } from "./hit-test";
 import type { Point } from "./hit-test";
 import { InkStroke } from "./ink-stroke";
 import type { MarkPopupHost } from "./mark-popup-host";
+import { captureText, createMark } from "./operations";
 import {
   appendPendingStroke,
   arm,
@@ -515,6 +516,7 @@ export class MarkCreation implements CreationGestures, Disposable {
           });
       },
       (error: unknown) => {
+        if (AbortError.test(error)) return;
         logger.warn("Could not place the text selection on the page", {
           error,
         });
@@ -1070,27 +1072,14 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     let created = false;
     try {
-      const [sortIndex, pageLabel] = await Promise.all([
-        structure.sortIndex(position),
-        structure.pageLabel(
-          position.pageIndex,
-          previousAnnotations(this.#deps.records()),
-        ),
-      ]);
       const outcome = await this.#deps.bridge.runPromise(
-        this.#deps.annotations.createAnnotation(
-          this.#deps.attachmentKey,
-          {
-            type,
-            color,
-            comment,
-            text,
-            pageLabel,
-            sortIndex,
-            position,
-          },
-          { group },
-        ),
+        createMark(this.#deps.annotations, {
+          attachmentKey: this.#deps.attachmentKey,
+          structure,
+          draft: { type, color, comment, text, position },
+          previous: previousAnnotations(this.#deps.records()),
+          group,
+        }),
       );
       if (outcome.kind === "failed") {
         this.#deps.reportCreateFailure(
@@ -1339,10 +1328,10 @@ export class MarkCreation implements CreationGestures, Disposable {
     const pages = selectionPagesOf(selection.getRangeAt(0), this.#deps.pages());
     const structure = this.#deps.structure();
     if (!pages.length || !structure) return null;
-    const captured = await structure.selectText({
-      text: selection.toString(),
-      pages,
-    });
+    const text = selection.toString();
+    const captured = await this.#deps.bridge.runPromise(
+      captureText(structure, { text, pages }),
+    );
     if (!captured) {
       logger.debug("Text selection maps onto no character of its pages", {
         pageIndexes: pages.map(({ pageIndex }) => pageIndex),
