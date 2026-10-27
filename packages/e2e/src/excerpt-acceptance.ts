@@ -2721,30 +2721,23 @@ export async function verifySavedEditDisplay(
   // ── What a remount shows ────────────────────────────────────────────────
   // Reopening the view drops its cards and mounts them again, which is the
   // surface a restart shows: the card seeds from that reference, and what it
-  // paints must be the saved edit's pixels.
-  const viewState = await obRun(
-    vaultId,
-    async ({ app }) => {
-      const leaves = app.workspace.getLeavesOfType("zotero-annotation-view");
-      if (leaves.length === 0)
-        throw new Error("The Annotation View is not open");
-      const state = leaves[0]!.getViewState();
-      for (const leaf of leaves) leaf.detach();
-      return { state: JSON.stringify(state) };
-    },
-    undefined,
-  );
+  // paints must be the saved edit's pixels. The view reopens in its own leaf,
+  // where a restart restores it, so it still follows the PDF tab.
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { state }) => {
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.setViewState(
-          Object.assign({}, JSON.parse(state), { active: true }),
+      async ({ app }) => {
+        const [leaf, ...others] = app.workspace.getLeavesOfType(
+          "zotero-annotation-view",
         );
+        if (!leaf) throw new Error("The Annotation View is not open");
+        const state = leaf.getViewState();
+        for (const other of others) other.detach();
+        await leaf.setViewState({ type: "empty" });
+        await leaf.setViewState(state);
         return true;
       },
-      { state: viewState.state },
+      undefined,
     ),
   ).toBe(true);
   await obRunUntil(

@@ -8742,6 +8742,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ),
               ).toBe(true);
 
+              // Focus comes back to the field for the next change, sent as the
+              // leave was, and the editor takes its keys again.
+              await obRun(
+                vaultId!,
+                async ({ app }, { historyKey }: { historyKey: "PUPR5FG5" }) => {
+                  app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map((leaf) =>
+                      leaf.view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]`,
+                      ),
+                    )
+                    .find(Boolean)!
+                    .querySelector<HTMLInputElement>(".zt-annot-tag-input")!
+                    .dispatchEvent(
+                      new FocusEvent("focusin", { bubbles: true }),
+                    );
+                },
+                { historyKey },
+              );
               // The next change starts a new session, which Escape ends and
               // saves as it closes the editor.
               await type(second, { enter: true });
@@ -13625,6 +13645,27 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
           // Complete the old response only after the new repository read.
           // Its completion must not restore the old operation or send again.
+          // The unload ended the old plugin's run, so the write it held ends
+          // in that unload's AbortError rather than an outcome.
+          await obRun(
+            vaultId!,
+            async ({ page: pageHelpers }) => {
+              const probe = pageHelpers.scratch.__zotlitWriteOutcomeProbe;
+              if (!probe?.pending) return;
+              probe.pending = probe.pending.then(
+                () => {
+                  throw new Error("The old plugin's write outlived its unload");
+                },
+                (error: unknown) => {
+                  if (
+                    (error as { name?: unknown } | null)?.name !== "AbortError"
+                  )
+                    throw error;
+                },
+              );
+            },
+            undefined,
+          );
           await restoreWriteOutcomeProbe(vaultId!);
           await obRun(
             vaultId!,
