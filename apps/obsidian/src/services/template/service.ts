@@ -1697,6 +1697,9 @@ function makeTemplateEngine(options: TemplateEngineOptions) {
         work.citation.add(CITATION_TEMPLATE_NAME);
 
         yield* coreReconcileWork(work, generation);
+        // A rebuild publishes after the settings snapshot reaches its other
+        // subscribers, as the previous asynchronous reconcile did.
+        yield* Effect.yieldNow;
         if (generation !== state.folderGeneration) return;
 
         yield* state.changed();
