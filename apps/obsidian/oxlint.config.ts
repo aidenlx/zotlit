@@ -520,7 +520,7 @@ export default defineConfig({
         "src/views/cited-by/**",
         "src/views/welcome/**",
         "src/views/template-data-explorer/**",
-        "src/views/annot-view/model.ts",
+        "src/views/annot-view/**",
       ],
       rules: {
         "no-restricted-imports": [
@@ -538,6 +538,7 @@ export default defineConfig({
       files: [
         "src/views/library/**",
         "src/views/query-view/**",
+        "src/views/annot-view/**",
         "src/views/cited-by/**",
         "src/views/welcome/**",
       ],

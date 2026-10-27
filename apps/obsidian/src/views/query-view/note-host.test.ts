@@ -19,12 +19,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
 } from "@/services/item-query/query-view";
-import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
+import { testAnnotHost } from "@/views/annot-view/__fixtures__/host";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 // @vitest-environment happy-dom
@@ -111,7 +110,7 @@ async function setup(kind: HostKind) {
   const runtime = testRuntime();
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
     runtime,
-    bridge: effectBridge(runtime),
+    registry: testAnnotHost().registry,
     app,
     reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
@@ -128,26 +127,7 @@ async function setup(kind: HostKind) {
     }),
     query: fakeQuery(run),
     cardFocus,
-    annotations: stubService<QueryViewDeps["annotations"]>(
-      "Annotations",
-      annotationReads(),
-    ),
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
-    libraryTagNames: async () => [],
-    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: "/Zotero",
-      baseAttachmentPath: null,
-    }),
-    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      { open: vi.fn(), refresh: vi.fn() },
-    ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {},
-    ),
     literatureNotes: noLiteratureNotes(),
   });
   const queryHost = cleanup.use(await makeQueryHost(deps));

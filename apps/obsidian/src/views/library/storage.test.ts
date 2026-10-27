@@ -13,11 +13,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
-import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
+import { makeAnnotHost } from "@/views/annot-view/__fixtures__/host";
 import { makeQueryHost } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
@@ -112,9 +111,10 @@ async function openLibrary() {
   await settings.bridge.runPromise(settings.loaded);
   const saveData = vi.spyOn(plugin, "saveData");
   const runtime = testRuntime();
+  const cardsHost = cleanup.use(makeAnnotHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+    registry: cardsHost.registry,
     runtime,
-    bridge: effectBridge(runtime),
     app,
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
     reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
@@ -132,22 +132,6 @@ async function openLibrary() {
     }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: stubService<QueryViewDeps["annotations"]>(
-      "AnnotationRepository",
-      annotationReads(),
-    ),
-    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      {},
-    ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {},
-    ),
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    libraryTagNames: async () => [],
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
     literatureNotes: noLiteratureNotes(),
   });
   const queryHost = cleanup.use(await makeQueryHost(deps));

@@ -28,11 +28,11 @@ import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
+  AnnotationRepository,
   AnnotationList,
   AnnotationRecord,
 } from "@/services/annotation-repository/service";
@@ -356,29 +356,9 @@ async function mount(
       },
     },
   );
-  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
-    runtime,
-    bridge: effectBridge(runtime),
-    app: editorApp(),
-    reads: readService,
-    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
-      ...libraryScope.streams,
-      current: {
-        mode: "selected",
-        invalid: false,
-        available: [
-          { selector: { type: "personal" }, libraryID: 1, name: null },
-          {
-            selector: { type: "group", groupID: 4815 },
-            libraryID: 2,
-            name: "Lab",
-          },
-        ],
-        unavailable: [],
-      },
-    }),
-    query: { ...fakeQuery(run), on: activity.on },
-    annotations: stubService<QueryViewDeps["annotations"]>("Annotations", {
+  const annotationsApi = stubService<AnnotationRepository["Service"]>(
+    "Annotations",
+    {
       ...annotations,
       read: () => Effect.succeed(list),
       peek: () =>
@@ -407,26 +387,35 @@ async function mount(
           [Symbol.dispose]: () => released.push(list),
         });
       },
+    },
+  );
+  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+    runtime,
+    app: editorApp(),
+    reads: readService,
+    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+      ...libraryScope.streams,
+      current: {
+        mode: "selected",
+        invalid: false,
+        available: [
+          { selector: { type: "personal" }, libraryID: 1, name: null },
+          {
+            selector: { type: "group", groupID: 4815 },
+            libraryID: 2,
+            name: "Lab",
+          },
+        ],
+        unavailable: [],
+      },
     }),
-    zoteroPref: stubService<QueryViewDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: "/zotero",
-      baseAttachmentPath: null,
-    }),
-    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      { open: vi.fn(), refresh: vi.fn() },
-    ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {},
-    ),
-    libraryTagNames: () => Promise.resolve([]),
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
+    query: { ...fakeQuery(run), on: activity.on },
     literatureNotes,
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", readers),
   });
-  const queryHost = cleanup.use(await makeQueryHost(deps));
+  const queryHost = cleanup.use(
+    await makeQueryHost(deps, { annotations: annotationsApi }),
+  );
   deps.registry = queryHost.registry;
   const save = vi.fn((_text: string) => {});
   const onSelectView = vi.fn((_name: string) => {});

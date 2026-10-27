@@ -44,3 +44,9 @@ export const libraryAvailabilityRevisionAtom = held(
   ),
   0,
 );
+
+/** Raw Libraries, independent of the scope selected for library searches. */
+export const libraryRowsAtom = Atom.map(
+  libraryScopeStateAtom,
+  (state) => state.libraryRows,
+);

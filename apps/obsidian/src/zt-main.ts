@@ -11,7 +11,6 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistry } from "@/lib/view-atoms";
 
-import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
@@ -335,16 +334,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       query: services.query,
-      annotations: services.annotationRepository,
-      bridge: services.bridge,
-      excerptDisplay: services.excerptDisplay,
-      allowEditing: () =>
-        void services.capabilityNotices.allowEditing().catch(passAborted),
-      reportBlockedGesture: (attachmentKey) =>
-        services.capabilityNotices.reportBlockedGesture(attachmentKey),
-      libraryTagNames: services.libraryTagNames,
-      zoteroPref: services.zoteroPref,
-      noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
         registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
@@ -360,11 +349,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
-      excerptDisplay: services.excerptDisplay,
-      liveUpdate: services.localServer,
       bridge: services.bridge,
       pdfReaders: services.pdfAnnotationEditor,
-      noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
       registry: services.runtime.runSync(ViewRegistry),
