@@ -350,7 +350,7 @@ export function pluginLayer(
         layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
-    // The legacy note writers create and move through the tags (`plugin-runtime.ts`).
+    // The note writers (`note-feature/`) create and move notes through these tags.
     // The protocol handlers also open notes through the
     // Workspace and read the vault folder from the environment. The Customize
     // flow reads the active note's paper from the metadata cache.
