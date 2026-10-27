@@ -196,7 +196,7 @@ export interface CapabilityGestures {
 }
 
 /** The one read a rendered comment takes from the Note Index. */
-export type CommentNotes = Pick<NoteIndex["Service"], "getNotesByItemKey">;
+type CommentNotes = Pick<NoteIndex["Service"], "getNotesByItemKey">;
 
 export interface PdfViewBindingDeps {
   view: PDFFileView;
