@@ -7,6 +7,7 @@ import type {
   TextSelection,
 } from "@zotlit/pdf-structure";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import type { Notifier } from "@/lib/notifier";
 import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
@@ -18,7 +19,7 @@ import type {
   HistoryOutcome,
   WriteRunFailed,
 } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
+import { groupFailureMessages } from "@/services/annotation-repository/write";
 import type {
   AnnotationDraft,
   GeometryInput,
@@ -33,6 +34,12 @@ class PdfStructureReadError extends Schema.TaggedError<
   PdfStructureReadError,
   { readonly brand: unique symbol }
 >()("PdfStructureReadError", { cause: Schema.Defect() }) {}
+
+/** The outcome of a write that failed before Zotero answered. */
+const UNKNOWN_OUTCOME = {
+  kind: "failed",
+  failure: { kind: "unknown-outcome" },
+} as const satisfies MutationState;
 
 /** Read both placement fields before asking the repository to create a mark. */
 export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
@@ -72,8 +79,7 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
   // never learned.
   (operation, _annotations, { draft }) =>
     operation.pipe(
-      Effect.catchCauseIf(
-        (cause) => !Cause.hasInterruptsOnly(cause),
+      recover(
         (cause) =>
           Effect.logWarning("An Annotation was not created").pipe(
             Effect.annotateLogs({
@@ -81,11 +87,8 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
               error: Cause.squash(cause),
             }),
             withLogCategory("pdf-annotation-editor"),
-            Effect.as<CreateOutcome>({
-              kind: "failed",
-              failure: { kind: "unknown-outcome" },
-            }),
           ),
+        Effect.succeed<CreateOutcome>(UNKNOWN_OUTCOME),
       ),
     ),
 );
@@ -145,12 +148,6 @@ export const saveGeometry = Effect.fn("PdfAnnotationEditor.saveGeometry")(
     ),
 );
 
-/** The outcome of a write that failed before Zotero answered. */
-const UNKNOWN_OUTCOME = {
-  kind: "failed",
-  failure: { kind: "unknown-outcome" },
-} as const satisfies MutationState;
-
 /** The notice for one write that did not land. */
 type FailureMessage = (failure: WriteFailure, now: CopyInstant) => string;
 
@@ -173,7 +170,7 @@ export const reportWrites = Effect.fn("PdfAnnotationEditor.reportWrites")(
     {
       verb,
       now,
-      message = writeFailureMessage,
+      message,
     }: { verb: string; now: () => CopyInstant; message?: FailureMessage },
   ) {
     const exit = yield* Effect.exit(send);
@@ -185,13 +182,8 @@ export const reportWrites = Effect.fn("PdfAnnotationEditor.reportWrites")(
         withLogCategory("pdf-annotation-editor"),
       );
     const outcomes = Exit.isSuccess(exit) ? exit.value : [UNKNOWN_OUTCOME];
-    const at = now();
-    const messages = new Set(
-      outcomes.flatMap((outcome) =>
-        outcome.kind === "failed" ? [message(outcome.failure, at)] : [],
-      ),
-    );
-    for (const text of messages) yield* notifier.show(text);
+    for (const text of groupFailureMessages(outcomes, now(), message))
+      yield* notifier.show(text);
     return outcomes;
   },
 );
@@ -280,16 +272,15 @@ export const stepMarkHistory = Effect.fn("PdfAnnotationEditor.stepHistory")(
         ? annotations.undo(attachmentKey)
         : annotations.redo(attachmentKey)
     ).pipe(
-      Effect.catchCauseIf(
-        (cause) => !Cause.hasInterruptsOnly(cause),
+      recover(
         (cause) =>
           Effect.logWarning(
             "A History Step failed before Zotero answered",
           ).pipe(
             Effect.annotateLogs({ direction, error: Cause.squash(cause) }),
             withLogCategory("pdf-annotation-editor"),
-            Effect.as<HistoryOutcome>(UNKNOWN_OUTCOME),
           ),
+        Effect.succeed<HistoryOutcome>(UNKNOWN_OUTCOME),
       ),
     );
     if (!speaks()) return outcome;
