@@ -124,7 +124,7 @@ const openEditor = Effect.fnUntraced(function* ({
       }),
   });
   // The real reads over the fixture database, in the state the test names.
-  const { reads } = Context.get(
+  const { reads, snapshot } = Context.get(
     yield* Layer.build(
       layerZoteroReads(
         inProcessClient(layerRcRef(memoryOpener(() => sql).open)),
@@ -159,6 +159,7 @@ const openEditor = Effect.fnUntraced(function* ({
           layerNoteIndex,
           Layer.mock(ZoteroReads, {
             reads,
+            snapshot,
             current: Effect.succeed({
               state: readsState,
               error: null,

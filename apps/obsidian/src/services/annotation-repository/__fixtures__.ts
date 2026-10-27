@@ -28,9 +28,8 @@ import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { AvailableExcerpt } from "@/services/excerpt-image/service";
-import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import { plainQueryClients } from "@/services/query-client/plain";
 import { layerQueryClients } from "@/services/query-client/service";
 import {
@@ -289,17 +288,18 @@ export async function setup(
   // the store, so a test that counts the repository's batch reads subtracts
   // these (see `batchReads`).
   const excerptBaselines = vi.fn();
-  const excerptImages = stubService<ExcerptImageService>(
+  const excerptImages = stubService<ExcerptImageService["Service"]>(
     "ExcerptImageService",
     {
-      stored: async ({ annotation, source }) => {
-        excerptBaselines();
-        if (!persistedExcerpt) return null;
-        const fingerprint = await persistedExcerpt(annotation, source);
-        return fingerprint === null
-          ? null
-          : ({ identity: { fingerprint } } as AvailableExcerpt);
-      },
+      stored: ({ annotation, source }) =>
+        Effect.promise(async () => {
+          excerptBaselines();
+          if (!persistedExcerpt) return null;
+          const fingerprint = await persistedExcerpt(annotation, source);
+          return fingerprint === null
+            ? null
+            : ({ identity: { fingerprint } } as AvailableExcerpt);
+        }),
     },
   );
 
@@ -310,7 +310,7 @@ export async function setup(
       Layer.succeed(ZoteroReads, readsService),
       layerQueryClients,
       Layer.succeed(ZoteroLocalApi, localApiService),
-      Layer.succeed(ExcerptImages, excerptImages),
+      Layer.succeed(ExcerptImageService, excerptImages),
       pref,
     ).pipe(Layer.provideMerge(testClockAtNow)),
     stack,

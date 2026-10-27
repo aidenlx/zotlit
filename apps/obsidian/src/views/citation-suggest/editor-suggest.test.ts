@@ -1,4 +1,5 @@
 import { Text } from "@codemirror/state";
+import { it as effectIt } from "@effect/vitest";
 import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type {
@@ -9,6 +10,7 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -33,6 +35,7 @@ import {
 } from "@/services/zotero-reads/test-utils";
 import { placeInsertion } from "@/views/annot-view/async-insert";
 
+import { readDocumentCitedKeys } from "./document-citations";
 import {
   CitationEditorSuggest,
   resolveCitationInsert,
@@ -584,6 +587,39 @@ describe("Citation Suggester document citations", () => {
     ]);
     expect(close).not.toHaveBeenCalled();
   });
+
+  effectIt.effect(
+    "#1789 unload leaves the document citation fallback silent",
+    () =>
+      Effect.promise(async () => {
+        await using bridge = openTestBridge();
+        using debug = vi.spyOn(
+          getLogger(["views", "citation-suggest"]),
+          "debug",
+        );
+        const started = Promise.withResolvers<void>();
+        const pending = readDocumentCitedKeys(
+          {
+            bridge,
+            citationIndex: {
+              getDocumentCitationSet: () => {
+                started.resolve();
+                return new Promise<DocumentCitationSet>(() => {});
+              },
+            },
+          },
+          file,
+          new AbortController().signal,
+        ).then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+        await started.promise;
+        await bridge[Symbol.asyncDispose]();
+        expect(await pending).toEqual({ value: [] });
+        expect(debug).not.toHaveBeenCalled();
+      }),
+  );
 
   it("keeps searching when document citations fail", async () => {
     using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");

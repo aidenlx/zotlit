@@ -418,7 +418,7 @@ export async function verifyReaderBackedExcerpts(
       vaultId,
       `(async()=>{
         for(const leaf of app.workspace.getLeavesOfType('zotero-annotation-view'))leaf.detach();
-        await app.plugins.plugins.zotlit.services.excerptImage.clear();
+        await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.excerptImage.clear);
         const file=app.vault.getFileByPath(${JSON.stringify(vaultPath)});
         if(!file)throw new Error('The Fixture PDF is not in the Fixture Vault');
         const leaf=app.workspace.getLeaf('tab');
@@ -455,9 +455,9 @@ export async function verifyReaderBackedExcerpts(
       ${requester}
       const service=services.excerptImage;
       const request=requestFor(${JSON.stringify(target.key)});
-      await service.clear();
+      await app.plugins.plugins.zotlit.services.bridge.runPromise(service.clear);
       const before=${diagnostics};
-      const outcome=await service.resolve(request);
+      const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(service.resolve(request));
       const after=${diagnostics};
       return JSON.stringify({
         before,
@@ -569,7 +569,7 @@ export async function verifyReaderBackedExcerpts(
       const keys=list.annotations.filter(annotation=>annotation.type==='image'||annotation.type==='ink').map(annotation=>annotation.key);
       const outcomes=[];
       for(const key of keys){
-        const outcome=await service.resolve(requestFor(key));
+        const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(service.resolve(requestFor(key)));
         outcomes.push({key,kind:outcome.kind,sha256:outcome.kind==='available'?require('crypto').createHash('sha256').update(outcome.bytes).digest('hex'):null});
       }
       return JSON.stringify({keys,outcomes});
@@ -751,7 +751,7 @@ export async function verifyReaderBackedExcerpts(
     await obEval(
       vaultId,
       `(async()=>{
-        await app.plugins.plugins.zotlit.services.excerptImage.clear();
+        await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.excerptImage.clear);
         for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();
         return true;
       })()`,
@@ -989,7 +989,7 @@ export async function verifyMultiPdfExcerptBatch(
         for(const [index,excerpt] of excerpts.entries()){
           const before=${diagnostics};
           const requestStarted=performance.now();
-          const outcome=await service.resolve(request(excerpt,index));
+          const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(service.resolve(request(excerpt,index)));
           const settled=performance.now()-requestStarted;
           const after=${diagnostics};
           await observeMemory();
@@ -1011,7 +1011,7 @@ export async function verifyMultiPdfExcerptBatch(
     `(async()=>{
       const services=app.plugins.plugins.zotlit.services;
       await services.noteIndex.whenIndexed();
-      await services.excerptImage.clear();
+      await services.bridge.runPromise(services.excerptImage.clear);
       return true;
     })()`,
     // The index of a freshly opened Fixture Vault is the one thing here that
@@ -1164,7 +1164,7 @@ export async function verifySavedEditDisplay(
   // would be served from it without the replacement rendering held below.
   await obEval(
     vaultId,
-    `(async()=>{await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()`,
+    `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.excerptImage.clear);return true;})()`,
   );
 
   await using cleanup = new AsyncDisposableStack();
@@ -1312,7 +1312,7 @@ export async function verifySavedEditDisplay(
     vaultId,
     `(async()=>{
       ${requester}
-      const outcome=await services.excerptImage.resolve(requestFor(${JSON.stringify(target.key)}));
+      const outcome=await services.bridge.runPromise(services.excerptImage.resolve(requestFor(${JSON.stringify(target.key)})));
       return JSON.stringify({pixels:outcome.kind==='available'?await (${decodedPixels})(outcome.bytes,outcome.format.mimeType):null});
     })()`,
   );
@@ -1390,10 +1390,10 @@ export async function verifySavedEditDisplay(
       const request=app.__zotlitExcerptStale;
       if(!request)throw new Error('The pre-edit snapshot is gone');
       const before=${diagnostics};
-      const outcome=await services.excerptImage.resolve(request);
+      const outcome=await services.bridge.runPromise(services.excerptImage.resolve(request));
       const after=${diagnostics};
       const current=requestFor(${JSON.stringify(target.key)});
-      const reference=await services.excerptImage.stored(current);
+      const reference=await services.bridge.runPromise(services.excerptImage.stored(current));
       delete app.__zotlitExcerptStale;
       return JSON.stringify({
         version:request.annotation.version??null,

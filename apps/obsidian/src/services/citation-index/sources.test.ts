@@ -1,5 +1,6 @@
+import { it } from "@effect/vitest";
 import { Effect } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect } from "vitest";
 
 import type { Attachment } from "@zotlit/db";
 import { rowInstant } from "@zotlit/db/test-utils";
@@ -46,6 +47,25 @@ async function readsOver(sql: string): Promise<TestReads> {
   return ready;
 }
 
+function readSources(
+  db: Pick<TestReads, "state" | "snapshot">,
+  citations: Parameters<typeof readReferenceSources>[1],
+) {
+  return readReferenceSources(
+    {
+      current: Effect.sync(() => ({
+        state: db.state,
+        error: null,
+        moved: false,
+        dbFileMissing: false,
+        activeReadMode: null,
+      })),
+      snapshot: db.snapshot,
+    },
+    citations,
+  );
+}
+
 function citation(
   indexedKey: string | null,
   linkpath: string | null,
@@ -87,142 +107,162 @@ function attachment(overrides: Partial<Attachment>): Attachment {
 describe("readReferenceSources", () => {
   afterEach(() => ready[Symbol.asyncDispose]());
 
-  it("joins the identity and summary of each cited Item", async () => {
-    await readsOver(seedWorksSql([CITED]));
+  it.effect("joins the identity and summary of each cited Item", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(KEY, "Notes/Doe 2024.md"),
-    ]);
+      const { sources } = yield* readSources(ready, [
+        citation(KEY, "Notes/Doe 2024.md"),
+      ]);
 
-    expect(sources.get(KEY)).toMatchObject({
-      itemKey: KEY,
-      itemID: CITED.itemID,
-      groupID: null,
-      citekey: "doe2024",
-      summary: "Doe (2024): Alpha kernels",
-      citationSummary: "Doe (2024)",
-      linkpath: "Notes/Doe 2024.md",
-    });
-    expect(sources.get(KEY)?.csl.title).toBe("Alpha kernels");
-  });
+      expect(sources.get(KEY)).toMatchObject({
+        itemKey: KEY,
+        itemID: CITED.itemID,
+        groupID: null,
+        citekey: "doe2024",
+        summary: "Doe (2024): Alpha kernels",
+        citationSummary: "Doe (2024)",
+        linkpath: "Notes/Doe 2024.md",
+      });
+      expect(sources.get(KEY)?.csl.title).toBe("Alpha kernels");
+    }),
+  );
 
-  it("carries a null linkpath through for an Item with no Literature Note", async () => {
-    await readsOver(seedWorksSql([CITED]));
+  it.effect(
+    "carries a null linkpath through for an Item with no Literature Note",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(KEY, null),
-    ]);
+        const { sources } = yield* readSources(ready, [citation(KEY, null)]);
 
-    expect(sources.get(KEY)?.linkpath).toBeNull();
-  });
+        expect(sources.get(KEY)?.linkpath).toBeNull();
+      }),
+  );
 
-  it("reports no citation key when Zotero holds none for the Item", async () => {
-    const { citationKey: _, ...uncited } = CITED;
-    await readsOver(seedWorksSql([uncited]));
+  it.effect("reports no citation key when Zotero holds none for the Item", () =>
+    Effect.gen(function* () {
+      const { citationKey: _, ...uncited } = CITED;
+      yield* Effect.promise(() => readsOver(seedWorksSql([uncited])));
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(KEY, null),
-    ]);
+      const { sources } = yield* readSources(ready, [citation(KEY, null)]);
 
-    expect(sources.get(KEY)?.citekey).toBeNull();
-  });
+      expect(sources.get(KEY)?.citekey).toBeNull();
+    }),
+  );
 
-  it("leaves out a citekey that names no live Zotero Item", async () => {
-    await readsOver(seedWorksSql([CITED]));
+  it.effect("leaves out a citekey that names no live Zotero Item", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(null, null),
-    ]);
+      const { sources } = yield* readSources(ready, [citation(null, null)]);
 
-    expect(sources.size).toBe(0);
-    expect(itemReads.map((call) => call.payload["indexedKeys"])).toEqual([[]]);
-  });
+      expect(sources.size).toBe(0);
+      expect(itemReads.map((call) => call.payload["indexedKeys"])).toEqual([
+        [],
+      ]);
+    }),
+  );
 
-  it("leaves out an Item the library no longer holds", async () => {
-    await readsOver(seedWorksSql([CITED]));
+  it.effect("leaves out an Item the library no longer holds", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(KEY, null),
-      citation(OTHER_KEY, null),
-    ]);
+      const { sources } = yield* readSources(ready, [
+        citation(KEY, null),
+        citation(OTHER_KEY, null),
+      ]);
 
-    expect([...sources.keys()]).toStrictEqual([KEY]);
-  });
+      expect([...sources.keys()]).toStrictEqual([KEY]);
+    }),
+  );
 
-  it("offers the Zotero-Openable Attachments of the cited Item", async () => {
-    await readsOver(
-      seedWorksSql(
-        [CITED],
-        [
+  it.effect("offers the Zotero-Openable Attachments of the cited Item", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() =>
+        readsOver(
+          seedWorksSql(
+            [CITED],
+            [
+              {
+                itemID: 20,
+                key: "ATCH2345",
+                parentItemID: CITED.itemID,
+                path: "storage:Doe_2024.pdf",
+                linkMode: 0,
+              },
+            ],
+          ),
+        ),
+      );
+
+      const { sources } = yield* readSources(ready, [citation(KEY, null)]);
+
+      expect(sources.get(KEY)?.attachments).toStrictEqual([
+        { key: "ATCH2345", groupID: null, label: "Doe_2024.pdf" },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "keeps the cited Items when the attachment table cannot be read",
+    () =>
+      Effect.gen(function* () {
+        ready = inProcessReadsService(
+          memoryOpener(() => seedWorksSql([CITED])).open,
           {
-            itemID: 20,
-            key: "ATCH2345",
-            parentItemID: CITED.itemID,
-            path: "storage:Doe_2024.pdf",
-            linkMode: 0,
+            wrap: (client) => ({
+              ...client,
+              AttachmentsOf: (() =>
+                Effect.fail(
+                  new DbUnavailable({ message: "Attachment read failed." }),
+                )) as typeof client.AttachmentsOf,
+            }),
           },
-        ],
-      ),
-    );
+        );
+        yield* Effect.promise(() => ready.ready);
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(KEY, null),
-    ]);
+        const { sources } = yield* readSources(ready, [citation(KEY, null)]);
 
-    expect(sources.get(KEY)?.attachments).toStrictEqual([
-      { key: "ATCH2345", groupID: null, label: "Doe_2024.pdf" },
-    ]);
-  });
+        expect(sources.get(KEY)).toMatchObject({
+          itemKey: KEY,
+          itemID: CITED.itemID,
+        });
+        expect(sources.get(KEY)?.attachments).toStrictEqual([]);
+      }),
+  );
 
-  it("keeps the cited Items when the attachment table cannot be read", async () => {
-    ready = inProcessReadsService(
-      memoryOpener(() => seedWorksSql([CITED])).open,
-      {
-        wrap: (client) => ({
-          ...client,
-          AttachmentsOf: (() =>
-            Effect.fail(
-              new DbUnavailable({ message: "Attachment read failed." }),
-            )) as typeof client.AttachmentsOf,
-        }),
-      },
-    );
-    await ready.ready;
+  it.effect("answers empty and unreadable when the item read fails", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() =>
+        readsOver(`${seedWorksSql([CITED])}\ndrop table items;`),
+      );
 
-    const { sources } = await readReferenceSources(ready, [
-      citation(KEY, null),
-    ]);
+      const { sources, database } = yield* readSources(ready, [
+        citation(KEY, null),
+      ]);
 
-    expect(sources.get(KEY)).toMatchObject({
-      itemKey: KEY,
-      itemID: CITED.itemID,
-    });
-    expect(sources.get(KEY)?.attachments).toStrictEqual([]);
-  });
+      expect(sources.size).toBe(0);
+      expect(database).toBe("unreadable");
+    }),
+  );
 
-  it("answers empty and unreadable when the item read fails", async () => {
-    await readsOver(`${seedWorksSql([CITED])}\ndrop table items;`);
+  it.effect(
+    "reads nothing while the database is unavailable, and says so",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
-    const { sources, database } = await readReferenceSources(ready, [
-      citation(KEY, null),
-    ]);
+        const { sources, database } = yield* readSources(
+          { state: "degraded", snapshot: ready.snapshot },
+          [citation(KEY, null)],
+        );
 
-    expect(sources.size).toBe(0);
-    expect(database).toBe("unreadable");
-  });
-
-  it("reads nothing while the database is unavailable, and says so", async () => {
-    await readsOver(seedWorksSql([CITED]));
-
-    const { sources, database } = await readReferenceSources(
-      { state: "degraded", acquireRead: () => ready.acquireRead() },
-      [citation(KEY, null)],
-    );
-
-    expect(sources.size).toBe(0);
-    expect(database).toBe("unreadable");
-    expect(itemReads).toEqual([]);
-  });
+        expect(sources.size).toBe(0);
+        expect(database).toBe("unreadable");
+        expect(itemReads).toEqual([]);
+      }),
+  );
 });
 
 describe("toZoteroOpenableAttachments", () => {

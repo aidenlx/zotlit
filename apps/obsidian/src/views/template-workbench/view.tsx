@@ -123,7 +123,6 @@ import {
   defaultBindingsAtom,
   templateFolderAtom,
 } from "@/services/settings/atoms";
-import { openCitationTemplate } from "@/services/template/actions";
 import {
   partialDocumentsAtom,
   partialNamesAtom,
@@ -1577,10 +1576,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .onClick(
           () =>
             void runTemplateWorkbenchAction("open-citation", () =>
-              openCitationTemplate(this.app, {
-                materializeCitationTemplate: () =>
-                  this.#commands.citation.run(),
-              }),
+              this.#commands.citation.run(this.app),
             ),
         ),
     );

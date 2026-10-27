@@ -10,22 +10,22 @@
 // survival need a vault and a Zotero data directory, so they are covered where
 // those exist — see `service.test.ts`.
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { ExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/service";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { taggedQueryClients } from "@/services/query-client/__fixtures__";
 import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { check } from "./__fixtures__/check";
 import { settledDisplay } from "./__fixtures__/display-state";
+import { encodeExcerptImage } from "./__fixtures__/encode";
 import { renderGate } from "./__fixtures__/render-gate";
 import type { GatedRender } from "./__fixtures__/render-gate";
 import { excerptAnnotationRecord, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
 import type { ExcerptDisplayDemand, ExcerptImageDisplay } from "./display";
-import { encodeExcerptImage } from "./encode";
 import type { ExcerptImage } from "./format";
 import { EXCERPT_JOB_LIMIT } from "./pdf-queue";
-import { ExcerptImageService } from "./service";
 import type { ExcerptEntry } from "./service";
 import { openExcerptStore } from "./store";
 import type { ExcerptStore } from "./store";

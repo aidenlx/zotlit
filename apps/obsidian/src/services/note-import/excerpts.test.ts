@@ -34,7 +34,6 @@ import { AttachmentCopyError } from "@/services/attachment-import/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import type { ExcerptImages } from "@/services/excerpt-image/layer";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   ExcerptOutcome,
@@ -167,12 +166,13 @@ async function setupFixture(mode = "normal") {
       basePath: vaultRoot,
     },
     excerptImages: {
-      resolver: stubService<ExcerptImages["Service"]>("ExcerptImages", {
+      resolver: {
         operation: () => ({
           resolve,
           [Symbol.asyncDispose]: async () => {},
         }),
-      }),
+        resolve,
+      },
       fileManager: app.fileManager,
       metadataCache: app.metadataCache,
     },

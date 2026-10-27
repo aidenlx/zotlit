@@ -1,10 +1,10 @@
 import { Effect } from "effect";
 
 import { check } from "./__fixtures__/check";
+import { encodeExcerptImage } from "./__fixtures__/encode";
 import { answerAnnotationImage } from "./cli-image";
 import type { AnnotationImagePorts } from "./cli-image";
 import type { ExcerptRequest } from "./contract";
-import { encodeExcerptImage } from "./encode";
 
 export async function run(): Promise<string[]> {
   const canvas = document.createElement("canvas");
@@ -44,13 +44,14 @@ export async function run(): Promise<string[]> {
   const passed: string[] = [];
   const ports: AnnotationImagePorts = {
     read: () => Effect.succeed(request),
-    resolve: async () => ({
-      kind: "available",
-      provenance: "rendered",
-      freshness: "checked",
-      ...image,
-      identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
-    }),
+    resolve: () =>
+      Effect.succeed({
+        kind: "available",
+        provenance: "rendered",
+        freshness: "checked",
+        ...image,
+        identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
+      }),
     publish: (_fingerprint, bytes) =>
       Effect.promise(async () => {
         check(
@@ -83,17 +84,18 @@ export async function run(): Promise<string[]> {
           { key: "ABCDEFGH" },
           {
             ...ports,
-            resolve: async () => ({
-              kind: "available",
-              provenance,
-              freshness: "checked",
-              ...image,
-              identity: {
-                key: "a".repeat(64),
-                fingerprint: "image",
-                pdf: null,
-              },
-            }),
+            resolve: () =>
+              Effect.succeed({
+                kind: "available",
+                provenance,
+                freshness: "checked",
+                ...image,
+                identity: {
+                  key: "a".repeat(64),
+                  fingerprint: "image",
+                  pdf: null,
+                },
+              }),
           },
         ),
       ),
@@ -140,11 +142,10 @@ export async function run(): Promise<string[]> {
                       }
                     : request,
               ),
-            resolve: async () => {
-              if (code === "render-timeout")
-                throw new DOMException("Deadline", "TimeoutError");
-              return { kind: "unavailable" };
-            },
+            resolve: () =>
+              code === "render-timeout"
+                ? Effect.fail(new DOMException("Deadline", "TimeoutError"))
+                : Effect.succeed({ kind: "unavailable" }),
             exists: () => Effect.succeed(code !== "file-unavailable"),
           },
         ),
