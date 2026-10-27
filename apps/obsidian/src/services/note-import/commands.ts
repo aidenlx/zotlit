@@ -1,12 +1,14 @@
-// The note import commands: each import runs behind the Notifier's progress
-// notice and ends with the import's own outcome.
+// The note import commands: the Notifier reports each import's outcome, and
+// the import ends with that outcome.
 import { Effect, Layer } from "effect";
+import type { Context } from "effect";
 import type { App } from "obsidian";
 
 import { scopedBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import { withProgress } from "@/lib/notifier";
-import type { Notifier } from "@/lib/notifier";
+import { reportOutcome } from "@/lib/notifier";
+import type { Notifier, OutcomeCopy } from "@/lib/notifier";
 import { PluginHost } from "@/lib/plugin-host";
 import { withLiteratureNote } from "@/services/note-feature/actions";
 
@@ -19,6 +21,24 @@ import {
 } from "./batch-import-notices";
 import type { NoteImportView } from "./view";
 
+/** The services a note import command reads. */
+type ImportCommandServices = BatchImportServices | Notifier;
+
+/**
+ * Run `task`, report its outcome as {@link reportOutcome} does, and end with
+ * that outcome. It shows no loading message, so no notice shows while a
+ * confirm the import opens waits for the user.
+ */
+const reported = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+  copy: OutcomeCopy<A>,
+): Effect.Effect<A, E, R | Notifier> =>
+  Effect.gen(function* () {
+    const exit = yield* Effect.exit(task);
+    yield* reportOutcome(exit, copy);
+    return yield* exit;
+  });
+
 /**
  * Import all child and standalone notes in the Library Scope. Answers the
  * import's outcome, or fails with what failed; the notice reports either.
@@ -28,10 +48,10 @@ export const importAllNotes = Effect.fn("importAllNotes")(function* (
   ports: BatchImportPorts,
   app: App,
 ) {
-  return yield* withProgress(runBatchImportAll(ports), {
-    loading: m.batch_import_loading(),
-    ...importNotices(batchImportAllToast({ app })),
-  });
+  return yield* reported(
+    runBatchImportAll(ports),
+    importNotices(batchImportAllToast({ app })),
+  );
 });
 
 /**
@@ -43,33 +63,41 @@ export const importChildNotes = Effect.fn("importChildNotes")(function* (
   app: App,
   indexedKey: string,
 ) {
-  return yield* withProgress(runChildImportByKey(ports, indexedKey), {
-    loading: m.batch_import_loading(),
-    ...importNotices(childImportToast({ app })),
-  });
+  return yield* reported(
+    runChildImportByKey(ports, indexedKey),
+    importNotices(childImportToast({ app })),
+  );
 });
 
 /**
+ * Start a note import command from a callback over `context`. Its notice
+ * reported a failure; a defect still surfaces.
+ */
+export const importStarter =
+  (
+    bridge: Pick<EffectBridge, "runAndForget">,
+    context: Context.Context<ImportCommandServices>,
+  ) =>
+  <A, E>(command: Effect.Effect<A, E, ImportCommandServices>): void =>
+    bridge.runAndForget(Effect.ignore(Effect.provideContext(command, context)));
+
+/**
  * Register Import all notes and Import child notes. Each runs on the layer's
- * Scope behind its progress notice, which reports the outcome; unload
+ * Scope, and its notice reports the outcome; unload
  * interrupts a run still going.
  */
 export const layerNoteImportCommands = (ports: {
   readonly view: NoteImportView;
-}): Layer.Layer<never, never, PluginHost | BatchImportServices | Notifier> =>
+}): Layer.Layer<never, never, PluginHost | ImportCommandServices> =>
   Layer.effectDiscard(
     Effect.gen(function* () {
       const host = yield* PluginHost;
       const bridge = yield* scopedBridge;
-      const context = yield* Effect.context<BatchImportServices | Notifier>();
+      const start = importStarter(
+        bridge,
+        yield* Effect.context<ImportCommandServices>(),
+      );
       const importPorts = { view: ports.view, bridge };
-      // The notice reported a failure; a defect still surfaces.
-      const start = <A, E>(
-        command: Effect.Effect<A, E, BatchImportServices | Notifier>,
-      ) =>
-        bridge.runAndForget(
-          Effect.ignore(Effect.provideContext(command, context)),
-        );
       yield* host.addCommand({
         id: "import-child-notes",
         name: m.command_import_child_notes_name(),

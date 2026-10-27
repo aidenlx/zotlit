@@ -76,7 +76,7 @@ import { batchUpdateNotices } from "./note-feature/update-single";
 import { AnnotationNoteActions } from "./note-feature/view-actions";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
-import { importChildNotes } from "./note-import/commands";
+import { importChildNotes, importStarter } from "./note-import/commands";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { PandocEngine } from "./pandoc/service";
@@ -266,18 +266,18 @@ export async function createPluginRuntime(
     },
   );
   const noteImportView = createNoteImportView(plugin.app, creation);
-  // Import child notes on the file menu, as the command runs it. Its notice
-  // reports a failure; a defect still surfaces.
-  const importContext = runtime.runSync(
-    Effect.context<BatchImportServices | Notifier>(),
+  // Import child notes on the file menu, as the command runs it.
+  const startImport = importStarter(
+    bridge,
+    runtime.runSync(Effect.context<BatchImportServices | Notifier>()),
   );
   const importChildNotesOf = (indexedKey: string) =>
-    bridge.runAndForget(
+    startImport(
       importChildNotes(
         { view: noteImportView, bridge },
         plugin.app,
         indexedKey,
-      ).pipe(Effect.ignore, Effect.provideContext(importContext)),
+      ),
     );
   bindProtocolViews({ noteImportView, opener: targetOpener });
 

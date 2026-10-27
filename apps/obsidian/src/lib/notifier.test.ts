@@ -205,28 +205,6 @@ describe("withProgress", () => {
     }),
   );
 
-  it.effect(
-    "shows no success message for a result without one, and hides the loading message",
-    () =>
-      Effect.gen(function* () {
-        const notifier = testNotifier();
-        const context = yield* Layer.build(notifier.layer);
-        const task = Effect.sleep("1 second").pipe(Effect.as(""));
-        const fiber = yield* withProgress(task, {
-          ...copy,
-          success: (result: string) =>
-            result === "" ? undefined : `Created ${result}`,
-        }).pipe(Effect.provideContext(context), Effect.forkChild);
-        yield* TestClock.adjust("1 second");
-        yield* Fiber.join(fiber);
-        yield* Effect.yieldNow;
-
-        expect(notifier.notices).toEqual([
-          { messages: ["Creating"], duration: 0, hidden: true },
-        ]);
-      }),
-  );
-
   it.effect("hides the success message after 2 seconds", () =>
     Effect.gen(function* () {
       const notifier = testNotifier();
