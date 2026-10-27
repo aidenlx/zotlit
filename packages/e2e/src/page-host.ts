@@ -6,7 +6,13 @@ export interface RenameListener {
 }
 export type PageApp = App & {
   plugins: App["plugins"] & {
-    plugins: App["plugins"]["plugins"] & { zotlit?: { _loaded: boolean } };
+    plugins: App["plugins"]["plugins"] & {
+      zotlit?: {
+        _loaded: boolean;
+        manifest: import("obsidian").PluginManifest;
+      };
+    };
+    manifests: Record<string, import("obsidian").PluginManifest>;
     disablePlugin(id: string): Promise<void>;
     enablePlugin(id: string): Promise<void>;
   };

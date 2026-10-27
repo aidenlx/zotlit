@@ -1,8 +1,28 @@
+import type { BackgroundWindow } from "./page-notes-types.ts";
+
 /** Page state between calls. Migration batches augment this interface with their slots. */
 export interface PageScratch {
   windowBeforeReload?: boolean;
   listenersBeforeReload?: Set<import("./page-host.ts").RenameListener>;
 }
+
+/** JSON handle for a Query View embedded in a Markdown note. */
+export interface NoteQueryView {
+  /** Temporary legacy source handle; remove when all callers migrate in #1855. */
+  el: string;
+  path: string;
+  kind: {
+    name: string;
+    opens: string;
+    closes: string | null;
+    index: number;
+    selector: string;
+    src: string | null;
+  };
+}
+export type QueryViewElement = HTMLElement & {
+  zotlitQueryView?: import("@/views/query-view/view").QueryView;
+};
 
 /**
  * Self-contained: serialized into each receiving window. Keep all runtime
@@ -10,6 +30,167 @@ export interface PageScratch {
  */
 export function createPageHelpers(app: import("obsidian").App) {
   const scratch: PageScratch = {};
+  async function annotationOpenSubpath(
+    gesture: () => void | Promise<void>,
+  ): Promise<Record<string, string>> {
+    const proto = Object.getPrototypeOf(
+      app.workspace.getMostRecentLeaf(),
+    ) as Pick<import("obsidian").WorkspaceLeaf, "setEphemeralState">;
+    const native = proto.setEphemeralState;
+    let subpath: string | null = null;
+    proto.setEphemeralState = new Proxy(native, {
+      apply: (
+        target,
+        receiver: import("obsidian").WorkspaceLeaf,
+        args: [state: { subpath?: string } | null | undefined],
+      ) => {
+        const [state] = args;
+        if (
+          subpath === null &&
+          typeof state?.subpath === "string" &&
+          state.subpath.includes("zt-annotation=")
+        )
+          subpath = state.subpath;
+        return Reflect.apply(target, receiver, args);
+      },
+    });
+    try {
+      await gesture();
+      const found = await until(
+        "the PDF opens at the Annotation",
+        () => subpath,
+        10000,
+      );
+      return Object.fromEntries(
+        new URLSearchParams(found.startsWith("#") ? found.slice(1) : found),
+      );
+    } finally {
+      proto.setEphemeralState = native;
+    }
+  }
+  function showBehind(win: BackgroundWindow) {
+    if (process.platform !== "darwin") {
+      win.showInactive();
+      return;
+    }
+    if (!win.isMinimized()) {
+      win.showInactive();
+      win.blur();
+      return;
+    }
+    const opacity = win.getOpacity();
+    win.setOpacity(0);
+    win.once("restore", () => {
+      win.blur();
+      setTimeout(() => win.setOpacity(opacity), 100);
+    });
+    win.showInactive();
+  }
+  async function revealQueryView({ path, kind }: NoteQueryView) {
+    const leaves = app.workspace
+      .getLeavesOfType("markdown")
+      .filter(
+        (l) => (l.view as import("obsidian").MarkdownView).file?.path === path,
+      );
+    const leaf =
+      leaves.find((l) => l === app.workspace.getMostRecentLeaf()) ?? leaves[0];
+    if (!leaf) throw new Error(`Cannot reveal: note not open: ${  path}`);
+    const view = leaf.view as import("obsidian").MarkdownView & {
+      previewMode: {
+        renderer: { sections: { el: HTMLElement; lines: number }[] };
+      };
+    };
+    const lines = view.data.split("\n");
+    const opens = new RegExp(kind.opens);
+    const from = lines.flatMap((text, index) =>
+      opens.test(text) ? [index] : [],
+    )[kind.index];
+    if (from === undefined)
+      throw new Error(`Cannot reveal: no ${  kind.name  } in ${  path}`);
+    let to = from;
+    if (kind.closes !== null) {
+      const closes = new RegExp(kind.closes);
+      to = lines.findIndex((text, index) => index > from && closes.test(text));
+      if (to === -1) to = lines.length - 1;
+    }
+    const lineOf = (el: HTMLElement) => {
+      if (view.getMode() === "source") {
+        const cm = view.editor.cm;
+        if (!cm.contentDOM.contains(el)) return null;
+        return cm.state.doc.lineAt(cm.posAtDOM(el)).number - 1;
+      }
+      let start = 0;
+      for (const section of view.previewMode.renderer.sections) {
+        if (section.el.contains(el))
+          return Math.max(start, Math.min(from, start + section.lines - 1));
+        start += section.lines;
+      }
+      return null;
+    };
+    const viewOf = (el: QueryViewElement) =>
+      el.zotlitQueryView
+        ? el
+        : el.querySelector<QueryViewElement>(".block-language-zotquery");
+    const drawn = () =>
+      [...view.containerEl.querySelectorAll<QueryViewElement>(kind.selector)]
+        .filter(
+          (el) =>
+            el.isShown() &&
+            (kind.src === null || el.getAttribute("src") === kind.src) &&
+            viewOf(el)?.zotlitQueryView,
+        )
+        .find((el) => {
+          const line = lineOf(el);
+          return line !== null && line >= from && line <= to;
+        });
+    const end = Temporal.Now.instant().epochMilliseconds + 10_000;
+    for (;;) {
+      const el = drawn();
+      if (el) {
+        const host = viewOf(el);
+        await host!.zotlitQueryView!.settled;
+        if (host!.isConnected && host!.isShown()) return host!;
+      }
+      if (Temporal.Now.instant().epochMilliseconds > end)
+        throw new Error(
+          `Not drawn: ${ 
+            kind.name 
+            } in ${ 
+            path 
+            } (${ 
+            view.getMode() 
+            }, lines ${ 
+            from 
+            }-${ 
+            to 
+            })`,
+        );
+      if (view.getMode() === "preview")
+        view.setEphemeralState({ scroll: from });
+      else {
+        const editor = view.editor;
+        if (
+          editor
+            .listSelections()
+            .some(
+              ({ anchor, head }) =>
+                Math.max(anchor.line, head.line) >= from &&
+                Math.min(anchor.line, head.line) <= to,
+            )
+        ) {
+          const off =
+            to < editor.lastLine()
+              ? { line: to + 1, ch: 0 }
+              : { line: Math.max(from - 1, 0), ch: 0 };
+          editor.setCursor(off);
+        }
+        const at = { line: from, ch: 0 };
+        editor.scrollIntoView({ from: at, to: at }, true);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
   function press<T extends HTMLElement>(
     el: T | null | undefined,
     what: string,
@@ -229,6 +410,9 @@ export function createPageHelpers(app: import("obsidian").App) {
     return `${source.slice(0, start)}{% managed %}\n{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n{% endmanaged %}\n${source.slice(end + 4)}`;
   }
   return {
+    annotationOpenSubpath,
+    showBehind,
+    revealQueryView,
     scratch,
     press,
     until,
