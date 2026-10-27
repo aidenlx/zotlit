@@ -290,9 +290,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteFeature: services.noteFeature,
       settings: services.settings,
       bridge: services.bridge,
-      citationLookup: services.citationLookup,
-      citationIndex: services.citationIndex,
-      useLedger: services.useLedger,
+      ...services.citationSuggestServices,
     });
     if (ANNOTATION_SUGGESTER_ENABLED) {
       registerAnnotationSuggest(this, {

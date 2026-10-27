@@ -80,7 +80,7 @@ export class InsertCitationModal extends ItemSearchModal {
       hit,
       Keymap.isModifier(evt, "Shift") ? "alt" : "main",
     );
-    if (this.#editor.getValue() !== before) return;
+    if (!outcome || this.#editor.getValue() !== before) return;
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
