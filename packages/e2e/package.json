@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@codemirror/view": "catalog:",
+    "@electron/remote": "catalog:",
     "@types/node": "catalog:",
+    "@types/react": "catalog:",
     "@types/yargs": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/obsidian": "workspace:*",

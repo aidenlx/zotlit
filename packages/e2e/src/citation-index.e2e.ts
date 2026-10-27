@@ -14,7 +14,8 @@ import {
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { prepareRunWindow } from "./background-throttling.ts";
-import { cli, obEval, waitFor } from "./obsidian-cli.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { cli, waitFor } from "./obsidian-cli.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -64,17 +65,37 @@ async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
   }
   cleanup.defer(async () => {
     await cp(path, fixture.databasePath);
-    await obEval(
+    await obRun(
       vaultId,
-      `app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(()=>true)`,
-      120_000,
+      async ({ zotlit }) => {
+        return String(
+          await zotlit.services.zoteroReads.refresh().then(() => true),
+        );
+      },
+      undefined,
+      { timeoutMs: 120000 },
     );
     expect(
       await waitFor(
         async () =>
-          (await obEval(
+          (await obRun(
             vaultId,
-            `app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(item.key)},{limit:1}).then(hits=>String(hits[0]?.item.fields.title===${JSON.stringify(item.title)}))`,
+            async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+              return String(
+                await zotlit.services.itemLookup
+                  .search(__typedArg0, { limit: 1 })
+                  .then((hits) =>
+                    String(
+                      (hits[0] && "title" in hits[0].item.fields
+                        ? "title" in hits[0]!.item.fields
+                          ? hits[0]!.item.fields.title
+                          : undefined
+                        : undefined) === __typedArg1,
+                    ),
+                  ),
+              );
+            },
+            { __typedArg0: item.key, __typedArg1: item.title },
           )) === "true",
         240,
       ),
@@ -112,17 +133,30 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     await cli([`vault=${vaultId}`, "plugin:enable", "id=zotlit"]);
     expect(
       await waitFor(async () => {
-        const answer = await obEval(
+        const answer = await obRun(
           vaultId,
-          `app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(item.title)},{limit:1}).then(hits=>String(hits[0]?.item.itemID===${item.itemID}))`,
+          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+            return String(
+              await zotlit.services.itemLookup
+                .search(__typedArg0, { limit: 1 })
+                .then((hits) => String(hits[0]?.item.itemID === __typedArg1)),
+            );
+          },
+          { __typedArg0: item.title, __typedArg1: item.itemID },
         ).catch(() => "");
         return answer === "true";
       }, 240),
     ).toBe(true);
-    await obEval(
+    await obRun(
       vaultId,
-      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.citationLookup.read({});return true;})()",
-      120_000,
+      async ({ zotlit }) => {
+        const s = zotlit.services;
+        await s.itemLookup.search("", { limit: 1 });
+        await s.citationLookup.read({});
+        return String(true);
+      },
+      undefined,
+      { timeoutMs: 120000 },
     );
   }, 600_000);
 
@@ -134,24 +168,42 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
   it("keeps requested answers and interactive reads responsive while refreshing 100,000 Items", async () => {
     // A delivered push over unchanged bytes must leave downstream indexes alone.
     const unchanged = JSON.parse(
-      await obEval(
+      await obRun(
         vaultId,
-        `(async()=>{
-          const s=app.plugins.plugins.zotlit.services;
-          const settled=Promise.withResolvers();
-          let active=false,publications=0;
-          using cleanup=new DisposableStack();
-          cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>publications++));
-          cleanup.defer(s.bridge.subscribe(s.zoteroReads.refreshing,value=>{
-            if(value)active=true;else if(active)settled.resolve();
-          }));
-          cleanup.adopt(setTimeout(()=>settled.reject(Error('Push did not settle')),10000),clearTimeout);
+        async ({ zotlit }, { __typedArg0 }) => {
+          const s = zotlit.services;
+          const settled = Promise.withResolvers<void>();
+          let active = false,
+            publications = 0;
+          using cleanup = new DisposableStack();
+          cleanup.defer(
+            s.bridge.subscribe(s.zoteroReads.changed, () => publications++),
+          );
+          cleanup.defer(
+            s.bridge.subscribe(s.zoteroReads.refreshing, (value) => {
+              if (value) active = true;
+              else if (active) settled.resolve();
+            }),
+          );
+          cleanup.adopt(
+            setTimeout(
+              () => settled.reject(Error("Push did not settle")),
+              10000,
+            ),
+            clearTimeout,
+          );
           s.zoteroReads.notifyExternalChange();
           await settled.promise;
-          const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
-          return JSON.stringify({publications,itemID:hits[0]?.item.itemID});
-        })()`,
-        30_000,
+          const hits = await s.itemLookup.search(__typedArg0, { limit: 1 });
+          return String(
+            JSON.stringify({
+              publications,
+              itemID: hits[0]?.item.itemID,
+            }),
+          );
+        },
+        { __typedArg0: item.key },
+        { timeoutMs: 30000 },
       ),
     );
     expect(unchanged).toEqual({ publications: 0, itemID: item.itemID });
@@ -163,62 +215,135 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
         for (let round = 0; round < 3; round += 1) {
           evidence.push(
             JSON.parse(
-              await obEval(
+              await obRun(
                 vaultId,
-                `(async()=>{
-              const s=app.plugins.plugins.zotlit.services,lookup=s.citationLookup;
-              const gaps=[],readMs=[],citationReadMs=[];
-              const key=${JSON.stringify(item.key)},expected=${JSON.stringify(item.citationKey)};
-              const request={citekeys:[expected],indexedKeys:[key]};
-              const held=await lookup.read(request);
-              const first=Promise.withResolvers();
-              let projection;
-              projection=lookup.observe(()=>{if(projection?.current)first.resolve();});
-              using disposeProjection=projection;
-              projection.set(request);
-              await first.promise;
-              let previous=performance.now(),heldThroughout=true;
-              using cleanup=new DisposableStack();
-              const changed=Promise.withResolvers();
-              cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>changed.resolve()));
-              const sample=()=>{const now=performance.now();gaps.push(now-previous);previous=now;heldThroughout&&=projection.current?.value.citekeyOf(key)===expected;};
-              cleanup.adopt(setInterval(sample,4),clearInterval);
-              let refreshing=true,readsDuringRefresh=0,readsCorrect=true;
-              const refresh=(async()=>{
-                await s.zoteroReads.refresh();
-                await changed.promise;
-                return await lookup.read(request);
-              })().finally(()=>{refreshing=false;});
-              // Every search crosses the interactive worker and hydrates its hit from SQLite.
-              const reads=(async()=>{
-                do {
-                  const started=performance.now();
-                  const hits=await s.itemLookup.search(${JSON.stringify(item.title)},{limit:1});
-                  readMs.push(performance.now()-started);
-                  readsCorrect&&=hits.length===1&&hits[0].item.itemID===${item.itemID}&&hits[0].item.fields.title===${JSON.stringify(item.title)};
-                  if(refreshing)readsDuringRefresh++;
-                } while(refreshing);
-              })();
-              const citationReads=(async()=>{
-                do {
-                  const started=performance.now();
-                  await lookup.read(request);
-                  citationReadMs.push(performance.now()-started);
-                  // A held answer can resolve immediately; yield so refresh and search can progress.
-                  await new Promise(resolve=>setTimeout(resolve,0));
-                } while(refreshing);
-              })();
-              const [fresh]=await Promise.all([refresh,reads,citationReads]);
-              sample();
-              const unrequested=[
-                ['unrequested-probe-key',()=>fresh.resolve('unrequested-probe-key')],
-                ['UNREQUESTED',()=>fresh.citekeyOf('UNREQUESTED')],
-              ].every(([key,read])=>{
-                try{read();return false;}catch(error){return error instanceof Error&&error.message.includes(key);}
-              });
-              return JSON.stringify({gaps,readMs,citationReadMs,readsDuringRefresh,readsCorrect,heldThroughout,sameRevision:fresh.revision===held.revision,citekey:fresh.citekeyOf(key),unique:fresh.resolve(expected).kind==="unique",unrequested});
-            })()`,
-                120_000,
+                async (
+                  { zotlit },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                    __typedArg4,
+                  },
+                ) => {
+                  const s = zotlit.services,
+                    lookup = s.citationLookup;
+                  const gaps: number[] = [],
+                    readMs: number[] = [],
+                    citationReadMs: number[] = [];
+                  const key = __typedArg0,
+                    expected = __typedArg1;
+                  const request = { citekeys: [expected], indexedKeys: [key] };
+                  const held = await lookup.read(request);
+                  const first = Promise.withResolvers<void>();
+                  let projection: ReturnType<typeof lookup.observe>;
+                  projection = lookup.observe(() => {
+                    if (projection?.current) first.resolve();
+                  });
+                  using _disposeProjection = projection;
+                  projection.set(request);
+                  await first.promise;
+                  let previous = performance.now(),
+                    heldThroughout = true;
+                  using cleanup = new DisposableStack();
+                  const changed = Promise.withResolvers<void>();
+                  cleanup.defer(
+                    s.bridge.subscribe(s.zoteroReads.changed, () =>
+                      changed.resolve(),
+                    ),
+                  );
+                  const sample = () => {
+                    const now = performance.now();
+                    gaps.push(now - previous);
+                    previous = now;
+                    heldThroughout &&=
+                      projection.current?.value.citekeyOf(key) === expected;
+                  };
+                  cleanup.adopt(setInterval(sample, 4), clearInterval);
+                  let refreshing = true,
+                    readsDuringRefresh = 0,
+                    readsCorrect = true;
+                  const refresh = (async () => {
+                    await s.zoteroReads.refresh();
+                    await changed.promise;
+                    return await lookup.read(request);
+                  })().finally(() => {
+                    refreshing = false;
+                  });
+                  // Every search crosses the interactive worker and hydrates its hit from SQLite.
+                  const reads = (async () => {
+                    do {
+                      const started = performance.now();
+                      const hits = await s.itemLookup.search(__typedArg2, {
+                        limit: 1,
+                      });
+                      readMs.push(performance.now() - started);
+                      readsCorrect &&=
+                        hits.length === 1 &&
+                        hits[0]!.item.itemID === __typedArg3 &&
+                        ("title" in hits[0]!.item.fields
+                          ? hits[0]!.item.fields.title
+                          : undefined) === __typedArg4;
+                      if (refreshing) readsDuringRefresh++;
+                    } while (refreshing);
+                  })();
+                  const citationReads = (async () => {
+                    do {
+                      const started = performance.now();
+                      await lookup.read(request);
+                      citationReadMs.push(performance.now() - started);
+                      // A held answer can resolve immediately; yield so refresh and search can progress.
+                      await new Promise((resolve) => setTimeout(resolve, 0));
+                    } while (refreshing);
+                  })();
+                  const [fresh] = await Promise.all([
+                    refresh,
+                    reads,
+                    citationReads,
+                  ]);
+                  sample();
+                  const unrequested = (
+                    [
+                      [
+                        "unrequested-probe-key",
+                        () => fresh.resolve("unrequested-probe-key"),
+                      ],
+                      ["UNREQUESTED", () => fresh.citekeyOf("UNREQUESTED")],
+                    ] as const
+                  ).every(([key, read]) => {
+                    try {
+                      read();
+                      return false;
+                    } catch (error) {
+                      return (
+                        error instanceof Error && error.message.includes(key)
+                      );
+                    }
+                  });
+                  return String(
+                    JSON.stringify({
+                      gaps,
+                      readMs,
+                      citationReadMs,
+                      readsDuringRefresh,
+                      readsCorrect,
+                      heldThroughout,
+                      sameRevision: fresh.revision === held.revision,
+                      citekey: fresh.citekeyOf(key),
+                      unique: fresh.resolve(expected).kind === "unique",
+                      unrequested,
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: item.key,
+                  __typedArg1: item.citationKey!,
+                  __typedArg2: item.title,
+                  __typedArg3: item.itemID,
+                  __typedArg4: item.title,
+                },
+                { timeoutMs: 120000 },
               ),
             ) as RefreshEvidence,
           );
@@ -267,9 +392,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
       evidence.every(({ unique, unrequested }) => unique && unrequested),
     ).toBe(true);
     expect(evidence.map(({ citekey }) => citekey)).toEqual([
-      item.citationKey,
-      item.citationKey,
-      item.citationKey,
+      item.citationKey!,
+      item.citationKey!,
+      item.citationKey!,
     ]);
     expect(p99).toBeLessThanOrEqual(RENDERER_BUDGET.p99Ms);
     expect(maximum).toBeLessThanOrEqual(RENDERER_BUDGET.maxMs);
@@ -306,31 +431,70 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           }
           rounds.push(
             JSON.parse(
-              await obEval(
+              await obRun(
                 vaultId,
-                `(async()=>{
-            const s=app.plugins.plugins.zotlit.services;
-            using cleanup=new DisposableStack();
-            const changed=Promise.withResolvers();
-            cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>changed.resolve()));
-            cleanup.adopt(setTimeout(()=>changed.reject(Error('Changed push did not publish')),60000),clearTimeout);
-            let refreshed=false,maximum=0,samples=0,correct=true,fresh=false;
-            const settled=changed.promise.then(()=>{refreshed=true;});
-            s.zoteroReads.notifyExternalChange();
-            const deadline=performance.now()+60000;
-            do{
-              const start=performance.now();
-              const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
-              maximum=Math.max(maximum,performance.now()-start);samples++;
-              correct&&=hits.length===1&&hits[0].item.itemID===${item.itemID};
-              fresh=hits[0]?.item.fields.title===${JSON.stringify(title)};
-              // Sampling cadence: each pass measures one search during the refresh.
-              await new Promise(resolve=>setTimeout(resolve,50));
-            }while((!refreshed||!fresh)&&performance.now()<deadline);
-            await settled;
-            return JSON.stringify({maximum,samples,correct,fresh});
-          })()`,
-                120_000,
+                async (
+                  { zotlit },
+                  { __typedArg0, __typedArg1, __typedArg2 },
+                ) => {
+                  const s = zotlit.services;
+                  using cleanup = new DisposableStack();
+                  const changed = Promise.withResolvers<void>();
+                  cleanup.defer(
+                    s.bridge.subscribe(s.zoteroReads.changed, () =>
+                      changed.resolve(),
+                    ),
+                  );
+                  cleanup.adopt(
+                    setTimeout(
+                      () =>
+                        changed.reject(Error("Changed push did not publish")),
+                      60000,
+                    ),
+                    clearTimeout,
+                  );
+                  let refreshed = false,
+                    maximum = 0,
+                    samples = 0,
+                    correct = true,
+                    fresh = false;
+                  const settled = changed.promise.then(() => {
+                    refreshed = true;
+                  });
+                  s.zoteroReads.notifyExternalChange();
+                  const deadline = performance.now() + 60000;
+                  do {
+                    const start = performance.now();
+                    const hits = await s.itemLookup.search(__typedArg0, {
+                      limit: 1,
+                    });
+                    maximum = Math.max(maximum, performance.now() - start);
+                    samples++;
+                    correct &&=
+                      hits.length === 1 && hits[0]!.item.itemID === __typedArg1;
+                    fresh =
+                      (hits[0] && "title" in hits[0].item.fields
+                        ? "title" in hits[0]!.item.fields
+                          ? hits[0]!.item.fields.title
+                          : undefined
+                        : undefined) === __typedArg2;
+                    // Sampling cadence: each pass measures one search during the refresh.
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                  } while (
+                    (!refreshed || !fresh) &&
+                    performance.now() < deadline
+                  );
+                  await settled;
+                  return String(
+                    JSON.stringify({ maximum, samples, correct, fresh }),
+                  );
+                },
+                {
+                  __typedArg0: item.key,
+                  __typedArg1: item.itemID,
+                  __typedArg2: title,
+                },
+                { timeoutMs: 120000 },
               ),
             ),
           );
@@ -369,16 +533,23 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
       `);
     }
     const answer = JSON.parse(
-      await obEval(
+      await obRun(
         vaultId,
-        `(async()=>{
-      const s=app.plugins.plugins.zotlit.services;
-      let rejected=false;
-      try{await s.zoteroReads.refresh();}catch{rejected=true;}
-      const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
-      return JSON.stringify({rejected,itemID:hits[0]?.item.itemID});
-    })()`,
-        120_000,
+        async ({ zotlit }, { __typedArg0 }) => {
+          const s = zotlit.services;
+          let rejected = false;
+          try {
+            await s.zoteroReads.refresh();
+          } catch {
+            rejected = true;
+          }
+          const hits = await s.itemLookup.search(__typedArg0, { limit: 1 });
+          return String(
+            JSON.stringify({ rejected, itemID: hits[0]?.item.itemID }),
+          );
+        },
+        { __typedArg0: item.key },
+        { timeoutMs: 120000 },
       ),
     );
     expect(answer).toEqual({ rejected: true, itemID: item.itemID });
