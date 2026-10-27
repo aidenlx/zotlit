@@ -59,20 +59,20 @@ export interface ExportPorts {
    */
   readLookup: (request: {
     citekeys: readonly string[];
-  }) => Promise<CitationLookupAnswer>;
+  }) => Effect.Effect<CitationLookupAnswer, unknown>;
   /**
    * Zotero library addresses of the cited Indexed Keys, read under one lease.
    * A key the database cannot place is absent; `null` means no read lease.
    */
   readItemRefs: (
     indexedKeys: readonly string[],
-  ) => Promise<ReadonlyMap<string, BibliographyItemRef> | null>;
+  ) => Effect.Effect<ReadonlyMap<string, BibliographyItemRef> | null>;
   /** Zotero data directory, named in the database failure. */
   dataDir: () => string;
   /** The bibliography source chain over the cited Items. */
   fetchBibliography: (
     refs: readonly BibliographyItemRef[],
-  ) => Promise<BibliographyResult>;
+  ) => Effect.Effect<BibliographyResult>;
   engine: Pick<CitationEngine, "prepareDocument" | "renderPrepared">;
 }
 
@@ -289,10 +289,8 @@ const readCitations = Effect.fn("readCitations")(function* (
   const ambiguous: string[] = [];
 
   const citekeys = citedIds.filter((id) => !injected.has(id));
-  const reading = yield* Effect.tryPromise(() =>
-    citekeys.length > 0
-      ? ports.readLookup({ citekeys })
-      : Promise.resolve(null),
+  const reading = yield* (
+    citekeys.length > 0 ? ports.readLookup({ citekeys }) : Effect.succeed(null)
   ).pipe(Effect.result);
   if (Result.isFailure(reading)) {
     return {
@@ -379,7 +377,7 @@ const citeItems = Effect.fn("citeItems")(function* (
 > {
   if (indexedKeys.length === 0) return { items: new Map() };
 
-  const placed = yield* Effect.promise(() => ports.readItemRefs(indexedKeys));
+  const placed = yield* ports.readItemRefs(indexedKeys);
   if (!placed) {
     return {
       error: { kind: "database-unavailable", dataDir: ports.dataDir() },
@@ -397,9 +395,7 @@ const citeItems = Effect.fn("citeItems")(function* (
     return { error: { kind: "items-missing", sources: unplaced } };
   }
 
-  const bibliography = yield* Effect.promise(() =>
-    ports.fetchBibliography(refs),
-  );
+  const bibliography = yield* ports.fetchBibliography(refs);
   return "error" in bibliography
     ? { error: toExportFailure(bibliography.error, describe) }
     : { items: bibliography.items };

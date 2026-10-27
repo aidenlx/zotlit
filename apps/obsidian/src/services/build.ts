@@ -475,6 +475,15 @@ export async function buildServices(
       }),
     })
     .useValue({
+      pandocExportServices: () => ({
+        db: runtime.runSync(ZoteroReads),
+        citationLookup: runtime.runSync(CitationLookup),
+        zoteroPref: runtime.runSync(ZoteroPref),
+        pandocEngine: runtime.runSync(PandocEngine),
+        notifier: runtime.runSync(Notifier),
+      }),
+    })
+    .useValue({
       pandocEngine: () =>
         bindManagedBinary(bridge, runtime.runSync(PandocEngine)),
     })

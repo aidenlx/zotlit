@@ -159,16 +159,22 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(missing).toMatchObject({ errors: [{ code: "style-missing" }] });
   });
 
-  it("shows export destinations within the named vault when the format changes", async () => {
+  it("exports a draft as HTML after the destination follows the chosen format (#1830)", async () => {
     const m = await import("@obsidian-messages");
     const vault = basename(path);
+    const source = await readFile(
+      join(root, "packages/scripts/lib/fixture/vault-pages/pandoc-export.md"),
+      "utf8",
+    );
+    await using output = new AsyncDisposableStack();
+    output.defer(() => rm(join(path, "Export display.html"), { force: true }));
     const result = JSON.parse(
       await obEval(
         vaultId,
         `(async()=>{
         ${browserWaits}
         await using cleanup=new AsyncDisposableStack();
-        const file=cleanup.adopt(await app.vault.create('Export display.md','A draft.'),file=>app.vault.delete(file));
+        const file=cleanup.adopt(await app.vault.create('Export display.md',${JSON.stringify(source)}),file=>app.vault.delete(file));
         const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
         await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});
         const doc=leaf.view.containerEl.ownerDocument;
@@ -182,7 +188,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const word=row.querySelector('.setting-item-description').textContent;
         const format=modal.querySelector('select');format.value='html';
         format.dispatchEvent(new format.ownerDocument.defaultView.Event('change',{bubbles:true}));
-        return JSON.stringify({word,html:row.querySelector('.setting-item-description').textContent,vault:app.vault.getName(),absolutePathShown:modal.textContent.includes(app.vault.adapter.getBasePath())});
+        const result={word,html:row.querySelector('.setting-item-description').textContent,vault:app.vault.getName(),absolutePathShown:modal.textContent.includes(app.vault.adapter.getBasePath())};
+        [...modal.querySelectorAll('button')].find(button=>button.textContent===${JSON.stringify(m.pandoc_export_confirm())}).click();
+        await until('HTML export',()=>app.vault.adapter.exists('Export display.html'),30000);
+        return JSON.stringify(result);
       })()`,
       ),
     );
@@ -199,6 +208,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       }),
     );
     expect(result.absolutePathShown).toBe(false);
+    const html = await readFile(join(path, "Export display.html"), "utf8");
+    expect(html).toContain("<strong>research draft</strong>");
+    expect(html).toContain("This callout becomes a readable quotation.");
+    expect(html).not.toContain("[!note]");
   });
 
   it("opens the Library View with the Welcome View beside the active note and reuses its tab", async () => {

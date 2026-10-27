@@ -31,16 +31,15 @@ export const exportRun = {
 export function answerExportModal(
   _app: unknown,
   options: { referencesStyleId: string | null },
-): Promise<{ format: "html"; styleId: string | null; destination: string }> {
+  resolve: (choices: { format: "html"; styleId: string | null; destination: string }) => void,
+): { close(): void } {
   exportRun.referencesStyleId = options.referencesStyleId;
-  return Promise.resolve({
+  resolve({
     format: "html",
-    styleId:
-      exportRun.override === undefined
-        ? options.referencesStyleId
-        : exportRun.override,
+    styleId: exportRun.override === undefined ? options.referencesStyleId : exportRun.override,
     destination: exportRun.destination,
   });
+  return { close() {} };
 }
 
 /** One cited work, as both Zotero itself and an export read it. */
