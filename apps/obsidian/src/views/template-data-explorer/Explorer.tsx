@@ -55,6 +55,7 @@ export function Explorer({
   lookup: Pick<ItemLookupHandle, "search">;
   explorer: Omit<
     DataExplorerProps,
+    | "engines"
     | "data"
     | "root"
     | "collapsedSections"
@@ -235,6 +236,7 @@ export function Explorer({
           ) : (
             <DataExplorer
               {...explorer}
+              engines={() => state.engines}
               restore={state.restore}
               onRestored={() => update(clearRestore)}
               onPresentationChange={(presentation) =>

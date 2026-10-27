@@ -536,9 +536,9 @@ export default defineConfig({
       },
     },
     {
-      // Views on view atoms with no Plain dependency left. The Template Data
-      // Explorer joins when the Template service converts.
+      // Views on view atoms with no Plain dependency left.
       files: [
+        "src/views/template-data-explorer/**",
         "src/views/library/**",
         "src/views/query-view/**",
         "src/views/annot-view/**",

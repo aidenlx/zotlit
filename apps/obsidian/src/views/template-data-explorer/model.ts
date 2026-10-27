@@ -36,6 +36,7 @@ import { viewRuntime } from "@/lib/view-atoms";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import { javascriptTemplatesEnabledAtom } from "@/services/template/atoms";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { getSampleItem } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
@@ -70,7 +71,9 @@ export interface ExplorerLoad {
 
 /** What the Explorer renders: its session and the data its target read. */
 export type ExplorerState = Omit<ExplorerSession, "revision"> &
-  Omit<ExplorerLoad, "itemId">;
+  Omit<ExplorerLoad, "itemId"> & {
+    readonly engines: readonly ("liquid" | "eta")[];
+  };
 
 export interface ExplorerModel {
   readonly session: Atom.Writable<ExplorerSession>;
@@ -111,10 +114,16 @@ export function makeExplorerModel(): ExplorerModel {
   });
   const state = Atom.make((get): ExplorerState => {
     const { revision: _, ...current } = get(session);
+    const permission = get(javascriptTemplatesEnabledAtom);
+    const engines: ExplorerState["engines"] =
+      AsyncResult.isSuccess(permission) && permission.value
+        ? ["liquid", "eta"]
+        : ["liquid"];
     const result = get(loaded);
     if (AsyncResult.isFailure(result)) {
       return {
         ...current,
+        engines,
         annotations: null,
         data: null,
         status: "error",
@@ -133,7 +142,7 @@ export function makeExplorerModel(): ExplorerModel {
         error: null,
       }),
     );
-    return { ...current, ...load };
+    return { ...current, ...load, engines };
   });
   return { session, loaded, state };
 }
