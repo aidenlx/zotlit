@@ -4,6 +4,7 @@
 // `turbo run test` through it, so the whole run passes the gate once and each
 // package's Vitest skips it. `--help` prints the contract.
 
+import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import yargs from "yargs";
@@ -22,7 +23,7 @@ import {
 
 const EXIT_USAGE = 2;
 
-const epilogue = `The Memory Gate admits a heavy run while the OS reports memory to spare and no gated run has started in the last 30 s (ADR 0077). It holds nothing once it admits.
+const epilogue = `The Memory Gate admits a heavy run in arrival order while the OS reports memory to spare. It holds nothing once it admits.
 
 Exit codes:
   ${EXIT_ADMISSION_BLOCKED}   the Admission Deadline passed with the gate still closed; blocked, not a failure.
@@ -65,7 +66,7 @@ const [command, ...args] = ((argv["--"] as unknown[] | undefined) ?? []).map(
 );
 if (!command) usage("name the command after: -- <command> [args...]");
 
-const admitted = await passMemoryGateOrExit();
+const admitted = await Effect.runPromise(passMemoryGateOrExit());
 const options = {
   stdio: "inherit",
   env: admitted
