@@ -69,10 +69,8 @@ export function openPandocExportModal(
     styleSource,
     notePath,
   }: PandocExportModalOptions,
-): Promise<PandocExportChoices | null> {
-  const { promise, resolve } =
-    Promise.withResolvers<PandocExportChoices | null>();
-
+  resolve: (choices: PandocExportChoices | null) => void,
+): Modal {
   let format: DocumentFormat = "docx";
   const noteStyleId = referencesStyleId ?? STYLE_DEFAULT;
   let styleId = noteStyleId;
@@ -171,7 +169,7 @@ export function openPandocExportModal(
 
   modal.setCloseCallback(() => resolve(null));
   modal.open();
-  return promise;
+  return modal;
 
   async function browse(): Promise<void> {
     try {

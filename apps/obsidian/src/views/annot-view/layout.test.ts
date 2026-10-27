@@ -22,7 +22,7 @@ import type {
   AnnotationRecord,
   MutationState,
 } from "@/services/annotation-repository/service";
-import type { NoteFeatureHandle } from "@/services/note-feature";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { stateEditor } from "./__fixtures__/editor";
@@ -180,19 +180,11 @@ async function mountLayout(
   });
   const app = editorApp();
   app.workspace = workspace;
-  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(() =>
-    Promise.resolve(null),
+  const prepare = vi.fn<AnnotationNoteActions["Service"]["insert"]>(() =>
+    Effect.succeed({ kind: "cancelled" }),
   );
   const hostModel = cleanup.use(
-    makeAnnotHost({
-      annotations: repo.api,
-      notes: {
-        prepare: (options) =>
-          Effect.flatMap(Effect.abortSignal, (signal) =>
-            Effect.tryPromise(() => prepare({ ...options, signal })),
-          ).pipe(Effect.scoped),
-      },
-    }),
+    makeAnnotHost({ annotations: repo.api, notes: { insert: prepare } }),
   );
   const deps = stubService<AnnotationsLayoutDeps>("AnnotationsLayoutDeps", {
     app,
@@ -384,10 +376,11 @@ it("drags each card with the Annotation Source of its own Attachment", async () 
   }
 
   await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(2));
-  expect(prepare.mock.calls.map(([options]) => options.source)).toEqual([
-    LISTS.PDFAAAAA!.source,
-    LISTS.PDFBBBBB!.source,
-  ]);
+  expect(
+    prepare.mock.calls.map(([options]) =>
+      "annotation" in options ? options.snapshot.source : null,
+    ),
+  ).toEqual([LISTS.PDFAAAAA!.source, LISTS.PDFBBBBB!.source]);
 });
 
 it("reads again only the Attachment whose list changed, and keeps the others", async () => {

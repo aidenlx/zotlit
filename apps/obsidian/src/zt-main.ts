@@ -295,13 +295,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     if (ANNOTATION_SUGGESTER_ENABLED) {
       registerAnnotationSuggest(this, {
         app: this.app,
+        workspace: this.app.workspace,
         query: services.query,
-        annotations: services.annotationRepository,
         bridge: services.bridge,
-        noteFeature: services.noteFeature,
-        zoteroPref: services.zoteroPref,
+        annotationNotes: services.annotationNotes,
         settings: services.settings,
-        useLedger: services.useLedger,
         notify: (message) => void new BaseNotice(message),
         commentRenderer: (owner, sourcePath) =>
           createCommentRenderer({
@@ -445,12 +443,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerPandocExport(this, {
       fileSystem: services.fileSystem,
       citationParse: services.citationParseService,
-      profile: services.profile,
+      profile: services.profileService,
       app: this.app,
-      db: services.zoteroReads,
-      citationLookup: services.citationLookup,
-      pandocEngine: services.pandocEngine,
-      zoteroPref: services.zoteroPref,
+      ...services.pandocExportServices,
       zoteroHttp: services.zoteroHttp,
       settings: services.settings,
       bridge: services.bridge,
