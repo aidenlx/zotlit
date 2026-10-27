@@ -336,7 +336,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit, page: pageHelpers }) => {
           const state = pageHelpers.scratch.__zotlitQuerySource;
-          if (!state) return String(true);
+          if (!state) return;
           const services = zotlit.services;
           services.bridge.runSync(
             services.zoteroPrefService.setDataDir(state.previous),
@@ -344,7 +344,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await state.lease?.[Symbol.asyncDispose]();
           delete pageHelpers.scratch.__zotlitQuerySource;
           await services.bridge.runPromise(services.zoteroReads.refresh);
-          return String(true);
         },
         undefined,
       );
@@ -363,7 +362,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
     await obRun(
       run.vaultId,
-      async ({ zotlit, page: pageHelpers }, { __typedArg0 }) => {
+      async ({ zotlit, page: pageHelpers }, { otherDir }) => {
         const services = zotlit.services;
         const lease = await services.acquireZoteroRead();
         pageHelpers.scratch.__zotlitQuerySource = {
@@ -372,12 +371,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .dataDirOverride,
         };
         services.bridge.runSync(
-          services.zoteroPrefService.setDataDir(__typedArg0),
+          services.zoteroPrefService.setDataDir(otherDir),
         );
         await services.bridge.runPromise(services.zoteroReads.refresh);
-        return String(true);
       },
-      { __typedArg0: otherDir },
+      { otherDir },
     );
     const integerQuery = {
       library: "personal",
@@ -1127,7 +1125,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const version = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(app.plugins.plugins.zotlit!.manifest.version);
+        return app.plugins.plugins.zotlit!.manifest.version;
       },
       undefined,
     );
@@ -1556,11 +1554,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }) => {
         return String(
-          String(
-            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-              "zotero.auto-refresh"
-            ],
-          ),
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "zotero.auto-refresh"
+          ],
         );
       },
       undefined,
@@ -1573,22 +1569,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({ "zotero.auto-refresh": false }),
         );
-        return String(true);
       },
       undefined,
     );
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
+        async ({ zotlit }, { autoRefreshEnabled }) => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({
-              "zotero.auto-refresh": __typedArg0,
+              "zotero.auto-refresh": autoRefreshEnabled,
             }),
           );
-          return String(true);
         },
-        { __typedArg0: autoRefresh === "true" },
+        { autoRefreshEnabled: autoRefresh === "true" },
       );
     });
     await obRun(
@@ -1603,7 +1597,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 pageHelpers.scratch.zotlitE2EChanged!++;
             },
           );
-        return String(true);
       },
       undefined,
     );
@@ -1614,7 +1607,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           pageHelpers.scratch.zotlitE2EOffChanged!();
           delete pageHelpers.scratch.zotlitE2EOffChanged;
           delete pageHelpers.scratch.zotlitE2EChanged;
-          return String(true);
         },
         undefined,
       );
@@ -1626,7 +1618,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ page: pageHelpers }) => {
           await pageHelpers.scratch.zotlitE2ESidebar?.cleanup.disposeAsync();
           delete pageHelpers.scratch.zotlitE2ESidebar;
-          return String(true);
         },
         undefined,
       );
@@ -1634,7 +1625,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+        async ({ app, page: pageHelpers }, { annotationItemKey }) => {
           const { until } = pageHelpers;
           await using cleanup = new AsyncDisposableStack();
           const leaf = cleanup.adopt(app.workspace.getRightLeaf(true), (leaf) =>
@@ -1642,7 +1633,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await leaf!.setViewState({
             type: "zotero-annotation-view",
-            state: { followMode: "pinned", pinnedItemKey: __typedArg0 },
+            state: { followMode: "pinned", pinnedItemKey: annotationItemKey },
           });
           const view = leaf!.view;
           await (view as import("@/views/annot-view/view").AnnotationView).read;
@@ -1666,11 +1657,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             cleanup: cleanup.move(),
           };
           pageHelpers.scratch.zotlitE2ESidebar = watch;
-          return String(String(watch.before));
+          return watch.before;
         },
-        { __typedArg0: annotationItem.key },
+        { annotationItemKey: annotationItem.key },
       ),
-    ).toBe(String(attachmentAnnotations.length));
+    ).toBe(attachmentAnnotations.length);
     const signal = () => signalDatabaseUpdated(run.vaultId);
     // A Zotero edit moves the Item's title and its modification time.
     const edit = (title: string, dateModified: string) => {
@@ -1691,72 +1682,48 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .get(targetItem.itemID) as { dateModified: string };
     })();
     const finds = (query: string) =>
-      ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: query, __typedArg1: targetItem.itemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1621",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" });
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { query, targetItemId }) => {
+          var hits = await zotlit.services.itemLookup.search(query);
+          return hits.some(function (hit) {
+            return hit.item.itemID === targetItemId;
+          });
+        },
+        { query, targetItemId: targetItem.itemID },
+        {
+          what: "the target item to appear in item lookup results after the database refresh",
+        },
+      );
 
     edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
     cleanup.defer(async () => {
       edit(targetItem.title, original.dateModified);
       await signal();
-      expect(await finds(targetItem.title)).toBe(true);
+      await finds(targetItem.title);
     });
     await signal();
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ page: pageHelpers }) => {
-            return String(String(pageHelpers.scratch.zotlitE2EChanged! >= 1));
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1635",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
-    expect(await finds("zqxv")).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ page: pageHelpers }) => {
+        return pageHelpers.scratch.zotlitE2EChanged! >= 1;
+      },
+      undefined,
+      { what: "the Freshness Signal to be counted in the page scratch" },
+    );
+    await finds("zqxv");
     expect(
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          return String(
-            JSON.stringify({
-              least: pageHelpers.scratch.zotlitE2ESidebar!.least,
-              now:
-                pageHelpers.scratch.zotlitE2ESidebar!.observer &&
-                document.querySelectorAll<HTMLElement>(
-                  ".workspace-leaf .zt-annot-card",
-                ).length > 0,
-            }),
-          );
+          return JSON.stringify({
+            least: pageHelpers.scratch.zotlitE2ESidebar!.least,
+            now:
+              pageHelpers.scratch.zotlitE2ESidebar!.observer &&
+              document.querySelectorAll<HTMLElement>(
+                ".workspace-leaf .zt-annot-card",
+              ).length > 0,
+          });
         },
         undefined,
       ),
@@ -1768,19 +1735,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-          var hits = await zotlit.services.itemLookup.search(__typedArg0);
-          return String(
-            String(
-              hits.some(function (hit) {
-                return hit.item.itemID === __typedArg1;
-              }),
-            ),
-          );
+        async ({ zotlit }, { searchQuery, annotationItemId }) => {
+          var hits = await zotlit.services.itemLookup.search(searchQuery);
+          return hits.some(function (hit) {
+            return hit.item.itemID === annotationItemId;
+          });
         },
-        { __typedArg0: "simple rules", __typedArg1: annotationItem.itemID },
+        {
+          searchQuery: "simple rules",
+          annotationItemId: annotationItem.itemID,
+        },
       ),
-    ).toBe("true");
+    ).toBe(true);
     await using cleanup = new AsyncDisposableStack();
 
     // A sync lands a large Library: the worker builds its index while the
@@ -1794,85 +1760,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       added[Symbol.dispose]();
       await signalDatabaseUpdated(run.vaultId);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-              var hits = await zotlit.services.itemLookup.search(__typedArg0);
-              return String(
-                String(
-                  hits.some(function (hit) {
-                    return hit.item.itemID === __typedArg1;
-                  }),
-                ),
-              );
-            },
-            { __typedArg0: lastTitleQuery, __typedArg1: lastItemID },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli.e2e.ts:1669",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: "false",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { lastTitleQuery, lastItemID }) => {
+          var hits = await zotlit.services.itemLookup.search(lastTitleQuery);
+          return hits.some(function (hit) {
+            return hit.item.itemID === lastItemID;
+          });
+        },
+        { lastTitleQuery, lastItemID },
+        {
+          ready: (value) => value === false,
+          what: "the last item to drop out of item lookup results for the title query",
+        },
+      );
     });
     await signalDatabaseUpdated(run.vaultId);
     // Until the build completes, the held index answers: a known Item stays
     // found. The new Items show once it completes. The 10 ms pause is the
     // sampling cadence of the measurement, not a wait for a state.
-    const rebuild = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
-          var lookup = zotlit.services.itemLookup;
-          var has = function (
-            hits: Awaited<ReturnType<typeof lookup.search>>,
-            id: number,
-          ) {
-            return hits.some(function (hit) {
-              return hit.item.itemID === id;
-            });
-          };
-          var start = performance.now();
-          var waits = [];
-          var staleMisses = 0;
-          while (performance.now() - start < 60000) {
-            if (has(await lookup.search(__typedArg0), __typedArg1))
-              return String(
-                JSON.stringify({
-                  builtMs: Math.round(performance.now() - start),
-                  polls: waits.length,
-                  staleMisses: staleMisses,
-                  waitMedianMs: waits.sort(function (a, b) {
-                    return a - b;
-                  })[waits.length >> 1],
-                  waitMaxMs: waits.at(-1),
-                }),
-              );
-            var t0 = performance.now();
-            if (!has(await lookup.search("simple rules"), __typedArg2))
-              staleMisses++;
-            waits.push(Math.round((performance.now() - t0) * 10) / 10);
-            await new Promise(function (resolve) {
-              setTimeout(resolve, 10);
-            });
-          }
-          return String(JSON.stringify({ builtMs: null }));
-        },
-        {
-          __typedArg0: lastTitleQuery,
-          __typedArg1: lastItemID,
-          __typedArg2: annotationItem.itemID,
-        },
-        { timeoutMs: 90000 },
-      ),
-    ) as {
+    const rebuild = (await obRun(
+      run.vaultId,
+      async ({ zotlit }, { lastTitleQuery, lastItemID, annotationItemId }) => {
+        var lookup = zotlit.services.itemLookup;
+        var has = function (
+          hits: Awaited<ReturnType<typeof lookup.search>>,
+          id: number,
+        ) {
+          return hits.some(function (hit) {
+            return hit.item.itemID === id;
+          });
+        };
+        var start = performance.now();
+        var waits = [];
+        var staleMisses = 0;
+        while (performance.now() - start < 60000) {
+          if (has(await lookup.search(lastTitleQuery), lastItemID))
+            return {
+              builtMs: Math.round(performance.now() - start),
+              polls: waits.length,
+              staleMisses: staleMisses,
+              waitMedianMs: waits.sort(function (a, b) {
+                return a - b;
+              })[waits.length >> 1],
+              waitMaxMs: waits.at(-1),
+            };
+          var t0 = performance.now();
+          if (!has(await lookup.search("simple rules"), annotationItemId))
+            staleMisses++;
+          waits.push(Math.round((performance.now() - t0) * 10) / 10);
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 10);
+          });
+        }
+        return { builtMs: null };
+      },
+      { lastTitleQuery, lastItemID, annotationItemId: annotationItem.itemID },
+      { timeoutMs: 90000 },
+    )) as {
       builtMs: number | null;
       polls: number;
       staleMisses: number;
@@ -1909,38 +1854,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `Synthauthor${added.firstItemID + 12}`,
       lastTitleQuery,
     ];
-    const timings = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          var lookup = zotlit.services.itemLookup;
-          var out: Record<
-            string,
-            { hits: number; medianMs: number; p95Ms: number }
-          > = {};
-          for (var query of __typedArg0) {
-            var times = [];
-            var hits = 0;
-            for (var i = 0; i < 21; i++) {
-              var t0 = performance.now();
-              hits = (await lookup.search(query)).length;
-              times.push(performance.now() - t0);
-            }
-            times.sort(function (a, b) {
-              return a - b;
-            });
-            out[query] = {
-              hits: hits,
-              medianMs: Math.round(times[10]! * 10) / 10,
-              p95Ms: Math.round(times[19]! * 10) / 10,
-            };
+    const timings = (await obRun(
+      run.vaultId,
+      async ({ zotlit }, { queries }) => {
+        var lookup = zotlit.services.itemLookup;
+        var out: Record<
+          string,
+          { hits: number; medianMs: number; p95Ms: number }
+        > = {};
+        for (var query of queries) {
+          var times = [];
+          var hits = 0;
+          for (var i = 0; i < 21; i++) {
+            var t0 = performance.now();
+            hits = (await lookup.search(query)).length;
+            times.push(performance.now() - t0);
           }
-          return String(JSON.stringify(out));
-        },
-        { __typedArg0: queries },
-        { timeoutMs: 90000 },
-      ),
-    ) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
+          times.sort(function (a, b) {
+            return a - b;
+          });
+          out[query] = {
+            hits: hits,
+            medianMs: Math.round(times[10]! * 10) / 10,
+            p95Ms: Math.round(times[19]! * 10) / 10,
+          };
+        }
+        return out;
+      },
+      { queries },
+      { timeoutMs: 90000 },
+    )) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
     console.info("Item Index queries, 10,000 Items", timings);
     for (const query of queries)
       expect(timings[query]!.hits).toBeGreaterThan(0);
@@ -1969,7 +1912,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             Worker.prototype.postMessage = original;
           },
         };
-        return String(true);
       },
       undefined,
     );
@@ -1978,52 +1920,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:update-all-notes"),
-            );
+            return app.commands.executeCommandById("zotlit:update-all-notes");
           },
           undefined,
         ),
-      ).toBe("true");
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async (_context, { __typedArg0 }) => {
-              return String(
-                String(
-                  Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(
-                      ".modal button",
-                    ),
-                  ).some((button) => button.textContent.trim() === __typedArg0),
-                ),
-              );
-            },
-            { __typedArg0: run.m.batch_update_confirm_button() },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli.e2e.ts:1746",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
       ).toBe(true);
-      const requests = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ page: pageHelpers }) => {
-            return String(
-              JSON.stringify(
-                pageHelpers.scratch.zotlitE2EClassifyRequests!.requests,
-              ),
-            );
-          },
-          undefined,
-        ),
-      ) as { count: number; snapshot: string }[];
+      await obRunUntil(
+        run.vaultId,
+        async (_context, { confirmButtonLabel }) => {
+          return Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".modal button"),
+          ).some((button) => button.textContent.trim() === confirmButtonLabel);
+        },
+        { confirmButtonLabel: run.m.batch_update_confirm_button() },
+        { what: "the modal button labelled with the confirm label to appear" },
+      );
+      const requests = (await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          return pageHelpers.scratch.zotlitE2EClassifyRequests!.requests;
+        },
+        undefined,
+      )) as { count: number; snapshot: string }[];
       expect(
         requests.reduce((total, request) => total + request.count, 0),
       ).toBeGreaterThanOrEqual(SYNTHETIC_CORPUS_SIZE);
@@ -2037,7 +1955,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ page: pageHelpers }) => {
           pageHelpers.scratch.zotlitE2EClassifyRequests!.restore();
           delete pageHelpers.scratch.zotlitE2EClassifyRequests;
-          return String(true);
         },
         undefined,
       );
@@ -2049,27 +1966,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const source = "Citation suggester source.md";
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        var file = await app.vault.create(__typedArg0, "");
+      async ({ app }, { notePath }) => {
+        var file = await app.vault.create(notePath, "");
         var leaf = app.workspace.getLeaf(true);
         await leaf.openFile(file, { state: { mode: "source", source: true } });
         (leaf.view as import("obsidian").MarkdownView).editor.focus();
-        return String(true);
       },
-      { __typedArg0: source },
+      { notePath: source },
     );
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          var file = app.vault.getAbstractFileByPath(__typedArg0)!;
+        async ({ app }, { source }) => {
+          var file = app.vault.getAbstractFileByPath(source)!;
           for (var leaf of app.workspace.getLeavesOfType("markdown"))
             if ((leaf.view as import("obsidian").FileView).file === file)
               leaf.detach();
           await app.fileManager.trashFile(file!);
-          return String(true);
         },
-        { __typedArg0: source },
+        { source },
       );
     });
 
@@ -2079,12 +1994,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { source, typedKeys }) => {
           var cm = (
             app.workspace.getLeavesOfType("markdown").find(function (leaf) {
               return (
-                (leaf.view as import("obsidian").FileView).file?.path ===
-                __typedArg0
+                (leaf.view as import("obsidian").FileView).file?.path === source
               );
             })!.view as import("obsidian").MarkdownView
           ).editor.cm;
@@ -2098,7 +2012,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   watch.closed = true;
           });
           try {
-            for (var ch of __typedArg1) {
+            for (var ch of typedKeys) {
               cm.dispatch(cm.state.replaceSelection(ch), {
                 userEvent: "input.type",
               });
@@ -2121,55 +2035,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           } finally {
             observer.disconnect();
           }
-          return String(JSON.stringify(watch));
+          return JSON.stringify(watch);
         },
-        { __typedArg0: source, __typedArg1: "[@ten simple" },
+        { source, typedKeys: "[@ten simple" },
       ),
     ).toBe(JSON.stringify({ opened: true, closed: false }));
 
     // The list matches the final query: its Item comes first. The popup is
     // `aria-busy` while its rows answer an earlier query.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(
-                    ".suggestion-container",
-                  ),
-                ).at(-1) &&
-                  !Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(
-                      ".suggestion-container",
-                    ),
-                  )
-                    .at(-1)!
-                    .hasAttribute("aria-busy") &&
-                  !!Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(
-                      ".suggestion-container",
-                    ),
-                  )
-                    .at(-1)!
-                    .querySelector<HTMLElement>(".suggestion-item")
-                    ?.textContent.includes(__typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: annotationItem.title },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1801",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { annotationItemTitle }) => {
+        return (
+          !!Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          ).at(-1) &&
+          !Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          )
+            .at(-1)!
+            .hasAttribute("aria-busy") &&
+          !!Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          )
+            .at(-1)!
+            .querySelector<HTMLElement>(".suggestion-item")
+            ?.textContent.includes(annotationItemTitle)
+        );
+      },
+      { annotationItemTitle: annotationItem.title },
+      {
+        what: "the citation suggestion list to settle on the annotation item as its first row",
+      },
+    );
     await obRun(
       run.vaultId,
       async (_context) => {
@@ -2189,39 +2093,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             bubbles: true,
           }),
         );
-        return String(true);
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              (
-                app.workspace.getLeavesOfType("markdown").find(function (leaf) {
-                  return (
-                    (leaf.view as import("obsidian").FileView).file?.path ===
-                    __typedArg0
-                  );
-                })!.view as import("obsidian").MarkdownView
-              ).editor.getValue(),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { source }) => {
+        return (
+          app.workspace.getLeavesOfType("markdown").find(function (leaf) {
+            return (
+              (leaf.view as import("obsidian").FileView).file?.path === source
             );
-          },
-          { __typedArg0: source },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1812",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: `[@${annotationItem.citationKey}]`,
-      }),
-    ).toBe(true);
+          })!.view as import("obsidian").MarkdownView
+        ).editor.getValue();
+      },
+      { source },
+      {
+        ready: (value) => value === `[@${annotationItem.citationKey}]`,
+        what: "the source note to contain the inserted citation for the annotation item",
+      },
+    );
   }, 180_000);
 
   it("finds a word inside a Chinese title once the Chinese Segmenter is installed, with no reload", async () => {
@@ -2230,14 +2121,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // the end, whatever happens between.
     await obRun(
       run.vaultId,
-      async ({ page: pageHelpers }, { __typedArg0 }) => {
+      async ({ page: pageHelpers }, { SEGMENTER_CACHE_DIR }) => {
         var saved = [];
         try {
           var dir = await (
             await (
               await navigator.storage.getDirectory()
             ).getDirectoryHandle("zotlit")
-          ).getDirectoryHandle(__typedArg0);
+          ).getDirectoryHandle(SEGMENTER_CACHE_DIR);
           for await (var [name, handle] of dir.entries())
             if (handle.kind === "file")
               saved.push({
@@ -2250,25 +2141,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if ((error as Error).name !== "NotFoundError") throw error;
         }
         pageHelpers.scratch.zotlitE2ESegmenterCache = saved;
-        return String(true);
       },
-      { __typedArg0: SEGMENTER_CACHE_DIR },
+      { SEGMENTER_CACHE_DIR },
     );
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ page: pageHelpers }, { __typedArg0, __typedArg1 }) => {
+        async ({ page: pageHelpers }, { SEGMENTER_CACHE_DIR }) => {
           var root = await (
             await navigator.storage.getDirectory()
           ).getDirectoryHandle("zotlit", { create: true });
           await root
-            .removeEntry(__typedArg0, { recursive: true })
+            .removeEntry(SEGMENTER_CACHE_DIR, { recursive: true })
             .catch(function (error) {
               if ((error as Error).name !== "NotFoundError") throw error;
             });
           var saved = pageHelpers.scratch.zotlitE2ESegmenterCache;
           if (saved!.length > 0) {
-            var dir = await root.getDirectoryHandle(__typedArg1, {
+            var dir = await root.getDirectoryHandle(SEGMENTER_CACHE_DIR, {
               create: true,
             });
             for (var entry of saved!) {
@@ -2280,22 +2170,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }
           }
           delete pageHelpers.scratch.zotlitE2ESegmenterCache;
-          return String(true);
         },
-        { __typedArg0: SEGMENTER_CACHE_DIR, __typedArg1: SEGMENTER_CACHE_DIR },
+        { SEGMENTER_CACHE_DIR },
       );
     });
     // Start from no binary, as a user who has not installed it yet.
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          await zotlit.services.chineseSegmenter
-            .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
-            .then(function () {
-              return true;
-            }),
-        );
+        return await zotlit.services.chineseSegmenter
+          .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
+          .then(function () {
+            return true;
+          });
       },
       undefined,
     );
@@ -2308,54 +2195,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     await signalDatabaseUpdated(run.vaultId);
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: "长江流域", __typedArg1: added.firstItemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1850",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { searchTerm, firstItemID }) => {
+        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        return hits.some(function (hit) {
+          return hit.item.itemID === firstItemID;
+        });
+      },
+      { searchTerm: "长江流域", firstItemID: added.firstItemID },
+      {
+        what: "the first item to appear in lookup results for the Chinese search term",
+      },
+    );
     // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
     expect(
       await obRun(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-          var hits = await zotlit.services.itemLookup.search(__typedArg0);
-          return String(
-            String(
-              hits.some(function (hit) {
-                return hit.item.itemID === __typedArg1;
-              }),
-            ),
-          );
+        async ({ zotlit }, { searchTerm, firstItemID }) => {
+          var hits = await zotlit.services.itemLookup.search(searchTerm);
+          return hits.some(function (hit) {
+            return hit.item.itemID === firstItemID;
+          });
         },
-        { __typedArg0: "流域", __typedArg1: added.firstItemID },
+        { searchTerm: "流域", firstItemID: added.firstItemID },
       ),
-    ).toBe("false");
+    ).toBe(false);
 
     await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
         pageHelpers.scratch.zotlitE2EPlugin = app.plugins.plugins.zotlit;
-        return String(true);
       },
       undefined,
     );
@@ -2364,7 +2234,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ page: pageHelpers }) => {
           delete pageHelpers.scratch.zotlitE2EPlugin;
-          return String(true);
         },
         undefined,
       );
@@ -2373,114 +2242,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            await zotlit.services.chineseSegmenter
-              .runPromise(zotlit.services.chineseSegmenter.binary.install)
-              .then(function () {
-                return zotlit.services.chineseSegmenter.runSync(
-                  zotlit.services.chineseSegmenter.binary.getStatus,
-                ).kind;
-              }),
-          );
+          return await zotlit.services.chineseSegmenter
+            .runPromise(zotlit.services.chineseSegmenter.binary.install)
+            .then(function () {
+              return zotlit.services.chineseSegmenter.runSync(
+                zotlit.services.chineseSegmenter.binary.getStatus,
+              ).kind;
+            });
         },
         undefined,
         { timeoutMs: 120000 },
       ),
     ).toBe("installed");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: "流域", __typedArg1: added.firstItemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1870",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { searchTerm, firstItemID }) => {
+        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        return hits.some(function (hit) {
+          return hit.item.itemID === firstItemID;
+        });
+      },
+      { searchTerm: "流域", firstItemID: added.firstItemID },
+      {
+        what: "the first item to appear in lookup results for the Chinese search term after the segmenter install",
+      },
+    );
 
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          await zotlit.services.chineseSegmenter
-            .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
-            .then(function () {
-              return true;
-            }),
-        );
+        return await zotlit.services.chineseSegmenter
+          .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
+          .then(function () {
+            return true;
+          });
       },
       undefined,
     );
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { searchTerm, firstItemID }) => {
+        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        return hits.some(function (hit) {
+          return hit.item.itemID === firstItemID;
+        });
+      },
+      { searchTerm: "流域", firstItemID: added.firstItemID },
+      {
+        ready: (value) => value === false,
+        what: "the Chinese search term to stop matching the first item in lookup results",
+      },
+    );
     expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: "流域", __typedArg1: added.firstItemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1878",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "false" }),
+      await obRun(
+        run.vaultId,
+        async ({ zotlit }, { searchTerm, firstItemID }) => {
+          var hits = await zotlit.services.itemLookup.search(searchTerm);
+          return hits.some(function (hit) {
+            return hit.item.itemID === firstItemID;
+          });
+        },
+        { searchTerm: "长江流域", firstItemID: added.firstItemID },
+      ),
     ).toBe(true);
     expect(
       await obRun(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-          var hits = await zotlit.services.itemLookup.search(__typedArg0);
-          return String(
-            String(
-              hits.some(function (hit) {
-                return hit.item.itemID === __typedArg1;
-              }),
-            ),
-          );
-        },
-        { __typedArg0: "长江流域", __typedArg1: added.firstItemID },
-      ),
-    ).toBe("true");
-    expect(
-      await obRun(
-        run.vaultId,
         async ({ app, page: pageHelpers }) => {
-          return String(
-            String(
-              pageHelpers.scratch.zotlitE2EPlugin ===
-                app.plugins.plugins.zotlit,
-            ),
+          return (
+            pageHelpers.scratch.zotlitE2EPlugin === app.plugins.plugins.zotlit
           );
         },
         undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
   }, 180_000);
 
   it("writes the database worker's log records to the plugin's log file at the configured level", async () => {
@@ -2505,7 +2340,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await zotlit.services.bridge.runPromise(
             zotlit.services.zoteroReads.refresh,
           );
-          return String(true);
         },
         undefined,
       );
@@ -2530,18 +2364,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 return record.message === "Opened Zotero database";
               })
             )
-              return String("pending");
+              return "pending";
             return String(
-              String(
-                added.filter(function (record) {
-                  return (
-                    record.level === "DEBUG" &&
-                    /^zotlit\.(db|item-lookup|obsidian\.database)\./.test(
-                      record.logger,
-                    )
-                  );
-                }).length,
-              ),
+              added.filter(function (record) {
+                return (
+                  record.level === "DEBUG" &&
+                  /^zotlit\.(db|item-lookup|obsidian\.database)\./.test(
+                    record.logger,
+                  )
+                );
+              }).length,
             );
           },
           undefined,
@@ -2574,34 +2406,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "log.to-file": true,
             }),
           );
-          return String(true);
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ app }) => {
-              return String(
-                await app.vault.adapter
-                  .exists(
-                    `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
-                  )
-                  .then(String),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli.e2e.ts:1921",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return await app.vault.adapter.exists(
+            `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
+          );
+        },
+        undefined,
+        {
+          what: "the zotlit.log.jsonl log file to exist in the plugin folder",
+        },
+      );
       // At `debug`, the worker's read snapshot and Item Index records reach the file.
       expect(
         await waitFor(
@@ -2618,7 +2437,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({ "log.level": "info" }),
           );
-          return String(true);
         },
         undefined,
       );
@@ -2631,13 +2449,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     } finally {
       await obRun(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
+        async ({ zotlit }, { previous }) => {
           zotlit.services.bridge.runSync(
-            zotlit.services.settings.update(__typedArg0),
+            zotlit.services.settings.update(previous),
           );
-          return String(true);
         },
-        { __typedArg0: previous },
+        { previous },
       );
     }
   }, 180_000);

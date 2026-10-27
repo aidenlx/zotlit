@@ -33,7 +33,7 @@ export const installMemoryClipboard = (vaultId: string): Promise<void> =>
     Object.assign(clipboard, {
       readText: () => store.text,
       writeText: (text: string) => {
-        store = { ...empty(), text: String(text) };
+        store = { ...empty(), text: text };
       },
       readHTML: () => store.html,
       readRTF: () => store.rtf,

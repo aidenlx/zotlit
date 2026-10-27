@@ -58,9 +58,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("asks the Fixture Attachment's Capability, not its Annotation's, before a saved edit", async () => {
     await obRun(
       run.vaultId,
-      async ({ zotlit, page }, { __typedArg0 }) => {
+      async ({ zotlit, page }, { EFFECT_MODULE_PATH }) => {
         const { Effect } = require(
-          __typedArg0,
+          EFFECT_MODULE_PATH,
         ) as typeof import("@/lib/effect");
         const repository = zotlit.services.annotationRepository;
         page.scratch.__zotlitCapabilitySubjects = [];
@@ -72,9 +72,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             reason: "zotero-unavailable",
           });
         };
-        return String(true);
       },
-      { __typedArg0: EFFECT_MODULE_PATH },
+      { EFFECT_MODULE_PATH },
     );
     const skips: string[] = [];
     let asked: string[] = [];
@@ -82,17 +81,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await verifySavedEditDisplay(run.vaultId, {
         skip: (note) => void skips.push(note ?? ""),
       });
-      asked = JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ page }) => {
-            return String(
-              JSON.stringify(page.scratch.__zotlitCapabilitySubjects),
-            );
-          },
-          undefined,
-        ),
-      ) as string[];
+      asked = (await obRun(
+        run.vaultId,
+        async ({ page }) => {
+          return page.scratch.__zotlitCapabilitySubjects;
+        },
+        undefined,
+      )) as string[];
     } finally {
       await obRun(
         run.vaultId,
@@ -101,7 +96,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             page.scratch.__zotlitCapabilityFor!;
           delete page.scratch.__zotlitCapabilityFor;
           delete page.scratch.__zotlitCapabilitySubjects;
-          return String(true);
         },
         undefined,
       );
@@ -284,11 +278,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         });
         release();
         await reading;
-        return JSON.stringify(afterClose);
+        return afterClose;
       },
       { key: annotationItem.key },
     );
-    expect(JSON.parse(result)).toEqual({ subscriptions: 0, reads: 0 });
+    expect(result).toEqual({ subscriptions: 0, reads: 0 });
   });
 
   it("copies an Annotation's citation after the database read, through Electron when the web clipboard refuses", async () => {
@@ -300,12 +294,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async (
           { app, page },
           {
-            __typedArg0,
-            __typedArg1,
-            __typedArg2,
-            __typedArg3,
-            __typedArg4,
-            __typedArg5,
+            annotationItemKey,
+            copiedAnnotationKey,
+            tooltipLabel,
+            refuse,
+            menuItemLabel,
+            citation,
           },
         ) => {
           const { press, until, stands } = page;
@@ -316,7 +310,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await leaf.setViewState({
             type: "zotero-annotation-view",
-            state: { followMode: "pinned", pinnedItemKey: __typedArg0 },
+            state: { followMode: "pinned", pinnedItemKey: annotationItemKey },
           });
           const view =
             leaf.view as import("../../../apps/obsidian/src/views/annot-view/view.tsx").AnnotationView;
@@ -326,8 +320,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             () =>
               view.contentEl.querySelector<HTMLElement>(
                 `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                  __typedArg1,
-                )}] [aria-label=${JSON.stringify(__typedArg2)}]`,
+                  copiedAnnotationKey,
+                )}] [aria-label=${JSON.stringify(tooltipLabel)}]`,
               ),
             5000,
           );
@@ -338,7 +332,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             navigator.clipboard.writeText = write;
           });
           clipboard.writeText("");
-          if (__typedArg3)
+          if (refuse)
             navigator.clipboard.writeText = () =>
               Promise.reject(new Error("Clipboard write refused"));
           button.scrollIntoView({ block: "center", behavior: "instant" });
@@ -351,25 +345,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 activeDocument.querySelectorAll<HTMLElement>(
                   ".menu .menu-item",
                 ),
-              ).find((e) => e.textContent.trim() === __typedArg4),
+              ).find((e) => e.textContent.trim() === menuItemLabel),
             2500,
           );
           press(item, "Copy citation");
           let text = "";
           await until(
             "citation on the clipboard",
-            () => (text = clipboard.readText()) === __typedArg5,
+            () => (text = clipboard.readText()) === citation,
             5000,
           ).catch(() => {});
-          return String(text);
+          return text;
         },
         {
-          __typedArg0: annotationItem.key,
-          __typedArg1: copiedAnnotation.key,
-          __typedArg2: run.m.annot_view_more_tooltip(),
-          __typedArg3: refuse,
-          __typedArg4: run.m.annot_view_menu_copy_citation(),
-          __typedArg5: citation,
+          annotationItemKey: annotationItem.key,
+          copiedAnnotationKey: copiedAnnotation.key,
+          tooltipLabel: run.m.annot_view_more_tooltip(),
+          refuse,
+          menuItemLabel: run.m.annot_view_menu_copy_citation(),
+          citation,
         },
       );
     expect(await copy(false)).toBe(citation);
@@ -411,11 +405,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ app }) => {
           for (const leaf of app.workspace.getLeavesOfType("pdf"))
             leaf.detach();
-          return String(String(app.workspace.getLeavesOfType("pdf").length));
+          return app.workspace.getLeavesOfType("pdf").length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
     // The default Profile shows Annotations in a Query Block; a Profile that
     // lists them in the note renders their excerpts.
     await useListingProfile(id);
@@ -424,21 +418,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     if (result.outcome !== "created")
       throw new Error("Excerpt note was not created");
     const markdown = await readFile(join(path, result.path), "utf8");
-    const files: string[] = JSON.parse(
-      await obRun(
-        id,
-        async ({ app }) => {
-          return String(
-            JSON.stringify(
-              app.vault
-                .getFiles()
-                .filter((f) => f.name.startsWith("zotlit-excerpt-"))
-                .map((f) => f.path),
-            ),
-          );
-        },
-        undefined,
-      ),
+    const files: string[] = await obRun(
+      id,
+      async ({ app }) => {
+        return app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-"))
+          .map((f) => f.path);
+      },
+      undefined,
     );
     expect(files).toHaveLength(3);
     const targets = new Set(
@@ -463,23 +451,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(bytes.length).toBeGreaterThan(1000);
     }
     expect(
-      JSON.parse(
-        await obRun(
-          id,
-          async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
-            const services = zotlit.services;
-            const file = app.vault.getFileByPath(__typedArg0)!;
-            if (!file) throw new Error("Created note missing");
-            const updated = await services.noteFeature.overwriteNote(
-              file,
-              __typedArg1,
-            );
-            return String(
-              JSON.stringify({ diagnostic: updated.diagnostic ?? null }),
-            );
-          },
-          { __typedArg0: result.path, __typedArg1: result.indexedKey },
-        ),
+      await obRun(
+        id,
+        async ({ app, zotlit }, { resultPath, indexedKey }) => {
+          const services = zotlit.services;
+          const file = app.vault.getFileByPath(resultPath)!;
+          if (!file) throw new Error("Created note missing");
+          const updated = await services.noteFeature.overwriteNote(
+            file,
+            indexedKey,
+          );
+          return { diagnostic: updated.diagnostic ?? null };
+        },
+        { resultPath: result.path, indexedKey: result.indexedKey },
       ),
     ).toEqual({ diagnostic: null });
     const overwritten = await readFile(join(path, result.path), "utf8");
@@ -487,54 +471,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const [file, initial] of initialImages)
       expect(await readFile(join(path, file))).toEqual(initial);
 
-    const frozenImport = JSON.parse(
-      await obRun(
-        id,
-        async ({ zotlit }) => {
-          const result = await zotlit.services.batchImport.runBatchImport(
-            "note",
-            [13],
-          );
-          return String(JSON.stringify(result));
-        },
-        undefined,
-      ),
-    ) as { outcome: string; write?: string };
+    const frozenImport = (await obRun(
+      id,
+      async ({ zotlit }) => {
+        const result = await zotlit.services.batchImport.runBatchImport(
+          "note",
+          [13],
+        );
+        return result;
+      },
+      undefined,
+    )) as { outcome: string; write?: string };
     expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          id,
-          async ({ zotlit }) => {
-            return String(
-              String(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.noteIndex.getImportedNoteByNoteKey(
-                    "NNNNAAAA",
-                  ),
-                ).length,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "excerpts.ts:347",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "1" }),
-    ).toBe(true);
+    await obRunUntil(
+      id,
+      async ({ zotlit }) => {
+        return zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
+        ).length;
+      },
+      undefined,
+      {
+        ready: (value) => value === 1,
+        what: "the imported note for NNNNAAAA to index one note",
+      },
+    );
     const importedPath = await obRun(
       id,
       async ({ zotlit }) => {
-        return String(
-          zotlit.services.bridge.runSync(
-            zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
-          )[0]!.path,
-        );
+        return zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
+        )[0]!.path;
       },
       undefined,
     );
@@ -550,27 +517,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       frozenTargets.map((target) => readFile(join(path, target))),
     );
 
-    const liveImport = JSON.parse(
-      await obRun(
-        id,
-        async ({ app, zotlit }, { __typedArg0 }) => {
-          const services = zotlit.services;
-          services.bridge.runSync(
-            services.settings.updateDefaultLiteratureNoteProfileBindings({
-              "note.import-annotations-as-template": true,
-            }),
-          );
-          const file = app.vault.getFileByPath(__typedArg0)!;
-          if (!file) throw new Error("Imported Note missing");
-          return String(
-            JSON.stringify(
-              await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
-            ),
-          );
-        },
-        { __typedArg0: importedPath },
-      ),
-    ) as { outcome: string };
+    const liveImport = (await obRun(
+      id,
+      async ({ app, zotlit }, { importedPath }) => {
+        const services = zotlit.services;
+        services.bridge.runSync(
+          services.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.import-annotations-as-template": true,
+          }),
+        );
+        const file = app.vault.getFileByPath(importedPath)!;
+        if (!file) throw new Error("Imported Note missing");
+        return await services.batchImport.reimportNoteByKey("NNNNAAAA", file);
+      },
+      { importedPath },
+    )) as { outcome: string };
     expect(liveImport).toEqual({ outcome: "overwritten" });
     const liveMarkdown = await readFile(join(path, importedPath), "utf8");
     expect(liveMarkdown).toContain("Saved snapshot");
@@ -595,23 +556,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await rename(sourcePdf, unavailablePdf);
     try {
       expect(
-        JSON.parse(
-          await obRun(
-            id,
-            async ({ app, zotlit }, { __typedArg0 }) => {
-              const services = zotlit.services;
-              const file = app.vault.getFileByPath(__typedArg0)!;
-              return String(
-                JSON.stringify(
-                  await services.batchImport.reimportNoteByKey(
-                    "NNNNAAAA",
-                    file,
-                  ),
-                ),
-              );
-            },
-            { __typedArg0: importedPath },
-          ),
+        await obRun(
+          id,
+          async ({ app, zotlit }, { importedPath }) => {
+            const services = zotlit.services;
+            const file = app.vault.getFileByPath(importedPath)!;
+            return await services.batchImport.reimportNoteByKey(
+              "NNNNAAAA",
+              file,
+            );
+          },
+          { importedPath },
         ),
       ).toEqual({ outcome: "overwritten" });
     } finally {
@@ -622,64 +577,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pooledSummary = JSON.stringify([
       "Excerpt images: 0 from Zotero with uncertain freshness, 2 with unchecked PDF freshness, 0 unavailable, 0 kept from the note and not refreshed.",
     ]);
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        id,
-        async ({ page }) => {
-          return String(
-            JSON.stringify(
-              [...page.windowDocuments()]
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .map((node) => node.textContent)
-                .filter((text) => text.includes("Excerpt images:")),
-            ),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpts.ts:414",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: pooledSummary });
+    await obRunUntil(
+      id,
+      async ({ page }) => {
+        return JSON.stringify(
+          [...page.windowDocuments()]
+            .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+            .map((node) => node.textContent)
+            .filter((text) => text.includes("Excerpt images:")),
+        );
+      },
+      undefined,
+      {
+        ready: (value) => value === pooledSummary,
+        what: "the Excerpt images notice to match the pooled summary",
+      },
+    );
     expect(
       await obRun(
         id,
         async ({ page }) => {
-          return String(
-            JSON.stringify(
-              [...page.windowDocuments()]
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .map((node) => node.textContent)
-                .filter((text) => text.includes("Excerpt images:")),
-            ),
+          return JSON.stringify(
+            [...page.windowDocuments()]
+              .flatMap((doc) => [
+                ...doc.querySelectorAll<HTMLElement>(".notice"),
+              ])
+              .map((node) => node.textContent)
+              .filter((text) => text.includes("Excerpt images:")),
           );
         },
         undefined,
       ),
     ).toBe(pooledSummary);
     expect(
-      JSON.parse(
-        await obRun(
-          id,
-          async ({ app, zotlit }, { __typedArg0 }) => {
-            const services = zotlit.services;
-            const file = app.vault.getFileByPath(__typedArg0)!;
-            return String(
-              JSON.stringify(
-                await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
-              ),
-            );
-          },
-          { __typedArg0: importedPath },
-        ),
+      await obRun(
+        id,
+        async ({ app, zotlit }, { importedPath }) => {
+          const services = zotlit.services;
+          const file = app.vault.getFileByPath(importedPath)!;
+          return await services.batchImport.reimportNoteByKey("NNNNAAAA", file);
+        },
+        { importedPath },
       ),
     ).toEqual({ outcome: "overwritten" });
 
@@ -687,10 +625,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         id,
         async ({ app }) => {
-          return String(String(app.workspace.getLeavesOfType("pdf").length));
+          return app.workspace.getLeavesOfType("pdf").length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
   });
 });

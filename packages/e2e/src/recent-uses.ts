@@ -31,15 +31,13 @@ export async function verifyRecentUses(
   const saved = await obRun(
     vaultId,
     async ({ app, zotlit }) => {
-      return String(
-        JSON.stringify({
-          layout: app.workspace.getLayout(),
-          settings: zotlit.services.bridge.runSync(
-            zotlit.services.settings.current,
-          ),
-          ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
-        }),
-      );
+      return JSON.stringify({
+        layout: app.workspace.getLayout(),
+        settings: zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        ),
+        ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
+      });
     },
     undefined,
   );
@@ -60,23 +58,19 @@ export async function verifyRecentUses(
         if (stillOpen()) throw new Error("The ZotLit services did not close");
         app.saveLocalStorage("zotlit-use-ledger", JSON.parse(saved).ledger);
         await app.plugins.enablePlugin("zotlit");
-        return String(
-          JSON.stringify(
-            Object.fromEntries(
-              Object.entries(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.useLedger.current,
-                ),
-              ).map(([key, use]) => [
-                key,
-                {
-                  kind: use.kind,
-                  instant: Temporal.Instant.fromEpochMilliseconds(
-                    use.instant.epochMilliseconds,
-                  ).toString(),
-                },
-              ]),
-            ),
+        return JSON.stringify(
+          Object.fromEntries(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(([key, use]) => [
+              key,
+              {
+                kind: use.kind,
+                instant: Temporal.Instant.fromEpochMilliseconds(
+                  use.instant.epochMilliseconds,
+                ).toString(),
+              },
+            ]),
           ),
         );
       },
@@ -109,7 +103,6 @@ export async function verifyRecentUses(
         await app.workspace.changeLayout(saved.layout);
         const file = app.vault.getFileByPath(sourcepath);
         if (file) await app.vault.delete(file);
-        return String(true);
       },
       {
         targetpath: targetPath,
@@ -148,7 +141,6 @@ export async function verifyRecentUses(
             ) as (WorkspaceLeaf & { view: LibraryView })[]
           )[0]?.view.query,
       );
-      return String(true);
     },
     { sourcepath: sourcePath, sourcetext: sourceText },
   );
@@ -273,7 +265,6 @@ export async function verifyRecentUses(
           "switcher closes",
           () => !activeDocument.querySelector<HTMLElement>(".prompt"),
         );
-        return String(true);
       },
       {
         choose: choose,
@@ -297,7 +288,6 @@ export async function verifyRecentUses(
       async ({ app }) => {
         await app.workspace.openLinkText("literatures/CCCC3333.md", "");
         app.workspace.requestActiveLeafEvents.run();
-        return String(true);
       },
       undefined,
     );
@@ -311,7 +301,6 @@ export async function verifyRecentUses(
         });
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.workspace.requestActiveLeafEvents.run();
-        return String(true);
       },
       {
         sourcepath: sourcePath,
@@ -343,7 +332,6 @@ export async function verifyRecentUses(
           row.dispatchEvent(
             new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
           );
-          return String(true);
         },
         undefined,
       );
@@ -359,7 +347,6 @@ export async function verifyRecentUses(
             ),
           );
           link.click();
-          return String(true);
         },
         undefined,
       );
@@ -386,7 +373,6 @@ export async function verifyRecentUses(
           row.dispatchEvent(
             new MouseEvent("click", { bubbles: true, detail: 1 }),
           );
-          return String(true);
         },
         { targetpath: targetPath },
       );
@@ -399,7 +385,6 @@ export async function verifyRecentUses(
             ch: 8,
           });
           app.commands.executeCommandById("zotlit:open-citekey");
-          return String(true);
         },
         undefined,
       );
@@ -422,7 +407,6 @@ export async function verifyRecentUses(
       await app.workspace.revealLeaf(target!);
       app.workspace.setActiveLeaf(target!, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { targetpath: targetPath },
   );
@@ -431,8 +415,54 @@ export async function verifyRecentUses(
   const ledger = await obRun(
     vaultId,
     async ({ zotlit }) => {
-      return String(
-        JSON.stringify(
+      return JSON.stringify(
+        Object.fromEntries(
+          Object.entries(
+            zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+          ).map(([key, use]) => [
+            key,
+            {
+              kind: use.kind,
+              instant: Temporal.Instant.fromEpochMilliseconds(
+                use.instant.epochMilliseconds,
+              ).toString(),
+            },
+          ]),
+        ),
+      );
+    },
+    undefined,
+  );
+  const local = await obRun(
+    vaultId,
+    async ({ app }) => {
+      return app.loadLocalStorage("zotlit-use-ledger");
+    },
+    undefined,
+  );
+  expect(local).toMatchObject({ AAAAAAAA: { kind: "opened" } });
+  const pluginData = await readFile(
+    join(vaultPath, ".obsidian/plugins/zotlit/data.json"),
+    "utf8",
+  );
+  expect(pluginData).not.toContain("zotlit-use-ledger");
+  for (const use of Object.values(JSON.parse(ledger)) as { instant: string }[])
+    expect(pluginData).not.toContain(use.instant);
+  await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return !!zotlit.services;
+    },
+    undefined,
+    { what: "the zotlit plugin services to be available" },
+  );
+  expect(await timeline()).toEqual(beforeReload);
+  expect(
+    await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return JSON.stringify(
           Object.fromEntries(
             Object.entries(
               zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
@@ -446,68 +476,6 @@ export async function verifyRecentUses(
               },
             ]),
           ),
-        ),
-      );
-    },
-    undefined,
-  );
-  const local = await obRun(
-    vaultId,
-    async ({ app }) => {
-      return String(JSON.stringify(app.loadLocalStorage("zotlit-use-ledger")));
-    },
-    undefined,
-  );
-  expect(JSON.parse(local)).toMatchObject({ AAAAAAAA: { kind: "opened" } });
-  const pluginData = await readFile(
-    join(vaultPath, ".obsidian/plugins/zotlit/data.json"),
-    "utf8",
-  );
-  expect(pluginData).not.toContain("zotlit-use-ledger");
-  for (const use of Object.values(JSON.parse(ledger)) as { instant: string }[])
-    expect(pluginData).not.toContain(use.instant);
-  await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }) => {
-          return String(String(!!zotlit.services));
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "recent-uses.ts:140",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
-  expect(await timeline()).toEqual(beforeReload);
-  expect(
-    await obRun(
-      vaultId,
-      async ({ zotlit }) => {
-        return String(
-          JSON.stringify(
-            Object.fromEntries(
-              Object.entries(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.useLedger.current,
-                ),
-              ).map(([key, use]) => [
-                key,
-                {
-                  kind: use.kind,
-                  instant: Temporal.Instant.fromEpochMilliseconds(
-                    use.instant.epochMilliseconds,
-                  ).toString(),
-                },
-              ]),
-            ),
-          ),
         );
       },
       undefined,
@@ -519,23 +487,19 @@ export async function verifyRecentUses(
     await obRun(
       vaultId,
       async ({ zotlit }) => {
-        return String(
-          JSON.stringify(
-            Object.fromEntries(
-              Object.entries(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.useLedger.current,
-                ),
-              ).map(([key, use]) => [
-                key,
-                {
-                  kind: use.kind,
-                  instant: Temporal.Instant.fromEpochMilliseconds(
-                    use.instant.epochMilliseconds,
-                  ).toString(),
-                },
-              ]),
-            ),
+        return JSON.stringify(
+          Object.fromEntries(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(([key, use]) => [
+              key,
+              {
+                kind: use.kind,
+                instant: Temporal.Instant.fromEpochMilliseconds(
+                  use.instant.epochMilliseconds,
+                ).toString(),
+              },
+            ]),
           ),
         );
       },
@@ -552,7 +516,6 @@ export async function verifyRecentUses(
       )[0];
       await app.workspace.revealLeaf(leaf!);
       app.workspace.setActiveLeaf(leaf!, { focus: true });
-      return String(true);
     },
     undefined,
   );
@@ -565,7 +528,6 @@ export async function verifyRecentUses(
     async ({ app }) => {
       await app.workspace.openLinkText("literatures/CCCC3333.md", "");
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -579,7 +541,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -614,7 +575,6 @@ export async function verifyRecentUses(
       row.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
       row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await until("citation inserted", () => editor.getValue() === valueInput);
-      return String(true);
     },
     {
       value: `[@${targetTitle}`,
@@ -701,7 +661,6 @@ export async function verifyRecentUses(
         }),
       );
       await until("Citation Suggester closes", () => !popup.isConnected);
-      return String(true);
     },
     {
       sourcepath: sourcePath,
@@ -718,7 +677,6 @@ export async function verifyRecentUses(
     async ({ app }) => {
       await app.workspace.openLinkText("literatures/CCCC3333.md", "");
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -733,7 +691,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -815,7 +772,6 @@ export async function verifyRecentUses(
         }),
       );
       await until("Citation Suggester closes", () => !popup.isConnected);
-      return String(true);
     },
     {
       sourcepath: sourcePath,
@@ -835,7 +791,6 @@ export async function verifyRecentUses(
     async ({ app }) => {
       await app.workspace.openLinkText("literatures/CCCC3333.md", "");
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     undefined,
   );
@@ -889,7 +844,6 @@ export async function verifyRecentUses(
         "dragged citation inserted",
         () => editor.getValue() === value,
       );
-      return String(true);
     },
     { sourcepath: sourcePath, target: target, value: `[@${targetCitekey}]` },
   );
@@ -972,7 +926,6 @@ export async function verifyRecentUses(
         }),
       );
       await until("Citation Suggester closes", () => !popup.isConnected);
-      return String(true);
     },
     {
       sourcepath: sourcePath,
@@ -994,7 +947,6 @@ export async function verifyRecentUses(
       ).filter((l) => l.view.file?.path === sourcepath);
       for (const leaf of leaves) leaf.view.editor.setValue(sourcetext);
       for (const leaf of leaves) await leaf.view.save();
-      return String(true);
     },
     { sourcepath: sourcePath, sourcetext: sourceText },
   );
@@ -1024,7 +976,6 @@ export async function verifyRecentUses(
           .querySelector<HTMLElement>("[data-library-card]")
           ?.checkVisibility(),
       );
-      return String(true);
     },
     undefined,
   );
@@ -1038,7 +989,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, preview: "preview", enabled: false },
   );
@@ -1077,7 +1027,6 @@ export async function verifyRecentUses(
       if (popover)
         if (typeof popover.hide === "function") popover.hide();
         else popover.unload();
-      return String(true);
     },
     { sourcepath: sourcePath },
   );
@@ -1096,7 +1045,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -1119,7 +1067,6 @@ export async function verifyRecentUses(
         () => file!.stat.mtime !== modified,
         10000,
       );
-      return String(true);
     },
     { targetpath: targetPath },
   );
@@ -1133,7 +1080,6 @@ export async function verifyRecentUses(
       });
       app.workspace.setActiveLeaf(leaf, { focus: true });
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
@@ -1152,7 +1098,6 @@ export async function verifyRecentUses(
         () => app.workspace.getActiveFile()?.path === `${targetpath}`,
       );
       app.workspace.requestActiveLeafEvents.run();
-      return String(true);
     },
     { targetpath: targetPath },
   );

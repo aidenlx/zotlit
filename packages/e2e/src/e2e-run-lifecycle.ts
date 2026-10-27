@@ -37,7 +37,6 @@ async function bootstrap(): Promise<void> {
     run.vaultId,
     async ({ app }) => {
       app.vault.setConfig("nativeMenus", false);
-      return String(true);
     },
     undefined,
   );
@@ -45,81 +44,57 @@ async function bootstrap(): Promise<void> {
   const serverPort = await availableLoopbackPort();
   await obRun(
     run.vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { serverPort }) => {
       zotlit.services.bridge.runSync(
         zotlit.services.settings.update({
           "server.enabled": false,
-          "server.port": __typedArg0,
+          "server.port": serverPort,
         }),
       );
-      return String(true);
     },
-    { __typedArg0: serverPort },
+    { serverPort },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              !zotlit.services.bridge.runSync(
-                zotlit.services.localServer.available,
-              ) &&
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.port"] === __typedArg0,
-            ),
-          );
-        },
-        { __typedArg0: serverPort },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lifecycle.ts:45",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ zotlit }, { serverPort }) => {
+      return (
+        !zotlit.services.bridge.runSync(
+          zotlit.services.localServer.available,
+        ) &&
+        zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "server.port"
+        ] === serverPort
+      );
+    },
+    { serverPort },
+    {
+      what: "the local server to stop and the server port setting to match serverPort",
+    },
+  );
   await obRun(
     run.vaultId,
     async ({ zotlit }) => {
       zotlit.services.bridge.runSync(
         zotlit.services.settings.update({ "server.enabled": true }),
       );
-      return String(true);
     },
     undefined,
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              zotlit.services.bridge.runSync(
-                zotlit.services.localServer.available,
-              ) &&
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.port"] === __typedArg0,
-            ),
-          );
-        },
-        { __typedArg0: serverPort },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lifecycle.ts:56",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ zotlit }, { serverPort }) => {
+      return (
+        zotlit.services.bridge.runSync(zotlit.services.localServer.available) &&
+        zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "server.port"
+        ] === serverPort
+      );
+    },
+    { serverPort },
+    {
+      what: "the local server to start and the server port setting to match serverPort",
+    },
+  );
 }
 
 async function teardown(): Promise<void> {
@@ -200,13 +175,10 @@ export function registerEndToEndRunHooks(): void {
           },
           5000,
         );
-        return String(JSON.stringify(left));
+        return left;
       },
       undefined,
     );
-    expect(
-      JSON.parse(left),
-      "menus, dialogs and popovers the case left open",
-    ).toEqual([]);
+    expect(left, "menus, dialogs and popovers the case left open").toEqual([]);
   });
 }
