@@ -5,8 +5,10 @@ import {
   Fiber,
   FiberSet,
   Layer,
+  PubSub,
   Result,
   Schema,
+  Stream,
 } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
@@ -189,17 +191,30 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
         handleProfileImportProtocol(data, deps),
       );
 
+    const outcomes = yield* PubSub.unbounded<ProtocolOutcome>();
+    const answered = (outcome: ProtocolOutcome | void) =>
+      outcome ? PubSub.publish(outcomes, outcome) : Effect.void;
     const localServer = yield* LocalServer;
     // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
     // runs the same interactive flow as the `update-many` protocol link. Each
     // run is a fiber of its own, so a long batch does not hold back the next
     // request.
     const updates = yield* forkEach(localServer.updateManyRequests, (event) =>
-      FiberSet.run(runs, updateManyRequested(event, deps)),
+      FiberSet.run(
+        runs,
+        Effect.flatMap(updateManyRequested(event, deps), (outcome) =>
+          answered(outcome),
+        ),
+      ),
     );
     // A batch import pushed over HTTP runs the same flow as the import-notes link.
     const imports = yield* forkEach(localServer.importNotesRequests, (event) =>
-      FiberSet.run(runs, importNotesRequested(event, deps)),
+      FiberSet.run(
+        runs,
+        Effect.flatMap(importNotesRequested(event, deps), (outcome) =>
+          answered(outcome),
+        ),
+      ),
     );
 
     const registration: ProtocolRegistration = {
@@ -207,6 +222,7 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
         Fiber.awaitAll([updates, imports]),
         FiberSet.awaitEmpty(runs),
       ),
+      outcomes: Stream.fromPubSub(outcomes),
     };
     return registration;
   },
@@ -253,12 +269,18 @@ export interface ProtocolRegistration {
    * closed) and no handler run or pushed request run is going.
    */
   readonly idle: Effect.Effect<void>;
+  /**
+   * The outcome of each pushed request, once its notice shows. A run that
+   * fails or is interrupted gives none.
+   */
+  readonly outcomes: Stream.Stream<ProtocolOutcome>;
 }
 
 const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
   function* (event: UpdateManyRequest, deps: ProtocolDeps) {
     const outcome = yield* updateMany(deps, event.items, event);
     yield* showProtocolOutcome(outcome, deps);
+    return outcome;
   },
   logAndContinue("Pushed batch update failed", "protocol"),
 );
@@ -267,6 +289,7 @@ const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
   function* (event: ImportNotesRequest, deps: ProtocolDeps) {
     const outcome = yield* importNotes(deps, event.mode, event.items);
     yield* showProtocolOutcome(outcome, deps);
+    return outcome;
   },
   logAndContinue("Pushed batch import failed", "protocol"),
 );

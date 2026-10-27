@@ -6,6 +6,7 @@ import {
   Fiber,
   FileSystem,
   Layer,
+  Option,
   PubSub,
   Scope,
   Stream,
@@ -869,16 +870,23 @@ describe("refused protocol links", () => {
 
   it.effect("refuses a pushed Profile ID that names no Profile", () =>
     Effect.gen(function* () {
+      const requests = yield* PubSub.unbounded<UpdateManyRequest>();
       const registration = yield* register({
-        updateManyRequests: Stream.make<[UpdateManyRequest]>({
-          items: [1, 2],
-          scope: "full",
-          profileId: "not-a-profile",
-        }),
+        updateManyRequests: Stream.fromPubSub(requests),
+      });
+      const outcome = yield* Stream.runHead(registration.outcomes).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+
+      yield* PubSub.publish(requests, {
+        items: [1, 2],
+        scope: "full",
+        profileId: "not-a-profile",
       });
 
-      yield* registration.idle;
-
+      expect(yield* Fiber.join(outcome)).toEqual(
+        Option.some(ProtocolOutcome.UnknownProfile({ text: "not-a-profile" })),
+      );
       expect(runBatchUpdate).not.toHaveBeenCalled();
     }),
   );

@@ -109,10 +109,6 @@ export interface BatchImport {
     mode: ImportMode,
     itemIDs: readonly number[],
   ): Promise<BatchImportResult>;
-  /** @see {@link runBatchImportAll} */
-  runBatchImportAll(target?: BatchTarget): Promise<BatchImportResult>;
-  /** @see {@link runChildImportByKey} */
-  runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
   /** @see {@link reimportNoteByKey} */
   reimportNoteByKey(
     noteKey: string,

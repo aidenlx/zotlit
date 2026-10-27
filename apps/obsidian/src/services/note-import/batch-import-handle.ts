@@ -1,15 +1,10 @@
-// Note import for callers outside Effect: Note Feature's actions and the debug surface.
+// Note import for callers outside Effect: the debug surface.
 import { Effect } from "effect";
 import type { Context } from "effect";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 
-import {
-  reimportNoteByKey,
-  runBatchImport,
-  runBatchImportAll,
-  runChildImportByKey,
-} from "./batch-import";
+import { reimportNoteByKey, runBatchImport } from "./batch-import";
 import type {
   BatchImport,
   BatchImportPorts,
@@ -32,9 +27,6 @@ export function bindBatchImport(
   return {
     runBatchImport: (mode, itemIDs) =>
       run(runBatchImport(importPorts, { mode, itemIDs })),
-    runBatchImportAll: (target) => run(runBatchImportAll(importPorts, target)),
-    runChildImportByKey: (indexedKey) =>
-      run(runChildImportByKey(importPorts, indexedKey)),
     reimportNoteByKey: (noteKey, targetFile) =>
       run(reimportNoteByKey(importPorts, noteKey, targetFile)),
   };

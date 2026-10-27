@@ -4,7 +4,7 @@ import type { FileSystemAdapter } from "obsidian";
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
-import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { Notifier } from "@/lib/notifier";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -12,12 +12,10 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
-import type { ImportProfile } from "@/setting-tab/import-profile-modal";
 import {
   createProfileDialog,
   importProfileDialog,
 } from "@/setting-tab/profile-dialogs";
-import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
 import {
   annotationCardShown,
@@ -78,6 +76,7 @@ import { batchUpdateNotices } from "./note-feature/update-single";
 import { AnnotationNoteActions } from "./note-feature/view-actions";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
+import { importChildNotes, importStarter } from "./note-import/commands";
 import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { PandocEngine } from "./pandoc/service";
@@ -266,15 +265,20 @@ export async function createPluginRuntime(
       ),
     },
   );
-  // The Import profile command. Unload closes an open dialog, and the caller
-  // sees it dismissed.
-  const runProfileDialog = exitOver(
-    bridge,
-    runtime.runSync(Effect.context<ProfileDialogServices>()),
-  );
-  const importProfile: ImportProfile = async (options) =>
-    valueOr(await runProfileDialog(creation.importProfile(options)), undefined);
   const noteImportView = createNoteImportView(plugin.app, creation);
+  // Import child notes on the file menu, as the command runs it.
+  const startImport = importStarter(
+    bridge,
+    runtime.runSync(Effect.context<BatchImportServices | Notifier>()),
+  );
+  const importChildNotesOf = (indexedKey: string) =>
+    startImport(
+      importChildNotes(
+        { view: noteImportView, bridge },
+        plugin.app,
+        indexedKey,
+      ),
+    );
   bindProtocolViews({ noteImportView, opener: targetOpener });
 
   return {
@@ -328,7 +332,7 @@ export async function createPluginRuntime(
     ),
     itemLookup: bindItemLookup(bridge, runtime.runSync(ItemLookup)),
     noteFeature,
-    importProfile,
+    importChildNotes: importChildNotesOf,
     noteImportView,
     batchImport: bindBatchImport(
       bridge,
