@@ -84,6 +84,17 @@ describe.skipIf(!reachable)("Window reload", () => {
     await runVaultScript(["remove", vaultPath, "--purge"]);
   }, 120000);
 
+  it("reads the current services after a plugin restart in one callback (#1848)", async () => {
+    expect(
+      await obRun(vaultId, async ({ app, zotlit }) => {
+        const before = zotlit.services;
+        await app.plugins.disablePlugin("zotlit");
+        await app.plugins.enablePlugin("zotlit");
+        return zotlit.services !== before;
+      }),
+    ).toBe(true);
+  });
+
   it("loads ZotLit in startup order, where its rename handlers run before the metadata cache moves the path", async () => {
     const toggled = await obRun(vaultId, recordRename, {
       listenerSources: null,
