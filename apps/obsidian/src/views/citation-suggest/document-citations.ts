@@ -3,6 +3,7 @@ import { Cause, Effect } from "effect";
 import type { TFile } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
@@ -19,42 +20,52 @@ export async function readDocumentCitedKeys(
   signal: AbortSignal,
 ): Promise<readonly string[]> {
   if (!file) return [];
-  using stack = new DisposableStack();
-  const timeout = new AbortController();
-  // Allow 150 ms for a warm index; startup indexing must not hold the picker.
-  const win = activeWindow;
-  const timer = win.setTimeout(() => timeout.abort(), 150);
-  stack.defer(() => win.clearTimeout(timer));
-  const lifetime = AbortSignal.any([signal, timeout.signal]);
+  const unavailable = (
+    reason: "aborted" | "timeout" | "failed",
+    error?: unknown,
+  ) =>
+    Effect.logDebug(
+      "Document citations unavailable; searching without cited Items",
+    ).pipe(
+      Effect.annotateLogs({
+        reason,
+        ...(reason === "failed" ? { error } : {}),
+      }),
+      withLogCategory("views", "citation-suggest"),
+    );
+  const empty: readonly string[] = [];
   try {
-    const set = await bridge.runPromise(
-      Effect.tryPromise(() =>
-        index.getDocumentCitationSet(file, { signal: lifetime }),
-      ),
-      { signal: lifetime },
-    );
-    return set.citations.flatMap(({ indexedKey }) =>
-      indexedKey === null ? [] : [indexedKey],
-    );
-  } catch (error) {
-    const reason = signal.aborted
-      ? "aborted"
-      : timeout.signal.aborted
-        ? "timeout"
-        : "failed";
-    await bridge.runPromise(
-      Effect.logDebug(
-        "Document citations unavailable; searching without cited Items",
-      ).pipe(
-        Effect.annotateLogs({
-          reason,
-          ...(reason === "failed"
-            ? { error: Cause.isUnknownError(error) ? error.cause : error }
-            : {}),
+    return await bridge.runPromise(
+      Effect.tryPromise((readSignal) =>
+        index.getDocumentCitationSet(file, {
+          signal: AbortSignal.any([signal, readSignal]),
         }),
-        withLogCategory("views", "citation-suggest"),
+      ).pipe(
+        Effect.map((set) =>
+          set.citations.flatMap(({ indexedKey }) =>
+            indexedKey === null ? [] : [indexedKey],
+          ),
+        ),
+        // Allow 150 ms for a warm index; startup indexing must not hold the picker.
+        Effect.timeoutOrElse({
+          duration: 150,
+          orElse: () => unavailable("timeout").pipe(Effect.as(empty)),
+        }),
+        recover((cause) => {
+          const error = Cause.squash(cause);
+          return unavailable(
+            "failed",
+            Cause.isUnknownError(error) ? error.cause : error,
+          );
+        }, Effect.succeed(empty)),
+        Effect.onInterrupt(() =>
+          signal.aborted ? unavailable("aborted") : Effect.void,
+        ),
       ),
+      { signal },
     );
-    return [];
+  } catch {
+    // The Effect handles read failures; an interrupted bridge has no result.
+    return empty;
   }
 }

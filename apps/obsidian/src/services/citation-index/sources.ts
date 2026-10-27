@@ -1,11 +1,12 @@
 // The source-join of a document's Citations: each cited Item read from the Zotero database, in the identities and summary a reference list reports.
 
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { Attachment, CslItemData, Item } from "@zotlit/db";
 import { parseAttachmentPath } from "@zotlit/db/path";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
@@ -187,13 +188,13 @@ export const readReferenceSources = Effect.fn("readReferenceSources")(
         const rows = yield* reads
           .AttachmentsOf({ itemIDs: cited.map(({ item }) => item.itemID) })
           .pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.interrupt
-                : Effect.logWarning(
-                    "Cannot read the attachments of the cited items",
-                    cause,
-                  ).pipe(Effect.as([])),
+            recover(
+              (cause) =>
+                Effect.logWarning(
+                  "Cannot read the attachments of the cited items",
+                  cause,
+                ),
+              Effect.succeed([]),
             ),
           );
         for (const [itemID, group] of Map.groupBy(
@@ -226,16 +227,13 @@ export const readReferenceSources = Effect.fn("readReferenceSources")(
         return { sources, presentKeys, database: "ready" as const };
       }),
     ).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.logWarning("Cannot read the cited items", cause).pipe(
-              Effect.as({
-                sources,
-                presentKeys,
-                database: "unreadable" as const,
-              }),
-            ),
+      recover(
+        (cause) => Effect.logWarning("Cannot read the cited items", cause),
+        Effect.succeed({
+          sources,
+          presentKeys,
+          database: "unreadable" as const,
+        }),
       ),
       withLogCategory("citation-index"),
     );
