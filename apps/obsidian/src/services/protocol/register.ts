@@ -35,7 +35,6 @@ import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
 import { Notifier, reportOutcome } from "@/lib/notifier";
-import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -45,7 +44,6 @@ import {
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import { toObsidianOpenable } from "@/services/attachment-open/openable";
@@ -63,7 +61,6 @@ import {
 } from "@/services/note-feature/update-batch";
 import type {
   BatchUpdatePorts,
-  BatchUpdateResult,
   BatchUpdateServices,
 } from "@/services/note-feature/update-batch";
 import {
@@ -90,6 +87,8 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
+
+import { batchUpdateToast, importNotices, updateAllToast } from "./notices";
 
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
@@ -246,17 +245,6 @@ function updatePorts(deps: ProtocolDeps): BatchUpdatePorts {
   };
 }
 
-/** The outcome notice of a note import, from its toast copy. */
-function importNotices<A>(copy: {
-  success: (result: A) => NoticeMessage | undefined;
-  error: (message: string, error: unknown) => NoticeMessage | undefined;
-}): OutcomeCopy<A> {
-  return {
-    success: copy.success,
-    error: (error) => copy.error(toast.formatErrorMessage(error), error),
-  };
-}
-
 /** The registered handlers, while their Scope holds them. */
 export interface ProtocolRegistration {
   /**
@@ -382,24 +370,6 @@ const handleBatchProtocol = Effect.fn("protocol.handleBatchProtocol")(
   },
 );
 
-/** A batch update's notices: the early-exit outcomes; a failure shows none. */
-const batchUpdateToast = {
-  success: batchUpdateNotice,
-  error: () => undefined,
-};
-
-function batchUpdateNotice(result: BatchUpdateResult): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "empty-selection":
-    case "not-found":
-      return m.notice_protocol_item_not_found();
-    default:
-      return undefined;
-  }
-}
-
 /** Handle `obsidian://zotlit/import-note`. */
 const handleImportProtocol = Effect.fn("protocol.handleImportProtocol")(
   function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
@@ -523,7 +493,7 @@ const handleUpdateAllProtocol = Effect.fn("protocol.handleUpdateAllProtocol")(
         groupID: query.groupID,
         collectionKey: query.collectionKey,
       }),
-      { success: updateAllNotice, error: () => undefined },
+      updateAllToast,
     );
   },
 );
@@ -546,23 +516,6 @@ const handleImportAllNotesProtocol = Effect.fn(
     importNotices(batchImportAllToast({ app: deps.app })),
   );
 });
-
-function updateAllNotice(result: BatchUpdateResult): string | undefined {
-  switch (result.outcome) {
-    case "db-unavailable":
-      return m.batch_update_db_unavailable();
-    case "empty-selection":
-      return m.batch_update_all_empty();
-    case "no-library-in-scope":
-      return m.batch_all_no_library_in_scope();
-    case "unavailable-target":
-      return m.batch_all_library_unavailable();
-    case "collection-not-found":
-      return m.notice_collection_not_found();
-    default:
-      return undefined;
-  }
-}
 
 /**
  * The link's query, or `null` when it does not parse (after the invalid-link

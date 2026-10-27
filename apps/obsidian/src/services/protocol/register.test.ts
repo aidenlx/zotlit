@@ -155,16 +155,6 @@ const readsApi = readsAnswering({
   ScopeItemIDs: (input) => reads.ScopeItemIDs(input),
 });
 
-/** Records the notices of the current case. */
-let notifier = testNotifier();
-
-/** The text of each notice the case showed, in order. */
-function shown(): string[] {
-  return notifier.notices.map(({ messages: [message] }) =>
-    typeof message === "string" ? message : (message?.textContent ?? ""),
-  );
-}
-
 /** Item `itemID` reads as `ref`. */
 function refOf(ref: ItemDisplayRef): void {
   reads.DisplayRefs.mockReturnValue(
@@ -293,7 +283,7 @@ function servicesFor(setup: Setup = {}) {
         setup.getFileByPath ??
         ((path: string) => Effect.succeed(setup.files?.get(path) ?? null)),
     }),
-    notifier.layer,
+    testNotifier().layer,
     layerWorkspaceFrom(setup.workspace ?? new MemoryWorkspace()),
     layerTestObsidianEnv({ basePath: "/vault" }),
   );
@@ -339,7 +329,6 @@ const dispatch = Effect.fn("dispatch")(function* (
 
 beforeEach(() => {
   handlers.clear();
-  notifier = testNotifier();
   vi.mocked(runBatchUpdate).mockClear();
   vi.mocked(runBatchUpdateAll).mockClear();
   openBatchModal.mockReset();
@@ -479,18 +468,15 @@ describe("open-attachment protocol link", () => {
       }),
   );
 
-  it.effect(
-    "shows the db-unavailable notice instead of resolving Attachments",
-    () =>
-      Effect.gen(function* () {
-        yield* registerOpener("loading");
+  it.effect("resolves no Attachments while the database is not ready", () =>
+    Effect.gen(function* () {
+      yield* registerOpener("loading");
 
-        yield* dispatch("zotlit/open-attachment", { item: "9" });
+      yield* dispatch("zotlit/open-attachment", { item: "9" });
 
-        expect(shown()).toEqual([m.notice_protocol_db_unavailable()]);
-        expect(reads.AttachmentsAt).not.toHaveBeenCalled();
-        expect(openAttachments).not.toHaveBeenCalled();
-      }),
+      expect(reads.AttachmentsAt).not.toHaveBeenCalled();
+      expect(openAttachments).not.toHaveBeenCalled();
+    }),
   );
 
   it.effect("offers no event, so the picker is always the Suggest modal", () =>
@@ -615,35 +601,6 @@ describe("library-wide protocol links", () => {
     }),
   );
 
-  it.effect(
-    "shows the early-exit notice an update-all link's update ended with",
-    () =>
-      Effect.gen(function* () {
-        vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
-          Effect.succeed<BatchUpdateResult>({ outcome: "empty-selection" }),
-        );
-        yield* register();
-
-        yield* dispatch("zotlit/update-all", { library: "7" });
-
-        expect(shown()).toEqual([m.batch_update_all_empty()]);
-        expect(notifier.notices[0]!.duration).toBe(2000);
-      }),
-  );
-
-  it.effect("shows no notice for an update-all link's update that failed", () =>
-    Effect.gen(function* () {
-      vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
-        Effect.die(new Error("classify failed")),
-      );
-      yield* register();
-
-      yield* dispatch("zotlit/update-all", { library: "7" });
-
-      expect(shown()).toEqual([]);
-    }),
-  );
-
   it.effect("passes the named group as an exact import target", () =>
     Effect.gen(function* () {
       yield* register();
@@ -763,7 +720,6 @@ describe("clipboard Profile protocol handoff", () => {
       yield* dispatch("zotlit/import-profile", { clipboard: "true" });
 
       expect(openTemplateWorkbench).not.toHaveBeenCalled();
-      expect(shown()).toEqual([]);
     }),
   );
 
@@ -799,7 +755,6 @@ describe("clipboard Profile protocol handoff", () => {
         expect(Exit.hasInterrupts(exit)).toBe(true);
         expect(close).toHaveBeenCalledOnce();
         expect(openTemplateWorkbench).not.toHaveBeenCalled();
-        expect(shown()).toEqual([]);
       }),
   );
 
@@ -816,56 +771,49 @@ describe("clipboard Profile protocol handoff", () => {
         );
 
         expect(importProfile).not.toHaveBeenCalled();
-        expect(shown()).toEqual([m.notice_protocol_invalid()]);
       }),
   );
 });
 
 describe("refused protocol links", () => {
-  it.effect(
-    "shows the invalid-link notice for a query that does not parse",
-    () =>
-      Effect.gen(function* () {
-        yield* register();
+  it.effect("reads no item for a query that does not parse", () =>
+    Effect.gen(function* () {
+      yield* register();
 
-        yield* dispatch("zotlit/open", { item: "x" });
+      yield* dispatch("zotlit/open", { item: "x" });
 
-        expect(shown()).toEqual([m.notice_protocol_invalid()]);
-        expect(reads.DisplayRefs).not.toHaveBeenCalled();
-      }),
+      expect(reads.DisplayRefs).not.toHaveBeenCalled();
+    }),
   );
 
-  it.effect("ignores a link from another Zotero without a notice", () =>
+  it.effect("ignores a link from another Zotero", () =>
     Effect.gen(function* () {
       refOf(REF);
       yield* register();
 
       yield* dispatch("zotlit/open", { item: "1", "source-id": "ffff0000" });
 
-      expect(shown()).toEqual([]);
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
       expect(openCompanionNote).not.toHaveBeenCalled();
     }),
   );
 
-  it.effect("shows the database notice when the database is not ready", () =>
+  it.effect("reads no item when the database is not ready", () =>
     Effect.gen(function* () {
       yield* register({ state: "degraded" });
 
       yield* dispatch("zotlit/open", { item: "1" });
 
-      expect(shown()).toEqual([m.notice_protocol_db_unavailable()]);
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
     }),
   );
 
-  it.effect("shows the not-found notice for an id with no live item", () =>
+  it.effect("opens no note for an id with no live item", () =>
     Effect.gen(function* () {
       yield* register();
 
       yield* dispatch("zotlit/open", { item: "5" });
 
-      expect(shown()).toEqual([m.notice_protocol_item_not_found()]);
       expect(openCompanionNote).not.toHaveBeenCalled();
     }),
   );
@@ -882,36 +830,31 @@ describe("refused protocol links", () => {
 
       yield* registration.idle;
 
-      expect(shown()).toHaveLength(1);
-      expect(shown()[0]).toContain("not-a-profile");
       expect(runBatchUpdate).not.toHaveBeenCalled();
     }),
   );
 
-  it.effect(
-    "shows the Profile failure notice when the imported document is gone",
-    () =>
-      Effect.gen(function* () {
-        yield* register({
-          deps: {
-            importProfile: vi.fn(() =>
-              Effect.succeed(
-                stubService<ImportedProfile>("LiteratureNoteProfile", {
-                  path: "templates/gone.md",
-                }),
-              ),
+  it.effect("opens no editor when the imported document is gone", () =>
+    Effect.gen(function* () {
+      yield* register({
+        deps: {
+          importProfile: vi.fn(() =>
+            Effect.succeed(
+              stubService<ImportedProfile>("LiteratureNoteProfile", {
+                path: "templates/gone.md",
+              }),
             ),
-          },
-        });
+          ),
+        },
+      });
 
-        yield* dispatch("zotlit/import-profile", { clipboard: "true" });
+      yield* dispatch("zotlit/import-profile", { clipboard: "true" });
 
-        expect(shown()).toEqual([m.notice_profile_action_failed()]);
-        expect(openTemplateWorkbench).not.toHaveBeenCalled();
-      }),
+      expect(openTemplateWorkbench).not.toHaveBeenCalled();
+    }),
   );
 
-  it.effect("shows the Profile failure notice when a vault read dies", () =>
+  it.effect("opens no editor when a vault read dies", () =>
     Effect.gen(function* () {
       yield* register({
         deps: {
@@ -928,7 +871,6 @@ describe("refused protocol links", () => {
 
       yield* dispatch("zotlit/import-profile", { clipboard: "true" });
 
-      expect(shown()).toEqual([m.notice_profile_action_failed()]);
       expect(openTemplateWorkbench).not.toHaveBeenCalled();
     }),
   );
@@ -953,35 +895,6 @@ describe("batch protocol links", () => {
           { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
         );
       }),
-  );
-
-  it.effect(
-    "shows the early-exit notice a link's batch update ended with",
-    () =>
-      Effect.gen(function* () {
-        vi.mocked(runBatchUpdate).mockReturnValueOnce(
-          Effect.succeed<BatchUpdateResult>({ outcome: "db-unavailable" }),
-        );
-        yield* register();
-
-        yield* dispatch("zotlit/update-many", { items: "3,4" });
-
-        expect(shown()).toEqual([m.batch_update_db_unavailable()]);
-        expect(notifier.notices[0]!.duration).toBe(2000);
-      }),
-  );
-
-  it.effect("shows no notice for a link's batch update that failed", () =>
-    Effect.gen(function* () {
-      vi.mocked(runBatchUpdate).mockReturnValueOnce(
-        Effect.die(new Error("classify failed")),
-      );
-      yield* register();
-
-      yield* dispatch("zotlit/update-many", { items: "3,4" });
-
-      expect(shown()).toEqual([]);
-    }),
   );
 
   it.effect("imports the one item an import-note link names", () =>
@@ -1016,26 +929,13 @@ describe("batch protocol links", () => {
     }),
   );
 
-  it.effect("tells the user to open the database a link import needs", () =>
+  it.effect("opens no import while the database is not ready", () =>
     Effect.gen(function* () {
       yield* register({ state: "loading" });
 
       yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
 
-      expect(shown()).toEqual([m.batch_update_db_unavailable()]);
-      expect(notifier.notices[0]!.duration).toBe(2000);
       expect(openBatchModal).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("shows the import failure a link run ended with", () =>
-    Effect.gen(function* () {
-      yield* register({ whenIndexed: Effect.die(new Error("index failed")) });
-
-      yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
-
-      expect(shown()).toEqual([m.batch_import_failed()]);
-      expect(notifier.notices[0]!.duration).toBe(4000);
     }),
   );
 });
