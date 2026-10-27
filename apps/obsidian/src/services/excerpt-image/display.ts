@@ -218,14 +218,16 @@ export const layerExcerptDisplays = Layer.effect(
       yield* queries.invalidate(slot.key);
       if (previous) yield* Fiber.interrupt(previous.fiber);
 
-      // The parent read owns both the fallback and the query resolution.
-      const work = Effect.scoped(
-        Effect.gen(function* () {
-          yield* Effect.forkChild(seed(slot));
-          yield* queries.read<AvailableExcerpt>(slot.key, ({ signal }) =>
+      // The read owns both jobs. A stored fallback can arrive after the
+      // fresh resolution fails, so both finish before this work settles.
+      const work = Effect.all(
+        [
+          seed(slot),
+          queries.read<AvailableExcerpt>(slot.key, ({ signal }) =>
             bridge.runPromise(resolve(request), { signal }),
-          );
-        }),
+          ),
+        ],
+        { concurrency: "unbounded", discard: true },
       ).pipe(
         Effect.ensuring(
           Effect.gen(function* () {
