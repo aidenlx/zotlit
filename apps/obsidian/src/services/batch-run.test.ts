@@ -464,6 +464,31 @@ describe("a task that awaits a rejected Promise", () => {
       ]);
     }),
   );
+
+  it.effect("reports an abort-named failure as a failed item", () =>
+    Effect.gen(function* () {
+      const { controls, settled } = makeRunControls();
+      const onTaskFailed = vi.fn();
+
+      const result = yield* executeBatchRun({
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: () => Effect.die(new DOMException("released", "AbortError")),
+        onTaskFailed,
+      });
+
+      expect(result).toMatchObject({ failed: 1, cancelled: false });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: { label: "Item 1", message: "released" },
+        },
+      ]);
+      expect(onTaskFailed).toHaveBeenCalledTimes(1);
+    }),
+  );
 });
 
 describe("a halted run", () => {
