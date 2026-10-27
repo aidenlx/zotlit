@@ -93,7 +93,7 @@ export interface TemplateDataLoader {
   ): Promise<CitationDataLoadResult>;
 }
 
-/** What a caller outside Effect passes to {@link loadTemplateData}. */
+/** What a caller outside Effect passes to the Template data loader. */
 export interface TemplateDataDeps {
   readonly templateData: TemplateDataLoader;
   /** The settings the data reads in place of the plugin's: a Profile's. */
@@ -258,17 +258,6 @@ export const readCitationData = Effect.fn("TemplateData.readCitation")(
     };
   },
 );
-
-/** {@link readTemplateData} for a caller outside Effect, through its handle. */
-export function loadTemplateData(
-  deps: TemplateDataDeps,
-  indexedKey: string,
-  root: ContractRoot,
-): Promise<TemplateDataLoadResult> {
-  return deps.templateData.load(indexedKey, root, {
-    settings: deps.dataSettings,
-  });
-}
 
 /**
  * Render the annotation root's `citation` field, labeling its failure with the

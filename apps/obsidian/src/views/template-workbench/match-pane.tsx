@@ -1,15 +1,13 @@
 // The Match tab of the Template Workbench View: it tests the selected Item
 // independently of preview rendering mode.
-import { useEffect, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
 
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { MatchPane, WorkbenchThemeProvider } from "@zotlit/workbench/ui";
 
 import { Select } from "@/components/select";
 import { useObsidianApp } from "@/lib/app-context";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 
 import { onKeymap, templateWorkbenchTheme } from "./theme";
 
@@ -32,34 +30,14 @@ export const matchTheme = {
 };
 
 export function NativeMatchPane({
-  runtime,
   controller,
-  db,
   onChooseItem,
 }: {
-  runtime: SubscriptionRuntime;
   controller: WorkbenchDocumentController;
-  db: Pick<
-    PlainZoteroReads,
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-  >;
   onChooseItem?: () => void;
 }) {
   const app = useObsidianApp();
-  // A database change can bring new Tags and Collections, and a new answer.
-  const [vocabularyRevision, setVocabularyRevision] = useState(0);
-  useEffect(
-    () =>
-      subscribe(runtime, db["changed"], () =>
-        setVocabularyRevision((value) => value + 1),
-      ),
-    [runtime, db],
-  );
+  const vocabularyRevision = useAtomValue(zoteroRevisionAtom);
   return (
     <WorkbenchThemeProvider theme={onKeymap(matchTheme, app)}>
       <MatchPane

@@ -1,6 +1,5 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
 import { Cause, DateTime, Effect, Exit } from "effect";
-import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { stringifyYaml } from "obsidian";
 import type { App } from "obsidian";
 
@@ -47,7 +46,6 @@ import { readLiveText } from "@/lib/live-text";
 import { Vault } from "@/lib/obsidian-vault";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import {
   applyComposedFrontmatter,
@@ -73,6 +71,7 @@ import {
 import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import type { TemplateOperations } from "@/services/template/service";
+import { makeWorkbenchCommand } from "@/views/template-workbench/command";
 
 import { previewBaseline } from "./baseline";
 export { previewBaseline } from "./baseline";
@@ -191,7 +190,8 @@ const renderNativeTemplateEffect = Effect.fn("NotePreview.render")(function* (
 
 /** One command per owner: a close interrupts its active render. */
 export function makeNativeRenderer(deps: NativeRenderDeps) {
-  const command = viewRuntime.fn(
+  const command = makeWorkbenchCommand(
+    deps.registry,
     (input: {
       request: RenderRequest;
       partial?: PartialPreviewSelection;
@@ -210,45 +210,12 @@ export function makeNativeRenderer(deps: NativeRenderDeps) {
           })
         : renderNativeTemplateEffect(deps, input.request),
   );
-  const release = deps.registry.mount(command);
-  let closed = false;
-  let pending: {
-    unsubscribe: () => void;
-    reject: (reason: unknown) => void;
-  } | null = null;
-  const cancel = () => {
-    pending?.unsubscribe();
-    pending?.reject(new Error("Preview render interrupted"));
-    pending = null;
-  };
-  const run = (
-    request: RenderRequest,
-    partial?: PartialPreviewSelection,
-  ): Promise<NativeRenderResult | string> => {
-    if (closed) return Promise.reject(new Error("Preview render closed"));
-    cancel();
-    return new Promise((resolve, reject) => {
-      const unsubscribe = deps.registry.subscribe(command, (result) => {
-        if (result.waiting || AsyncResult.isInitial(result)) return;
-        unsubscribe();
-        pending = null;
-        if (AsyncResult.isSuccess(result)) resolve(result.value);
-        else reject(Cause.squash(result.cause));
-      });
-      pending = { reject, unsubscribe };
-      deps.registry.set(command, { request, ...(partial ? { partial } : {}) });
-    });
-  };
   return {
     render: (request: RenderRequest) =>
-      run(request) as Promise<NativeRenderResult>,
+      command.run({ request }) as Promise<NativeRenderResult>,
     partial: (request: RenderRequest, partial: PartialPreviewSelection) =>
-      run(request, partial) as Promise<string>,
-    [Symbol.dispose]() {
-      closed = true;
-      cancel();
-      release();
-    },
+      command.run({ request, partial }) as Promise<string>,
+    [Symbol.dispose]: () => command[Symbol.dispose](),
   };
 }
 

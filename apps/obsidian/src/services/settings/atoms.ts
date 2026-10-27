@@ -16,3 +16,16 @@ export const templateFolderAtom = Atom.map(
   settingsAtom,
   (settings) => settings["template.folder"],
 );
+
+/** Only the default bindings invalidate Workbench renders. */
+export const defaultBindingsAtom = held(
+  Stream.unwrap(
+    Effect.map(PluginSettings, (service) =>
+      Stream.map(
+        service.changes,
+        (settings) => settings["note.default-profile"].bindings,
+      ),
+    ),
+  ),
+  defaults["note.default-profile"].bindings,
+);

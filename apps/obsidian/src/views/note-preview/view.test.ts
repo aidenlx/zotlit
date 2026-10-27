@@ -21,9 +21,10 @@ import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { templateRevisionAtom } from "@/services/template/atoms";
+import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "@/views/template-workbench/__fixtures__";
+import { makeWorkbenchHost } from "@/views/template-workbench/__fixtures__";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
-import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
 
 import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
 import {
@@ -179,34 +180,36 @@ async function setup(
   const editorLeaf = leafWithApp(app);
   const editor = new Editor(
     editorLeaf,
-    stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
-      runtime: testRuntime(),
-      settings: fixture.settings,
-      bridge: fixture.deps.bridge,
-      zoteroReads: fixture.zoteroReads,
-      zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
-        "ZoteroPref",
-        { dataDir: "/Zotero" },
-      ),
-      templates: fixture.templates,
-      nativePreview: fixture.deps,
-      itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
-        "ItemLookup",
-        {
-          search: async () => [],
-          openSession: () => ({
+    makeWorkbenchHost(
+      stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+        runtime: testRuntime(),
+        settings: fixture.settings,
+        bridge: fixture.deps.bridge,
+        zoteroReads: fixture.zoteroReads,
+        zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
+          "ZoteroPref",
+          { dataDir: "/Zotero" },
+        ),
+        templates: fixture.templates,
+        nativePreview: fixture.deps,
+        itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
+          "ItemLookup",
+          {
             search: async () => [],
-            close: () => {},
-            [Symbol.dispose]() {},
-          }),
-        },
-      ),
-      noteFeature: undefined,
-      query: undefined,
-      render: undefined,
-      profile: undefined,
-      pluginVersion: undefined,
-    }),
+            openSession: () => ({
+              search: async () => [],
+              close: () => {},
+              [Symbol.dispose]() {},
+            }),
+          },
+        ),
+        noteFeature: undefined,
+        query: undefined,
+        render: undefined,
+        profile: undefined,
+        pluginVersion: undefined,
+      }),
+    ).deps,
   );
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
   editor.file = file;
