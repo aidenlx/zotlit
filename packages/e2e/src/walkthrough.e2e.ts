@@ -765,27 +765,28 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `(async()=>{
       ${browserWaits}
       const template=app.plugins.plugins.zotlit.services.template;
+      await using cleanup=new AsyncDisposableStack();
       const previous=template.javascriptTemplatesEnabled;
+      cleanup.defer(()=>template.setJavascriptTemplatesEnabled(previous));
       for(const leaf of app.workspace.getLeavesOfType('zotlit-template-data-explorer'))leaf.detach();
-      const leaf=app.workspace.getLeaf('tab');
-      try {
-        await template.setJavascriptTemplatesEnabled(false);
-        await leaf.setViewState({type:'zotlit-template-data-explorer',active:true,state:{itemIndexedKey:'DMRGRART',root:'note',zotlitLaunch:true}});
-        const element=leaf.view.contentEl;
-        const button=()=>element.querySelector('[aria-label="Template actions"]');
-        await waitFor(()=>!!button(),true,'Explorer field actions');
-        const labels=()=>Array.from(document.querySelectorAll('.menu .menu-item-title')).map(el=>el.textContent);
-        const closeMenu=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
-        const menu=async()=>{button().click();await waitFor(()=>labels().length>0,true,'Explorer menu');return labels();};
-        const disabled=await menu();closeMenu();
-        await template.setJavascriptTemplatesEnabled(true);
-        await waitFor(()=>{closeMenu();button().click();return labels().includes('Eta');},true,'Eta actions after permission');
-        const enabled=labels();closeMenu();
-        await template.setJavascriptTemplatesEnabled(false);
-        await waitFor(()=>{closeMenu();button().click();return labels().includes('Copy output')&&!labels().includes('Eta');},true,'Liquid actions after permission is removed');
-        const revoked=labels();closeMenu();
-        return JSON.stringify({disabled,enabled,revoked});
-      } finally {leaf.detach();await template.setJavascriptTemplatesEnabled(previous);}
+      const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+      await template.setJavascriptTemplatesEnabled(false);
+      await leaf.setViewState({type:'zotlit-template-data-explorer',active:true,state:{itemIndexedKey:'DMRGRART',root:'note',zotlitLaunch:true}});
+      const element=leaf.view.contentEl;
+      const button=()=>element.querySelector('[aria-label="Template actions"]');
+      await waitFor(()=>!!button(),true,'Explorer field actions');
+      const labels=()=>Array.from(document.querySelectorAll('.menu .menu-item-title')).map(el=>el.textContent);
+      const closeMenu=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      cleanup.defer(closeMenu);
+      const menu=async()=>{button().click();await waitFor(()=>labels().length>0,true,'Explorer menu');return labels();};
+      const disabled=await menu();closeMenu();
+      await template.setJavascriptTemplatesEnabled(true);
+      await waitFor(()=>{closeMenu();button().click();return labels().includes('Eta');},true,'Eta actions after permission');
+      const enabled=labels();closeMenu();
+      await template.setJavascriptTemplatesEnabled(false);
+      await waitFor(()=>{closeMenu();button().click();return labels().includes('Copy output')&&!labels().includes('Eta');},true,'Liquid actions after permission is removed');
+      const revoked=labels();closeMenu();
+      return JSON.stringify({disabled,enabled,revoked});
     })()`,
       ),
     );
