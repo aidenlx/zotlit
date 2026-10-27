@@ -98,32 +98,20 @@ import type {
 
 export type { CreateOutcome, WriteReadError } from "./core/writes";
 export { WriteRunFailed } from "./core/writes";
-export {
-  UNHELD_RETENTION,
-  LocalApiReadFailed,
-  AnnotationLibraryUnresolved,
-} from "./core/lists";
+export { UNHELD_RETENTION, AnnotationLibraryUnresolved } from "./core/lists";
 export type {
   DatabaseAnnotationSource,
   AnnotationSource,
   AnnotationRecord,
   AnnotationList,
-  TextFieldDraftState,
   TextFieldDraft,
-  TagDraftState,
   TagDraft,
   AnnotationState,
   AnnotationRepositoryEvent,
-  AnnotationRepositoryCoreDeps,
 } from "./core/model";
 export type { EditingCapability } from "./capability";
-export type { AnnotationLock, LockReason } from "./lock";
-export type {
-  HistoryDirection,
-  HistoryEditKind,
-  HistoryOutcome,
-  HistoryStep,
-} from "./history";
+export type { LockReason } from "./lock";
+export type { HistoryDirection, HistoryOutcome } from "./history";
 export type {
   AnnotationDraft,
   GeometryEdit,
@@ -131,7 +119,6 @@ export type {
   MutationState,
   TextField,
   WriteConflict,
-  WriteFailure,
 } from "./write";
 export type { DatabaseRowsError } from "./core/bridge";
 
