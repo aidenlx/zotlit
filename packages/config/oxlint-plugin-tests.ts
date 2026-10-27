@@ -467,10 +467,22 @@ export const noEvalCapture: Rule = {
             : node.callee.type === "MemberExpression"
               ? staticName(node.callee)
               : undefined;
-        if (name !== "obRun" && name !== "obRunUntil") return;
+        if (
+          name !== "obRun" &&
+          name !== "obRunUntil" &&
+          name !== "readQueryViewUntil"
+        )
+          return;
         const argument = node.arguments[1];
         if (!argument) return;
         const callback = resolve(argument);
+        // Temporary legacy overload while batches migrate; remove in #1855.
+        if (
+          name === "readQueryViewUntil" &&
+          (callback.type === "TemplateLiteral" ||
+            (callback.type === "Literal" && typeof callback.value === "string"))
+        )
+          return;
         if (
           callback.type !== "ArrowFunctionExpression" &&
           callback.type !== "FunctionExpression"
