@@ -2372,7 +2372,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app, zotlit }) => {
           app.saveLocalStorage("zotlit-workbench-launch-approved", null);
-          app.saveLocalStorage("zotlit-profile-customization", "ask");
+          app.saveLocalStorage("zotlit-profile-customization", "native");
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({ "server.workbench": false }),
           );
