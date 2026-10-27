@@ -8,7 +8,6 @@ import type {
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
-import { passAborted } from "@/lib/abort-error";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -45,6 +44,7 @@ import {
   zoteroRevisionAtom,
   zoteroStateAtom,
 } from "@/services/zotero-reads/atoms";
+import { viewTargetOpener } from "@/views/open-target";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
@@ -277,7 +277,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         onPinItem: () => this.#pickItemToPin(),
         onUnpin: () => this.#unpin(),
         onEnableLiveUpdates: () => this.#enableLiveUpdates(),
-        onOpenPdf: () => void this.#openPdf().catch(passAborted),
+        onOpenPdf: () => this.#openPdf(),
         fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;
@@ -645,10 +645,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Open the Attachment on screen in Obsidian's own PDF view. A non-PDF
    * Attachment or a missing file is answered by the reader's own notice.
    */
-  async #openPdf(): Promise<void> {
+  #openPdf(): void {
     const active = selectActiveAttachment(this.#store.getState());
     if (!active) return;
-    await this.#deps.opener.open(
+    viewTargetOpener(this.#deps.registry, this.#deps.opener).open(
       { kind: "attachment", attachmentKey: active.indexedKey },
       false,
     );

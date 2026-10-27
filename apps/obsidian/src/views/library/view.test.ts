@@ -757,7 +757,7 @@ async function pluginData(
     items,
     welcome: { registry: welcomeHost.registry, setupActions },
     literatureNotes,
-    opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
+    opener: { open: () => Effect.succeed({ kind: "reader" as const }) },
   });
   /** Zotero's database changes to hold `items`, and says so. */
   const change = async (items: readonly SeedItem[]) => {
@@ -3343,7 +3343,7 @@ describe("Reading Card", () => {
 
   it("lists the files, which open in their reader, the Zotero notes, which link to Zotero, and the tags as chips", async () => {
     const { deps, change } = await pluginData();
-    const open = vi.fn(() => Promise.resolve());
+    const open = vi.fn(() => Effect.succeed({ kind: "reader" as const }));
     Object.assign(deps, { opener: { open } });
     const view = await openTab(deps);
     await act(async () => {

@@ -79,6 +79,7 @@
   "command_open_pdf_name": "Open PDF",
   "notice_no_pdf_attachment": "This item has no PDF attachment.",
   "notice_pdf_file_missing": "The PDF file is missing.",
+  "notice_pdf_open_failed": "Could not open the PDF.",
   "hover_source_citekey": "ZotLit citation key",
   "notice_creating_note": "Creating literature note…",
   "notice_created_note": "Literature note created.",

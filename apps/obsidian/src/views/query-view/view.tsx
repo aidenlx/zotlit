@@ -23,6 +23,7 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
+import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import { queryRevisionAtom } from "@/services/item-query/atoms";
 import type { Diagnostic } from "@/services/item-query/contract";
 import type { QueryHandle } from "@/services/item-query/handle";
@@ -48,6 +49,7 @@ import type {
 } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 import type { AnnotState } from "@/views/annot-view/store";
+import { viewTargetOpener } from "@/views/open-target";
 
 import {
   makeQueryOperations,
@@ -591,9 +593,9 @@ export class QueryView extends Component implements HistorySurface {
   get tableDeps(): {
     query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
     literatureNotes: LiteratureNotes;
-    readers: QueryViewDeps["opener"];
+    readers: TargetOpenGesture;
   } {
-    const { literatureNotes, opener: readers } = this.#deps;
+    const { literatureNotes, opener } = this.#deps;
     return {
       query: {
         on: (_event, listener) =>
@@ -611,7 +613,7 @@ export class QueryView extends Component implements HistorySurface {
         customFieldNames: (signal) => this.customFieldNames(signal),
       },
       literatureNotes,
-      readers,
+      readers: viewTargetOpener(this.registry, opener),
     };
   }
 

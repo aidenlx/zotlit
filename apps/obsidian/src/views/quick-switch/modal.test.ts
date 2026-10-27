@@ -209,9 +209,9 @@ describe("QuickSwitchModal PDF chord", () => {
     modal: QuickSwitchModal;
     open: ReturnType<typeof vi.fn>;
   } {
-    const open = vi.fn<QuickSwitchDeps["opener"]["open"]>(async () => ({
-      kind: "reader",
-    }));
+    const open = vi.fn<QuickSwitchDeps["opener"]["open"]>(() =>
+      Effect.succeed({ kind: "reader" }),
+    );
     onPlatform(true);
     const deps = stubService<QuickSwitchDeps>("QuickSwitchDeps", {
       app: stubService<App>("App", {}),
@@ -223,6 +223,7 @@ describe("QuickSwitchModal PDF chord", () => {
       }),
       bridge: stubService<QuickSwitchDeps["bridge"]>("EffectBridge", {
         runSync: Effect.runSync,
+        runAndForget: (effect) => void Effect.runFork(effect),
       }),
       attachments: stubService<QuickSwitchDeps["attachments"]>(
         "LiteratureNoteAttachments",

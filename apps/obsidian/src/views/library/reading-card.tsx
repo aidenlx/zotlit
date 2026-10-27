@@ -34,8 +34,9 @@ import { itemTypeIcon } from "@/lib/item-type-icon";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import type { TargetOpener } from "@/services/attachment-open/open-target";
+import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import { AnnotList } from "@/views/annot-view/AnnotView";
+import { viewTargetOpener } from "@/views/open-target";
 import { serializeQueryFile } from "@/views/query-view/query-file";
 import {
   LOADING_TEXT,
@@ -57,7 +58,6 @@ import {
 import type { CardSession } from "./card-model";
 import { FILTER_CHIP_LINE_CLASS, TAG_CHIP_CLASS } from "./chip";
 import type { ReadingCardDisclosures } from "./document";
-import { libraryTargetOpener } from "./item-actions";
 import type { ItemActions } from "./item-actions";
 import { waitForRead } from "./model";
 import type { MenuItem } from "./row-menu";
@@ -213,8 +213,8 @@ export class ReadingCard extends Component {
     return this.#deps.items;
   }
 
-  get readers(): Pick<TargetOpener, "open"> {
-    return libraryTargetOpener(this.registry, this.#deps.opener);
+  get readers(): TargetOpenGesture {
+    return viewTargetOpener(this.registry, this.#deps.opener);
   }
 
   get host(): ReadingCardHost {

@@ -2,18 +2,24 @@
 // resolver and a seeded Zotero database. Obsidian's PDF view and the system
 // handler are the host boundaries, so both are recorders.
 
-import { Effect } from "effect";
-import type { Context } from "effect";
+import { Context, Effect, Layer } from "effect";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
+import { buildRuntime } from "@/lib/effect-layer";
+import { ObsidianEnv } from "@/lib/obsidian-env";
 import {
   DATA_DIR,
-  resolverHarness,
+  openResolver,
 } from "@/services/attachment-resolver/__fixtures__";
 import type { ResolverHarnessOptions } from "@/services/attachment-resolver/__fixtures__";
+import { AttachmentResolver } from "@/services/attachment-resolver/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
-import { createTargetOpener } from "./open-target";
+import { layerTargetOpener, TargetOpener } from "./open-target";
 import type { NativeOpener, ReaderOutcome } from "./open-target";
 import type { ObsidianOpenableAttachment } from "./resolve";
 
@@ -61,50 +67,109 @@ export const OPENER_ROWS = `
       (60, 61, 2, 'application/pdf', '${FILES.rougier}');
 `;
 
+export interface OpenerHarnessOptions extends Omit<
+  ResolverHarnessOptions,
+  "rows"
+> {
+  /** Files the reader finds missing at the open. */
+  missing?: readonly string[];
+  /** Files whose open the reader fails. */
+  broken?: readonly string[];
+  native?: NativeOpener;
+  settings?: Settings;
+}
+
 /**
- * The opener over the real resolver of {@link OPENER_ROWS}, a reader that
- * records each open and finds no file at the paths in `missing`, and a system
- * handler that records each link unless `native` takes it.
+ * The opener over the real resolver of {@link OPENER_ROWS}, on a runtime that
+ * also carries `context` — a test's `TestClock`, for one. The reader records
+ * each open, finds no file at the paths in `missing` and fails at the paths
+ * in `broken`; the system handler records each link unless `native` takes
+ * it; the Notifier records each notice. `close` disposes it.
  */
-export async function openerHarness(
-  stack: AsyncDisposableStack,
+export async function openOpener(
   {
     missing = [],
+    broken = [],
     native,
     settings = defaults,
-    context,
     ...options
-  }: Omit<ResolverHarnessOptions, "rows"> & {
-    missing?: readonly string[];
-    native?: NativeOpener;
-    settings?: Settings;
-    /** What the resolver's runtime also carries: a test's `TestClock`, for one. */
-    context?: Context.Context<never>;
-  } = {},
+  }: OpenerHarnessOptions = {},
+  context: Context.Context<never> = Context.empty(),
 ) {
+  await using stack = new AsyncDisposableStack();
   const opened: { attachment: ObsidianOpenableAttachment; pane: unknown }[] =
     [];
   const handed: string[] = [];
-  const harness = await resolverHarness(
-    stack,
+  const harness = await openResolver(
     { rows: OPENER_ROWS, ...options },
     context,
   );
-  const opener = createTargetOpener({
-    attachments: harness.service,
-    reader: {
-      open: (attachment, pane): Promise<ReaderOutcome> => {
-        if (missing.includes(attachment.absolutePath))
-          return Promise.resolve("file-missing");
-        opened.push({ attachment, pane });
-        return Promise.resolve("opened");
-      },
-    },
-    native: native ?? ((url) => void handed.push(url)),
-    settings: { current: Effect.sync(() => settings) },
-    bridge: harness.bridge,
-    vaultBasePath: VAULT,
-    platform: "linux",
-  });
-  return { ...harness, opener, opened, handed };
+  stack.defer(() => harness.close());
+  const notifier = testNotifier();
+  const runtime = buildRuntime(
+    layerTargetOpener({
+      reader: Effect.succeed({
+        open: (attachment, pane): Promise<ReaderOutcome> => {
+          if (broken.includes(attachment.absolutePath))
+            return Promise.reject(new Error("the reader failed"));
+          if (missing.includes(attachment.absolutePath))
+            return Promise.resolve("file-missing");
+          opened.push({ attachment, pane });
+          return Promise.resolve("opened");
+        },
+      }),
+      native: native ?? ((url) => void handed.push(url)),
+      platform: "linux",
+    }).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(AttachmentResolver, harness.service),
+          Layer.mock(PluginSettings, { current: Effect.sync(() => settings) }),
+          Layer.succeed(
+            ObsidianEnv,
+            stubService<ObsidianEnv["Service"]>("ObsidianEnv", {
+              basePath: VAULT,
+            }),
+          ),
+          notifier.layer,
+        ),
+      ),
+      Layer.provideMerge(Layer.succeedContext(context)),
+    ),
+    stack,
+  );
+  await runtime.context();
+  const opener = runtime.runSync(TargetOpener);
+  const owned = stack.move();
+  return {
+    ...harness,
+    opener,
+    /** Runs on the opener's runtime, which unload closes. */
+    bridge: effectBridge(runtime),
+    opened,
+    handed,
+    notices: notifier.notices,
+    close: () => owned.disposeAsync(),
+  };
+}
+
+/** {@link openOpener} on the test's own context, closed with its Scope. */
+export const openerFixture = Effect.fnUntraced(function* (
+  options: OpenerHarnessOptions = {},
+) {
+  const context = yield* Effect.context<never>();
+  return yield* Effect.acquireRelease(
+    Effect.promise(() => openOpener(options, context)),
+    (harness) => Effect.promise(() => harness.close()),
+  );
+});
+
+/** {@link openOpener} for a Promise suite, disposed with `stack`. */
+export async function openerHarness(
+  stack: AsyncDisposableStack,
+  options: OpenerHarnessOptions = {},
+) {
+  const harness = await openOpener(options);
+  stack.defer(() => harness.close());
+  return harness;
 }
