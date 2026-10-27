@@ -223,7 +223,10 @@ export async function obEvalUntil(
   }, options.tries);
 }
 
-/** The JSON callback boundary; all imports used by its code must be type-only. */
+/**
+ * The JSON callback boundary; all imports used by its code must be type-only.
+ * Service reads follow the current plugin when a callback restarts it.
+ */
 // oxlint-disable-next-line max-params -- The approved callback API keeps options fourth (#1848).
 export async function obRun<A = undefined, R = void>(
   vaultId: string,
@@ -234,7 +237,7 @@ export async function obRun<A = undefined, R = void>(
   args?: A & JsonCompatible<A>,
   options: { timeoutMs?: number } = {},
 ): Promise<Awaited<R>> {
-  const code = `(async()=>{const page=globalThis.__zotlitPageHelpers;if(!page)return '__zotlitHelpersMissing__';const result=await (${callback.toString()})({app,zotlit:app.plugins.plugins.zotlit,page},${JSON.stringify(args) ?? "undefined"});return JSON.stringify({value:result});})()`;
+  const code = `(async()=>{const page=globalThis.__zotlitPageHelpers;if(!page)return '__zotlitHelpersMissing__';const result=await (${callback.toString()})({app,zotlit:{get services(){return app.plugins.plugins.zotlit.services;}},page},${JSON.stringify(args) ?? "undefined"});return JSON.stringify({value:result});})()`;
   let reply = await obEval(vaultId, code, options.timeoutMs);
   if (reply === "__zotlitHelpersMissing__") {
     await obEval(
