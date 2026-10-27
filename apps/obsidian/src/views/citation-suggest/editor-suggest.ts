@@ -1,5 +1,6 @@
 import { Text } from "@codemirror/state";
 import { regex } from "arkregex";
+import { Effect } from "effect";
 import { EditorSuggest, Keymap } from "obsidian";
 import type {
   Editor,
@@ -12,6 +13,9 @@ import type {
 import type { CitationVariant } from "@zotlit/db";
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
+import { valueOr } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
@@ -106,14 +110,27 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const source = `@${context.query}`;
     const key = scanPandocCitations(source)[0]?.items[0];
     if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
-      const answer = await this.#deps.citationLookup
-        .read(
-          {
-            citekeys: [key.citationKey],
-          },
+      const answer = valueOr(
+        await this.#deps.bridge.runPromiseExit(
+          this.#deps.citationLookup.read({ citekeys: [key.citationKey] }).pipe(
+            recover(
+              (cause) =>
+                Effect.logDebug(
+                  "Locator lookup failed; closing citation suggestions",
+                ).pipe(
+                  Effect.annotateLogs({
+                    cause,
+                    citationKey: key.citationKey,
+                  }),
+                  withLogCategory("views", "citation-suggest"),
+                ),
+              Effect.succeed(null),
+            ),
+          ),
           { signal: controller.signal },
-        )
-        .catch(() => null);
+        ),
+        null,
+      );
       if (controller.signal.aborted) return null;
       if (answer === null) return [];
       const found = answer.resolve(key.citationKey);
@@ -170,7 +187,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
         : "main";
     const before = context.editor.getValue();
     const outcome = await resolveCitationInsert(this.#deps, hit, variant);
-    if (context.editor.getValue() !== before) return;
+    if (!outcome || context.editor.getValue() !== before) return;
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
@@ -222,7 +239,7 @@ export function writeCitation(
  * writes nothing.
  */
 export function commitCitationInsert(
-  deps: Pick<CitationSuggestDeps, "useLedger">,
+  deps: Pick<CitationSuggestDeps, "useLedger" | "bridge">,
   {
     indexedKey,
     text,
@@ -230,7 +247,7 @@ export function commitCitationInsert(
   }: { indexedKey: string; text: string; insert: () => boolean },
 ): boolean {
   if (text.length === 0 || !insert()) return false;
-  deps.useLedger.record(indexedKey, "cited");
+  deps.bridge.runSync(deps.useLedger.record(indexedKey, "cited"));
   return true;
 }
 
@@ -252,55 +269,74 @@ export type CitationInsertOutcome =
  * identity the user picked here. A snapshot still resolving reports every key
  * as missing, so it is refused too rather than let an ambiguous key through
  * while the answer is pending. Errors other than {@link InertTemplateError}
- * propagate.
+ * propagate. Interruption returns null, so the editor reports no outcome.
  */
 export async function resolveCitationInsert(
-  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup">,
+  deps: Pick<CitationSuggestDeps, "noteFeature" | "citationLookup" | "bridge">,
   hit: Pick<SearchHit, "item">,
   variant: CitationVariant,
-): Promise<CitationInsertOutcome> {
-  const citationKey =
-    "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
-  if (!citationKey) {
-    return {
-      kind: "notice",
-      message: m.notice_no_citekey({ key: hit.item.key }),
-    };
-  }
+): Promise<CitationInsertOutcome | null> {
+  const exit = await deps.bridge.runPromiseExit(
+    Effect.gen(function* (): Effect.gen.Return<CitationInsertOutcome> {
+      const citationKey =
+        "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
+      if (!citationKey) {
+        return {
+          kind: "notice",
+          message: m.notice_no_citekey({ key: hit.item.key }),
+        };
+      }
 
-  // A pending snapshot has no verdict yet and would read an ambiguous key as
-  // missing. A held snapshot keeps its verdict while it revalidates or fails.
-  if (deps.citationLookup.status === "pending") {
-    return { kind: "notice", message: m.notice_citekey_not_ready() };
-  }
+      // A pending snapshot has no verdict yet and would read an ambiguous key as
+      // missing. A held snapshot keeps its verdict while it revalidates or fails.
+      if ((yield* deps.citationLookup.current).status === "pending") {
+        return { kind: "notice", message: m.notice_citekey_not_ready() };
+      }
 
-  let lookup;
-  try {
-    lookup = await deps.citationLookup.read({ citekeys: [citationKey] });
-  } catch {
-    return { kind: "notice", message: m.notice_citekey_not_ready() };
-  }
-  if (lookup.resolve(citationKey).kind === "ambiguous") {
-    return {
-      kind: "notice",
-      message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),
-    };
-  }
+      const lookup = yield* deps.citationLookup
+        .read({ citekeys: [citationKey] })
+        .pipe(
+          recover(
+            (cause) =>
+              Effect.logWarning(
+                "Citation lookup failed; insertion unavailable",
+              ).pipe(
+                Effect.annotateLogs({ cause, citationKey }),
+                withLogCategory("views", "citation-suggest"),
+              ),
+            Effect.succeed(null),
+          ),
+        );
+      if (!lookup)
+        return { kind: "notice", message: m.notice_citekey_not_ready() };
+      if (lookup.resolve(citationKey).kind === "ambiguous") {
+        return {
+          kind: "notice",
+          message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),
+        };
+      }
 
-  let rendered: string | null;
-  try {
-    rendered = deps.noteFeature.renderCitation(
-      [{ citationKey, item: hit.item }],
-      variant,
-    );
-  } catch (e) {
-    if (!(e instanceof InertTemplateError)) throw e;
-    return { kind: "notice", message: e.message };
-  }
-  if (rendered === null) {
-    return { kind: "notice", message: m.notice_template_not_ready() };
-  }
-  return { kind: "insert", text: rendered };
+      return yield* Effect.try((): CitationInsertOutcome => {
+        const rendered = deps.noteFeature.renderCitation(
+          [{ citationKey, item: hit.item }],
+          variant,
+        );
+        return rendered === null
+          ? { kind: "notice", message: m.notice_template_not_ready() }
+          : { kind: "insert", text: rendered };
+      }).pipe(
+        Effect.catch(({ cause }) =>
+          cause instanceof InertTemplateError
+            ? Effect.succeed<CitationInsertOutcome>({
+                kind: "notice",
+                message: cause.message,
+              })
+            : Effect.die(cause),
+        ),
+      );
+    }),
+  );
+  return valueOr(exit, null);
 }
 
 /** Resolved inline trigger: ch offsets on the cursor line. */

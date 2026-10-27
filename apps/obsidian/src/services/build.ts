@@ -41,10 +41,12 @@ import type { LiteratureNoteServices } from "./attachment-open/literature-note";
 import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
+import { CitationLookup } from "./citation-index/lookup-service";
 import {
   plainCitationIndex,
   plainCitationLookup,
 } from "./citation-index/plain";
+import { CitationIndex } from "./citation-index/service";
 import { plainCitationParse } from "./citation-parse/plain";
 import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
@@ -97,6 +99,7 @@ import { bindTemplateData } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
 import { plainTemplate, plainTemplateMigration } from "./template/plain";
 import { plainUseLedger } from "./use-ledger/plain";
+import { UseLedger } from "./use-ledger/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
@@ -456,6 +459,13 @@ export async function buildServices(
     })
     .useValue({ citationParseService: () => runtime.runSync(CitationParse) })
     .useValue({ citationIndex: () => plainCitationIndex(runtime) })
+    .useValue({
+      citationSuggestServices: () => ({
+        citationLookup: runtime.runSync(CitationLookup),
+        citationIndex: runtime.runSync(CitationIndex),
+        useLedger: runtime.runSync(UseLedger),
+      }),
+    })
     .useValue({
       pandocEngine: () =>
         bindManagedBinary(bridge, runtime.runSync(PandocEngine)),

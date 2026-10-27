@@ -459,7 +459,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ]);
   });
 
-  it("keeps citation suggestions when a word reaches eight letters", async () => {
+  it("keeps citation suggestions for full words and inserts from both pickers", async () => {
     expect(
       await obEvalUntil(
         vaultId,
@@ -489,17 +489,33 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             await waitFor(()=>suggest.isOpen&&suggest.context?.query===query&&suggest.suggestEl.textContent.includes('Why Most Published Research Findings Are False'),true,'Citation suggestions for '+query);
             results.push({query,found:hits.some(hit=>hit.item.key==='DMIANART')});
           }
+          const key=(await app.plugins.plugins.zotlit.services.itemLookup.search('findings',{limit:5})).find(hit=>hit.item.key==='DMIANART').item.fields.citationKey;
+          const row=[...suggest.suggestEl.querySelectorAll('.suggestion-item')].find(el=>el.textContent.includes('Why Most Published Research Findings Are False'));
+          row.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+          await waitFor(()=>editor.getValue().includes('@'+key)&&!editor.getValue().includes('[@findings'),true,'Inline citation inserted');
+          const inline=editor.getValue();
+          editor.setCursor(editor.offsetToPos(inline.length));
+          app.commands.executeCommandById('zotlit:insert-citation');
+          await waitFor(()=>!!activeDocument.querySelector('.prompt-input'),true,'Insert citation modal');
+          const input=activeDocument.querySelector('.prompt-input');
+          input.value='findings';input.dispatchEvent(new Event('input',{bubbles:true}));
+          await waitFor(()=>!!activeDocument.querySelector('.prompt-results [data-indexed-key="DMIANART"]'),true,'Modal citation result');
+          activeDocument.querySelector('.prompt-results [data-indexed-key="DMIANART"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+          await waitFor(()=>editor.getValue().length>inline.length&&editor.getValue().split('@'+key).length===3,true,'Modal citation inserted');
+          const inserted=editor.getValue();
           await leaf.view.save();
-          return JSON.stringify(results);
+          return JSON.stringify({results,inline,inserted,key});
         })()`,
       ),
     );
-    expect(results).toEqual(
+    expect(results.results).toEqual(
       ["researc", "research", "finding", "findings"].map((query) => ({
         query,
         found: true,
       })),
     );
+    expect(results.inline).toContain(`@${results.key}`);
+    expect(results.inserted.split(`@${results.key}`)).toHaveLength(3);
   });
 
   it("keeps the citation suggester closed while entering a page locator", async () => {
