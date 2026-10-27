@@ -260,7 +260,6 @@ async function openFixture(mode: string) {
           },
           notePath: options.notePath,
           target: {
-            signal: yield* Effect.abortSignal,
             valid: options.valid,
             commit,
           },

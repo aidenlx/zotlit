@@ -19,7 +19,10 @@ export class AnnotationNoteActions extends Context.Service<
     citation(key: string): Effect.Effect<AnnotationCitation, unknown>;
     insert(
       options: AnnotationInsertRequest,
-    ): Effect.Effect<AnnotationInsertOutcome, unknown>;
+    ): Effect.Effect<
+      AnnotationInsertOutcome,
+      Effect.Error<ReturnType<typeof commitAnnotation>>
+    >;
   }
 >()("zotlit/note-feature/AnnotationNoteActions") {}
 

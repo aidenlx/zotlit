@@ -110,25 +110,28 @@ function fixture() {
     }
   };
   const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
-  const prepare = vi.fn((input: AnnotationInsertRequest) => {
-    const request = Promise.withResolvers<Result>();
-    pending.push(request);
-    void request.promise.catch(() => {});
-    return bridge
-      .runPromiseExit(
-        annotationAction(
-          input,
-          Effect.tryPromise({
-            try: (signal) => {
-              signal.throwIfAborted();
-              return request.promise;
-            },
-            catch: (error) => templateFailure(error),
-          }),
-        ),
-      )
-      .then((exit) => valueOr(exit, undefined));
-  });
+  const prepare = vi.fn(
+    (input: AnnotationInsertRequest, signal: AbortSignal) => {
+      const request = Promise.withResolvers<Result>();
+      pending.push(request);
+      void request.promise.catch(() => {});
+      return bridge
+        .runPromiseExit(
+          annotationAction(
+            input,
+            Effect.tryPromise({
+              try: (signal) => {
+                signal.throwIfAborted();
+                return request.promise;
+              },
+              catch: (error) => templateFailure(error),
+            }),
+          ),
+          { signal },
+        )
+        .then((exit) => valueOr(exit, undefined));
+    },
+  );
   const notify = vi.fn();
   const insert = createInsertHandler({
     app: stubService<App>("App", { workspace }),
@@ -269,7 +272,7 @@ it.effect("supersedes the pending action and inserts once with one undo", () =>
     await using f = fixture();
     const first = f.insert(card);
     const second = f.insert(card);
-    expect(f.prepare.mock.calls[0]?.[0].target.signal.aborted).toBe(true);
+    expect(f.prepare.mock.calls[0]?.[1].aborted).toBe(true);
     f.cm.dispatch({ changes: { from: 0, insert: "user " } });
     f.pending[1]!.resolve(result("EXCERPT"));
     expect(await second).toMatchObject({ kind: "inserted" });
@@ -407,26 +410,29 @@ function dragFixture() {
     }
   };
   const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
-  const prepare = vi.fn((input: AnnotationInsertRequest) => {
-    preparing = true;
-    const request = Promise.withResolvers<Result>();
-    pending.push(request);
-    void request.promise.catch(() => {});
-    return bridge
-      .runPromiseExit(
-        annotationAction(
-          input,
-          Effect.tryPromise({
-            try: (signal) => {
-              signal.throwIfAborted();
-              return request.promise;
-            },
-            catch: (error) => templateFailure(error),
-          }),
-        ),
-      )
-      .then((exit) => valueOr(exit, undefined));
-  });
+  const prepare = vi.fn(
+    (input: AnnotationInsertRequest, signal: AbortSignal) => {
+      preparing = true;
+      const request = Promise.withResolvers<Result>();
+      pending.push(request);
+      void request.promise.catch(() => {});
+      return bridge
+        .runPromiseExit(
+          annotationAction(
+            input,
+            Effect.tryPromise({
+              try: (signal) => {
+                signal.throwIfAborted();
+                return request.promise;
+              },
+              catch: (error) => templateFailure(error),
+            }),
+          ),
+          { signal },
+        )
+        .then((exit) => valueOr(exit, undefined));
+    },
+  );
   const handler = createDragInsertHandler({
     app: stubService<App>("App", { workspace }),
     execute: prepare,
@@ -569,7 +575,7 @@ it.effect.each(["escape", "overlap", "close", "new-drag"])(
       vi.spyOn(f.cm, "posAtCoords").mockReturnValue(4);
       const first = f.start();
       f.drop(first.dataTransfer);
-      const signal = f.prepare.mock.calls[0]![0].target.signal;
+      const signal = f.prepare.mock.calls[0]![1];
       if (mode === "escape")
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       if (mode === "overlap")

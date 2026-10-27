@@ -370,9 +370,15 @@ it.effect("runs two captured inserts at the same time", () =>
     const input = insertInput("FIRSTAAA", signal);
     const a = Promise.withResolvers<AnnotationInsertOutcome | undefined>();
     const b = Promise.withResolvers<AnnotationInsertOutcome | undefined>();
-    host.registry.set(command, { input, resolve: a.resolve, reject: a.reject });
+    host.registry.set(command, {
+      input,
+      signal,
+      resolve: a.resolve,
+      reject: a.reject,
+    });
     host.registry.set(command, {
       input: insertInput("SECNDBBB", signal),
+      signal,
       resolve: b.resolve,
       reject: b.reject,
     });
@@ -413,6 +419,7 @@ it.effect("interrupts an insert when its leaf releases the command", () =>
     const signal = yield* Effect.abortSignal;
     host.registry.set(command, {
       input: insertInput("FIRSTAAA", signal),
+      signal,
       resolve: answer.resolve,
       reject: answer.reject,
     });
@@ -439,7 +446,7 @@ function insertInput(
       sourceScope: "/zotero",
     },
     notePath: "note.md",
-    target: { valid: () => !signal.aborted, signal, commit: () => true },
+    target: { valid: () => !signal.aborted, commit: () => true },
   };
 }
 

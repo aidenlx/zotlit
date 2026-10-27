@@ -408,12 +408,27 @@ export const makeInsertCommand = () =>
   viewRuntime.fn(
     (request: {
       input: AnnotationInsertRequest;
+      signal: AbortSignal;
       resolve: (outcome: AnnotationInsertOutcome | undefined) => void;
       reject: (error: unknown) => void;
     }) =>
-      Effect.flatMap(AnnotationNoteActions, (notes) =>
-        notes.insert(request.input),
-      ).pipe(
+      Effect.gen(function* () {
+        const { signal } = request;
+        if (signal.aborted) return yield* Effect.interrupt;
+        const cancelled = Effect.callback<never>((resume) => {
+          const interrupt = () => resume(Effect.interrupt);
+          if (signal.aborted) {
+            interrupt();
+            return;
+          }
+          signal.addEventListener("abort", interrupt, { once: true });
+          return Effect.sync(() =>
+            signal.removeEventListener("abort", interrupt),
+          );
+        });
+        const notes = yield* AnnotationNoteActions;
+        return yield* Effect.raceFirst(notes.insert(request.input), cancelled);
+      }).pipe(
         Effect.onExit((exit) =>
           Effect.sync(() => {
             if (exit._tag === "Success") request.resolve(exit.value);

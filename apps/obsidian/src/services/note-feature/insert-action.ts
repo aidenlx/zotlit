@@ -24,7 +24,6 @@ export interface AnnotationSnapshot {
   sourceScope: string | null;
 }
 interface AnnotationInsertTarget {
-  signal: AbortSignal;
   valid(): boolean;
   commit(text: string, placement?: Placement): boolean;
 }
@@ -73,19 +72,7 @@ export type AnnotationInsertOutcome =
 export const commitAnnotation = Effect.fn("AnnotationNoteActions.insert")(
   function* (options: AnnotationInsertRequest) {
     const { target, notePath, placement } = options;
-    const cancelled = Effect.callback<never>((resume) => {
-      const interrupt = () => resume(Effect.interrupt);
-      if (target.signal.aborted) {
-        interrupt();
-        return;
-      }
-      target.signal.addEventListener("abort", interrupt, { once: true });
-      return Effect.sync(() =>
-        target.signal.removeEventListener("abort", interrupt),
-      );
-    });
     const preparation = Effect.gen(function* () {
-      if (target.signal.aborted) return yield* Effect.interrupt;
       let annotation: AnnotationRecord;
       let snapshot: AnnotationSnapshot;
       if ("hit" in options) {
@@ -119,7 +106,7 @@ export const commitAnnotation = Effect.fn("AnnotationNoteActions.insert")(
       );
       return { annotation, result };
     });
-    const prepared = yield* Effect.raceFirst(preparation, cancelled);
+    const prepared = yield* preparation;
     if (!target.valid()) return { kind: "cancelled" } as const;
     if (!prepared) return { kind: "unavailable" } as const;
     const { annotation, result } = prepared;
@@ -133,10 +120,9 @@ export const commitAnnotation = Effect.fn("AnnotationNoteActions.insert")(
           landed: target.commit(annotation.text ?? annotation.key, placement),
         };
       else {
-        yield* Effect.logWarning("Annotation insert failed", {
-          annotationKey: annotation.key,
-          error,
-        });
+        yield* Effect.logWarning("Annotation insert failed").pipe(
+          Effect.annotateLogs({ annotationKey: annotation.key, error }),
+        );
         outcome = { kind: "failed" };
       }
     } else if (!result.insert) {

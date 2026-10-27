@@ -22,6 +22,7 @@ interface AsyncInsertDeps {
   app: App;
   execute: (
     request: AnnotationInsertRequest,
+    signal: AbortSignal,
   ) => Promise<AnnotationInsertOutcome | undefined>;
   snapshot: (annotation: AnnotationRecord) => AnnotationSnapshot;
   notify: (message: string | DocumentFragment) => void;
@@ -125,12 +126,15 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
     pending = target;
     return report(
       deps,
-      await deps.execute({
-        annotation,
-        snapshot,
-        target,
-        notePath: info.file.path,
-      }),
+      await deps.execute(
+        {
+          annotation,
+          snapshot,
+          target,
+          notePath: info.file.path,
+        },
+        target.signal,
+      ),
     );
   };
   const offer = () => {
@@ -259,11 +263,14 @@ async function insertDrop(
   cleanup.defer(() => options.settled(target));
   report(
     deps,
-    await deps.execute({
-      annotation: options.annotation,
-      snapshot: options.snapshot,
-      target,
-      notePath: file.path,
-    }),
+    await deps.execute(
+      {
+        annotation: options.annotation,
+        snapshot: options.snapshot,
+        target,
+        notePath: file.path,
+      },
+      target.signal,
+    ),
   );
 }

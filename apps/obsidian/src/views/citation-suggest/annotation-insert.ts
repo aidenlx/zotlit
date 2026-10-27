@@ -48,6 +48,7 @@ export async function insertAnnotation(
         notePath: file.path,
         placement: { replacesTrigger: true },
       }),
+      { signal: target.signal },
     ),
     undefined,
   );

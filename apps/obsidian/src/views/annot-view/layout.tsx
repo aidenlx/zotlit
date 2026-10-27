@@ -314,9 +314,14 @@ export class AnnotationsLayout extends Component {
 
     const insertDeps: Parameters<typeof createInsertHandler>[0] = {
       app: deps.app,
-      execute: (input) =>
+      execute: (input, signal) =>
         new Promise((resolve, reject) =>
-          deps.registry.set(this.#insertCommand, { input, resolve, reject }),
+          deps.registry.set(this.#insertCommand, {
+            input,
+            signal,
+            resolve,
+            reject,
+          }),
         ),
       notify: (message) => void new BaseNotice(message),
       snapshot: (annotation) => {
