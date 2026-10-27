@@ -48,7 +48,6 @@ export type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
-  CommentNotes,
   PdfViewBinding,
 } from "./binding";
 export type { MarkGestures } from "./selection";
