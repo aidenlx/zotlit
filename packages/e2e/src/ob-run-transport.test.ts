@@ -120,3 +120,41 @@ it("defaults to true and names the last rejected value on exhaustion", async () 
   await vi.advanceTimersByTimeAsync(250);
   await rejected;
 });
+
+// #1855: preserve wrapper behavior through the public typed transport.
+it("awaits a callback promise", async () => {
+  expect(await obRun("vault", () => Promise.resolve(7))).toBe(7);
+});
+
+it("names a non-Error thrown by the page", async () => {
+  await expect(
+    obRun("vault", () => {
+      throw "plain";
+    }),
+  ).rejects.toThrow("plain");
+});
+
+it("takes the last reply past console output", async () => {
+  const answer = socketBoundary.answer;
+  socketBoundary.answer = async (code) =>
+    `plugin loaded\n=> early\nmore\n${await answer(code)}`;
+  expect(await obRun("vault", () => 42)).toBe(42);
+});
+
+it("reports output with no reply line", async () => {
+  socketBoundary.answer = async () => "Vault not found.";
+  await expect(obRun("vault", () => true)).rejects.toThrow(
+    'obsidian reply had no "=> " line: Vault not found.',
+  );
+});
+
+it("puts the thrown message first, then the app frames", async () => {
+  socketBoundary.answer = async () =>
+    `=> __zotlitEvalError__${JSON.stringify({
+      message: "x",
+      stack: "Error: x\n    at eval (app://obsidian.md/app.js:1:1)",
+    })}`;
+  await expect(obRun("vault", () => true)).rejects.toThrow(
+    "x\n    at eval (app://obsidian.md/app.js:1:1)",
+  );
+});

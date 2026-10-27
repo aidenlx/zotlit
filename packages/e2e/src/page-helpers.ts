@@ -26,8 +26,6 @@ import type {
 
 /** JSON handle for a Query View embedded in a Markdown note. */
 export interface NoteQueryView {
-  /** Transitional source for the deferred migration batches; remove in #1855. */
-  readonly el: string;
   path: string;
   kind: {
     name: string;

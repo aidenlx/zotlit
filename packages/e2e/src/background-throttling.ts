@@ -45,8 +45,6 @@ type RunWindow = Window &
 import { installMemoryClipboard } from "./memory-clipboard.ts";
 import { obRun } from "./obsidian-cli.ts";
 
-/** Global the restore function lives on in the vault window between calls. */
-
 /**
  * Prepares the vault window `vaultId` for a run, after it opens and after each
  * reload. It installs the window's in-memory clipboard

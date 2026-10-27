@@ -1,7 +1,13 @@
+import type { readQueryViewUntil } from "./note-query-view.ts";
+import type * as Cli from "./obsidian-cli.ts";
 import { obRun } from "./obsidian-cli.ts";
 
 // Typecheck is the seam: these calls are compiled, never executed.
 function proofs() {
+  // @ts-expect-error #1855: Query View reads take typed callbacks.
+  const queryViewReader: Parameters<typeof readQueryViewUntil>[1] =
+    "JSON.stringify(true)";
+  void queryViewReader;
   void obRun("vault", ({ zotlit }) =>
     zotlit.services.profile.getBuiltInSource(),
   );
@@ -17,3 +23,17 @@ function proofs() {
   void obRun("vault", () => ({ action: () => true }));
 }
 void proofs;
+
+// #1855: only typed callbacks cross the public eval boundary.
+type LegacyEvalExports = Extract<
+  keyof typeof Cli,
+  | "obEval"
+  | "obJson"
+  | "obReadUntil"
+  | "obEvalUntil"
+  | "wrapEvalCode"
+  | "parseEvalReply"
+  | "WINDOW_DOCUMENTS"
+>;
+const legacyEvalExports: Record<LegacyEvalExports, never> = {};
+void legacyEvalExports;
