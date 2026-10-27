@@ -25,16 +25,18 @@ import {
   openWorkbenchLayout,
 } from "@/views/note-preview/register";
 
-import { runTemplateWorkbenchAction } from "./actions";
+import { startTemplateWorkbenchAction } from "./actions";
+import type { WorkbenchActionDeps } from "./actions";
 import { makeDefaultSourceCommand } from "./atoms";
 import { templateDocumentKind } from "./document-kind";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
-type RegistrationDeps = TemplateWorkbenchDeps & {
-  webWorkbenchEnabled: boolean;
-  customize: CustomizeAction;
-};
+type RegistrationDeps = TemplateWorkbenchDeps &
+  WorkbenchActionDeps & {
+    webWorkbenchEnabled: boolean;
+    customize: CustomizeAction;
+  };
 /**
  * What the Workbench's commands, header action, and file-menu entries ask of a
  * file: which kind of Template Document it is, which Profile a note opens, and
@@ -119,7 +121,7 @@ export function registerTemplateWorkbenchView(
       const target = plugin.app.workspace.getActiveFile();
       if (!isProfile(target)) return false;
       if (!checking)
-        void runTemplateWorkbenchAction("customize", () =>
+        startTemplateWorkbenchAction(deps, "customize", () =>
           customizeTarget(target, { destination: "native" }),
         );
       return true;
@@ -133,7 +135,7 @@ export function registerTemplateWorkbenchView(
         const target = targetOf(plugin.app.workspace.getActiveFile());
         if (!target) return false;
         if (!checking)
-          void runTemplateWorkbenchAction("open-web", () =>
+          startTemplateWorkbenchAction(deps, "open-web", () =>
             customizeTarget(target, { destination: "web" }),
           );
         return true;
@@ -149,7 +151,7 @@ export function registerTemplateWorkbenchView(
       // file menu and the Markdown header action already take.
       if (isPlainDocument(active)) {
         if (!checking)
-          void runTemplateWorkbenchAction("open-editor", () =>
+          startTemplateWorkbenchAction(deps, "open-editor", () =>
             openTemplateWorkbench(plugin.app, active, {
               explainUnsupported: false,
               ...(leaf ? { leaf } : {}),
@@ -163,7 +165,7 @@ export function registerTemplateWorkbenchView(
         const itemIndexedKey =
           active &&
           itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
-        void runTemplateWorkbenchAction("open-editor", () =>
+        startTemplateWorkbenchAction(deps, "open-editor", () =>
           openNativeProfile(plugin.app, target, {
             ...(itemIndexedKey ? { itemIndexedKey } : {}),
             ...(leaf ? { leaf } : {}),
@@ -185,7 +187,7 @@ export function registerTemplateWorkbenchView(
         explainUnsupported: false,
         ...(problem ? { problem } : {}),
       };
-      void runTemplateWorkbenchAction("open-workbench", () =>
+      startTemplateWorkbenchAction(deps, "open-workbench", () =>
         file
           ? openTemplateWorkbench(plugin.app, file, options)
           : openNativeProfile(plugin.app, deps.registry, options),
@@ -216,7 +218,7 @@ export function registerTemplateWorkbenchView(
           view.addAction("file-pen-line", m.template_workbench_open(), () => {
             const file = view.file;
             if (!file) return;
-            void runTemplateWorkbenchAction("open-editor", () =>
+            startTemplateWorkbenchAction(deps, "open-editor", () =>
               openTemplateWorkbench(plugin.app, file, {
                 leaf: view.leaf,
                 ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
@@ -256,14 +258,13 @@ export function templateWorkbenchFileMenu(
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_open())
           .setIcon("file-pen-line")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("open-editor", () =>
-                openTemplateWorkbench(app, file, {
-                  explainUnsupported: false,
-                  ...(leaf ? { leaf } : {}),
-                }),
-              ),
+          .onClick(() =>
+            startTemplateWorkbenchAction(deps, "open-editor", () =>
+              openTemplateWorkbench(app, file, {
+                explainUnsupported: false,
+                ...(leaf ? { leaf } : {}),
+              }),
+            ),
           ),
       );
       return;
@@ -277,14 +278,13 @@ export function templateWorkbenchFileMenu(
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_open_layout())
           .setIcon("panels-top-left")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("customize", () =>
-                customizeTarget(target, {
-                  ...options,
-                  destination: "native",
-                }),
-              ),
+          .onClick(() =>
+            startTemplateWorkbenchAction(deps, "customize", () =>
+              customizeTarget(target, {
+                ...options,
+                destination: "native",
+              }),
+            ),
           ),
       );
     if (deps.webWorkbenchEnabled)
@@ -293,14 +293,13 @@ export function templateWorkbenchFileMenu(
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_web_open())
           .setIcon("external-link")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("open-web", () =>
-                customizeTarget(target, {
-                  ...options,
-                  destination: "web",
-                }),
-              ),
+          .onClick(() =>
+            startTemplateWorkbenchAction(deps, "open-web", () =>
+              customizeTarget(target, {
+                ...options,
+                destination: "web",
+              }),
+            ),
           ),
       );
     menu.addItem((item) =>
@@ -310,7 +309,7 @@ export function templateWorkbenchFileMenu(
         .setIcon("file-pen-line")
         .onClick(() => {
           const leaf = activeLeafFor(app, file);
-          void runTemplateWorkbenchAction("open-editor", () =>
+          startTemplateWorkbenchAction(deps, "open-editor", () =>
             openNativeProfile(app, target, {
               ...options,
               ...(leaf ? { leaf } : {}),

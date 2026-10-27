@@ -10,7 +10,8 @@ import type {
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
-import { runTemplateWorkbenchAction } from "@/views/template-workbench/actions";
+import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
+import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 import {
   TEMPLATE_WORKBENCH_VIEW_TYPE,
   TemplateWorkbenchView,
@@ -151,7 +152,7 @@ export function subscribeActiveTemplateWorkbench(
 }
 export function registerNotePreview(
   plugin: Plugin,
-  deps: PreviewViewDeps,
+  deps: PreviewViewDeps & WorkbenchActionDeps,
 ): void {
   const { app } = plugin;
   plugin.registerView(
@@ -165,7 +166,7 @@ export function registerNotePreview(
       const editor = activeTemplateWorkbench(app);
       if (!editor) return false;
       if (!checking)
-        void runTemplateWorkbenchAction("open-workbench", () =>
+        startTemplateWorkbenchAction(deps, "open-workbench", () =>
           openWorkbenchLayout(app, editor),
         );
       return true;
@@ -178,7 +179,7 @@ export function registerNotePreview(
       const editor = activeTemplateWorkbench(app);
       if (!editor) return false;
       if (!checking)
-        void runTemplateWorkbenchAction("open-preview", () =>
+        startTemplateWorkbenchAction(deps, "open-preview", () =>
           openNotePreview(app, editor),
         );
       return true;

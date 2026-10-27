@@ -3,7 +3,6 @@ import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
-import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 
 import { itemSummary } from "@/lib/item-summary";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
@@ -55,25 +54,8 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
         return yield* (yield* Profile).materializeDefault();
       }),
     ),
-    restore: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        const profile = yield* Profile;
-        yield* profile.restoreDefault();
-        return yield* profile.getSource("default");
-      }),
-    ),
     citation: makeWorkbenchCommand(registry, (app: App) =>
       reportCitationTemplateOpen(app),
-    ),
-    unpack: makeWorkbenchCommand(
-      registry,
-      (bundled: readonly LiteratureNoteTemplatePartial[]) =>
-        Effect.gen(function* () {
-          const templates = yield* Template;
-          return yield* templates.unpackPartials(
-            yield* templates.planPartialUnpack(bundled),
-          );
-        }),
     ),
     styles: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
