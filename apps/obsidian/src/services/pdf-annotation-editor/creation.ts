@@ -1093,11 +1093,9 @@ export class MarkCreation implements CreationGestures, Disposable {
       if (disarm) this.#arm(null);
       return outcome.annotationKey;
     } catch (error) {
-      if (AbortError.test(error)) return null;
-      logger.warn("An Annotation was not created", { type, error });
-      this.#deps.reportCreateFailure(
-        m.annot_view_write_reason_unknown_outcome(),
-      );
+      // The create's own failure is an outcome; this is what came after it.
+      if (!AbortError.test(error))
+        logger.warn("An Annotation create did not finish", { type, error });
       return null;
     } finally {
       if (foreground) {

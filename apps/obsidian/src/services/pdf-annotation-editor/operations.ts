@@ -1,5 +1,5 @@
 // PDF.js supplies the geometry; the repository owns each Annotation write.
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import type {
   PdfPosition,
@@ -8,11 +8,22 @@ import type {
 } from "@zotlit/pdf-structure";
 
 import { withLogCategory } from "@/lib/effect-log";
-import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type { Notifier } from "@/lib/notifier";
+import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
+import type { CopyInstant } from "@/services/annotation-repository/capability-copy";
+import type {
+  AnnotationRepository,
+  CreateOutcome,
+  HistoryDirection,
+  HistoryOutcome,
+  WriteRunFailed,
+} from "@/services/annotation-repository/service";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type {
   AnnotationDraft,
   GeometryInput,
   MutationState,
+  WriteFailure,
 } from "@/services/annotation-repository/write";
 
 import type { EditablePosition } from "./geometry-edit";
@@ -57,6 +68,26 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
       { group },
     );
   },
+  // A create that failed before Zotero answered is one whose outcome ZotLit
+  // never learned.
+  (operation, _annotations, { draft }) =>
+    operation.pipe(
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          Effect.logWarning("An Annotation was not created").pipe(
+            Effect.annotateLogs({
+              type: draft.type,
+              error: Cause.squash(cause),
+            }),
+            withLogCategory("pdf-annotation-editor"),
+            Effect.as<CreateOutcome>({
+              kind: "failed",
+              failure: { kind: "unknown-outcome" },
+            }),
+          ),
+      ),
+    ),
 );
 
 /** A settled DOM selection waits for PDF.js inside the reader's scope. */
@@ -113,3 +144,185 @@ export const saveGeometry = Effect.fn("PdfAnnotationEditor.saveGeometry")(
       ),
     ),
 );
+
+/** The outcome of a write that failed before Zotero answered. */
+const UNKNOWN_OUTCOME = {
+  kind: "failed",
+  failure: { kind: "unknown-outcome" },
+} as const satisfies MutationState;
+
+/** The notice for one write that did not land. */
+type FailureMessage = (failure: WriteFailure, now: CopyInstant) => string;
+
+/**
+ * Run the writes of one verb, and say why through the Notifier, once per
+ * reason, for each that did not land. A send that failed is an outcome ZotLit
+ * never learned. An interrupt, such as plugin unload, passes on with no
+ * notice.
+ *
+ * @param options.message the notice for one failure; a Geometry Edit names
+ *   itself.
+ * @param options.now the clock a cooldown's remaining seconds are read against.
+ * @returns the outcome of each write.
+ * @see apps/obsidian/policies/ui-seams.md
+ */
+export const reportWrites = Effect.fn("PdfAnnotationEditor.reportWrites")(
+  function* <E>(
+    notifier: Pick<Notifier["Service"], "show">,
+    send: Effect.Effect<readonly MutationState[], E>,
+    {
+      verb,
+      now,
+      message = writeFailureMessage,
+    }: { verb: string; now: () => CopyInstant; message?: FailureMessage },
+  ) {
+    const exit = yield* Effect.exit(send);
+    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
+      return yield* Effect.failCause(exit.cause);
+    if (Exit.isFailure(exit))
+      yield* Effect.logWarning("A write failed before Zotero answered").pipe(
+        Effect.annotateLogs({ verb, error: Cause.squash(exit.cause) }),
+        withLogCategory("pdf-annotation-editor"),
+      );
+    const outcomes = Exit.isSuccess(exit) ? exit.value : [UNKNOWN_OUTCOME];
+    const at = now();
+    const messages = new Set(
+      outcomes.flatMap((outcome) =>
+        outcome.kind === "failed" ? [message(outcome.failure, at)] : [],
+      ),
+    );
+    for (const text of messages) yield* notifier.show(text);
+    return outcomes;
+  },
+);
+
+/** {@link reportWrites} for one write. */
+export const reportWrite = <E>(
+  notifier: Pick<Notifier["Service"], "show">,
+  write: Effect.Effect<MutationState, E>,
+  options: { verb: string; now: () => CopyInstant; message?: FailureMessage },
+) =>
+  reportWrites(
+    notifier,
+    Effect.map(write, (state) => [state]),
+    options,
+  );
+
+/**
+ * Recolour these Annotations in Zotero: one alone, or two or more as one
+ * History Step where each keeps its own outcome.
+ *
+ * @param annotationKeys Indexed Keys, in list order.
+ */
+export const recolorMarks = (
+  annotations: Pick<
+    AnnotationRepository["Service"],
+    "patchColor" | "patchColors"
+  >,
+  annotationKeys: readonly string[],
+  color: string,
+): Effect.Effect<readonly MutationState[], WriteRunFailed> => {
+  const [first] = annotationKeys;
+  if (first === undefined) return Effect.succeed([]);
+  return annotationKeys.length === 1
+    ? Effect.map(annotations.patchColor(first, color), (state) => [state])
+    : annotations.patchColors(annotationKeys, color);
+};
+
+/**
+ * Erase these Annotations in Zotero: one alone, or two or more as one History
+ * Step where each keeps its own outcome.
+ *
+ * @param annotationKeys Indexed Keys, in list order.
+ */
+export const eraseMarks = (
+  annotations: Pick<
+    AnnotationRepository["Service"],
+    "deleteAnnotation" | "deleteAnnotations"
+  >,
+  annotationKeys: readonly string[],
+): Effect.Effect<readonly MutationState[], WriteRunFailed> => {
+  const [first] = annotationKeys;
+  if (first === undefined) return Effect.succeed([]);
+  return annotationKeys.length === 1
+    ? Effect.map(annotations.deleteAnnotation(first), (state) => [state])
+    : annotations.deleteAnnotations(annotationKeys);
+};
+
+/**
+ * Take one History Step on an Attachment, and say through the Notifier what
+ * the reader should know of it: a step Zotero moved under, one that did not
+ * land, or one that put an Annotation back under a new creator. A step that
+ * failed before Zotero answered is one whose outcome ZotLit never learned.
+ *
+ * @param options.speaks whether the reader that asked still stands to hear the
+ *   answer; a closed one says nothing.
+ * @param options.now the clock a cooldown's remaining seconds are read against.
+ */
+export const stepMarkHistory = Effect.fn("PdfAnnotationEditor.stepHistory")(
+  function* (
+    annotations: Pick<AnnotationRepository["Service"], "undo" | "redo">,
+    notifier: Pick<Notifier["Service"], "show">,
+    {
+      attachmentKey,
+      direction,
+      speaks,
+      now,
+    }: {
+      attachmentKey: string;
+      direction: HistoryDirection;
+      speaks: () => boolean;
+      now: () => CopyInstant;
+    },
+  ) {
+    const outcome = yield* (
+      direction === "undo"
+        ? annotations.undo(attachmentKey)
+        : annotations.redo(attachmentKey)
+    ).pipe(
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          Effect.logWarning(
+            "A History Step failed before Zotero answered",
+          ).pipe(
+            Effect.annotateLogs({ direction, error: Cause.squash(cause) }),
+            withLogCategory("pdf-annotation-editor"),
+            Effect.as<HistoryOutcome>(UNKNOWN_OUTCOME),
+          ),
+      ),
+    );
+    if (!speaks()) return outcome;
+    const notice = historyOutcomeNotice(outcome, now());
+    if (notice !== null) yield* notifier.show(notice);
+    return outcome;
+  },
+);
+
+/**
+ * Read an Attachment's Annotations for the marks of an open PDF. A read that
+ * failed is logged and fails on; an interrupt passes on unlogged.
+ *
+ * @param path the open file, which the log names.
+ */
+export const readMarks = (
+  annotations: Pick<AnnotationRepository["Service"], "read">,
+  attachmentKey: string,
+  path: string | null,
+) =>
+  annotations.read(attachmentKey).pipe(
+    Effect.tapCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.void
+        : Effect.logWarning(
+            "Failed to read the annotations of an open PDF",
+          ).pipe(
+            Effect.annotateLogs({
+              error: Cause.squash(cause),
+              path,
+              attachmentKey,
+            }),
+            withLogCategory("pdf-annotation-editor"),
+          ),
+    ),
+  );
