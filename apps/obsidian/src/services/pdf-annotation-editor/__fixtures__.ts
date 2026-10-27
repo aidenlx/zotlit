@@ -879,5 +879,5 @@ export async function readerOverZotero(
       void repository.read(attachmentKey).then(draw).catch(passAborted);
     }),
   );
-  return { ...reader, ...zoteroSide };
+  return { ...reader, ...zoteroSide, closeRuntime: () => stack.disposeAsync() };
 }

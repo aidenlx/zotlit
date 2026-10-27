@@ -1628,3 +1628,31 @@ it("creates a Text Draft finished as the view closes, from the page it read at t
   const [box] = (open.drafts[0]!.position as TextPosition).rects;
   expect(box![2]! - box![0]!).toBeCloseTo(40, 2);
 });
+
+it("stops an image create waiting for PDF geometry when the runtime closes (#1860)", async () => {
+  await using open = await imageReader();
+  const read = Promise.withResolvers<string>();
+  const started = Promise.withResolvers<void>();
+  open.structure.sortIndex.mockImplementationOnce(() => {
+    started.resolve();
+    return read.promise;
+  });
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await started.promise;
+  let settled = false;
+  void open.creation.created.then(() => {
+    settled = true;
+  });
+  try {
+    await open.closeRuntime();
+    await vi.waitFor(() => expect(settled).toBe(true));
+    expect(open.drafts).toEqual([]);
+    expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  } finally {
+    read.resolve("00000|000100|00100");
+    await open.creation.created;
+  }
+  expect(open.drafts).toEqual([]);
+});

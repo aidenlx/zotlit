@@ -30,6 +30,7 @@ import type { readerSurfaces } from "./__fixtures__";
 import {
   ingestCapability,
   selectMarkHandles,
+  selectAdjust,
   setCommenting,
 } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
@@ -1770,4 +1771,44 @@ it("keeps the tag editor closed for a press on a Locked Annotation's tag verb", 
   expect(h.store.getState().floating).toMatchObject({ tagging: false });
   expect(h.repository.tagDraftFor("PUPR5FG5")).toBeNull();
   expect(h.writes()).toEqual([]);
+});
+
+it("stops a geometry edit waiting for its PDF sort index when the runtime closes (#1860)", async () => {
+  await using h = await figureSelected();
+  const read = Promise.withResolvers<string>();
+  const started = Promise.withResolvers<void>();
+  h.sortIndex.mockImplementationOnce(() => {
+    started.resolve();
+    return read.promise;
+  });
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  pointer(h.containerEl, "pointermove", { x: 230, y: 382 });
+  pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
+  await started.promise;
+  let settled = false;
+  void h.selection.adjusted.then(() => {
+    settled = true;
+  });
+  try {
+    await h.closeRuntime();
+    await vi.waitFor(() => expect(settled).toBe(true));
+    expect(h.writes()).toEqual([]);
+    expect(h.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+  } finally {
+    read.resolve("00000|000012|00517");
+    await h.selection.adjusted;
+  }
+  expect(h.writes()).toEqual([]);
+});
+
+it("ends a geometry edit whose PDF read fails without sending a patch (#1860)", async () => {
+  await using h = await figureSelected();
+  h.sortIndex.mockRejectedValueOnce(new Error("Worker was destroyed"));
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  pointer(h.containerEl, "pointermove", { x: 230, y: 382 });
+  pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
+
+  await expect(h.selection.adjusted).resolves.toBeUndefined();
+  expect(h.writes()).toEqual([]);
+  expect(selectAdjust(h.store.getState())).toBeNull();
 });
