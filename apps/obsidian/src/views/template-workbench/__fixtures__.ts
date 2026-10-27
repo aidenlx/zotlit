@@ -5,10 +5,12 @@ import { onTestFinished } from "vitest";
 
 import type { WorkbenchHost } from "@zotlit/workbench/ui";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { Notifier } from "@/lib/notifier";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
@@ -230,6 +232,7 @@ export function makeWorkbenchHost(
     }),
   ).pipe(
     Context.add(Template, deps.services?.template ?? template),
+    Context.add(Notifier, testNotifier().service),
     Context.add(Profile, deps.services?.profile ?? profile),
     Context.add(
       ZoteroReads,

@@ -26,6 +26,7 @@ import {
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
 
+import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
@@ -45,7 +46,11 @@ import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
 import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
-import { TemplateWorkbenchView, originatingNoteUpdateNotice } from "./view";
+import {
+  TemplateWorkbenchView,
+  originatingNoteUpdateNotice,
+  unpackedPartialNotices,
+} from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
   openWorkbenchLayout: vi.fn(async () => {}),
@@ -2411,7 +2416,7 @@ language: liquid
 
     // Both entries go — the written one and the one the reader's own file
     // answers — so the problem clears and neither name has two homes left.
-    expect(await view.unpackBundledPartials()).toBe(true);
+    await view.unpackBundledPartials();
     expect(unpacked).toEqual(["authors", "venue-line"]);
     expect(view.getViewData()).not.toContain("partials:");
     expect(view.getViewData()).toContain("filename: paper");
@@ -2424,6 +2429,48 @@ language: liquid
         .find((item) => item.title === m.template_workbench_partials())!
         .submenu?.items.map((item) => item.title),
     ).toEqual([m.workbench_partial_new()]);
+  });
+
+  it.each([true, false])(
+    "restores the built-in Default once the reader confirms: %s",
+    async (confirmed) => {
+      using _answer = answerConfirmation(confirmed);
+      const restoreDefault = vi.fn(() => Effect.void);
+      const { view, leaf } = setup({
+        runtime: testRuntime(),
+        profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+          "Profile",
+          {
+            restoreDefault: Effect.suspend(restoreDefault),
+            getSource: () => Effect.succeed("Built-in Default"),
+          },
+        ),
+      });
+
+      const setViewState = vi.spyOn(leaf, "setViewState");
+
+      await view.restoreDefault();
+
+      expect(restoreDefault).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      expect(setViewState).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      expect(view.isDefaultDraft).toBe(confirmed);
+      expect(view.getViewData()).toBe(confirmed ? "Built-in Default" : SOURCE);
+    },
+  );
+
+  it("names each kind of unpacked partial in a notice of its own", () => {
+    expect(
+      unpackedPartialNotices({
+        written: ["authors", "title"],
+        kept: ["venue-line"],
+        otherCase: [],
+        refused: ["pages"],
+      }),
+    ).toEqual([
+      m.notice_partials_unpacked({ names: "authors, title" }),
+      m.notice_partials_kept({ names: "venue-line" }),
+      m.notice_partials_refused({ names: "pages" }),
+    ]);
   });
 
   it("names no partial while the template service is still scanning the folder", () => {

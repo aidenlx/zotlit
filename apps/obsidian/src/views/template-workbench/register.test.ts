@@ -3,8 +3,18 @@ import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Effect } from "effect";
 import { MarkdownView, TFile } from "obsidian";
 import type { App, Command, EventRef, Plugin, WorkspaceLeaf } from "obsidian";
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  afterEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -35,6 +45,7 @@ import {
   openNativeProfile,
   openTemplateWorkbench,
   registerTemplateWorkbenchView,
+  requiresNative,
   templateWorkbenchFileMenu,
 } from "./register";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
@@ -45,20 +56,6 @@ vi.mock("@/views/note-preview/register", () => ({
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-/** Every message a Notice showed. */
-const shownNotices = vi.hoisted((): string[] => []);
-vi.mock("@/lib/notice", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/notice")>();
-  return {
-    ...actual,
-    BaseNotice: class extends actual.BaseNotice {
-      constructor(message: string | DocumentFragment, duration?: number) {
-        super(message, duration);
-        if (typeof message === "string") shownNotices.push(message);
-      }
-    },
-  };
-});
 const setOriginatingNote = vi.fn<(file: TFile | null) => Promise<void>>(
   async () => {},
 );
@@ -67,13 +64,19 @@ beforeEach(() => {
     TemplateWorkbenchView.prototype,
     "setOriginatingNote",
   ).mockImplementation(setOriginatingNote);
-  shownNotices.length = 0;
 });
 afterEach(() => {
   vi.restoreAllMocks();
   resetMockPlatform();
   vi.mocked(findWorkbenchLayout).mockReset().mockResolvedValue(null);
 });
+
+/** A bridge over an empty runtime, closed when the test ends. */
+function testBridge() {
+  const bridge = openTestBridge();
+  onTestFinished(() => bridge[Symbol.asyncDispose]());
+  return bridge;
+}
 
 type FileMenuHandler = (
   menu: Menu,
@@ -192,6 +195,8 @@ function register(plugin: Plugin, deps: RegistrationHostDeps): void {
   const options = {
     ...makeWorkbenchHost(deps).deps,
     customize: "customize" in deps ? deps.customize : async () => {},
+    bridge: testBridge(),
+    notifier: testNotifier().service,
     webWorkbenchEnabled: deps.webWorkbenchEnabled,
   };
   registerTemplateWorkbenchView(plugin, options);
@@ -656,15 +661,14 @@ Annotation`);
     "language: eta",
     "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title\n    merge: replace",
   ])(
-    "opens an advanced Profile natively with a Notice: %s",
+    "opens an advanced Profile natively, which needs the native editor: %s",
     async (manifest) => {
       const { app, file, setViewState } = setup();
-      vi.spyOn(app.vault, "cachedRead").mockResolvedValue(
-        `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`,
-      );
+      const source = `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`;
+      vi.spyOn(app.vault, "cachedRead").mockResolvedValue(source);
       await openNativeProfile(app, file);
       expect(setViewState).toHaveBeenCalledOnce();
-      expect(shownNotices).toEqual([m.template_workbench_native_required()]);
+      expect(requiresNative(source)).toBe(true);
     },
   );
   it.each(["ask", "web"])(

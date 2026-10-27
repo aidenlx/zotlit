@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { useAtomValue } from "@effect/atom-react";
+import { Effect } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
@@ -97,18 +98,21 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import { AbortError } from "@/lib/abort-error";
+import { AbortError, passAborted } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
+import { portCall } from "@/lib/legacy-port";
 import { loadedTextFileView } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
+import { Notifier, reportOutcome } from "@/lib/notifier";
+import type { NoticeMessage } from "@/lib/notifier";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
@@ -119,6 +123,7 @@ import type {
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { defaultProfilePathAtom } from "@/services/profile/atoms";
+import { Profile } from "@/services/profile/service";
 import {
   defaultBindingsAtom,
   templateFolderAtom,
@@ -128,6 +133,8 @@ import {
   partialNamesAtom,
   templateRevisionAtom,
 } from "@/services/template/atoms";
+import { Template } from "@/services/template/service";
+import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
@@ -146,9 +153,9 @@ import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/at
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
 
-import { runTemplateWorkbenchAction } from "./actions";
+import { templateWorkbenchAction } from "./actions";
 import { makeWorkbenchCommands, makeChoiceCommand } from "./atoms";
-import { makeWorkbenchCommand } from "./command";
+import { makeWorkbenchCommand, makeWorkbenchTask } from "./command";
 import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import { createTemplateWorkbenchHost } from "./host";
@@ -190,6 +197,38 @@ export type OriginatingNoteUpdateOutcome =
   | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
   | { outcome: "updated" | "refused"; name: string; result: UpdateResult }
   | { outcome: "failed"; name: string; error: unknown };
+
+/** The notices that report what unpacking a Profile's bundled partials did. */
+export function unpackedPartialNotices(
+  result: Pick<
+    PartialUnpackOutcome,
+    "written" | "kept" | "otherCase" | "refused"
+  >,
+): string[] {
+  const { written, kept, otherCase, refused } = result;
+  return [
+    ...(written.length > 0
+      ? [m.notice_partials_unpacked({ names: written.join(", ") })]
+      : []),
+    ...(kept.length > 0
+      ? [m.notice_partials_kept({ names: kept.join(", ") })]
+      : []),
+    ...(otherCase.length > 0
+      ? [m.notice_partials_other_case({ names: otherCase.join(", ") })]
+      : []),
+    // The manifest entry stays, so without this the action reads as inert:
+    // the bundled-partial problem is still there the next time it is read.
+    ...(refused.length > 0
+      ? [m.notice_partials_refused({ names: refused.join(", ") })]
+      : []),
+  ];
+}
+
+/** One Workbench action a leaf runs and reports. */
+interface WorkbenchAction {
+  readonly operation: string;
+  readonly action: Effect.Effect<void, unknown, ViewServices>;
+}
 
 /** The UI renders operation outcomes, keeping template saves separate from note updates. */
 export function originatingNoteUpdateNotice(
@@ -304,6 +343,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   readonly #commands;
   readonly #partialCommand;
+  readonly #action;
+  readonly #noteUpdate;
   readonly #chooseItemCommand;
   readonly #chooseAnnotationCommand;
   readonly #exportCommand = makeExportTemplateDataCommand();
@@ -398,6 +439,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#mount();
     return this.#updatingNote;
   }
+  /** Update the originating note, and show what came of it. */
+  reportOriginatingNoteUpdate(): Promise<void> {
+    return this.#noteUpdate.run().catch(passAborted);
+  }
+  /** Run a Workbench action on this leaf; closing the leaf stops it quietly. */
+  #run(
+    operation: string,
+    action: Effect.Effect<void, unknown, ViewServices>,
+  ): Promise<void> {
+    return this.#action.run({ operation, action }).catch(passAborted);
+  }
   async #updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
     const origin = this.#originatingNote;
     const update = this.#deps.noteFeature;
@@ -485,6 +537,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       deps.registry,
       (options: CreateSharedPartialOptions) =>
         createSharedPartialEffect(this.app, options),
+    );
+    this.#action = makeWorkbenchCommand(
+      deps.registry,
+      ({ operation, action }: WorkbenchAction) =>
+        templateWorkbenchAction(operation, action),
+      { concurrent: true },
+    );
+    this.#noteUpdate = makeWorkbenchTask(deps.registry, () =>
+      reportOutcome(
+        portCall("update-originating-note", () => this.updateOriginatingNote()),
+        {
+          success: (result): NoticeMessage | undefined =>
+            originatingNoteUpdateNotice(this.app, result) ?? undefined,
+          error: (error) =>
+            updateNoteToast("full", { app: this.app }).error(error),
+        },
+      ),
     );
     this.store = workbenchStore(deps.registry, this.model);
     this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
@@ -1505,6 +1574,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#chooseItemCommand[Symbol.dispose]();
       this.#chooseAnnotationCommand[Symbol.dispose]();
       this.#partialCommand[Symbol.dispose]();
+      this.#action[Symbol.dispose]();
+      this.#noteUpdate[Symbol.dispose]();
       this.#commands[Symbol.dispose]();
       this.preview?.[Symbol.dispose]();
       this.#editor[Symbol.dispose]();
@@ -1547,8 +1618,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("panels-top-left")
         .onClick(
           () =>
-            void runTemplateWorkbenchAction("open-workbench", () =>
-              openWorkbenchLayout(this.app, this),
+            void this.#run(
+              "open-workbench",
+              portCall("open-workbench", () =>
+                openWorkbenchLayout(this.app, this),
+              ),
             ),
         ),
     );
@@ -1574,10 +1648,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.template_workbench_open_citation())
         .setIcon("quote")
         .onClick(
-          () =>
-            void runTemplateWorkbenchAction("open-citation", () =>
-              this.#commands.citation.run(this.app),
-            ),
+          () => void this.#commands.citation.run(this.app).catch(passAborted),
         ),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
@@ -1637,12 +1708,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           entry
             .setTitle(partial.name)
             .setChecked(this.file?.path === partial.path)
-            .onClick(
-              () =>
-                void runTemplateWorkbenchAction("open-partial", () =>
-                  this.#openPartial(partial.path),
-                ),
-            ),
+            .onClick(() => void this.#openPartial(partial.path)),
         );
       submenu.addSeparator();
       submenu.addItem((entry) =>
@@ -1661,12 +1727,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     });
   }
 
-  async #openPartial(path: string): Promise<void> {
-    const file = this.app.vault.getFileByPath(path);
-    if (file)
-      await openTemplateWorkbench(this.app, file, {
-        explainUnsupported: false,
-      });
+  #openPartial(path: string): Promise<void> {
+    return this.#run(
+      "open-partial",
+      portCall("open-partial", async () => {
+        const file = this.app.vault.getFileByPath(path);
+        if (file)
+          await openTemplateWorkbench(this.app, file, {
+            explainUnsupported: false,
+          });
+      }),
+    );
   }
 
   /**
@@ -1773,9 +1844,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       });
       return;
     }
-    void runTemplateWorkbenchAction("open-partial", () =>
-      this.#openPartial(document.path),
-    );
+    void this.#openPartial(document.path);
   }
   /**
    * Write every partial this document still carries in its manifest into the
@@ -1789,58 +1858,53 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * The keep-or-replace ask belongs to import, which is where the bundle's copy
    * still has somewhere to go.
    */
-  unpackBundledPartials(): Promise<boolean> {
-    return runTemplateWorkbenchAction("unpack-partials", async () => {
-      const bundled = this.#controller.document?.manifest.partials ?? [];
-      if (this.#controller.readOnly || !bundled.length) return;
-      const { written, kept, dropped, refused, otherCase } =
-        await this.#commands.unpack.run(bundled);
-      this.#controller.dropBundledPartials(dropped);
-      if (written.length > 0)
-        new BaseNotice(
-          m.notice_partials_unpacked({ names: written.join(", ") }),
+  unpackBundledPartials(): Promise<void> {
+    return this.#run(
+      "unpack-partials",
+      Effect.gen({ self: this }, function* () {
+        const bundled = this.#controller.document?.manifest.partials ?? [];
+        if (this.#controller.readOnly || !bundled.length) return;
+        const template = yield* Template;
+        const result = yield* template.unpackPartials(
+          yield* template.planPartialUnpack(bundled),
         );
-      if (kept.length > 0)
-        new BaseNotice(m.notice_partials_kept({ names: kept.join(", ") }));
-      if (otherCase.length > 0)
-        new BaseNotice(
-          m.notice_partials_other_case({ names: otherCase.join(", ") }),
-        );
-      // The manifest entry stays, so without this the action reads as inert:
-      // the bundled-partial problem is still there the next time it is read.
-      if (refused.length > 0)
-        new BaseNotice(
-          m.notice_partials_refused({ names: refused.join(", ") }),
-        );
-    });
+        this.#controller.dropBundledPartials(result.dropped);
+        const notifier = yield* Notifier;
+        for (const message of unpackedPartialNotices(result))
+          yield* notifier.show(message);
+      }),
+    );
   }
-  async restoreDefault(): Promise<void> {
-    await runTemplateWorkbenchAction("restore-default", async () => {
-      const path = this.registry.get(defaultProfilePathAtom);
-      if (
-        !(await confirm(
+  restoreDefault(): Promise<void> {
+    return this.#run(
+      "restore-default",
+      Effect.gen({ self: this }, function* () {
+        const path = this.registry.get(defaultProfilePathAtom);
+        const confirmed = yield* awaitConfirm(
           {
             title: m.settings_profile_document_restore_title(),
-            content: m.settings_profile_document_restore_desc({
-              path,
-            }),
+            content: m.settings_profile_document_restore_desc({ path }),
             action: m.settings_profile_document_restore_action(),
             destructive: true,
           },
           this.app,
-        ))
-      )
-        return;
-      await this.save();
-      this.allowNoFile = true;
-      this.#defaultDraft = true;
-      await this.leaf.setViewState({
-        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-        state: { file: null, defaultDraft: true },
-        active: true,
-      });
-      this.setViewData(await this.#commands.restore.run(), true);
-    });
+        );
+        if (!confirmed) return;
+        yield* portCall("save", () => this.save());
+        this.allowNoFile = true;
+        this.#defaultDraft = true;
+        yield* portCall("restore-default-view", () =>
+          this.leaf.setViewState({
+            type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+            state: { file: null, defaultDraft: true },
+            active: true,
+          }),
+        );
+        const profile = yield* Profile;
+        yield* profile.restoreDefault;
+        this.setViewData(yield* profile.getSource("default"), true);
+      }),
+    );
   }
 
   /** Customize binds the existing document before enabling any edits. */
@@ -2525,11 +2589,7 @@ function EditorContent({
             <button
               className={originatingNoteNotice.button}
               disabled={view.updatingNote}
-              onClick={async () => {
-                const result = await view.updateOriginatingNote();
-                const notice = originatingNoteUpdateNotice(view.app, result);
-                if (notice !== null) new BaseNotice(notice);
-              }}
+              onClick={() => void view.reportOriginatingNoteUpdate()}
             >
               <span className={originatingNoteNotice.labels}>
                 <span

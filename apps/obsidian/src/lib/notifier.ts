@@ -8,6 +8,7 @@ import {
   FiberSet,
   Layer,
   Option,
+  Predicate,
 } from "effect";
 import type { Duration } from "effect";
 import type { Scope } from "effect";
@@ -146,6 +147,14 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
 }, Effect.scoped);
 
 /**
+ * An abort, or a typed failure that wraps one: a Promise port whose run was
+ * aborted rejects with an `AbortError`, which `portCall` keeps as the cause.
+ */
+const isAbort = (error: unknown): boolean =>
+  AbortError.test(error) ||
+  (Predicate.hasProperty(error, "cause") && AbortError.test(error.cause));
+
+/**
  * The error message for a task that failed with `cause`: none for an abort,
  * else the message `copy` gives for the error, logged with the error.
  */
@@ -154,7 +163,7 @@ const failureMessage = Effect.fnUntraced(function* (
   copy: (error: unknown) => NoticeMessage | undefined,
 ) {
   const error = Cause.squash(cause);
-  if (AbortError.test(error)) return undefined;
+  if (isAbort(error)) return undefined;
   const message = copy(error);
   yield* Effect.logError("Toast reported error").pipe(
     Effect.annotateLogs({

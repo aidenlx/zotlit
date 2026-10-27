@@ -1,8 +1,11 @@
 import type { App, Command, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
+import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 import {
   TemplateWorkbenchView,
   TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -174,9 +177,14 @@ function setup() {
     },
     register: (dispose: () => void) => cleanup.push(dispose),
   });
+  const bridge = openTestBridge();
+  onTestFinished(() => bridge[Symbol.asyncDispose]());
   registerNotePreview(
     plugin,
-    stubService<PreviewViewDeps>("PreviewViewDeps", {}),
+    stubService<PreviewViewDeps & WorkbenchActionDeps>("PreviewViewDeps", {
+      bridge,
+      notifier: testNotifier().service,
+    }),
   );
   const editorLeaf = makeLeaf();
   const editor = new TemplateWorkbenchView(
