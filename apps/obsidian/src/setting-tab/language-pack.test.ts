@@ -4,7 +4,6 @@ import { ButtonComponent, renderRow } from "@mock/obsidian";
 import { Context, Effect, Layer, Stream } from "effect";
 import type { SettingDefinition } from "obsidian";
 
-import { eventually } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -25,13 +24,12 @@ const languagePackRow = (ctx: SettingTabContext) =>
   );
 
 it.effect(
-  "installs from the setting row behind the toast, and the row then names the restart",
+  "installs from the setting row, and the row then names the restart",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
         const pack = yield* startOn(fakeDevice(), { language: "zh" });
-        const notifier = testNotifier();
-        const services = (yield* Layer.build(notifier.layer)).pipe(
+        const services = (yield* Layer.build(testNotifier().layer)).pipe(
           Context.add(LanguagePack, pack),
           Context.add(
             PluginSettings,
@@ -63,10 +61,6 @@ it.effect(
           Stream.filter((situation) => situation.kind === "restart-pending"),
           Stream.runHead,
         );
-        yield* eventually(() => expect(notifier.notices).toHaveLength(1));
-        expect(notifier.notices[0]?.messages).toEqual([
-          m.notice_language_pack_restart(),
-        ]);
         expect(languagePackRow(ctx)?.desc).toBe(
           m.notice_language_pack_restart(),
         );

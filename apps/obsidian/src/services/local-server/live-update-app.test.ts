@@ -28,7 +28,7 @@ function makeDeps(
     enabled: () => true,
     sourceId: () => SOURCE_ID,
     noteIndex: {
-      whenIndexed: () => Promise.resolve(),
+      whenIndexed: () => Promise.resolve(true),
       getIndexedItemKeys: () => ["ABCD2345", "ZZZ99999g17"],
     },
     onNotify: vi.fn(),
@@ -103,8 +103,8 @@ describe("GET /literature-notes", () => {
   });
 
   it("awaits whenIndexed so a startup-time query reflects the post-scan keys", async () => {
-    let resolveScan!: () => void;
-    const scanned = new Promise<void>((resolve) => {
+    let resolveScan!: (indexed: boolean) => void;
+    const scanned = new Promise<boolean>((resolve) => {
       resolveScan = resolve;
     });
     let keys: string[] = [];
@@ -119,10 +119,25 @@ describe("GET /literature-notes", () => {
 
     const pending = app.request("/literature-notes", { headers: headers() });
     keys = ["ABCD2345"];
-    resolveScan();
+    resolveScan(true);
 
     const res = await pending;
     await expect(res.json()).resolves.toEqual({ keys: ["ABCD2345"] });
+  });
+
+  it("answers 404, not the keys so far, when the server stops before the scan ends", async () => {
+    const app = createLiveUpdateApp(
+      makeDeps({
+        noteIndex: {
+          whenIndexed: () => Promise.resolve(false),
+          getIndexedItemKeys: () => ["ABCD2345"],
+        },
+      }),
+    );
+
+    const res = await app.request("/literature-notes", { headers: headers() });
+
+    expect(res.status).toBe(404);
   });
 });
 

@@ -6,12 +6,12 @@
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
 import { Effect } from "effect";
+import type { Stream } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
 import { useLayoutEffect, useMemo } from "react";
 import type { ComponentType } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
 
 import { nameDictionary } from "@zotlit/item-query";
 import type { NameDictionary, QueryContext } from "@zotlit/item-query";
@@ -19,23 +19,28 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { PaneState } from "@/components/pane-state";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
+import { queryRevisionAtom } from "@/services/item-query/atoms";
 import type { Diagnostic } from "@/services/item-query/contract";
 import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
-  QueryViewResult,
   QueryViewRow,
 } from "@/services/item-query/query-view";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import { selectorKey } from "@/services/library-scope/scope";
+import { QueryService } from "@/services/item-query/service";
+import { libraryAvailabilityRevisionAtom } from "@/services/library-scope/atoms";
+import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import {
+  zoteroRevisionAtom,
+  zoteroQueryUnavailableRevisionAtom,
+} from "@/services/zotero-reads/atoms";
+import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
 import { CardDisplayContext } from "@/views/annot-view/card-display";
 import type { CardDisplay } from "@/views/annot-view/card-display";
@@ -47,6 +52,11 @@ import type {
 import { useAnnotStore } from "@/views/annot-view/store";
 import type { AnnotState } from "@/views/annot-view/store";
 
+import {
+  makeQueryOperations,
+  makeRunQueryCommand,
+  readFilterValues,
+} from "./atoms";
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
 import { contextHint } from "./context-hint";
@@ -58,6 +68,12 @@ import { GroupEditor } from "./group-control";
 import type { ItemRowGestures } from "./item-rows";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
+import { useQueryViewState } from "./model";
+import {
+  holdQueryViewModel,
+  makeQueryViewModel,
+  queryStateHandle,
+} from "./model";
 import { PapersLayout } from "./papers-layout";
 import { groupOptions, sortOptions } from "./properties";
 import { PropertiesMenu } from "./properties-menu";
@@ -104,15 +120,18 @@ import {
   viewProperties,
 } from "./view-properties";
 
-const logger = getLogger(["views", "query-view"]);
-
 /** The services a Query View reads through. */
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
+  registry: ViewRegistryHandle;
   runtime: SubscriptionRuntime;
   query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
   reads: AnnotationsLayoutDeps["reads"] &
     Pick<
-      PlainZoteroReads,
+      {
+        readonly [K in keyof ZoteroReadsEvents]: Stream.Stream<
+          Parameters<ZoteroReadsEvents[K]> extends [infer A] ? A : void
+        >;
+      } & { acquireRead: AnnotationsLayoutDeps["reads"]["acquireRead"] },
       | "changed"
       | "degraded"
       | "refresh-failed"
@@ -121,10 +140,11 @@ export interface QueryViewDeps extends AnnotationsLayoutDeps {
       | "refresh-requested"
       | "acquireRead"
     >;
-  libraryScope: Pick<
-    PlainLibraryScope,
-    "changed" | "libraries-changed" | "current"
-  >;
+  libraryScope: {
+    readonly changed: Stream.Stream<ResolvedLibraryScope | null>;
+    readonly "libraries-changed": Stream.Stream<void>;
+    readonly current: ResolvedLibraryScope | null;
+  };
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** What the Table's Literature Note Property reads and does. */
@@ -373,17 +393,6 @@ export interface QueryViewState {
   defaults: QueryViewDefaults;
 }
 
-const INITIAL_STATE: QueryViewState = {
-  file: null,
-  view: null,
-  problems: [],
-  phase: "idle",
-  results: null,
-  failure: null,
-  saveFailed: false,
-  defaults: {},
-};
-
 /** The text of a warning: the researcher's words where ZotLit has them. */
 function warningText(warning: QueryViewWarning): string {
   return warning.code === "key-outside-target-libraries"
@@ -442,21 +451,6 @@ function layoutProblems(view: QueryFileView): string[] {
  */
 export const RERUN_DELAY_MS = 300;
 
-/** `result` as a list of `rows`, with the counts and warnings in `change`. */
-function listed(
-  result: QueryViewResult,
-  change: Pick<
-    QueryViewResult,
-    "returnedCount" | "matchedCount" | "truncated"
-  > & {
-    rows: readonly QueryViewRow[];
-    warnings?: QueryViewResult["warnings"];
-  },
-): QueryViewResult {
-  const { groups: _groups, totalCount: _totalCount, ...list } = result;
-  return { ...list, ...change };
-}
-
 /** One run of a view: its key, the view it ran for, and its plan. */
 interface ViewRun {
   view: QueryFileView;
@@ -512,14 +506,20 @@ function formulaIssues(
 }
 
 export class QueryView extends Component implements HistorySurface {
-  readonly state = createStore<QueryViewState>()(() => INITIAL_STATE);
+  readonly model = makeQueryViewModel();
+  readonly registry: ViewRegistryHandle;
+  readonly state: ReturnType<typeof queryStateHandle>;
+  #release: (() => void) | null;
+  #releaseCommand: (() => void) | null;
+  #finishRun: (() => void) | null = null;
   readonly #deps: QueryViewDeps;
   readonly #host: QueryViewHost;
   readonly #layout: AnnotationsLayout;
   readonly #planner: ViewPlanner;
   /** The file's text, the view on screen, the edits and their saves. */
   readonly #document: QueryFileDocument;
-  #run: AbortController | null = null;
+  readonly #runCommand = makeRunQueryCommand();
+  readonly #operations: ReturnType<typeof makeQueryOperations>;
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
   /**
@@ -552,10 +552,17 @@ export class QueryView extends Component implements HistorySurface {
   constructor(deps: QueryViewDeps, host: QueryViewHost) {
     super();
     this.#deps = deps;
+    this.registry = deps.registry;
+    this.#operations = makeQueryOperations(this.registry);
+    this.#release = holdQueryViewModel(this.registry, this.model);
+    this.#releaseCommand = this.registry.mount(this.#runCommand);
+    this.state = queryStateHandle(this.registry, this.model);
     this.#host = host;
     this.#document = new QueryFileDocument(host, {
       show: () => this.#choose(),
-      saveFailed: (saveFailed) => this.state.setState({ saveFailed }),
+      saveFailed: (saveFailed) => {
+        if (this.#release) this.state.setState({ saveFailed });
+      },
     });
     this.#layout = new AnnotationsLayout(deps, {
       ...host.layout,
@@ -608,18 +615,22 @@ export class QueryView extends Component implements HistorySurface {
   get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> & {
     readers: QueryViewDeps["opener"];
   } {
-    const { query, literatureNotes, opener: readers } = this.#deps;
+    const { literatureNotes, opener: readers } = this.#deps;
     return {
       query: {
-        on: (...args) => query.on(...args),
+        on: (_event, listener) =>
+          this.registry.subscribe(queryRevisionAtom, listener),
         run: (request, signal) => {
           const libraries = this.#host.libraries?.();
-          return query.run(
-            libraries ? { ...request, libraries } : request,
+          return this.#operations.run(
+            Effect.flatMap(QueryService, (query) =>
+              query.run(libraries ? { ...request, libraries } : request),
+            ),
+            { kind: "cancelled" },
             signal,
           );
         },
-        customFieldNames: (signal) => query.customFieldNames(signal),
+        customFieldNames: (signal) => this.customFieldNames(signal),
       },
       literatureNotes,
       readers,
@@ -639,7 +650,9 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Settles once the cards show the last run the view started. Never rejects. */
   get settled(): Promise<void> {
-    return this.#settled.then(() => this.#layout.read);
+    return this.#settled
+      .then(() => this.#layout.read)
+      .then(() => this.#operations.settled);
   }
 
   /**
@@ -678,33 +691,27 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   override onload(): void {
+    this.#release ??= holdQueryViewModel(this.registry, this.model);
     this.addChild(this.#layout);
     const rerun = () => this.refresh();
-    const { reads, libraryScope } = this.#deps;
     const subscriptions = new DisposableStack();
     this.#subscriptions = subscriptions;
-    // A new database connection, a database that cannot be read, and another
-    // Library Scope each change what the query gives. A change to one
-    // Attachment's Annotations reaches the cards through the layout, which
-    // reads the live records again; an Annotation added to or removed from an
-    // Attachment the cards show runs the query again, so it takes its place.
+    this.#releaseCommand ??= this.registry.mount(this.#runCommand);
+    subscriptions.defer(() => this.#operations[Symbol.dispose]());
+    subscriptions.defer(this.registry.mount(queryRevisionAtom));
     subscriptions.defer(
-      this.#deps.query.on("changed", () => {
-        // Only Item queries expose Last Activity. Annotation follow owns
-        // its rebind when the active note changes.
+      this.registry.subscribe(queryRevisionAtom, () => {
         if (this.state.getState().view?.from === "items") rerun();
       }),
     );
-    subscriptions.defer(subscribe(this.#deps.runtime, reads["changed"], rerun));
-    subscriptions.defer(
-      subscribe(this.#deps.runtime, reads["degraded"], rerun),
-    );
-    subscriptions.defer(
-      subscribe(this.#deps.runtime, reads["db-file-missing"], rerun),
-    );
-    subscriptions.defer(
-      subscribe(this.#deps.runtime, libraryScope["libraries-changed"], rerun),
-    );
+    for (const atom of [
+      zoteroRevisionAtom,
+      zoteroQueryUnavailableRevisionAtom,
+      libraryAvailabilityRevisionAtom,
+    ]) {
+      subscriptions.defer(this.registry.mount(atom));
+      subscriptions.defer(this.registry.subscribe(atom, rerun));
+    }
     // A Literature Note's frontmatter changes which Items a vault condition
     // keeps; the view runs again where that changes its request.
     const replan = () => {
@@ -733,10 +740,15 @@ export class QueryView extends Component implements HistorySurface {
 
   override onunload(): void {
     void this.flush();
+    this.registry.set(this.#runCommand, Atom.Reset);
+    this.#finishRun?.();
+    this.#finishRun = null;
+    this.#releaseCommand?.();
+    this.#releaseCommand = null;
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
-    this.#run?.abort();
-    this.#run = null;
+    this.#release?.();
+    this.#release = null;
     this.#shownRequest = null;
     this.#runRequest = null;
     this.#rendered = false;
@@ -749,7 +761,12 @@ export class QueryView extends Component implements HistorySurface {
   render(el: HTMLElement): void {
     el.addClass("zt-query-view");
     this.#rendered = true;
-    this.#layout.render(el, <QueryViewBody view={this} />);
+    this.#layout.render(
+      el,
+      <ViewRegistryProvider registry={this.registry}>
+        <QueryViewBody view={this} />
+      </ViewRegistryProvider>,
+    );
   }
 
   /**
@@ -804,33 +821,21 @@ export class QueryView extends Component implements HistorySurface {
   }
 
   /** The values a filter condition offers, from the Libraries the view reads. */
-  async filterValues(): Promise<FilterValues> {
-    const libraries = this.#deps.libraryScope.current?.available ?? [];
-    await using lease = await this.#deps.reads.acquireRead();
-    const tags = new Set<string>();
-    for (const { libraryID } of libraries)
-      for (const tag of await Effect.runPromise(
-        lease.reads.TagNames({ libraryID }),
-      ))
-        tags.add(tag);
-    const collections = await Effect.runPromise(
-      lease.reads.CollectionPaths({
-        libraryIDs: libraries.map(({ libraryID }) => libraryID),
-      }),
-    );
-    return {
-      tags: [...tags].sort(),
-      collections: collections.map((path) => path.join("/")),
-      libraries: libraries.map(({ selector, name }) => ({
-        id: selectorKey(selector),
-        name,
-      })),
-    };
+  filterValues(): Promise<FilterValues> {
+    return this.#operations.run(readFilterValues, {
+      tags: [],
+      collections: [],
+      libraries: [],
+    });
   }
 
   /** The custom fields of the Zotero source, which `custom[...]` offers. */
   customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
-    return this.#deps.query.customFieldNames(signal);
+    return this.#operations.run(
+      Effect.flatMap(QueryService, (query) => query.customFieldNames),
+      [],
+      signal,
+    );
   }
 
   /** The surface the host is, by what it binds to `this`. */
@@ -896,12 +901,13 @@ export class QueryView extends Component implements HistorySurface {
 
   /** Show the view named `name`, or the file's first view for `null`. */
   selectView(name: string | null): void {
+    this.registry.set(this.model.wanted, name);
     this.#document.selectView(name);
   }
 
   /** The name of the view shown, as the host remembers it. */
   get viewName(): string | null {
-    return this.#document.viewName;
+    return this.registry.get(this.model.wanted);
   }
 
   /** The user picked a view from the view menu. */
@@ -912,6 +918,7 @@ export class QueryView extends Component implements HistorySurface {
   /** The document shows another file or view: say what keeps it from running, and run it. */
   #choose(): void {
     const { file, view, wanted } = this.#document;
+    this.registry.set(this.model.wanted, this.#document.viewName);
     if (!file) return;
     const problems = file.problems.map(problemText);
     if (view) {
@@ -988,63 +995,6 @@ export class QueryView extends Component implements HistorySurface {
     return JSON.stringify([plan.key, this.#host.rowPass?.()?.key ?? null]);
   }
 
-  /**
-   * The answer to `request`, with only the rows `pass` keeps. With a pass the
-   * query first reads the Indexed Key of every match, since the pass may keep
-   * any of them; the request's limit cuts the kept keys, and only those rows
-   * are read with their fields, in the order of the keys. The answer counts
-   * the kept rows as the query counts its own matches.
-   */
-  async #read(
-    request: QueryViewRequest,
-    pass: QueryRowPass | null,
-    signal: AbortSignal,
-  ): Promise<QueryViewOutcome> {
-    if (!pass) return this.#deps.query.run(request, signal);
-    const keys = await this.#deps.query.run(
-      { ...request, fields: [], limit: null },
-      signal,
-    );
-    if (keys.kind !== "result") return keys;
-    const kept = (keys.result.rows ?? [])
-      .map((row) => row.indexedKey)
-      .filter((key) => pass.keeps(key));
-    const page =
-      request.limit === null || request.limit === undefined
-        ? kept
-        : kept.slice(0, request.limit);
-    const counts = {
-      returnedCount: page.length,
-      matchedCount: kept.length,
-      truncated: page.length < kept.length,
-    };
-    if (page.length === 0)
-      return { ...keys, result: listed(keys.result, { ...counts, rows: [] }) };
-    const read = await this.#deps.query.run(
-      {
-        ...request,
-        filter: [
-          `${JSON.stringify(page)}.contains(indexedKey)`,
-          ...(request.filter === undefined ? [] : [`(${request.filter})`]),
-        ].join(" && "),
-        limit: null,
-      },
-      signal,
-    );
-    if (read.kind !== "result") return read;
-    const byKey = new Map(
-      (read.result.rows ?? []).map((row) => [row.indexedKey, row]),
-    );
-    return {
-      ...read,
-      result: listed(read.result, {
-        ...counts,
-        rows: page.flatMap((key) => byKey.get(key) ?? []),
-        warnings: [...keys.result.warnings, ...read.result.warnings],
-      }),
-    };
-  }
-
   /** Run the view's query again, and show its rows. */
   refresh(): void {
     this.#refresh(false);
@@ -1052,8 +1002,9 @@ export class QueryView extends Component implements HistorySurface {
 
   /** @param fromList whether a list change asked for the run. */
   #refresh(fromList: boolean): void {
-    this.#run?.abort();
-    this.#run = null;
+    this.#finishRun?.();
+    this.#finishRun = null;
+    this.registry.set(this.#runCommand, Atom.Reset);
     const { file, view, problems } = this.state.getState();
     if (!file || !view || problems.length > 0) {
       this.#runRequest = null;
@@ -1076,8 +1027,6 @@ export class QueryView extends Component implements HistorySurface {
       this.#fail(run, plan.fault.diagnostic, NO_RESULTS.formulaIssues);
       return;
     }
-    const controller = new AbortController();
-    this.#run = controller;
     if (
       this.#shownRequest !== null &&
       this.#shownBinding !== binding &&
@@ -1089,20 +1038,14 @@ export class QueryView extends Component implements HistorySurface {
     if (this.#shownRequest !== key) this.state.setState({ phase: "loading" });
     // A Formula with a mistake, and each Formula that reads it, is left out
     // of the rows; the outcome gives the reason for each.
-    this.#settled = this.#read(
-      plan.request,
-      this.#host.rowPass?.() ?? null,
-      controller.signal,
-    ).then(
-      (outcome) => {
-        if (this.#run !== controller) return;
-        this.#run = null;
-        return this.#land(run, outcome, fromList);
-      },
-      (error: unknown) => {
-        if (this.#run !== controller) return;
-        this.#run = null;
-        logger.warn("A Query View could not run its query", { error });
+    const completion = Promise.withResolvers<void>();
+    this.#settled = completion.promise;
+    this.#finishRun = () => completion.resolve();
+    this.registry.set(this.#runCommand, {
+      request: plan.request,
+      pass: this.#host.rowPass?.() ?? null,
+      land: (outcome) => this.#land(run, outcome, fromList),
+      fail: (error) =>
         this.#fail(
           run,
           {
@@ -1111,9 +1054,9 @@ export class QueryView extends Component implements HistorySurface {
             hint: "",
           },
           NO_RESULTS.formulaIssues,
-        );
-      },
-    );
+        ),
+      done: () => completion.resolve(),
+    });
   }
 
   async #land(
@@ -1252,13 +1195,6 @@ export class QueryView extends Component implements HistorySurface {
     }
     await this.#layout.showRows(rows, this.#host.attachments?.() ?? []);
   }
-}
-
-function useQueryViewState<T>(
-  view: QueryView,
-  selector: (state: QueryViewState) => T,
-): T {
-  return useStore(view.state, selector);
 }
 
 function Problems({ view }: { view: QueryView }) {

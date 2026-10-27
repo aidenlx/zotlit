@@ -24,22 +24,21 @@ import { Annotation, FIELD_SHEET_SELECTOR } from "./Annotation";
 import { cardPlace, moveOrigin } from "./card-selection";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
-import { annotViewBody, headerShape } from "./presentation";
-import type {
-  AnnotViewBody,
-  EmptyStateAction,
-  HeaderShape,
-} from "./presentation";
 import {
-  groupedCards,
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
   useToggleGroupCollapsed,
   useToggleSearchOpen,
-  visibleOrder,
-} from "./store";
+} from "./model";
+import { annotViewBody, headerShape } from "./presentation";
+import type {
+  AnnotViewBody,
+  EmptyStateAction,
+  HeaderShape,
+} from "./presentation";
+import { groupedCards, visibleOrder } from "./state";
 import { confineTabOrder } from "./tab-order";
 
 /**

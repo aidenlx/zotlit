@@ -371,8 +371,11 @@ export const layerLocalServer: Layer.Layer<
     const noteStatus: NoteStatusSource = {
       getIndexedItemKeys: () => run(noteIndex.getIndexedItemKeys),
       whenIndexed: async () => {
-        if (stoppedFlag) return;
-        valueOr(await runPromiseExit(noteIndex.whenIndexed), undefined);
+        if (stoppedFlag) return false;
+        return valueOr(
+          await runPromiseExit(Effect.as(noteIndex.whenIndexed, true)),
+          false,
+        );
       },
     };
 

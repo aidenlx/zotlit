@@ -9,7 +9,11 @@ import { BaseNotice } from "@/lib/notice";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
-import { createReferenceActions, ReferenceActionsContext } from "./actions";
+import {
+  copyBibliographyMessage,
+  createReferenceActions,
+  ReferenceActionsContext,
+} from "./actions";
 import {
   dismissEngineHintCommand,
   openIndexedKeyCommand,
@@ -89,7 +93,8 @@ export class ReferencesView extends ItemView {
         registry.set(dismissEngineHintCommand, undefined),
       getCopySnapshot: () => registry.get(this.model.snapshot),
       writeClipboard: writeClipboardRichText,
-      notify: (message) => void new BaseNotice(message),
+      reportCopy: (outcome) =>
+        void new BaseNotice(copyBibliographyMessage(outcome)),
     });
     // References has no saved layout fields; its title is fixed and its actions
     // read the current model. The registry owns their refresh with the leaf.

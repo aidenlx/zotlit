@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { expect, vi } from "vitest";
 
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
@@ -364,5 +365,100 @@ it.effect(
       expect(registry.get(first.model.cursors)["BOOK0001"]).toBe(0);
       const unchanged = registry.get(first.model.cursors);
       expect(advanceOccurrence("BOOK0001", 0)(unchanged)).toBe(unchanged);
+    }),
+);
+
+// #1710: opening a Literature Note belongs to the gesture, not its source pane.
+it.effect(
+  "opens notes from two References panes without cancelling either creation",
+  () =>
+    Effect.gen(function* () {
+      const first = Promise.withResolvers<void>();
+      const second = Promise.withResolvers<void>();
+      const started: string[] = [];
+      const opened: string[] = [];
+      const cancelled: string[] = [];
+      const host = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          makeReferencesHost({
+            openIndexedKey: (key) =>
+              Effect.gen(function* () {
+                yield* Effect.promise((signal) => {
+                  started.push(key);
+                  signal.addEventListener("abort", () => cancelled.push(key));
+                  return key === "BOOK0001" ? first.promise : second.promise;
+                });
+                opened.push(key);
+              }),
+          }),
+        ),
+        (host) => Effect.promise(() => host.close()),
+      );
+      const releases = [
+        host.registry.mount(openIndexedKeyCommand),
+        host.registry.mount(openIndexedKeyCommand),
+      ];
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const release of releases) release();
+        }),
+      );
+      host.registry.set(openIndexedKeyCommand, "BOOK0001");
+      yield* waitFor(() => expect(started).toEqual(["BOOK0001"]));
+      host.registry.set(openIndexedKeyCommand, "BOOK0002");
+      yield* waitFor(() => expect(started).toEqual(["BOOK0001", "BOOK0002"]));
+      expect(cancelled).toEqual([]);
+      second.resolve();
+      yield* waitFor(() => expect(opened).toEqual(["BOOK0002"]));
+      first.resolve();
+      yield* waitFor(() => expect(opened).toEqual(["BOOK0002", "BOOK0001"]));
+    }),
+);
+
+it.effect(
+  "keeps note creation after the last References pane closes until plugin unload",
+  () =>
+    Effect.gen(function* () {
+      const created = Promise.withResolvers<void>();
+      const expired = Promise.withResolvers<void>();
+      const started: string[] = [];
+      const opened: string[] = [];
+      const cancelled: string[] = [];
+      const host = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          makeReferencesHost({
+            openIndexedKey: (key) =>
+              Effect.gen(function* () {
+                yield* Effect.promise((signal) => {
+                  started.push(key);
+                  signal.addEventListener("abort", () => cancelled.push(key));
+                  return key === "BOOK0001"
+                    ? created.promise
+                    : new Promise<never>(() => {});
+                });
+                opened.push(key);
+              }),
+          }),
+        ),
+        (host) => Effect.promise(() => host.close()),
+      );
+      const release = host.registry.mount(openIndexedKeyCommand);
+      host.registry.set(openIndexedKeyCommand, "BOOK0001");
+      yield* waitFor(() => expect(started).toEqual(["BOOK0001"]));
+      release();
+      const sentinel = Atom.make(null);
+      host.registry.onNodeRemoved = (node) => {
+        if (node.atom === sentinel) expired.resolve();
+      };
+      host.registry.get(sentinel);
+      yield* Effect.promise(() => expired.promise);
+      expect(cancelled).toEqual([]);
+      created.resolve();
+      yield* waitFor(() => expect(opened).toEqual(["BOOK0001"]));
+      host.registry.set(openIndexedKeyCommand, "BOOK0002");
+      yield* waitFor(() => expect(started).toEqual(["BOOK0001", "BOOK0002"]));
+      host.registry.dispose();
+      yield* waitFor(() => expect(cancelled).toEqual(["BOOK0002"]));
+      expect(opened).toEqual(["BOOK0001"]);
     }),
 );

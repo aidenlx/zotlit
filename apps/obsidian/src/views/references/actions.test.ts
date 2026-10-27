@@ -10,8 +10,15 @@ import type {
   ReferenceSource,
 } from "@/services/citation-index/service";
 
-import { createReferenceActions } from "./actions";
-import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
+import {
+  copyBibliography,
+  copyBibliographyMessage,
+  createReferenceActions,
+} from "./actions";
+import type {
+  CopyBibliographyOutcome,
+  CopyBibliographySnapshot,
+} from "./actions";
 import type { CopiedBibliography } from "./copied-bibliography";
 import type { ReferenceEntry } from "./entries";
 import type { ReferencesCopyTarget } from "./state";
@@ -50,23 +57,9 @@ let writeClipboard: ReturnType<
     (content: CopiedBibliography) => Promise<ClipboardRepresentation>
   >
 >;
-let notify: ReturnType<typeof vi.fn<(message: string) => void>>;
 
-function build(): ReferenceActions {
-  return createReferenceActions({
-    app: stubService<App>("App", {}),
-    getSourcePath: () => "notes/tidal.md",
-    openIndexedKey: () => undefined,
-    openLinkText: () => undefined,
-    nextOccurrence: () => 0,
-    revealOccurrence: () => undefined,
-    onOpenEngineSettings: () => undefined,
-    onChangeStyle: () => undefined,
-    onDismissEngineHint: () => undefined,
-    getCopySnapshot,
-    writeClipboard,
-    notify,
-  });
+function copy() {
+  return copyBibliography({ getCopySnapshot, writeClipboard }, offered);
 }
 
 beforeEach(() => {
@@ -74,7 +67,6 @@ beforeEach(() => {
   writeClipboard = vi.fn(() =>
     Promise.resolve<ClipboardRepresentation>("rich"),
   );
-  notify = vi.fn();
 });
 
 describe("onOpenNote", () => {
@@ -109,7 +101,7 @@ describe("onOpenNote", () => {
       onDismissEngineHint: () => undefined,
       getCopySnapshot,
       writeClipboard,
-      notify,
+      reportCopy: () => undefined,
     }).onOpenNote(entry);
     return { openIndexedKey, openLinkText };
   }
@@ -143,64 +135,83 @@ describe("onOpenNote", () => {
   });
 });
 
-describe("onCopyBibliography", () => {
-  it("writes both representations of the snapshot and reports the copy", async () => {
-    await build().onCopyBibliography(offered);
+describe("copyBibliography", () => {
+  it("writes both representations of the snapshot", async () => {
+    expect(await copy()).toEqual({ kind: "copied", representation: "rich" });
 
     expect(writeClipboard).toHaveBeenCalledExactlyOnceWith({
       html: "<p>[1] Rivers, A. (2020). <em>Field notes</em>. Harbour Press.</p>",
       text: "[1] Rivers, A. (2020). Field notes. Harbour Press.",
     });
-    expect(notify).toHaveBeenCalledExactlyOnceWith(
-      "Bibliography snapshot copied.",
-    );
   });
 
-  it("names the plain-text fallback the platform fell back to", async () => {
+  it("answers the plain-text fallback the platform fell back to", async () => {
     writeClipboard.mockResolvedValue("text");
-    await build().onCopyBibliography(offered);
 
-    expect(notify).toHaveBeenCalledExactlyOnceWith(
-      "Bibliography copied as plain text.",
-    );
+    expect(await copy()).toEqual({ kind: "copied", representation: "text" });
   });
 
-  it("asks for a retry when the note changed before the write", async () => {
-    getCopySnapshot.mockReturnValue(snapshot({ path: "notes/estuary.md" }));
-    await build().onCopyBibliography(offered);
+  it.each([
+    ["the note changed", snapshot({ path: "notes/estuary.md" })],
+    ["a newer render replaced the snapshot", snapshot({ generation: 8 })],
+    ["readiness went away", null],
+  ])("refuses the copy when %s before the write", async (_case, held) => {
+    getCopySnapshot.mockReturnValue(held);
 
+    expect(await copy()).toEqual({ kind: "changed" });
     expect(writeClipboard).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledExactlyOnceWith(
-      "References changed. Try again.",
-    );
   });
 
-  it("asks for a retry when a newer render replaced the snapshot", async () => {
-    getCopySnapshot.mockReturnValue(snapshot({ generation: 8 }));
-    await build().onCopyBibliography(offered);
-
-    expect(writeClipboard).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledExactlyOnceWith(
-      "References changed. Try again.",
-    );
-  });
-
-  it("asks for a retry when readiness went away before the write", async () => {
-    getCopySnapshot.mockReturnValue(null);
-    await build().onCopyBibliography(offered);
-
-    expect(writeClipboard).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledExactlyOnceWith(
-      "References changed. Try again.",
-    );
-  });
-
-  it("reports a clipboard the platform refused", async () => {
+  it("answers a clipboard the platform refused", async () => {
     writeClipboard.mockRejectedValue(new Error("clipboard unavailable"));
-    await build().onCopyBibliography(offered);
 
-    expect(notify).toHaveBeenCalledExactlyOnceWith(
-      "Could not copy bibliography.",
-    );
+    expect(await copy()).toEqual({ kind: "failed" });
   });
+});
+
+describe("onCopyBibliography", () => {
+  it("hands the copy's outcome to the seam that reports it", async () => {
+    const reportCopy = vi.fn<(outcome: CopyBibliographyOutcome) => void>();
+    writeClipboard.mockResolvedValue("text");
+
+    await createReferenceActions({
+      app: stubService<App>("App", {}),
+      getSourcePath: () => "notes/tidal.md",
+      openIndexedKey: () => undefined,
+      openLinkText: () => undefined,
+      nextOccurrence: () => 0,
+      revealOccurrence: () => undefined,
+      onOpenEngineSettings: () => undefined,
+      onChangeStyle: () => undefined,
+      onDismissEngineHint: () => undefined,
+      getCopySnapshot,
+      writeClipboard,
+      reportCopy,
+    }).onCopyBibliography(offered);
+
+    expect(reportCopy).toHaveBeenCalledExactlyOnceWith({
+      kind: "copied",
+      representation: "text",
+    });
+  });
+});
+
+describe("copyBibliographyMessage", () => {
+  it.each([
+    [
+      { kind: "copied", representation: "rich" },
+      "Bibliography snapshot copied.",
+    ],
+    [
+      { kind: "copied", representation: "text" },
+      "Bibliography copied as plain text.",
+    ],
+    [{ kind: "changed" }, "References changed. Try again."],
+    [{ kind: "failed" }, "Could not copy bibliography."],
+  ] satisfies [CopyBibliographyOutcome, string][])(
+    "reports %o as %s",
+    (outcome, message) => {
+      expect(copyBibliographyMessage(outcome)).toBe(message);
+    },
+  );
 });

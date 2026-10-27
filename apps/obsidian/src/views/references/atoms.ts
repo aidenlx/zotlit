@@ -98,10 +98,15 @@ export const referencesSelectionAtom = Atom.make((get): ReferencesSelection => {
     : next;
 });
 
-export const openIndexedKeyCommand = viewRuntime.fn((key: string) =>
-  Effect.gen(function* () {
-    yield* (yield* CitekeyEditor).openIndexedKey(key, false);
-  }).pipe(withLogCategory("references")),
+/** A note open can finish after its source pane closes or another pane opens a note. */
+export const openIndexedKeyCommand = Atom.keepAlive(
+  viewRuntime.fn(
+    (key: string) =>
+      Effect.gen(function* () {
+        yield* (yield* CitekeyEditor).openIndexedKey(key, false);
+      }).pipe(withLogCategory("references")),
+    { concurrent: true },
+  ),
 );
 export const dismissEngineHintCommand = viewRuntime.fn(() =>
   Effect.gen(function* () {

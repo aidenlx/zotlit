@@ -28,6 +28,7 @@ import type {
 import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 
 import {
+  batchUpdateAllNotice,
   overwriteNote,
   overwriteNoteToast,
   reimportNoteToast,
@@ -47,27 +48,40 @@ function appStub(): App {
 // Every Literature Note write that hits a missing partial names it and offers
 // the route back to the Workbench; create and single update already did.
 it.each([
-  ["overwrite", () => overwriteNoteToast({ app: appStub() }).error],
+  [
+    "overwrite",
+    () => overwriteNoteToast({ app: appStub() }).error,
+    new MissingTemplateError("venue-line"),
+  ],
+  [
+    "an overwrite's render",
+    () => overwriteNoteToast({ app: appStub() }).error,
+    new NoteWriteAborted({
+      path: "Books/Paper.md",
+      cause: new MissingTemplateError("venue-line"),
+    }),
+  ],
   [
     "reimport",
     () => reimportNoteToast({ app: appStub(), path: "Books/Reading.md" }).error,
+    new MissingTemplateError("venue-line"),
   ],
-] as const)("names the missing partial when %s fails on one", (_name, make) => {
-  const error = make();
-  const notice =
-    typeof error === "function"
-      ? error(new MissingTemplateError("venue-line"))
-      : error;
+] as const)(
+  "names the missing partial when %s fails on one",
+  (_name, make, failure) => {
+    const error = make();
+    const notice = typeof error === "function" ? error(failure) : error;
 
-  expect(notice).toBeInstanceOf(DocumentFragment);
-  expect((notice as DocumentFragment).textContent).toContain(
-    m.notice_note_missing_partial({ name: "venue-line" }),
-  );
-});
+    expect(notice).toBeInstanceOf(DocumentFragment);
+    expect((notice as DocumentFragment).textContent).toContain(
+      m.notice_note_missing_partial({ name: "venue-line" }),
+    );
+  },
+);
 
 /**
  * The note actions' services, with `feature` as the Note Feature, `reads`
- * as the Zotero database in `state`, and the notices recorded.
+ * as the Zotero database in `state`.
  */
 function actions(
   feature: Partial<NoteFeature["Service"]> = {},
@@ -77,11 +91,10 @@ function actions(
 ) {
   const reads =
     database.reads ?? stubService<ZoteroReadsApi>("ZoteroReadsApi", {});
-  const notifier = testNotifier();
   const layer: Layer.Layer<NoteActionServices> = Layer.mergeAll(
     unimplementedProfileDialogServices,
     Layer.mock(NoteFeature, feature),
-    notifier.layer,
+    testNotifier().layer,
     Layer.mock(LibraryScope, {}),
     Layer.mock(MetadataCache, {}),
     Layer.mock(NoteImporter, {}),
@@ -104,12 +117,7 @@ function actions(
     app: appStub(),
     batchUpdate: stubService<BatchUpdatePorts>("BatchUpdatePorts", {}),
   });
-  return { notifier, layer, ports };
-}
-
-/** The first message of each notice. */
-function texts(harness: ReturnType<typeof actions>): unknown[] {
-  return harness.notifier.notices.map(({ messages: [message] }) => message);
+  return { layer, ports };
 }
 
 /** The error logs of `run`, by message and annotations. */
@@ -136,15 +144,13 @@ const errorLogs = Effect.fnUntraced(function* <A, E, R>(
   return errors;
 });
 
-it.effect("reports an update all that the loading database stopped", () =>
-  Effect.gen(function* () {
-    const harness = actions();
-    yield* updateAll(harness.ports).pipe(Effect.provide(harness.layer));
-    expect(texts(harness)).toEqual([m.batch_update_db_unavailable()]);
-  }),
-);
+it("names the loading database that stopped an update all", () => {
+  expect(batchUpdateAllNotice({ outcome: "db-unavailable" })).toBe(
+    m.batch_update_db_unavailable(),
+  );
+});
 
-it.effect("logs an update all that failed, with no notice", () =>
+it.effect("logs an update all that failed", () =>
   Effect.gen(function* () {
     const failure = new DbUnavailable({ message: "the read failed" });
     const harness = actions(
@@ -163,7 +169,6 @@ it.effect("logs an update all that failed, with no notice", () =>
         annotations: expect.objectContaining({ error: failure }),
       },
     ]);
-    expect(texts(harness)).toEqual([]);
   }),
 );
 
@@ -194,12 +199,11 @@ it.effect("leaves the note as it was when the user cancels the overwrite", () =>
       Effect.provide(harness.layer),
     );
     expect(overwrite).not.toHaveBeenCalled();
-    expect(texts(harness)).toEqual([]);
   }),
 );
 
 it.effect(
-  "names the missing partial that a confirmed overwrite's render threw",
+  "ends a confirmed overwrite whose render threw a missing partial",
   () =>
     Effect.gen(function* () {
       using _answer = answerConfirmation(true);
@@ -217,9 +221,5 @@ it.effect(
         Effect.provide(harness.layer),
       );
       expect(overwrite).toHaveBeenCalledExactlyOnceWith(file, "ABCD2345");
-      const [notice] = texts(harness);
-      expect((notice as DocumentFragment).textContent).toContain(
-        m.notice_note_missing_partial({ name: "venue-line" }),
-      );
     }),
 );
