@@ -1,3 +1,6 @@
+import { Effect } from "effect";
+import { MaxOpsBeforeYield } from "effect/Scheduler";
+
 // Runs in a disposable Electron renderer so transactions use Chromium's IndexedDB.
 import { check } from "./__fixtures__/check";
 import { encodeExcerptImage } from "./__fixtures__/encode";
@@ -75,7 +78,7 @@ export async function run(): Promise<string[]> {
   });
   {
     using store = await openExcerptStore("restart", 10 * UNIT);
-    await store.put("first", entry(4));
+    await Effect.runPromise(store.put("first", entry(4)));
   }
   {
     using store = await openExcerptStore("restart", 10 * UNIT);
@@ -91,9 +94,9 @@ export async function run(): Promise<string[]> {
     );
     passed.push("restart and vault isolation");
     const held = (await store.get("first"))!;
-    await store.put("second", entry(4, 8));
+    await Effect.runPromise(store.put("second", entry(4, 8)));
     await store.get("first");
-    await store.put("third", entry(4, 9));
+    await Effect.runPromise(store.put("third", entry(4, 9)));
     check(
       (await store.get("second")) === undefined,
       "LRU did not evict oldest use",
@@ -102,13 +105,13 @@ export async function run(): Promise<string[]> {
       marker((await store.get("first"))!.bytes) === 7,
       "Recently used entry was evicted",
     );
-    await store.put("first", entry(2, 10));
-    await store.put("fourth", entry(4, 11));
+    await Effect.runPromise(store.put("first", entry(2, 10)));
+    await Effect.runPromise(store.put("fourth", entry(4, 11)));
     check(
       marker((await store.get("third"))!.bytes) === 9,
       "Replacement byte accounting evicted an entry early",
     );
-    await store.put("oversized", entry(11));
+    await Effect.runPromise(store.put("oversized", entry(11)));
     check(
       (await store.get("oversized")) === undefined,
       "Oversized entry exceeded budget",
@@ -120,9 +123,9 @@ export async function run(): Promise<string[]> {
     passed.push("LRU, replacement accounting, oversized and owned bytes");
     await store.clear();
     await Promise.all([
-      store.put("a", entry(6, 1)),
-      store.put("b", entry(6, 2)),
-      store.put("c", entry(6, 3)),
+      Effect.runPromise(store.put("a", entry(6, 1))),
+      Effect.runPromise(store.put("b", entry(6, 2))),
+      Effect.runPromise(store.put("c", entry(6, 3))),
     ]);
     check(
       (await store.get("a")) === undefined &&
@@ -138,7 +141,7 @@ export async function run(): Promise<string[]> {
       (await store.get("c")) === undefined,
       "Clear retained derived pixels",
     );
-    await store.put("full-budget", entry(10));
+    await Effect.runPromise(store.put("full-budget", entry(10)));
     check(
       (await store.get("full-budget"))?.bytes.byteLength === 10 * UNIT,
       "Clear retained stale accounting",
@@ -158,7 +161,7 @@ export async function run(): Promise<string[]> {
         if (this.name === "images") this.transaction.abort();
         return request;
       };
-      await store.put("failed", entry(4)).then(
+      await Effect.runPromise(store.put("failed", entry(4))).then(
         () => {
           throw new Error("Aborted write succeeded");
         },
@@ -173,7 +176,7 @@ export async function run(): Promise<string[]> {
       (await store.get("failed")) === undefined,
       "Failed transaction committed pixels",
     );
-    await store.put("recovered", entry(10, 12));
+    await Effect.runPromise(store.put("recovered", entry(10, 12)));
     check(
       marker((await store.get("recovered"))!.bytes) === 12 &&
         (await store.get("full-budget")) === undefined,
@@ -194,7 +197,9 @@ export async function run(): Promise<string[]> {
     const webp = await encodeExcerptImage(source, new AbortController().signal);
     check(webp.format.format === "webp", "Canvas did not encode lossless WebP");
     const pdf = { size: 1, mtimeMs: 1 };
-    await store.put("webp", { bytes: webp.bytes, format: webp.format, pdf });
+    await Effect.runPromise(
+      store.put("webp", { bytes: webp.bytes, format: webp.format, pdf }),
+    );
     const stored = await store.get("webp", pdf);
     check(
       stored?.format.format === "webp" && sameBytes(stored.bytes, webp.bytes),
@@ -212,25 +217,31 @@ export async function run(): Promise<string[]> {
       legacy?.format.format === "png" && sameBytes(legacy.bytes, png),
       "Legacy PNG record did not survive as PNG",
     );
-    await store.put("mismatch", { bytes: webp.bytes, format: PNG_FORMAT, pdf });
+    await Effect.runPromise(
+      store.put("mismatch", { bytes: webp.bytes, format: PNG_FORMAT, pdf }),
+    );
     check(
       (await store.get("mismatch")) === undefined,
       "Metadata that disagrees with its payload reached a caller",
     );
-    await store.put("truncated", {
-      bytes: webp.bytes.subarray(0, 8),
-      format: WEBP_FORMAT,
-      pdf,
-    });
+    await Effect.runPromise(
+      store.put("truncated", {
+        bytes: webp.bytes.subarray(0, 8),
+        format: WEBP_FORMAT,
+        pdf,
+      }),
+    );
     check(
       (await store.get("truncated")) === undefined,
       "Truncated WebP reached a caller",
     );
-    await store.put("declared-bomb", {
-      bytes: sizedWebp(16_383, 16_383),
-      format: WEBP_FORMAT,
-      pdf,
-    });
+    await Effect.runPromise(
+      store.put("declared-bomb", {
+        bytes: sizedWebp(16_383, 16_383),
+        format: WEBP_FORMAT,
+        pdf,
+      }),
+    );
     check(
       (await store.get("declared-bomb")) === undefined,
       "A record declaring 1 GiB of RGBA reached a caller",
@@ -247,7 +258,7 @@ export async function run(): Promise<string[]> {
     };
     {
       using store = await openExcerptStore("latest", 10 * UNIT);
-      await store.put("first", entry(4));
+      await Effect.runPromise(store.put("first", entry(4)));
       await store.putLatest("annot", reference);
       check(
         (await store.latest("annot"))?.key === "first",
@@ -280,13 +291,99 @@ export async function run(): Promise<string[]> {
           (await store.latest("other")) === undefined,
         "Clear retained references",
       );
-      await store.put("first", entry(10));
+      await Effect.runPromise(store.put("first", entry(10)));
       check(
         (await store.get("first"))?.bytes.byteLength === 10 * UNIT,
         "References outlived the accounting clear",
       );
     }
     passed.push("latest references");
+  }
+  {
+    // #1862: eviction must keep its transaction even when the caller is due to yield.
+    using store = await openExcerptStore("eviction-yield", 10 * UNIT);
+    await Effect.runPromise(store.put("oldest", entry(4)));
+    await Effect.runPromise(store.put("next", entry(4)));
+    const reference = { key: "oldest", fingerprint: "F1", pdf: null };
+    await store.putLatest("first-annotation", reference);
+    await store.putLatest("second-annotation", reference);
+    await Effect.runPromise(
+      store.put("newest", entry(10)).pipe(
+        Effect.provideService(MaxOpsBeforeYield, 10),
+        Effect.catchCause((cause) => Effect.die(new Error(String(cause)))),
+      ),
+    );
+    check(
+      (await store.get("oldest")) === undefined &&
+        (await store.get("next")) === undefined &&
+        (await store.get("newest"))?.bytes.byteLength === 10 * UNIT,
+      "Eviction lost its transaction across cursor operations",
+    );
+    check(
+      (await store.latest("first-annotation")) === undefined &&
+        (await store.latest("second-annotation")) === undefined,
+      "Eviction retained references to deleted images",
+    );
+    passed.push("eviction transaction survives scheduler pressure");
+  }
+  {
+    // #1862: interruption after a reference deletion rolls the whole write back.
+    using store = await openExcerptStore("eviction-interrupt", 10 * UNIT);
+    await Effect.runPromise(store.put("held", entry(10)));
+    await store.putLatest("annotation", {
+      key: "held",
+      fingerprint: "F1",
+      pdf: null,
+    });
+    const controller = new AbortController();
+    const remove = Object.getOwnPropertyDescriptor(
+      IDBCursor.prototype,
+      "delete",
+    )!.value as IDBCursor["delete"];
+    let interrupted = false;
+    {
+      using cleanup = new DisposableStack();
+      cleanup.defer(() => {
+        IDBCursor.prototype.delete = remove;
+      });
+      IDBCursor.prototype.delete = function () {
+        const request = remove.call(this);
+        request.addEventListener(
+          "success",
+          () => {
+            interrupted = true;
+            controller.abort();
+          },
+          { once: true },
+        );
+        return request;
+      };
+      await Effect.runPromise(store.put("interrupted", entry(10)), {
+        signal: controller.signal,
+      }).then(
+        () => {
+          throw new Error("Interrupted eviction succeeded");
+        },
+        () => undefined,
+      );
+    }
+    check(interrupted, "Eviction did not reach its deletion boundary");
+    check(
+      (await store.get("held"))?.bytes.byteLength === 10 * UNIT &&
+        (await store.get("interrupted")) === undefined &&
+        (await store.latest("annotation"))?.key === "held",
+      "Interrupted eviction did not restore pixels and references",
+    );
+    await Effect.runPromise(store.put("recovered", entry(10)));
+    check(
+      (await store.get("recovered"))?.bytes.byteLength === 10 * UNIT &&
+        (await store.get("held")) === undefined &&
+        (await store.latest("annotation")) === undefined,
+      "Interrupted eviction damaged accounting or later writes",
+    );
+    passed.push(
+      "interrupted eviction rolls back images, references and accounting",
+    );
   }
   // Simulate the next schema version using the real open/upgrade machinery.
   const originalOpen = Object.getOwnPropertyDescriptor(
@@ -314,7 +411,7 @@ export async function run(): Promise<string[]> {
       (await store.get("old")) === undefined,
       "Schema retained obsolete records",
     );
-    await store.put("new", entry(3));
+    await Effect.runPromise(store.put("new", entry(3)));
     check(
       (await store.get("new"))?.bytes.byteLength === 3 * UNIT,
       "Schema reset is not writable",
