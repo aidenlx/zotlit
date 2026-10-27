@@ -340,7 +340,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   });
   const prepareCreate = Effect.fn("Profile.prepareCreate")(function* (
     options: ProfileCreateOptions,
-  ): Effect.fn.Return<ProfileCreation, ProfileError> {
+  ): Effect.fn.Return<ProfileCreation, ProfileOperationError | VaultError> {
     const requestedLabel = options.label.trim();
     const label = requestedLabel || m.settings_profile_new_name();
     const base = yield* resolveProfile(DEFAULT_PROFILE);
@@ -442,13 +442,20 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   });
   const create = Effect.fn("Profile.create")(function* (
     options: ProfileCreateOptions,
-  ): Effect.fn.Return<LiteratureNoteProfile, ProfileError> {
+  ): Effect.fn.Return<
+    LiteratureNoteProfile,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure
+  > {
     return yield* (yield* prepareCreate(options)).create();
   });
   /** Read the effective look without ejecting the built-in Default document. */
   const getSource = Effect.fn("Profile.getSource")(function* (
     selector: ProfileSelector,
-  ): Effect.fn.Return<string, ProfileError> {
+  ): Effect.fn.Return<string, ProfileOperationError | VaultError> {
     const profile = yield* resolveProfile(selector);
     if (!profile)
       return yield* operationError(
@@ -482,7 +489,14 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     selector: ProfileSelector,
     source: string,
     expected: ProfileDocumentExpectation,
-  ): Effect.fn.Return<ProfileDocumentWrite, ProfileError> {
+  ): Effect.fn.Return<
+    ProfileDocumentWrite,
+    | ProfileOperationError
+    | VaultError
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure
+  > {
     return yield* mutate(
       Effect.gen(function* () {
         yield* settle();
@@ -511,7 +525,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   /** The vault path a Profile's document has, or would have once ejected. */
   const documentPath = Effect.fn("Profile.documentPath")(function* (
     profile: ResolvedProfile,
-  ): Effect.fn.Return<string, ProfileError> {
+  ): Effect.fn.Return<string, never> {
     return profile.document
       ? join((yield* settings.current)!["template.folder"], profile.document)
       : yield* defaultDocumentPath();
@@ -525,7 +539,10 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     path: string,
     source: string,
     expected: ProfileDocumentExpectation,
-  ): Effect.fn.Return<ProfileDocumentWrite, ProfileError> {
+  ): Effect.fn.Return<
+    ProfileDocumentWrite,
+    VaultError | VaultFolderBlockedError | LiveTextRewriteFailed
+  > {
     const file = yield* vault.getFileByPath(path);
     if (!file) {
       // The document the caller edited is gone; only a Default that never had
@@ -562,7 +579,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   const createDocument = Effect.fn("Profile.createDocument")(function* (
     path: string,
     data: string,
-  ): Effect.fn.Return<boolean, ProfileError> {
+  ): Effect.fn.Return<boolean, VaultError> {
     return yield* vault.create(path, data).pipe(
       Effect.as(true),
       Effect.catchTag("FileExists", () => Effect.succeed(false)),
@@ -571,7 +588,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   /** The refusal a document standing where the caller expected none earns. */
   const documentExists = Effect.fn("Profile.documentExists")(function* (
     path: string,
-  ): Effect.fn.Return<ProfileDocumentWrite, ProfileError> {
+  ): Effect.fn.Return<ProfileDocumentWrite, VaultError> {
     const file = yield* vault.getFileByPath(path);
     return {
       state: "refused",
@@ -588,7 +605,10 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   const setMatch = Effect.fn("Profile.setMatch")(function* (
     id: ProfileId,
     match: MatchTree | undefined,
-  ): Effect.fn.Return<void, ProfileError> {
+  ): Effect.fn.Return<
+    void,
+    ProfileOperationError | VaultError | TemplateFailure
+  > {
     return yield* mutate(
       Effect.gen(function* () {
         yield* settle();
@@ -653,7 +673,14 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     options: {
       label?: string;
     } = {},
-  ): Effect.fn.Return<LiteratureNoteProfile, ProfileError> {
+  ): Effect.fn.Return<
+    LiteratureNoteProfile,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure
+  > {
     return yield* mutate(
       Effect.gen(function* () {
         const profile = yield* resolveProfile(selector);
@@ -685,7 +712,10 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   /** Freeze one export identity, effective bindings and partials for a Share sheet. */
   const prepareShare = Effect.fn("Profile.prepareShare")(function* (
     selector: ProfileSelector,
-  ): Effect.fn.Return<ProfileShare, ProfileError> {
+  ): Effect.fn.Return<
+    ProfileShare,
+    ProfileOperationError | VaultError | TemplateFailure
+  > {
     yield* settle();
     const profile = yield* resolveProfile(selector);
     if (!profile)
@@ -805,7 +835,14 @@ const makeProfileEngine = Effect.fnUntraced(function* (
       label: string,
       id: ProfileId,
       content: string,
-    ): Effect.fn.Return<LiteratureNoteProfile, ProfileError> {
+    ): Effect.fn.Return<
+      LiteratureNoteProfile,
+      | ProfileOperationError
+      | VaultError
+      | FileExists
+      | VaultFolderBlockedError
+      | TemplateFailure
+    > {
       yield* validateLabel(label);
       const folder = (yield* settings.current)!["template.folder"];
       let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
@@ -829,7 +866,10 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   const prepareImport = Effect.fn("Profile.prepareImport")(function* (
     source: string,
     options: ProfileImportOptions = {},
-  ): Effect.fn.Return<ProfileImport, ProfileError> {
+  ): Effect.fn.Return<
+    ProfileImport,
+    ProfileOperationError | VaultError | TemplateFailure
+  > {
     yield* settle();
     const parsed = yield* Effect.try({
       try: () => new TemplateFacade().parseLiteratureNoteTemplate(source),
@@ -1023,7 +1063,10 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   });
   const importTarget = Effect.fn("Profile.importTarget")(function* (
     id: ProfileId,
-  ): Effect.fn.Return<LiteratureNoteProfile | undefined, ProfileError> {
+  ): Effect.fn.Return<
+    LiteratureNoteProfile | undefined,
+    ProfileOperationError | TemplateFailure
+  > {
     const matches = (yield* template.getLiteratureNoteTemplateStatuses).filter(
       (status) =>
         status.reference.startsWith("zotlit-profile.") &&
@@ -1037,7 +1080,14 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     return held;
   });
   const ejectDefault = Effect.fn("Profile.ejectDefault")(
-    function* (): Effect.fn.Return<TFile, ProfileError> {
+    function* (): Effect.fn.Return<
+      TFile,
+      | ProfileOperationError
+      | VaultError
+      | FileExists
+      | VaultFolderBlockedError
+      | TemplateFailure
+    > {
       return (yield* materializeDefault()).file;
     },
   );
@@ -1048,7 +1098,11 @@ const makeProfileEngine = Effect.fnUntraced(function* (
         file: TFile;
         created: boolean;
       },
-      ProfileError
+      | ProfileOperationError
+      | VaultError
+      | FileExists
+      | VaultFolderBlockedError
+      | TemplateFailure
     > {
       const path = yield* defaultDocumentPath();
       yield* ensureParent(path);
@@ -1073,7 +1127,10 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     (effect) => mutate(Effect.uninterruptible(effect)),
   );
   const restoreDefault = Effect.fn("Profile.restoreDefault")(
-    function* (): Effect.fn.Return<void, ProfileError> {
+    function* (): Effect.fn.Return<
+      void,
+      ProfileOperationError | VaultError | TemplateFailure
+    > {
       const path = yield* defaultDocumentPath();
       const file = yield* vault.getFileByPath(path);
       if (file) yield* fileManager.trashFile(file);
@@ -1083,7 +1140,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   );
   const prepareDelete = Effect.fn("Profile.prepareDelete")(function* (
     id: ProfileId,
-  ): Effect.fn.Return<ProfileDeletionPlan, ProfileError> {
+  ): Effect.fn.Return<ProfileDeletionPlan, ProfileOperationError> {
     const source = (yield* Ref.get(registry)).profiles.find(
       (profile) => profile.id === id,
     );
@@ -1138,7 +1195,15 @@ const makeProfileEngine = Effect.fnUntraced(function* (
     options: {
       move?: boolean;
     } = {},
-  ): Effect.fn.Return<ProfileDeletionResult, ProfileError> {
+  ): Effect.fn.Return<
+    ProfileDeletionResult,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure
+  > {
     return yield* mutate(
       Effect.gen(function* () {
         const plan = yield* prepareDelete(id);
@@ -1189,7 +1254,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   });
   const settle = Effect.fn("Profile.settle")(function* (): Effect.fn.Return<
     void,
-    ProfileError
+    ProfileOperationError | TemplateFailure
   > {
     if ((yield* template.waitUntilSettled(5000)) !== "settled")
       return yield* operationError(
@@ -1199,7 +1264,7 @@ const makeProfileEngine = Effect.fnUntraced(function* (
   });
   const scan = Effect.fn("Profile.scan")(function* (): Effect.fn.Return<
     void,
-    ProfileError
+    TemplateFailure
   > {
     const templateStatus = yield* template.status;
     // Template publishes a new snapshot when its inputs change, including
@@ -1575,29 +1640,89 @@ export interface ProfileState {
   readonly diagnostics: readonly ProfileDiagnostic[];
   readonly defaultDocumentPath: string;
   readonly templateStatus: import("@/services/template/service").TemplateStatus;
-  readonly failure?: Cause.Cause<ProfileError>;
+  readonly failure?: Cause.Cause<TemplateFailure>;
 }
-type EffectOperations<T> = {
-  [K in keyof T]: T[K] extends (...args: infer P) => infer A
+type ProfileOperationErrors = {
+  resolveProfile: ProfileOperationError;
+  profileOf: ProfileOperationError;
+  getBuiltInSource: ProfileOperationError;
+  create:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  getSource: ProfileOperationError | VaultError | TemplateFailure;
+  saveSource:
+    | ProfileOperationError
+    | VaultError
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure;
+  setMatch: ProfileOperationError | VaultError | TemplateFailure;
+  duplicate:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  ejectDefault:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  materializeDefault:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  restoreDefault: ProfileOperationError | VaultError | TemplateFailure;
+  prepareDelete: ProfileOperationError | TemplateFailure;
+  delete:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure;
+};
+type EffectOperations = {
+  [K in keyof ProfileOperations]: ProfileOperations[K] extends (
+    ...args: infer P
+  ) => infer A
     ? (
         ...args: P
       ) => Effect.Effect<
         Awaited<A>,
-        K extends "resolveProfile" | "profileOf" | "getBuiltInSource"
-          ? ProfileOperationError
-          : ProfileError
+        ProfileOperationErrors[K & keyof ProfileOperationErrors]
       >
-    : Effect.Effect<T[K]>;
+    : Effect.Effect<ProfileOperations[K]>;
 };
 export type ProfileCreation = Omit<PreparedProfileCreation, "create"> & {
-  create(): Effect.Effect<LiteratureNoteProfile, ProfileError>;
+  create(): Effect.Effect<
+    LiteratureNoteProfile,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure
+  >;
 };
 export type ProfileImport = PreparedProfileImport extends infer P
   ? P extends PreparedProfileImport
     ? Omit<P, "import" | "previewSource"> & {
         import(
           options?: Parameters<P["import"]>[0],
-        ): Effect.Effect<LiteratureNoteProfile, ProfileError>;
+        ): Effect.Effect<
+          LiteratureNoteProfile,
+          | ProfileOperationError
+          | ProfileImportChanged
+          | VaultError
+          | VaultFolderBlockedError
+          | TemplateFailure
+        >;
         previewSource(
           options?: Parameters<P["previewSource"]>[0],
         ): Effect.Effect<string, ProfileOperationError>;
@@ -1611,22 +1736,28 @@ export type ProfileShare = Omit<PreparedProfileShare, "render"> & {
 };
 export class Profile extends Context.Service<
   Profile,
-  Omit<
-    EffectOperations<ProfileOperations>,
-    "prepareCreate" | "prepareImport" | "prepareShare"
-  > & {
+  Omit<EffectOperations, "prepareCreate" | "prepareImport" | "prepareShare"> & {
     readonly state: Effect.Effect<ProfileState>;
     readonly changes: Stream.Stream<ProfileState>;
     prepareCreate(
       options: ProfileCreateOptions,
-    ): Effect.Effect<ProfileCreation, ProfileError>;
+    ): Effect.Effect<
+      ProfileCreation,
+      ProfileOperationError | VaultError | TemplateFailure
+    >;
     prepareImport(
       source: string,
       options?: ProfileImportOptions,
-    ): Effect.Effect<ProfileImport, ProfileError>;
+    ): Effect.Effect<
+      ProfileImport,
+      ProfileOperationError | VaultError | TemplateFailure
+    >;
     prepareShare(
       selector: ProfileSelector,
-    ): Effect.Effect<ProfileShare, ProfileError>;
+    ): Effect.Effect<
+      ProfileShare,
+      ProfileOperationError | VaultError | TemplateFailure
+    >;
   }
 >()("zotlit/profile/Profile") {}
 const operationError = (cause: unknown) =>
@@ -1689,8 +1820,8 @@ export const layerProfile = Layer.effect(
       }),
     ).pipe(Effect.forkScoped({ startImmediately: true }));
     yield* Effect.addFinalizer(() => PubSub.shutdown(state.pubsub));
-    const owned = <A>(effect: Effect.Effect<A, ProfileError>) =>
-      Effect.suspend(() =>
+    const owned = <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.suspend((): Effect.Effect<A, E | TemplateFailure> =>
         startupFailure
           ? Effect.failCause(startupFailure)
           : isScopeClosed(scope)
