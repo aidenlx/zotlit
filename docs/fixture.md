@@ -46,16 +46,15 @@ pnpm fixture paths
 
 ## Use the Fixture Vault
 
-The **Citation search and insertion (#1857)** section in `citekey-smoke-test.md`
-checks both citation pickers: cited-item priority, main and alternate insertion,
-a changed destination, unload, the 150 ms index wait, and closing a pending picker.
-Use the `all` Scope Case and follow the action and expected-outcome table.
-
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
 
 `pandoc-export.md` checks **Export note with citations**. Rebuild with `pnpm fixture`, open the page in the Fixture Vault, and follow **Check the export**. Install the Pandoc engine first if the command asks for it. Export as HTML with the default citation style: the progress notice ends with the file and style, and the file preserves bold text and the callout body while removing the Obsidian callout marker. Run the command again and dismiss its dialog: no new output is written. The focused desktop check is `pnpm e2e --project=desktop src/walkthrough.e2e.ts -t 'exports a draft as HTML'`; it stages this committed page in the demo vault and reads the HTML after the completion notice.
 
-`excerpt-display.md` checks live excerpt display, refresh, reopening, saved-edit replacement, cache clear, and unload for #1795. Use the `all` Scope Case and follow its action and expected-result table; the saved-edit cases require a Paired Run.
+`excerpt-display.md` checks live excerpt display, refresh, reopening, saved-edit replacement, cache clear, and unload. Use the `all` Scope Case and follow its action and expected-result table; the saved-edit cases require a Paired Run.
+
+`citekey-smoke-test.md` checks both citation pickers in its **Citation search and insertion** section: cited-item priority, main and alternate insertion, a changed destination, unload, the 150 ms index wait, and closing a pending picker. Use the `all` Scope Case and follow the action and expected-outcome table.
+
+`tools-for-thought.md` checks Template Data Explorer permissions in its **Template Data Explorer permissions** section: Liquid-only actions, enabling and removing JavaScript permission with an open Explorer, separate searches in two leaves, and cleanup after both leaves close.
 
 ### Excerpt-rendering acceptance inputs
 
@@ -677,7 +676,3 @@ For a check that needs database writes, use a named copy of the built Zotero dat
    ```
 
 Rebuilding or discarding the Fixture also removes its forks. Restore the previous override before either operation.
-
-### Trial Explorer permissions
-
-Open `tools-for-thought.md` in the Fixture Vault and follow **Template Data Explorer permissions**. The cases check Liquid-only actions, enabling and removing JavaScript permission with an open Explorer, separate searches in two leaves, and cleanup after both leaves close.

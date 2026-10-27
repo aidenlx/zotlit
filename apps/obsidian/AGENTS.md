@@ -24,7 +24,7 @@ The Annotation Marks and the Creation Toolbar inside Obsidian's PDF reader are v
 
 ## Note feature
 
-`src/services/note-feature/` is the `NoteFeature` Effect service (`service.ts`) over composable free functions that take an injected `NoteFeatureDeps` bundle; read `context.ts` (deps) and `operations.ts` (the operations) before editing. Batch runners fetch shared context (item tags, note path) once and thread it through the stages, so per-item ops take already-fetched data instead of re-reading.
+`src/services/note-feature/` is the `NoteFeature` Effect service (`service.ts`) over Effect functions that yield the services they read: `write-pipeline.ts` (the writes) and `creation-planning.ts` (Profile selection and creation plans). `context.ts` builds the resolvers a template render calls (`buildNoteResolvers` over `NoteResolverServices`); `operations.ts` holds `NoteFeatureHandle`, the shape callers outside Effect get from `handle.ts`. Read these before editing. Batch runners fetch shared context (item tags, note path) once and thread it through the stages, so per-item ops take already-fetched data instead of re-reading.
 
 ## Setting tab
 
