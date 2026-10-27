@@ -2,6 +2,7 @@
 import { Clock, DateTime, Effect, Layer } from "effect";
 import type { App, FileSystemAdapter, View } from "obsidian";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -42,6 +43,7 @@ interface EditorFixtureOptions {
 export function editorFixtureLayer(options: EditorFixtureOptions) {
   const deps = Layer.mergeAll(
     layerWorkspaceFrom(options.workspace ?? options.app.workspace),
+    testNotifier().layer,
     Layer.mock(Vault, {
       fullPath: (path) =>
         Effect.sync(() =>

@@ -1,7 +1,6 @@
 // Concurrent classify/execute primitives for batch runs, and the Promise edge the batch modal calls.
 import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
-import { AbortError } from "@/lib/abort-error";
 import { exitOver, valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
@@ -124,16 +123,16 @@ export type RunOutcome = "created" | "updated" | "skipped";
  * a modal's `onRun` callback and its shell. Each task returns a
  * {@link RunOutcome} (tallied into {@link BatchRunResult} and reported via
  * {@link BatchRunControls.onItemSettled}) or fails (reported as `"failed"` with
- * a formatted error message). Abort errors are suppressed from the failure
- * count; cancelled tasks are those that never ran, and a stop request
- * interrupts task scheduling rather than producing a typed failure.
+ * a formatted error message). Only interruption leaves a task unreported:
+ * cancelled tasks are those that never ran, and a stop request interrupts task
+ * scheduling rather than producing a typed failure.
  *
  * The executor polls {@link BatchRunControls.stop} as each task starts: a stop
  * skips queued tasks and leaves admitted work running to its own completion.
  * An interrupt, such as unload, stops a task at once, except for the write
  * steps its `run` makes uninterruptible; the task reports no settle event.
  *
- * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
+ * @param opts.onTaskFailed Optional per-failure callback (non-interrupt only),
  *   called after the task is reported as failed; use for structured logging.
  * @param opts.haltOn Marks a typed failure as configuration-level rather than
  *   per-item: the first task to fail with a matching error halts the whole run
@@ -185,20 +184,18 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
                   yield* Ref.update(halt, (current) => current ?? exit.cause);
                   return yield* Effect.interrupt;
                 }
-                if (!AbortError.test(error)) {
-                  const recovery = profileRecovery(error);
-                  yield* Effect.sync(() =>
-                    controls.onItemSettled({
-                      id: task.id,
-                      status: "failed",
-                      failure: {
-                        label: task.label,
-                        message: formatErrorMessage(error),
-                        ...(recovery ? { recovery } : {}),
-                      },
-                    }),
-                  );
-                }
+                const recovery = profileRecovery(error);
+                yield* Effect.sync(() =>
+                  controls.onItemSettled({
+                    id: task.id,
+                    status: "failed",
+                    failure: {
+                      label: task.label,
+                      message: formatErrorMessage(error),
+                      ...(recovery ? { recovery } : {}),
+                    },
+                  }),
+                );
                 return yield* Effect.failCause(exit.cause);
               }
 
@@ -224,14 +221,12 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
         completed += 1;
       } else if (!Cause.hasInterruptsOnly(entry.cause)) {
         const error = Cause.squash(entry.cause);
-        if (!AbortError.test(error)) {
-          yield* Ref.update(result, (current) => ({
-            ...current,
-            failed: current.failed + 1,
-          }));
-          completed += 1;
-          onTaskFailed?.(tasks[i]!, error);
-        }
+        yield* Ref.update(result, (current) => ({
+          ...current,
+          failed: current.failed + 1,
+        }));
+        completed += 1;
+        onTaskFailed?.(tasks[i]!, error);
       }
     }
 

@@ -18,7 +18,6 @@ import { makeViewRegistry } from "@/lib/view-atoms";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { QueryService } from "@/services/item-query/service";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
-import type { ProfileOperations } from "@/services/profile/service";
 import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -101,7 +100,8 @@ export type WorkbenchHostDeps = Omit<
         | "unpackPartials"
       >;
     profile?: Pick<
-      ProfileOperations,
+      Profile["Service"],
+      | "profiles"
       | "getSource"
       | "profileOf"
       | "getBuiltInSource"
@@ -187,41 +187,30 @@ export function makeWorkbenchHost(
         return deps.templates.createPartial(name, options);
       }),
   });
-  const profileState = () => ({
-    loaded: true,
-    profiles: deps.profile
-      ? "profiles" in deps.profile
-        ? (deps.profile
-            .profiles as readonly import("@/services/profile/service").LiteratureNoteProfile[])
-        : []
-      : [],
-    diagnostics: [],
-    defaultDocumentPath:
-      (deps.profile && "defaultDocumentPath" in deps.profile
-        ? deps.profile.defaultDocumentPath
-        : undefined) ?? "templates/zotlit-profile.default.md",
-    templateStatus: { state: "loaded" as const, compileErrors: new Map() },
+  const profileState = Effect.gen(function* () {
+    return {
+      loaded: true,
+      profiles:
+        deps.profile && "profiles" in deps.profile
+          ? yield* deps.profile.profiles
+          : [],
+      diagnostics: [],
+      defaultDocumentPath:
+        deps.profile && "defaultDocumentPath" in deps.profile
+          ? yield* deps.profile.defaultDocumentPath
+          : "templates/zotlit-profile.default.md",
+      templateStatus: { state: "loaded" as const, compileErrors: new Map() },
+    };
   });
   const profile = stubService<Profile["Service"]>("Profile", {
-    state: Effect.sync(profileState),
-    changes: Stream.suspend(() => Stream.make(profileState())),
-    profileOf: (file) => Effect.sync(() => deps.profile!.profileOf(file)),
-    getBuiltInSource: () => Effect.sync(() => deps.profile!.getBuiltInSource()),
+    state: profileState,
+    changes: Stream.fromEffect(profileState),
+    profileOf: (file) => Effect.suspend(() => deps.profile!.profileOf(file)),
+    getBuiltInSource: Effect.suspend(() => deps.profile!.getBuiltInSource),
     getSource: (selector) =>
-      Effect.promise((signal) => {
-        signal.throwIfAborted();
-        return deps.profile!.getSource(selector);
-      }),
-    materializeDefault: () =>
-      Effect.promise((signal) => {
-        signal.throwIfAborted();
-        return deps.profile!.materializeDefault();
-      }),
-    restoreDefault: () =>
-      Effect.promise((signal) => {
-        signal.throwIfAborted();
-        return deps.profile!.restoreDefault();
-      }),
+      Effect.suspend(() => deps.profile!.getSource(selector)),
+    materializeDefault: Effect.suspend(() => deps.profile!.materializeDefault),
+    restoreDefault: Effect.suspend(() => deps.profile!.restoreDefault),
   });
   const dbState = () => ({
     state: deps.zoteroReads.state,

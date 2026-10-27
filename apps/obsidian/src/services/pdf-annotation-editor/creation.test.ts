@@ -14,6 +14,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { useFakeTimers } from "@/services/annotation-repository/__fixtures__";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
@@ -35,6 +36,7 @@ import {
   READER_NOW as NOW,
   readerOverZotero,
   readerSurfaces,
+  toolColors,
 } from "./__fixtures__";
 import { arm, ingestCapability, selectTextDraft } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
@@ -1655,4 +1657,45 @@ it("stops an image create waiting for PDF geometry when the runtime closes (#186
     await open.creation.created;
   }
   expect(open.drafts).toEqual([]);
+});
+
+it("says a create's outcome is unknown when its PDF geometry read fails", async () => {
+  await using open = await imageReader();
+  open.structure.sortIndex.mockRejectedValueOnce(
+    new Error("Worker was destroyed"),
+  );
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.annot_view_write_reason_unknown_outcome()],
+  ]);
+});
+
+it("says nothing of a create that landed when what follows it fails, and logs it", async () => {
+  using warn = vi.spyOn(getLogger("pdf-annotation-editor"), "warn");
+  const colors: ToolColorStore = {
+    ...toolColors(),
+    use: () => {
+      throw new Error("The recent colours were not kept");
+    },
+  };
+  await using open = await imageReader(undefined, { colors });
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await open.creation.created;
+
+  // Zotero holds the Annotation, so no notice says it was not created.
+  expect(open.drafts).toHaveLength(1);
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(warn).toHaveBeenCalledWith("An Annotation create did not finish", {
+    type: "image",
+    error: new Error("The recent colours were not kept"),
+  });
 });

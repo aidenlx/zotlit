@@ -25,7 +25,7 @@ import { ObsidianEnv } from "@/lib/obsidian-env";
 import { PluginHost } from "@/lib/plugin-host";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
-import type { ProfileOperations } from "@/services/profile/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -276,7 +276,7 @@ function readDocumentStyle(
     app: App;
     basePath: string;
     settings: Readonly<Settings>;
-    profile: Pick<ProfileOperations, "loaded" | "profileOf">;
+    profile: Pick<ProfileReader, "loaded" | "profileOf">;
   },
   absolutePath: string,
 ): DocumentStyleRead {

@@ -10,7 +10,7 @@ function proofs() {
   void queryViewReader;
   void obRun("vault", ({ zotlit }) =>
     zotlit.services.bridge.runSync(
-      zotlit.services.profileService.getBuiltInSource(),
+      zotlit.services.profileService.getBuiltInSource,
     ),
   );
   void obRun("vault", ({ zotlit }) => {

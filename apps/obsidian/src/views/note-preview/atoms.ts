@@ -7,7 +7,7 @@ import { Profile } from "@/services/profile/service";
 export const makeBuiltInSourceCommand = () =>
   viewRuntime.fn(() =>
     Effect.gen(function* () {
-      return yield* (yield* Profile).getBuiltInSource();
+      return yield* (yield* Profile).getBuiltInSource;
     }),
   );
 
