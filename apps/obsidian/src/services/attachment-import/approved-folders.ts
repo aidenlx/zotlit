@@ -3,10 +3,9 @@
 // never syncs to another device and never applies in another vault. Follows the
 // Device Override precedent set by the Zotero profile and data directories.
 
-import type { App } from "obsidian";
+import { Effect } from "effect";
 
-/** localStorage surface these helpers need — the vault-scoped store. */
-export type DeviceStorage = Pick<App, "loadLocalStorage" | "saveLocalStorage">;
+import { DeviceStorage } from "@/lib/obsidian-device-storage";
 
 const STORAGE_KEY = "zotlit-approved-attachment-folders";
 
@@ -15,19 +14,20 @@ const STORAGE_KEY = "zotlit-approved-attachment-folders";
  * granted. A record that is not a list of paths reads as no approvals at all:
  * this is a permission, so anything unreadable grants nothing.
  */
-export function loadApprovedFolders(app: DeviceStorage): string[] {
-  const raw: unknown = app.loadLocalStorage(STORAGE_KEY);
-  if (!Array.isArray(raw)) return [];
-  const folders = raw.filter(
-    (entry: unknown): entry is string => typeof entry === "string" && !!entry,
-  );
-  return [...new Set(folders)];
-}
+export const loadApprovedFolders = DeviceStorage.use((storage) =>
+  storage.load(STORAGE_KEY),
+).pipe(
+  Effect.map((raw): string[] => {
+    if (!Array.isArray(raw)) return [];
+    const folders = raw.filter(
+      (entry: unknown): entry is string => typeof entry === "string" && !!entry,
+    );
+    return [...new Set(folders)];
+  }),
+);
 
 /** Persist `folders`, dropping the record entirely once nothing is approved. */
-export function saveApprovedFolders(
-  app: DeviceStorage,
-  folders: readonly string[],
-): void {
-  app.saveLocalStorage(STORAGE_KEY, folders.length > 0 ? [...folders] : null);
-}
+export const saveApprovedFolders = (folders: readonly string[]) =>
+  DeviceStorage.use((storage) =>
+    storage.save(STORAGE_KEY, folders.length > 0 ? [...folders] : null),
+  );

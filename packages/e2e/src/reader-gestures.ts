@@ -1,54 +1,12 @@
+import { expect } from "vitest";
 // The Obsidian half of a gesture on a PDF page in the Paired Run: the PDF
 // opened with the Annotation View beside it, the reader's view as an eval
 // expression, pointer events dispatched as the browser sends them, the window
 // raised so the page lays out, and the reads a Geometry Edit test takes of the
 // plugin around a gesture.
 
-import { expect } from "vitest";
-
-import { showBehind } from "./background-throttling.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
-
-/**
- * The Obsidian PDF view showing `attachmentPath` in a laid-out leaf, as an
- * eval expression.
- */
-export function pdfViewOf(attachmentPath: string): string {
-  return `app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(attachmentPath)}&&view.containerEl.getBoundingClientRect().width>0)`;
-}
-
-/**
- * Declares `clientOf(x, y)` in an eval: a PDF point on page one of the view
- * `pdfView` as a client point, through the overlay the page draws — its box on
- * screen over its own `viewBox`, which is the frame a gesture on the page is
- * measured in.
- *
- * @param pdfView the PDF view as an eval expression, as {@link pdfViewOf} gives it.
- */
-export function clientOfFirstPage(pdfView: string): string {
-  return `const clientOf=(x,y)=>{const overlay=${pdfView}.viewer.child.getPage(1).div.querySelector('.zt-pdf-annotation-overlay');const box=overlay.getBoundingClientRect();const view=overlay.viewBox.baseVal;return {x:box.left+(x-view.x)*box.width/view.width,y:box.top+(view.y+view.height-y)*box.height/view.height};};`;
-}
-
-/**
- * The Creation Toolbar button of `tool` in the view `pdfView`, as an eval
- * expression.
- *
- * @param pdfView the PDF view as an eval expression, as {@link pdfViewOf} gives it.
- * @param tool the button's `data-zt-tool`.
- */
-export function toolButtonOf(pdfView: string, tool: string): string {
-  return `${pdfView}.containerEl.querySelector('[data-zt-tool=${JSON.stringify(tool)}]')`;
-}
-
-/**
- * The reader's page container, which scrolls the pages, as an eval expression.
- *
- * @param pdfView the PDF view as an eval expression, as {@link pdfViewOf} gives it.
- */
-export function pageContainerOf(pdfView: string): string {
-  return `${pdfView}.viewer.child.pdfViewer.pdfViewer.container`;
-}
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import type { BackgroundWindow } from "./page-notes-types.ts";
 
 /**
  * Brings page one on screen in a window that lays it out, and arms `tool`
@@ -58,73 +16,78 @@ export function pageContainerOf(pdfView: string): string {
 export async function armToolOnFirstPage(
   vaultId: string,
   {
-    pdfView,
+    attachmentPath,
     tool,
     at,
-  }: {
-    /** The PDF view as an eval expression, as {@link pdfViewOf} gives it. */
-    pdfView: string;
-    /** The button's `data-zt-tool`. */
-    tool: string;
-    at?: readonly [number, number];
-  },
+  }: { attachmentPath: string; tool: string; at?: readonly [number, number] },
 ): Promise<void> {
   await raiseWindow(vaultId);
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return String(!!view.viewer.child.getPage(1)?.div.querySelector('.zt-pdf-annotation-overlay'));})()`,
-      { expected: "true" },
-    ),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    ({ page }, { attachmentPath }) => {
+      const view = page.pdfView(attachmentPath);
+      if (!view) return false;
+      view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+      return !!view.viewer.child
+        .getPage(1)
+        ?.div.querySelector(".zt-pdf-annotation-overlay");
+    },
+    { attachmentPath },
+    { what: "PDF first page overlay" },
+  );
   if (at) {
-    const clientOf = clientOfFirstPage(pdfView);
-    const [x, y] = at;
-    await obEval(
+    await obRun(
       vaultId,
-      `(function(){${clientOf}const at=clientOf(${x},${y});${pageContainerOf(pdfView)}.scrollTop+=at.y-innerHeight/2;return true;})()`,
+      ({ page }, { attachmentPath, at }) => {
+        const view = page.pdfView(attachmentPath)!;
+        const point = page.clientOfFirstPage(view, at[0], at[1]);
+        page.pageContainer(view).scrollTop += point.y - innerHeight / 2;
+      },
+      { attachmentPath, at },
     );
-    // Measured in its own eval, once the scroll has laid the page out.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){${clientOf}const at=clientOf(${x},${y});const page=${pdfView}.viewer.child.getPage(1).div;return String(Math.abs(at.y-innerHeight/2)<innerHeight/4&&page.contains(document.elementFromPoint(at.x,at.y)));})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      ({ page }, { attachmentPath, at }) => {
+        const view = page.pdfView(attachmentPath)!;
+        const point = page.clientOfFirstPage(view, at[0], at[1]);
+        return (
+          Math.abs(point.y - innerHeight / 2) < innerHeight / 4 &&
+          view.viewer.child
+            .getPage(1)!
+            .div.contains(document.elementFromPoint(point.x, point.y))
+        );
+      },
+      { attachmentPath, at },
+      { what: "PDF point centered" },
+    );
   }
   expect(
-    await obEval(
+    await obRun(
       vaultId,
-      `(function(){${PAGE}const tool=${toolButtonOf(pdfView, tool)};if(tool.getAttribute('aria-pressed')!=='true')press(tool,${JSON.stringify(`tool ${tool}`)});return tool.getAttribute('aria-pressed');})()`,
+      ({ page }, { attachmentPath, tool }) => {
+        const button = page.toolButton(page.pdfView(attachmentPath)!, tool)!;
+        if (button.getAttribute("aria-pressed") !== "true")
+          page.press(button, `tool ${tool}`);
+        return button.getAttribute("aria-pressed");
+      },
+      { attachmentPath, tool },
     ),
   ).toBe("true");
 }
 
-/**
- * Stands `tool` down from the Creation Toolbar where it is armed, so the next
- * test starts with no tool armed.
- */
+/** Stands the named Creation Toolbar tool down after a test. */
 export async function disarmTool(
   vaultId: string,
-  { pdfView, tool }: { pdfView: string; tool: string },
+  { attachmentPath, tool }: { attachmentPath: string; tool: string },
 ): Promise<void> {
-  // Teardown for the next test, not a reader's press: the tool may be gone.
-  await obEval(
+  await obRun(
     vaultId,
-    `(function(){const tool=${toolButtonOf(pdfView, tool)};if(tool?.getAttribute('aria-pressed')==='true')tool.click();return true;})()`,
+    ({ page }, { attachmentPath, tool }) => {
+      const button = page.toolButton(page.pdfView(attachmentPath)!, tool);
+      if (button?.getAttribute("aria-pressed") === "true") button.click();
+    },
+    { attachmentPath, tool },
   );
-}
-
-/**
- * One field of the Editing Capability on the Attachment `attachmentKey`, read
- * after a fresh Capability Probe, as an eval expression.
- */
-export function capabilityOf(
-  attachmentKey: string,
-  field: "kind" | "reason",
-): string {
-  return `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();return String(repository.capabilityFor(${JSON.stringify(attachmentKey)}).${field});})()`;
 }
 
 /**
@@ -136,9 +99,14 @@ export async function settledGesture(
   vaultId: string,
   attachmentPath: string,
 ): Promise<void> {
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{await app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).gestured;return true;})()`,
+    async ({ zotlit }, { attachmentPath }) => {
+      await zotlit.services.pdfAnnotationEditor.bindings.find(
+        (candidate) => candidate.filePath === attachmentPath,
+      )!.gestured;
+    },
+    { attachmentPath },
   );
 }
 
@@ -153,9 +121,16 @@ export async function reopenPdfView(
   attachmentPath: string,
 ): Promise<void> {
   expect(
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{const leaf=${pdfViewOf(attachmentPath)}.leaf;const file=leaf.view.file;await leaf.setViewState({type:'empty'});await leaf.openFile(file);return 'reopened';})()`,
+      async ({ page }, { attachmentPath }) => {
+        const view = page.pdfView(attachmentPath)!;
+        const file = view.file!;
+        await view.leaf.setViewState({ type: "empty" });
+        await view.leaf.openFile(file);
+        return "reopened";
+      },
+      { attachmentPath },
     ),
   ).toBe("reopened");
 }
@@ -180,52 +155,57 @@ export async function openPdfWithAnnotationView(
     cleanup: AsyncDisposableStack;
   },
 ): Promise<void> {
-  const layout = await obEval(
+  const layout = await obRun(
     vaultId,
-    "JSON.stringify(app.workspace.getLayout())",
+    async ({ app }) => {
+      return JSON.stringify(app.workspace.getLayout());
+    },
+    undefined,
   );
   cleanup.defer(async () => {
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      async ({ app }, { layout }) => {
+        await app.workspace.changeLayout(JSON.parse(layout));
+      },
+      { layout },
     );
   });
-  await obEval(
+  await obRun(
     vaultId,
-    `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});await app.workspace.getLeaf('tab').openFile(file);return true;})()`,
+    async ({ app }, { attachmentPath }) => {
+      const file = app.vault.getFileByPath(attachmentPath)!;
+      await app.workspace.getLeaf("tab").openFile(file);
+    },
+    { attachmentPath },
   );
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `String(!!app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
-      { expected: "true" },
-    ),
-  ).toBe(true);
-  await obEval(
+  await obRunUntil(
     vaultId,
-    "app.commands.executeCommandById('zotlit:open-annot-view');true",
+    async ({ zotlit }, { attachmentPath }) => {
+      return !!zotlit.services.pdfAnnotationEditor.bindings.find(
+        (b) => b.filePath === attachmentPath,
+      )?.session;
+    },
+    { attachmentPath },
+    {
+      what: "the PDF annotation editor binding for the attachment to open a session",
+    },
   );
-  await obEval(
+  await obRun(
     vaultId,
-    "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
+    async ({ app }) => {
+      app.commands.executeCommandById("zotlit:open-annot-view");
+    },
+    undefined,
+  );
+  await obRun(
+    vaultId,
+    async ({ app }) => {
+      app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
+    },
+    undefined,
   );
 }
-
-/**
- * Declares `fire(type, x, y, target?, extra?)` in an eval: one pointer event,
- * or the click that follows a release, dispatched as the browser would at a
- * client point — to the node under it unless a target is named — answering
- * that node. `extra` overrides the event's own fields, such as a second
- * pointer's `pointerId`.
- */
-export const FIRE = `const fire=(type,x,y,target,extra)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window,...extra};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
-
-/**
- * Declares `tap(x, y)` in an eval, after {@link FIRE}: a press, its release,
- * and the click that follows, all at one client point — a mark click as the
- * browser delivers it.
- */
-export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return node;};`;
 
 /**
  * Shows the vault's window if it is hidden or minimized, behind other apps'
@@ -233,31 +213,24 @@ export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('p
  * out; `prepareRunWindow` keeps a covered window laying it out.
  */
 export async function raiseWindow(vaultId: string): Promise<void> {
-  expect(
-    await obEvalUntil(
-      vaultId,
-      `(function(){const electronWindow=require('@electron/remote').getCurrentWindow();if(!electronWindow.isVisible()||electronWindow.isMinimized()){${showBehind("electronWindow")}}return document.visibilityState;})()`,
-      { expected: "visible" },
-    ),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    ({ page }) => {
+      const electronWindow = (
+        require("@electron/remote") as {
+          getCurrentWindow(): BackgroundWindow & {
+            isVisible(): boolean;
+          };
+        }
+      ).getCurrentWindow();
+      if (!electronWindow.isVisible() || electronWindow.isMinimized())
+        page.showBehind(electronWindow);
+      return document.visibilityState;
+    },
+    undefined,
+    { what: "visible vault window", ready: (state) => state === "visible" },
+  );
 }
-
-/** The Mark Popup's comment editor, as an eval expression. */
-export const POPUP_EDITOR = `document.querySelector('.zt-pdf-mark-popup .cm-content')`;
-
-/**
- * Declares `send(type, point, extra?)` and `press(point, detail)` in an eval:
- * the pointer and mouse events a mouse button delivers at a client point.
- * CodeMirror reads the mouse events, and `detail` counts the clicks of a
- * double click.
- */
-const MOUSE = `const send=(type,{x,y},extra)=>{const init={clientX:x,clientY:y,bubbles:true,cancelable:true,composed:true,pointerId:1,button:0,buttons:1,view:window,...extra};document.elementFromPoint(x,y).dispatchEvent(type.startsWith('pointer')?new PointerEvent(type,init):new MouseEvent(type,init));};const press=(point,detail)=>{send('pointerdown',point,{detail});send('mousedown',point,{detail});send('pointerup',point,{detail,buttons:0});send('mouseup',point,{detail,buttons:0});send('click',point,{detail,buttons:0});};`;
-
-/**
- * Declares `at(from, to)` in an eval, after {@link MOUSE}: the centre of
- * characters `from` to `to` of `hello world` in the popup's comment editor.
- */
-const IN_EDITOR = `const text=[...${POPUP_EDITOR}.querySelectorAll('.cm-line')].flatMap((line)=>[...line.childNodes]).map((node)=>node.nodeType===3?node:node.firstChild).find((node)=>node?.textContent.includes('hello'));const at=(from,to)=>{const range=document.createRange();range.setStart(text,from);range.setEnd(text,to);const box=range.getBoundingClientRect();return {x:box.left+box.width/2,y:box.top+box.height/2};};`;
 
 /**
  * Selects text in the open comment editor of the Mark Popup three ways — a
@@ -268,63 +241,134 @@ const IN_EDITOR = `const text=[...${POPUP_EDITOR}.querySelectorAll('.cm-line')].
 export async function expectEditorKeepsSelections(
   vaultId: string,
 ): Promise<void> {
-  const nativeMenus = await obEval(
-    vaultId,
-    `String(app.vault.getConfig('nativeMenus'))`,
+  const nativeMenus = await obRun(vaultId, ({ app }) =>
+    app.vault.getConfig("nativeMenus"),
   );
-  await obEval(vaultId, `(app.vault.setConfig('nativeMenus',false),true)`);
+  await obRun(vaultId, ({ app }) => {
+    app.vault.setConfig("nativeMenus", false);
+  });
   try {
-    /** Replaces what the editor holds with `hello world`. */
     const type = () =>
-      obEval(
+      obRun(vaultId, ({ page }) => {
+        page.popupEditor()!.focus();
+        document.execCommand("selectAll");
+        document.execCommand("insertText", false, "hello world");
+      });
+    const gesture = async (kind: "double" | "drag" | "context" | "all") => {
+      await obRun(
         vaultId,
-        `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'hello world');return true;})()`,
+        ({ page }, { kind }) => {
+          const send = (
+            type: string,
+            { x, y }: { x: number; y: number },
+            extra?: PointerEventInit,
+          ) => {
+            const init = {
+              clientX: x,
+              clientY: y,
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              pointerId: 1,
+              button: 0,
+              buttons: 1,
+              view: window,
+              ...extra,
+            };
+            document
+              .elementFromPoint(x, y)!
+              .dispatchEvent(
+                type.startsWith("pointer")
+                  ? new PointerEvent(type, init)
+                  : new MouseEvent(type, init),
+              );
+          };
+          const press = (point: { x: number; y: number }, detail: number) => {
+            send("pointerdown", point, { detail });
+            send("mousedown", point, { detail });
+            send("pointerup", point, { detail, buttons: 0 });
+            send("mouseup", point, { detail, buttons: 0 });
+            send("click", point, { detail, buttons: 0 });
+          };
+          const text = [...page.popupEditor()!.querySelectorAll(".cm-line")]
+            .flatMap((line) => [...line.childNodes])
+            .map((node) => (node.nodeType === 3 ? node : node.firstChild))
+            .find((node) => node?.textContent?.includes("hello"))!;
+          const at = (from: number, to: number) => {
+            const range = document.createRange();
+            range.setStart(text, from);
+            range.setEnd(text, to);
+            const box = range.getBoundingClientRect();
+            return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+          };
+          if (kind === "double") {
+            const word = at(1, 2);
+            press(word, 1);
+            press(word, 2);
+            send("dblclick", word, { detail: 2, buttons: 0 });
+          }
+          if (kind === "drag") {
+            const from = at(1, 2),
+              to = at(8, 9);
+            send("pointerdown", from, { detail: 1 });
+            send("mousedown", from, { detail: 1 });
+            send("pointermove", to);
+            send("mousemove", to);
+            send("pointerup", to, { buttons: 0 });
+            send("mouseup", to, { buttons: 0 });
+            send("click", to, { buttons: 0 });
+          }
+          if (kind === "context")
+            send("contextmenu", at(1, 2), { button: 2, buttons: 2 });
+          if (kind === "all") {
+            const menu = [
+              ...document.querySelectorAll(".menu .menu-item"),
+            ].find((item) => item.textContent.trim() === "Select all")!;
+            const box = menu.getBoundingClientRect();
+            press(
+              { x: box.left + box.width / 2, y: box.top + box.height / 2 },
+              1,
+            );
+          }
+        },
+        { kind },
       );
-    const select = async (gesture: string, selected: string) => {
-      await obEval(
-        vaultId,
-        `(function(){${MOUSE}${IN_EDITOR}${gesture}return true;})()`,
-      );
-      expect(
-        await obEvalUntil(vaultId, `String(getSelection())`, {
-          expected: selected,
-        }),
-      ).toBe(true);
-      expect(
-        await obEvalUntil(vaultId, `String(!!${POPUP_EDITOR})`, {
-          expected: "true",
-        }),
-      ).toBe(true);
+    };
+    const selected = async (text: string) => {
+      await obRunUntil(vaultId, () => String(getSelection()), undefined, {
+        what: "editor selection",
+        ready: (value) => value === text,
+      });
+      await obRunUntil(vaultId, ({ page }) => !!page.popupEditor(), undefined, {
+        what: "popup editor stays open",
+      });
     };
     await type();
-    await select(
-      `const word=at(1,2);press(word,1);press(word,2);send('dblclick',word,{detail:2,buttons:0});`,
-      "hello",
-    );
+    await gesture("double");
+    await selected("hello");
     await type();
-    await select(
-      `const from=at(1,2),to=at(8,9);send('pointerdown',from,{detail:1});send('mousedown',from,{detail:1});send('pointermove',to);send('mousemove',to);send('pointerup',to,{buttons:0});send('mouseup',to,{buttons:0});send('click',to,{buttons:0});`,
-      "ello wo",
-    );
-    const selectAll = `[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Select all')`;
+    await gesture("drag");
+    await selected("ello wo");
     await type();
-    await obEval(
+    await gesture("context");
+    await obRunUntil(
       vaultId,
-      `(function(){${MOUSE}${IN_EDITOR}send('contextmenu',at(1,2),{button:2,buttons:2});return true;})()`,
+      () =>
+        [...document.querySelectorAll(".menu .menu-item")].some(
+          (item) => item.textContent.trim() === "Select all",
+        ),
+      undefined,
+      { what: "Select all menu item" },
     );
-    expect(
-      await obEvalUntil(vaultId, `String(!!${selectAll})`, {
-        expected: "true",
-      }),
-    ).toBe(true);
-    await select(
-      `const box=${selectAll}.getBoundingClientRect();press({x:box.left+box.width/2,y:box.top+box.height/2},1);`,
-      "hello world",
-    );
+    await gesture("all");
+    await selected("hello world");
   } finally {
-    await obEval(
+    await obRun(
       vaultId,
-      `(app.vault.setConfig('nativeMenus',${nativeMenus === "true"}),true)`,
+      ({ app }, { nativeMenus }) => {
+        app.vault.setConfig("nativeMenus", nativeMenus);
+      },
+      { nativeMenus },
     );
   }
 }
@@ -340,12 +384,21 @@ export async function recomputedSortIndex(
   vaultId: string,
   { attachmentPath, position }: { attachmentPath: string; position: string },
 ): Promise<string> {
-  return JSON.parse(
-    await obEval(
-      vaultId,
-      `(async()=>{const binding=app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${position}));})()`,
-    ),
-  ) as string;
+  return obRun(
+    vaultId,
+    async ({ zotlit }, { attachmentPath, position }) => {
+      const binding = zotlit.services.pdfAnnotationEditor.bindings.find(
+        (candidate) => candidate.filePath === attachmentPath,
+      )!;
+      return (await binding.sortIndex(position))!;
+    },
+    {
+      attachmentPath,
+      position: JSON.parse(position) as Parameters<
+        import("@zotlit/obsidian/e2e").E2eServices["pdfAnnotationEditor"]["bindings"][number]["sortIndex"]
+      >[0],
+    },
+  );
 }
 
 /**
@@ -356,20 +409,37 @@ export async function recomputedSortIndex(
 export async function watchExcerptPixels(
   vaultId: string,
 ): Promise<AsyncDisposable & { keys(): Promise<string[]> }> {
-  await obEval(
+  await obRun(
     vaultId,
-    "(function(){window.__ztPixelsOff?.();window.__ztPixels=[];window.__ztPixelsOff=app.plugins.plugins.zotlit.services.annotationRepository.on('excerpt-pixels-changed',(record)=>window.__ztPixels.push(record.key));return true;})()",
+    async ({ zotlit, page }) => {
+      page.scratch.pixelsOff?.();
+      page.scratch.pixels = [];
+      page.scratch.pixelsOff = zotlit.services.bridge.subscribe(
+        zotlit.services.annotationRepository.excerptPixelsChanged,
+        ({ record }) => page.scratch.pixels!.push(record.key),
+      );
+    },
+    undefined,
   );
   return {
     async keys() {
-      return JSON.parse(
-        await obEval(vaultId, "JSON.stringify(window.__ztPixels)"),
-      ) as string[];
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          return page.scratch.pixels;
+        },
+        undefined,
+      )) as string[];
     },
     async [Symbol.asyncDispose]() {
-      await obEval(
+      await obRun(
         vaultId,
-        "(function(){window.__ztPixelsOff?.();delete window.__ztPixelsOff;delete window.__ztPixels;return true;})()",
+        async ({ page }) => {
+          page.scratch.pixelsOff?.();
+          delete page.scratch.pixelsOff;
+          delete page.scratch.pixels;
+        },
+        undefined,
       );
     },
   };

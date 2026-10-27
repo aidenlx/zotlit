@@ -20,10 +20,10 @@ import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
-import type { ItemLookup } from "@/services/item-lookup/service";
 
 import type { NativeWorkbenchSuggesterRequest } from "./host";
 import {
@@ -109,7 +109,7 @@ export function sampleTypeLabel(id: string): string {
 }
 
 export async function recentItemChoices(
-  lookup: Pick<ItemLookup, "search">,
+  lookup: Pick<ItemLookupHandle, "search">,
 ): Promise<readonly WorkbenchItemChoice[]> {
   try {
     const hits = await lookup.search("", { limit: 3 });
@@ -142,7 +142,7 @@ export async function searchWorkbenchItem(
 
 export async function chooseWorkbenchItem(
   host: WorkbenchHost,
-  deps: ItemSearchDeps & { lookup: Pick<ItemLookup, "search"> },
+  deps: ItemSearchDeps & { lookup: Pick<ItemLookupHandle, "search"> },
   selected?: WorkbenchItemChoice,
 ): Promise<WorkbenchItemChoice | null> {
   const recent = await recentItemChoices(deps.lookup);
@@ -367,7 +367,7 @@ export function ItemSelectionList({
   onSelect,
   onSearch,
 }: {
-  lookup: Pick<ItemLookup, "search">;
+  lookup: Pick<ItemLookupHandle, "search">;
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {

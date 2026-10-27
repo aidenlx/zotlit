@@ -11,6 +11,7 @@ import { Component, Scope } from "obsidian";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
 import "./note-host.css";
+import { makeNoteBindingAtom } from "./note-binding";
 import { QueryView } from "./view";
 import type { QueryViewDeps, QueryViewHost } from "./view";
 
@@ -25,6 +26,7 @@ export class NoteQueryHost extends Component {
   readonly #scope: Scope;
   /** The Item key `this` reads, as the note's Properties give it. */
   #item: string | null;
+  readonly #binding: ReturnType<typeof makeNoteBindingAtom>;
 
   constructor(
     deps: QueryViewDeps,
@@ -46,6 +48,7 @@ export class NoteQueryHost extends Component {
     this.#sourcePath = sourcePath;
     this.#scope = new Scope(deps.app.scope);
     this.#item = this.#readItem();
+    this.#binding = makeNoteBindingAtom(sourcePath, this.#item);
     // `zt-query-note`: the view stands in a note (see `note-host.css`).
     el.addClass("zt-root", "zt-query-note", "interactive-child");
     this.#query = new QueryView(deps, {
@@ -66,12 +69,11 @@ export class NoteQueryHost extends Component {
     // A card in the view takes the card keys while it has focus.
     const keys = this.#deps.cardFocus.hold(this.#el, this.#scope, this.#query);
     this.register(() => keys[Symbol.dispose]());
-    // `this` follows the note's `zotero-key`.
-    const { metadataCache } = this.#deps.app;
-    this.registerEvent(
-      metadataCache.on("changed", (file) => {
-        if (file.path !== this.#sourcePath()) return;
-        this.#item = this.#readItem();
+    const { registry } = this.#deps;
+    this.register(registry.mount(this.#binding));
+    this.register(
+      registry.subscribe(this.#binding, (key) => {
+        this.#item = key;
         this.#query.contextChanged();
       }),
     );

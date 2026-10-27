@@ -1,7 +1,8 @@
 // UI seam for note-import: opens the batch modal and the overwrite confirm against the running app.
+import type { Effect } from "effect";
 import type { App } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
 import type { ConfirmOptions } from "@/lib/confirm";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
@@ -9,6 +10,7 @@ import type {
   BatchProfilePickerDeps,
   BatchProfilePickerOptions,
 } from "@/services/batch-profile-choice";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { BatchModal } from "@/views/batch-modal";
 import type { BatchModalOptions } from "@/views/batch-modal";
 
@@ -19,10 +21,15 @@ import type { BatchModalOptions } from "@/views/batch-modal";
  */
 export interface NoteImportView {
   openBatchModal(options: BatchModalOptions): void;
-  confirm(options: ConfirmOptions): Promise<boolean>;
+  /** The user's answer; an interrupt closes the modal. */
+  confirm(options: ConfirmOptions): Effect.Effect<boolean>;
+  /**
+   * The user's Profile, or `undefined`; an interrupt closes the picker and
+   * the Profile dialog it opened.
+   */
   chooseProfile(
     options: BatchProfilePickerOptions,
-  ): Promise<ProfileSelector | undefined>;
+  ): Effect.Effect<ProfileSelector | undefined, never, ProfileDialogServices>;
 }
 
 export function createNoteImportView(
@@ -31,7 +38,7 @@ export function createNoteImportView(
 ): NoteImportView {
   return {
     openBatchModal: (options) => new BatchModal(app, options).open(),
-    confirm: (options) => confirm(options, app),
+    confirm: (options) => awaitConfirm(options, app),
     chooseProfile: (options) =>
       chooseBatchProfile({ app, ...profilePicker }, options),
   };

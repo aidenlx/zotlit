@@ -1,14 +1,12 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
-import { ButtonComponent } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
 
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { DOCS_COMPANION } from "@/lib/constants";
 import type { HydrationOrigin } from "@/services/settings/classify";
 import type { Settings } from "@/services/settings/schema";
 
@@ -18,7 +16,7 @@ import {
   releaseApp,
   releaseOf,
 } from "./__fixtures__";
-import { releaseNoteUrl, V1_TEMPLATE_FOLDER } from "./constants";
+import { V1_TEMPLATE_FOLDER } from "./constants";
 
 /** The configured Literature Note template folder in the fixture settings. */
 const CONFIGURED_TEMPLATE_FOLDER = "templates";
@@ -184,44 +182,20 @@ function runCheck(opts: {
 }
 
 it.effect(
-  "Release Companion update notice opens both the current release note and Companion installation guide",
+  "Release Companion upgrade records the version and opens no first screen",
   () =>
     Effect.gen(function* () {
-      const labels = new WeakMap<ButtonComponent, string>();
-      const actions = new Map<string, (event: MouseEvent) => unknown>();
-      vi.spyOn(ButtonComponent.prototype, "setButtonText").mockImplementation(
-        function (this: ButtonComponent, text) {
-          labels.set(this, text);
-          return this;
-        },
-      );
-      vi.spyOn(ButtonComponent.prototype, "onClick").mockImplementation(
-        function (
-          this: ButtonComponent,
-          callback: (event: MouseEvent) => unknown,
-        ) {
-          actions.set(labels.get(this)!, callback);
-          return this;
-        },
-      );
-      const open = vi.spyOn(window, "open").mockImplementation(() => null);
-
-      yield* runCheck({
+      const { update, openFirstScreen } = yield* runCheck({
         origin: "current",
         templateFiles: [],
         recordedVersion: "2.0.1",
         currentVersion: "2.1.0",
         noticesEnabled: false,
       });
-
-      actions.get("See what's new")?.(new MouseEvent("click"));
-      actions.get("Open installation guide")?.(new MouseEvent("click"));
-      yield* Effect.promise(() =>
-        vi.waitFor(() => {
-          expect(open).toHaveBeenCalledWith(releaseNoteUrl("2.1.0"));
-          expect(open).toHaveBeenCalledWith(DOCS_COMPANION);
-        }),
-      );
+      expect(update).toHaveBeenCalledExactlyOnceWith({
+        "release.previous-version": "2.1.0",
+      });
+      expect(openFirstScreen).not.toHaveBeenCalled();
     }),
 );
 

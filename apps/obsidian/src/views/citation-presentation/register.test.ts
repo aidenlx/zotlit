@@ -8,6 +8,7 @@ import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
+import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -99,10 +100,11 @@ function openVault({ note, settings = {} }: VaultOptions = {}) {
   });
 
   const deps: CitationPresentationDeps = {
+    fileSystem: nodeFileSystem,
     app,
     zoteroPref: { dataDir: DATA_DIR },
     settings: { current: Effect.succeed(resolvedSettings) },
-    bridge: { runSync: Effect.runSync },
+    bridge: { runSync: Effect.runSync, runPromiseExit: Effect.runPromiseExit },
   };
   registerCitationPresentation(
     stubService<Pick<Plugin, "addCommand" | "app">>("Plugin", {

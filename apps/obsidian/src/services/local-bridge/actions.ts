@@ -6,6 +6,7 @@
 import { TFile } from "obsidian";
 import type { App, Plugin, TAbstractFile } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
@@ -14,7 +15,7 @@ import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { FileMenuSegment } from "@/services/file-menu";
 import { isLiteratureNote } from "@/services/note-index/service";
-import type { PlainProfile } from "@/services/profile/plain";
+import type { Profile } from "@/services/profile/service";
 import type { PluginSettings } from "@/services/settings/service";
 
 import { noteItem } from "./customize";
@@ -23,7 +24,8 @@ import type { CustomizeAction, CustomizeRequest } from "./customize";
 export interface CustomizeActionDeps {
   settings: Pick<PluginSettings["Service"], "current">;
   /** The stamp reader: which Profile this note belongs to, if any. */
-  profile: Pick<PlainProfile, "loaded" | "profileOf">;
+  profile: Pick<Profile["Service"], "loaded" | "profileOf">;
+  bridge: Pick<EffectBridge, "runSync">;
   /** The shared Customize flow, the same one the settings rows open. */
   customize: CustomizeAction;
 }
@@ -75,7 +77,7 @@ function customizable(
   return (
     file instanceof TFile &&
     file.extension === "md" &&
-    deps.profile.loaded &&
+    deps.bridge.runSync(deps.profile.loaded) &&
     isLiteratureNote(file, app)
   );
 }
@@ -89,14 +91,14 @@ function customizable(
 export function noteCustomizeRequest(
   file: TFile,
   app: App,
-  deps: Pick<CustomizeActionDeps, "profile">,
+  deps: Pick<CustomizeActionDeps, "profile" | "bridge">,
 ): CustomizeRequest | UnknownProfileDiagnostic {
-  const note = deps.profile.profileOf(file);
+  const note = deps.bridge.runSync(deps.profile.profileOf(file));
   if (!note.ok)
     return unknownProfileDiagnostic(note.stamped.stamp, { path: file.path });
   return {
     profileId: note.profile.selector,
-    item: noteItem(app, file),
+    item: noteItem(file, app.metadataCache.getFileCache(file)),
     originatingNote: file,
   };
 }

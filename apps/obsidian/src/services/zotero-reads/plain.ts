@@ -20,7 +20,10 @@ import type {
   ZoteroReadsState,
 } from "./service";
 
-export interface PlainZoteroReads extends ZoteroReadsState {
+export interface PlainZoteroReads extends Omit<
+  ZoteroReadsState,
+  "activeReadMode"
+> {
   readonly changes: Stream.Stream<ZoteroReadsState>;
   readonly "refresh-requested": Stream.Stream<void>;
   readonly changed: Stream.Stream<void>;
@@ -52,9 +55,6 @@ export function plainZoteroReads(
     },
     get dbFileMissing() {
       return bridge.runSync(service.current).dbFileMissing;
-    },
-    get activeReadMode() {
-      return bridge.runSync(service.current).activeReadMode;
     },
     reads: service.reads,
     snapshot: service.snapshot,

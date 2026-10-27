@@ -1,8 +1,4 @@
-export {
-  selectProfilesByMatch,
-  testItemMatches,
-  type MatchSelection,
-} from "./select";
+export { selectProfilesByMatch, type MatchSelection } from "./select";
 export {
   compileProfileMatch,
   type ProfileMatch,

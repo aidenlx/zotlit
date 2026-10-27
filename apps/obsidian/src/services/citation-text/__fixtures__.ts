@@ -1,11 +1,13 @@
 import { Context, Effect, Layer, PubSub, Stream } from "effect";
-import type { App } from "obsidian";
 
-import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
-import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
+import { forkEach } from "@/lib/effect-stream";
 import type { OpenDocuments } from "@/lib/open-documents";
+import { VaultError } from "@/lib/vault-errors";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationLookupState } from "@/services/citation-index/lookup-service";
 import type {
@@ -137,7 +139,8 @@ export function firstText(
 
 /** The real CitationText layer over already-owned consumer fixture dependencies. */
 export interface CitationTextFixtureDeps {
-  app: App;
+  /** The Obsidian objects the capability tags read; a missing one is empty. */
+  host: HostSources;
   citationIndex: Pick<
     PlainCitationIndex,
     "getParsedDocument" | "changed" | "membership-changed"
@@ -153,7 +156,8 @@ export interface CitationTextFixtureDeps {
     PlainQueryClients,
     "client" | "ask" | "read" | "peek" | "invalidate" | "watch"
   >;
-  openDocuments: OpenDocuments;
+  /** The documents open in the workspace; without it, the layer reads the host's workspace. */
+  openDocuments?: OpenDocuments;
 }
 
 export function citationTextFixture(
@@ -177,30 +181,38 @@ export function citationTextFixture(
     layerCitationText(deps.openDocuments).pipe(
       Layer.provide(
         Layer.mergeAll(
-          // A host without a workspace gets an empty in-memory one.
-          layerHostApp(
-            Object.assign({ workspace: new MemoryWorkspace() }, deps.app),
-          ),
+          layerHost(deps.host),
           Layer.succeed(
             CitationIndex,
             stubService<CitationIndex["Service"]>("CitationIndex", {
               getParsedDocument: (file) =>
-                Effect.tryPromise((signal) =>
-                  deps.citationIndex.getParsedDocument(file, signal),
-                ),
+                Effect.tryPromise({
+                  try: (signal) =>
+                    deps.citationIndex.getParsedDocument(file, signal),
+                  catch: (cause) =>
+                    new VaultError({
+                      operation: "cachedRead",
+                      path: file.path,
+                      cause,
+                      message: String(cause),
+                    }),
+                }),
               changes: Stream.empty,
-              events: Stream.merge(
-                deps.citationIndex.changed.pipe(
-                  Stream.map((path): CitationIndexEvent => ({
-                    type: "changed",
-                    path,
-                  })),
-                ),
-                deps.citationIndex["membership-changed"].pipe(
-                  Stream.map((): CitationIndexEvent => ({
-                    type: "membership-changed",
-                  })),
-                ),
+              // Install both source subscriptions before fixture startup returns.
+              events: Stream.unwrap(
+                Effect.gen(function* () {
+                  const events = testEvent<CitationIndexEvent>();
+                  yield* forkEach(deps.citationIndex.changed, (path) => {
+                    events.emit({ type: "changed", path });
+                  });
+                  yield* forkEach(
+                    deps.citationIndex["membership-changed"],
+                    () => {
+                      events.emit({ type: "membership-changed" });
+                    },
+                  );
+                  return events.stream;
+                }),
               ),
             }),
           ),

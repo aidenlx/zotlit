@@ -1,7 +1,7 @@
 // Runs in a disposable Electron renderer so transactions use Chromium's IndexedDB.
 import { check } from "./__fixtures__/check";
+import { encodeExcerptImage } from "./__fixtures__/encode";
 import { sizedWebp } from "./__fixtures__/webp";
-import { encodeExcerptImage } from "./encode";
 import { PNG_FORMAT, WEBP_FORMAT } from "./format";
 import { openExcerptStore } from "./store";
 

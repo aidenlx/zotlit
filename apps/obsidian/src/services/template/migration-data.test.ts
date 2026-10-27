@@ -1,4 +1,6 @@
-import { expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { expect, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Library } from "@zotlit/db";
@@ -8,19 +10,22 @@ import {
   MY_LIBRARY_SCOPE,
   resolveLibraryScope,
 } from "@/services/library-scope/scope";
-import { loadTemplateData } from "@/services/template-workbench/data";
+import { LibraryScope } from "@/services/library-scope/service";
+import { workbenchContext } from "@/services/template-workbench/__fixtures__";
+import { readTemplateData } from "@/services/template-workbench/data";
+import { layerRcRef } from "@/services/zotero-reads/connection";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
+import { layerZoteroReads } from "@/services/zotero-reads/service";
 import {
-  inProcessReadsService,
+  inProcessClient,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
-import { loadLiteratureNoteTemplateMigrationData } from "./migration";
-import type { LiteratureNoteTemplateMigrationDataDeps } from "./migration";
+import { readMigrationVerificationData } from "./migration-data";
 
 vi.mock("@/services/template-workbench/data", async (original) => ({
   ...(await original<typeof import("@/services/template-workbench/data")>()),
-  loadTemplateData: vi.fn(),
+  readTemplateData: vi.fn(),
 }));
 
 /**
@@ -46,78 +51,66 @@ const SEED = `
     values (1, 10, 1), (3, 10, 2), (3, 11, 3);
 `;
 
-it("verifies against the first in-scope item that renders, its Citation read before the render", async () => {
-  const events: string[] = [];
-  await using reads = inProcessReadsService(memoryOpener(() => SEED).open, {
-    wrap: (client) => ({
-      ...client,
-      ItemsByIndexedKeys: ((payload: {
-        readonly indexedKeys: readonly string[];
-      }) => {
-        events.push(`read ${payload.indexedKeys.join()}`);
-        return client.ItemsByIndexedKeys(payload);
-      }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+it.effect(
+  "verifies against the first in-scope item that renders, its Citation read before the render",
+  () =>
+    Effect.gen(function* () {
+      const events: string[] = [];
+      const client = inProcessClient(
+        layerRcRef(memoryOpener(() => SEED).open),
+      ).pipe(
+        Effect.map((client): ZoteroReadsClient => ({
+          ...client,
+          ItemsByIndexedKeys: ((payload: {
+            readonly indexedKeys: readonly string[];
+          }) => {
+            events.push(`read ${payload.indexedKeys.join()}`);
+            return client.ItemsByIndexedKeys(payload);
+          }) as unknown as ZoteroReadsClient["ItemsByIndexedKeys"],
+        })),
+      );
+      const reads = yield* Layer.build(layerZoteroReads(client));
+      vi.mocked(readTemplateData).mockImplementation((key, root) => {
+        if (root === "note") events.push(`render ${key}`);
+        // The item modified last cannot render; the next one can.
+        return Effect.succeed(
+          key === "MAIN2345"
+            ? { kind: "not-found" as const }
+            : { kind: "data" as const, data: { root, key } },
+        );
+      });
+
+      const data = yield* readMigrationVerificationData({
+        annotation: false,
+      }).pipe(
+        Effect.provideContext(workbenchContext(reads)),
+        Effect.provideService(
+          LibraryScope,
+          stubService<LibraryScope["Service"]>("LibraryScope", {
+            resolveLibraries: (libraries: readonly Library[]) =>
+              Effect.sync(() =>
+                resolveLibraryScope(libraries, MY_LIBRARY_SCOPE),
+              ),
+          }),
+        ),
+      );
+
+      expect(data).toMatchObject({
+        note: { root: "note", key: "RELA2345" },
+        filename: { root: "filename", key: "RELA2345" },
+        annotation: null,
+        citation: [
+          {
+            citationKey: "rela2024",
+            item: { libraryID: USER_LIBRARY_ID, indexedKey: "RELA2345" },
+          },
+        ],
+      });
+      expect(events).toEqual([
+        "read MAIN2345",
+        "render MAIN2345",
+        "read RELA2345",
+        "render RELA2345",
+      ]);
     }),
-  });
-  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key, root) => {
-    if (root === "note") events.push(`render ${key}`);
-    // The item modified last cannot render; the next one can.
-    return key === "MAIN2345"
-      ? { kind: "not-found" }
-      : { kind: "data", data: { root, key } };
-  });
-  const deps = stubService<LiteratureNoteTemplateMigrationDataDeps>(
-    "LiteratureNoteTemplateMigrationDataDeps",
-    {
-      app: stubService<LiteratureNoteTemplateMigrationDataDeps["app"]>(
-        "App",
-        {},
-      ),
-      zoteroReads: stubService<
-        LiteratureNoteTemplateMigrationDataDeps["zoteroReads"]
-      >("ZoteroReads", {
-        acquireRead: () => reads.acquireRead(),
-      }),
-      libraryScope: stubService<
-        LiteratureNoteTemplateMigrationDataDeps["libraryScope"]
-      >("LibraryScope", {
-        resolveLibraries: (libraries: readonly Library[]) =>
-          resolveLibraryScope(libraries, MY_LIBRARY_SCOPE),
-      }),
-      noteIndex: stubService<
-        LiteratureNoteTemplateMigrationDataDeps["noteIndex"]
-      >("NoteIndex", {}),
-      settings: stubService<
-        LiteratureNoteTemplateMigrationDataDeps["settings"]
-      >("PluginSettings", {}),
-      templates: stubService<
-        LiteratureNoteTemplateMigrationDataDeps["templates"]
-      >("Template", {}),
-      zoteroPref: stubService<
-        LiteratureNoteTemplateMigrationDataDeps["zoteroPref"]
-      >("ZoteroPref", {}),
-    },
-  );
-
-  const data = await loadLiteratureNoteTemplateMigrationData(deps, {
-    annotation: false,
-  });
-
-  expect(data).toMatchObject({
-    note: { root: "note", key: "RELA2345" },
-    filename: { root: "filename", key: "RELA2345" },
-    annotation: null,
-    citation: [
-      {
-        citationKey: "rela2024",
-        item: { libraryID: USER_LIBRARY_ID, indexedKey: "RELA2345" },
-      },
-    ],
-  });
-  expect(events).toEqual([
-    "read MAIN2345",
-    "render MAIN2345",
-    "read RELA2345",
-    "render RELA2345",
-  ]);
-});
+);

@@ -1,19 +1,26 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 import { Cause, Context, Effect, Layer } from "effect";
-import type { App, HoverParent, TFile } from "obsidian";
+import type {
+  HoverParent,
+  MetadataCache as ObsidianMetadataCache,
+  TFile,
+} from "obsidian";
 import type { ReactNode } from "react";
 
 import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { ObsidianApp } from "@/lib/obsidian-app";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace, workspaceTrigger } from "@/lib/obsidian-workspace";
+import type { WorkspaceEventHost } from "@/lib/obsidian-workspace";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import {
-  describeCandidates,
+  describeCandidatesEffect,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
+import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
 import type {
   CitationLookupAnswer,
   CitationLookupRequest,
@@ -27,7 +34,10 @@ import type { CitationLookupStatus } from "@/services/citation-index/lookup-serv
 import { CitationIndex } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { DocumentCitationSet } from "@/services/citation-index/service";
-import type { CitekeyResolution } from "@/services/citation-index/service";
+import type {
+  CitekeyResolution,
+  SnapshotItem,
+} from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import { CitationText } from "@/services/citation-text/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
@@ -55,13 +65,8 @@ import type {
 } from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
-import { acquireReadLease } from "@/services/zotero-reads/lease";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsApi,
-  ZoteroReadsState,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -74,12 +79,16 @@ import type { HoverVisit } from "./visits";
 
 /** What one popover read reaches outside Effect. */
 interface PopoverReads {
-  app: App;
-  db: {
-    readonly state: ZoteroReadsState["state"];
-    readonly reads: ZoteroReadsApi;
-    acquireRead(): Promise<ZoteroReadLease>;
-  };
+  /** The workspace the popover raises its menu and Profile switch events on. */
+  host: WorkspaceEventHost;
+  /** The vault's file at `path`, `null` when it holds none. */
+  fileAt(path: string): TFile | null;
+  /** The metadata cache reads the hovered note's Citation Presentation takes. */
+  metadataCache: Pick<ObsidianMetadataCache, "getFileCache">;
+  databaseState(): ZoteroReadsState["state"];
+  readSources(
+    citations: Parameters<typeof readReferenceSources>[1],
+  ): Promise<Effect.Success<ReturnType<typeof readReferenceSources>>>;
   lookupStatus(): CitationLookupStatus;
   readLookup(
     request: CitationLookupRequest,
@@ -97,6 +106,10 @@ interface PopoverReads {
   libraryScope: {
     readonly current: ResolvedLibraryScope | null;
   };
+  /** The candidates of one Ambiguous Citation Key; none once unload interrupts the read. */
+  describeCandidates(
+    candidates: readonly SnapshotItem[],
+  ): Promise<AmbiguousCandidate[]>;
   /** The formatted citations of the hovered document, read for this popover. */
   readText(
     path: string,
@@ -194,7 +207,8 @@ interface PopoverRead {
 export const layerCitationPopover: Layer.Layer<
   CitationPopover,
   never,
-  | ObsidianApp
+  | Vault
+  | Workspace
   | MetadataCache
   | ZoteroReads
   | CitationLookup
@@ -206,7 +220,8 @@ export const layerCitationPopover: Layer.Layer<
 > = Layer.effect(
   CitationPopover,
   Effect.gen(function* () {
-    const app = yield* ObsidianApp;
+    const vault = yield* Vault;
+    const workspace = yield* Workspace;
     const metadata = yield* MetadataCache;
     const reads = yield* ZoteroReads;
     const lookup = yield* CitationLookup;
@@ -242,16 +257,14 @@ export const layerCitationPopover: Layer.Layer<
     const lookupReleased = () =>
       new DOMException("Citation Lookup released", "AbortError");
     const deps: PopoverReads = {
-      app,
-      db: {
-        get state() {
-          return bridge.runSync(reads.current).state;
-        },
-        get reads() {
-          return reads.reads;
-        },
-        acquireRead: () => acquireReadLease(reads, bridge),
+      host: { workspace: workspaceTrigger(workspace, bridge.runSync) },
+      fileAt: (path) => bridge.runSync(vault.getFileByPath(path)),
+      metadataCache: {
+        getFileCache: (file) => bridge.runSync(metadata.fileCache(file)),
       },
+      databaseState: () => bridge.runSync(reads.current).state,
+      readSources: (citations) =>
+        bridge.runPromise(readReferenceSources(reads, citations)),
       lookupStatus: () => bridge.runSync(lookup.current).status,
       async readLookup(request, { signal }) {
         if (bridge.closed()) throw lookupReleased();
@@ -287,6 +300,17 @@ export const layerCitationPopover: Layer.Layer<
           return bridge.runSync(libraries.current);
         },
       },
+      describeCandidates: (candidates) =>
+        held(
+          describeCandidatesEffect(
+            {
+              db: reads,
+              libraryScope: { current: bridge.runSync(libraries.current) },
+            },
+            candidates,
+          ),
+          [],
+        ),
       async readText(path, { signal }) {
         if (bridge.closed()) return null;
         return held(
@@ -415,7 +439,7 @@ async function fill(
     return;
   }
   const actions = createCitationPopoverActions({
-    app: deps.app,
+    host: deps.host,
     open: (block, pane) => {
       if ("work" in request) {
         if (read.indexedKey) request.open(read.indexedKey, pane);
@@ -426,7 +450,7 @@ async function fill(
     prepare:
       "work" in request && read.indexedKey
         ? async (block) => {
-            const { sources, database } = await readReferenceSources(deps.db, [
+            const { sources, database } = await deps.readSources([
               { indexedKey: read.indexedKey!, linkpath: null },
             ]);
             // The popover moved on to another visit while the read ran: this
@@ -452,7 +476,7 @@ async function fill(
           }
         : undefined,
     hide: () => popover.hide(),
-    switchProfile: (path) => requestProfileSwitch(deps.app, path),
+    switchProfile: (path) => requestProfileSwitch(deps.host, path),
     log: deps.log,
   });
   visit.state.content = (
@@ -486,7 +510,7 @@ async function readWork(
     profileFailure: undefined,
     pending: false,
   };
-  if (deps.db.state === "degraded")
+  if (deps.databaseState() === "degraded")
     return { ...empty, unavailable: "database" };
   if (work.kind === "citekey" && deps.lookupStatus() === "pending") {
     return {
@@ -514,8 +538,7 @@ async function readWork(
             ? {
                 kind: "ambiguous",
                 citekey: work.citekey,
-                candidates: await describeCandidates(
-                  deps,
+                candidates: await deps.describeCandidates(
                   resolution.candidates,
                 ),
               }
@@ -527,7 +550,7 @@ async function readWork(
   } else {
     indexedKey = work.indexedKey;
   }
-  const { sources, database } = await readReferenceSources(deps.db, [
+  const { sources, database } = await deps.readSources([
     { indexedKey, linkpath: null },
   ]);
   if (database === "unreadable") return { ...empty, unavailable: "database" };
@@ -572,7 +595,7 @@ async function readBlocks(
   request: CitationHoverRequest,
   signal: AbortSignal,
 ): Promise<PopoverRead> {
-  const file = deps.app.vault.getFileByPath(request.sourcePath);
+  const file = deps.fileAt(request.sourcePath);
   if (!file) {
     deps.log("debug", "Hovered citation sits in no note", {
       path: request.sourcePath,
@@ -599,7 +622,7 @@ async function readBlocks(
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
   const presented = documentCitationPresentation(
-    documentPresentation(deps.app.metadataCache, file, deps.profile),
+    documentPresentation(deps.metadataCache, file, deps.profile),
     deps.vaultPresentation(),
     { citations, works: sources },
   );

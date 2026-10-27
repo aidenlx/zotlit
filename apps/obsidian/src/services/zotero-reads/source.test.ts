@@ -2,6 +2,7 @@ import {
   Deferred,
   Effect,
   Exit,
+  FileSystem,
   Layer,
   Option,
   Ref,
@@ -31,7 +32,11 @@ import type { ZoteroReadsClient } from "./in-process";
 import { DbUnavailable } from "./rpc";
 import type { ChangeEvent, ReadsConfig } from "./rpc";
 import { layerSource } from "./source";
-import type { SourcePorts } from "./source";
+import type { SourceOptions, SourcePorts } from "./source";
+
+/** The source over a file system that holds nothing: the tests stub every port that reads it. */
+const testSource = (options?: SourceOptions) =>
+  layerSource(options).pipe(Layer.provide(FileSystem.layerNoop({})));
 
 let dir: string;
 let dbPath: string;
@@ -153,7 +158,7 @@ async function startSource(
   const scope = Scope.makeUnsafe();
   const context = await Effect.runPromise(
     Layer.buildWithScope(
-      Layer.provideMerge(layerSource({ ports }), TestClock.layer()),
+      Layer.provideMerge(testSource({ ports }), TestClock.layer()),
       scope,
     ),
   );
@@ -277,7 +282,7 @@ describe("ZoteroReads source", () => {
         return yield* reads.Libraries({});
       }).pipe(
         Effect.scoped,
-        Effect.provide(layerSource({ ports, initial: config() })),
+        Effect.provide(testSource({ ports, initial: config() })),
       ),
     );
     expect(version.find((l) => l.libraryID === 1)?.version).toBe(1);
@@ -1235,7 +1240,7 @@ describe("ZoteroReads source", () => {
         }).pipe(
           Effect.scoped,
           Effect.provide(
-            layerSource({
+            testSource({
               ports,
               initial: config({ databasePath: missing() }),
             }),

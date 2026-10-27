@@ -28,7 +28,8 @@ Desktop Queue (FIFO, no overtaking)
     a slot of N is free (default 2, ZOTLIT_DESKTOP_SLOTS)
     and no holder from its own worktree has a slot
     or, for an Exclusive Hold, all N slots are free
-  → Memory Gate → Lease → run in the worktree's own vault window
+  → Memory Gate (FIFO, OS pressure permits)
+  → Lease → run in the worktree's own vault window
 ```
 
 - **Exclusive Hold:** `measure:query` takes all N slots, because its timings mean nothing while another run competes for CPU. So does `desktop-slot run --exclusive`, for a manual walk that needs the whole app, such as a screen capture. Everything else takes one slot.

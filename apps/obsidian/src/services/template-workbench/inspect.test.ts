@@ -1,15 +1,19 @@
 import { it } from "@effect/vitest";
 import { Stream } from "effect";
-import { Effect, Exit, Fiber } from "effect";
+import { Context, Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import type { CachedMetadata, CliData } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { Template } from "@/services/template/service";
 
-import { workbenchRegistrationDeps } from "./__fixtures__";
+import {
+  fixtureServices,
+  workbenchContext,
+  workbenchIdentity,
+} from "./__fixtures__";
 import { TEMPLATE_INSPECT_COMMAND } from "./inspect";
 import { INSPECT_DIAGNOSTICS, inspectFlags } from "./inspect-contract";
 import { registerTemplateWorkbench } from "./register";
@@ -47,27 +51,21 @@ async function fixture(
       throw Object.assign(new Error("Missing file"), { code: "ENOENT" });
     return value;
   });
-  Object.assign(f.vault, {
-    getName: () => "Inspection fixture",
-    adapter: { getBasePath: () => "/fixture", read },
-  });
+  Object.assign(f.vault, { adapter: { read } });
   const { host, command } = fakeCliHost();
+  const services = fixtureServices(f.runtime);
   registerTemplateWorkbench(
     { ...host, manifest: { version: "test" } },
-    workbenchRegistrationDeps({
-      runtime: testRuntime(),
-      app: f.app,
-      templates: f.template,
-      settings: f.settings,
-      bridge: f.bridge,
-      profile: f.profile,
-      zoteroPref: {
+    workbenchContext(
+      services,
+      workbenchIdentity({
+        vaultName: "Inspection fixture",
+        basePath: "/fixture",
+        apiVersion: "1.0.0",
         sourceId: "fixture-source",
         databasePath: "/fixture/db",
-        dataDir: "/fixture",
-        baseAttachmentPath: null,
-      },
-    }),
+      }),
+    ),
   );
   const inspect = (params: CliData = {}) =>
     command(TEMPLATE_INSPECT_COMMAND)
@@ -78,6 +76,8 @@ async function fixture(
   const cleanup = stack.move();
   return {
     ...f,
+    /** The Template service the commands read. */
+    templates: Context.get(services, Template),
     disk,
     read,
     readSignal,
@@ -398,26 +398,29 @@ describe("registered template-inspect", () => {
     () =>
       Effect.gen(function* () {
         const f = yield* scopedFixture();
-        const statuses = f.template.getLiteratureNoteTemplateStatuses();
-        vi.spyOn(
-          f.template,
+        const statuses = yield* f.templates.getLiteratureNoteTemplateStatuses;
+        Object.defineProperty(
+          f.templates,
           "getLiteratureNoteTemplateStatuses",
-        ).mockReturnValue(
-          statuses.map((entry) => ({
-            ...entry,
-            validation: {
-              state: "invalid",
-              manifestId: "Bk3Qn7XvT2Lp",
-              error: {
-                code: "unknown",
-                message: "Invalid document envelope",
-                recovery: "Repair its YAML",
-                cause: new Error("Original YAML parser evidence", {
-                  cause: new Error("Nested cause"),
-                }),
-              },
-            },
-          })),
+          {
+            value: Effect.succeed(
+              statuses.map((entry) => ({
+                ...entry,
+                validation: {
+                  state: "invalid",
+                  manifestId: "Bk3Qn7XvT2Lp",
+                  error: {
+                    code: "unknown",
+                    message: "Invalid document envelope",
+                    recovery: "Repair its YAML",
+                    cause: new Error("Original YAML parser evidence", {
+                      cause: new Error("Nested cause"),
+                    }),
+                  },
+                },
+              })),
+            ),
+          },
         );
         expect(yield* f.inspect({ document: BOOKS })).toMatchObject({
           problems: [
@@ -538,8 +541,8 @@ describe("registered template-inspect", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture();
         const watching = vi.fn();
-        const original = f.template["compile-status-changed"];
-        Object.defineProperty(f.template, "compile-status-changed", {
+        const original = f.templates.compileEvents;
+        Object.defineProperty(f.templates, "compileEvents", {
           value: Stream.unwrap(
             Effect.acquireRelease(
               Effect.sync(() => {

@@ -7,21 +7,22 @@ import { Effect, Layer } from "effect";
 import type { Scope } from "effect";
 import type { App } from "obsidian";
 
+import { scopedBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
+import { portCall } from "@/lib/legacy-port";
 import { BaseNotice } from "@/lib/notice";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { Template } from "./service";
-import type { TemplateOperations } from "./service";
-
-const logger = getLogger(["template", "actions"]);
 
 /** The template surface the Citation text entry points read. */
 export type CitationTemplateActions = Pick<
-  TemplateOperations,
+  Template["Service"],
   "materializeCitationTemplate"
 >;
 
@@ -38,25 +39,24 @@ export const layerCitationTemplateActions: Layer.Layer<
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const template = yield* Template;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-    yield* addCitationTemplateActions(host, {
-      template: {
-        materializeCitationTemplate: () =>
-          runPromise(template.materializeCitationTemplate),
-      },
-    });
+    const bridge = yield* scopedBridge;
+    yield* addCitationTemplateActions(host, { template, bridge });
   }),
 );
 
 export function addCitationTemplateActions(
   host: Pick<PluginHostShape, "addCommand" | "app">,
-  deps: { template: CitationTemplateActions },
+  deps: {
+    template: CitationTemplateActions;
+    bridge: Pick<EffectBridge, "runAndForget">;
+  },
 ): Effect.Effect<void, never, Scope.Scope> {
   return Effect.asVoid(
     host.addCommand({
       id: "customize-citation-text",
       name: m.command_customize_citation_text_name(),
-      callback: () => void openCitationTemplate(host.app, deps.template),
+      callback: () =>
+        deps.bridge.runAndForget(openCitationTemplate(host.app, deps.template)),
     }),
   );
 }
@@ -67,15 +67,24 @@ export function addCitationTemplateActions(
  * "profile uses Eta" notice belongs to a Profile document, so it is not
  * offered here.
  */
-export async function openCitationTemplate(
-  app: App,
-  template: CitationTemplateActions,
-): Promise<void> {
-  try {
-    const file = await template.materializeCitationTemplate();
-    await openTemplateWorkbench(app, file, { explainUnsupported: false });
-  } catch (error) {
-    logger.error("Failed to open the citation text", { error });
-    new BaseNotice(m.notice_citation_text_open_failed());
-  }
-}
+export const openCitationTemplate = Effect.fn("openCitationTemplate")(
+  function* (app: App, template: CitationTemplateActions) {
+    const file = yield* template.materializeCitationTemplate;
+    yield* portCall("open-template-workbench", () =>
+      openTemplateWorkbench(app, file, { explainUnsupported: false }),
+    );
+  },
+  (effect) =>
+    effect.pipe(
+      recover(
+        (cause) =>
+          Effect.logError("Failed to open the citation text").pipe(
+            Effect.annotateLogs({ cause }),
+            withLogCategory("template", "actions"),
+          ),
+        Effect.sync(() => {
+          new BaseNotice(m.notice_citation_text_open_failed());
+        }),
+      ),
+    ),
+);

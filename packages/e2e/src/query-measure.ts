@@ -57,8 +57,10 @@ import {
 } from "@zotlit/scripts/fixture/spec";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { prepareRunWindow, showBehind } from "./background-throttling.ts";
-import { cli, cliCommand, obEval, waitFor } from "./obsidian-cli.ts";
+import { prepareRunWindow } from "./background-throttling.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { cli, cliCommand, waitFor } from "./obsidian-cli.ts";
+import type { BackgroundWindow } from "./page-notes-types.ts";
 import {
   DATASET_QUERY_SPECS,
   evaluateTier,
@@ -435,9 +437,17 @@ let vaultId = "";
 
 /** The window is on screen and Chromium counts the page as visible. */
 async function isVisible(): Promise<boolean> {
-  const state = await obEval(
+  const state = await obRun(
     vaultId,
-    "(()=>{const win=require('@electron/remote').getCurrentWindow();return String(document.visibilityState==='visible'&&win.isVisible()&&!win.isMinimized());})()",
+    async (_context) => {
+      const win = require("@electron/remote").getCurrentWindow();
+      return String(
+        document.visibilityState === "visible" &&
+          win.isVisible() &&
+          !win.isMinimized(),
+      );
+    },
+    undefined,
   ).catch(() => "false");
   return state === "true";
 }
@@ -446,10 +456,14 @@ async function isVisible(): Promise<boolean> {
 async function requireVisible(): Promise<void> {
   if (await isVisible()) return;
   // Shows a hidden or minimized window and leaves the OS focus where it is.
-  await obEval(
-    vaultId,
-    `(()=>{const win=require('@electron/remote').getCurrentWindow();${showBehind("win")}return true;})()`,
-  );
+  await obRun(vaultId, ({ page }) => {
+    const win = (
+      require("@electron/remote") as {
+        getCurrentWindow(): BackgroundWindow;
+      }
+    ).getCurrentWindow();
+    page.showBehind(win);
+  });
   log(
     `The window of the vault at ${vaultPath} is hidden. Bring it on screen and keep it uncovered: the script waits for 2 minutes.`,
   );
@@ -552,18 +566,25 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
   // Initial fuzzy-search indexing is a separate renderer job. Wait for its
   // normal completion so this record measures ZotLit Query rather than startup.
   log("Waiting for the search index of this Fixture to finish...");
-  await obEval(
+  await obRun(
     vaultId,
-    '(async()=>{const hits=await app.plugins.plugins.zotlit.services.itemLookup.search("",{limit:1});if(hits.length!==1)throw new Error("Search index did not produce its first result");return true;})()',
-    600_000,
+    async ({ zotlit }) => {
+      const hits = await zotlit.services.itemLookup.search("", { limit: 1 });
+      if (hits.length !== 1)
+        throw new Error("Search index did not produce its first result");
+    },
+    undefined,
+    { timeoutMs: 600000 },
   );
-  // Citation snapshot pages share the query worker. Await the successful read;
-  // Citation Index.ready only marks listener registration.
+  // Citation Lookup pages share the query worker. Await its resolved answers.
   log("Waiting for the Citation Index snapshot of this Fixture to finish...");
-  await obEval(
+  await obRun(
     vaultId,
-    "(async()=>{await app.plugins.plugins.zotlit.services.citationIndex.readSnapshot();return true;})()",
-    600_000,
+    async ({ zotlit }) => {
+      await zotlit.services.citationLookup.whenResolved();
+    },
+    undefined,
+    { timeoutMs: 600000 },
   );
 }
 
@@ -721,11 +742,14 @@ async function measureTier(raw: RawTier): Promise<void> {
     const running = measure(exportSpec.args);
     await delay(cancelDelayMs);
     const sentAtEpochMs = Temporal.Now.instant().epochMilliseconds;
-    const arrivedAtEpochMs = Number(
-      await obEval(
-        vaultId,
-        "(async()=>{const at=Date.now();await app.plugins.disablePlugin('zotlit');return String(at);})()",
-      ),
+    const arrivedAtEpochMs = await obRun(
+      vaultId,
+      async ({ app }) => {
+        const at = Temporal.Now.instant().epochMilliseconds;
+        await app.plugins.disablePlugin("zotlit");
+        return at;
+      },
+      undefined,
     );
     const report = await running.catch((error: unknown) => {
       log(`the run did not report after the unload: ${String(error)}`);
@@ -744,9 +768,12 @@ async function measureTier(raw: RawTier): Promise<void> {
     }
     // `disablePlugin` leaves the plugin in the enabled list, so the CLI
     // `plugin:enable` refuses; load it again in the same way.
-    await obEval(
+    await obRun(
       vaultId,
-      "(async()=>{await app.plugins.enablePlugin('zotlit');return true;})()",
+      async ({ app }) => {
+        await app.plugins.enablePlugin("zotlit");
+      },
+      undefined,
     );
     await requirePluginReady(
       "ZotLit did not load again after the unload cancel",
@@ -976,9 +1003,17 @@ function findings(rawTiers: RawTier[], tiers: TierMeasurement[]): string[] {
 }
 
 async function environment(): Promise<string[]> {
-  const versions = await obEval(
+  const versions = await obRun(
     vaultId,
-    "JSON.stringify({obsidian:require('electron').ipcRenderer.sendSync('version'),electron:process.versions.electron,chrome:process.versions.chrome,zotlit:app.plugins.manifests.zotlit.version})",
+    async ({ app }) => {
+      return JSON.stringify({
+        obsidian: require("electron").ipcRenderer.sendSync("version"),
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        zotlit: app.plugins.manifests.zotlit!.version,
+      });
+    },
+    undefined,
   ).catch(() => "{}");
   const { obsidian, electron, chrome, zotlit } = JSON.parse(versions) as Record<
     string,

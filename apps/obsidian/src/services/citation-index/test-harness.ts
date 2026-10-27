@@ -6,15 +6,22 @@ import type {
   App,
   CachedMetadata,
   EventRef,
+  Events,
   FileStats,
   LinkCache,
+  TAbstractFile,
+  TFolder,
 } from "obsidian";
 
 import type { Library, LibraryCitekey } from "@zotlit/db";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
+import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
+import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { resolveLibraryScope } from "@/services/library-scope/scope";
@@ -76,9 +83,10 @@ export function groupLibrary({
 
 type Callback = (...args: unknown[]) => void;
 
-export class MockMetadataCache {
+export class MockMetadataCache implements MetadataCacheSource {
   readonly fileCache = new Map<string, CachedMetadata>();
   readonly files = new Map<string, TFile>();
+  readonly resolvedLinks: Record<string, Record<string, number>> = {};
   vault?: MockVault;
 
   readonly #listeners: Record<string, Set<Callback>> = {
@@ -160,7 +168,11 @@ export class MockMetadataCache {
 
 type VaultEventName = "create" | "modify" | "rename" | "delete";
 
-export class MockVault {
+/**
+ * The vault the harness drives: notes and their bodies, held by the metadata
+ * cache's file map. The Citation Index only reads it; a write rejects.
+ */
+export class MockVault implements VaultSource {
   readonly bodies = new Map<string, string>();
   readonly reads: string[] = [];
   readonly #listeners: Record<VaultEventName, Set<Callback>> = {
@@ -179,6 +191,45 @@ export class MockVault {
   getMarkdownFiles(): TFile[] {
     return [...this.metadataCache.files.values()].filter(
       (file) => file.extension === "md",
+    );
+  }
+
+  getFolderByPath(_path: string): TFolder | null {
+    return null;
+  }
+
+  getAbstractFileByPath(path: string): TAbstractFile | null {
+    return this.getFileByPath(path);
+  }
+
+  /** The body, without counting a read as {@link cachedRead} does. */
+  read(file: TFile): Promise<string> {
+    return Promise.resolve(this.bodies.get(file.path) ?? "");
+  }
+
+  /** The Citation Index reads no path through the adapter. */
+  readonly adapter = {
+    read: (path: string): Promise<string> =>
+      Promise.reject(new Error(`The harness reads no path: ${path}`)),
+  };
+
+  process(file: TFile): Promise<string> {
+    return Promise.reject(
+      new Error(`The harness writes no note: ${file.path}`),
+    );
+  }
+
+  create(path: string): Promise<TFile> {
+    return Promise.reject(new Error(`The harness writes no note: ${path}`));
+  }
+
+  createFolder(path: string): Promise<TFolder> {
+    return Promise.reject(new Error(`The harness writes no folder: ${path}`));
+  }
+
+  trash(file: TAbstractFile): Promise<void> {
+    return Promise.reject(
+      new Error(`The harness writes no note: ${file.path}`),
     );
   }
 
@@ -590,7 +641,12 @@ export class MemoryStore implements CitekeyStore {
 }
 
 export interface CitationIndexHarness extends AsyncDisposable {
-  app: App;
+  /** The vault, metadata cache and workspace the index reads. */
+  host: HostSources & {
+    metadataCache: MockMetadataCache;
+    vault: MockVault;
+    workspace: MemoryWorkspace;
+  };
   draft: TFile;
   index: PlainCitationIndex & {
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
@@ -681,7 +737,7 @@ export async function createCitationIndexHarness(
     metadataCache.fileCache.set(path, { links: [] } as CachedMetadata);
   }
 
-  const app = { metadataCache, vault, workspace } as unknown as App;
+  const host = { metadataCache, vault, workspace };
   // The Note Index runs as it does once enabled at runtime: layout is ready
   // and the cache clean, so its Full Scan finishes before the harness returns.
   // The Citation Index keeps the deferred layout the test releases.
@@ -690,7 +746,7 @@ export async function createCitationIndexHarness(
       metadataCache,
       vault,
       workspace: new MemoryWorkspace({ layoutReady: true }),
-    } as unknown as App,
+    },
     stack,
   );
   const settings =
@@ -707,7 +763,7 @@ export async function createCitationIndexHarness(
   );
   const fixture = citationIndexFixture(
     {
-      app,
+      host,
       db,
       libraryScope,
       noteIndex,
@@ -733,7 +789,7 @@ export async function createCitationIndexHarness(
   const resources = stack.move();
 
   return {
-    app,
+    host,
     draft: metadataCache.files.get("draft.md")!,
     get index() {
       return index;
@@ -756,6 +812,46 @@ export async function createCitationIndexHarness(
     passCooldown: clock.passCooldown,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
+}
+
+type Listener = (...data: never[]) => unknown;
+
+/** `source.on`, typed for an Obsidian object whose `on` overloads name each event. */
+function listenOn(source: Pick<Events, "on">) {
+  return (name: string, callback: Listener): EventRef =>
+    source.on(name, (...data: unknown[]) =>
+      Reflect.apply(callback, undefined, data),
+    );
+}
+
+/**
+ * An App over the harness's vault and metadata cache, with `workspace`, for a
+ * view under test that still reads the App.
+ */
+export function harnessApp(
+  { metadataCache, vault }: CitationIndexHarness["host"],
+  workspace: App["workspace"],
+): App {
+  return stubService<App>("App", {
+    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
+      getFileCache: (file) => metadataCache.getFileCache(file),
+      getCache: (path) => metadataCache.getCache(path),
+      getFirstLinkpathDest: (linkpath, sourcePath) =>
+        metadataCache.getFirstLinkpathDest(linkpath, sourcePath),
+      on: listenOn(metadataCache),
+      offref: (ref) => metadataCache.offref(ref),
+    }),
+    vault: stubService<App["vault"]>("Vault", {
+      getFileByPath: (path) => vault.getFileByPath(path),
+      getAbstractFileByPath: (path) => vault.getAbstractFileByPath(path),
+      getMarkdownFiles: () => vault.getMarkdownFiles(),
+      cachedRead: (file) => vault.cachedRead(file),
+      read: (file) => vault.read(file),
+      on: listenOn(vault),
+      offref: (ref) => vault.offref(ref),
+    }),
+    workspace,
+  });
 }
 
 export function link(

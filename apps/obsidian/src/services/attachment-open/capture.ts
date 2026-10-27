@@ -50,7 +50,7 @@ export function paneFromTarget(target: string | undefined): PaneType | boolean {
 export interface FileLinkCaptureDeps {
   /** Decides which links ZotLit takes, and opens them. */
   opener: Pick<TargetOpener, "follow">;
-  attachments: Pick<AttachmentResolver, "warm">;
+  attachments: Pick<AttachmentResolver["Service"], "warm">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync">;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
@@ -75,7 +75,7 @@ export interface FileLinkCaptureDeps {
  */
 export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
   const host = (deps.window ?? window) as { open: Window["open"] };
-  deps.attachments.warm();
+  deps.bridge.runSync(deps.attachments.warm);
 
   return disposable(
     around(host, {

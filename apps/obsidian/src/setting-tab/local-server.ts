@@ -1,19 +1,24 @@
 // The Advanced page's Local server group: the one loopback listener, the
 // toggle of each service it hosts, and the port it actually bound. The live
 // update switch sits on the Zotero page beside the Companion it answers.
-import { Stream } from "effect";
+import { Effect, Stream } from "effect";
 import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
+import { LocalBridge } from "@/services/local-bridge/service";
+import { LocalServer } from "@/services/local-server/service";
+import { PluginSettings } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { paintEach } from "./effect-tab";
 import { defaultPlaceholder } from "./placeholder";
 
+const currentSettings = PluginSettings.use((settings) => settings.current);
+
 function serverEnabled(ctx: SettingTabContext): () => boolean {
-  return () => ctx.bridge.runSync(ctx.settings.current)["server.enabled"];
+  return () => ctx.tab.sync(currentSettings)["server.enabled"];
 }
 
 /**
@@ -24,7 +29,7 @@ export function localServerItems(
   ctx: SettingTabContext,
 ): SettingGroupItem<SettingsKey>[] {
   const enabled = serverEnabled(ctx);
-  const port = ctx.bridge.runSync(ctx.localServer.effectivePort);
+  const port = ctx.tab.sync(LocalServer.use((server) => server.effectivePort));
   return [
     {
       id: "settings_local_server_enabled",
@@ -119,28 +124,36 @@ export function liveUpdatesItems(
         // The server also turns on from the annotation view and Customize, and
         // a bind can fail while it stays on, so the state line follows both
         // the setting and the listener while the row is on screen.
-        const stack = new DisposableStack();
-        const apply = (): void => {
-          const port = ctx.bridge.runSync(ctx.localServer.effectivePort);
-          const listening = port !== null;
-          setting.setDesc(
-            listening
-              ? m.settings_zotero_local_server_on({ port })
-              : ctx.bridge.runSync(ctx.settings.current)["server.enabled"]
-                ? m.settings_zotero_local_server_not_listening()
-                : m.settings_zotero_local_server_off(),
-          );
-          setting.descEl.toggleClass("mod-warning", !listening);
-        };
-        stack.defer(subscribe(ctx.runtime, ctx.settings.changes, apply));
-        stack.defer(
-          subscribe(
-            ctx.runtime,
-            Stream.drop(ctx.localServer.effectivePortChanges, 1),
-            apply,
-          ),
+        return ctx.tab.mount(
+          Effect.gen(function* () {
+            const server = yield* LocalServer;
+            const settings = yield* PluginSettings;
+            const state = Effect.all({
+              port: server.effectivePort,
+              enabled: Effect.map(
+                settings.current,
+                (current) => current["server.enabled"],
+              ),
+            });
+            yield* paintEach(
+              Stream.merge(
+                settings.changes,
+                Stream.drop(server.effectivePortChanges, 1),
+              ).pipe(Stream.mapEffect(() => state)),
+              ({ port, enabled }) => {
+                const listening = port !== null;
+                setting.setDesc(
+                  listening
+                    ? m.settings_zotero_local_server_on({ port })
+                    : enabled
+                      ? m.settings_zotero_local_server_not_listening()
+                      : m.settings_zotero_local_server_off(),
+                );
+                setting.descEl.toggleClass("mod-warning", !listening);
+              },
+            );
+          }),
         );
-        return () => stack.dispose();
       },
     },
   ];
@@ -155,7 +168,9 @@ function workbenchConnectionRows(
   ctx: SettingTabContext,
   enabled: () => boolean,
 ): SettingGroupItem<SettingsKey>[] {
-  const connection = ctx.localBridge.connection;
+  const connection = ctx.tab.sync(
+    LocalBridge.use((bridge) => bridge.connection),
+  );
   if (connection === null) return [];
   return [
     {
@@ -170,7 +185,13 @@ function workbenchConnectionRows(
         setting.addButton((button) =>
           button
             .setButtonText(m.settings_local_server_workbench_disconnect())
-            .onClick(() => ctx.localBridge.disconnect()),
+            .onClick(
+              () =>
+                void ctx.tab.run(
+                  LocalBridge.use((bridge) => bridge.disconnect),
+                  m.settings_failed_workbench_disconnect(),
+                ),
+            ),
         );
       },
     },

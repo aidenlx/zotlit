@@ -1,4 +1,5 @@
-export { type NoteFeatureDeps } from "./context";
+export { NoteFeature } from "./service";
+export { bindNoteFeature } from "./handle";
 export {
   applyComposedFrontmatter,
   composeLiteratureNote,
@@ -11,25 +12,18 @@ export {
   type ComposeRefusal,
   type PreparedComposition,
 } from "./compose";
-export {
-  openCompanionNote,
-  companionNoteNotice,
-  type CompanionNoteDeps,
-} from "./companion-view";
+export { openCompanionNote, companionNoteNotice } from "./companion-view";
 export { noteOperationDiagnosticContent } from "./update-single";
 export {
-  confirmProfileSwitch,
+  awaitProfileSwitchConsent,
   switchNoteProfileInteractively,
-  type InteractiveProfileSwitchDeps,
   type ProfileSwitchConsent,
 } from "./switch-view";
 export {
-  createNoteInteractively,
-  type InteractiveCreationDeps,
   type InteractiveCreationOptions,
+  type InteractiveCreationPorts,
 } from "./creation-view";
 export {
-  createNoteFeature,
   type CompanionNoteTarget,
   type CreateNoteDiagnostic,
   type CreateNoteResult,
@@ -37,13 +31,14 @@ export {
   type CreationProfileSelection,
   type CreationProfileSource,
   type CreationSelectionProblem,
-  type PreparedCreationProfile,
   type ProfileNotePreview,
-  type ProfileNotePreviewOptions,
   type ProfilePreview,
-  type PreparedProfileSwitch,
-  type NoteFeature,
+  type NoteFeatureHandle,
   type UpdateResult,
   type UpdateScope,
 } from "./operations";
+export {
+  type ProfileNotePreviewOptions,
+  type PreparedProfileSwitch,
+} from "./types";
 export { type AnnotationCitation } from "./annotation-citation";

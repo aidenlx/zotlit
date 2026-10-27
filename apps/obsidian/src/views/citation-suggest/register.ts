@@ -7,8 +7,8 @@ import "./style.css";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { ItemLookupHandle } from "@/services/item-lookup/handle";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import type { PluginSettings } from "@/services/settings/service";
 import type { PlainUseLedger } from "@/services/use-ledger/plain";
 
@@ -19,8 +19,8 @@ import { InsertCitationModal } from "./insert-modal";
 
 export interface CitationSuggestDeps {
   app: App;
-  lookup: ItemLookup;
-  noteFeature: Pick<NoteFeature, "renderCitation">;
+  lookup: ItemLookupHandle;
+  noteFeature: Pick<NoteFeatureHandle, "renderCitation">;
   settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   /** Says whether the Citation Key of a chosen Item names several Items, and

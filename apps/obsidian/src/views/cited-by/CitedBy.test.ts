@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
 import { Effect } from "effect";
-import { Keymap, MarkdownView, TFile } from "obsidian";
+import { Keymap, MarkdownView } from "obsidian";
 import type {
-  App,
-  CachedMetadata,
   LinkCache,
   ListItemCache,
   Loc,
+  PaneType,
   Pos,
   SectionCache,
+  TFile,
   WorkspaceLeaf,
 } from "obsidian";
 import { act } from "preact/test-utils";
@@ -20,11 +20,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { vaultError } from "@/lib/vault-errors";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { yieldToMain } from "@/lib/yield-to-main";
 import {
   annotationRows,
   annotationUri,
 } from "@/services/citation-index/__fixtures__/annotations";
+import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
@@ -38,11 +41,21 @@ import {
 } from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 
-import { CitedByActionsContext, createCitedByActions } from "./actions";
+import { makeCitedByHost } from "./__fixtures__";
+import type { CitedByHost } from "./__fixtures__";
+import { previewAtom } from "./atoms";
 import { CitedBy } from "./CitedBy";
-import { COMPACT_CAP, createCitedByStore, CitedByStoreProvider } from "./store";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+import {
+  CitedByModelContext,
+  collapseAll,
+  expandAll,
+  DEFAULT_CITED_BY_LAYOUT,
+  EMPTY_CITED_BY_NOTE_STATE,
+  holdCitedByModel,
+  makeCitedByModel,
+} from "./model";
+import type { CitedByLayout } from "./model";
+import { COMPACT_CAP } from "./store";
 
 const body = "A reason cites @doe2024 here.\n";
 const start = body.indexOf("@doe2024");
@@ -193,6 +206,7 @@ const sortedStats: Record<string, { ctime: number; mtime: number }> = {
 };
 
 let root: Root | undefined;
+let host: CitedByHost | undefined;
 
 /** Bounds state polling while preserving the preview stream's host-yield boundary. */
 async function waitForState(assertion: () => void): Promise<void> {
@@ -212,6 +226,8 @@ afterEach(async () => {
   vi.useRealTimers();
   await act(() => root?.unmount());
   root = undefined;
+  await host?.close();
+  host = undefined;
   document.body.replaceChildren();
 });
 
@@ -224,13 +240,14 @@ function snapshot(overrides: Partial<CitedBySnapshot> = {}): CitedBySnapshot {
   };
 }
 
-function makeFile(
-  path: string = group.path,
+/** Hold a citing note at `path` in `vault`, with the facts the sort modes read. */
+function addFile(
+  vault: CitedByHost["vault"],
+  path: string,
   stats: { ctime: number; mtime: number } = { ctime: 0, mtime: 1 },
 ): TFile {
-  const file = new TFile();
+  const file = vault.add(path);
   const name = path.slice(path.lastIndexOf("/") + 1);
-  file.path = path;
   file.name = name;
   file.basename = name.slice(0, -".md".length);
   file.extension = "md";
@@ -257,90 +274,142 @@ async function render(options: {
   missingPaths?: readonly string[];
 }) {
   const shown = options.snapshot ?? snapshot();
+  const read = vi.fn(
+    (file: TFile) => options.read?.(file) ?? Promise.resolve(body),
+  );
+  /** The path of each parse the sidebar cancelled, in order. */
+  const cancelled: string[] = [];
+  const current = (host = await makeCitedByHost({
+    getParsedNote: (file) =>
+      Effect.tryPromise({
+        // Taking the signal makes the read interruptible, as the real parse is.
+        try: async (signal) => {
+          signal.addEventListener("abort", () => cancelled.push(file.path));
+          if (options.citationIndex) {
+            return options.citationIndex.getParsedNote(file);
+          }
+          const source = await read(file);
+          file.stat.size = source.length;
+          return new ParsedNote(source, scanNote(source));
+        },
+        catch: vaultError("cachedRead", file.path),
+      }),
+  }));
+  const { registry, vault, metadataCache, workspace } = current;
   const files = new Map(
     shown.groups
       .filter(({ path }) => !options.missingPaths?.includes(path))
       .map(
-        ({ path }) => [path, makeFile(path, options.stats?.[path])] as const,
+        ({ path }) =>
+          [path, addFile(vault, path, options.stats?.[path])] as const,
       ),
   );
-  const file =
-    files.get(group.path) ?? files.values().next().value ?? makeFile();
-  const read = vi.fn(
-    (file: TFile) => options.read?.(file) ?? Promise.resolve(body),
-  );
-  const openLinkText = vi.fn(() => Promise.resolve());
-  const setEphemeralState = vi.fn();
-  const markdownView = new MarkdownView(
-    stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
-  );
-  Object.assign(markdownView, { file, setEphemeralState });
-  const sourceLeaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-    view: markdownView,
-  });
-  const oldSetEphemeralState = vi.fn();
-  const oldMarkdownView = new MarkdownView(
-    stubService<WorkspaceLeaf>("WorkspaceLeaf", {}),
-  );
-  Object.assign(oldMarkdownView, {
-    file,
-    setEphemeralState: oldSetEphemeralState,
-  });
-  const oldSourceLeaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-    view: oldMarkdownView,
-  });
-  const setActiveLeaf = vi.fn();
-  const vault = stubService<App["vault"]>("Vault", {
-    getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-    cachedRead: read,
-  });
-  const metadataCache = stubService<App["metadataCache"]>("MetadataCache", {
-    getFileCache: (): CachedMetadata => ({
+  for (const path of files.keys()) {
+    metadataCache.setCache(path, {
       links: options.links ?? [],
       sections: options.sections,
       listItems: options.listItems,
-    }),
-  });
-  const workspace = stubService<App["workspace"]>("Workspace", {
-    activeLeaf: sourceLeaf,
-    openLinkText,
-    getLeavesOfType: () =>
-      options.duplicateSourceLeaf ? [oldSourceLeaf, sourceLeaf] : [sourceLeaf],
-    setActiveLeaf,
-  });
-  const app = stubService<App>("App", { vault, metadataCache, workspace });
-  const store = createCitedByStore();
-  store.setState({
-    indexedKey:
-      options.indexedKey === undefined ? "ABCD2345" : options.indexedKey,
-    snapshot: shown,
-    collapsed: options.collapsed ? [group.path] : [],
-    activePath: options.activePath ?? null,
+    });
+  }
+  const file =
+    files.get(group.path) ??
+    files.values().next().value ??
+    addFile(vault, group.path);
+
+  // The source note open in a Markdown leaf, and active; with
+  // `duplicateSourceLeaf`, an older leaf shows it too.
+  const setEphemeralState = vi.fn();
+  const oldSetEphemeralState = vi.fn();
+  const markdownView = (onState: () => void) =>
+    Object.assign(
+      new MarkdownView(stubService<WorkspaceLeaf>("WorkspaceLeaf", {})),
+      { file, setEphemeralState: onState },
+    );
+  if (options.duplicateSourceLeaf) {
+    workspace.openLeaf("markdown", markdownView(oldSetEphemeralState));
+  }
+  const sourceView = markdownView(setEphemeralState);
+  workspace.openLeaf("markdown", sourceView);
+  workspace.activeView = sourceView;
+  /** Each note the sidebar opened: its link text, source path and pane. */
+  const openLinkText =
+    vi.fn<
+      (
+        linktext: string,
+        sourcePath: string,
+        newLeaf: PaneType | boolean | undefined,
+      ) => void
+    >();
+  vi.spyOn(workspace, "openLinkText").mockImplementation(
+    async (linktext, sourcePath, newLeaf) =>
+      openLinkText(linktext, sourcePath, newLeaf),
+  );
+  const setActiveLeaf = vi.spyOn(workspace, "setActiveLeaf");
+
+  // The component reads these once it renders; hold them for the setup too.
+  registry.mount(activeCitedByAtom);
+  /** Follows a note of `key` at `path` and waits for its Cited By to show. */
+  const retarget = async (
+    key: string | null,
+    path: string,
+    shownNext?: CitedBySnapshot,
+  ) => {
+    current.follow(path, key);
+    if (key === null || !shownNext) return;
+    await waitForState(() => expect(current.started).toContain(key));
+    await show(shownNext, key);
+  };
+  /** Sends `next` to the followed key's observer and waits for it to show. */
+  const show = async (next: CitedBySnapshot, key = followedKey()) => {
+    expect(current.publish(key, next)).toBe(true);
+    await waitForState(() =>
+      expect(registry.get(activeCitedByAtom)).toBe(next),
+    );
+  };
+  const followedKey = () => current.started.at(-1)!;
+  const indexedKey =
+    options.indexedKey === undefined ? "ABCD2345" : options.indexedKey;
+  await retarget(
+    indexedKey,
+    options.activePath ?? "Literature/Paper.md",
+    shown,
+  );
+  const model = makeCitedByModel({
     search: options.search ?? "",
     searchVisible: options.searchVisible ?? false,
   });
-  const actions = createCitedByActions({
-    app,
-    store,
-    citationIndex: options.citationIndex ?? {
-      getParsedNote: async (file) => {
-        const source = await read(file);
-        file.stat.size = source.length;
-        return new ParsedNote(source, scanNote(source));
-      },
-    },
+  holdCitedByModel(registry, model);
+  registry.set(model.note, {
+    ...EMPTY_CITED_BY_NOTE_STATE,
+    collapsed: options.collapsed ? [group.path] : [],
   });
+  /** Changes the controls as the toolbar does. */
+  const setLayout = (patch: Partial<CitedByLayout>) =>
+    registry.update(model.layout, (layout) => ({ ...layout, ...patch }));
+  /** The collapse toggle of the toolbar, over every group shown. */
+  const controls = {
+    collapseAll: () =>
+      registry.update(
+        model.note,
+        collapseAll(
+          (registry.get(activeCitedByAtom)?.groups ?? []).map(
+            ({ path }) => path,
+          ),
+        ),
+      ),
+    expandAll: () => registry.update(model.note, expandAll()),
+  };
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(async () => {
     root!.render(
       createElement(
-        CitedByStoreProvider,
-        { value: store },
+        ViewRegistryProvider,
+        { registry },
         createElement(
-          CitedByActionsContext,
-          { value: actions },
+          CitedByModelContext,
+          { value: model },
           createElement(CitedBy),
         ),
       ),
@@ -354,7 +423,7 @@ async function render(options: {
   await act(() =>
     waitForState(() => {
       for (const path of previewPaths) {
-        expect(store.getState().previews[path]?.status).toBeOneOf([
+        expect(registry.get(previewAtom(path)).status).toBeOneOf([
           "ready",
           "unavailable",
         ]);
@@ -362,16 +431,21 @@ async function render(options: {
     }),
   );
   return {
-    actions,
-    app,
+    cancelled,
+    controls,
     container,
     file,
+    metadataCache,
     openLinkText,
     oldSetEphemeralState,
+    model,
     read,
+    registry,
+    retarget,
     setActiveLeaf,
     setEphemeralState,
-    store,
+    setLayout,
+    show,
   };
 }
 
@@ -497,53 +571,45 @@ describe("CitedBy", () => {
   });
 
   it("moves from reset progress to its final truthful state", async () => {
-    const { container, store } = await render({});
+    const { container, show } = await render({});
 
-    await act(() =>
-      store.setState({
-        snapshot: snapshot({ coverage: "indexing" }),
-      }),
-    );
+    await act(() => show(snapshot({ coverage: "indexing" })));
     expect(container.textContent).toContain("Indexing citations…");
     expect(container.textContent).toContain("draft");
 
-    await act(() =>
-      store.setState({
-        snapshot: snapshot({ groups: [], coverage: "complete" }),
-      }),
-    );
+    await act(() => show(snapshot({ groups: [], coverage: "complete" })));
     expect(container.querySelector("[data-cited-by-empty]")?.textContent).toBe(
       "No notes cite this literature note.",
     );
   });
 
   it("reads context for a collapsed group, then expands it without a load wait", async () => {
-    const { actions, container, read } = await render({ collapsed: true });
+    const { controls, container, read } = await render({ collapsed: true });
     await act(async () => Promise.resolve());
     expect(read).toHaveBeenCalledOnce();
     expect(container.querySelector("[data-occurrence]")).toBeNull();
 
-    await act(() => actions.expandAll());
+    await act(() => controls.expandAll());
     expect(read).toHaveBeenCalledOnce();
     expect(container.textContent).toContain("A reason cites @doe2024 here.");
     expect(container.querySelector("mark")?.textContent).toBe("@doe2024");
 
     await act(async () => {
-      actions.collapseAll();
-      actions.expandAll();
+      controls.collapseAll();
+      controls.expandAll();
       await Promise.resolve();
     });
     expect(read).toHaveBeenCalledOnce();
   });
 
-  it("streams every group one read at a time, yielding between batches", async () => {
+  it("reads every group one note at a time, in group order", async () => {
     const groups: CitedByGroup[] = Array.from({ length: 7 }, (_, index) => ({
       ...group,
       path: `Notes/source-${index}.md`,
     }));
     const paths = groups.map(({ path }) => path);
     const pendingReads: ((source: string) => void)[] = [];
-    const { container, read, store } = await render({
+    const { container, read } = await render({
       previewsPending: true,
       snapshot: snapshot({ groups }),
       read: () =>
@@ -552,73 +618,103 @@ describe("CitedBy", () => {
         }),
     });
     const readPaths = () => read.mock.calls.map(([file]) => file.path);
-    const finishReads = async (count: number) => {
-      await act(async () => {
-        for (let done = 0; done < count; done += 1) {
-          await waitForState(() => expect(pendingReads).toHaveLength(1));
-          const path = readPaths().at(-1)!;
-          pendingReads.shift()!(body);
-          await waitForState(() =>
-            expect(store.getState().previews[path]?.status).toBe("ready"),
-          );
-        }
-      });
-    };
 
+    for (let done = 0; done < paths.length; done += 1) {
+      await act(() => waitForState(() => expect(pendingReads).toHaveLength(1)));
+      expect(readPaths()).toEqual(paths.slice(0, done + 1));
+      await act(async () => pendingReads.shift()!(body));
+    }
     await act(() =>
-      waitForState(() => expect(readPaths()).toEqual(paths.slice(0, 1))),
+      waitForState(() =>
+        expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(7),
+      ),
     );
-
-    await finishReads(5);
-    expect(readPaths()).toEqual(paths.slice(0, 5));
-
-    await act(async () => yieldToMain());
-    expect(readPaths()).toEqual(paths.slice(0, 6));
-
-    await finishReads(2);
-    await act(async () => yieldToMain());
-    expect(readPaths()).toEqual(paths);
-    expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(7);
   });
 
-  it("stops streaming once the view is gone", async () => {
+  it("cancels its reads once the view is gone, and frees the queue for the next", async () => {
+    const groups: CitedByGroup[] = Array.from({ length: 5 }, (_, index) => ({
+      ...group,
+      path: `Notes/source-${index}.md`,
+    }));
     const pendingReads: ((source: string) => void)[] = [];
-    const { read, store } = await render({
+    const { cancelled, container, model, read, registry } = await render({
       previewsPending: true,
-      snapshot: snapshot({
-        groups: [group, { ...group, path: "Notes/other.md" }],
-      }),
+      snapshot: snapshot({ groups }),
       read: () =>
         new Promise<string>((resolve) => {
           pendingReads.push(resolve);
         }),
     });
+    const readPaths = () => read.mock.calls.map(([file]) => file.path);
     await act(() => waitForState(() => expect(read).toHaveBeenCalledOnce()));
 
     await act(() => root?.unmount());
-    root = undefined;
-    await act(async () => {
-      pendingReads.shift()!(body);
-      await waitForState(() =>
-        expect(store.getState().previews[group.path]?.status).toBe("ready"),
-      );
-    });
+    // Cancelling one read frees its turn before the next read stops, so that
+    // one may still start; it is cancelled too, and none after it starts.
+    await act(() =>
+      waitForState(() => {
+        expect(cancelled).toContain(groups[0]!.path);
+        expect(cancelled).toEqual(readPaths());
+      }),
+    );
+    expect(read.mock.calls.length).toBeLessThan(groups.length);
 
-    expect(read).toHaveBeenCalledOnce();
+    const reads = read.mock.calls.length;
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        createElement(
+          ViewRegistryProvider,
+          { registry },
+          createElement(
+            CitedByModelContext,
+            { value: model },
+            createElement(CitedBy),
+          ),
+        ),
+      );
+      await Promise.resolve();
+    });
+    await act(() =>
+      waitForState(() => expect(read.mock.calls.length).toBeGreaterThan(reads)),
+    );
   });
 
-  it("invalidates cached context when the note modification time changes", async () => {
-    const { actions, file, read } = await render({});
+  it("reads a note again when Obsidian indexes it again", async () => {
+    const { file, metadataCache, read } = await render({});
     await act(async () => Promise.resolve());
     expect(read).toHaveBeenCalledOnce();
 
-    file.stat = { ...file.stat, mtime: 2 };
     await act(async () => {
-      actions.invalidatePreview(file.path);
+      metadataCache.change(file, { links: [] });
       await Promise.resolve();
     });
 
-    expect(read).toHaveBeenCalledTimes(2);
+    await act(() => waitForState(() => expect(read).toHaveBeenCalledTimes(2)));
+  });
+
+  it("marks a preview unavailable when a read again fails", async () => {
+    let reads = 0;
+    const { container, file, metadataCache } = await render({
+      read: () => {
+        reads += 1;
+        return reads === 1
+          ? Promise.resolve(body)
+          : Promise.reject(new Error("unreadable"));
+      },
+    });
+    expect(container.textContent).not.toContain("Preview unavailable");
+
+    await act(async () => {
+      metadataCache.change(file, { links: [] });
+      await Promise.resolve();
+    });
+
+    await act(() =>
+      waitForState(() =>
+        expect(container.textContent).toContain("Preview unavailable"),
+      ),
+    );
   });
 
   it("keeps the source group when its preview is unavailable", async () => {
@@ -931,7 +1027,7 @@ describe("CitedBy", () => {
   });
 
   it("activates the toolbar toggle from the keyboard", async () => {
-    const { container, store } = await render({});
+    const { container, registry, model } = await render({});
     await act(async () => Promise.resolve());
     const toggle = container.querySelector(
       "[data-cited-by-collapse-results]",
@@ -942,7 +1038,7 @@ describe("CitedBy", () => {
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
       );
     });
-    expect(store.getState().collapsed).toEqual([group.path]);
+    expect(registry.get(model.note).collapsed).toEqual([group.path]);
   });
 
   it("shows note and occurrence counts, folders for duplicate names, and the self label", async () => {
@@ -962,16 +1058,16 @@ describe("CitedBy", () => {
   });
 
   it("filters by note path and by loaded context, collapsed groups included", async () => {
-    const { container, store } = await render({ collapsed: true });
+    const { container, setLayout } = await render({ collapsed: true });
     await act(async () => Promise.resolve());
 
-    await act(() => store.setState({ search: "notes/draft" }));
+    await act(() => setLayout({ search: "notes/draft" }));
     expect(container.querySelector("[data-source]")).not.toBeNull();
 
-    await act(() => store.setState({ search: "reason cites" }));
+    await act(() => setLayout({ search: "reason cites" }));
     expect(container.querySelector("[data-source]")).not.toBeNull();
 
-    await act(() => store.setState({ search: "not present" }));
+    await act(() => setLayout({ search: "not present" }));
     expect(container.querySelector("[data-source]")).toBeNull();
   });
 
@@ -1173,7 +1269,7 @@ describe("CitedBy", () => {
   });
 
   it("marks the context mode active and toggles it from the keyboard", async () => {
-    const { container, store } = await render({});
+    const { container, registry, model } = await render({});
     await act(async () => Promise.resolve());
     const toggle = container.querySelector(
       "[data-cited-by-show-more-context]",
@@ -1190,7 +1286,7 @@ describe("CitedBy", () => {
       );
     });
 
-    expect(store.getState().moreContext).toBe(true);
+    expect(registry.get(model.layout).moreContext).toBe(true);
     expect(
       container.querySelector("[data-cited-by-show-more-context]")?.classList,
     ).toContain("is-active");
@@ -1224,9 +1320,11 @@ describe("CitedBy", () => {
   });
 
   it("clears the query and restores every result when the search closes", async () => {
-    const { container, store } = await render({ searchVisible: true });
+    const { container, model, registry, setLayout } = await render({
+      searchVisible: true,
+    });
     await act(async () => Promise.resolve());
-    await act(() => store.setState({ search: "not present" }));
+    await act(() => setLayout({ search: "not present" }));
     expect(container.querySelector("[data-cited-by-result]")).toBeNull();
 
     await act(() =>
@@ -1235,25 +1333,25 @@ describe("CitedBy", () => {
       ).click(),
     );
 
-    expect(store.getState().search).toBe("");
+    expect(registry.get(model.layout).search).toBe("");
     expect(container.querySelector("[data-cited-by-search]")).toBeNull();
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
   });
 
   it("keeps every occurrence of a group whose note name matches", async () => {
-    const { container, store } = await render({
+    const { container, setLayout } = await render({
       snapshot: snapshot({ groups: [multiGroup] }),
       read: () => Promise.resolve(multiBody),
     });
     await act(async () => Promise.resolve());
 
-    await act(() => store.setState({ search: "draft" }));
+    await act(() => setLayout({ search: "draft" }));
 
     expect(container.querySelectorAll("[data-occurrence]")).toHaveLength(2);
   });
 
   it("keeps only matching occurrences, collapsed groups included", async () => {
-    const { actions, container, read, store } = await render({
+    const { controls, container, read, setLayout } = await render({
       collapsed: true,
       snapshot: snapshot({ groups: [multiGroup] }),
       read: () => Promise.resolve(multiBody),
@@ -1261,11 +1359,11 @@ describe("CitedBy", () => {
     await act(async () => Promise.resolve());
     expect(read).toHaveBeenCalledOnce();
 
-    await act(() => store.setState({ search: "beta cites" }));
+    await act(() => setLayout({ search: "beta cites" }));
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
     expect(read).toHaveBeenCalledOnce();
 
-    await act(() => actions.expandAll());
+    await act(() => controls.expandAll());
     const cards = container.querySelectorAll("[data-occurrence]");
     expect(cards).toHaveLength(1);
     expect(cards[0]?.textContent).toBe("Beta cites @doe2024 there.");
@@ -1273,7 +1371,9 @@ describe("CitedBy", () => {
   });
 
   it("applies a typed query only after the input debounce elapses", async () => {
-    const { container, store } = await render({ searchVisible: true });
+    const { container, model, registry } = await render({
+      searchVisible: true,
+    });
     await act(async () => Promise.resolve());
     vi.useFakeTimers();
     const input = container.querySelector(
@@ -1285,61 +1385,54 @@ describe("CitedBy", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(input.value).toBe("not present");
-    expect(store.getState().search).toBe("");
+    expect(registry.get(model.layout).search).toBe("");
     expect(container.querySelector("[data-cited-by-result]")).not.toBeNull();
 
     await act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(store.getState().search).toBe("not present");
+    expect(registry.get(model.layout).search).toBe("not present");
     expect(container.querySelector("[data-cited-by-result]")).toBeNull();
   });
 
   it("expands and collapses all visible source groups", async () => {
-    const { actions, container } = await render({});
+    const { controls, container } = await render({});
     await act(async () => Promise.resolve());
     expect(container.querySelector("[data-occurrence]")).not.toBeNull();
 
-    await act(() => actions.collapseAll());
+    await act(() => controls.collapseAll());
     expect(container.querySelector("[data-occurrence]")).toBeNull();
     expect(container.querySelector("[aria-expanded=false]")).not.toBeNull();
 
-    await act(() => actions.expandAll());
+    await act(() => controls.expandAll());
     await act(async () => Promise.resolve());
     expect(container.querySelector("[data-occurrence]")).not.toBeNull();
   });
 
   it("preserves search and expands groups when the target changes", async () => {
-    const { actions, container, read, store } = await render({
-      search: "draft",
-    });
+    const { controls, container, model, read, registry, retarget } =
+      await render({ search: "draft" });
     await act(async () => Promise.resolve());
-    await act(() => actions.collapseAll());
+    await act(() => controls.collapseAll());
     const nextGroup: CitedByGroup = {
       ...group,
       occurrences: [{ ...group.occurrences[0]!, raw: "other" }],
     };
 
-    await act(() =>
-      store.setState({
-        indexedKey: "NEXT0001",
-        activePath: "Other.md",
-        snapshot: snapshot({ groups: [nextGroup] }),
-        collapsed: [],
-      }),
-    );
+    await act(async () => {
+      await retarget("NEXT2345", "Other.md", snapshot({ groups: [nextGroup] }));
+      registry.set(model.note, EMPTY_CITED_BY_NOTE_STATE);
+    });
     await act(async () => Promise.resolve());
 
-    expect(store.getState().search).toBe("draft");
+    expect(registry.get(model.layout).search).toBe("draft");
     expect(container.querySelector("[aria-expanded=true]")).not.toBeNull();
     expect(
       container.querySelector('[data-occurrence$=":other"]'),
     ).not.toBeNull();
     expect(read).toHaveBeenCalledOnce();
-    expect(createCitedByStore().getState()).toMatchObject({
-      search: "",
-      collapsed: [],
-    });
+    expect(DEFAULT_CITED_BY_LAYOUT.search).toBe("");
+    expect(EMPTY_CITED_BY_NOTE_STATE.collapsed).toEqual([]);
   });
 
   it("offers the six Backlinks sort modes and marks the one in force", async () => {
@@ -1483,22 +1576,25 @@ describe("CitedBy", () => {
   });
 
   it("does not match context cached for the previous target", async () => {
-    const { container, store } = await render({});
+    const { container, registry, model, retarget, setLayout } = await render(
+      {},
+    );
     await act(async () => Promise.resolve());
-    await act(() => store.setState({ search: "reason cites" }));
+    await act(() => setLayout({ search: "reason cites" }));
     expect(container.querySelector("[data-source]")).not.toBeNull();
     const nextGroup: CitedByGroup = {
       ...group,
       occurrences: [{ ...group.occurrences[0]!, raw: "other" }],
     };
 
-    await act(() =>
-      store.setState({
-        indexedKey: "ZZZ99999g7",
-        snapshot: snapshot({ groups: [nextGroup] }),
-        collapsed: [],
-      }),
-    );
+    await act(async () => {
+      await retarget(
+        "ZZZ99999g7",
+        "Literature/Paper.md",
+        snapshot({ groups: [nextGroup] }),
+      );
+      registry.set(model.note, EMPTY_CITED_BY_NOTE_STATE);
+    });
 
     expect(container.querySelector("[data-source]")).toBeNull();
   });

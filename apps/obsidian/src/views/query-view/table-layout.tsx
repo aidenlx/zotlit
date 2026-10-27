@@ -12,7 +12,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { useStore } from "zustand";
 
 import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
@@ -24,17 +23,18 @@ import type {
   OpenTarget,
   TargetOpener,
 } from "@/services/attachment-open/open-target";
+import type { QueryHandle } from "@/services/item-query/handle";
 import type {
   QueryViewRequest,
   QueryViewRow,
   QueryViewValue,
 } from "@/services/item-query/query-view";
-import type { QueryService } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
+import { useQueryViewState } from "./model";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
 import { CellContent, recordCells, searchFinds } from "./record-rows";
@@ -81,7 +81,7 @@ export interface TableChildSource {
    */
   load(
     parent: TableRecord,
-    query: Pick<QueryService, "run">,
+    query: Pick<QueryHandle, "run">,
     signal: AbortSignal,
   ): Promise<readonly TableRecord[]>;
   /**
@@ -285,7 +285,7 @@ export const LOADING_TEXT =
   "zt:truncate zt:animate-in zt:fade-in zt:fill-mode-backwards zt:delay-150";
 
 /** The expanded rows and the rows under them, read when a row expands. */
-export function useChildren(query: Pick<QueryService, "run">) {
+export function useChildren(query: Pick<QueryHandle, "run">) {
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
@@ -695,17 +695,20 @@ function ChildRow({
 
 /** The view's rows as a table of Items. */
 export function TableLayout({ view }: { view: QueryView }) {
-  const rows = useStore(view.state, (s) => (s.results ?? NO_RESULTS).records);
+  const rows = useQueryViewState(
+    view,
+    (s) => (s.results ?? NO_RESULTS).records,
+  );
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
   const { query, literatureNotes, readers } = view.tableDeps;
   const { children: expanded, toggle } = useChildren(query);
   const properties = useViewProperties(view);
-  const dataset = useStore(view.state, (s) => s.view?.from ?? "annotations");
+  const dataset = useQueryViewState(view, (s) => s.view?.from ?? "annotations");
   const columns = useMemo(() => properties?.visible ?? [], [properties]);
   const scroller = useRef<HTMLDivElement>(null);
-  const sizes = useStore(view.state, (s) => s.view?.columnSize);
+  const sizes = useQueryViewState(view, (s) => s.view?.columnSize);
   // The search reads the vault properties as the cells do, again on a
   // change of the notes, as the List and Cards search them.
   const vaultVersion = useVaultVersion(literatureNotes);

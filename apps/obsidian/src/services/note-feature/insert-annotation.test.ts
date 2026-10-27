@@ -1,17 +1,18 @@
-import { Effect } from "effect";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { it } from "@effect/vitest";
+import { Effect, FileSystem, Fiber, Layer, SubscriptionRef } from "effect";
 import {
   mkdir,
   mkdtemp,
-  open,
   readFile,
   readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { FileSystemAdapter, TFile, TFolder } from "obsidian";
-import type { App, FileManager, Vault } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { FileSystemAdapter } from "obsidian";
+import type { TFile } from "obsidian";
+import { expect, vi } from "vitest";
 
 import type { Annotation } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -20,18 +21,29 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import type { FileManagerSource } from "@/lib/obsidian-file-manager";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
-import { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
+import { layerExcerptPreparation } from "@/services/excerpt-image/prepare";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
   ExcerptOutcome,
   ExcerptRequest,
 } from "@/services/excerpt-image/service";
+import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { Template, templateFailure } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -39,11 +51,6 @@ import {
 
 import type { AnnotationInsertOptions } from "./insert-annotation";
 import { prepareAnnotationInsert } from "./insert-annotation";
-
-vi.mock("node:fs/promises", async (original) => {
-  const fs = await original<typeof import("node:fs/promises")>();
-  return { ...fs, open: vi.fn(fs.open) };
-});
 
 const card: AnnotationRecord = {
   key: "FDRFQ7C2",
@@ -64,7 +71,47 @@ const card: AnnotationRecord = {
 const DURABLE_LINK =
   "zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=3";
 
-async function fixture(mode: string) {
+const zoteroPrefAt = (dataDir: string) =>
+  stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+    dataDir,
+    baseAttachmentPath: null,
+  });
+
+/**
+ * The Node file system, except that the next temporary write, once armed,
+ * waits for the test after it writes its bytes.
+ */
+function pausingFileSystem() {
+  let pause: Effect.Effect<void> | undefined;
+  const layer = Layer.effect(
+    FileSystem.FileSystem,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      return FileSystem.FileSystem.of({
+        ...fs,
+        open: (path, options) =>
+          Effect.map(fs.open(path, options), (file) => {
+            const paused = pause;
+            if (!paused || !path.endsWith(".tmp")) return file;
+            pause = undefined;
+            return {
+              ...file,
+              writeAll: (bytes: Uint8Array) =>
+                Effect.andThen(file.writeAll(bytes), paused),
+            };
+          }),
+      });
+    }),
+  ).pipe(Layer.provide(NodeFileSystem.layer));
+  return {
+    layer,
+    arm: (paused: Effect.Effect<void>) => {
+      pause = paused;
+    },
+  };
+}
+
+async function openFixture(mode: string) {
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
     ".scratch/insert-tests",
@@ -87,32 +134,23 @@ async function fixture(mode: string) {
     "attachment.import": mode !== "disabled",
     "attachment.folder-path": "Images",
   };
-  const registered = new Map<string, TFile>();
-  const app = stubService<App>("App", {
-    vault: stubService<Vault>("Vault", {
-      adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
-        getFullPath: (path: string) => join(root, path),
-        reconcileInternalFile: async (path: string) => {
-          if (
-            await readFile(join(root, path)).then(
-              () => true,
-              () => false,
-            )
-          )
-            registered.set(path, Object.assign(new TFile(), { path }));
-          else registered.delete(path);
-        },
-      }),
-      getAbstractFileByPath: () => null,
-      getFileByPath: (path: string) => registered.get(path) ?? null,
-      createFolder: async (path: string) => {
-        await mkdir(join(root, path), { recursive: true });
-        return Object.assign(new TFolder(), { path });
-      },
-    }),
-    fileManager: stubService<FileManager>("FileManager", {
-      generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,
-    }),
+  const vault = new MemoryVault();
+  const adapter = Object.assign(Object.create(FileSystemAdapter.prototype), {
+    getFullPath: (path: string) => join(root, path),
+    reconcileInternalFile: async (path: string) => {
+      if (
+        await readFile(join(root, path)).then(
+          () => true,
+          () => false,
+        )
+      )
+        vault.add(path);
+      else vault.remove(path);
+    },
+  }) as FileSystemAdapter;
+  Object.assign(vault, { adapter });
+  const fileManager = stubService<FileManagerSource>("FileManagerSource", {
+    generateMarkdownLink: (file: TFile) => `[[${file.path}]]`,
   });
   const resolver = {
     resolve: vi.fn(
@@ -135,55 +173,81 @@ async function fixture(mode: string) {
       language: "liquid",
     }),
   );
-  const ctx: Parameters<typeof prepareAnnotationInsert>[0] = {
-    zoteroReads,
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    settings: {
-      current: Effect.succeed(settings),
-      update: () => Effect.succeed(settings),
-    },
-    bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
-    profile: profileReader(settings),
-    template: {
-      renderManagedContent: () => "",
-      loaded: true,
-      renderProfileAnnotation: render,
-      render: () => "",
-      renderCitation: () => "",
-      renderFilename: () => "",
-      frontmatterFields: [],
-      getLiteratureNoteTemplate: () => undefined,
-    },
-    noteIndex: {
-      whenIndexed: async () => {},
-      getNotesByItemKey: () => [],
-      getImportedNoteByNoteKey: () => [],
-    },
-    singleExcerpt: (options) =>
-      prepareSingleExcerpt({ ...options, app, resolver }),
-  };
+  const reader = profileReader(settings);
+  let profileFailure: ProfileOperationError | null = null;
+  const zoteroPref = Effect.runSync(
+    SubscriptionRef.make(zoteroPrefAt("/zotero")),
+  );
+  const pref = Layer.mock(ZoteroPref, {
+    current: SubscriptionRef.get(zoteroPref),
+    changes: SubscriptionRef.changes(zoteroPref),
+  });
+  const fileSystem = pausingFileSystem();
+  const excerpts = layerExcerptPreparation.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerHost({ vault, fileManager }),
+        fileSystem.layer,
+        pref,
+        Layer.succeed(
+          ExcerptImageService,
+          stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+            resolve: (request) =>
+              Effect.tryPromise(() => resolver.resolve(request)),
+          }),
+        ),
+      ),
+    ),
+  );
+  const layer = Layer.mergeAll(
+    excerpts,
+    Layer.mock(ZoteroReads, {
+      reads: zoteroReads.reads,
+      snapshot: zoteroReads.snapshot,
+    }),
+    pref,
+    Layer.mock(PluginSettings, { current: Effect.succeed(settings) }),
+    Layer.mock(Profile, {
+      profileOf: (file) =>
+        profileFailure
+          ? Effect.fail(profileFailure)
+          : Effect.sync(() => reader.profileOf(file)),
+    }),
+    Layer.mock(NoteIndex, { getNotesByItemKey: () => Effect.succeed([]) }),
+    Layer.mock(Template, {
+      renderProfileAnnotation: (data) =>
+        Effect.try({ try: () => render(data), catch: templateFailure }),
+      renderCitation: () => Effect.succeed(""),
+    }),
+  );
   let valid = true;
   const options: AnnotationInsertOptions = {
     annotation: card,
     source: { kind: "zotero-local-api", serverID: "SERVER000001" },
     sourceScope: "/zotero",
     notePath: "Target.md",
-    signal: new AbortController().signal,
     valid: () => valid,
   };
   if (mode === "write-failure")
     await writeFile(join(root, "Images"), "occupied");
   return {
     root,
-    app,
-    ctx,
+    adapter,
     options,
     resolver,
     render,
+    zoteroPref,
+    /** Pause the next temporary write after its bytes, on `paused`. */
+    pauseTemporaryWrite: fileSystem.arm,
+    /** The insert under test, over this fixture's services. */
+    insert: () => prepareAnnotationInsert(options).pipe(Effect.provide(layer)),
+    failProfile: (failure: ProfileOperationError) => {
+      profileFailure = failure;
+    },
     invalidate: () => {
       valid = false;
     },
-    async [Symbol.asyncDispose]() {
+    async close() {
       await zoteroReads[Symbol.asyncDispose]();
       client.$client.close();
       await rm(root, { recursive: true, force: true });
@@ -191,195 +255,255 @@ async function fixture(mode: string) {
   };
 }
 
-it.each([
+/** The test's fixture, closed with its scope. */
+const fixture = (mode: string) =>
+  Effect.acquireRelease(
+    Effect.promise(() => openFixture(mode)),
+    (f) => Effect.promise(() => f.close()),
+  );
+
+const read = <A>(evaluate: () => Promise<A>) =>
+  Effect.promise(() => evaluate());
+
+it.effect.each([
   ["success", 0],
   ["fallback", 1],
 ] as const)(
   "renders the API-ahead card once after preparation and embeds the saved excerpt (%s)",
-  async (mode, zotero) => {
-    await using f = await fixture(mode);
-    const result = await prepareAnnotationInsert(f.ctx, f.options);
-    expect(f.render).toHaveBeenCalledTimes(1);
-    const names = await readdir(join(f.root, "Images"));
-    expect(names).toHaveLength(1);
-    expect(result?.text).toContain(`![[Images/${names[0]}]]`);
-    expect(result?.text).toContain(`Page [3](${DURABLE_LINK})`);
-    expect(result?.text).not.toContain("file://");
-    expect(await readFile(join(f.root, "Images", names[0]!))).toEqual(redPng);
-    expect(result?.summary).toEqual({ zotero, unchecked: 0, unavailable: 0 });
-    expect(
-      f.resolver.resolve.mock.calls.map(([request]) => request.annotation),
-    ).toEqual([card]);
-  },
+  ([mode, zotero]) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode);
+      const result = yield* f.insert();
+      expect(f.render).toHaveBeenCalledTimes(1);
+      const names = yield* read(() => readdir(join(f.root, "Images")));
+      expect(names).toHaveLength(1);
+      expect(result?.text).toContain(`![[Images/${names[0]}]]`);
+      expect(result?.text).toContain(`Page [3](${DURABLE_LINK})`);
+      expect(result?.text).not.toContain("file://");
+      expect(
+        yield* read(() => readFile(join(f.root, "Images", names[0]!))),
+      ).toEqual(redPng);
+      expect(result?.summary).toEqual({ zotero, unchecked: 0, unavailable: 0 });
+      expect(
+        f.resolver.resolve.mock.calls.map(([request]) => request.annotation),
+      ).toEqual([card]);
+    }).pipe(Effect.scoped),
 );
 
-it.each([
+it.effect.each([
   ["disabled", []],
   ["unavailable", [card]],
   ["throw", [card]],
   ["write-failure", [card]],
 ] as const)(
   "renders the API-ahead card once after preparation and leaves the excerpt unavailable (%s)",
-  async (mode, resolved) => {
-    await using f = await fixture(mode);
-    const result = await prepareAnnotationInsert(f.ctx, f.options);
-    expect(f.render).toHaveBeenCalledTimes(1);
-    // Both the page label and the unavailable excerpt's source link name the
-    // Annotation durably; nothing in the note is a path on this computer.
-    expect(result?.text).toContain(`Page [3](${DURABLE_LINK})`);
-    expect(result?.text).toContain(`[Zotero](${DURABLE_LINK})`);
-    expect(result?.text).not.toContain("file://");
-    expect(result?.text).not.toContain("![[");
-    expect(result?.summary.unavailable).toBe(1);
-    expect(
-      f.resolver.resolve.mock.calls.map(([request]) => request.annotation),
-    ).toEqual(resolved);
-  },
+  ([mode, resolved]) =>
+    Effect.gen(function* () {
+      const f = yield* fixture(mode);
+      const result = yield* f.insert();
+      expect(f.render).toHaveBeenCalledTimes(1);
+      // Both the page label and the unavailable excerpt's source link name the
+      // Annotation durably; nothing in the note is a path on this computer.
+      expect(result?.text).toContain(`Page [3](${DURABLE_LINK})`);
+      expect(result?.text).toContain(`[Zotero](${DURABLE_LINK})`);
+      expect(result?.text).not.toContain("file://");
+      expect(result?.text).not.toContain("![[");
+      expect(result?.summary.unavailable).toBe(1);
+      expect(
+        f.resolver.resolve.mock.calls.map(([request]) => request.annotation),
+      ).toEqual(resolved);
+    }).pipe(Effect.scoped),
 );
 
-it("cancels between resolution and materialization", async () => {
-  await using f = await fixture("success");
-  f.resolver.resolve.mockImplementation(async () => {
-    f.invalidate();
-    return availableOutcome({
-      bytes: new Uint8Array([1]),
-      format: PNG_FORMAT,
-      provenance: "rendered",
-      freshness: "checked",
+it.effect("cancels between resolution and materialization", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture("success");
+    f.resolver.resolve.mockImplementation(async () => {
+      f.invalidate();
+      return availableOutcome({
+        bytes: new Uint8Array([1]),
+        format: PNG_FORMAT,
+        provenance: "rendered",
+        freshness: "checked",
+      });
     });
-  });
-  expect(await prepareAnnotationInsert(f.ctx, f.options)).toBeNull();
-  expect(await readdir(f.root)).toEqual([]);
-  expect(f.render).not.toHaveBeenCalled();
-});
+    expect(yield* f.insert()).toBeNull();
+    expect(yield* read(() => readdir(f.root))).toEqual([]);
+    expect(f.render).not.toHaveBeenCalled();
+  }).pipe(Effect.scoped),
+);
 
-it("preserves text-only insertion without resolving or writing an image", async () => {
-  await using f = await fixture("success");
-  f.options.annotation = {
-    ...card,
-    type: "highlight",
-    text: "Captured text from the card",
-  };
-  const result = await prepareAnnotationInsert(f.ctx, f.options);
-  expect(result?.text).toContain("Captured text from the card");
-  expect(f.render).toHaveBeenCalledTimes(1);
-  expect(f.resolver.resolve).not.toHaveBeenCalled();
-  expect(await readdir(f.root)).toEqual([]);
-});
+it.effect(
+  "cancels when the Zotero data directory moves between resolution and materialization",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("success");
+      // The resolver stands in for a legacy Promise port, so it runs the
+      // Effect that moves the data directory on the test's context.
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      f.resolver.resolve.mockImplementation(async () => {
+        await runPromise(
+          SubscriptionRef.set(f.zoteroPref, zoteroPrefAt("/moved")),
+        );
+        return availableOutcome({
+          bytes: new Uint8Array([1]),
+          format: PNG_FORMAT,
+          provenance: "rendered",
+          freshness: "checked",
+        });
+      });
+      expect(yield* f.insert()).toBeNull();
+      expect(yield* read(() => readdir(f.root))).toEqual([]);
+      expect(f.render).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
+);
 
-it("preserves manual and automatic tags in the actual annotation template", async () => {
-  await using f = await fixture("disabled");
-  f.options.annotation = {
-    ...card,
-    tags: ["review", "imported"],
-    templateMetadata: {
-      dateAdded: null,
-      dateModified: null,
-      authorName: null,
-      isExternal: null,
-      tags: [
-        { name: "review", type: "manual" },
-        { name: "imported", type: "auto" },
-      ],
-    },
-  };
-  const facade = new TemplateFacade();
-  f.render.mockImplementation((data) =>
-    facade.render("annotation", data, {
-      source:
-        "{% for tag in zt.tags %}{{ tag.name }}={{ tag.type }};{% endfor %}",
-      language: "liquid",
-    }),
-  );
-  expect((await prepareAnnotationInsert(f.ctx, f.options))?.text).toBe(
-    "review=manual;imported=auto;",
-  );
-});
+it.effect(
+  "preserves text-only insertion without resolving or writing an image",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("success");
+      f.options.annotation = {
+        ...card,
+        type: "highlight",
+        text: "Captured text from the card",
+      };
+      const result = yield* f.insert();
+      expect(result?.text).toContain("Captured text from the card");
+      expect(f.render).toHaveBeenCalledTimes(1);
+      expect(f.resolver.resolve).not.toHaveBeenCalled();
+      expect(yield* read(() => readdir(f.root))).toEqual([]);
+    }).pipe(Effect.scoped),
+);
 
-it.each(["signal", "target"])(
-  "cancels during the temporary write (%s)",
-  async (mode) => {
-    await using f = await fixture("success");
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
-    const controller = new AbortController();
-    f.options.signal = controller.signal;
-    const fs =
-      await vi.importActual<typeof import("node:fs/promises")>(
-        "node:fs/promises",
+it.effect(
+  "preserves manual and automatic tags in the actual annotation template",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("disabled");
+      f.options.annotation = {
+        ...card,
+        tags: ["review", "imported"],
+        templateMetadata: {
+          dateAdded: null,
+          dateModified: null,
+          authorName: null,
+          isExternal: null,
+          tags: [
+            { name: "review", type: "manual" },
+            { name: "imported", type: "auto" },
+          ],
+        },
+      };
+      const facade = new TemplateFacade();
+      f.render.mockImplementation((data) =>
+        facade.render("annotation", data, {
+          source:
+            "{% for tag in zt.tags %}{{ tag.name }}={{ tag.type }};{% endfor %}",
+          language: "liquid",
+        }),
       );
-    vi.mocked(open).mockImplementationOnce(async (...args) => {
-      const file = await fs.open(...args);
-      const write = file.writeFile.bind(file);
-      vi.spyOn(file, "writeFile").mockImplementationOnce(
-        async (...writeArgs) => {
-          await write(...writeArgs);
-          started.resolve();
-          await release.promise;
+      expect((yield* f.insert())?.text).toBe("review=manual;imported=auto;");
+    }).pipe(Effect.scoped),
+);
+
+it.effect.each(["interrupt", "target"])(
+  "cancels during the temporary write (%s)",
+  (mode) =>
+    Effect.gen(function* () {
+      const f = yield* fixture("success");
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      f.pauseTemporaryWrite(
+        Effect.sync(() => started.resolve()).pipe(
+          Effect.andThen(Effect.promise(() => release.promise)),
+        ),
+      );
+      const pending = yield* f
+        .insert()
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* read(() => started.promise).pipe(
+        Effect.andThen(
+          read(() => readdir(join(f.root, "Images"))).pipe(
+            Effect.map((names) => names.every((name) => name.endsWith(".tmp"))),
+          ),
+        ),
+        Effect.tap((temporary) =>
+          Effect.sync(() => expect(temporary).toBe(true)),
+        ),
+        Effect.andThen(
+          mode === "interrupt"
+            ? Fiber.interrupt(pending)
+            : Effect.sync(() => f.invalidate()),
+        ),
+        Effect.ensuring(Effect.sync(() => release.resolve())),
+      );
+      if (mode === "target") expect(yield* Fiber.join(pending)).toBeNull();
+      expect(yield* read(() => readdir(join(f.root, "Images")))).toEqual([]);
+      expect(f.render).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
+);
+
+it.effect.each([false, true])(
+  "cancels during registration and preserves pre-existing assets (%s)",
+  (existing) =>
+    Effect.gen(function* () {
+      const f = yield* fixture("success");
+      if (existing) yield* f.insert();
+      f.render.mockClear();
+      const register = f.adapter.reconcileInternalFile.bind(f.adapter);
+      vi.spyOn(f.adapter, "reconcileInternalFile").mockImplementationOnce(
+        async (path) => {
+          await register(path);
+          f.invalidate();
         },
       );
-      return file;
-    });
-    const pending = prepareAnnotationInsert(f.ctx, f.options);
-    const settled = pending.catch(() => null);
-    try {
-      await started.promise;
-      expect(
-        (await readdir(join(f.root, "Images"))).every((name) =>
-          name.endsWith(".tmp"),
+      expect(yield* f.insert()).toBeNull();
+      expect(yield* read(() => readdir(join(f.root, "Images")))).toHaveLength(
+        existing ? 1 : 0,
+      );
+      expect(f.render).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "reads truthful metadata and reports a missing required fact only on access",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("disabled");
+      f.render.mockImplementation((data) =>
+        String(
+          (data as { dateModified: Annotation["dateModified"] }).dateModified,
         ),
-      ).toBe(true);
-      if (mode === "signal") controller.abort();
-      else f.invalidate();
-    } finally {
-      release.resolve();
-    }
-    expect(await settled).toBeNull();
-    expect(await readdir(join(f.root, "Images"))).toEqual([]);
-    expect(f.render).not.toHaveBeenCalled();
-  },
+      );
+      const missing = yield* Effect.flip(f.insert());
+      expect(missing.message).toBe(
+        "Annotation source did not supply dateModified",
+      );
+      f.options.annotation = {
+        ...card,
+        templateMetadata: {
+          dateAdded: "2025-01-01T00:00:00Z",
+          dateModified: "2026-09-20T01:02:03Z",
+          authorName: "Known author",
+          isExternal: true,
+        },
+      };
+      expect((yield* f.insert())?.text).toBe("2026-09-20T01:02:03Z");
+    }).pipe(Effect.scoped),
 );
 
-it.each([false, true])(
-  "cancels during registration and preserves pre-existing assets (%s)",
-  async (existing) => {
-    await using f = await fixture("success");
-    if (existing) await prepareAnnotationInsert(f.ctx, f.options);
-    f.render.mockClear();
-    const reconcile = f.app.vault.adapter as FileSystemAdapter;
-    const register = reconcile.reconcileInternalFile.bind(reconcile);
-    vi.spyOn(reconcile, "reconcileInternalFile").mockImplementationOnce(
-      async (path) => {
-        await register(path);
-        f.invalidate();
-      },
-    );
-    expect(await prepareAnnotationInsert(f.ctx, f.options)).toBeNull();
-    expect(await readdir(join(f.root, "Images"))).toHaveLength(
-      existing ? 1 : 0,
-    );
-    expect(f.render).not.toHaveBeenCalled();
-  },
+it.effect(
+  "fails with the Profile store's typed error when it cannot read the note's Profile",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("disabled");
+      const failure = new ProfileOperationError({
+        message: "The Profile registry is not readable",
+        cause: new Error("The Profile registry is not readable"),
+      });
+      f.failProfile(failure);
+      expect(yield* Effect.flip(f.insert())).toBe(failure);
+      expect(f.render).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
 );
-
-it("reads truthful metadata and reports a missing required fact only on access", async () => {
-  await using f = await fixture("disabled");
-  f.render.mockImplementation((data) =>
-    String((data as { dateModified: Annotation["dateModified"] }).dateModified),
-  );
-  await expect(prepareAnnotationInsert(f.ctx, f.options)).rejects.toThrow(
-    "Annotation source did not supply dateModified",
-  );
-  f.options.annotation = {
-    ...card,
-    templateMetadata: {
-      dateAdded: "2025-01-01T00:00:00Z",
-      dateModified: "2026-09-20T01:02:03Z",
-      authorName: "Known author",
-      isExternal: true,
-    },
-  };
-  expect((await prepareAnnotationInsert(f.ctx, f.options))?.text).toBe(
-    "2026-09-20T01:02:03Z",
-  );
-});

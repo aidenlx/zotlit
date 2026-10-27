@@ -1,5 +1,7 @@
+import { Effect, Queue, Stream } from "effect";
 import type {
   DropdownComponent,
+  ExtraButtonComponent,
   Setting,
   SettingDefinitionItem,
   SettingDefinitionPage,
@@ -7,20 +9,26 @@ import type {
 
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import { ANNOTATION_SUGGESTER_ENABLED } from "@/lib/constants";
-import { subscribe } from "@/lib/effect-stream";
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
 import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStyles } from "@/services/pandoc/installed-styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { defaults } from "@/services/settings/schema";
-import type { HoverAction } from "@/services/settings/schema";
+import type { HoverAction, Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { resolvedChanged, ZoteroPref } from "@/services/zotero-pref/service";
 import { annotationTriggerError } from "@/views/citation-suggest/annotation-trigger";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { zoteroDataDir } from "./database";
+import { paintEach } from "./effect-tab";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { pandocIntegrationDefinition } from "./pandoc-integration";
 import { citationTextItems } from "./templates";
+
+const currentSettings = PluginSettings.use((settings) => settings.current);
 
 /** Items for the "Citations" sub-page. */
 export function citationsPageItems(
@@ -43,9 +51,7 @@ export function citationsPageItems(
           name: m.settings_citation_at_trigger_name(),
           desc: m.settings_citation_at_trigger_desc(),
           visible: () =>
-            ctx.bridge.runSync(ctx.settings.current)[
-              "citation.editor-suggester"
-            ],
+            ctx.tab.sync(currentSettings)["citation.editor-suggester"],
           control: { type: "toggle", key: "citation.at-trigger" },
         },
         {
@@ -250,8 +256,7 @@ function requireModPage(
     name: m.settings_citation_hover_mod_page_name(),
     desc: m.settings_citation_hover_mod_desc(),
     visible: () =>
-      ctx.bridge.runSync(ctx.settings.current)["citation.hover-action"] ===
-      "popover",
+      ctx.tab.sync(currentSettings)["citation.hover-action"] === "popover",
     items: REQUIRE_MOD_KEYS.map(([key, id, name]) => ({
       id,
       name: name(),
@@ -279,24 +284,17 @@ function renderReferencesStyleRow(
   setting: Setting,
   ctx: SettingTabContext,
 ): () => void {
-  const stack = new DisposableStack();
-
   let dropdown: DropdownComponent | undefined;
   let styles: readonly InstalledCslStyle[] = [];
   let stylesLoaded = false;
-  let disposed = false;
-  stack.defer(() => {
-    disposed = true;
-  });
 
-  const selectedValue = (): string =>
-    ctx.bridge.runSync(ctx.settings.current)["note.default-profile"].bindings[
-      "citation.references-style"
-    ] ?? STYLE_DEFAULT;
+  const selectedValue = (current: Readonly<Settings>): string =>
+    current["note.default-profile"].bindings["citation.references-style"] ??
+    STYLE_DEFAULT;
 
-  const repopulate = (): void => {
+  const repopulate = (settings: Readonly<Settings>): void => {
     if (!dropdown) return;
-    const current = selectedValue();
+    const current = selectedValue(settings);
     setting.setDesc(
       referencesStyleDescription(
         stylesLoaded &&
@@ -311,54 +309,80 @@ function renderReferencesStyleRow(
     dropdown.setValue(current);
   };
 
-  /**
-   * The read outlives the row only until disposal, so a live row always fills.
-   * Only the newest read applies, so overlapping reloads cannot land stale.
-   */
-  let latestRead = 0;
-  const reload = (): void => {
-    const read = ++latestRead;
-    void listInstalledStyles(ctx.zoteroPref.dataDir).then((installed) => {
-      if (disposed || read !== latestRead) return;
-      styles = installed;
-      stylesLoaded = true;
-      repopulate();
-    });
-  };
-
   // Zotero installs styles while this tab stays open, so the list re-reads the
   // data directory on demand instead of only on mount.
-  setting.addExtraButton((button) =>
-    button
+  let refresh: ExtraButtonComponent | undefined;
+  setting.addExtraButton((button) => {
+    refresh = button
       .setIcon("refresh-cw")
-      .setTooltip(m.settings_citation_references_style_refresh())
-      .onClick(reload),
-  );
+      .setTooltip(m.settings_citation_references_style_refresh());
+  });
 
   setting.addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      ctx.bridge.runSync(
-        ctx.settings.updateDefaultLiteratureNoteProfileBindings({
-          "citation.references-style": value === STYLE_DEFAULT ? null : value,
-        }),
+      void ctx.tab.run(
+        PluginSettings.use((settings) =>
+          settings.updateDefaultLiteratureNoteProfileBindings({
+            "citation.references-style": value === STYLE_DEFAULT ? null : value,
+          }),
+        ),
+        m.settings_failed_save(),
       );
     });
-    repopulate();
+    repopulate(ctx.tab.sync(currentSettings));
   });
 
-  reload();
-  stack.defer(
-    subscribe(ctx.runtime, ctx.zoteroPref["resolved-changed"], reload),
-  );
-  stack.defer(
-    subscribe(ctx.runtime, ctx.settings.changes, () => {
-      if (dropdown && dropdown.getValue() !== selectedValue()) repopulate();
+  return ctx.tab.mount(
+    Effect.gen(function* () {
+      const settings = yield* PluginSettings;
+      const pref = yield* ZoteroPref;
+      const reloads = yield* Queue.unbounded<void>();
+      refresh?.onClick(() => Queue.offerUnsafe(reloads, undefined));
+
+      yield* Effect.forkScoped(
+        paintEach(settings.changes, (current) => {
+          if (dropdown && dropdown.getValue() !== selectedValue(current))
+            repopulate(current);
+        }),
+      );
+      // The list reads the data directory on mount, on Refresh, and when the
+      // directory moves; a newer read drops the one still in flight.
+      yield* Stream.merge(
+        Stream.make(undefined),
+        Stream.merge(resolvedChanged(pref), Stream.fromQueue(reloads)),
+      ).pipe(
+        // A failed read keeps the last list, so the row stays live.
+        Stream.switchMap(() =>
+          Stream.fromEffect(
+            installedStyles.pipe(
+              recover(
+                (cause) =>
+                  Effect.logWarning(
+                    "Cannot read the installed CSL styles",
+                    cause,
+                  ),
+                Effect.sync(() => styles),
+              ),
+            ),
+          ),
+        ),
+        Stream.runForEach((installed) =>
+          Effect.map(settings.current, (current) => {
+            styles = installed;
+            stylesLoaded = true;
+            repopulate(current);
+          }),
+        ),
+      );
     }),
   );
-
-  return () => stack.dispose();
 }
+
+/** The CSL styles installed in the current Zotero data directory. */
+const installedStyles = Effect.flatMap(zoteroDataDir, (dataDir) =>
+  listInstalledStyles(dataDir),
+);
 
 export function referencesStyleDescription(missing: boolean): DocumentFragment {
   const desc = createFragment();

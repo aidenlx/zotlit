@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { deadlineAfter } from "@/services/annotation-repository/__fixtures__/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
@@ -41,7 +42,7 @@ const LIVE: EditingCapability = { kind: "writable" };
 const BLOCKED: EditingCapability[] = [
   { kind: "authorization-required" },
   { kind: "authorizing" },
-  { kind: "cooldown", retryAfter: NOW.add({ seconds: 30 }) },
+  { kind: "cooldown", retryAfter: deadlineAfter(NOW, 30) },
   ...(
     [
       "zotero-unavailable",
@@ -146,7 +147,7 @@ it("counts a cooldown down each time the sentence is read again", () => {
   // have to follow that instant.
   const capability: EditingCapability = {
     kind: "cooldown",
-    retryAfter: NOW.add({ seconds: 30 }),
+    retryAfter: deadlineAfter(NOW, 30),
   };
 
   expect(capabilityBlock(capability, NOW)?.reason).toContain("30");

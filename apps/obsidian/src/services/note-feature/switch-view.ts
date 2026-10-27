@@ -1,35 +1,29 @@
+import { Cause, Effect } from "effect";
 // The single consent surface for changing a Literature Note's Profile.
 import { dirname } from "node:path/posix";
 import { ConfirmationModal } from "obsidian";
 import type { App, TFile } from "obsidian";
 
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
+import { awaitModal } from "@/lib/effect-modal";
 import { normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { modalAnswer } from "@/lib/modal-answer";
-import { BaseNotice } from "@/lib/notice";
-import * as toast from "@/lib/toast";
+import { Notifier, withProgress } from "@/lib/notifier";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { listInstalledStyles } from "@/services/pandoc/styles";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import type { ProfilePick } from "@/views/quick-switch/profile-picker";
 
-import type { NoteFeature } from "./operations";
+import { installedStyles, settleProfilePick } from "./creation-view";
+import type { InteractiveCreationPorts } from "./creation-view";
+import { NoteFeature } from "./service";
 import { noteOperationDiagnosticContent } from "./update-single";
 
-const logger = getLogger("note-feature");
-
-export interface InteractiveProfileSwitchDeps {
-  createProfile: CreateProfile;
-  importProfile: ImportProfile;
-  app: App;
-  noteFeature: Pick<NoteFeature, "prepareProfileSwitch" | "switchNoteProfile">;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-}
+const logged = withLogCategory("note-feature");
 
 export interface ProfileSwitchConsent {
   confirmed: boolean;
@@ -37,55 +31,56 @@ export interface ProfileSwitchConsent {
   importedNotes: boolean;
 }
 
-export async function switchNoteProfileInteractively(
-  deps: InteractiveProfileSwitchDeps,
-  file: TFile,
-): Promise<void> {
-  try {
-    let [plan, styles] = await Promise.all([
-      deps.noteFeature.prepareProfileSwitch(file),
-      deps.zoteroPref.dataDir
-        ? listInstalledStyles(deps.zoteroPref.dataDir)
-        : [],
-    ]);
-    const choice = await chooseLiteratureNoteProfile(deps.app, {
-      previews: plan.profiles,
-      preselected: plan.current.selector,
-      current: plan.current.selector,
-      styles,
-      onImport: async () => {
-        const cache = deps.app.metadataCache.getFileCache(file);
-        await deps.importProfile({
-          indexedKey:
-            itemKeyFromFrontmatter(cache) ??
-            noteKeyFromFrontmatter(cache) ??
-            undefined,
-        });
-      },
-      onNew: async () => {
-        const cache = deps.app.metadataCache.getFileCache(file);
-        const created = await deps.createProfile({
-          indexedKey:
-            itemKeyFromFrontmatter(cache) ??
-            noteKeyFromFrontmatter(cache) ??
-            undefined,
-          useForNote: true,
-        });
-        if (!created) return undefined;
-        plan = await deps.noteFeature.prepareProfileSwitch(file);
-        return { id: created.profile.id, label: created.profile.label };
-      },
+/**
+ * Change `file`'s Profile after the user picks one and consents to what the
+ * change does. The switch reports its outcome on a progress notice; a failure
+ * before it is logged and shows the failure notice. An interrupt closes the
+ * open dialog.
+ */
+export const switchNoteProfileInteractively = Effect.fn(
+  "switchNoteProfileInteractively",
+)(function* (ports: InteractiveCreationPorts, file: TFile) {
+  const noteFeature = yield* NoteFeature;
+  const notifier = yield* Notifier;
+  yield* Effect.gen(function* () {
+    const cache = yield* (yield* MetadataCache).fileCache(file);
+    const indexedKey =
+      itemKeyFromFrontmatter(cache) ??
+      noteKeyFromFrontmatter(cache) ??
+      undefined;
+    let [plan, styles] = yield* Effect.all(
+      [noteFeature.prepareProfileSwitch(file), installedStyles],
+      { concurrency: "unbounded" },
+    );
+    const pick = yield* awaitModal<ProfilePick | undefined>((resolve) =>
+      openLiteratureNoteProfile(
+        ports.app,
+        {
+          previews: plan.profiles,
+          preselected: plan.current.selector,
+          current: plan.current.selector,
+          styles,
+        },
+        resolve,
+      ),
+    );
+    const { choice, created } = yield* settleProfilePick(ports, pick, {
+      indexedKey,
+      useForNote: true,
     });
     if (!choice || choice.id === plan.current.selector) {
-      logger.debug("Profile switch dismissed without a change", {
-        path: file.path,
-      });
+      yield* Effect.logDebug("Profile switch dismissed without a change").pipe(
+        Effect.annotateLogs({ path: file.path }),
+        logged,
+      );
       return;
     }
+    // A Profile made in the picker joins the plan's targets.
+    if (created) plan = yield* noteFeature.prepareProfileSwitch(file);
     const target = plan.profiles.find(
       ({ selector }) => selector === choice.id,
     )!;
-    const consent = await confirmProfileSwitch(deps.app, {
+    const consent = yield* awaitProfileSwitchConsent(ports.app, {
       current: plan.current.label ?? m.settings_profile_default_name(),
       requested: choice.label,
       moveFolder:
@@ -98,13 +93,15 @@ export async function switchNoteProfileInteractively(
       imported: plan.imported,
     });
     if (!consent.confirmed) {
-      logger.debug("Cancelled Literature Note Profile switch", {
-        path: file.path,
-      });
+      yield* Effect.logDebug("Cancelled Literature Note Profile switch").pipe(
+        Effect.annotateLogs({ path: file.path }),
+        logged,
+      );
       return;
     }
-    await toast.promise(
-      deps.noteFeature.switchNoteProfile(file, {
+    // The notice tells the user how the switch went.
+    yield* withProgress(
+      noteFeature.switchNoteProfile(file, {
         profile: choice.id,
         move: consent.move,
         importedNotes: consent.importedNotes ? (plan.importedNotes ?? []) : [],
@@ -113,22 +110,31 @@ export async function switchNoteProfileInteractively(
         loading: m.notice_profile_switching(),
         success: (result) =>
           result.diagnostic
-            ? noteOperationDiagnosticContent(deps.app, result.diagnostic)
+            ? noteOperationDiagnosticContent(ports.app, result.diagnostic)
             : m.notice_profile_switched({ label: choice.label }),
-        error: () => m.notice_profile_switch_failed(),
+        error: m.notice_profile_switch_failed(),
       },
-    );
-  } catch (error) {
-    logger.error("Failed to prepare Literature Note Profile switch", {
-      path: file.path,
-      error,
-    });
-    new BaseNotice(m.notice_profile_switch_failed());
-  }
-}
+    ).pipe(recover(() => Effect.void, Effect.void));
+  }).pipe(
+    recover(
+      (cause) =>
+        Effect.logError(
+          "Failed to prepare Literature Note Profile switch",
+        ).pipe(
+          Effect.annotateLogs({ path: file.path, error: Cause.squash(cause) }),
+          logged,
+        ),
+      notifier.show(m.notice_profile_switch_failed()).pipe(Effect.asVoid),
+    ),
+  );
+});
 
-/** All consequences and opt-ins are visible before any note is changed. */
-export function confirmProfileSwitch(
+/**
+ * All consequences and opt-ins are visible before any note is changed.
+ *
+ * @returns The user's consent; an interrupt closes the dialog.
+ */
+export function awaitProfileSwitchConsent(
   app: App,
   options: {
     current: string;
@@ -137,8 +143,8 @@ export function confirmProfileSwitch(
     importedCount: number | null;
     imported?: boolean;
   },
-): Promise<ProfileSwitchConsent> {
-  return modalAnswer<ProfileSwitchConsent>((resolve) => {
+): Effect.Effect<ProfileSwitchConsent> {
+  return awaitModal<ProfileSwitchConsent>((resolve) => {
     const modal = new ConfirmationModal(app);
     modal.contentEl.addClass("zt-root");
     let move = false;

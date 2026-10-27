@@ -10,9 +10,7 @@ import { QUERY_MEASURE_COMMAND, registerQueryMeasureCli } from "./measure";
 function measureHandler(): CliCommandHandler {
   const { host, command } = fakeCliHost();
   registerQueryMeasureCli(host, {
-    measure: async () => {
-      throw new Error("the run started.");
-    },
+    measure: () => Effect.die(new Error("the run started.")),
   });
   return command(QUERY_MEASURE_COMMAND).handler;
 }

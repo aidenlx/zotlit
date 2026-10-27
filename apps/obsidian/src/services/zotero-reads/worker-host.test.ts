@@ -5,6 +5,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  FileSystem,
   Layer,
   Logger,
   Option,
@@ -773,7 +774,9 @@ const openConnection = Effect.fnUntraced(function* (
 ) {
   const scope = yield* Scope.make();
   const connection = yield* Scope.provide(
-    connectWorker("", config, { reapClones }),
+    connectWorker("", config, { reapClones }).pipe(
+      Effect.provideService(FileSystem.FileSystem, FileSystem.makeNoop({})),
+    ),
     scope,
   );
   const spawned = StandInWorker.spawned.length;

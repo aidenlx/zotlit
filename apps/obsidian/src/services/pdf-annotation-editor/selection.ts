@@ -22,6 +22,7 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
+import { passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -1070,12 +1071,7 @@ export class MarkSelection implements Disposable {
     );
     // The write's proposal is drawn from here on.
     end();
-    // A lock says its own reason alone, as it does on every other surface.
-    this.#write(outcome, (failure, now) =>
-      failure.kind === "locked"
-        ? writeFailureMessage(failure, now)
-        : m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
-    );
+    this.#write(outcome, geometryFailureMessage);
   }
 
   /**
@@ -1546,10 +1542,12 @@ export class MarkSelection implements Disposable {
       now: Temporal.Instant,
     ) => string = writeFailureMessage,
   ): void {
-    void outcome.then((state) => {
-      if (state.kind !== "failed") return;
-      new BaseNotice(message(state.failure, this.#deps.now()));
-    });
+    void outcome
+      .then((state) => {
+        if (state.kind !== "failed") return;
+        new BaseNotice(message(state.failure, this.#deps.now()));
+      })
+      .catch(passAborted);
   }
 
   #live(): boolean {
@@ -1689,4 +1687,17 @@ function linkUnder(target: EventTarget | null): boolean {
     ? node
     : (node?.parentElement ?? null);
   return element?.closest("a[href], .linkAnnotation") != null;
+}
+
+/**
+ * The notice for a Geometry Edit that did not land: it names the edit, and a
+ * lock says its own reason alone, as it does on every other surface.
+ */
+export function geometryFailureMessage(
+  failure: WriteFailure,
+  now: Temporal.Instant,
+): string {
+  return failure.kind === "locked"
+    ? writeFailureMessage(failure, now)
+    : m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) });
 }

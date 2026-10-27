@@ -9,7 +9,6 @@
 // resizes in the Table as the others do.
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { useMemo } from "react";
-import { useStore } from "zustand";
 
 import { cellProperties } from "@zotlit/item-query";
 import { FIELD_LABELS } from "@zotlit/zotero-types/field-labels";
@@ -19,6 +18,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 
 import { DATASETS } from "./datasets";
+import { useQueryViewState } from "./model";
 import {
   LITERATURE_NOTE,
   QUERY_FILE_DATASETS,
@@ -280,9 +280,9 @@ export function useViewProperties(
   view: QueryView,
   vaultNames?: readonly string[],
 ): ViewProperties | null {
-  const file = useStore(view.state, (s) => s.file);
-  const shown = useStore(view.state, (s) => s.view);
-  const faults = useStore(view.state, formulaIssuesOf);
+  const file = useQueryViewState(view, (s) => s.file);
+  const shown = useQueryViewState(view, (s) => s.view);
+  const faults = useQueryViewState(view, formulaIssuesOf);
   return useMemo(
     () =>
       shown

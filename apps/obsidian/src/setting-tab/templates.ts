@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { Menu } from "obsidian";
 import type {
   SettingControl,
@@ -7,21 +8,23 @@ import type {
   SettingGroupItem,
 } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
-import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
+import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
 import { openCitationTemplate } from "@/services/template/actions";
-import { createSharedPartial } from "@/views/template-workbench/new-partial";
+import { Template } from "@/services/template/service";
+import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { appendCompileError } from "./compile-error";
 import type { SettingsKey, SettingTabContext } from "./context";
+import { SettingTab } from "./effect-tab";
 import { defaultPlaceholder } from "./placeholder";
-
-const logger = getLogger(["setting-tab", "templates"]);
 
 /** Auto-trim dropdown sentinel for "keep whitespace" (`false` isn't a string). */
 const TRIM_KEEP = "keep";
@@ -44,6 +47,17 @@ export function encodeAutoTrim(value: unknown): string {
 /** Map a dropdown string back to a stored {@link AutoTrim} (`"keep"` → `false`). */
 export function decodeAutoTrim(value: unknown): AutoTrim {
   return value === "nl" || value === "slurp" ? value : false;
+}
+
+/** Rebuild the definitions once a row's action has run. */
+const rebuild = SettingTab.use((tab) => tab.update);
+
+/** Whether JavaScript Templates are on, for a row's `visible` predicate. */
+function javascriptTemplatesEnabled(ctx: SettingTabContext): () => boolean {
+  return () =>
+    ctx.tab.sync(
+      Template.use((template) => template.javascriptTemplatesEnabled),
+    );
 }
 
 /**
@@ -75,14 +89,14 @@ export function templateEngineItems(
       id: "settings_template_trim_leading",
       name: m.settings_template_trim_leading_name(),
       desc: m.settings_template_trim_desc(),
-      visible: () => ctx.template.javascriptTemplatesEnabled,
+      visible: javascriptTemplatesEnabled(ctx),
       control: trimControl("template.auto-trim-leading"),
     },
     {
       id: "settings_template_trim_trailing",
       name: m.settings_template_trim_trailing_name(),
       desc: m.settings_template_trim_desc(),
-      visible: () => ctx.template.javascriptTemplatesEnabled,
+      visible: javascriptTemplatesEnabled(ctx),
       control: trimControl("template.auto-trim-trailing"),
     },
     ...unrecognizedFileItems(ctx),
@@ -97,8 +111,15 @@ export function templateEngineItems(
 function unrecognizedFileItems(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey>[] {
-  if (!ctx.template.loaded) return [];
-  return ctx.template.getUnrecognizedFiles().map((path) => ({
+  const files = ctx.tab.sync(
+    Effect.gen(function* () {
+      const template = yield* Template;
+      return (yield* template.loaded)
+        ? yield* template.getUnrecognizedFiles
+        : [];
+    }),
+  );
+  return files.map((path) => ({
     id: `settings_template_unrecognized:${path}`,
     name: m.settings_template_unrecognized_name(),
     desc: m.settings_template_unrecognized_desc({ path }),
@@ -120,8 +141,18 @@ function unrecognizedFileItems(
 export function partialItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
-  if (!ctx.template.loaded) return [];
-  const partials = ctx.template.getPartialDocuments();
+  const documents = ctx.tab.sync(
+    Effect.gen(function* () {
+      const template = yield* Template;
+      if (!(yield* template.loaded)) return undefined;
+      return {
+        partials: yield* template.getPartialDocuments,
+        reserved: yield* template.getReservedPartialFiles,
+      };
+    }),
+  );
+  if (!documents) return [];
+  const { partials, reserved } = documents;
   return [
     {
       type: "list",
@@ -130,7 +161,8 @@ export function partialItems(
       emptyState: m.settings_partials_empty_desc(),
       addItem: {
         name: m.settings_partial_add(),
-        action: () => void addPartial(ctx),
+        action: () =>
+          void ctx.tab.run(addPartial(ctx), m.settings_failed_partial_create()),
       },
       items: partials.map((partial) => ({
         id: `settings_partial_entry:${partial.path}`,
@@ -144,7 +176,10 @@ export function partialItems(
               .setTooltip(m.settings_partial_open())
               .onClick(() => {
                 button.buttonEl.blur();
-                void openPartial(ctx, partial.path);
+                void ctx.tab.run(
+                  openPartial(ctx, partial.path),
+                  m.settings_failed_partial_open(),
+                );
               }),
           );
           setting.addExtraButton((button) =>
@@ -158,7 +193,13 @@ export function partialItems(
                     .setTitle(m.settings_partial_delete())
                     .setIcon("trash-2")
                     .setWarning(true)
-                    .onClick(() => void deletePartial(ctx, partial)),
+                    .onClick(
+                      () =>
+                        void ctx.tab.run(
+                          deletePartial(ctx, partial),
+                          m.settings_failed_partial_delete(),
+                        ),
+                    ),
                 );
                 showMenuAtButton(menu, button.extraSettingsEl);
               }),
@@ -166,7 +207,7 @@ export function partialItems(
         },
       })),
     },
-    ...ctx.template.getReservedPartialFiles().map(({ name, path }) => ({
+    ...reserved.map(({ name, path }) => ({
       id: `settings_partial_reserved:${path}`,
       name: m.settings_partial_reserved_name(),
       desc: m.settings_partial_reserved_desc({ name, path }),
@@ -180,32 +221,36 @@ export function partialItems(
  * once the document exists, the way `duplicateProfileToWorkbench` does. A
  * dismissed prompt leaves the reader on the page they started from.
  */
-async function addPartial(ctx: SettingTabContext): Promise<void> {
-  const name = await createSharedPartial(ctx.app, ctx.template, {
-    open: false,
+function addPartial(ctx: SettingTabContext) {
+  return Effect.gen(function* () {
+    const template = yield* Template;
+    const taken = yield* template.getPartialNames;
+    const name = yield* awaitModal<string | null>((settle) =>
+      openNewPartialPrompt(ctx.app, taken, settle),
+    );
+    if (name === null) return;
+    yield* template.createPartial(name);
+    const document = yield* template.getPartialDocument(name);
+    if (document) yield* openPartial(ctx, document.path);
+  }).pipe(Effect.ensuring(rebuild));
+}
+
+function openPartial(ctx: SettingTabContext, path: string) {
+  return Effect.gen(function* () {
+    const file = yield* (yield* Vault).getFileByPath(path);
+    if (!file) return;
+    yield* leaveSettingsFor("open-template-workbench", () =>
+      openTemplateWorkbench(ctx.app, file, { explainUnsupported: false }),
+    );
   });
-  ctx.requestUpdate();
-  if (name === null) return;
-  const document = ctx.template.getPartialDocument(name);
-  if (document) await openPartial(ctx, document.path);
 }
 
-async function openPartial(
-  ctx: SettingTabContext,
-  path: string,
-): Promise<void> {
-  const file = ctx.app.vault.getFileByPath(path);
-  if (!file) return;
-  ctx.app.setting.close();
-  await openTemplateWorkbench(ctx.app, file, { explainUnsupported: false });
-}
-
-async function deletePartial(
+function deletePartial(
   ctx: SettingTabContext,
   partial: { name: string; path: string },
-): Promise<void> {
-  try {
-    const confirmed = await confirm(
+) {
+  return Effect.gen(function* () {
+    const confirmed = yield* awaitConfirm(
       {
         title: m.settings_partial_delete_confirm_title(),
         content: m.settings_partial_delete_confirm_body({ path: partial.path }),
@@ -215,13 +260,8 @@ async function deletePartial(
       ctx.app,
     );
     if (!confirmed) return;
-    await ctx.template.deletePartial(partial.name);
-  } catch (error) {
-    logger.error("Failed to delete a partial", { error, name: partial.name });
-    new BaseNotice(m.notice_partial_delete_failed());
-  } finally {
-    ctx.requestUpdate();
-  }
+    yield* (yield* Template).deletePartial(partial.name);
+  }).pipe(Effect.ensuring(rebuild));
 }
 
 /**
@@ -237,7 +277,7 @@ async function deletePartial(
 export function citationTextItems(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey>[] {
-  if (!ctx.template.loaded) return [];
+  if (!ctx.tab.sync(Template.use((template) => template.loaded))) return [];
   return [
     {
       id: "settings_citation_text",
@@ -254,7 +294,9 @@ export function citationTextItems(
  * its file and adds Reset.
  */
 function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
-  const status = ctx.template.getCitationTemplateStatus();
+  const status = ctx.tab.sync(
+    Template.use((template) => template.getCitationTemplateStatus),
+  );
 
   const desc = createFragment();
   desc.append(m.settings_citation_text_desc());
@@ -292,8 +334,9 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // contains document.activeElement (to preserve focus mid-edit), so a
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
-        void openCitationTemplate(ctx.app, ctx.template).finally(() =>
-          ctx.requestUpdate(),
+        void ctx.tab.run(
+          openCitationText(ctx),
+          m.settings_failed_citation_text_open(),
         );
       }),
   );
@@ -306,17 +349,27 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
       .setDestructive()
       .onClick(() => {
         btn.buttonEl.blur();
-        void resetCitationText(ctx, status.path);
+        void ctx.tab.run(
+          resetCitationText(ctx, status.path),
+          m.settings_failed_citation_text_reset(),
+        );
       }),
   );
 }
 
-async function resetCitationText(
-  ctx: SettingTabContext,
-  path: string,
-): Promise<void> {
-  try {
-    const confirmed = await confirm(
+/**
+ * Open the Citation Template in the Template Workbench View, creating its
+ * document from the built-in citation text when the vault holds none.
+ */
+function openCitationText(ctx: SettingTabContext) {
+  return Effect.gen(function* () {
+    yield* openCitationTemplate(ctx.app, yield* Template);
+  }).pipe(Effect.ensuring(rebuild));
+}
+
+function resetCitationText(ctx: SettingTabContext, path: string) {
+  return Effect.gen(function* () {
+    const confirmed = yield* awaitConfirm(
       {
         title: m.settings_citation_text_reset_confirm_title(),
         content: m.settings_citation_text_reset_confirm_body({ path }),
@@ -326,14 +379,9 @@ async function resetCitationText(
       ctx.app,
     );
     if (!confirmed) return;
-    await ctx.template.restoreCitationTemplate();
-    new BaseNotice(m.notice_citation_text_reset());
-  } catch (error) {
-    logger.error("Failed to reset the citation text", { error });
-    new BaseNotice(m.notice_citation_text_reset_failed());
-  } finally {
-    ctx.requestUpdate();
-  }
+    yield* (yield* Template).restoreCitationTemplate;
+    yield* (yield* Notifier).show(m.notice_citation_text_reset());
+  }).pipe(Effect.ensuring(rebuild));
 }
 
 /**
@@ -363,8 +411,7 @@ function renderJsTemplatesButton(
   setting: Setting,
   ctx: SettingTabContext,
 ): void {
-  const service = ctx.template;
-  const enabled = service.javascriptTemplatesEnabled;
+  const enabled = javascriptTemplatesEnabled(ctx)();
   setting.addButton((btn) => {
     if (enabled) {
       btn.setButtonText(m.settings_template_js_turn_off());
@@ -375,8 +422,9 @@ function renderJsTemplatesButton(
       // See the blur comment in renderEjectableRow's eject button: the
       // reconciler skips re-rendering the row containing document.activeElement.
       btn.buttonEl.blur();
-      void applyJsTemplatesFlag(ctx, !enabled).finally(() =>
-        ctx.requestUpdate(),
+      void ctx.tab.run(
+        applyJsTemplatesFlag(ctx, !enabled).pipe(Effect.ensuring(rebuild)),
+        m.settings_failed_js_templates(),
       );
     });
   });
@@ -385,19 +433,13 @@ function renderJsTemplatesButton(
 /**
  * Disabling applies immediately. Enabling requires confirmation first, since
  * Eta templates then run with ZotLit's full JS access; declining leaves the
- * gate off and the trailing `requestUpdate` re-renders the button to match.
+ * gate off and the trailing rebuild re-renders the button to match.
  */
-async function applyJsTemplatesFlag(
-  ctx: SettingTabContext,
-  enabled: boolean,
-): Promise<void> {
-  const service = ctx.template;
-  try {
-    if (!enabled) {
-      await service.setJavascriptTemplatesEnabled(false);
-      return;
-    }
-    const confirmed = await confirm(
+function applyJsTemplatesFlag(ctx: SettingTabContext, enabled: boolean) {
+  return Effect.gen(function* () {
+    const template = yield* Template;
+    if (!enabled) return yield* template.setJavascriptTemplatesEnabled(false);
+    const confirmed = yield* awaitConfirm(
       {
         title: m.settings_template_js_confirm_title(),
         content: m.settings_template_js_confirm_body(),
@@ -406,11 +448,6 @@ async function applyJsTemplatesFlag(
       },
       ctx.app,
     );
-    if (confirmed) await service.setJavascriptTemplatesEnabled(true);
-  } catch (error) {
-    logger.error("Failed to change JavaScript templates flag", {
-      enabled,
-      error,
-    });
-  }
+    if (confirmed) yield* template.setJavascriptTemplatesEnabled(true);
+  });
 }

@@ -1,17 +1,13 @@
 // The Annotation Suggester's search through ZotLit Query over the Zotero
 // database alone, as it runs with Zotero closed.
 import { dirname, join } from "node:path";
-import type { FileSystemAdapter, Vault } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { openScenarioDatabase } from "@zotlit/db/test-scenario";
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { stubService } from "@/lib/__fixtures__/service-stub";
-import { QueryService } from "@/services/item-query/service";
+import { buildQueryService } from "@/services/item-query/__fixtures__";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
-import { inertUseLedger } from "@/services/use-ledger/__fixtures__";
 import {
   inProcessReadsService,
   sharedClientOpener,
@@ -42,34 +38,36 @@ function addOlderPaper(sqlite: ScenarioDatabase["sqlite"]): void {
   `);
 }
 
-function setup(uses: Record<string, number> = {}) {
-  const scenario = openScenarioDatabase({
-    storage: "temp-directory",
-    annotations: true,
-  });
-  addOlderPaper(scenario.sqlite);
-  const reads = inProcessReadsService(sharedClientOpener(scenario.db));
-  const service = new QueryService({
-    runtime: testRuntime(),
-    pluginVersion: "2.2.0-beta.2",
-    useLedger: { ...inertUseLedger, uses },
-    reads,
-    zoteroPref: {
-      sourceId: "captured-source",
-      databasePath: scenario.path,
-      dataDir: dirname(scenario.path),
-      baseAttachmentPath: join(dirname(scenario.path), "linked"),
-    },
-    libraryScope: {
-      effective: MY_LIBRARY_SCOPE,
-    },
-    vault: stubService<Vault>("Vault", {
-      getName: () => "Annotation search",
-      adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
-        getBasePath: () => dirname(scenario.path),
-      }),
+async function setup(uses: Record<string, number> = {}) {
+  await using stack = new AsyncDisposableStack();
+  const scenario = stack.use(
+    openScenarioDatabase({
+      storage: "temp-directory",
+      annotations: true,
     }),
-  });
+  );
+  addOlderPaper(scenario.sqlite);
+  const reads = stack.use(
+    inProcessReadsService(sharedClientOpener(scenario.db)),
+  );
+  const { handle: service } = await buildQueryService(
+    {
+      reads: reads.reads,
+      pluginVersion: "2.2.0-beta.2",
+      uses,
+      source: {
+        sourceId: "captured-source",
+        databasePath: scenario.path,
+        dataDir: dirname(scenario.path),
+        baseAttachmentPath: join(dirname(scenario.path), "linked"),
+      },
+      effective: () => MY_LIBRARY_SCOPE,
+      vaultName: "Annotation search",
+      basePath: dirname(scenario.path),
+    },
+    stack,
+  );
+  const owned = stack.move();
   const search = async (text: string) =>
     (await searchAnnotations(service, text, {
       signal: new AbortController().signal,
@@ -79,11 +77,7 @@ function setup(uses: Record<string, number> = {}) {
     service,
     search,
     sqlite: scenario.sqlite,
-    async [Symbol.asyncDispose]() {
-      await service[Symbol.asyncDispose]();
-      await reads[Symbol.asyncDispose]();
-      scenario.close();
-    },
+    [Symbol.asyncDispose]: () => owned.disposeAsync(),
   };
 }
 
@@ -100,7 +94,7 @@ const COMMENTED = [
 
 describe("searchAnnotations", () => {
   it("matches annotation text in any case", async () => {
-    await using h = setup();
+    await using h = await setup();
     expect((await h.search("EXACT")).toSorted()).toEqual([
       "ANN2HGHT",
       "RULESANN",
@@ -108,7 +102,7 @@ describe("searchAnnotations", () => {
   });
 
   it("matches the comment", async () => {
-    await using h = setup();
+    await using h = await setup();
     expect((await h.search("comment")).toSorted()).toEqual(
       COMMENTED.toSorted(),
     );
@@ -119,7 +113,7 @@ describe("searchAnnotations", () => {
   // what the researcher sees: H<sub>2</sub>O reads "H2O", and the tag names
   // are no words of it.
   it("matches the visible text of rich text, not its markup", async () => {
-    await using h = setup();
+    await using h = await setup();
     h.sqlite.exec(`
       update itemAnnotations set text = 'Water is H<sub>2</sub>O', comment = 'A <b>key</b>stone'
       where itemID = (select itemID from items where key = 'RULESANN');
@@ -132,7 +126,7 @@ describe("searchAnnotations", () => {
   // Only the four tags the reader renders are markup; any other angle bracket
   // is text the researcher reads, as the card and the copied comment keep it.
   it("keeps the literal angle brackets of a comparison", async () => {
-    await using h = setup();
+    await using h = await setup();
     h.sqlite.exec(`
       update itemAnnotations set text = 'Significant at p < 0.05 and q > 0.1', comment = 'Holds for n<30 and m>2'
       where itemID = (select itemID from items where key = 'RULESANN');
@@ -142,20 +136,20 @@ describe("searchAnnotations", () => {
   });
 
   it("needs every word, each in the text or the comment", async () => {
-    await using h = setup();
+    await using h = await setup();
     expect(await h.search("rule use")).toEqual(["RULESANN"]);
     expect(await h.search("exact comment")).toEqual([]);
   });
 
   it("narrows by tag:", async () => {
-    await using h = setup();
+    await using h = await setup();
     expect((await h.search("tag:method")).toSorted()).toEqual(
       COMMENTED.toSorted(),
     );
   });
 
   it("narrows by color: name or hex", async () => {
-    await using h = setup();
+    await using h = await setup();
     expect(await h.search("color:green")).toEqual(["RULESANN"]);
     expect(await h.search("color:#5FB236")).toEqual(["RULESANN"]);
     expect(
@@ -164,19 +158,19 @@ describe("searchAnnotations", () => {
   });
 
   it("narrows by paper: title words", async () => {
-    await using h = setup();
+    await using h = await setup();
     expect(await h.search('exact paper:"simple rules"')).toEqual(["RULESANN"]);
     expect(await h.search("exact paper:matching")).toEqual(["ANN2HGHT"]);
   });
 
   it("puts the annotations of the paper with the latest activity first", async () => {
     {
-      await using h = setup();
+      await using h = await setup();
       expect(await h.search("exact")).toEqual(["ANN2HGHT", "RULESANN"]);
     }
     {
       // A Use of the older paper on this device makes it the most recent.
-      await using h = setup({
+      await using h = await setup({
         RULES222: Temporal.Instant.from("2026-10-01T00:00:00Z")
           .epochMilliseconds,
       });
@@ -185,7 +179,7 @@ describe("searchAnnotations", () => {
   });
 
   it("lists every annotation for an empty query, the latest paper first", async () => {
-    await using h = setup({
+    await using h = await setup({
       RULES222: Temporal.Instant.from("2026-10-01T00:00:00Z").epochMilliseconds,
     });
     const keys = await h.search("");
@@ -204,7 +198,7 @@ describe("searchAnnotations", () => {
   });
 
   it("returns what a hit shows and inserts", async () => {
-    await using h = setup();
+    await using h = await setup();
     const [hit] = (await searchAnnotations(h.service, "use it", {
       signal: new AbortController().signal,
       limit: 50,
@@ -224,7 +218,7 @@ describe("searchAnnotations", () => {
   });
 
   it("answers null once the signal aborts", async () => {
-    await using h = setup();
+    await using h = await setup();
     const controller = new AbortController();
     controller.abort();
     expect(

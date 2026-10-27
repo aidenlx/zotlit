@@ -1,13 +1,20 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { MarkdownView } from "obsidian";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import type { SearchHit } from "@/services/item-lookup/service";
+
 import { prepareRunWindow } from "./background-throttling.ts";
-import { LIST_ANNOTATIONS_JS, useListingProfile } from "./listing-profile.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { useListingProfile } from "./listing-profile.ts";
+import { cliCommand, obRun, obRunUntil } from "./obsidian-cli.ts";
+import type {
+  WalkthroughApp,
+  WalkthroughCitationSuggest,
+  WalkthroughRemote,
+} from "./page-walkthrough-types.ts";
 import {
   clearVault,
   e2eVaultDir,
@@ -20,29 +27,6 @@ const fixture = join(root, ".scratch/e2e-walkthrough-fixture");
 const path = e2eVaultDir(root, "walkthrough-vault");
 const run = vaultScript(root, fixture);
 const reachable = await isObsidianReachable(root);
-
-// These callbacks run inside Obsidian. Poll only arrivals with no completion
-// promise; CodeMirror layout and native suggestion updates have their own signals.
-// `waitFor` predates `until` and compares a read against an expected value; its
-// 25 ms timer is the poll interval, not a sleep.
-const browserWaits = `${PAGE}
-  const measure=(cm)=>new Promise(resolve=>cm.requestMeasure({read:()=>null,write:resolve}));
-  const waitFor=async(read,expected,label)=>{
-    using timers=new DisposableStack();
-    let lastError;
-    for(let attempt=0;attempt<200;attempt++){
-      const actual=read();
-      if(JSON.stringify(actual)===JSON.stringify(expected))return actual;
-      lastError=new Error(label+': expected '+JSON.stringify(expected)+', received '+JSON.stringify(actual));
-      await new Promise(resolve=>timers.adopt(setTimeout(resolve,25),clearTimeout));
-    }
-    throw lastError;
-  };
-  const pressKey=async(debugger_,key,code)=>{
-    await debugger_.sendCommand('Input.dispatchKeyEvent',{type:'keyDown',key,code:key,windowsVirtualKeyCode:code});
-    await debugger_.sendCommand('Input.dispatchKeyEvent',{type:'keyUp',key,code:key,windowsVirtualKeyCode:code});
-  };
-`;
 
 describe.skipIf(!reachable)("Walkthrough regressions", () => {
   let vaultId = "";
@@ -60,47 +44,85 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
   it("starts the demo with Sync disabled", async () => {
     expect(
-      await obEval(vaultId, `String(app.internalPlugins.plugins.sync.enabled)`),
-    ).toBe("false");
-    expect(
-      await obEval(
+      await obRun(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.status-bar [aria-label]')).some(el=>el.getAttribute('aria-label')==='Uninitialized'))`,
+        async ({ app: host }) => {
+          const app = host as WalkthroughApp;
+
+          return app.internalPlugins.plugins.sync.enabled;
+        },
+        undefined,
       ),
-    ).toBe("false");
+    ).toBe(false);
+    expect(
+      await obRun(
+        vaultId,
+        async (_context) => {
+          return Array.from(
+            document.querySelectorAll<HTMLElement>(".status-bar [aria-label]"),
+          ).some((el) => el.getAttribute("aria-label") === "Uninitialized");
+        },
+        undefined,
+      ),
+    ).toBe(false);
   });
 
   it("shows Cited by counts only while following a literature note", async () => {
     const m = await import("@obsidian-messages");
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-        ${browserWaits}
-        await using cleanup=new AsyncDisposableStack();
+    const result = await obRun(
+      vaultId,
+      async ({ app: host, page }, { emptyMessage, openNoteMessage }) => {
+        const app = host as WalkthroughApp;
+
+        const { waitFor } = page;
+        await using cleanup = new AsyncDisposableStack();
         // Ioannidis is cited only in this Fixture chapter; other walkthroughs cite Rougier.
-        const chapter=app.vault.getFileByPath('Thesis/Chapter 3 - Presenting the results.md');
-        const original=await app.vault.read(chapter);
-        cleanup.defer(()=>app.vault.modify(chapter,original));
-        await app.vault.modify(chapter,'A chapter without citations.');
-        const literature=cleanup.adopt(await app.vault.create('Uncited literature.md','---\\nzotero-key: DMIANART\\n---\\nA literature note.'),file=>app.vault.delete(file));
-        const plain=cleanup.adopt(await app.vault.create('Ordinary note.md','An ordinary note.'),file=>app.vault.delete(file));
-        const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-        await leaf.openFile(literature);app.workspace.setActiveLeaf(leaf,{focus:true});
-        app.commands.executeCommandById('zotlit:show-cited-by');
-        const content=()=>app.workspace.getLeavesOfType('zotlit-cited-by')[0]?.view.contentEl;
-        const empty=()=>content()?.querySelector('[data-cited-by-empty]')?.textContent;
-        const stats=()=>content()?.querySelector('[data-cited-by-stats]')?.textContent??null;
-        await waitFor(empty,${JSON.stringify(m.cited_by_empty())},'Uncited literature note');
-        const before=stats();
-        await leaf.openFile(plain);app.workspace.setActiveLeaf(leaf,{focus:true});
-        await waitFor(empty,${JSON.stringify(m.cited_by_open_literature_note())},'Ordinary note');
-        const withoutTarget=stats();
-        await leaf.openFile(literature);app.workspace.setActiveLeaf(leaf,{focus:true});
-        await waitFor(empty,${JSON.stringify(m.cited_by_empty())},'Restored literature target');
-        return JSON.stringify({before,withoutTarget,after:stats()});
-      })()`,
-      ),
+        const chapter = app.vault.getFileByPath(
+          "Thesis/Chapter 3 - Presenting the results.md",
+        )!;
+        const original = await app.vault.read(chapter);
+        cleanup.defer(() => app.vault.modify(chapter, original));
+        await app.vault.modify(chapter, "A chapter without citations.");
+        const literature = cleanup.adopt(
+          await app.vault.create(
+            "Uncited literature.md",
+            "---\nzotero-key: DMIANART\n---\nA literature note.",
+          ),
+          (file) => app.vault.delete(file),
+        );
+        const plain = cleanup.adopt(
+          await app.vault.create("Ordinary note.md", "An ordinary note."),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(literature);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:show-cited-by");
+        const content = () =>
+          page.leavesOfType("zotlit-cited-by")[0]?.view.contentEl;
+        const empty = () =>
+          content()?.querySelector<HTMLElement>("[data-cited-by-empty]")
+            ?.textContent;
+        const stats = () =>
+          content()?.querySelector<HTMLElement>("[data-cited-by-stats]")
+            ?.textContent ?? null;
+        await waitFor(empty, emptyMessage, "Uncited literature note");
+        const before = stats();
+        await leaf.openFile(plain);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        await waitFor(empty, openNoteMessage, "Ordinary note");
+        const withoutTarget = stats();
+        await leaf.openFile(literature);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        await waitFor(empty, emptyMessage, "Restored literature target");
+        return { before, withoutTarget, after: stats() };
+      },
+      {
+        emptyMessage: m.cited_by_empty(),
+        openNoteMessage: m.cited_by_open_literature_note(),
+      },
     );
     const zeroCounts = `${m.cited_by_note_count({ count: 0 })} · ${m.cited_by_occurrence_count({ count: 0 })}`;
     expect(result).toEqual({
@@ -110,32 +132,139 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     });
   });
 
+  it("materializes the CSL style selected by a note through the CLI (#1793)", async () => {
+    const styleId = "http://www.zotero.org/styles/chinese-gb7714-1987-numeric";
+    const note = "CSL CLI regression.md";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        vaultId,
+        async ({ app: host }, { note }) => {
+          const app = host as WalkthroughApp;
+
+          const file = app.vault.getFileByPath(note)!;
+          if (file) await app.vault.delete(file);
+        },
+        { note },
+      );
+    });
+    await obRun(
+      vaultId,
+      async ({ app: host }, { note, fileContent }) => {
+        const app = host as WalkthroughApp;
+
+        await app.vault.create(note, fileContent);
+      },
+      { note, fileContent: `---\nzotlit-csl: ${styleId}\n---\nA draft.\n` },
+    );
+    const selected = JSON.parse(
+      await cliCommand(vaultId, "zotlit:csl", { args: { style: styleId } }),
+    );
+    expect(selected).toMatchObject({
+      command: "zotlit:csl",
+      styleId,
+      path: expect.any(String),
+    });
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { note }) => {
+        const app = host as WalkthroughApp;
+
+        return await app.metadataCache.getFileCache(
+          app.vault.getFileByPath(note)!,
+        )?.frontmatter?.["zotlit-csl"];
+      },
+      { note },
+      {
+        ready: (value) => value === styleId,
+        what: "the zotlit-csl frontmatter of the note to match the selected CSL style",
+      },
+    );
+    const document = JSON.parse(
+      await cliCommand(vaultId, "zotlit:csl", {
+        args: { file: join(path, note) },
+      }),
+    );
+    expect(document).toMatchObject({
+      command: "zotlit:csl",
+      styleId,
+      path: selected.path,
+      source: { kind: "note" },
+    });
+    expect(await readFile(document.path, "utf8")).toContain(
+      `<id>${styleId}</id>`,
+    );
+    const missing = JSON.parse(
+      await cliCommand(vaultId, "zotlit:csl", {
+        args: { style: "https://example.invalid/missing-style" },
+      }),
+    );
+    expect(missing).toMatchObject({ errors: [{ code: "style-missing" }] });
+  });
+
   it("shows export destinations within the named vault when the format changes", async () => {
     const m = await import("@obsidian-messages");
     const vault = basename(path);
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-        ${browserWaits}
-        await using cleanup=new AsyncDisposableStack();
-        const file=cleanup.adopt(await app.vault.create('Export display.md','A draft.'),file=>app.vault.delete(file));
-        const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-        await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});
-        const doc=leaf.view.containerEl.ownerDocument;
-        const dialog=()=>[...doc.querySelectorAll('.modal')].find(el=>el.querySelector('.modal-title')?.textContent==='Export with citations');
+    const result = await obRun(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+
+        const { waitFor } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const file = cleanup.adopt(
+          await app.vault.create("Export display.md", "A draft."),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const doc = (leaf.view as MarkdownView).containerEl.ownerDocument;
+        const dialog = () =>
+          [...doc.querySelectorAll<HTMLElement>(".modal")].find(
+            (el) =>
+              el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+              "Export with citations",
+          );
         // Teardown dismisses whatever dialog is left, not a reader's press.
-        cleanup.defer(()=>dialog()?.parentElement.querySelector('.modal-bg')?.click());
-        app.commands.executeCommandById('zotlit:pandoc-export');
-        await waitFor(()=>!!dialog(),true,'Export dialog');
-        const modal=dialog();
-        const row=[...modal.querySelectorAll('.setting-item')].find(el=>el.querySelector('.setting-item-name')?.textContent==='Save to');
-        const word=row.querySelector('.setting-item-description').textContent;
-        const format=modal.querySelector('select');format.value='html';
-        format.dispatchEvent(new format.ownerDocument.defaultView.Event('change',{bubbles:true}));
-        return JSON.stringify({word,html:row.querySelector('.setting-item-description').textContent,vault:app.vault.getName(),absolutePathShown:modal.textContent.includes(app.vault.adapter.getBasePath())});
-      })()`,
-      ),
+        cleanup.defer(() =>
+          dialog()
+            ?.parentElement!.querySelector<HTMLElement>(".modal-bg")
+            ?.click(),
+        );
+        app.commands.executeCommandById("zotlit:pandoc-export");
+        await waitFor(() => !!dialog(), true, "Export dialog");
+        const modal = dialog();
+        const row = [
+          ...modal!.querySelectorAll<HTMLElement>(".setting-item"),
+        ].find(
+          (el) =>
+            el.querySelector<HTMLElement>(".setting-item-name")?.textContent ===
+            "Save to",
+        );
+        const word = row!.querySelector<HTMLElement>(
+          ".setting-item-description",
+        )!.textContent;
+        const format = modal!.querySelector<HTMLSelectElement>("select");
+        format!.value = "html";
+        format!.dispatchEvent(
+          new format!.ownerDocument.defaultView!.Event("change", {
+            bubbles: true,
+          }),
+        );
+        return {
+          word,
+          html: row!.querySelector<HTMLElement>(".setting-item-description")!
+            .textContent,
+          vault: app.vault.getName(),
+          absolutePathShown: modal!.textContent.includes(
+            app.vault.adapter.getBasePath(),
+          ),
+        };
+      },
+      undefined,
     );
     expect(result.word).toBe(
       m.pandoc_export_destination_in_vault({
@@ -154,159 +283,325 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
   it("opens the Library View with the Welcome View beside the active note and reuses its tab", async () => {
     const notePath = "Welcome navigation.md";
-    const noteId = await obEval(
+    const noteId = await obRun(
       vaultId,
-      `(async()=>{
-        for(const leaf of app.workspace.getLeavesOfType('zotlit-library'))leaf.detach();
-        const file=await app.vault.create(${JSON.stringify(notePath)},'Keep this note open.');
-        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
-        app.workspace.setActiveLeaf(leaf,{focus:true});
-        app.commands.executeCommandById('zotlit:open-welcome-view');return leaf.id;
-      })()`,
+      async ({ app: host }, { notePath }) => {
+        const app = host as WalkthroughApp;
+
+        for (const leaf of app.workspace.getLeavesOfType("zotlit-library"))
+          leaf.detach();
+        const file = await app.vault.create(notePath, "Keep this note open.");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:open-welcome-view");
+        return leaf.id;
+      },
+      { notePath },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         vaultId,
-        `(async()=>{const leaf=app.workspace.getLeafById(${JSON.stringify(noteId)});leaf?.detach();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app: host }, { noteId, notePath }) => {
+          const app = host as WalkthroughApp;
+
+          const leaf = app.workspace.getLeafById(noteId);
+          leaf?.detach();
+          const file = app.vault.getFileByPath(notePath)!;
+          if (file) await app.vault.delete(file);
+        },
+        { noteId, notePath },
       );
     });
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-library')`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEval(
-        vaultId,
-        `app.workspace.getLeafById(${JSON.stringify(noteId)}).view.file?.path??'<no file>'`,
-      ),
-    ).toBe(notePath);
-    const welcomeId = await obEval(vaultId, "app.workspace.activeLeaf.id");
-    await obEval(
+    await obRunUntil(
       vaultId,
-      `app.workspace.setActiveLeaf(app.workspace.getLeafById(${JSON.stringify(noteId)}),{focus:true});app.commands.executeCommandById('zotlit:open-welcome-view');true`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.workspace.activeLeaf?.view.getViewType() === "zotlit-library"
+        );
+      },
+      undefined,
+      { what: "the active leaf to be the Library View" },
     );
     expect(
-      await obEvalUntil(vaultId, "app.workspace.activeLeaf?.id", {
-        expected: welcomeId,
-      }),
-    ).toBe(true);
-    expect(
-      await obEval(
+      await obRun(
         vaultId,
-        "String(app.workspace.getLeavesOfType('zotlit-library').length)",
+        async ({ app: host }, { noteId }) => {
+          const app = host as WalkthroughApp;
+
+          return (
+            (app.workspace.getLeafById(noteId)!.view as MarkdownView).file
+              ?.path ?? "<no file>"
+          );
+        },
+        { noteId },
       ),
-    ).toBe("1");
+    ).toBe(notePath);
+    const welcomeId = await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return app.workspace.activeLeaf!.id;
+      },
+      undefined,
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host }, { noteId }) => {
+        const app = host as WalkthroughApp;
+
+        app.workspace.setActiveLeaf(app.workspace.getLeafById(noteId)!, {
+          focus: true,
+        });
+        app.commands.executeCommandById("zotlit:open-welcome-view");
+      },
+      { noteId },
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return app.workspace.activeLeaf?.id;
+      },
+      undefined,
+      {
+        ready: (value) => value === welcomeId,
+        what: "the active leaf id to match the Welcome View leaf",
+      },
+    );
+    expect(
+      await obRun(
+        vaultId,
+        async ({ app: host }) => {
+          const app = host as WalkthroughApp;
+
+          return app.workspace.getLeavesOfType("zotlit-library").length;
+        },
+        undefined,
+      ),
+    ).toBe(1);
   });
 
   it("reuses an open literature note when searching from Welcome", async () => {
     const notePath = "Search existing note.md";
-    const leafId = await obEval(
+    const leafId = await obRun(
       vaultId,
-      `(async()=>{
-        const file=await app.vault.create(${JSON.stringify(notePath)},'---\\nzotero-key: DMRGRART\\n---\\nExisting literature note');
-        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
-        const welcome=app.workspace.getLeavesOfType('zotlit-library')[0]??app.workspace.getLeaf('tab');
-        await welcome.setViewState({type:'zotlit-library',active:true});
-        app.workspace.setActiveLeaf(welcome,{focus:true});return leaf.id;
-      })()`,
+      async ({ app: host }, { notePath }) => {
+        const app = host as WalkthroughApp;
+
+        const file = await app.vault.create(
+          notePath,
+          "---\nzotero-key: DMRGRART\n---\nExisting literature note",
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        const welcome =
+          app.workspace.getLeavesOfType("zotlit-library")[0] ??
+          app.workspace.getLeaf("tab");
+        await welcome.setViewState({ type: "zotlit-library", active: true });
+        app.workspace.setActiveLeaf(welcome, { focus: true });
+        return leaf.id;
+      },
+      { notePath },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         vaultId,
-        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file?.path===${JSON.stringify(notePath)})leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app: host, page }, { notePath }) => {
+          const app = host as WalkthroughApp;
+
+          for (const leaf of page.leavesOfType("markdown"))
+            if ((leaf.view as MarkdownView).file?.path === notePath)
+              leaf.detach();
+          const file = app.vault.getFileByPath(notePath)!;
+          if (file) await app.vault.delete(file);
+        },
+        { notePath },
       );
     });
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('DMRGRART').some(file=>file.path===${JSON.stringify(notePath)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       vaultId,
-      `(()=>{app.commands.executeCommandById('zotlit:note-quick-switcher');const input=activeDocument.querySelector('.prompt-input');input.value='ten simple';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
+      async ({ zotlit }, { notePath }) => {
+        return zotlit.services.noteIndex
+          .getNotesByItemKey("DMRGRART")
+          .some((file) => file.path === notePath);
+      },
+      { notePath },
+      {
+        what: "the literature note index for item DMRGRART to include the open note",
+      },
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        app.commands.executeCommandById("zotlit:note-quick-switcher");
+        const input =
+          activeDocument.querySelector<HTMLInputElement>(".prompt-input");
+        input!.value = "ten simple";
+        input!.dispatchEvent(
+          new input!.ownerDocument.defaultView!.Event("input", {
+            bubbles: true,
+          }),
+        );
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return activeDocument
+          .querySelector<HTMLElement>(".prompt-results")
+          ?.textContent.includes("Ten Simple Rules for Better Figures");
+      },
+      undefined,
+      {
+        what: "the Welcome search results to list Ten Simple Rules for Better Figures",
+      },
+    );
+    await obRun(
+      vaultId,
+      async ({ page }) => {
+        const { pressKey } = page;
+        const debugger_ = (
+          (activeWindow as Window & { require: NodeJS.Require }).require(
+            "@electron/remote",
+          ) as WalkthroughRemote
+        ).getCurrentWebContents().debugger;
+        await pressKey(debugger_, "Enter", 13);
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { notePath }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          (app.workspace.activeLeaf?.view as MarkdownView | undefined)?.file
+            ?.path === notePath
+        );
+      },
+      { notePath },
+      { what: "the active Markdown leaf to show the reused literature note" },
     );
     expect(
-      await obEvalUntil(
+      await obRun(
         vaultId,
-        `String(activeDocument.querySelector('.prompt-results')?.textContent.includes('Ten Simple Rules for Better Figures'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(async()=>{${browserWaits}
-          const debugger_=activeWindow.require('@electron/remote').getCurrentWebContents().debugger;
-          await pressKey(debugger_,'Enter',13);return true;
-        })()`,
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.workspace.activeLeaf?.view.file?.path===${JSON.stringify(notePath)})`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          `JSON.stringify({count:app.workspace.getLeavesOfType('markdown').filter(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)}).length,active:app.workspace.activeLeaf.id})`,
-        ),
+        async ({ app: host, page }, { notePath }) => {
+          const app = host as WalkthroughApp;
+
+          return {
+            count: page
+              .leavesOfType("markdown")
+              .filter((leaf) => leaf.view.file?.path === notePath).length,
+            active: app.workspace.activeLeaf!.id,
+          };
+        },
+        { notePath },
       ),
     ).toEqual({ count: 1, active: leafId });
   });
 
   it("recovers a failed citation render after cooldown while keeping the displayed text", async () => {
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-      await using cleanup=new AsyncDisposableStack();
-      const services=app.plugins.plugins.zotlit.services;
-      const file=cleanup.adopt(await app.vault.create('Held read recovery.md','Before [@rougier2014].\\n\\nEnd'),file=>app.vault.delete(file));
-      const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-      if(!app.metadataCache.getFileCache(file))await new Promise(resolve=>{
-        const event=app.metadataCache.on('changed',changed=>{
-          if(changed.path===file.path){app.metadataCache.offref(event);resolve();}
+    const result = await obRun(
+      vaultId,
+      async ({ app: host, zotlit }) => {
+        const app = host as WalkthroughApp;
+
+        await using cleanup = new AsyncDisposableStack();
+        const services = zotlit.services;
+        const file = cleanup.adopt(
+          await app.vault.create(
+            "Held read recovery.md",
+            "Before [@rougier2014].\n\nEnd",
+          ),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        if (!app.metadataCache.getFileCache(file))
+          await new Promise<void>((resolve) => {
+            const event = app.metadataCache.on("changed", (changed) => {
+              if (changed.path === file.path) {
+                app.metadataCache.offref(event);
+                resolve();
+              }
+            });
+            cleanup.defer(() => app.metadataCache.offref(event));
+          });
+        await leaf.openFile(file);
+        (leaf.view as MarkdownView).editor.setCursor({ line: 2, ch: 3 });
+        const first = await services.citationText.read(file.path);
+        if (!first?.formatted.size)
+          throw new Error("Initial citations were not formatted");
+        const engine = await services.pandocEngine.runPromise(
+          services.pandocEngine.binary.getEngine,
+        );
+        const original = engine!.renderCitations;
+        cleanup.defer(() => {
+          engine!.renderCitations = original;
         });
-        cleanup.defer(()=>app.metadataCache.offref(event));
-      });
-      await leaf.openFile(file);
-      leaf.view.editor.setCursor({line:2,ch:3});
-      const first=await services.citationText.read(file.path);
-      if(!first?.formatted.size)throw new Error('Initial citations were not formatted');
-      const engine=await services.pandocEngine.getEngine();
-      const original=engine.renderCitations;
-      cleanup.defer(()=>{engine.renderCitations=original;});
-      let fail=true,reads=0;
-      engine.renderCitations=function(...args){
-        reads++;
-        return fail?Promise.reject(new Error('Simulated render failure')):original.apply(this,args);
-      };
-      services.queryClient.invalidate(['citation-render']);
-      services.queryClient.invalidate(['citation-text',file.path]);
-      const failed=await services.citationText.read(file.path);
-      const failedStatus=services.citationText.peek(file.path)?.status;
-      fail=false;
-      await services.citationText.read(file.path);
-      const duringCooldown=reads;
-      const instant=Temporal.Now.instant;
-      const afterCooldown=instant().add({seconds:6});
-      Temporal.Now.instant=()=>afterCooldown;
-      cleanup.defer(()=>{Temporal.Now.instant=instant;});
-      const recovered=await services.citationText.read(file.path);
-      const status=services.citationText.peek(file.path)?.status;
-      await new Promise(resolve=>leaf.view.editor.cm.requestMeasure({read:()=>null,write:resolve}));
-      return JSON.stringify({failedStatus,keptText:failed===first,duringCooldown,reads,recovered:recovered===first,status,widget:!!leaf.view.contentEl.querySelector('.zt-citation')});
-    })()`,
-      ),
+        let fail = true,
+          reads = 0;
+        engine!.renderCitations = new Proxy(original, {
+          apply(
+            target,
+            receiver: NonNullable<typeof engine>,
+            args: Parameters<typeof original>,
+          ) {
+            reads++;
+            return fail
+              ? Promise.reject(new Error("Simulated render failure"))
+              : Reflect.apply(target, receiver, args);
+          },
+        });
+        services.queryClient.invalidate(["citation-render"]);
+        services.queryClient.invalidate(["citation-text", file.path]);
+        const failed = await services.citationText.read(file.path);
+        const failedStatus = services.citationText.peek(file.path)?.status;
+        fail = false;
+        await services.citationText.read(file.path);
+        const duringCooldown = reads;
+        // oxlint-disable-next-line no-restricted-globals -- Preserve the native cooldown-clock regression probe.
+        const now = Date.now;
+        // oxlint-disable-next-line effecttsgo/global-date -- This test advances the native clock consumed by the cooldown.
+        const afterCooldown = now() + 6000;
+        // oxlint-disable-next-line no-restricted-globals -- Preserve the native cooldown-clock regression probe.
+        Date.now = () => afterCooldown;
+        cleanup.defer(() => {
+          // oxlint-disable-next-line no-restricted-globals -- Restore the native clock after the probe.
+          Date.now = now;
+        });
+        const recovered = await services.citationText.read(file.path);
+        const status = services.citationText.peek(file.path)?.status;
+        await new Promise((resolve) =>
+          (leaf.view as MarkdownView).editor.cm.requestMeasure({
+            read: () => null,
+            write: resolve,
+          }),
+        );
+        return {
+          failedStatus,
+          keptText: failed === first,
+          duringCooldown,
+          reads,
+          recovered: recovered === first,
+          status,
+          widget: !!(
+            leaf.view as MarkdownView
+          ).contentEl.querySelector<HTMLElement>(".zt-citation"),
+        };
+      },
+      undefined,
     );
     expect(result).toEqual({
       failedStatus: "failed",
@@ -321,49 +616,102 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
   it("places a plain-click caret inside a formatted citation and keeps selections", async () => {
     const source = "Before [@rougier2014, p. 1] after\n\nEnd";
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-        const file=await app.vault.create('Citation click.md',${JSON.stringify(source)});
-        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
-        app.workspace.setActiveLeaf(leaf,{focus:true});window.focus();
-        leaf.view.editor.setCursor({line:2,ch:3});leaf.view.editor.focus();return true;
-      })()`,
+      async ({ app: host }, { source }) => {
+        const app = host as WalkthroughApp;
+
+        const file = await app.vault.create("Citation click.md", source);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        window.focus();
+        (leaf.view as MarkdownView).editor.setCursor({ line: 2, ch: 3 });
+        (leaf.view as MarkdownView).editor.focus();
+      },
+      { source },
     );
-    const view =
-      "app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Citation click.md').view";
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(!!(${view}).contentEl.querySelector('.zt-citation'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          const view=${view},editor=view.editor;
-          const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
-          const gesture=async(kind)=>{
-            editor.setCursor({line:2,ch:3});editor.focus();
-            await waitFor(()=>editor.cm.hasFocus&&!!view.contentEl.querySelector('.zt-citation'),true,'Citation widget');
-            await measure(editor.cm);
-            const element=view.contentEl.querySelector('.zt-citation');
-            const box=element.getBoundingClientRect();
-            const start={x:box.x+box.width/2,y:box.y+box.height/2};
-            const end=kind==='drag'?{x:box.right+35,y:start.y}:start;
-            const modifiers=kind==='extend'?8:0;
-            await debugger_.sendCommand('Input.dispatchMouseEvent',{type:'mousePressed',...start,button:'left',clickCount:1,modifiers});
-            if(kind==='drag')await debugger_.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',...end,button:'left',buttons:1});
-            await debugger_.sendCommand('Input.dispatchMouseEvent',{type:'mouseReleased',...end,button:'left',clickCount:1,modifiers});
-            await measure(editor.cm);
-            return {cursor:editor.getCursor(),selection:editor.getSelection(),source:editor.getValue(),formatted:!!view.contentEl.querySelector('.zt-citation')};
+
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === "Citation click.md")!
+          .view.contentEl.querySelector<HTMLElement>(".zt-citation");
+      },
+      undefined,
+      { what: "a formatted citation element in the Citation click note" },
+    );
+    const result = await obRun(
+      vaultId,
+      async ({ page }) => {
+        const { measure, waitFor } = page;
+        const view = page
+            .leavesOfType("markdown")
+            .find((leaf) => leaf.view.file?.path === "Citation click.md")!.view,
+          editor = view.editor;
+        const debugger_ = (
+          require("@electron/remote") as WalkthroughRemote
+        ).getCurrentWebContents().debugger;
+        const gesture = async (kind: "plain" | "drag" | "extend") => {
+          editor.setCursor({ line: 2, ch: 3 });
+          editor.focus();
+          await waitFor(
+            () =>
+              editor.cm.hasFocus &&
+              !!view.contentEl.querySelector<HTMLElement>(".zt-citation"),
+            true,
+            "Citation widget",
+          );
+          await measure(editor.cm);
+          const element =
+            view.contentEl.querySelector<HTMLElement>(".zt-citation");
+          const box = element!.getBoundingClientRect();
+          const start = {
+            x: box.x + box.width / 2,
+            y: box.y + box.height / 2,
           };
-          return JSON.stringify({plain:await gesture('plain'),drag:await gesture('drag'),extend:await gesture('extend')});
-        })()`,
-      ),
+          const end =
+            kind === "drag" ? { x: box.right + 35, y: start.y } : start;
+          const modifiers = kind === "extend" ? 8 : 0;
+          await debugger_.sendCommand("Input.dispatchMouseEvent", {
+            type: "mousePressed",
+            ...start,
+            button: "left",
+            clickCount: 1,
+            modifiers,
+          });
+          if (kind === "drag")
+            await debugger_.sendCommand("Input.dispatchMouseEvent", {
+              type: "mouseMoved",
+              ...end,
+              button: "left",
+              buttons: 1,
+            });
+          await debugger_.sendCommand("Input.dispatchMouseEvent", {
+            type: "mouseReleased",
+            ...end,
+            button: "left",
+            clickCount: 1,
+            modifiers,
+          });
+          await measure(editor.cm);
+          return {
+            cursor: editor.getCursor(),
+            selection: editor.getSelection(),
+            source: editor.getValue(),
+            formatted:
+              !!view.contentEl.querySelector<HTMLElement>(".zt-citation"),
+          };
+        };
+        return {
+          plain: await gesture("plain"),
+          drag: await gesture("drag"),
+          extend: await gesture("extend"),
+        };
+      },
+      undefined,
     );
     expect(result.plain.cursor.line).toBe(0);
     expect(result.plain.cursor.ch).toBeGreaterThan(source.indexOf("["));
@@ -375,32 +723,67 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     for (const gesture of [result.plain, result.drag, result.extend]) {
       expect(gesture.source).toBe(source);
     }
-    const navigation = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          const view=${view};
-          const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
-          const service=app.plugins.plugins.zotlit.services.citekeyEditor;
-          const tab=app.plugins.plugins.zotlit.settingTab;
-          const previous=tab.getControlValue('citation.open-as-links');
-          const original=service.openCitekey,requests=[];
-          await using restore=new AsyncDisposableStack();
-          restore.defer(async()=>{service.openCitekey=original;await tab.setControlValue('citation.open-as-links',previous);});
-          service.openCitekey=async(...args)=>{requests.push(args);};
-            for(const openAsLinks of [false,true]){
-              await tab.setControlValue('citation.open-as-links',openAsLinks);
-              view.editor.setCursor({line:2,ch:3});view.editor.focus();
-              await waitFor(()=>view.editor.cm.hasFocus&&!!view.contentEl.querySelector('.zt-citation'),true,'Citation navigation widget');
-              await measure(view.editor.cm);
-              const box=view.contentEl.querySelector('.zt-citation').getBoundingClientRect();
-              const modifiers=openAsLinks?0:process.platform==='darwin'?4:2;
-              for(const type of ['mousePressed','mouseReleased'])await debugger_.sendCommand('Input.dispatchMouseEvent',{type,x:box.x+box.width/2,y:box.y+box.height/2,button:'left',clickCount:1,modifiers});
-            }
-            return JSON.stringify(requests);
-        })()`,
-      ),
+    // The stub records the open and hands the bridge an Effect that changes
+    // nothing (`navigationEnabled`), so no note opens.
+    const navigation = await obRun(
+      vaultId,
+      async ({ app: host, zotlit, page }) => {
+        const app = host as WalkthroughApp;
+
+        const { measure, waitFor } = page;
+        const view = page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === "Citation click.md")!.view;
+        const debugger_ = (
+          require("@electron/remote") as WalkthroughRemote
+        ).getCurrentWebContents().debugger;
+        const service = zotlit.services.citekeyEditor;
+        const tab = app.plugins.plugins.zotlit.settingTab;
+        const previous = tab.getControlValue("citation.open-as-links");
+        const original = service.openCitekey,
+          requests: Parameters<typeof service.openCitekey>[] = [];
+        await using restore = new AsyncDisposableStack();
+        restore.defer(async () => {
+          service.openCitekey = original;
+          await tab.setControlValue("citation.open-as-links", previous);
+        });
+        service.openCitekey = (...args) => {
+          requests.push(args);
+          return service.navigationEnabled;
+        };
+        for (const openAsLinks of [false, true]) {
+          await tab.setControlValue("citation.open-as-links", openAsLinks);
+          view.editor.setCursor({ line: 2, ch: 3 });
+          view.editor.focus();
+          await waitFor(
+            () =>
+              view.editor.cm.hasFocus &&
+              !!view.contentEl.querySelector<HTMLElement>(".zt-citation"),
+            true,
+            "Citation navigation widget",
+          );
+          await measure(view.editor.cm);
+          const box = view.contentEl
+            .querySelector<HTMLElement>(".zt-citation")!
+            .getBoundingClientRect();
+          const modifiers = openAsLinks
+            ? 0
+            : process.platform === "darwin"
+              ? 4
+              : 2;
+          for (const type of ["mousePressed", "mouseReleased"])
+            await debugger_.sendCommand("Input.dispatchMouseEvent", {
+              type,
+              x: box.x + box.width / 2,
+              y: box.y + box.height / 2,
+              button: "left",
+              clickCount: 1,
+              modifiers,
+            });
+        }
+        return requests;
+      },
+      undefined,
     );
     expect(navigation).toEqual([
       ["rougier2014", "tab"],
@@ -409,39 +792,79 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("keeps citation suggestions when a word reaches eight letters", async () => {
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(async()=>String((await app.plugins.plugins.zotlit.services.itemLookup.search('researc',{limit:5})).some(hit=>hit.item.key==='DMIANART')))()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const results = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          await using cleanup=new AsyncDisposableStack();
-          const previousLeaf=app.workspace.activeLeaf;
-          cleanup.defer(()=>{if(previousLeaf)app.workspace.setActiveLeaf(previousLeaf,{focus:true});});
-          const file=cleanup.adopt(await app.vault.create('Citation full words.md',''),file=>app.vault.delete(file));
-          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-          await leaf.openFile(file);
-          app.workspace.setActiveLeaf(leaf,{focus:true});leaf.view.editor.focus();
-          const suggest=app.workspace.editorSuggest.suggests.find(s=>s.constructor.name==='CitationEditorSuggest');
-          cleanup.defer(()=>suggest.close());
-          const editor=leaf.view.editor,results=[];
-          for(const query of ['researc','research','finding','findings']){
-            const hits=await app.plugins.plugins.zotlit.services.itemLookup.search(query,{limit:5});
-            const text='[@'+query;
-            editor.cm.dispatch({changes:{from:0,to:editor.cm.state.doc.length,insert:text},selection:{anchor:text.length},userEvent:'input.type'});
-            await waitFor(()=>suggest.isOpen&&suggest.context?.query===query&&suggest.suggestEl.textContent.includes('Why Most Published Research Findings Are False'),true,'Citation suggestions for '+query);
-            results.push({query,found:hits.some(hit=>hit.item.key==='DMIANART')});
-          }
-          await leaf.view.save();
-          return JSON.stringify(results);
-        })()`,
-      ),
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit }) => {
+        return (
+          await zotlit.services.itemLookup.search("researc", {
+            limit: 5,
+          })
+        ).some((hit) => hit.item.key === "DMIANART");
+      },
+      undefined,
+      { what: "the item lookup for researc to return item DMIANART" },
+    );
+    const results = await obRun(
+      vaultId,
+      async ({ app: host, zotlit, page }) => {
+        const app = host as WalkthroughApp;
+
+        const { waitFor } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const previousLeaf = app.workspace.activeLeaf;
+        cleanup.defer(() => {
+          if (previousLeaf)
+            app.workspace.setActiveLeaf(previousLeaf, { focus: true });
+        });
+        const file = cleanup.adopt(
+          await app.vault.create("Citation full words.md", ""),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        (leaf.view as MarkdownView).editor.focus();
+        const suggest = app.workspace.editorSuggest.suggests.find(
+          (s) => s.constructor.name === "CitationEditorSuggest",
+        ) as WalkthroughCitationSuggest;
+        cleanup.defer(() => suggest!.close());
+        const editor = (leaf.view as MarkdownView).editor,
+          results = [];
+        for (const query of ["researc", "research", "finding", "findings"]) {
+          const hits = await zotlit.services.itemLookup.search(query, {
+            limit: 5,
+          });
+          const text = `[@${query}`;
+          editor.cm.dispatch({
+            changes: {
+              from: 0,
+              to: editor.cm.state.doc.length,
+              insert: text,
+            },
+            selection: { anchor: text.length },
+            userEvent: "input.type",
+          });
+          await waitFor(
+            () =>
+              suggest!.isOpen &&
+              suggest!.context?.query === query &&
+              suggest!.suggestEl.textContent.includes(
+                "Why Most Published Research Findings Are False",
+              ),
+            true,
+            `Citation suggestions for ${query}`,
+          );
+          results.push({
+            query,
+            found: hits.some((hit) => hit.item.key === "DMIANART"),
+          });
+        }
+        await (leaf.view as MarkdownView).save();
+        return results;
+      },
+      undefined,
     );
     expect(results).toEqual(
       ["researc", "research", "finding", "findings"].map((query) => ({
@@ -452,80 +875,167 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("keeps the citation suggester closed while entering a page locator", async () => {
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-        const file=await app.vault.create('Citation locator.md','');
-        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
-        app.workspace.setActiveLeaf(leaf,{focus:true});window.focus();leaf.view.editor.focus();
-        await require('@electron/remote').getCurrentWebContents().debugger.sendCommand('Input.insertText',{text:'[@ten'});
-        return true;
-      })()`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        const file = await app.vault.create("Citation locator.md", "");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        window.focus();
+        (leaf.view as MarkdownView).editor.focus();
+        await (require("@electron/remote") as WalkthroughRemote)
+          .getCurrentWebContents()
+          .debugger.sendCommand("Input.insertText", { text: "[@ten" });
+      },
+      undefined,
     );
-    const suggester =
-      "app.workspace.editorSuggest.suggests.find(suggest=>suggest.constructor.name==='CitationEditorSuggest')";
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((${suggester}).isOpen&&(${suggester}).suggestEl.textContent.includes('Ten Simple Rules for Better Figures'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+
+    await obRunUntil(
       vaultId,
-      `(async()=>{${browserWaits}
-        const debugger_=activeWindow.require('@electron/remote').getCurrentWebContents().debugger;
-        await pressKey(debugger_,'Enter',13);return true;
-      })()`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          (app.workspace.editorSuggest.suggests.find(
+            (suggest) => suggest.constructor.name === "CitationEditorSuggest",
+          ) as WalkthroughCitationSuggest)!.isOpen &&
+          app.workspace.editorSuggest.suggests
+            .find(
+              (suggest) => suggest.constructor.name === "CitationEditorSuggest",
+            )!
+            .suggestEl.textContent.includes(
+              "Ten Simple Rules for Better Figures",
+            )
+        );
+      },
+      undefined,
+      {
+        what: "the citation suggester to be open listing Ten Simple Rules for Better Figures",
+      },
     );
-    const editor =
-      "app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Citation locator.md').view.editor";
-    expect(
-      await obEvalUntil(vaultId, `(${editor}).getValue()`, {
-        expected: "[@rougier2014]",
-      }),
-    ).toBe(true);
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          const debugger_=require('@electron/remote').getCurrentWebContents().debugger;
-          const editor=${editor},suggest=${suggester},manager=app.workspace.editorSuggest;
-          const originalTrigger=manager.trigger,originalShow=suggest.showSuggestions,originalClose=suggest.close;
-          const updated=Promise.withResolvers();
-          using hooks=new DisposableStack();
-          hooks.defer(()=>{manager.trigger=originalTrigger;suggest.showSuggestions=originalShow;suggest.close=originalClose;});
-          hooks.adopt(setTimeout(()=>updated.reject(new Error('Native citation suggestion update did not finish')),5000),clearTimeout);
-          let triggering=false,shown=false;
-          const entered=()=>editor.getValue()==='[@rougier2014, p]'&&editor.getCursor().ch===16;
-          manager.trigger=function(...args){
-            const relevant=args[0]===editor&&entered();
-            if(relevant)triggering=true;
-            const result=originalTrigger.apply(this,args);
-            if(relevant){triggering=false;if(suggest.context===null||shown)updated.resolve();}
-            return result;
-          };
-          suggest.close=function(...args){
-            const result=originalClose.apply(this,args);
-            if(entered())updated.resolve();
-            return result;
-          };
-          suggest.showSuggestions=function(...args){
-            const result=originalShow.apply(this,args);
-            if(entered()&&suggest.context?.query==='rougier2014, p'){
-              shown=true;if(!triggering)updated.resolve();
+    await obRun(
+      vaultId,
+      async ({ page }) => {
+        const { pressKey } = page;
+        const debugger_ = (
+          (activeWindow as Window & { require: NodeJS.Require }).require(
+            "@electron/remote",
+          ) as WalkthroughRemote
+        ).getCurrentWebContents().debugger;
+        await pressKey(debugger_, "Enter", 13);
+      },
+      undefined,
+    );
+
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === "Citation locator.md")!
+          .view.editor.getValue();
+      },
+      undefined,
+      {
+        ready: (value) => value === "[@rougier2014]",
+        what: "the Citation locator note text to read [@rougier2014]",
+      },
+    );
+    const result = await obRun(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+
+        const { pressKey } = page;
+        const debugger_ = (
+          require("@electron/remote") as WalkthroughRemote
+        ).getCurrentWebContents().debugger;
+        const editor = page
+            .leavesOfType("markdown")
+            .find((leaf) => leaf.view.file?.path === "Citation locator.md")!
+            .view.editor,
+          suggest = app.workspace.editorSuggest.suggests.find(
+            (suggest) => suggest.constructor.name === "CitationEditorSuggest",
+          ) as WalkthroughCitationSuggest,
+          manager = app.workspace.editorSuggest;
+        const originalTrigger = manager.trigger,
+          originalShow = suggest!.showSuggestions,
+          originalClose = suggest!.close;
+        const updated = Promise.withResolvers<void>();
+        using hooks = new DisposableStack();
+        hooks.defer(() => {
+          manager.trigger = originalTrigger;
+          suggest!.showSuggestions = originalShow;
+          suggest!.close = originalClose;
+        });
+        hooks.adopt(
+          setTimeout(
+            () =>
+              updated.reject(
+                new Error("Native citation suggestion update did not finish"),
+              ),
+            5000,
+          ),
+          clearTimeout,
+        );
+        let triggering = false,
+          shown = false;
+        const entered = () =>
+          editor.getValue() === "[@rougier2014, p]" &&
+          editor.getCursor().ch === 16;
+        manager.trigger = new Proxy(originalTrigger, {
+          apply(
+            target,
+            receiver: NonNullable<typeof manager>,
+            args: Parameters<typeof originalTrigger>,
+          ) {
+            const relevant = args[0] === editor && entered();
+            if (relevant) triggering = true;
+            const result = Reflect.apply(target, receiver, args);
+            if (relevant) {
+              triggering = false;
+              if (suggest!.context === null || shown) updated.resolve();
             }
             return result;
-          };
-          await pressKey(debugger_,'ArrowLeft',37);
-          await debugger_.sendCommand('Input.insertText',{text:', p'});
-          await updated.promise;
-          const open=suggest.isOpen,before=editor.getValue();
-          await pressKey(debugger_,'Enter',13);
-          return JSON.stringify({open,before,after:editor.getValue()});
-        })()`,
-      ),
+          },
+        });
+        suggest!.close = new Proxy(originalClose, {
+          apply(
+            target,
+            receiver: NonNullable<typeof suggest>,
+            args: Parameters<typeof originalClose>,
+          ) {
+            const result = Reflect.apply(target, receiver, args);
+            if (entered()) updated.resolve();
+            return result;
+          },
+        });
+        suggest!.showSuggestions = new Proxy(originalShow, {
+          apply(
+            target,
+            receiver: NonNullable<typeof suggest>,
+            args: Parameters<typeof originalShow>,
+          ) {
+            const result = Reflect.apply(target, receiver, args);
+            if (entered() && suggest!.context?.query === "rougier2014, p") {
+              shown = true;
+              if (!triggering) updated.resolve();
+            }
+            return result;
+          },
+        });
+        await pressKey(debugger_, "ArrowLeft", 37);
+        await debugger_.sendCommand("Input.insertText", { text: ", p" });
+        await updated.promise;
+        const open = suggest!.isOpen,
+          before = editor.getValue();
+        await pressKey(debugger_, "Enter", 13);
+        return { open, before, after: editor.getValue() };
+      },
+      undefined,
     );
     expect(result.before).toBe("[@rougier2014, p]");
     expect(result.open).toBe(false);
@@ -533,44 +1043,87 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("refreshes and closes citation settings without cleanup errors", async () => {
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
+    const result = await obRun(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+
+        const { press, waitFor } = page;
+        app.setting.close();
+        const tab = app.plugins.plugins.zotlit.settingTab;
+        const controls = [
+          ["Pandoc citations", "citation.pandoc-citations"],
+          ["Wikilink citations", "citation.wikilink-citations"],
+        ] as const;
+        const previous = controls.map(([, key]) => tab.getControlValue(key!));
+        const popout = app.vault.getConfig("settingsPopoutWindow");
+        const originalError = console.error;
+        const errors: string[] = [];
+        await using restore = new AsyncDisposableStack();
+        restore.defer(async () => {
           app.setting.close();
-          const tab=app.plugins.plugins.zotlit.settingTab;
-          const controls=[['Pandoc citations','citation.pandoc-citations'],['Wikilink citations','citation.wikilink-citations']];
-          const previous=controls.map(([,key])=>tab.getControlValue(key));
-          const popout=app.vault.getConfig('settingsPopoutWindow');
-          const originalError=console.error;
-          const errors=[];
-          await using restore=new AsyncDisposableStack();
-          restore.defer(async()=>{
-            app.setting.close();console.error=originalError;
-            for(let i=0;i<controls.length;i++)await tab.setControlValue(controls[i][1],previous[i]);
-            app.vault.setConfig('settingsPopoutWindow',popout);
-          });
-          console.error=(...args)=>{errors.push(args.map(value=>value instanceof Error?value.message:String(value)).join(' '));originalError(...args);};
-            app.vault.setConfig('settingsPopoutWindow',false);
-            app.setting.open();app.setting.openTabById('zotlit');
-            const row=(name)=>Array.from(app.setting.containerEl.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);
-            press(row('Citations'),'Citations');
-            const tutorial=!!row('Pandoc citation tutorial')?.querySelector('button');
-            const changed=[];
-            for(const [name,key] of controls){
-              const initial=tab.getControlValue(key);
-              for(const expected of [!initial,initial]){
-                const tutorialButton=row('Pandoc citation tutorial').querySelector('button');
-                press(row(name).querySelector('.checkbox-container'),name);
-                await waitFor(()=>({value:tab.getControlValue(key),refreshed:row('Pandoc citation tutorial').querySelector('button')!==tutorialButton}),{value:expected,refreshed:true},'Citation settings refresh');
-                changed.push(tab.getControlValue(key)===expected);
-              }
-            }
-            app.setting.close();
-            return JSON.stringify({tutorial,changed,errors});
-        })()`,
-      ),
+          console.error = originalError;
+          for (let i = 0; i < controls.length; i++)
+            await tab.setControlValue(controls[i]![1]!, previous[i]);
+          app.vault.setConfig("settingsPopoutWindow", popout);
+        });
+        console.error = (...args) => {
+          errors.push(
+            args
+              .map((value) =>
+                value instanceof Error ? value.message : String(value),
+              )
+              .join(" "),
+          );
+          originalError(...args);
+        };
+        app.vault.setConfig("settingsPopoutWindow", false);
+        app.setting.open();
+        app.setting.openTabById("zotlit");
+        const row = (name: string) =>
+          Array.from(
+            app.setting.containerEl.querySelectorAll<HTMLElement>(
+              ".setting-item",
+            ),
+          ).find(
+            (el) =>
+              el.querySelector<HTMLElement>(".setting-item-name")
+                ?.textContent === name,
+          );
+        press(row("Citations"), "Citations");
+        const tutorial = !!row(
+          "Pandoc citation tutorial",
+        )?.querySelector<HTMLButtonElement>("button");
+        const changed = [];
+        for (const [name, key] of controls) {
+          const initial = tab.getControlValue(key!);
+          for (const expected of [!initial, initial]) {
+            const tutorialButton = row(
+              "Pandoc citation tutorial",
+            )!.querySelector<HTMLButtonElement>("button");
+            press(
+              row(name)!.querySelector<HTMLElement>(".checkbox-container"),
+              name!,
+            );
+            await waitFor(
+              () => ({
+                value: tab.getControlValue(key!),
+                refreshed:
+                  row(
+                    "Pandoc citation tutorial",
+                  )!.querySelector<HTMLButtonElement>("button") !==
+                  tutorialButton,
+              }),
+              { value: expected, refreshed: true },
+              "Citation settings refresh",
+            );
+            changed.push(tab.getControlValue(key!) === expected);
+          }
+        }
+        app.setting.close();
+        return { tutorial, changed, errors };
+      },
+      undefined,
     );
     expect(result.tutorial).toBe(true);
     expect(result.changed).toEqual([true, true, true, true]);
@@ -580,43 +1133,71 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   it("updates the active literature note from its editor, title, and Properties", async () => {
     const initial =
       "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%";
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-        const file=await app.vault.create('Focus update.md',${JSON.stringify(initial)});
-        const leaf=app.workspace.getLeaf('tab');
-        await leaf.openFile(file,{state:{mode:'source',source:false}});
-        app.workspace.setActiveLeaf(leaf,{focus:true});return true;
-      })()`,
+      async ({ app: host }, { initial }) => {
+        const app = host as WalkthroughApp;
+
+        const file = await app.vault.create("Focus update.md", initial);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file, { state: { mode: "source", source: false } });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { initial },
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getFileByPath('Focus update.md'))?.frontmatter?.['zotero-key']==='DMRGRART')`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.metadataCache.getFileCache(
+            app.vault.getFileByPath("Focus update.md")!,
+          )?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      undefined,
+      { what: "the Focus update note frontmatter zotero-key to be DMRGRART" },
+    );
     for (const selector of [
       ".cm-content",
       ".inline-title",
       ".metadata-property-key-input",
     ]) {
-      const result = JSON.parse(
-        await obEval(
-          vaultId,
-          `(async()=>{
-            ${browserWaits}
-            const view=app.workspace.getActiveFileView(), editor=view.editor;
-            editor.setValue(editor.getValue().replace('%%zt-managed%%','%%zt-managed%%\\nFOCUS_UPDATE_SENTINEL'));
-            const target=view.containerEl.querySelector(${JSON.stringify(selector)});
-            if(!target)throw Error('Missing focus target');
-            target.focus();
-            const focused=target===target.ownerDocument.activeElement;
-            const accepted=app.commands.executeCommandById('zotlit:update-note');
-            await waitFor(()=>editor.getValue().includes('FOCUS_UPDATE_SENTINEL'),false,'Literature note update');
-            return JSON.stringify({focused,accepted,updated:!editor.getValue().includes('FOCUS_UPDATE_SENTINEL')});
-          })()`,
-        ),
+      const result = await obRun(
+        vaultId,
+        async ({ app: host, page }, { selector }) => {
+          const app = host as WalkthroughApp;
+
+          const { waitFor } = page;
+          const view = app.workspace.getActiveFileView() as MarkdownView,
+            editor = view!.editor;
+          editor.setValue(
+            editor
+              .getValue()
+              .replace(
+                "%%zt-managed%%",
+                "%%zt-managed%%\nFOCUS_UPDATE_SENTINEL",
+              ),
+          );
+          const target = view!.containerEl.querySelector<HTMLElement>(selector);
+          if (!target) throw Error("Missing focus target");
+          target.focus();
+          const focused = target === target.ownerDocument.activeElement;
+          const accepted =
+            app.commands.executeCommandById("zotlit:update-note");
+          await waitFor(
+            () => editor.getValue().includes("FOCUS_UPDATE_SENTINEL"),
+            false,
+            "Literature note update",
+          );
+          return {
+            focused,
+            accepted,
+            updated: !editor.getValue().includes("FOCUS_UPDATE_SENTINEL"),
+          };
+        },
+        { selector },
       );
       expect(result, selector).toEqual({
         focused: true,
@@ -631,62 +1212,119 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     // document that lists them puts one callout per Annotation in the note.
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         vaultId,
-        "(async()=>{await app.plugins.plugins.zotlit.services.profile.restoreDefault();return true;})()",
+        async ({ zotlit }) => {
+          await zotlit.services.profile.restoreDefault();
+        },
+        undefined,
       );
     });
     await useListingProfile(vaultId, { restore: true });
     const notePath = "Scroll update.md";
     const source =
       "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%\n";
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-        const file=await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(source)});
-        const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'source',source:false}});
-        app.workspace.setActiveLeaf(leaf,{focus:true});window.focus();return true;
-      })()`,
+      async ({ app: host }, { notePath, fileContent }) => {
+        const app = host as WalkthroughApp;
+
+        const file = await app.vault.create(notePath, fileContent);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file, { state: { mode: "source", source: false } });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        window.focus();
+      },
+      { notePath, fileContent: source },
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(notePath)}))?.frontmatter?.['zotero-key']==='DMRGRART')`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       vaultId,
-      `app.commands.executeCommandById('zotlit:update-note');true`,
+      async ({ app: host }, { notePath }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.metadataCache.getFileCache(app.vault.getFileByPath(notePath)!)
+            ?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      { notePath },
+      { what: "the updated note frontmatter zotero-key to be DMRGRART" },
     );
-    const view = `app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((${view}).editor.getValue().split('[!note]').length>2)`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          const view=${view},editor=view.editor,cm=editor.cm;
-          let changed=0;
-          const edited=editor.getValue().replaceAll('[!note]',()=>++changed<=2?'[!quote]':'[!note]')+'\\nUnsaved researcher text.';
-          editor.setValue(edited);
-          editor.setCursor({line:7,ch:0});await measure(cm);editor.scrollTo(null,600);await measure(cm);
-          const before={top:cm.scrollDOM.scrollTop,height:cm.scrollDOM.scrollHeight,cursor:editor.getCursor()};
-          const accepted=app.commands.executeCommandById('zotlit:update-note');
-          await waitFor(()=>editor.getValue().includes('[!quote]'),false,'Updated callouts');
-          await measure(cm);
-          const after={top:cm.scrollDOM.scrollTop,height:cm.scrollDOM.scrollHeight,cursor:editor.getCursor()};
-          const updated=editor.getValue();editor.undo();const undoMatches=editor.getValue()===edited;
-          editor.redo();const redoMatches=editor.getValue()===updated;
-          return JSON.stringify({accepted,before,after,undoMatches,redoMatches,updated:!updated.includes('[!quote]'),unsaved:updated.includes('Unsaved researcher text.')});
-        })()`,
-      ),
+    await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        app.commands.executeCommandById("zotlit:update-note");
+      },
+      undefined,
+    );
+
+    await obRunUntil(
+      vaultId,
+      async ({ page }, { notePath }) => {
+        return (
+          page
+            .leavesOfType("markdown")
+            .find((leaf) => leaf.view.file?.path === notePath)!
+            .view.editor.getValue()
+            .split("[!note]").length > 2
+        );
+      },
+      { notePath },
+      { what: "the editor in the note to hold more than two [!note] callouts" },
+    );
+    const result = await obRun(
+      vaultId,
+      async ({ app: host, page }, { notePath }) => {
+        const app = host as WalkthroughApp;
+
+        const { measure, waitFor } = page;
+        const view = page
+            .leavesOfType("markdown")
+            .find((leaf) => leaf.view.file?.path === notePath)!.view,
+          editor = view.editor,
+          cm = editor.cm;
+        let changed = 0;
+        const edited = `${editor.getValue().replaceAll("[!note]", () => (++changed <= 2 ? "[!quote]" : "[!note]"))}\nUnsaved researcher text.`;
+        editor.setValue(edited);
+        editor.setCursor({ line: 7, ch: 0 });
+        await measure(cm);
+        editor.scrollTo(null, 600);
+        await measure(cm);
+        const before = {
+          top: cm.scrollDOM.scrollTop,
+          height: cm.scrollDOM.scrollHeight,
+          cursor: editor.getCursor(),
+        };
+        const accepted = app.commands.executeCommandById("zotlit:update-note");
+        await waitFor(
+          () => editor.getValue().includes("[!quote]"),
+          false,
+          "Updated callouts",
+        );
+        await measure(cm);
+        const after = {
+          top: cm.scrollDOM.scrollTop,
+          height: cm.scrollDOM.scrollHeight,
+          cursor: editor.getCursor(),
+        };
+        const updated = editor.getValue();
+        editor.undo();
+        const undoMatches = editor.getValue() === edited;
+        editor.redo();
+        const redoMatches = editor.getValue() === updated;
+        return {
+          accepted,
+          before,
+          after,
+          undoMatches,
+          redoMatches,
+          updated: !updated.includes("[!quote]"),
+          unsaved: updated.includes("Unsaved researcher text."),
+        };
+      },
+      { notePath },
     );
     expect(result.accepted).toBe(true);
     expect(result.updated).toBe(true);
@@ -697,63 +1335,113 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result.after.cursor).toEqual(result.before.cursor);
     expect(result.after.height).toBe(result.before.height);
     expect(Math.abs(result.after.top - result.before.top)).toBeLessThan(2);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(async()=>String((await app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))).includes('Unsaved researcher text.')))()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { notePath }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          await app.vault.read(app.vault.getFileByPath(notePath)!)
+        ).includes("Unsaved researcher text.");
+      },
+      { notePath },
+      { what: "the note file on disk to keep the unsaved researcher text" },
+    );
   });
 
   it.each(["built-in", "customized"])(
     "opens the %s template in its popout without displaying a main-window Workbench tab",
     async (kind) => {
       const notePath = `Popout ${kind}.md`;
-      await obEval(
+      await obRun(
         vaultId,
-        `(async()=>{
-          for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])
-            for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();
-          const profile=app.plugins.plugins.zotlit.services.profile;
-          ${kind === "built-in" ? "await profile.restoreDefault();" : "await profile.materializeDefault();"}
-          const file=await app.vault.create(${JSON.stringify(notePath)},'---\\nzotero-key: DMRGRART\\n---\\n# Popout');
-          const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
-          app.workspace.setActiveLeaf(leaf,{focus:true});return true;
-        })()`,
+        async ({ app: host, zotlit }, { kind, notePath }) => {
+          const app = host as WalkthroughApp;
+
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+            "zotlit-note-preview",
+          ])
+            for (const leaf of app.workspace.getLeavesOfType(type))
+              leaf.detach();
+          const profile = zotlit.services.profile;
+          if (kind === "built-in") await profile.restoreDefault();
+          else await profile.materializeDefault();
+          const file = await app.vault.create(
+            notePath,
+            "---\nzotero-key: DMRGRART\n---\n# Popout",
+          );
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { kind, notePath },
       );
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(notePath)}))?.frontmatter?.['zotero-key']==='DMRGRART')`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      const result = JSON.parse(
-        await obEval(
-          vaultId,
-          `(async()=>{
-            ${browserWaits}
-            const editors=()=>app.workspace.getLeavesOfType('zotlit-template-workbench');
-            let mainSamples=0;
-            const sample=()=>{for(const leaf of editors()){
-              const el=leaf.view.containerEl;
-              if(el.ownerDocument===document&&el.isConnected&&el.getBoundingClientRect().width>0)mainSamples++;
-            }};
-            using resources=new DisposableStack();
-            const observer=resources.adopt(new MutationObserver(sample),value=>value.disconnect());
-            observer.observe(document.body,{childList:true,subtree:true});
-            resources.adopt(setInterval(sample,10),clearInterval);
-              const accepted=app.commands.executeCommandById('zotlit:customize-note-template');
-              const ready=()=>editors().some(leaf=>leaf.view.file&&leaf.view.containerEl.ownerDocument!==document)
-                &&app.workspace.getLeavesOfType('zotlit-note-preview').length>0
-                &&app.workspace.getLeavesOfType('zotlit-template-data-explorer').length>0;
-              await waitFor(ready,true,'Template Workbench and companion views');
-              sample();
-              return JSON.stringify({accepted,ready:ready(),mainSamples,
-                customized:!!app.vault.getFileByPath(app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)});
-          })()`,
-        ),
+      await obRunUntil(
+        vaultId,
+        async ({ app: host }, { notePath }) => {
+          const app = host as WalkthroughApp;
+
+          return (
+            app.metadataCache.getFileCache(app.vault.getFileByPath(notePath)!)
+              ?.frontmatter?.["zotero-key"] === "DMRGRART"
+          );
+        },
+        { notePath },
+        {
+          what: "the note frontmatter zotero-key to be DMRGRART before the preview check",
+        },
+      );
+      const result = await obRun(
+        vaultId,
+        async ({ app: host, zotlit, page }) => {
+          const app = host as WalkthroughApp;
+
+          const { waitFor } = page;
+          const editors = () => page.leavesOfType("zotlit-template-workbench");
+          let mainSamples = 0;
+          const sample = () => {
+            for (const leaf of editors()) {
+              const el = leaf.view.containerEl;
+              if (
+                el.ownerDocument === document &&
+                el.isConnected &&
+                el.getBoundingClientRect().width > 0
+              )
+                mainSamples++;
+            }
+          };
+          using resources = new DisposableStack();
+          const observer = resources.adopt(
+            new MutationObserver(sample),
+            (value) => value.disconnect(),
+          );
+          observer.observe(document.body, { childList: true, subtree: true });
+          resources.adopt(setInterval(sample, 10), clearInterval);
+          const accepted = app.commands.executeCommandById(
+            "zotlit:customize-note-template",
+          );
+          const ready = () =>
+            editors().some(
+              (leaf) =>
+                leaf.view.file &&
+                leaf.view.containerEl.ownerDocument !== document,
+            ) &&
+            page.leavesOfType("zotlit-note-preview").length > 0 &&
+            page.leavesOfType("zotlit-template-data-explorer").length > 0;
+          await waitFor(ready, true, "Template Workbench and companion views");
+          sample();
+          return {
+            accepted,
+            ready: ready(),
+            mainSamples,
+            customized: !!app.vault.getFileByPath(
+              zotlit.services.profile.defaultDocumentPath,
+            )!,
+          };
+        },
+        undefined,
       );
       expect(result).toEqual({
         accepted: true,
@@ -762,15 +1450,25 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         customized: true,
       });
       // The template's Query Block shows a placeholder in the note preview.
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `(()=>{const el=app.workspace.getLeavesOfType('zotlit-note-preview')[0]?.view.contentEl;
-            return String(!!el?.querySelector('[data-zotlit-draft] [data-query-placeholder]')
-              &&!el.querySelector('[data-zotlit-draft] [role="toolbar"]'));})()`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          const el = page.leavesOfType("zotlit-note-preview")[0]?.view
+            .contentEl;
+          return (
+            !!el?.querySelector<HTMLElement>(
+              "[data-zotlit-draft] [data-query-placeholder]",
+            ) &&
+            !el.querySelector<HTMLElement>(
+              '[data-zotlit-draft] [role="toolbar"]',
+            )
+          );
+        },
+        undefined,
+        {
+          what: "the note preview to show the Query Block placeholder and no draft toolbar",
+        },
+      );
     },
   );
 
@@ -778,149 +1476,373 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const m = await import("@obsidian-messages");
     // The default Profile shows Annotations in a Query Block; a default
     // document that lists them puts one callout per Annotation in the note.
-    const original = await obEval(
+    const original = await obRun(
       vaultId,
-      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await profile.materializeDefault();return app.vault.read(app.vault.getFileByPath(profile.defaultDocumentPath));})()`,
+      async ({ app: host, zotlit }) => {
+        const app = host as WalkthroughApp;
+
+        const profile = zotlit.services.profile;
+        await profile.materializeDefault();
+        return await app.vault.read(
+          app.vault.getFileByPath(profile.defaultDocumentPath)!,
+        );
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         vaultId,
-        `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await app.vault.modify(app.vault.getFileByPath(profile.defaultDocumentPath),${JSON.stringify(original)});return true;})()`,
+        async ({ app: host, zotlit }, { original }) => {
+          const app = host as WalkthroughApp;
+
+          const profile = zotlit.services.profile;
+          await app.vault.modify(
+            app.vault.getFileByPath(profile.defaultDocumentPath)!,
+            original,
+          );
+        },
+        { original },
       );
     });
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-      const profile=app.plugins.plugins.zotlit.services.profile;
-      const file=app.vault.getFileByPath(profile.defaultDocumentPath);
-      const source=await app.vault.read(file);
-      const listed=(${LIST_ANNOTATIONS_JS})(source);
-      await app.vault.modify(file,listed);
-      const leaf=app.workspace.getLeaf('tab');
-      await leaf.openFile(app.vault.getFileByPath(profile.defaultDocumentPath));
-      app.workspace.setActiveLeaf(leaf,{focus:true});
-      app.commands.executeCommandById('zotlit:customize-profile');return true;
-    })()`,
+      async ({ app: host, zotlit, page }) => {
+        const app = host as WalkthroughApp;
+
+        const profile = zotlit.services.profile;
+        const file = app.vault.getFileByPath(profile.defaultDocumentPath)!;
+        const source = await app.vault.read(file);
+        const listed = page.listAnnotations(source);
+        await app.vault.modify(file, listed);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(
+          app.vault.getFileByPath(profile.defaultDocumentPath)!,
+        );
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:customize-profile");
+      },
+      undefined,
     );
-    const editor =
-      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
+
     // Opening the layout can move and reload the editor. Use the button only
     // after its companion panes arrive in the same popout document.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(()=>{${PAGE}
-          const view=${editor};
-          const doc=view?.contentEl?.ownerDocument;
-          const ready=doc&&doc!==document
-            &&['zotlit-template-data-explorer','zotlit-note-preview'].every(type=>app.workspace.getLeavesOfType(type).some(leaf=>leaf.view.contentEl?.ownerDocument===doc));
-          // A main-area pane shows the view header, so the reader presses its
-          // Choose item action; the in-pane trigger is for a sidebar alone.
-          const trigger=ready&&view.containerEl.querySelector(${JSON.stringify(`.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`)});
-          if(!trigger)return 'false';
-          press(trigger,'Choose item');return 'true';
-        })()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const prompt = `(${editor})?.contentEl?.ownerDocument.querySelector('.prompt')`;
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(()=>{const input=(${prompt})?.querySelector('input');if(!input)return 'false';input.value='rougier';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return 'true';})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }, { actionSelector }) => {
+        const { press } = page;
+        const view = page
+          .leavesOfType("zotlit-template-workbench")
+          .find(
+            (leaf) =>
+              leaf.view.file?.path ===
+              zotlit.services.profile.defaultDocumentPath,
+          )?.view;
+        const doc = view?.contentEl?.ownerDocument;
+        const ready =
+          doc &&
+          doc !== document &&
+          (
+            ["zotlit-template-data-explorer", "zotlit-note-preview"] as const
+          ).every((type) =>
+            page
+              .leavesOfType(type)
+              .some((leaf) => leaf.view.contentEl?.ownerDocument === doc),
+          );
+        // A main-area pane shows the view header, so the reader presses its
+        // Choose item action; the in-pane trigger is for a sidebar alone.
+        const trigger =
+          ready && view.containerEl.querySelector<HTMLElement>(actionSelector);
+        if (!trigger) return false;
+        press(trigger, "Choose item");
+        return true;
+      },
+      {
+        actionSelector: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
+      },
+      {
+        what: "the Choose item trigger to appear once the workbench companion panes load",
+      },
+    );
+
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }) => {
+        const input = page
+          .leavesOfType("zotlit-template-workbench")
+          .find(
+            (leaf) =>
+              leaf.view.file?.path ===
+              zotlit.services.profile.defaultDocumentPath,
+          )
+          ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(".prompt")
+          ?.querySelector<HTMLInputElement>("input");
+        if (!input) return false;
+        input.value = "rougier";
+        input.dispatchEvent(
+          new input.ownerDocument.defaultView!.Event("input", {
+            bubbles: true,
+          }),
+        );
+        return true;
+      },
+      undefined,
+      {
+        what: "the Choose item search input in the workbench to appear",
+      },
+    );
     // The results are `aria-busy` while they answer an earlier query.
-    const result = `Array.from((${prompt})?.querySelectorAll('.suggestion-item')??[]).find(row=>!row.closest('[aria-busy]')&&row.textContent.includes('Ten Simple Rules for Better Figures'))`;
+
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }) => {
+        const { press } = page;
+        const row = Array.from(
+          page
+            .leavesOfType("zotlit-template-workbench")
+            .find(
+              (leaf) =>
+                leaf.view.file?.path ===
+                zotlit.services.profile.defaultDocumentPath,
+            )
+            ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(
+              ".prompt",
+            )
+            ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
+        ).find(
+          (row) =>
+            !row.closest("[aria-busy]") &&
+            row.textContent.includes("Ten Simple Rules for Better Figures"),
+        );
+        if (!row) return false;
+        row.dispatchEvent(
+          new row.ownerDocument.defaultView!.MouseEvent("mousemove", {
+            bubbles: true,
+          }),
+        );
+        press(row, "search result");
+        return true;
+      },
+      undefined,
+      {
+        what: "the Ten Simple Rules result row in Choose item to settle out of aria-busy",
+      },
+    );
+
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }) => {
+        return (
+          page
+            .leavesOfType("zotlit-note-preview")
+            .find(
+              (leaf) =>
+                leaf.view.contentEl?.ownerDocument ===
+                page
+                  .leavesOfType("zotlit-template-workbench")
+                  .find(
+                    (leaf) =>
+                      leaf.view.file?.path ===
+                      zotlit.services.profile.defaultDocumentPath,
+                  )?.view?.contentEl?.ownerDocument,
+            )
+            ?.view.contentEl?.querySelectorAll<HTMLElement>(".callout")
+            .length! > 0 &&
+          !(page
+            .leavesOfType("zotlit-note-preview")
+            .find(
+              (leaf) =>
+                leaf.view.contentEl?.ownerDocument ===
+                page
+                  .leavesOfType("zotlit-template-workbench")
+                  .find(
+                    (leaf) =>
+                      leaf.view.file?.path ===
+                      zotlit.services.profile.defaultDocumentPath,
+                  )?.view?.contentEl?.ownerDocument,
+            )?.view.contentEl)!.querySelector<HTMLElement>(
+            "[data-zotlit-preview-pending]",
+          )
+        );
+      },
+      undefined,
+      {
+        what: "the note preview beside the workbench to render callouts with no pending preview",
+      },
+    );
     expect(
-      await obEvalUntil(
+      await obRun(
         vaultId,
-        `(()=>{${PAGE}const row=${result};if(!row)return 'false';row.dispatchEvent(new row.ownerDocument.defaultView.MouseEvent('mousemove',{bubbles:true}));press(row,'search result');return 'true';})()`,
-        { expected: "true" },
+        async ({ zotlit, page }) => {
+          return Array.from(
+            (page
+              .leavesOfType("zotlit-note-preview")
+              .find(
+                (leaf) =>
+                  leaf.view.contentEl?.ownerDocument ===
+                  page
+                    .leavesOfType("zotlit-template-workbench")
+                    .find(
+                      (leaf) =>
+                        leaf.view.file?.path ===
+                        zotlit.services.profile.defaultDocumentPath,
+                    )?.view?.contentEl?.ownerDocument,
+              )?.view.contentEl)!.querySelectorAll<HTMLElement>(".callout p"),
+          ).some((p) => p.classList.contains("zt:bg-accent"));
+        },
+        undefined,
       ),
-    ).toBe(true);
-    const preview = `app.workspace.getLeavesOfType('zotlit-note-preview').find(leaf=>leaf.view.contentEl?.ownerDocument===(${editor})?.contentEl?.ownerDocument)?.view.contentEl`;
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((${preview})?.querySelectorAll('.callout').length>0&&!(${preview}).querySelector('[data-zotlit-preview-pending]'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEval(
-        vaultId,
-        `String(Array.from((${preview}).querySelectorAll('.callout p')).some(p=>p.classList.contains('zt:bg-accent')))`,
-      ),
-    ).toBe("false");
+    ).toBe(false);
   });
   it("stores a typed property rule and note name that YAML has to quote as the text the reader typed", async () => {
     const m = await import("@obsidian-messages");
     const rule = 'zt.creators | map: "fullName"';
     const name = "{{ zt.title | replace: ':', '-' }}";
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          await using cleanup=new AsyncDisposableStack();
-          const profile=app.plugins.plugins.zotlit.services.profile;
-          await profile.materializeDefault();
-          const file=app.vault.getFileByPath(profile.defaultDocumentPath);
-          const original=await app.vault.read(file);
-          cleanup.defer(async()=>{
-            for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])
-              for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();
-            await app.vault.modify(file,original);
+    const result = await obRun(
+      vaultId,
+      async (
+        { app: host, zotlit, page },
+        {
+          propertiesTab,
+          ruleText,
+          storedRule,
+          nameAndFolderTab,
+          filenameLabel,
+          nameText,
+          storedName,
+          invalidMessage,
+        },
+      ) => {
+        const app = host as WalkthroughApp;
+
+        const { press, until, waitFor } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const profile = zotlit.services.profile;
+        await profile.materializeDefault();
+        const file = app.vault.getFileByPath(profile.defaultDocumentPath)!;
+        const original = await app.vault.read(file);
+        cleanup.defer(async () => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+            "zotlit-note-preview",
+          ])
+            for (const leaf of app.workspace.getLeavesOfType(type))
+              leaf.detach();
+          await app.vault.modify(file, original);
+        });
+        // The built-in Profile writes its note name as a block scalar, which
+        // YAML holds as written; a hand-written Profile quotes it.
+        const lines = original.split("\n");
+        const at = lines.indexOf("filename: |");
+        if (at < 0) throw new Error("Block note name");
+        lines.splice(
+          at,
+          2,
+          `filename: '${lines[at + 1]!.trim().replaceAll("'", "''")}'`,
+        );
+        await app.vault.modify(file, lines.join("\n"));
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:customize-profile");
+        const view = () =>
+          page.leavesOfType("zotlit-template-workbench")[0]?.view;
+        await waitFor(
+          () => !!view()?.contentEl.querySelector<HTMLElement>('[role="tab"]'),
+          true,
+          "Profile Editor",
+        );
+        const el = view()!.contentEl;
+        // The layout can still be moving the editor into its popout; press a
+        // tab once the reader can see it.
+        const open = async (label: string) =>
+          press(
+            await until(
+              `${label} tab shown`,
+              () =>
+                Array.from(
+                  el.querySelectorAll<HTMLElement>('[role="tab"]'),
+                ).find(
+                  (tab) => tab.textContent === label && tab.checkVisibility(),
+                ),
+              5000,
+            ),
+            label,
+          );
+        const type = (
+          content: HTMLElement | undefined | null,
+          text: string,
+        ) => {
+          const cm = (
+            content as HTMLElement & {
+              cmTile: { view: MarkdownView["editor"]["cm"] };
+            }
+          ).cmTile.view;
+          cm.focus();
+          cm.dispatch({
+            changes: { from: 0, to: cm.state.doc.length, insert: text },
+            selection: { anchor: text.length },
+            userEvent: "input.type",
           });
-          // The built-in Profile writes its note name as a block scalar, which
-          // YAML holds as written; a hand-written Profile quotes it.
-          const lines=original.split('\\n');
-          const at=lines.indexOf('filename: |');
-          if(at<0)throw new Error('Block note name');
-          lines.splice(at,2,"filename: '"+lines[at+1].trim().replaceAll("'","''")+"'");
-          await app.vault.modify(file,lines.join('\\n'));
-          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-          await leaf.openFile(file);
-          app.workspace.setActiveLeaf(leaf,{focus:true});
-          app.commands.executeCommandById('zotlit:customize-profile');
-          const view=()=>app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view;
-          await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile Editor');
-          const el=view().contentEl;
-          // The layout can still be moving the editor into its popout; press a
-          // tab once the reader can see it.
-          const open=async(label)=>press(await until(label+' tab shown',()=>Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===label&&tab.checkVisibility()),5000),label);
-          const type=(content,text)=>{
-            const cm=content.cmTile.view;
-            cm.focus();
-            cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:text},selection:{anchor:text.length},userEvent:'input.type'});
-            return ()=>cm.state.doc.toString();
-          };
-          await open(${JSON.stringify(m.workbench_tab_properties())});
-          const toggleOf=()=>Array.from(el.querySelectorAll('button[aria-controls][aria-expanded]')).find(button=>button.closest('li')?.innerText.startsWith('title\\n'));
-          await waitFor(()=>!!toggleOf(),true,'Title property row');
-          const toggle=toggleOf();
-          press(toggle,'title property');
-          const ruleEditor=()=>el.ownerDocument.getElementById(toggle.getAttribute('aria-controls'))?.querySelector('.cm-content');
-          await waitFor(()=>!!ruleEditor(),true,'Title rule editor');
-          const ruleShown=type(ruleEditor(),${JSON.stringify(rule)});
-          const storedRule=${JSON.stringify(`expr: '${rule}'`)};
-          await waitFor(()=>view().data.includes(storedRule),true,'Stored rule');
-          await open(${JSON.stringify(m.workbench_tab_name_and_folder())});
-          const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
-          await waitFor(()=>!!nameEditor(),true,'Note name editor');
-          const nameShown=type(nameEditor(),${JSON.stringify(name)});
-          const storedName=${JSON.stringify(`filename: '${name.replaceAll("'", "''")}'`)};
-          await waitFor(()=>view().data.includes(storedName),true,'Stored note name');
-          return JSON.stringify({
-            rule:ruleShown(),
-            name:nameShown(),
-            invalid:el.textContent.includes(${JSON.stringify(m.workbench_problem_invalid_manifest())}),
-          });
-        })()`,
-      ),
+          return () => cm.state.doc.toString();
+        };
+        await open(propertiesTab);
+        const toggleOf = () =>
+          Array.from(
+            el.querySelectorAll<HTMLButtonElement>(
+              "button[aria-controls][aria-expanded]",
+            ),
+          ).find((button) =>
+            button.closest("li")?.innerText.startsWith("title\n"),
+          );
+        await waitFor(() => !!toggleOf(), true, "Title property row");
+        const toggle = toggleOf();
+        press(toggle, "title property");
+        const ruleEditor = () =>
+          el.ownerDocument
+            .getElementById(toggle!.getAttribute("aria-controls")!)
+            ?.querySelector<HTMLElement>(".cm-content");
+        await waitFor(() => !!ruleEditor(), true, "Title rule editor");
+        const ruleShown = type(ruleEditor(), ruleText);
+        await waitFor(
+          () => view()!.data.includes(storedRule),
+          true,
+          "Stored rule",
+        );
+        await open(nameAndFolderTab);
+        const nameEditor = () =>
+          Array.from(el.querySelectorAll<HTMLElement>(".cm-content")).find(
+            (content) =>
+              el.ownerDocument.getElementById(
+                content.getAttribute("aria-labelledby")!,
+              )?.textContent === filenameLabel,
+          );
+        await waitFor(() => !!nameEditor(), true, "Note name editor");
+        const nameShown = type(nameEditor(), nameText);
+        await waitFor(
+          () => view()!.data.includes(storedName),
+          true,
+          "Stored note name",
+        );
+        return {
+          rule: ruleShown(),
+          name: nameShown(),
+          invalid: el.textContent.includes(invalidMessage),
+        };
+      },
+      {
+        propertiesTab: m.workbench_tab_properties(),
+        ruleText: rule,
+        storedRule: `expr: '${rule}'`,
+        nameAndFolderTab: m.workbench_tab_name_and_folder(),
+        filenameLabel: m.workbench_name_filename_label(),
+        nameText: name,
+        storedName: `filename: '${name.replaceAll("'", "''")}'`,
+        invalidMessage: m.workbench_problem_invalid_manifest(),
+      },
     );
     expect(result).toEqual({ rule, name, invalid: false });
   });
@@ -929,70 +1851,173 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const m = await import("@obsidian-messages");
     // A paper no other walkthrough keeps a note for, so creation is not refused.
     const title = "Why Most Published Research Findings Are False";
-    const result = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          ${browserWaits}
-          await using cleanup=new AsyncDisposableStack();
-          const services=app.plugins.plugins.zotlit.services;
-          const types=['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'];
-          const detach=()=>{for(const type of types)for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();};
+    const result = await obRun(
+      vaultId,
+      async (
+        { app: host, zotlit, page },
+        {
+          noteTitle,
+          tabLabel,
+          filenameLabel,
+          expectedPreviewPath,
+          folderLabel,
+          previewed,
+        },
+      ) => {
+        const app = host as WalkthroughApp;
+
+        const { press, until, waitFor } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const services = zotlit.services;
+        const types = [
+          "zotlit-template-workbench",
+          "zotlit-template-data-explorer",
+          "zotlit-note-preview",
+        ];
+        const detach = () => {
+          for (const type of types)
+            for (const leaf of app.workspace.getLeavesOfType(type))
+              leaf.detach();
+        };
+        detach();
+        // The paper is searchable once the item index answers.
+        let hits: SearchHit[] = [];
+        const hit = await until(
+          "Paper not found",
+          async () => {
+            hits = await services.itemLookup.search("ioannidis", {
+              limit: 20,
+            });
+            return hits.find((candidate) => candidate.item.key === "DMIANART");
+          },
+          10000,
+        ).catch(() => {
+          throw new Error(
+            `Paper not found: ${JSON.stringify(hits.map((candidate) => candidate.item.key))}`,
+          );
+        });
+        const profile = await services.profile.create({
+          label: "Path preview",
+          bindings: { folder: "path-notes" },
+        });
+        cleanup.defer(async () => {
           detach();
-          // The paper is searchable once the item index answers.
-          let hits=[];
-          const hit=await until('Paper not found',async()=>{
-            hits=await services.itemLookup.search('ioannidis',{limit:20});
-            return hits.find(candidate=>candidate.item.key==='DMIANART');
-          },10000).catch(()=>{throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));});
-          const profile=await services.profile.create({label:'Path preview',bindings:{folder:'path-notes'}});
-          cleanup.defer(async()=>{
-            detach();
-            await services.profile.delete(profile.id,'default');
-          });
-          const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-          await leaf.openFile(app.vault.getFileByPath(profile.path));
-          app.workspace.setActiveLeaf(leaf,{focus:true});
-          app.commands.executeCommandById('zotlit:customize-profile');
-          const view=()=>app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view;
-          await waitFor(()=>!!view()?.contentEl.querySelector('[role="tab"]'),true,'Profile editor');
-          const el=view().contentEl;
-          // Choose item has its own walkthrough; this one starts from the paper.
-          if(!await view().selectItem({id:hit.item.indexedKey,title:${JSON.stringify(title)}}))throw new Error('Profile item was not selected');
-          press(Array.from(el.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent===${JSON.stringify(m.workbench_tab_name_and_folder())}),'Name and folder');
-          const preview=()=>el.querySelector('[data-part="filename-output"]')?.textContent;
-          await waitFor(()=>/^path-notes\\/[^/]+\\.md$/.test(preview()??''),true,'Preview under the Profile folder');
-          // A slash in the note name makes a subfolder under the folder.
-          const nameEditor=()=>Array.from(el.querySelectorAll('.cm-content')).find(content=>el.ownerDocument.getElementById(content.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.workbench_name_filename_label())});
-          await waitFor(()=>!!nameEditor(),true,'Note name editor');
-          const cm=nameEditor().cmTile.view;
-          const name='Findings/{{ zt.title }}';
-          cm.focus();
-          cm.dispatch({changes:{from:0,to:cm.state.doc.length,insert:name},selection:{anchor:name.length},userEvent:'input.type'});
-          await waitFor(preview,${JSON.stringify(`path-notes/Findings/${title}.md`)},'Preview with a subfolder');
-          // A folder override moves the whole preview.
-          const label=Array.from(el.querySelectorAll('label[for]')).find(label=>label.textContent===${JSON.stringify(m.workbench_name_binding_folder())});
-          const folder=el.ownerDocument.getElementById(label.htmlFor);
-          folder.focus();
-          folder.value='Reading list';
-          folder.dispatchEvent(new folder.ownerDocument.defaultView.Event('input',{bubbles:true}));
-          folder.dispatchEvent(new folder.ownerDocument.defaultView.FocusEvent('focusout',{bubbles:true}));
-          const previewed=${JSON.stringify(`Reading list/Findings/${title}.md`)};
-          await waitFor(preview,previewed,'Preview under the overridden folder');
-          await view().save();
-          // The Profile takes the saved document once the template recompiles.
-          await waitFor(()=>services.profile.resolveProfile(profile.id)?.bindings['note.literature-folder'],'Reading list','Saved folder');
-          const created=await services.noteFeature.createNote(hit.item,{profile:profile.id});
-          if(created.outcome!=='created')throw new Error('Note refused: '+created.diagnostic?.code);
-          const path=created.file.path;
-          cleanup.defer(async()=>{
-            for(const leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file?.path===path)leaf.detach();
-            const file=app.vault.getFileByPath(path);
-            if(file)await app.vault.delete(file);
-          });
-          return JSON.stringify({previewed:preview(),created:path});
-        })()`,
-      ),
+          await services.profile.delete(profile.id, "default");
+        });
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(app.vault.getFileByPath(profile.path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:customize-profile");
+        const view = () =>
+          page.leavesOfType("zotlit-template-workbench")[0]?.view;
+        await waitFor(
+          () => !!view()?.contentEl.querySelector<HTMLElement>('[role="tab"]'),
+          true,
+          "Profile editor",
+        );
+        const el = view()!.contentEl;
+        // Choose item has its own walkthrough; this one starts from the paper.
+        if (
+          !(await view()!.selectItem({
+            id: hit.item.indexedKey,
+            title: noteTitle,
+          }))
+        )
+          throw new Error("Profile item was not selected");
+        press(
+          Array.from(el.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+            (tab) => tab.textContent === tabLabel,
+          ),
+          "Name and folder",
+        );
+        const preview = () =>
+          el.querySelector<HTMLElement>('[data-part="filename-output"]')
+            ?.textContent;
+        await waitFor(
+          () => /^path-notes\/[^/]+\.md$/.test(preview() ?? ""),
+          true,
+          "Preview under the Profile folder",
+        );
+        // A slash in the note name makes a subfolder under the folder.
+        const nameEditor = () =>
+          Array.from(el.querySelectorAll<HTMLElement>(".cm-content")).find(
+            (content) =>
+              el.ownerDocument.getElementById(
+                content.getAttribute("aria-labelledby")!,
+              )?.textContent === filenameLabel,
+          );
+        await waitFor(() => !!nameEditor(), true, "Note name editor");
+        const cm = (
+          nameEditor()! as HTMLElement & {
+            cmTile: { view: MarkdownView["editor"]["cm"] };
+          }
+        ).cmTile.view;
+        const name = "Findings/{{ zt.title }}";
+        cm.focus();
+        cm.dispatch({
+          changes: { from: 0, to: cm.state.doc.length, insert: name },
+          selection: { anchor: name.length },
+          userEvent: "input.type",
+        });
+        await waitFor(preview, expectedPreviewPath, "Preview with a subfolder");
+        // A folder override moves the whole preview.
+        const label = Array.from(
+          el.querySelectorAll<HTMLLabelElement>("label[for]"),
+        ).find((label) => label.textContent === folderLabel);
+        const folder = el.ownerDocument.getElementById(
+          label!.htmlFor,
+        ) as HTMLInputElement;
+        folder!.focus();
+        folder!.value = "Reading list";
+        folder!.dispatchEvent(
+          new folder!.ownerDocument.defaultView!.Event("input", {
+            bubbles: true,
+          }),
+        );
+        folder!.dispatchEvent(
+          new folder!.ownerDocument.defaultView!.FocusEvent("focusout", {
+            bubbles: true,
+          }),
+        );
+        await waitFor(
+          preview,
+          previewed,
+          "Preview under the overridden folder",
+        );
+        await view()!.save();
+        // The Profile takes the saved document once the template recompiles.
+        await waitFor(
+          () =>
+            services.profile.resolveProfile(profile.id)?.bindings[
+              "note.literature-folder"
+            ],
+          "Reading list",
+          "Saved folder",
+        );
+        const created = await services.noteFeature.createNote(hit.item, {
+          profile: profile.id,
+        });
+        if (created.outcome !== "created")
+          throw new Error(`Note refused: ${created.diagnostic?.code}`);
+        const path = created.file.path;
+        cleanup.defer(async () => {
+          for (const leaf of page.leavesOfType("markdown"))
+            if ((leaf.view as MarkdownView).file?.path === path) leaf.detach();
+          const file = app.vault.getFileByPath(path)!;
+          if (file) await app.vault.delete(file);
+        });
+        return { previewed: preview(), created: path };
+      },
+      {
+        noteTitle: title,
+        tabLabel: m.workbench_tab_name_and_folder(),
+        filenameLabel: m.workbench_name_filename_label(),
+        expectedPreviewPath: `path-notes/Findings/${title}.md`,
+        folderLabel: m.workbench_name_binding_folder(),
+        previewed: `Reading list/Findings/${title}.md`,
+      },
     );
     expect(result).toEqual({
       previewed: `Reading list/Findings/${title}.md`,
@@ -1001,211 +2026,588 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("keeps Annotation fields and preview when Customize reopens its workbench", async () => {
-    await obEval(
+    await obRun(
       vaultId,
-      `(async()=>{
-        const file=await app.vault.create('Reopen workbench.md','---\\nzotero-key: DMRGRART\\n---\\n# Workbench context');
-        const leaf=app.workspace.getLeaf('tab');
-        await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;
-      })()`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        const file = await app.vault.create(
+          "Reopen workbench.md",
+          "---\nzotero-key: DMRGRART\n---\n# Workbench context",
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getFileByPath('Reopen workbench.md'))?.frontmatter?.['zotero-key']==='DMRGRART')`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       vaultId,
-      `app.commands.executeCommandById('zotlit:customize-note-template');true`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.metadataCache.getFileCache(
+            app.vault.getFileByPath("Reopen workbench.md")!,
+          )?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      undefined,
+      {
+        what: "the Reopen workbench note frontmatter zotero-key to be DMRGRART",
+      },
     );
-    const editor =
-      "app.workspace.getLeavesOfType('zotlit-template-workbench')[0]?.view";
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(!!(${editor})?.contentEl.querySelector('[role="tab"]'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{${PAGE}press(Array.from((${editor}).contentEl.querySelectorAll('[role="tab"]')).find(tab=>tab.textContent==='Annotation'),'Annotation');return true;})()`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        app.commands.executeCommandById("zotlit:customize-note-template");
+      },
+      undefined,
     );
-    const contexts = `(()=>({
-      tab:(${editor}).store.getState().tab,
-      editor:(${editor}).store.getState().root,
-      preview:app.workspace.getLeavesOfType('zotlit-note-preview')[0]?.view.getState().root,
-      fields:app.workspace.getLeavesOfType('zotlit-template-data-explorer')[0]?.view.getState().root
-    }))()`;
+
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page
+          .leavesOfType("zotlit-template-workbench")[0]
+          ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
+      },
+      undefined,
+      { what: "the workbench tab bar to render after Customize reopens it" },
+    );
+    await obRun(
+      vaultId,
+      async ({ page }) => {
+        const { press } = page;
+        press(
+          Array.from(
+            (page.leavesOfType("zotlit-template-workbench")[0]
+              ?.view)!.contentEl.querySelectorAll<HTMLElement>('[role="tab"]'),
+          ).find((tab) => tab.textContent === "Annotation"),
+          "Annotation",
+        );
+      },
+      undefined,
+    );
+
     const expected = {
       tab: "annotation",
       editor: "annotation",
       preview: "annotation",
       fields: "annotation",
     };
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(JSON.stringify(${contexts})===${JSON.stringify(JSON.stringify(expected))})`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       vaultId,
-      `(async()=>{
-        const note=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path==='Reopen workbench.md');
-        await app.workspace.revealLeaf(note);app.workspace.setActiveLeaf(note,{focus:true});
-        return app.commands.executeCommandById('zotlit:customize-note-template');
-      })()`,
+      async ({ page }, { expectedJson }) => {
+        return (
+          JSON.stringify(
+            (() => ({
+              tab: (page.leavesOfType("zotlit-template-workbench")[0]
+                ?.view)!.store.getState().tab,
+              editor: (page.leavesOfType("zotlit-template-workbench")[0]
+                ?.view)!.store.getState().root,
+              preview: page
+                .leavesOfType("zotlit-note-preview")[0]
+                ?.view.getState().root,
+              fields: page
+                .leavesOfType("zotlit-template-data-explorer")[0]
+                ?.view.getState().root,
+            }))(),
+          ) === expectedJson
+        );
+      },
+      { expectedJson: JSON.stringify(expected) },
+      {
+        what: "the workbench, preview and field explorer views to match the expected snapshot",
+      },
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+
+        const note = page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === "Reopen workbench.md");
+        await app.workspace.revealLeaf(note!);
+        app.workspace.setActiveLeaf(note!, { focus: true });
+        return app.commands.executeCommandById(
+          "zotlit:customize-note-template",
+        );
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.workspace.activeLeaf ===
+          (page.leavesOfType("zotlit-template-workbench")[0]?.view)!.leaf
+        );
+      },
+      undefined,
+      { what: "the Template Workbench to become the active leaf" },
     );
     expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.workspace.activeLeaf===(${editor}).leaf)`,
-        { expected: "true" },
+      JSON.parse(
+        await obRun(
+          vaultId,
+          async ({ page }) => {
+            return JSON.stringify(
+              (() => ({
+                tab: (page.leavesOfType("zotlit-template-workbench")[0]
+                  ?.view)!.store.getState().tab,
+                editor: (page.leavesOfType("zotlit-template-workbench")[0]
+                  ?.view)!.store.getState().root,
+                preview: page
+                  .leavesOfType("zotlit-note-preview")[0]
+                  ?.view.getState().root,
+                fields: page
+                  .leavesOfType("zotlit-template-data-explorer")[0]
+                  ?.view.getState().root,
+              }))(),
+            );
+          },
+          undefined,
+        ),
       ),
-    ).toBe(true);
-    expect(
-      JSON.parse(await obEval(vaultId, `JSON.stringify(${contexts})`)),
     ).toEqual(expected);
   });
 
   it("keeps a switched note's subfolder under the target Profile's folder", async () => {
-    const created = JSON.parse(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          const {profile}=app.plugins.plugins.zotlit.services;
-          const books=await profile.create({label:'Books',bindings:{folder:'books'}});
-          const folder=profile.resolveProfile('default').bindings['note.literature-folder'].replace(/^\\/+|\\/+$/g,'');
-          const dir=(folder?folder+'/':'')+'2024';
-          if(!app.vault.getAbstractFileByPath(dir))await app.vault.createFolder(dir);
-          const file=await app.vault.create(dir+'/Subfolder move.md','---\\nzotero-key: DMRGRART\\n---\\nMy reading notes\\n');
-          const leaf=app.workspace.getLeaf('tab');
-          await leaf.openFile(file);
-          app.workspace.setActiveLeaf(leaf,{focus:true});
-          return JSON.stringify({id:books.id,path:file.path});
-        })()`,
-      ),
-    ) as { id: string; path: string };
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(created.path)}))?.frontmatter?.['zotero-key']==='DMRGRART')`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    const created = (await obRun(
       vaultId,
-      `app.commands.executeCommandById('zotlit:switch-literature-note-profile')`,
+      async ({ app: host, zotlit }) => {
+        const app = host as WalkthroughApp;
+
+        const { profile } = zotlit.services;
+        const books = await profile.create({
+          label: "Books",
+          bindings: { folder: "books" },
+        });
+        const folder = profile
+          .resolveProfile("default")!
+          .bindings["note.literature-folder"].replaceAll(/^\/+|\/+$/g, "");
+        const dir = `${folder ? `${folder}/` : ""}2024`;
+        if (!app.vault.getAbstractFileByPath(dir))
+          await app.vault.createFolder(dir);
+        const file = await app.vault.create(
+          `${dir}/Subfolder move.md`,
+          "---\nzotero-key: DMRGRART\n---\nMy reading notes\n",
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        return { id: books.id, path: file.path };
+      },
+      undefined,
+    )) as { id: string; path: string };
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { createdPath }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.metadataCache.getFileCache(app.vault.getFileByPath(createdPath)!)
+            ?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      { createdPath: created.path },
+      { what: "the switched note frontmatter zotero-key to be DMRGRART" },
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        return app.commands.executeCommandById(
+          "zotlit:switch-literature-note-profile",
+        );
+      },
+      undefined,
     );
     const target = "books/2024/Subfolder move.md";
-    const row = `Array.from(Array.from(activeDocument.querySelectorAll('.prompt')).at(-1)?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(target)}))`;
-    expect(
-      await obEvalUntil(vaultId, `String(!!(${row}))`, { expected: "true" }),
-    ).toBe(true);
-    await obEval(
+
+    await obRunUntil(
       vaultId,
-      `(()=>{${PAGE}press(${row},'Profile row');return true;})()`,
+      async (_context, { target }) => {
+        return !!Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".prompt"))
+            .at(-1)
+            ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
+        ).find((el) => el.textContent.includes(target));
+      },
+      { target },
+      {
+        what: "the last open prompt to list the target Profile folder suggestion",
+      },
     );
-    const move = `(()=>{const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);return Array.from(modal?.querySelectorAll('input[type=checkbox]')??[]).find(input=>{for(let el=input.parentElement;el&&el!==modal;el=el.parentElement){if(el.querySelectorAll('input[type=checkbox]').length>1)return false;if(el.textContent.includes('Move to books/2024/'))return true;}return false;});})()`;
-    expect(
-      await obEvalUntil(vaultId, `String(!!${move})`, { expected: "true" }),
-    ).toBe(true);
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{${PAGE}press(${move},'Move to books/2024/');return true;})()`,
+      async ({ page }, { target }) => {
+        const { press } = page;
+        press(
+          Array.from(
+            Array.from(activeDocument.querySelectorAll<HTMLElement>(".prompt"))
+              .at(-1)
+              ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
+          ).find((el) => el.textContent.includes(target)),
+          "Profile row",
+        );
+      },
+      { target },
+    );
+
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return !!(() => {
+          const modal = Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".modal"),
+          ).at(-1);
+          return Array.from(
+            modal?.querySelectorAll<HTMLInputElement>("input[type=checkbox]") ??
+              [],
+          ).find((input) => {
+            for (
+              let el = input.parentElement;
+              el && el !== modal;
+              el = el.parentElement
+            ) {
+              if (
+                el.querySelectorAll<HTMLInputElement>("input[type=checkbox]")
+                  .length > 1
+              )
+                return false;
+              if (el.textContent.includes("Move to books/2024/")) return true;
+            }
+            return false;
+          });
+        })();
+      },
+      undefined,
+      { what: "the Move to books/2024/ checkbox in the top modal to appear" },
+    );
+    await obRun(
+      vaultId,
+      async ({ page }) => {
+        const { press } = page;
+        press(
+          (() => {
+            const modal = Array.from(
+              activeDocument.querySelectorAll<HTMLElement>(".modal"),
+            ).at(-1);
+            return Array.from(
+              modal?.querySelectorAll<HTMLInputElement>(
+                "input[type=checkbox]",
+              ) ?? [],
+            ).find((input) => {
+              for (
+                let el = input.parentElement;
+                el && el !== modal;
+                el = el.parentElement
+              ) {
+                if (
+                  el.querySelectorAll<HTMLInputElement>("input[type=checkbox]")
+                    .length > 1
+                )
+                  return false;
+                if (el.textContent.includes("Move to books/2024/")) return true;
+              }
+              return false;
+            });
+          })(),
+          "Move to books/2024/",
+        );
+      },
+      undefined,
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        const { press } = page;
+        const modal = Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1);
+        const button = Array.from(
+          modal?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+        ).find((el) => el.textContent.trim() === "Switch to “Books”");
+        if (!button) return false;
+        press(button, "Switch to Books");
+        return true;
+      },
+      undefined,
+      {
+        what: "the Switch to Books button in the top modal to appear and be pressed",
+      },
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { target }) => {
+        const app = host as WalkthroughApp;
+
+        return (
+          app.metadataCache.getFileCache(app.vault.getFileByPath(target)!)
+            ?.frontmatter?.["zotlit-profile"] ?? ""
+        );
+      },
+      { target },
+      {
+        ready: (value) => value === `Books (${created.id})`,
+        what: "the switched note zotlit-profile frontmatter to read Books with its profile id",
+      },
     );
     expect(
-      await obEvalUntil(
+      await obRun(
         vaultId,
-        `(()=>{${PAGE}const modal=Array.from(activeDocument.querySelectorAll('.modal')).at(-1);const button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent.trim()==='Switch to “Books”');if(!button)return false;press(button,'Switch to Books');return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(target)}))?.frontmatter?.['zotlit-profile']??'')`,
-        { expected: `Books (${created.id})` },
-      ),
-    ).toBe(true);
-    expect(
-      await obEval(
-        vaultId,
-        `(async()=>{
-          const moved=app.vault.getFileByPath(${JSON.stringify(target)});
-          const body=await app.vault.read(moved);
-          const left=!!app.vault.getAbstractFileByPath(${JSON.stringify(created.path)});
+        async ({ app: host, zotlit }, { target, createdPath, createdId }) => {
+          const app = host as WalkthroughApp;
+
+          const moved = app.vault.getFileByPath(target)!;
+          const body = await app.vault.read(moved);
+          const left = !!app.vault.getAbstractFileByPath(createdPath);
           await app.vault.delete(moved);
-          const {profile}=app.plugins.plugins.zotlit.services;
-          await app.vault.delete(app.vault.getFileByPath(profile.profiles.find(p=>p.id===${JSON.stringify(created.id)}).path));
-          app.workspace.detachLeavesOfType('empty');
-          return String(!left&&body.includes('My reading notes'));
-        })()`,
+          const { profile } = zotlit.services;
+          await app.vault.delete(
+            app.vault.getFileByPath(
+              profile.profiles.find((p) => p.id === createdId)!.path,
+            )!,
+          );
+          app.workspace.detachLeavesOfType("empty");
+          return !left && body.includes("My reading notes");
+        },
+        { target, createdPath: created.path, createdId: created.id },
       ),
-    ).toBe("true");
+    ).toBe(true);
   });
 
   it("creates a Profile from a name alone in Add profile and opens it on Name and folder", async () => {
     const m = await import("@obsidian-messages");
-    await obEval(
+    await obRun(
       vaultId,
-      `app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        app.vault.setConfig("settingsPopoutWindow", false);
+        app.setting.open();
+      },
+      undefined,
     );
-    await obEval(vaultId, `app.setting.openTabById('zotlit');true`);
-    await obEval(
+    await obRun(
       vaultId,
-      `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:['settings_page_profiles']});true`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        app.setting.openTabById("zotlit");
+      },
+      undefined,
     );
-    const add = `app.setting.containerEl.querySelector('[aria-label=${JSON.stringify(m.settings_profile_add())}]')`;
-    expect(
-      await obEvalUntil(vaultId, `String(!!(${add}))`, { expected: "true" }),
-    ).toBe(true);
-    await obEval(
+    await obRun(
       vaultId,
-      `(()=>{${PAGE}press(${add},'Add profile');return true;})()`,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
+
+        app.setting.navigateToSearchResult({
+          tab: app.setting.activeTab!,
+          pagePath: ["settings_page_profiles"],
+        });
+      },
+      undefined,
     );
-    const dialog = `Array.from(activeDocument.querySelectorAll('.modal')).find(el=>el.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_add())})`;
-    const status = `(${dialog})?.querySelector('p[role="status"]')`;
+
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { addProfileLabel }) => {
+        const app = host as WalkthroughApp;
+
+        return !!app.setting.containerEl.querySelector<HTMLElement>(
+          `[aria-label=${JSON.stringify(addProfileLabel)}]`,
+        );
+      },
+      { addProfileLabel: m.settings_profile_add() },
+      { what: "the Add profile button in the settings tab to render" },
+    );
+    await obRun(
+      vaultId,
+      async ({ app: host, page }, { addProfileLabel }) => {
+        const app = host as WalkthroughApp;
+
+        const { press } = page;
+        press(
+          app.setting.containerEl.querySelector<HTMLElement>(
+            `[aria-label=${JSON.stringify(addProfileLabel)}]`,
+          ),
+          "Add profile",
+        );
+      },
+      { addProfileLabel: m.settings_profile_add() },
+    );
+
+    await obRunUntil(
+      vaultId,
+      async (_context, { addProfileLabel }) => {
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        )
+          .find(
+            (el) =>
+              el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+              addProfileLabel,
+          )
+          ?.querySelector<HTMLElement>('p[role="status"]')?.textContent;
+      },
+      { addProfileLabel: m.settings_profile_add() },
+      {
+        ready: (value) => value === m.settings_profile_name_invalid(),
+        what: "the Add profile modal to show the invalid profile name status",
+      },
+    );
     expect(
-      await obEvalUntil(vaultId, `String((${status})?.textContent)`, {
-        expected: m.settings_profile_name_invalid(),
-      }),
-    ).toBe(true);
-    expect(
-      await obEval(
+      await obRun(
         vaultId,
-        `String((${status}).classList.contains('zt:text-(--text-error)'))`,
+        async (_context, { addProfileLabel }) => {
+          return (Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".modal"),
+          )
+            .find(
+              (el) =>
+                el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                addProfileLabel,
+            )
+            ?.querySelector<HTMLElement>(
+              'p[role="status"]',
+            ))!.classList.contains("zt:text-(--text-error)");
+        },
+        { addProfileLabel: m.settings_profile_add() },
       ),
-    ).toBe("false");
-    const action = `Array.from((${dialog}).querySelectorAll('.modal-button-container button')).find(el=>el.textContent===${JSON.stringify(m.settings_profile_add())})`;
-    expect(await obEval(vaultId, `String((${action}).disabled)`)).toBe("true");
-    await obEval(
-      vaultId,
-      `(()=>{const input=Array.from((${dialog}).querySelectorAll('label')).find(el=>el.firstChild?.textContent===${JSON.stringify(m.settings_profile_name_name())}).querySelector('input');input.value='Reading group';input.dispatchEvent(new input.ownerDocument.defaultView.Event('input',{bubbles:true}));return true;})()`,
-    );
+    ).toBe(false);
+
     expect(
-      await obEvalUntil(vaultId, `String((${action}).disabled)`, {
-        expected: "false",
-      }),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(()=>{${PAGE}press(${action},'Add');return true;})()`,
-    );
-    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').map(leaf=>leaf.view).find(view=>view.file?.name==='zotlit-profile.reading-group.md')`;
-    expect(
-      await obEvalUntil(vaultId, `String((${editor})?.store.getState().tab)`, {
-        expected: "name",
-      }),
-    ).toBe(true);
-    expect(
-      await obEval(
+      await obRun(
         vaultId,
-        `app.vault.read((${editor}).file).then(text=>String(/^folder:/m.test(text)))`,
+        async (_context, { addProfileLabel }) => {
+          return Array.from(
+            Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+              .find(
+                (el) =>
+                  el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                  addProfileLabel,
+              )!
+              .querySelectorAll<HTMLButtonElement>(
+                ".modal-button-container button",
+              ),
+          ).find((el) => el.textContent === addProfileLabel)!.disabled;
+        },
+        { addProfileLabel: m.settings_profile_add() },
+      ),
+    ).toBe(true);
+    await obRun(
+      vaultId,
+      async (_context, { addProfileLabel, profileNameText }) => {
+        const input = Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .find(
+              (el) =>
+                el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                addProfileLabel,
+            )!
+            .querySelectorAll<HTMLLabelElement>("label"),
+        )
+          .find((el) => el.firstChild?.textContent === profileNameText)!
+          .querySelector<HTMLInputElement>("input");
+        input!.value = "Reading group";
+        input!.dispatchEvent(
+          new input!.ownerDocument.defaultView!.Event("input", {
+            bubbles: true,
+          }),
+        );
+      },
+      {
+        addProfileLabel: m.settings_profile_add(),
+        profileNameText: m.settings_profile_name_name(),
+      },
+    );
+    await obRunUntil(
+      vaultId,
+      async (_context, { addProfileLabel }) => {
+        return Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .find(
+              (el) =>
+                el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                addProfileLabel,
+            )!
+            .querySelectorAll<HTMLButtonElement>(
+              ".modal-button-container button",
+            ),
+        ).find((el) => el.textContent === addProfileLabel)!.disabled;
+      },
+      { addProfileLabel: m.settings_profile_add() },
+      {
+        ready: (value) => value === false,
+        what: "the Add profile modal submit button to become enabled",
+      },
+    );
+    await obRun(
+      vaultId,
+      async ({ page }, { addProfileLabel }) => {
+        const { press } = page;
+        press(
+          Array.from(
+            Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+              .find(
+                (el) =>
+                  el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                  addProfileLabel,
+              )!
+              .querySelectorAll<HTMLButtonElement>(
+                ".modal-button-container button",
+              ),
+          ).find((el) => el.textContent === addProfileLabel),
+          "Add",
+        );
+      },
+      { addProfileLabel: m.settings_profile_add() },
+    );
+
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page
+          .leavesOfType("zotlit-template-workbench")
+          .map((leaf) => leaf.view)
+          .find((view) => view.file?.name === "zotlit-profile.reading-group.md")
+          ?.store.getState().tab;
+      },
+      undefined,
+      {
+        ready: (value) => value === "name",
+        what: "the reading-group Profile workbench to open on the Name tab",
+      },
+    );
+    expect(
+      await obRun(
+        vaultId,
+        async ({ app: host, page }) => {
+          const app = host as WalkthroughApp;
+
+          return await app.vault
+            .read(
+              page
+                .leavesOfType("zotlit-template-workbench")
+                .map((leaf) => leaf.view)
+                .find(
+                  (view) =>
+                    view.file?.name === "zotlit-profile.reading-group.md",
+                )!.file!,
+            )
+            .then((text) => String(/^folder:/m.test(text)));
+        },
+        undefined,
       ),
     ).toBe("false");
   });

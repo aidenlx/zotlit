@@ -1,3 +1,7 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { layer } from "@effect/vitest";
+import { Effect } from "effect";
+import { TestClock } from "effect/testing";
 import {
   mkdir,
   mkdtemp,
@@ -8,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, expect } from "vitest";
 
 import { CSL_STAGING_EXT, cslStoreDirectory } from "./csl";
 import { reapCslStore } from "./reap-temps";
@@ -26,64 +30,73 @@ afterEach(async () => {
   await rm(parent, { recursive: true, force: true });
 });
 
-/** A store entry stamped `hours` into the past. */
-async function entry(name: string, hours: number): Promise<string> {
-  const path = join(store, name);
-  await writeFile(path, "<style/>");
-  const at =
-    Temporal.Now.instant().subtract({ hours }).epochMilliseconds / 1000;
-  await utimes(path, at, at);
-  return name;
-}
+/** The test's now, in seconds since the epoch: every entry ages against it. */
+const NOW = 1_000_000_000;
 
-async function names(): Promise<string[]> {
-  return (await readdir(store)).sort();
-}
+const HOUR = 60 * 60;
+const DAY = 24 * HOUR;
 
-const DAY = 24;
-
-describe("reapCslStore", () => {
-  it("evicts a style once it ages out, keeping one still in its window", async () => {
-    await entry("old.csl", 31 * DAY);
-    await entry("fresh.csl", 29 * DAY);
-
-    await reapCslStore({ parent });
-
-    expect(await names()).toEqual(["fresh.csl"]);
+/** A store entry stamped `seconds` before {@link NOW}, with the Clock at NOW. */
+const entry = (name: string, seconds: number) =>
+  Effect.gen(function* () {
+    const path = join(store, name);
+    yield* Effect.promise(() => writeFile(path, "<style/>"));
+    yield* Effect.promise(() => utimes(path, NOW - seconds, NOW - seconds));
+    yield* TestClock.setTime(NOW * 1000);
+    return name;
   });
 
-  it("evicts an abandoned staged file on a far shorter clock", async () => {
-    await entry(`.abandoned${CSL_STAGING_EXT}`, 2);
-    await entry(`.writing${CSL_STAGING_EXT}`, 0);
-    // Same age as the abandoned staged file, but a style's clock is far longer.
-    await entry("kept.csl", 2);
+const names = Effect.promise(async () => (await readdir(store)).sort());
 
-    await reapCslStore({ parent });
+layer(NodeFileSystem.layer)("reapCslStore", (it) => {
+  it.effect(
+    "evicts a style once it ages out, keeping one still in its window",
+    () =>
+      Effect.gen(function* () {
+        yield* entry("old.csl", 31 * DAY);
+        yield* entry("fresh.csl", 29 * DAY);
+        yield* reapCslStore({ parent });
+        expect(yield* names).toEqual(["fresh.csl"]);
+      }),
+  );
 
-    expect(await names()).toEqual([`.writing${CSL_STAGING_EXT}`, "kept.csl"]);
-  });
+  it.effect("evicts an abandoned staged file on a far shorter clock", () =>
+    Effect.gen(function* () {
+      yield* entry(`.abandoned${CSL_STAGING_EXT}`, 2 * HOUR);
+      yield* entry(`.writing${CSL_STAGING_EXT}`, 0);
+      // Same age as the abandoned staged file, but a style's clock is far longer.
+      yield* entry("kept.csl", 2 * HOUR);
+      yield* reapCslStore({ parent });
+      expect(yield* names).toEqual([`.writing${CSL_STAGING_EXT}`, "kept.csl"]);
+    }),
+  );
 
-  it("ages an unrecognized entry as a style, since ZotLit owns the store", async () => {
-    await entry("stray", 31 * DAY);
-    await entry("recent-stray", 1);
+  it.effect(
+    "ages an unrecognized entry as a style, since ZotLit owns the store",
+    () =>
+      Effect.gen(function* () {
+        yield* entry("stray", 31 * DAY);
+        yield* entry("recent-stray", HOUR);
+        yield* reapCslStore({ parent });
+        expect(yield* names).toEqual(["recent-stray"]);
+      }),
+  );
 
-    await reapCslStore({ parent });
+  it.effect("ages a kept style out once the Clock moves past its window", () =>
+    Effect.gen(function* () {
+      yield* entry("style.csl", 29 * DAY);
+      yield* reapCslStore({ parent });
+      expect(yield* names).toEqual(["style.csl"]);
+      yield* TestClock.adjust("2 days");
+      yield* reapCslStore({ parent });
+      expect(yield* names).toEqual([]);
+    }),
+  );
 
-    expect(await names()).toEqual(["recent-stray"]);
-  });
-
-  it("resolves quietly before the store has ever been written", async () => {
-    await rm(store, { recursive: true });
-
-    await expect(reapCslStore({ parent })).resolves.toBeUndefined();
-  });
-
-  it("rejects with an already-aborted signal's reason, leaving every entry", async () => {
-    await entry("old.csl", 31 * DAY);
-    const signal = AbortSignal.abort();
-
-    await expect(reapCslStore({ parent, signal })).rejects.toBe(signal.reason);
-
-    expect(await names()).toEqual(["old.csl"]);
-  });
+  it.effect("settles quietly before the store has ever been written", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => rm(store, { recursive: true }));
+      yield* reapCslStore({ parent });
+    }),
+  );
 });

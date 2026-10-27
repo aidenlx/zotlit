@@ -19,14 +19,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import { libraryLabel } from "@/services/library-scope/label";
 import { compareSelectors, selectorOf } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
+import { LibraryScope } from "@/services/library-scope/service";
 import type {
   DbUnavailable,
   SnapshotExpired,
 } from "@/services/zotero-reads/rpc";
-import type {
-  ZoteroReads,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 import type { FlatGroupDef } from "@/views/batch-modal";
 
 /** Which items a batch action collects from its scope. */
@@ -133,26 +132,6 @@ export function resolveBatchScope(
   });
 }
 
-/** The services a library-wide run reaches its Library Scope through. */
-export interface BatchScopePlanDeps {
-  zoteroReads: Pick<ZoteroReads["Service"], "snapshot">;
-  libraryScope: {
-    resolveLibraries(
-      libraries: readonly Library[],
-    ): Effect.Effect<ResolvedLibraryScope>;
-  };
-}
-
-/** Lift a synchronous Library Scope resolver into the Effect planning seam. */
-export function effectLibraryScope(libraryScope: {
-  resolveLibraries(libraries: readonly Library[]): ResolvedLibraryScope;
-}): BatchScopePlanDeps["libraryScope"] {
-  return {
-    resolveLibraries: (libraries) =>
-      Effect.sync(() => libraryScope.resolveLibraries(libraries)),
-  };
-}
-
 export type BatchScopePlan =
   /** Library Scope is Selected Libraries, and this database holds none of them. */
   | { outcome: "no-library-in-scope" }
@@ -175,17 +154,16 @@ export type BatchScopePlan =
  * classification, confirmation, writes — runs under it.
  */
 export function planBatchScope(
-  deps: BatchScopePlanDeps,
   kind: BatchScopeKind,
   target: BatchTarget,
-): Effect.Effect<BatchScopePlan, BatchScopeError> {
+): Effect.Effect<BatchScopePlan, BatchScopeError, LibraryScope | ZoteroReads> {
   return Effect.scoped(
     Effect.gen(function* () {
-      const reads = yield* deps.zoteroReads.snapshot;
+      const reads = yield* (yield* ZoteroReads).snapshot;
       const libraries = yield* reads.Libraries({});
       const libraryScope =
         target.groupID === undefined
-          ? yield* deps.libraryScope.resolveLibraries(libraries)
+          ? yield* (yield* LibraryScope).resolveLibraries(libraries)
           : null;
       let unavailableLibraries = 0;
       if (libraryScope !== null) {

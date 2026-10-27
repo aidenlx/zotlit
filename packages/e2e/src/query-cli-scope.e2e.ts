@@ -12,7 +12,10 @@ import { e2eVaultPath, targetItem } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { expectedLibraryIDs } from "./e2e-run-note-helpers.ts";
 import type { LibraryScopeReport } from "./e2e-run-query-types.ts";
-import { cliCommand, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { obRunUntil } from "./obsidian-cli.ts";
+import { cliCommand, waitFor } from "./obsidian-cli.ts";
+import type { QueryWorkerRecord } from "./page-query-types.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
@@ -29,9 +32,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // Settle any pending settings write before editing its disk file; plugin
     // unload also flushes pending settings.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "app.plugins.plugins.zotlit.services.settings.flush().then(()=>true)",
+      async ({ zotlit }) => {
+        return await zotlit.services.bridge
+          .runPromise(zotlit.services.settings.flush)
+          .then(() => true);
+      },
+      undefined,
     );
 
     // Rewrite the e2e vault's own copy — the shared Fixture layout's vault
@@ -44,50 +52,99 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The plugin toggle is also the Zotero database worker's whole life:
     // record every worker spawned and every worker ended across it.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "(function(){var Original=window.Worker;var record={spawned:[],Original:Original,terminate:Original.prototype.terminate,ended:new WeakSet()};record.Recording=class extends Original{constructor(url,options){super(url,options);record.spawned.push({worker:this,name:options&&options.name});}};Original.prototype.terminate=function(){record.ended.add(this);return record.terminate.call(this);};window.Worker=record.Recording;window.zotlitE2EWorkers=record;return true;})()",
+      async ({ page: pageHelpers }) => {
+        var Original = window.Worker;
+        var record: QueryWorkerRecord = {
+          spawned: [],
+          Original: Original,
+          terminate: Original.prototype.terminate,
+          ended: new WeakSet(),
+        };
+        window.Worker = new Proxy(Original, {
+          construct(Target, args) {
+            const [url, options] = args;
+            const worker = new Target(url, options);
+            record.spawned.push({ worker, name: options?.name });
+            return worker;
+          },
+        });
+        Original.prototype.terminate = new Proxy(record.terminate, {
+          apply(target, receiver, args) {
+            record.ended.add(receiver);
+            return Reflect.apply(target, receiver, args);
+          },
+        });
+        pageHelpers.scratch.zotlitE2EWorkers = record;
+      },
+      undefined,
     );
-    const workers = (expression: string) =>
-      `(function(){var record=window.zotlitE2EWorkers;return ${expression};})()`;
+
     await using restoreWorkers = new AsyncDisposableStack();
     restoreWorkers.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        workers(
-          `(function(){
-            if(record.held){
-              record.held.worker.postMessage=record.held.post;
-              if(!record.ended.has(record.held.worker))
-                for(var args of record.held.pending)record.held.post.apply(record.held.worker,args);
+        async ({ page: pageHelpers }) => {
+          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          return (function () {
+            if (record!.held) {
+              record!.held.worker.postMessage = record!.held.post;
+              if (!record!.ended.has(record!.held.worker))
+                for (var args of record!.held.pending)
+                  record!.held.post.apply(record!.held.worker, args);
             }
-            window.Worker=record.Original;
-            record.Original.prototype.terminate=record.terminate;
-            delete window.zotlitE2EWorkers;
+            window.Worker = record!.Original;
+            record!.Original.prototype.terminate = record!.terminate;
+            delete pageHelpers.scratch.zotlitE2EWorkers;
             return true;
-          })()`,
-        ),
+          })();
+        },
+        undefined,
       );
-      await obEval(
+      await obRun(
         run.vaultId,
-        "(app.plugins.plugins.zotlit?Promise.resolve():app.plugins.enablePlugin('zotlit')).then(function(){return true;})",
+        async ({ app }) => {
+          return await (
+            app.plugins.plugins.zotlit
+              ? Promise.resolve()
+              : app.plugins.enablePlugin("zotlit")
+          ).then(function () {
+            return true;
+          });
+        },
+        undefined,
       );
     });
     // An ordinary user action (the Community Plugins toggle), not a bypass —
     // it makes the plugin re-read data.json from disk.
-    const toggled = await obEvalUntil(
+    await obRunUntil(
       run.vaultId,
-      "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })",
-      { expected: "true", tries: 20 },
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      {
+        tries: 20,
+        what: "the zotlit plugin to be disabled and enabled again from Community Plugins",
+      },
     );
-    expect(toggled).toBe(true);
 
-    const reloaded = await obEvalUntil(
+    await obRunUntil(
       run.vaultId,
-      "String('zotlit' in app.plugins.plugins)",
-      { expected: "true" },
+      async ({ app }) => {
+        return "zotlit" in app.plugins.plugins;
+      },
+      undefined,
+      { what: "the zotlit plugin to be loaded into the plugin registry" },
     );
-    expect(reloaded).toBe(true);
 
     // Dispatched as a registered CLI command, not `eval` — the way a real
     // caller would invoke it. Retried a few times: a window fresh off a
@@ -124,52 +181,101 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     {
       // The load spawned one database worker, and it serves.
       expect(
-        await obEval(run.vaultId, workers("String(record.spawned.length)")),
-      ).toBe("1");
-      expect(
-        await obEvalUntil(
+        await obRun(
           run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
-          { expected: "ready" },
+          async ({ page: pageHelpers }) => {
+            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            return record!.spawned.filter(function (entry) {
+              return entry.name === "zotlit-zotero-reads";
+            }).length;
+          },
+          undefined,
         ),
-      ).toBe(true);
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          `app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
-          { expected: targetItem.citationKey! },
-        ),
-      ).toBe(true);
+      ).toBe(1);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.zoteroReads.state;
+        },
+        undefined,
+        {
+          ready: (value) => value === "ready",
+          what: "the zoteroReads status to read ready",
+        },
+      );
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { targetItemKey }) => {
+          return await zotlit.services.citationLookup
+            .read({ indexedKeys: [targetItemKey] })
+            .then(function (answer) {
+              return String(answer.citekeyOf(targetItemKey));
+            });
+        },
+        { targetItemKey: targetItem.key },
+        {
+          ready: (value) => value === targetItem.citationKey!,
+          what: "the target item citation key to resolve from the citation lookup",
+        },
+      );
       // Termination emits no browser error event: liveness must detect it.
-      await obEval(
+      await obRun(
         run.vaultId,
-        workers(
-          "(record.spawned.find(function(entry){return entry.name==='zotlit-zotero-reads';}).worker.terminate(),true)",
-        ),
+        async ({ page: pageHelpers }) => {
+          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          return (
+            record!.spawned
+              .find(function (entry) {
+                return entry.name === "zotlit-zotero-reads";
+              })!
+              .worker.terminate(),
+            true
+          );
+        },
+        undefined,
       );
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.citationLookup.status)",
-          { expected: "failed", tries: 160 },
-        ),
-      ).toBe(true);
-      await obEval(
+      await obRunUntil(
         run.vaultId,
-        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
+        async ({ zotlit }) => {
+          return zotlit.services.citationLookup.status;
+        },
+        undefined,
+        {
+          ready: (value) => value === "failed",
+          tries: 160,
+          what: "the citation lookup status to become failed",
+        },
       );
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
-          { expected: "ready" },
-        ),
-      ).toBe(true);
+      await obRun(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return await zotlit.services.zoteroReads.refresh().then(function () {
+            return true;
+          });
+        },
+        undefined,
+      );
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.zoteroReads.state;
+        },
+        undefined,
+        {
+          ready: (value) => value === "ready",
+          what: "the zoteroReads status to read ready again",
+        },
+      );
       // SearchItems hydrates its hits from SQLite in the interactive worker.
       const hits = JSON.parse(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(targetItem.title)},{limit:1}).then(JSON.stringify)`,
+          async ({ zotlit }, { targetItemTitle }) => {
+            return await zotlit.services.itemLookup
+              .search(targetItemTitle, { limit: 1 })
+              .then(JSON.stringify);
+          },
+          { targetItemTitle: targetItem.title },
         ),
       ) as { item: { itemID: number; fields: { title: string } } }[];
       expect(hits).toMatchObject([
@@ -180,63 +286,127 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         },
       ]);
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.citationLookup.status)",
-          { expected: "fresh" },
-        ),
-      ).toBe(true);
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          `app.plugins.plugins.zotlit.services.citationLookup.whenResolved().then(function(){return app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));});})`,
-          { expected: targetItem.citationKey! },
-        ),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.citationLookup.status;
+        },
+        undefined,
+        {
+          ready: (value) => value === "fresh",
+          what: "the citation lookup status to become fresh",
+        },
+      );
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { targetItemKey }) => {
+          return await zotlit.services.citationLookup
+            .whenResolved()
+            .then(function () {
+              return zotlit.services.citationLookup
+                .read({ indexedKeys: [targetItemKey] })
+                .then(function (answer) {
+                  return String(answer.citekeyOf(targetItemKey));
+                });
+            });
+        },
+        { targetItemKey: targetItem.key },
+        {
+          ready: (value) => value === targetItem.citationKey!,
+          what: "the target item citation key to resolve after the citation lookup settles",
+        },
+      );
       // Hold the lookup request so unload must cancel the pending worker read.
-      await obEval(
+      await obRun(
         run.vaultId,
-        workers(`(function(){
-          var entry=record.spawned.findLast(function(entry){return entry.name==='zotlit-zotero-reads';});
-          var post=entry.worker.postMessage;
-          record.held={worker:entry.worker,post:post,pending:[]};
-          entry.worker.postMessage=function(...args){
-            if(args[0]?.[1]?.tag==='CitationLookup'){
-              record.heldSnapshot=true;
-              record.held.pending.push(args);return;
-            }
-            return post.apply(this,args);
-          };
-          return app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;});
-        })()`),
+        async ({ zotlit, page: pageHelpers }) => {
+          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          return await (function () {
+            var entry = record!.spawned.findLast(function (entry) {
+              return entry.name === "zotlit-zotero-reads";
+            });
+            var post = entry!.worker.postMessage;
+            record!.held = { worker: entry!.worker, post: post, pending: [] };
+            entry!.worker.postMessage = new Proxy(post, {
+              apply(target, receiver, args) {
+                if (args[0]?.[1]?.tag === "CitationLookup") {
+                  record!.heldSnapshot = true;
+                  record!.held!.pending.push(
+                    args as [unknown, StructuredSerializeOptions?],
+                  );
+                  return;
+                }
+                return Reflect.apply(target, receiver, args);
+              },
+            });
+            return zotlit.services.zoteroReads.refresh().then(function () {
+              return true;
+            });
+          })();
+        },
+        undefined,
       );
-      expect(
-        await obEvalUntil(run.vaultId, workers("String(record.heldSnapshot)"), {
-          expected: "true",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          return record!.heldSnapshot;
+        },
+        undefined,
+        { what: "the held worker snapshot to be recorded in the page scratch" },
+      );
       // Unload ends the recovered worker and its pending citation read.
-      await obEval(
+      await obRun(
         run.vaultId,
-        "app.plugins.disablePlugin('zotlit').then(function(){return true;})",
+        async ({ app }) => {
+          return await app.plugins.disablePlugin("zotlit").then(function () {
+            return true;
+          });
+        },
+        undefined,
       );
-      const ended = await obEvalUntil(
-        run.vaultId,
-        workers(
-          "String(record.spawned.filter(function(entry){return entry.name==='zotlit-zotero-reads';}).every(function(entry){return record.ended.has(entry.worker);}))",
-        ),
-        { expected: "true", tries: 120 },
-      );
-      expect(
-        ended,
-        await obEval(
+      try {
+        await obRunUntil(
           run.vaultId,
-          workers(
-            "JSON.stringify(record.spawned.map(function(entry){return {name:entry.name,ended:record.ended.has(entry.worker)};}))",
-          ),
-        ),
-      ).toBe(true);
+          async ({ page: pageHelpers }) => {
+            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            return record!.spawned
+              .filter(function (entry) {
+                return entry.name === "zotlit-zotero-reads";
+              })
+              .every(function (entry) {
+                return record!.ended.has(entry.worker);
+              });
+          },
+          undefined,
+          {
+            tries: 120,
+            what: "every zotlit-zotero-reads worker to end after the Scope Case switch",
+          },
+        );
+      } catch (error) {
+        const workers = await obRun(
+          run.vaultId,
+          async ({ page: pageHelpers }) => {
+            var record = pageHelpers.scratch.zotlitE2EWorkers;
+            return JSON.stringify(
+              record!.spawned.map(function (entry) {
+                return {
+                  name: entry.name,
+                  ended: record!.ended.has(entry.worker),
+                };
+              }),
+            );
+          },
+          undefined,
+        );
+        throw new Error(
+          `The Scope Case switch left workers running: ${workers}`,
+          {
+            cause: error,
+          },
+        );
+      }
     }
   }, 120_000);
 });

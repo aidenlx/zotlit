@@ -3,20 +3,24 @@
 // the shape of ./obsidian-metadata-cache; policies/events.md (Capability tags)
 // describes it. Views, leaves, `Component`s and React handlers stay edges and
 // keep `app.workspace`.
-import { Context, Effect, Layer } from "effect";
-import type { Scope, Stream } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
+import type { Cause, Scope, Stream } from "effect";
 import { MarkdownView } from "obsidian";
 import type {
   Editor,
   MarkdownFileInfo,
   Menu,
+  OpenViewState,
+  PaneType,
   TAbstractFile,
+  TextFileView,
   TFile,
   Workspace as ObsidianWorkspace,
   WorkspaceLeaf,
 } from "obsidian";
 
 import { logAndContinue } from "@/lib/effect-log";
+import { loadedTextFileView } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import {
   obsidianEventSource,
@@ -24,17 +28,48 @@ import {
 } from "@/lib/obsidian-event-source";
 import type { ObsidianEventEmitter } from "@/lib/obsidian-event-source";
 
+/** Obsidian rejected an `openLinkText` call. `cause` holds what it threw. */
+export class OpenLinkFailed extends Schema.TaggedError<
+  OpenLinkFailed,
+  { readonly brand: unique symbol }
+>()("OpenLinkFailed", {
+  /** The link text the call opened. */
+  linktext: Schema.String,
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
 /** The Obsidian object the tag reads: what `app.workspace` gives. */
 export type WorkspaceSource = Pick<
   ObsidianWorkspace,
-  "onLayoutReady" | "getActiveFile" | "getActiveViewOfType"
+  | "onLayoutReady"
+  | "getActiveFile"
+  | "getActiveViewOfType"
+  | "getLeavesOfType"
+  | "iterateAllLeaves"
+  | "updateOptions"
+  | "openLinkText"
+  | "getLeaf"
+  | "setActiveLeaf"
+  | "trigger"
+  | "requestActiveLeafEvents"
+  | "readWorkspaceFile"
 > &
   ObsidianEventEmitter;
 
 /** One workspace event, tagged with its Obsidian event name. */
 export type WorkspaceEvent =
   /** The active file changed; `null` when no file is active. */
-  { readonly _tag: "file-open"; readonly file: TFile | null };
+  | { readonly _tag: "file-open"; readonly file: TFile | null }
+  /** A leaf opened, closed or moved. */
+  | { readonly _tag: "layout-change" }
+  /** The active leaf changed; `null` when no leaf is active. */
+  | {
+      readonly _tag: "active-leaf-change";
+      readonly leaf: WorkspaceLeaf | null;
+    }
+  /** The theme or a CSS snippet changed, so a CSS variable may read anew. */
+  | { readonly _tag: "css-change" };
 
 /** Where a file menu opened: Obsidian's `source` name, and the leaf of a view's own menu. */
 export interface FileMenuOrigin {
@@ -57,6 +92,60 @@ export interface WorkspaceShape {
   readonly getActiveFile: Effect.Effect<TFile | null>;
   /** The Markdown view of the active leaf now, `null` when it holds none. */
   readonly activeMarkdownView: Effect.Effect<MarkdownView | null>;
+  /**
+   * The Markdown view of each open Markdown leaf now, in Obsidian's leaf
+   * order: the editors a decoration change reaches, and the reading views a
+   * re-render reaches.
+   */
+  readonly markdownViews: Effect.Effect<readonly MarkdownView[]>;
+  /** Each open leaf of view type `type` now, in every window, in Obsidian's leaf order. */
+  leavesOfType(type: string): Effect.Effect<readonly WorkspaceLeaf[]>;
+  /**
+   * The loaded text view that edits `file` now, in any window, which holds
+   * the note's live text; `null` when none (`lib/live-text.ts`).
+   */
+  loadedTextView(file: TFile): Effect.Effect<TextFileView | null>;
+  /**
+   * Obsidian's undocumented `readWorkspaceFile()`: the serialized layout
+   * Obsidian restored this session's leaves from. `null` when the build has
+   * no such reader; a rejected read fails with its cause.
+   */
+  readonly readWorkspaceFile: Effect.Effect<unknown, Cause.UnknownError>;
+  /**
+   * Obsidian's `updateOptions()`: every editor reads the registered editor
+   * extensions again, so a change to a registered extension array applies.
+   */
+  readonly updateOptions: Effect.Effect<void>;
+  /**
+   * Obsidian's undocumented `requestActiveLeafEvents.run()`: Obsidian defers
+   * the active leaf's events, such as `file-open`; this delivers a deferred
+   * one now.
+   */
+  readonly requestActiveLeafEvents: Effect.Effect<void>;
+  /**
+   * Obsidian's `openLinkText`: open `linktext`, resolved from `sourcePath`, in
+   * the pane `newLeaf` names, with the view state `state`.
+   */
+  openLinkText(
+    linktext: string,
+    sourcePath: string,
+    options?: {
+      readonly newLeaf?: PaneType | boolean;
+      readonly state?: OpenViewState;
+    },
+  ): Effect.Effect<void, OpenLinkFailed>;
+  /**
+   * Obsidian's `getLeaf`: a leaf in the pane `newLeaf` names, for a view to
+   * open in.
+   */
+  getLeaf(newLeaf?: PaneType | boolean): Effect.Effect<WorkspaceLeaf>;
+  /** Obsidian's `setActiveLeaf`: make `leaf` the active leaf, focused when `focus`. */
+  setActiveLeaf(
+    leaf: WorkspaceLeaf,
+    options?: { readonly focus?: boolean },
+  ): Effect.Effect<void>;
+  /** Obsidian's `trigger`: raise the workspace event `name` with `data`. */
+  trigger(name: string, ...data: unknown[]): Effect.Effect<void>;
   /**
    * Add `handler` to Obsidian's `file-menu` for the life of the current
    * Scope. Obsidian reads the menu as soon as its listeners return, so the
@@ -100,6 +189,15 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     _tag: "file-open",
     file,
   }));
+  yield* events.listen(source, "layout-change", () => ({
+    _tag: "layout-change",
+  }));
+  yield* events.listen(
+    source,
+    "active-leaf-change",
+    (leaf: WorkspaceLeaf | null) => ({ _tag: "active-leaf-change", leaf }),
+  );
+  yield* events.listen(source, "css-change", () => ({ _tag: "css-change" }));
 
   /** Register `name` on the current Scope; each call runs `toEffect` synchronously with the caller's context. */
   const menuHook = <Args extends unknown[], R>(
@@ -127,6 +225,57 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     activeMarkdownView: Effect.sync(() =>
       source.getActiveViewOfType(MarkdownView),
     ),
+    markdownViews: Effect.sync(() =>
+      source
+        .getLeavesOfType("markdown")
+        .flatMap(({ view }) => (view instanceof MarkdownView ? [view] : [])),
+    ).pipe(Effect.withSpan("Workspace.markdownViews")),
+    leavesOfType: Effect.fn("Workspace.leavesOfType")((type) =>
+      Effect.sync(() => source.getLeavesOfType(type)),
+    ),
+    loadedTextView: Effect.fn("Workspace.loadedTextView")((file) =>
+      Effect.sync(() => loadedTextFileView({ workspace: source }, file)),
+    ),
+    readWorkspaceFile: Effect.suspend(() => {
+      const read = source.readWorkspaceFile?.bind(source);
+      return read === undefined
+        ? Effect.succeed(null)
+        : Effect.tryPromise(() => read());
+    }).pipe(Effect.withSpan("Workspace.readWorkspaceFile")),
+    updateOptions: Effect.sync(() => source.updateOptions()).pipe(
+      Effect.withSpan("Workspace.updateOptions"),
+    ),
+    requestActiveLeafEvents: Effect.sync(() =>
+      source.requestActiveLeafEvents.run(),
+    ).pipe(Effect.withSpan("Workspace.requestActiveLeafEvents")),
+    openLinkText: Effect.fn("Workspace.openLinkText")(
+      (linktext, sourcePath, options = {}) =>
+        Effect.tryPromise({
+          try: () =>
+            source.openLinkText(
+              linktext,
+              sourcePath,
+              options.newLeaf,
+              options.state,
+            ),
+          catch: (cause) =>
+            new OpenLinkFailed({
+              linktext,
+              message: cause instanceof Error ? cause.message : String(cause),
+              cause,
+            }),
+        }),
+    ),
+    getLeaf: Effect.fn("Workspace.getLeaf")((newLeaf) =>
+      Effect.sync(() => source.getLeaf(newLeaf)),
+    ),
+    setActiveLeaf: Effect.fn("Workspace.setActiveLeaf")((leaf, options = {}) =>
+      Effect.sync(() => source.setActiveLeaf(leaf, options)),
+    ),
+    // Untraced: a citation raises its menus from a pointer handler.
+    trigger: Effect.fnUntraced(function* (name, ...data) {
+      yield* Effect.sync(() => source.trigger(name, ...data));
+    }),
     onFileMenu: Effect.fn("Workspace.onFileMenu")((handler) =>
       menuHook(
         "file-menu",
@@ -155,6 +304,27 @@ export const makeWorkspace = Effect.fnUntraced(function* (
 export const layerWorkspaceFrom = (
   source: WorkspaceSource,
 ): Layer.Layer<Workspace> => Layer.effect(Workspace, makeWorkspace(source));
+
+/**
+ * What plain code that raises a workspace event reads of its host, such as a
+ * Profile switch or the Attachment menu: the app, or {@link workspaceTrigger}
+ * over the tag.
+ */
+export interface WorkspaceEventHost {
+  readonly workspace: Pick<ObsidianWorkspace, "trigger">;
+}
+
+/**
+ * Obsidian's `trigger` over the tag, for plain code that raises a workspace
+ * event, such as a hover handler: each call runs the tag's `trigger` with
+ * `run`, the runner of the caller's layer.
+ */
+export function workspaceTrigger(
+  workspace: Pick<WorkspaceShape, "trigger">,
+  run: (effect: Effect.Effect<void>) => void,
+): Pick<ObsidianWorkspace, "trigger"> {
+  return { trigger: (name, ...data) => run(workspace.trigger(name, ...data)) };
+}
 
 /** The tag over the app's workspace. */
 export const layerWorkspace: Layer.Layer<Workspace, never, ObsidianApp> =

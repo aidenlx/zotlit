@@ -1,0 +1,38 @@
+// Template data for callers outside Effect: the views.
+import { Effect } from "effect";
+import type { Context } from "effect";
+
+import type { EffectBridge } from "@/lib/effect-bridge";
+
+import { readCitationData, readTemplateData, withSettings } from "./data";
+import type { TemplateDataLoader, TemplateDataServices } from "./data";
+
+/**
+ * The Template data reads over `context`, run through `bridge`. A load
+ * resolves with its result and rejects with what failed, as a read or a
+ * Template does.
+ */
+export function bindTemplateData(
+  bridge: Pick<EffectBridge, "runPromise">,
+  context: Context.Context<TemplateDataServices>,
+): TemplateDataLoader {
+  const run = <A, E>(effect: Effect.Effect<A, E, TemplateDataServices>) =>
+    bridge.runPromise(Effect.provideContext(effect, context));
+  return {
+    load: (indexedKey, root, options) => {
+      const read = readTemplateData(indexedKey, root);
+      return run(
+        (options?.settings === undefined
+          ? read
+          : read.pipe(withSettings(options.settings))
+        ).pipe(Effect.mapError(({ cause }) => cause)),
+      );
+    },
+    loadCitation: (selector, variant) =>
+      run(
+        readCitationData(selector, variant).pipe(
+          Effect.mapError(({ cause }) => cause),
+        ),
+      ),
+  };
+}

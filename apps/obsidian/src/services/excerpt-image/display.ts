@@ -20,9 +20,9 @@ import {
 } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
-import { ExcerptImages } from "./layer";
+import { ExcerptImageService } from "./service";
 import { supersedes } from "./service";
-import type { AvailableExcerpt, ExcerptImageService } from "./service";
+import type { AvailableExcerpt, ExcerptOutcome } from "./service";
 
 /** The key prefix every live display read lives under. */
 export const EXCERPT_DISPLAY = "excerpt-image-display";
@@ -115,12 +115,15 @@ export interface ExcerptDisplayDeps {
   /** The Effect boundary for the query client's Effect-native operations. */
   bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
   /** One resolution of one request, through the shared PDF queue. */
-  resolve: ExcerptImageService["resolve"];
+  resolve: (
+    request: ExcerptRequest,
+    signal?: AbortSignal,
+  ) => Promise<ExcerptOutcome>;
   /**
    * The image this device last displayed for one Annotation, which a display
    * that has nothing yet paints while the Annotation's pixels resolve.
    */
-  stored: ExcerptImageService["stored"];
+  stored: (request: ExcerptRequest) => Promise<AvailableExcerpt | null>;
 }
 
 /** An Annotation whose pixels have no image: nothing rendered, nothing in Zotero's cache. */
@@ -529,14 +532,15 @@ export class ExcerptDisplays extends Context.Service<
 export const layerExcerptDisplays = serviceLayer(ExcerptDisplays, {
   key: "excerptDisplay",
   make: Effect.gen(function* () {
-    const images = yield* ExcerptImages;
+    const images = yield* ExcerptImageService;
     const queries = yield* QueryClients;
     const bridge = yield* scopedBridge;
     return new ExcerptDisplayService({
       queries,
       bridge,
-      resolve: (request, signal) => images.resolve(request, signal),
-      stored: (request) => images.stored(request),
+      resolve: (request, signal) =>
+        bridge.runPromise(images.resolve(request), { signal }),
+      stored: (request) => bridge.runPromise(images.stored(request)),
     });
   }),
 });

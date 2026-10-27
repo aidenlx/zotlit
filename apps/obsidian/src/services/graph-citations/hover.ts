@@ -2,7 +2,7 @@
 
 import { around } from "monkey-around";
 import { Keymap, PopoverState } from "obsidian";
-import type { App, GraphData } from "obsidian";
+import type { GraphData, MetadataCache, Workspace } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
@@ -28,15 +28,16 @@ const logger = getLogger("graph-citations");
 
 /** The popover runners this hover boundary uses, without making the file an Effect owner. */
 interface PopoverBridge {
-  runPromise(
-    effect: ReturnType<CitationPopover["Service"]["showWork"]>,
-  ): PromiseLike<void>;
+  runAndForget: EffectBridge["runAndForget"];
   runSync: EffectBridge["runSync"];
 }
 
 /** What one graph leaf's hover wrap reads the world through. */
 export interface NodeHoverDeps {
-  app: App;
+  /** Where a page preview raises its `hover-link`. */
+  workspace: Pick<Workspace, "trigger">;
+  /** What a Literature Note node's frontmatter is read from. */
+  metadataCache: Pick<MetadataCache, "getCache">;
   settings: Pick<PluginSettings["Service"], "current">;
   citationPopover: Pick<CitationPopover["Service"], "showWork" | "hide">;
   bridge: PopoverBridge;
@@ -151,7 +152,7 @@ function hoverNode(
     // the shared citekey source, so the graph is the same row of Obsidian's
     // Page preview settings as every other ZotLit citation surface rather
     // than the graph's own row.
-    triggerCitekeyHover(deps.app.workspace, {
+    triggerCitekeyHover(deps.workspace, {
       event: evt,
       hoverParent: members.engine,
       targetEl: stand.take(position, id),
@@ -163,7 +164,8 @@ function hoverNode(
     return true;
   }
   logger.debug("Graph node shows its entry", { id, work: node.work });
-  void deps.bridge.runPromise(
+  // Unload interrupts a pending popover.
+  deps.bridge.runAndForget(
     deps.citationPopover.showWork({
       event: evt,
       hoverParent: members.engine,
@@ -189,9 +191,7 @@ function hoveredNode(
 ): HoveredNode | null {
   const citekey = additions.citedWorkNodes.get(id);
   if (citekey !== undefined) return { id, work: { kind: "citekey", citekey } };
-  const indexedKey = itemKeyFromFrontmatter(
-    deps.app.metadataCache.getCache(id),
-  );
+  const indexedKey = itemKeyFromFrontmatter(deps.metadataCache.getCache(id));
   return indexedKey === null
     ? null
     : { id, work: { kind: "item", indexedKey } };

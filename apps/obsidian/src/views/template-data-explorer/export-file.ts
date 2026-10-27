@@ -6,8 +6,7 @@ import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { loadTemplateData } from "@/services/template-workbench/data";
-import type { TemplateDataDeps } from "@/services/template-workbench/data";
+import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 
 import { buildTemplateDataExport } from "./export";
 
@@ -16,40 +15,45 @@ export interface TemplateDataExportTarget {
   indexedKey: string;
   root: TemplateRoot;
 }
-export async function exportTemplateDataFile(
-  deps: TemplateDataDeps,
+
+/** Saves the export of one loaded root; a root with no data shows a notice. */
+export function saveTemplateDataExport(
+  result: TemplateDataLoadResult,
   {
     indexedKey,
     root,
     pluginVersion,
   }: TemplateDataExportTarget & { pluginVersion: string },
-): Promise<void> {
-  try {
-    const result = await loadTemplateData(deps, indexedKey, root);
-    if (result.kind !== "data") {
-      logger.error("No template data to export for {indexedKey}: {reason}", {
-        indexedKey,
-        root,
-        reason: result.kind,
-      });
-      new BaseNotice(m.template_data_explorer_export_failed());
-      return;
-    }
-    const { filename, json } = buildTemplateDataExport({
-      root: result.data,
-      contractRoot: root,
-      indexedKey,
-      pluginVersion,
-      timestamp: exportTimestamp(),
-    });
-    saveFile(new Blob([json], { type: "application/json" }), filename);
-    logger.debug("Exported template data to {filename}", { filename, root });
-  } catch (error) {
-    logger.error("Failed to export template data for {indexedKey}", {
+): void {
+  if (result.kind !== "data") {
+    logger.error("No template data to export for {indexedKey}: {reason}", {
       indexedKey,
       root,
-      error,
+      reason: result.kind,
     });
     new BaseNotice(m.template_data_explorer_export_failed());
+    return;
   }
+  const { filename, json } = buildTemplateDataExport({
+    root: result.data,
+    contractRoot: root,
+    indexedKey,
+    pluginVersion,
+    timestamp: exportTimestamp(),
+  });
+  saveFile(new Blob([json], { type: "application/json" }), filename);
+  logger.debug("Exported template data to {filename}", { filename, root });
+}
+
+/** Reports an export that failed with `error`. */
+export function failTemplateDataExport(
+  { indexedKey, root }: TemplateDataExportTarget,
+  error: unknown,
+): void {
+  logger.error("Failed to export template data for {indexedKey}", {
+    indexedKey,
+    root,
+    error,
+  });
+  new BaseNotice(m.template_data_explorer_export_failed());
 }

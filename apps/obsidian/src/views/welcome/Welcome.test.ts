@@ -2,6 +2,7 @@
 // The Welcome View banner as it draws from its store: its header, its checklist
 // of setup steps, its Help Links, and the template conversion and migration
 // sections.
+import * as Atom from "effect/reactivity/Atom";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,15 +10,17 @@ import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 
+import { makeWelcomeHost } from "./__fixtures__";
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
-import { WelcomeStoreProvider, createWelcomeStore } from "./store";
-import type { WelcomeState, WelcomeStore } from "./store";
+import { WelcomeModelProvider } from "./model";
+import type { WelcomeState } from "./presentation";
 import { Welcome } from "./Welcome";
 
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+let cleanup = new AsyncDisposableStack();
 
 let root: Root | undefined;
 
@@ -32,6 +35,8 @@ const CONVERTED: LiteratureNoteTemplateMigrationResult = {
 afterEach(async () => {
   await act(() => root?.unmount());
   root = undefined;
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   document.body.replaceChildren();
 });
 
@@ -448,16 +453,26 @@ async function render(
 ): Promise<{
   actions: WelcomeActions;
   container: HTMLElement;
-  store: WelcomeStore;
+  store: { setState(patch: Partial<WelcomeState>): void };
 }> {
-  const store = createWelcomeStore();
-  store.setState({
-    migrationPending: mode === "upgraded",
-    connection: { status: "missing" },
-    literatureFolder: "Literature",
-    version: "2.2.0",
-    ...state,
-  });
+  const host = cleanup.use(await makeWelcomeHost());
+  const { registry } = host;
+  const session = cleanup.use(host.openSession());
+  const model = {
+    state: Atom.make<WelcomeState>({
+      ...session.state(),
+      migrationPending: mode === "upgraded",
+      connection: { status: "missing" },
+      literatureFolder: "Literature",
+      version: "2.2.0",
+      ...state,
+    }),
+  };
+  cleanup.defer(registry.mount(model.state));
+  const store = {
+    setState: (patch: Partial<WelcomeState>) =>
+      registry.update(model.state, (s) => ({ ...s, ...patch })),
+  };
   const actions: WelcomeActions = {
     convertLiteratureNoteTemplates: vi.fn(async () => CONVERTED),
     dismiss: vi.fn(),
@@ -477,12 +492,16 @@ async function render(
   await act(() => {
     root!.render(
       createElement(
-        WelcomeStoreProvider,
-        { value: store },
+        ViewRegistryProvider,
+        { registry },
         createElement(
-          WelcomeActionsContext,
-          { value: actions },
-          createElement(Welcome),
+          WelcomeModelProvider,
+          { value: model },
+          createElement(
+            WelcomeActionsContext,
+            { value: actions },
+            createElement(Welcome),
+          ),
         ),
       ),
     );

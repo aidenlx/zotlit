@@ -1,6 +1,6 @@
 ---
 name: pr
-description: "Use when opening a PR or writing a PR body."
+description: "Use when opening a PR, landing a stack of PRs, or writing a PR body."
 metadata:
   credits:
     skill: show-me
@@ -12,6 +12,8 @@ metadata:
 ## Base branch
 
 Open every PR against `next`: `gh pr create --base next`. The repository's default branch is `main`, so a PR opened without `--base` targets the wrong branch. `main` receives only stable graduations from `next` and emergency hotfixes, and a PR to `main` is made only when the user names one ([CONTRIBUTING.md](../../../CONTRIBUTING.md), ADR 0021).
+
+A PR that targets another PR's branch is part of a **stack**: link and land the chain with `gh stack link` / `gh stack merge`, as [Stacked pull requests](../../../docs/agents/issue-tracker.md#stacked-pull-requests) describes.
 
 ## Body
 

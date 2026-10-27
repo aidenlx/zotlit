@@ -5,6 +5,7 @@ import {
   Cause,
   Context,
   Effect,
+  FileSystem,
   Fiber,
   Layer,
   Option,
@@ -17,6 +18,7 @@ import {
 
 import type { CslItemData } from "@zotlit/db";
 
+import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
@@ -178,8 +180,9 @@ export const layerBibliographyRender = Layer.effect(
     const profile = yield* Profile;
     const queries = yield* QueryClients;
     const scope = yield* Scope.Scope;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const { runPromise } = yield* scopedBridge;
     const styles = new InstalledStyleCache();
+    const fileSystem = yield* FileSystem.FileSystem;
     let closed = false;
     const state = yield* SubscriptionRef.make<BibliographyRenderState>({
       vaultPresentation: vaultPresentation(yield* settings.current),
@@ -293,10 +296,9 @@ export const layerBibliographyRender = Layer.effect(
         const selected = (yield* SubscriptionRef.get(state)).vaultPresentation;
         const request = effectivePresentation(presentation ?? {}, selected);
         const dataDir = (yield* pref.current).dataDir;
-        const style = yield* Effect.tryPromise({
-          try: () => styles.resolve(dataDir, request),
-          catch: renderError,
-        });
+        const style = yield* styles
+          .resolve(dataDir, request)
+          .pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
         if (style.kind !== "failed") return { request, style };
         yield* Effect.logDebug(
           "Cannot resolve the requested citation style",

@@ -6,28 +6,30 @@
 import { history } from "@codemirror/commands";
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Effect } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 import { Keymap, Scope, TFile } from "obsidian";
 import type { App, Editor, EventRef, MarkdownFileInfo } from "obsidian";
 import { act } from "preact/test-utils";
 import type { DragEvent as ReactDragEvent } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
+  AnnotationRepository,
   AnnotationList,
   AnnotationRecord,
+  MutationState,
 } from "@/services/annotation-repository/service";
-import type { NoteFeature } from "@/services/note-feature";
+import type { NoteFeatureHandle } from "@/services/note-feature";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { stateEditor } from "./__fixtures__/editor";
 import { editorApp } from "./__fixtures__/editor-app";
+import { makeAnnotHost } from "./__fixtures__/host";
 import { AnnotationsLayout } from "./layout";
 import type { AnnotationsLayoutDeps, AnnotationsLayoutHost } from "./layout";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 function record(
   key: string,
@@ -81,11 +83,22 @@ function repository() {
   const lists = { ...LISTS };
   const capabilities = { ...CAPABILITIES };
   const base = annotationReads();
+  const changed = testEvent<string>();
+  const mutations = new Map<string, MutationState>();
   const read = vi.fn((key: string) => Effect.succeed(lists[key] ?? null));
   const api = stubService<
-    AnnotationsLayoutDeps["annotations"] & { read: typeof read }
+    AnnotationRepository["Service"] & { read: typeof read }
   >("AnnotationRepository", {
     ...base,
+    annotationChanged: changed.stream,
+    annotationState: (key) =>
+      Effect.sync(() => ({
+        mutation: mutations.get(key) ?? { kind: "idle" as const },
+        textDrafts: { comment: null, text: null },
+        tagDraft: null,
+        hidden: false,
+        gone: false,
+      })),
     read,
     peek: vi.fn((key: string) => {
       const value = lists[key];
@@ -107,6 +120,10 @@ function repository() {
     lists,
     capabilities,
     api,
+    changeAnnotation(key: string, mutation: MutationState) {
+      mutations.set(key, mutation);
+      changed.emit(key);
+    },
     emit(
       event: "annotations-changed" | "capability-changed",
       attachmentKey?: string,
@@ -142,7 +159,6 @@ async function mountLayout(
   host: Pick<AnnotationsLayoutHost, "showNewRecords" | "onListChanged"> = {},
 ) {
   const repo = repository();
-  const bridge = cleanup.use(openTestBridge());
   const workspaceListeners = new Map<string, Set<EventRef>>();
   const listeners = new Map<EventRef, Listener>();
   const workspace = stubService<App["workspace"]>("Workspace", {
@@ -164,27 +180,25 @@ async function mountLayout(
   });
   const app = editorApp();
   app.workspace = workspace;
-  const prepare = vi.fn<NoteFeature["prepareAnnotationInsert"]>(() =>
+  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(() =>
     Promise.resolve(null),
+  );
+  const hostModel = cleanup.use(
+    makeAnnotHost({
+      annotations: repo.api,
+      notes: {
+        prepare: (options) =>
+          Effect.flatMap(Effect.abortSignal, (signal) =>
+            Effect.tryPromise(() => prepare({ ...options, signal })),
+          ).pipe(Effect.scoped),
+      },
+    }),
   );
   const deps = stubService<AnnotationsLayoutDeps>("AnnotationsLayoutDeps", {
     app,
     opener: stubService<AnnotationsLayoutDeps["opener"]>("TargetOpener", {}),
-    annotations: repo.api,
-    bridge,
+    registry: hostModel.registry,
     reads: stubService<AnnotationsLayoutDeps["reads"]>("ZoteroReads", {}),
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    excerptDisplay: stubService<AnnotationsLayoutDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      { open: vi.fn(), refresh: vi.fn() },
-    ),
-    noteFeature: stubService<AnnotationsLayoutDeps["noteFeature"]>(
-      "NoteFeature",
-      { prepareAnnotationInsert: prepare },
-    ),
-    libraryTagNames: () => Promise.resolve([]),
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
   });
   const scope = new Scope();
   const layout = new AnnotationsLayout(deps, {
@@ -273,6 +287,30 @@ it("gives each card the Editing Capability of its own Attachment", async () => {
 
   await click(card(el, BETA.key));
   expect(commentField(BETA.key)?.hasAttribute("data-blocked")).toBe(true);
+});
+
+it("marks a failed Attachment's rows unresolved and keeps the other Attachment's cards", async () => {
+  const { layout, repo, el } = await mountLayout();
+  repo.api.read.mockImplementation((key) =>
+    key === ALPHA.parentKey
+      ? Effect.die(new Error("Attachment read failed"))
+      : Effect.succeed(LISTS[key] ?? null),
+  );
+
+  await act(async () => {
+    expect(
+      await layout.showRows([
+        { annotationKey: ALPHA.key, attachmentKey: ALPHA.parentKey },
+        { annotationKey: BETA.key, attachmentKey: BETA.parentKey },
+      ]),
+    ).toBe(false);
+  });
+
+  expect(layout.store.getState().unresolved).toEqual([ALPHA.key]);
+  expect(
+    el.querySelector(`[data-zotero-annotation-key="${ALPHA.key}"]`),
+  ).toBeNull();
+  expect(card(el, BETA.key)).toBeTruthy();
 });
 
 it("selects and copies the cards of every Attachment through the host's Scope", async () => {
@@ -633,4 +671,19 @@ it("reaches a card under each group heading it shows under, and steps on from th
   expect(document.activeElement).toBe(secondAlpha);
   expect(await press(scope, secondAlpha!, ["C", ["Mod"]])).toBe(true);
   expect(writeText).toHaveBeenCalledWith("alpha\n\nbeta");
+});
+
+it("updates every card that a batched group write changed", async () => {
+  const { layout, repo } = await mountLayout();
+  await act(() =>
+    Atom.batch(() => {
+      repo.changeAnnotation(ALPHA.key, { kind: "idle" });
+      repo.changeAnnotation(BETA.key, {
+        kind: "failed",
+        failure: { kind: "unknown-outcome" },
+      });
+    }),
+  );
+  expect(layout.store.getState().mutations.get(ALPHA.key)?.kind).toBe("idle");
+  expect(layout.store.getState().mutations.get(BETA.key)?.kind).toBe("failed");
 });

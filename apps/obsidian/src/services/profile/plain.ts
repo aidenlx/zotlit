@@ -2,10 +2,24 @@
 import { Cause, Effect, Exit, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
-import { Profile, ProfileOperationError } from "./service";
-import type { ProfileOperations, ProfileState } from "./service";
+import { effectBridge } from "@/lib/effect-bridge";
+import { LiveTextRewriteFailed } from "@/lib/effect-live-text";
+import { plainTemplateError } from "@/services/template/errors";
 
-export type PlainProfile = ProfileOperations & {
+import { Profile, ProfileOperationError } from "./service";
+import type { ProfileError, ProfileOperations, ProfileState } from "./service";
+
+/** The Profile members views, legacy services and e2e still read. */
+export type PlainProfile = Omit<
+  ProfileOperations,
+  | "duplicate"
+  | "ejectDefault"
+  | "prepareDelete"
+  | "prepareCreate"
+  | "prepareShare"
+  | "prepareImport"
+  | "diagnostics"
+> & {
   readonly changes: Stream.Stream<ProfileState>;
   readonly changed: Stream.Stream<void>;
   readonly state: ProfileState;
@@ -18,19 +32,22 @@ export function plainProfile(
   >,
 ): PlainProfile {
   const service = runtime.runSync(Profile);
-  const context = runtime.runSync(Effect.context<never>());
-  const runSync = Effect.runSyncWith(context);
-  const runPromise = Effect.runPromiseExitWith(context);
-  const unwrap = <A>(exit: Exit.Exit<A, ProfileOperationError>): A => {
+  // Unload stops a pending call, which then rejects with an `AbortError`.
+  const bridge = effectBridge(runtime);
+  const plainError = (error: unknown) =>
+    error instanceof ProfileOperationError ||
+    error instanceof LiveTextRewriteFailed
+      ? error.cause
+      : plainTemplateError(error);
+  const read = <A>(effect: Effect.Effect<A, ProfileError>): A => {
+    const exit = bridge.runSync(Effect.exit(effect));
     if (Exit.isSuccess(exit)) return exit.value;
-    const error = Cause.squash(exit.cause);
-    throw error instanceof ProfileOperationError ? error.cause : error;
+    throw plainError(Cause.squash(exit.cause));
   };
-  const read = <A>(effect: Effect.Effect<A, ProfileOperationError>) =>
-    unwrap(runSync(Effect.exit(effect)));
-  const run = async <A>(
-    effect: Effect.Effect<A, ProfileOperationError>,
-  ): Promise<A> => unwrap(await runPromise(effect));
+  const run = <A>(effect: Effect.Effect<A, ProfileError>): Promise<A> =>
+    bridge.runPromise(effect).catch((error: unknown) => {
+      throw plainError(error);
+    });
   return {
     get state() {
       return read(service.state);
@@ -40,9 +57,6 @@ export function plainProfile(
     },
     get profiles() {
       return read(service.profiles);
-    },
-    get diagnostics() {
-      return read(service.diagnostics);
     },
     get defaultDocumentPath() {
       return read(service.defaultDocumentPath);
@@ -54,29 +68,9 @@ export function plainProfile(
     getSource: (...args) => run(service.getSource(...args)),
     saveSource: (...args) => run(service.saveSource(...args)),
     setMatch: (...args) => run(service.setMatch(...args)),
-    duplicate: (...args) => run(service.duplicate(...args)),
-    ejectDefault: (...args) => run(service.ejectDefault(...args)),
     materializeDefault: (...args) => run(service.materializeDefault(...args)),
     restoreDefault: (...args) => run(service.restoreDefault(...args)),
-    prepareDelete: (...args) => run(service.prepareDelete(...args)),
     delete: (...args) => run(service.delete(...args)),
-
-    prepareCreate: async (options) => {
-      const plan = await run(service.prepareCreate(options));
-      return { ...plan, create: () => run(plan.create()) };
-    },
-    prepareShare: async (selector) => {
-      const plan = await run(service.prepareShare(selector));
-      return { ...plan, render: (options) => read(plan.render(options)) };
-    },
-    prepareImport: async (source, options) => {
-      const plan = await run(service.prepareImport(source, options));
-      return {
-        ...plan,
-        previewSource: (options) => read(plan.previewSource(options)),
-        import: (options) => run(plan.import(options)),
-      };
-    },
     changes: service.changes,
     changed: service.changes.pipe(
       Stream.drop(1),

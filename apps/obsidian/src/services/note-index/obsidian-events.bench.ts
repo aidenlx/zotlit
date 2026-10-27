@@ -18,7 +18,7 @@ it.live("measures metadata event dispatch (#1705)", () =>
       { "paper.md": cache({ itemKey: "ABCD2345" }), "paper.txt": cache({}) },
       { enabledAtRuntime: true },
     );
-    const index = yield* noteIndexOf(host.app);
+    const index = yield* noteIndexOf(host);
     const file = host.vault.files.get("paper.md")!;
     const txt = host.vault.files.get("paper.txt")!;
     const a = cache({ itemKey: "ABCD2345" });

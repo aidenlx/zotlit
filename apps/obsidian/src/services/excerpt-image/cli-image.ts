@@ -1,5 +1,6 @@
 // The renderer-side answer of the local Annotation image command.
-import { Data, Effect, Result, Schema } from "effect";
+import { Cause, Data, Effect, Result, Schema } from "effect";
+import type { PlatformError } from "effect";
 import type { CliData } from "obsidian";
 
 import { renderDiagnostic } from "@zotlit/item-query";
@@ -37,12 +38,14 @@ export interface AnnotationImagePorts {
   read(
     key: string,
   ): Effect.Effect<ExcerptRequest | null, ExcerptSourceUnavailable>;
-  resolve(
-    request: ExcerptRequest,
-    signal?: AbortSignal,
-  ): Promise<ExcerptOutcome>;
-  publish(fingerprint: string, bytes: Uint8Array): Promise<string>;
-  exists(path: string): Promise<boolean>;
+  resolve(request: ExcerptRequest): Effect.Effect<ExcerptOutcome, unknown>;
+  /** The path the PNG store publishes `bytes` at. */
+  publish(
+    fingerprint: string,
+    bytes: Uint8Array,
+  ): Effect.Effect<string, PlatformError.PlatformError>;
+  /** Whether a file stands at `path` on this device. */
+  exists(path: string): Effect.Effect<boolean>;
 }
 
 /** A step of the image answer failed; `cause` is what it threw. */
@@ -98,7 +101,7 @@ export const answerAnnotationImage = Effect.fn("AnnotationImageCli.answer")(
     return yield* imageAnswer({ key, request, ports }).pipe(
       Effect.catchTag("ImageAnswerError", ({ cause }) =>
         Effect.succeed(
-          cause instanceof Error && cause.name === "TimeoutError"
+          Cause.isTimeoutError(cause)
             ? imageFailure(
                 "render-timeout",
                 "The Excerpt Image exceeded the 35 second rendering deadline.",
@@ -126,14 +129,20 @@ const imageAnswer = Effect.fn("AnnotationImageCli.image")(function* ({
   request: ExcerptRequest;
   ports: AnnotationImagePorts;
 }) {
-  const outcome = yield* attempt((signal) => ports.resolve(request, signal));
+  const outcome = yield* ports
+    .resolve(request)
+    .pipe(Effect.mapError((cause) => new ImageAnswerError({ cause })));
   if (outcome.kind === "available") {
     const path =
       outcome.provenance === "zotero"
         ? request.zoteroPngPath
         : yield* pngBytes(outcome).pipe(
             Effect.flatMap((bytes) =>
-              attempt(() => ports.publish(outcome.identity.key, bytes)),
+              ports
+                .publish(outcome.identity.key, bytes)
+                .pipe(
+                  Effect.mapError((cause) => new ImageAnswerError({ cause })),
+                ),
             ),
           );
     if (!path)
@@ -150,11 +159,10 @@ const imageAnswer = Effect.fn("AnnotationImageCli.image")(function* ({
     });
   }
   const pdfExists =
-    request.pdfPath !== null &&
-    (yield* attempt(() => ports.exists(request.pdfPath!)));
+    request.pdfPath !== null && (yield* ports.exists(request.pdfPath));
   const cacheExists =
     request.zoteroPngPath !== null &&
-    (yield* attempt(() => ports.exists(request.zoteroPngPath!)));
+    (yield* ports.exists(request.zoteroPngPath));
   return !pdfExists && !cacheExists
     ? imageFailure(
         "file-unavailable",

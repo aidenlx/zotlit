@@ -3,29 +3,26 @@
 // is incomplete, until the researcher dismisses it, and an upgrade from v1
 // keeps its Migration Prompt on screen until a dismissal acknowledges it.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Layer } from "effect";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { testEvents } from "@/lib/__fixtures__/event-stream";
 import {
   createObsidianHost,
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { stubService } from "@/lib/__fixtures__/service-stub";
+import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import * as m from "@/lib/i18n/generated/messages";
-import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { buildRelease } from "@/services/release/__fixtures__";
+import { Release } from "@/services/release/service";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import type { SettingsFixture } from "@/services/settings/__fixtures__";
-import { stubbedReads } from "@/services/zotero-reads/test-utils";
+import { PluginSettings } from "@/services/settings/service";
 
+import { makeWelcomeHost } from "./__fixtures__";
 import { WelcomeBanner } from "./banner";
 import type { WelcomeBannerDeps } from "./banner";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 let cleanup = new AsyncDisposableStack();
 afterEach(async () => {
@@ -84,17 +81,7 @@ async function loadSettings(plugin: PluginStub): Promise<SettingsFixture> {
 }
 
 /** What the banner reads, over `settings`, beside a Zotero database of 3 Items. */
-async function bannerDeps(
-  app: App,
-  settings: SettingsFixture,
-): Promise<WelcomeBannerDeps> {
-  const events = testEvents<Record<string, () => void>>([
-    "changed",
-    "degraded",
-    "refresh-failed",
-    "db-file-missing",
-    "refreshing",
-  ]);
+async function bannerDeps(app: App, settings: SettingsFixture) {
   const release = cleanup.use(
     await buildRelease({
       app,
@@ -107,34 +94,24 @@ async function bannerDeps(
       version: "2.2.0",
     }),
   );
-  const zoteroReads = cleanup.use(stubbedReads());
-  const reads = new Proxy(zoteroReads.reads, {
-    get(target, property, receiver) {
-      if (property === "ConnectionReadout")
-        return () => Effect.succeed({ itemCount: 3 });
-      return Reflect.get(target, property, receiver);
-    },
-  });
-  const deps: WelcomeBannerDeps = {
-    runtime: testRuntime(),
-    bridge: release.bridge,
-    app,
-    reads: stubService<WelcomeBannerDeps["reads"]>("ZoteroReads", {
-      state: "ready",
-      error: null,
-      reads,
-      ...events.streams,
+  const host = cleanup.use(
+    await makeWelcomeHost({
+      services: Layer.mergeAll(
+        layerHostApp(app),
+        Layer.succeed(PluginSettings, settings),
+        Layer.succeed(Release, release.release),
+      ),
     }),
-    queries: queryClientsFixture(),
-    zoteroPref: { dataDir: "/Zotero" },
-    settings,
+  );
+  const deps = {
+    registry: host.registry,
     setupActions: {
       openSettings: vi.fn(),
       pickFolder: vi.fn(),
       locateZotero: vi.fn(),
     },
-    templateMigration: { convert: vi.fn(), retryCleanup: vi.fn() },
-    release: release.release,
+    settings,
+    bridge: settings.bridge,
   };
   return deps;
 }

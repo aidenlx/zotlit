@@ -2,16 +2,8 @@
 import { Effect, Result } from "effect";
 import type { CliData } from "obsidian";
 
-import type {
-  CitationTemplateData,
-  CitationVariant,
-  ContractRoot,
-  TemplateSlot,
-} from "@zotlit/db";
-import type { FrontmatterLanguage } from "@zotlit/templates/constants";
+import type { CitationVariant, ContractRoot } from "@zotlit/db";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
-import type { RootVariableUse } from "@zotlit/templates/facade";
-import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
   serializeTemplateData,
@@ -24,16 +16,17 @@ import { withLogCategory } from "@/lib/effect-log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import type { ProfileDiagnostic } from "@/services/profile/service";
+import type {
+  ProfileDiagnostic,
+  ProfileOperationError,
+} from "@/services/profile/service";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
-  CitationTemplateStatus,
-  CompileError,
   LiteratureNoteTemplateStatus,
   ResolvedLiteratureNoteTemplate,
   SettleOutcome,
-  SharedPartialDocument,
-  TemplateFileStatus,
+  Template,
+  TemplateFailure,
 } from "@/services/template/service";
 
 import type {
@@ -62,7 +55,7 @@ import type {
   WorkbenchIdentity,
 } from "./envelope";
 import { renderGuide } from "./guide";
-import type { selectInspectionNote } from "./inspect";
+import type { InspectionNote } from "./inspect";
 import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import {
   parseDataRequest,
@@ -104,10 +97,10 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
   pluginVersion: string;
-  getIdentity: () => WorkbenchIdentity | Promise<WorkbenchIdentity>;
+  getIdentity: Effect.Effect<WorkbenchIdentity>;
   selectNote: (
     name: string,
-  ) => Promise<ReturnType<typeof selectInspectionNote>>;
+  ) => Effect.Effect<InspectionNote, ProfileOperationError>;
   loadData: (
     indexedKey: string,
     root: ContractRoot,
@@ -119,88 +112,52 @@ interface TemplateWorkbenchDeps {
     variant: CitationVariant,
   ) => Effect.Effect<CitationDataLoadResult, TemplateDataError>;
   settleTimeoutMs?: number;
-  templates: {
-    readonly javascriptTemplatesEnabled: boolean;
-    readonly compileErrors: ReadonlyMap<string, CompileError>;
-    getTemplateFileStatuses: () => readonly TemplateFileStatus[];
-    getCitationTemplateStatus: () => CitationTemplateStatus;
-    getPartialDocument: (name: string) => SharedPartialDocument | null;
-    render: (name: string, data: object) => string;
-    renderFilename: (data: object) => string;
-    renderCitationData: (data: CitationTemplateData) => string;
-    waitUntilSettled: (timeoutMs: number) => Promise<SettleOutcome>;
-    analyzeRootVariables: (name: string) => RootVariableUse[] | null;
-    getTemplateSource: (name: TemplateSlot) => Promise<string>;
-  };
-  frontmatter: {
-    /**
-     * Configured Managed Frontmatter fields in configuration order, the keys
-     * left inert by the JavaScript Templates gate, and the gate's current
-     * state. Non-throwing counterpart to the plugin's compiled-fields
-     * accessor, which throws when any field is inert.
-     */
-    read: () => {
-      fields: readonly FrontmatterField[];
-      inertKeys: readonly string[];
-      javascriptTemplatesEnabled: boolean;
-    };
-    /**
-     * Evaluate `fields` over `zt`, gate-aware: a `"javascript"` field is
-     * skipped (never compiled) while the gate is off, its key reported in
-     * `inertKeys` rather than `values`/`errors`. Non-throwing counterpart to
-     * the plugin's frontmatter write path, for `frontmatter-eval`.
-     */
-    evaluate: (
-      fields: readonly FrontmatterField[],
-      zt: object,
-    ) => {
-      values: Readonly<Record<string, unknown>>;
-      errors: Readonly<Record<string, string>>;
-      inertKeys: readonly string[];
-    };
-    /** Compile-check a single ad-hoc expression; `null` when it compiles. */
-    validateExpr: (
-      expr: string,
-      language: FrontmatterLanguage,
-    ) => string | null;
-    /**
-     * Upsert `fields` through the plugin's settings service, so the settings
-     * modal, compilation lifecycle, and sync all observe the change. Callers
-     * validate the candidate list (reserved keys, non-empty, compile-checked)
-     * before calling; this never receives — and so never stores — a field the
-     * settings modal would have refused.
-     */
-    write: (fields: readonly FrontmatterField[]) => void;
-  };
+  templates: Pick<
+    Template["Service"],
+    | "javascriptTemplatesEnabled"
+    | "compileErrors"
+    | "getTemplateFileStatuses"
+    | "waitUntilSettled"
+  >;
   literatureNotes?: {
-    readProfiles: () => {
-      defaultProfile:
-        | {
-            readonly document?: string;
-            readonly bindings?: ResolvedLiteratureNoteProfileBindings;
-          }
-        | undefined;
-      diagnostics?: readonly ProfileDiagnostic[];
-      profiles: readonly {
-        readonly id: string;
-        readonly label: string;
-        readonly document?: string;
-        readonly bindings?: ResolvedLiteratureNoteProfileBindings;
-      }[];
-    };
-    getDocumentStatuses: () => readonly LiteratureNoteTemplateStatus[];
+    readProfiles: Effect.Effect<
+      {
+        defaultProfile:
+          | {
+              readonly document?: string;
+              readonly bindings?: ResolvedLiteratureNoteProfileBindings;
+            }
+          | undefined;
+        diagnostics?: readonly ProfileDiagnostic[];
+        profiles: readonly {
+          readonly id: string;
+          readonly label: string;
+          readonly document?: string;
+          readonly bindings?: ResolvedLiteratureNoteProfileBindings;
+        }[];
+      },
+      ProfileOperationError
+    >;
+    getDocumentStatuses: Effect.Effect<
+      readonly LiteratureNoteTemplateStatus[],
+      TemplateFailure
+    >;
+    /** The installed document `reference` names; fails with what it threw. */
     getDocument: (
       reference: string,
-    ) =>
+    ) => Effect.Effect<
       | Pick<
           ResolvedLiteratureNoteTemplate,
           "renderForCreate" | "renderForUpdate"
         >
-      | undefined;
+      | undefined,
+      unknown
+    >;
+    /** The document `source` rendered over `data`; fails with what it threw. */
     renderSource: (
       source: string,
       data: object,
-    ) => { create: string; update: string | null };
+    ) => Effect.Effect<{ create: string; update: string | null }, unknown>;
   };
 }
 
@@ -224,9 +181,9 @@ export function createTemplateWorkbenchHandlers(
       ? notSettledDiagnostic(settleTimeoutMs)
       : initFailedDiagnostic();
 
-  const getIdentity = () => Effect.promise(async () => deps.getIdentity());
+  const getIdentity = () => deps.getIdentity;
   const waitUntilSettled = () =>
-    Effect.promise(() => deps.templates.waitUntilSettled(settleTimeoutMs));
+    deps.templates.waitUntilSettled(settleTimeoutMs);
 
   /**
    * The preamble both item-backed commands share: parse the selector, resolve
@@ -286,10 +243,11 @@ export function createTemplateWorkbenchHandlers(
           ok: true,
           pluginVersion: deps.pluginVersion,
           identity: yield* getIdentity(),
-          javascriptTemplatesEnabled: deps.templates.javascriptTemplatesEnabled,
-          templates: deps.templates.getTemplateFileStatuses(),
+          javascriptTemplatesEnabled:
+            yield* deps.templates.javascriptTemplatesEnabled,
+          templates: yield* deps.templates.getTemplateFileStatuses,
           ...(deps.literatureNotes
-            ? literatureNoteAuthoringState(deps.literatureNotes)
+            ? yield* literatureNoteAuthoringState(deps.literatureNotes)
             : {}),
         });
       },
@@ -305,7 +263,7 @@ export function createTemplateWorkbenchHandlers(
           let noteContext: { note: string; profile: string } | undefined;
           if ("note" in request) {
             const note = request.note;
-            const selected = yield* Effect.promise(() => deps.selectNote(note));
+            const selected = yield* deps.selectNote(note);
             if (selected.error) {
               const problem = INSPECT_DIAGNOSTICS[selected.error];
               return envelope(TEMPLATE_DATA_COMMAND, {
@@ -397,7 +355,7 @@ export function createTemplateWorkbenchHandlers(
               ...echoed,
               diagnostic: templateFaultDiagnostic(error, {
                 template: null,
-                compileErrors: deps.templates.compileErrors,
+                compileErrors: yield* deps.templates.compileErrors,
               }),
             });
           }
@@ -447,10 +405,13 @@ export function createTemplateWorkbenchHandlers(
             });
           }
 
-          let render: (data: object) => {
-            create: string;
-            update: string | null;
-          };
+          let render: (data: object) => Effect.Effect<
+            {
+              create: string;
+              update: string | null;
+            },
+            unknown
+          >;
           let document: { name: string; source?: string };
           if ("source" in request) {
             document = { name: "source", source: request.source };
@@ -460,7 +421,10 @@ export function createTemplateWorkbenchHandlers(
             const reference =
               "document" in request
                 ? request.document
-                : profileDocumentReference(literatureNotes, request.profile);
+                : yield* profileDocumentReference(
+                    literatureNotes,
+                    request.profile,
+                  );
             if (typeof reference !== "string") {
               return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
                 ok: false,
@@ -470,14 +434,14 @@ export function createTemplateWorkbenchHandlers(
             }
             document = { name: reference };
             const lookup = yield* Effect.result(
-              Effect.try(() => literatureNotes.getDocument(reference)),
+              literatureNotes.getDocument(reference),
             );
             if (Result.isFailure(lookup)) {
               return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
                 ok: false,
                 ...echoed,
                 diagnostic: literatureNoteDocumentDiagnostic(
-                  lookup.failure.cause,
+                  lookup.failure,
                   document,
                 ),
               });
@@ -490,10 +454,11 @@ export function createTemplateWorkbenchHandlers(
                 diagnostic: documentNotFoundDiagnostic(reference),
               });
             }
-            render = (data) => ({
-              create: resolved.renderForCreate(data),
-              update: resolved.renderForUpdate(data),
-            });
+            render = (data) =>
+              Effect.try(() => ({
+                create: resolved.renderForCreate(data),
+                update: resolved.renderForUpdate(data),
+              })).pipe(Effect.mapError(({ cause }) => cause));
           }
 
           const result = yield* loadFailure(deps.loadData(request.key, "note"));
@@ -504,15 +469,13 @@ export function createTemplateWorkbenchHandlers(
               diagnostic: dataLoadDiagnostic(result, request.key),
             });
           }
-          const rendered = yield* Effect.result(
-            Effect.try(() => render(result.data)),
-          );
+          const rendered = yield* Effect.result(render(result.data));
           if (Result.isFailure(rendered)) {
             return envelope(TEMPLATE_DOCUMENT_RENDER_COMMAND, {
               ok: false,
               ...echoed,
               diagnostic: literatureNoteDocumentDiagnostic(
-                rendered.failure.cause,
+                rendered.failure,
                 document,
               ),
             });
@@ -546,14 +509,17 @@ const answerRejection = (command: WorkbenchCommand) =>
     envelope(command, { ok: false, diagnostic: rejectionDiagnostic(rejected) }),
   );
 
-function literatureNoteAuthoringState(
+const literatureNoteAuthoringState = Effect.fnUntraced(function* (
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
-): {
-  profiles: readonly LiteratureNoteProfileRow[];
-  documents: readonly LiteratureNoteDocumentRow[];
-  profileDiagnostics: readonly ProfileDiagnostic[];
-} {
-  const state = literatureNotes.readProfiles();
+): Effect.fn.Return<
+  {
+    profiles: readonly LiteratureNoteProfileRow[];
+    documents: readonly LiteratureNoteDocumentRow[];
+    profileDiagnostics: readonly ProfileDiagnostic[];
+  },
+  ProfileOperationError | TemplateFailure
+> {
+  const state = yield* literatureNotes.readProfiles;
   const profiles: LiteratureNoteProfileRow[] = [
     ...(state.defaultProfile
       ? [
@@ -573,7 +539,7 @@ function literatureNoteAuthoringState(
     })),
   ];
   const documents = new Map<string, LiteratureNoteDocumentRow>();
-  for (const status of literatureNotes.getDocumentStatuses()) {
+  for (const status of yield* literatureNotes.getDocumentStatuses) {
     documents.set(
       status.reference,
       status.validation.state === "valid"
@@ -614,15 +580,15 @@ function literatureNoteAuthoringState(
       a.reference.localeCompare(b.reference),
     ),
   };
-}
+});
 
 /** Parse a `--profile` argument's text, then resolve its document reference. */
-function profileDocumentReference(
+const profileDocumentReference = Effect.fnUntraced(function* (
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
   text: string,
-): string | Diagnostic {
+): Effect.fn.Return<string | Diagnostic, ProfileOperationError> {
   const selector = parseProfileSelector(text);
-  const state = literatureNotes.readProfiles();
+  const state = yield* literatureNotes.readProfiles;
   const found =
     selector === undefined
       ? undefined
@@ -642,7 +608,7 @@ function profileDocumentReference(
     );
   }
   return found.document;
-}
+});
 
 function documentNotFoundDiagnostic(reference: string): Diagnostic {
   return diagnostic(

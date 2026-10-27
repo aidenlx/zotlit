@@ -11,19 +11,24 @@ import { isCitationExampleId } from "@zotlit/workbench/render";
 import type { RenderCallerSource } from "@zotlit/workbench/render";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
+import { plainTemplateError } from "@/services/template/errors";
+import { Template } from "@/services/template/service";
 import { checkDiagnostic } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import type {
   CheckContext,
   CheckOutcome,
+  CheckServices,
   InspectedSource,
   PlainCheckBranch,
 } from "./check";
-import { readCitationData, readTemplateData } from "./data";
+import { readCitationData, readTemplateData, withSettings } from "./data";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import type { InspectDiagnosticCode } from "./inspect-contract";
+import { templateCall } from "./sync-template";
 
 /** The refusal a Reserved Partial Name carries, as the inspection registry names it. */
 export const RESERVED_PARTIAL_NAME =
@@ -48,13 +53,14 @@ export const attempt = <A>(evaluate: () => A) =>
 
 /** What a failed check reports: what was thrown, or the failure itself. */
 export const thrown = (error: unknown): unknown =>
-  error instanceof CheckSourceThrew ? error.cause : error;
+  error instanceof CheckSourceThrew || error instanceof ProfileOperationError
+    ? error.cause
+    : plainTemplateError(error);
 
 /** Checks a document the Profile branch does not own, and returns the answer. */
 export const checkPlainDocument = Effect.fn(
   "TemplateWorkbenchCli.checkPlainDocument",
 )(function* ({
-  deps,
   params,
   draft,
   inspect,
@@ -64,7 +70,7 @@ export const checkPlainDocument = Effect.fn(
   root,
   context,
   attachReport,
-}: PlainCheckBranch): Effect.fn.Return<CheckOutcome> {
+}: PlainCheckBranch): Effect.fn.Return<CheckOutcome, never, CheckServices> {
   const document = inspected.document!;
   let documentContext: CheckContext = context;
   if (
@@ -89,7 +95,8 @@ export const checkPlainDocument = Effect.fn(
   // Template it runs reported it.
   return yield* Effect.gen(function* (): Effect.fn.Return<
     CheckOutcome,
-    unknown
+    unknown,
+    CheckServices
   > {
     const parsed = yield* attempt(() => parsePlainTemplateDocument(source));
     documentContext = {
@@ -97,9 +104,10 @@ export const checkPlainDocument = Effect.fn(
       language: parsed.manifest.language,
     };
     caller = { source, language: parsed.manifest.language };
+    const template = yield* Template;
     if (
       documentContext.language === "eta" &&
-      !deps.templates.javascriptTemplatesEnabled
+      !(yield* template.javascriptTemplatesEnabled)
     )
       return {
         context: documentContext,
@@ -126,7 +134,6 @@ export const checkPlainDocument = Effect.fn(
         },
       };
     const inspectBindings = createInspectHandler(
-      deps,
       undefined,
       draft ? document.id : undefined,
     );
@@ -158,7 +165,7 @@ export const checkPlainDocument = Effect.fn(
     const profile =
       selector === undefined
         ? undefined
-        : deps.profile.resolveProfile(selector);
+        : yield* (yield* Profile).resolveProfile(selector);
     if (!profile)
       return yield* new CheckSourceThrew({
         cause: new Error("The selected Profile does not resolve."),
@@ -189,14 +196,9 @@ export const checkPlainDocument = Effect.fn(
           reason: "Provide key or a Citation example to check rendering.",
         },
       };
-    const data = {
-      ...deps.data,
-      settings: { current: Effect.succeed(profile.settings) },
-    };
     const loaded = yield* (
       root === "citation"
         ? readCitationData(
-            data,
             typeof params.example === "string" &&
               isCitationExampleId(params.example)
               ? { example: params.example }
@@ -204,10 +206,9 @@ export const checkPlainDocument = Effect.fn(
             (params.variant ?? "main") as CitationVariant,
           )
         : readTemplateData(
-            data,
             params.key as string,
             root as "note" | "annotation",
-          )
+          ).pipe(withSettings(profile.settings))
     ).pipe(Effect.mapError(({ cause }) => cause));
     if (loaded.kind !== "data")
       return {
@@ -240,13 +241,13 @@ export const checkPlainDocument = Effect.fn(
       ),
     );
     documentContext = { ...documentContext, dataRevision };
-    checks[document.kind] = yield* Effect.try(() =>
+    checks[document.kind] = yield* templateCall(
       document.kind === "citation"
-        ? deps.templates.renderCitationSource(
+        ? template.renderCitationSource(
             source,
             loaded.data as CitationTemplateData,
           )
-        : deps.templates.renderPartialSource(source, loaded.data, {
+        : template.renderPartialSource(source, loaded.data, {
             name: document.label,
           }),
     ).pipe(
@@ -258,7 +259,7 @@ export const checkPlainDocument = Effect.fn(
         }),
         onFailure: (error): ProfileCheck => ({
           status: "failed",
-          diagnostics: [checkDiagnostic(error.cause, caller)],
+          diagnostics: [checkDiagnostic(error, caller)],
         }),
       }),
     );

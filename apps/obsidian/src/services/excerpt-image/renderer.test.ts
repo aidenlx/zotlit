@@ -1,12 +1,25 @@
+import { it } from "@effect/vitest";
+import { Effect, Exit, Fiber } from "effect";
+import type { FileSystem, Layer } from "effect";
+import { TestClock } from "effect/testing";
 // Host doubles measure resource ownership without allocating a browser canvas or a large PDF.
 import { open } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
-import { expect, it, vi } from "vitest";
+import { expect, vi } from "vitest";
 
+import { NodeExcerptImageFixture } from "@/services/excerpt-image/__fixtures__/node-service";
+
+import { layerExcerptFiles } from "./__fixtures__/files";
 import { redPng } from "./__fixtures__/png";
+import { ExcerptRendererFixture as ExcerptRenderer } from "./__fixtures__/renderer";
 import { sizedWebp } from "./__fixtures__/webp";
-import { ExcerptRenderer } from "./renderer";
-import { ExcerptImageService } from "./service";
+
+let platform: Layer.Layer<FileSystem.FileSystem>;
+class ExcerptImageService extends NodeExcerptImageFixture {
+  constructor(deps: ConstructorParameters<typeof NodeExcerptImageFixture>[0]) {
+    super(deps, platform);
+  }
+}
 import type { ExcerptRequest } from "./service";
 
 vi.mock("node:fs/promises", async (original) => ({
@@ -147,7 +160,7 @@ function fixture() {
       destroy,
     };
   });
-  const deadlines: { milliseconds: number; controller: AbortController }[] = [];
+
   const canvas = () => {
     const canvas = {
       width: 0,
@@ -167,15 +180,14 @@ function fixture() {
     canvases.push(canvas);
     return canvas as unknown as HTMLCanvasElement;
   };
-  const renderer = new ExcerptRenderer({
-    load,
-    deadline: (milliseconds) => {
-      const controller = new AbortController();
-      deadlines.push({ milliseconds, controller });
-      return controller.signal;
+  platform = layerExcerptFiles(open);
+  const renderer = new ExcerptRenderer(
+    {
+      load,
+      canvas,
     },
-    canvas,
-  });
+    platform,
+  );
   const request: ExcerptRequest = {
     annotation: {
       key: "ANNOT001",
@@ -216,7 +228,6 @@ function fixture() {
     canvases,
     canvas,
     measured,
-    deadlines,
     render: (input = request, signal = new AbortController().signal) =>
       renderer.render(input, signal),
     async [Symbol.asyncDispose]() {
@@ -640,23 +651,27 @@ it.each(["next request", "shutdown"])(
   },
 );
 
-it("bounds a stuck render and teardown, then refuses another resident document", async () => {
-  await using f = fixture();
-  f.state.stage = "render";
-  f.state.destroyGate = new Promise(() => {});
-  const pending = f.render();
-  const rejection = expect(pending).rejects.toThrow("render deadline");
-  await f.started.promise;
-  f.deadlines
-    .find(({ milliseconds }) => milliseconds === 30_000)!
-    .controller.abort(new Error("render deadline"));
-  await f.destroyStarted.promise;
-  f.deadlines
-    .findLast(({ milliseconds }) => milliseconds === 5_000)!
-    .controller.abort(new Error("close deadline"));
-  await rejection;
-  await expect(f.render()).rejects.toThrow("closed");
-  expect(f.getDocument).toHaveBeenCalledTimes(1);
-  expect(f.tasks[0]!.cancel).toHaveBeenCalledTimes(1);
-  expect(f.canvases[0]).toMatchObject({ width: 0, height: 0 });
-});
+it.effect(
+  "bounds a stuck render and teardown, then refuses another resident document",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* Effect.acquireDisposable(Effect.sync(fixture));
+      f.state.stage = "render";
+      f.state.destroyGate = new Promise(() => {});
+      const fiber = yield* f.renderer.native
+        .render(f.request)
+        .pipe(Effect.provide(platform), Effect.exit, Effect.forkChild);
+      yield* Effect.promise(() => f.started.promise);
+      yield* TestClock.adjust(30_000);
+      yield* Effect.promise(() => f.destroyStarted.promise);
+      yield* TestClock.adjust(5_000);
+      expect(Exit.isFailure(yield* Fiber.join(fiber))).toBe(true);
+      const next = yield* f.renderer.native
+        .render(f.request)
+        .pipe(Effect.provide(platform), Effect.flip);
+      expect(next).toMatchObject({ message: "Excerpt renderer is closed" });
+      expect(f.getDocument).toHaveBeenCalledTimes(1);
+      expect(f.tasks[0]!.cancel).toHaveBeenCalledTimes(1);
+      expect(f.canvases[0]).toMatchObject({ width: 0, height: 0 });
+    }),
+);

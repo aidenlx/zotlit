@@ -1,12 +1,14 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import type { Plugin } from "obsidian";
 
+import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { effectBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 
+import { defaults } from "./schema";
 import { layerPluginSettings, PluginSettings } from "./service";
 import type { PluginSettingsOptions, Settings } from "./service";
 
@@ -128,4 +130,29 @@ export async function buildSeededSettings(overrides: SettingsOverrides = {}) {
   });
   applySettings(settings, settings.bridge, overrides);
   return settings;
+}
+
+/**
+ * Settings whose changes the test publishes, for a layer that reads only
+ * `current` and `changes`. `changes` replays the current value to a new
+ * subscriber, then each `update`. `update` returns once every subscriber's
+ * runnable handling of the new value has run.
+ */
+export function settingsFeed(overrides: Partial<Settings> = {}) {
+  let current: Readonly<Settings> = { ...defaults, ...overrides };
+  const events = testEvent<Readonly<Settings>>();
+  return {
+    layer: Layer.mock(PluginSettings, {
+      current: Effect.sync(() => current),
+      changes: Stream.suspend(() =>
+        events.stream.pipe(Stream.prepend([current])),
+      ),
+    }),
+    update(patch: Partial<Settings>): void {
+      if (events.subscribers === 0)
+        throw new Error("No layer follows the settings yet");
+      current = { ...current, ...patch };
+      events.emit(current);
+    },
+  };
 }

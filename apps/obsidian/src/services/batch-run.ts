@@ -1,28 +1,11 @@
-// Snapshot-pinned batch write runner over the concurrent classify/execute primitives.
-import { Cause, Deferred, Effect, Exit, Ref, Schema, Stream } from "effect";
+// Concurrent classify/execute primitives for batch runs, and the Promise edge the batch modal calls.
+import { Cause, Deferred, Effect, Exit, Option, Ref, Stream } from "effect";
 
 import { AbortError } from "@/lib/abort-error";
+import { exitOver, valueOr } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { settleAtEdge } from "@/lib/signal-edge";
 import { formatErrorMessage } from "@/lib/toast";
-import type {
-  ZoteroReads,
-  ZoteroReadsApi,
-} from "@/services/zotero-reads/service";
-
-/**
- * A batch task's `run` callback rejected. `cause` holds the rejection; the
- * executor reads it for the failure row, the halt test and the logs, and
- * {@link runBatch} rethrows it, so callers see the original.
- */
-export class TaskRejected extends Schema.TaggedError<
-  TaskRejected,
-  { readonly brand: unique symbol }
->()("TaskRejected", { cause: Schema.Defect() }) {}
-
-/** What a task failed with: a {@link TaskRejected}'s rejection, else the error. */
-function taskFailure(error: unknown): unknown {
-  return error instanceof TaskRejected ? error.cause : error;
-}
 
 /** A failed-item payload the run reports; rendered by the modal's failure row. */
 export interface BatchFailure {
@@ -36,7 +19,7 @@ export interface BatchClassifyControls {
    * the total passed at construction. */
   onProgress: (classified: number) => void;
   /** The modal's cancel; a Promise caller turns it into an interrupt with
-   * {@link runBatch}. */
+   * {@link runBatchWith}. */
   signal: AbortSignal;
 }
 
@@ -90,7 +73,7 @@ export interface BatchRunResult {
  * the caller's Snapshot so every request sees one database state. Each reply
  * slice advances the loading bar, and the caller's `processSlice` handles the
  * per-id logic. It cancels by interruption only: a Promise caller passes
- * {@link BatchClassifyControls.signal} to {@link runBatch}, which interrupts it.
+ * {@link BatchClassifyControls.signal} to {@link runBatchWith}, which interrupts it.
  *
  * @returns an Effect that fails with a read error.
  */
@@ -147,15 +130,17 @@ export type RunOutcome = "created" | "updated" | "skipped";
  *
  * The executor polls {@link BatchRunControls.stop} as each task starts: a stop
  * skips queued tasks and leaves admitted work running to its own completion.
+ * An interrupt, such as unload, stops a task at once, except for the write
+ * steps its `run` makes uninterruptible; the task reports no settle event.
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
- * @param opts.haltOn Marks an error as configuration-level rather than
+ * @param opts.haltOn Marks a typed failure as configuration-level rather than
  *   per-item: the first task to fail with a matching error halts the whole run
  *   instead of reporting a failure row (and repeating the same message for
  *   every remaining item). Tasks that haven't started yet short-circuit once
  *   the halt is recorded; the Effect fails with that error once all in-flight
- *   tasks settle.
+ *   tasks settle. A defect never halts the run.
  *
  * @returns an Effect that fails with a task error or the first halting error.
  */
@@ -165,7 +150,7 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
   concurrency: number;
   run: (task: T) => Effect.Effect<RunOutcome, E>;
   onTaskFailed?: (task: T, error: unknown) => void;
-  haltOn?: (error: unknown) => boolean;
+  haltOn?: (error: E) => boolean;
 }): Effect.Effect<BatchRunResult, E> {
   const { tasks, controls, concurrency, run, onTaskFailed, haltOn } = opts;
 
@@ -182,16 +167,21 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
       tasks,
       (task) =>
         Effect.exit(
-          Effect.uninterruptible(
+          // The task's reads stay interruptible, so unload does not wait for
+          // them; its write steps are uninterruptible in their own services.
+          Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
               if (yield* Deferred.isDone(controls.stop))
                 return yield* Effect.interrupt;
               if ((yield* Ref.get(halt)) !== null)
                 return yield* Effect.interrupt;
-              const exit = yield* Effect.exit(run(task));
+              const exit = yield* Effect.exit(restore(run(task)));
               if (Exit.isFailure(exit)) {
-                const error = taskFailure(Cause.squash(exit.cause));
-                if (haltOn?.(error)) {
+                if (Cause.hasInterruptsOnly(exit.cause))
+                  return yield* Effect.failCause(exit.cause);
+                const error = Cause.squash(exit.cause);
+                const failure = Cause.findErrorOption(exit.cause);
+                if (haltOn && Option.isSome(failure) && haltOn(failure.value)) {
                   yield* Ref.update(halt, (current) => current ?? exit.cause);
                   return yield* Effect.interrupt;
                 }
@@ -233,7 +223,7 @@ export function executeBatchRun<T extends BatchRunTask, E>(opts: {
       if (Exit.isSuccess(entry)) {
         completed += 1;
       } else if (!Cause.hasInterruptsOnly(entry.cause)) {
-        const error = taskFailure(Cause.squash(entry.cause));
+        const error = Cause.squash(entry.cause);
         if (!AbortError.test(error)) {
           yield* Ref.update(result, (current) => ({
             ...current,
@@ -274,66 +264,46 @@ function profileRecovery(error: unknown): BatchFailure["recovery"] {
 }
 
 /**
- * Run a batch of write tasks under one ZoteroReads Snapshot held for the whole
- * run, so every task's `run` reads one database state even when a refresh
- * lands mid-run. The Scope holds the Snapshot until every admitted task
- * settles and releases it on success, failure, and interruption alike.
- * Callers create their per-run caches before this call and close over them in
- * `run`; the Snapshot-bound `reads` is threaded to each task.
- *
- * @returns an Effect that fails with the Snapshot error or a
- *   {@link TaskRejected} that holds the halting task's rejection. A stop
- *   request is not a failure: the run returns with `cancelled` set.
+ * Run an Effect-native batch operation from a Promise caller through
+ * `runExit`, such as the bridge's `runPromiseExit`: a modal callback runs a
+ * batch operation that unload interrupts. This is the caller boundary: typed
+ * failures and defects keep their identity, an aborted signal rejects with the
+ * signal's own abort reason, and an unload rejects with the interrupt.
  */
-export function runBatchWrite<T extends BatchRunTask>(opts: {
-  zoteroReads: Pick<ZoteroReads["Service"], "snapshot">;
-  tasks: readonly T[];
-  controls: BatchRunControls;
-  concurrency: number;
-  run: (task: T, reads: ZoteroReadsApi) => Promise<RunOutcome>;
-  onTaskFailed?: (task: T, error: unknown) => void;
-  haltOn?: (error: unknown) => boolean;
-}): Effect.Effect<
-  BatchRunResult,
-  TaskRejected | Effect.Error<ZoteroReads["Service"]["snapshot"]>
-> {
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const reads = yield* opts.zoteroReads.snapshot;
-      return yield* executeBatchRun({
-        tasks: opts.tasks,
-        controls: opts.controls,
-        concurrency: opts.concurrency,
-        run: (task) =>
-          Effect.tryPromise({
-            try: () => opts.run(task, reads),
-            catch: (cause) => new TaskRejected({ cause }),
-          }),
-        onTaskFailed: opts.onTaskFailed,
-        haltOn: opts.haltOn,
-      });
-    }),
-  );
+export function runBatchWith<R = never>(
+  runExit: <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    options?: { readonly signal?: AbortSignal },
+  ) => Promise<Exit.Exit<A, E>>,
+) {
+  return async <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    signal?: AbortSignal,
+  ): Promise<A> => {
+    signal?.throwIfAborted();
+    const exit = await runExit(
+      effect,
+      signal === undefined ? undefined : { signal },
+    );
+    return settleAtEdge(exit, signal);
+  };
 }
 
 /**
- * Run an Effect-native batch operation from a Promise caller. This is the
- * caller boundary: typed failures and defects keep their identity, a
- * {@link TaskRejected} rejects with the task's own rejection, and an aborted
- * signal rejects with the signal's own abort reason.
+ * The runners a batch modal's callbacks enter Effect through, over the
+ * services this Effect runs with and through `bridge`, so unload interrupts
+ * them. `run` settles as {@link runBatchWith} settles. `settle` resolves
+ * `undefined` when unload interrupts it, for a choice the modal waits on.
  */
-export async function runBatch<A, E>(
-  effect: Effect.Effect<A, E>,
-  signal?: AbortSignal,
-): Promise<A> {
-  signal?.throwIfAborted();
-  // Every Effect here has R = never, so the default Effect runtime is enough.
-  const exit = await Effect.runPromiseExit(
-    effect,
-    signal === undefined ? undefined : { signal },
-  );
-  return settleAtEdge(
-    Exit.mapError(exit, (error) => taskFailure(error)),
-    signal,
-  );
-}
+export const modalRunner = Effect.fnUntraced(function* <R>(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
+) {
+  const runExit = exitOver(bridge, yield* Effect.context<R>());
+  return {
+    run: runBatchWith(runExit),
+    settle: async <A, E>(
+      effect: Effect.Effect<A, E, R>,
+    ): Promise<A | undefined> =>
+      valueOr<A | undefined, E>(await runExit(effect), undefined),
+  };
+});

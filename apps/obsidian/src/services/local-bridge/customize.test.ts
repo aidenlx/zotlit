@@ -1,36 +1,53 @@
 // @vitest-environment happy-dom
-import { Effect, SubscriptionRef } from "effect";
+import { it } from "@effect/vitest";
+import { Context, Effect, Fiber, Layer, SubscriptionRef } from "effect";
+import type { Scope } from "effect";
+import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
-import type {
-  App,
-  MetadataCache,
-  Vault,
-  Workspace,
-  WorkspaceLeaf,
-} from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
-import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
+import type {
+  LiteratureNotePackError,
+  LiteratureNoteTemplatePartial,
+} from "@zotlit/templates/literature-note-pack";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
-import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
-import type { LocalServer } from "@/services/local-server/service";
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryMetadataCache } from "@/lib/__fixtures__/obsidian-metadata-cache";
+import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
+import { LocalServer } from "@/services/local-server/service";
+import { Profile, ProfileOperationError } from "@/services/profile/service";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
 import {
   profileCustomization,
   saveProfileCustomization,
 } from "@/views/template-workbench/preferences";
 
-import { createCustomize } from "./customize";
+import {
+  bindCustomize,
+  Customize,
+  customize,
+  layerCustomize,
+} from "./customize";
 import type {
-  CustomizeDeps,
+  CustomizePorts,
+  CustomizeRequest,
   LaunchConsent,
   LaunchSheetDetails,
+  NativeProfileTarget,
 } from "./customize";
+import { LocalBridge } from "./service";
 
 const LIQUID_PROFILE = `---
 id: default
@@ -55,16 +72,24 @@ const CALLING_PROFILE = LIQUID_PROFILE.replace(
 /** The build the unsupported check reads a Profile against. */
 const PLUGIN_VERSION = "2.3.0";
 
+const DEFAULT_DOCUMENT = "templates/zotlit-profile.default.md";
+
 const LAUNCH_URL =
   "https://zotlit.aidenlx.site/workbench#zotlit-connect=abc&port=9091";
 
 interface Harness {
-  customize: ReturnType<typeof createCustomize>;
+  customize(request: CustomizeRequest): Effect.Effect<void, unknown>;
+  /** The flow as its layer builds it, for a run through {@link bindCustomize}. */
+  service: Effect.Effect<Customize["Service"], never, Scope.Scope>;
+  /** The ports the flow runs with. */
+  ports: CustomizePorts;
   device: Map<string, unknown>;
   settings: Settings;
   update: ReturnType<typeof vi.fn>;
   opened: string[];
   sheets: LaunchSheetDetails[];
+  /** The sheets taken away without an answer. */
+  closedSheets: LaunchSheetDetails[];
   launches: unknown[];
   openedFiles: string[];
 }
@@ -73,17 +98,21 @@ interface Options {
   webWorkbenchEnabled?: boolean;
   settings?: Partial<Settings>;
   source?: string;
-  /** What the sheet answers; `null` is Cancel. */
-  consent?: LaunchConsent | null;
+  /** What the sheet answers; `null` is Cancel, and `"held"` never answers. */
+  consent?: LaunchConsent | null | "held";
   effectivePort?: number | null;
-  /** The listener binds on the next tick once asked; `false` keeps it silent. */
+  /** The listener binds once the flow turns the server on; `false` keeps it silent. */
   serverStarts?: boolean;
   /** What the template folder holds. */
   partials?: readonly LiteratureNoteTemplatePartial[];
   activeNote?: { basename: string; itemKey: string | null } | null;
+  /** The Profiles the registry holds; the vault holds each one's file. */
+  profiles?: readonly LiteratureNoteProfile[];
+  /** The vault holds a saved Default Profile document that does not parse. */
+  invalidDefault?: boolean;
 }
 
-function harness({
+const harness = Effect.fnUntraced(function* ({
   webWorkbenchEnabled = true,
   settings: overrides = {},
   source = LIQUID_PROFILE,
@@ -92,7 +121,9 @@ function harness({
   serverStarts = true,
   partials = [],
   activeNote = null,
-}: Options = {}): Harness {
+  profiles = [],
+  invalidDefault = false,
+}: Options = {}) {
   const settings: Settings = {
     ...defaults,
     "server.workbench": true,
@@ -101,357 +132,501 @@ function harness({
   const device = new Map<string, unknown>();
   const opened: string[] = [];
   const sheets: LaunchSheetDetails[] = [];
+  const closedSheets: LaunchSheetDetails[] = [];
   const launches: unknown[] = [];
   const openedFiles: string[] = [];
   const update = vi.fn((patch: Partial<Settings>) => {
     Object.assign(settings, patch);
   });
-  const effect = effectBridge(testRuntime());
-  const file = activeNote ? new TFile() : null;
-  if (file && activeNote) file.basename = activeNote.basename;
-  const portRef = Effect.runSync(
-    SubscriptionRef.make<number | null>(effectivePort),
-  );
-  if (serverStarts) {
-    queueMicrotask(() => {
-      Effect.runSync(SubscriptionRef.set(portRef, 9095));
+  const port = yield* SubscriptionRef.make<number | null>(effectivePort);
+
+  const workspace = new MemoryWorkspace();
+  const metadataCache = new MemoryMetadataCache();
+  if (activeNote) {
+    const file = new TFile();
+    file.path = `literatures/${activeNote.basename}.md`;
+    file.basename = activeNote.basename;
+    workspace.activeFile = file;
+    metadataCache.entries.set(file.path, {
+      frontmatter: activeNote.itemKey
+        ? { "zotero-key": activeNote.itemKey }
+        : {},
     });
   }
-  const app = stubService<App>("App", {
-    vault: stubService<Vault>("Vault", {
-      getName: () => "Research",
-      getFileByPath: (path: string) => {
-        const file = new TFile();
-        file.path = path;
-        return file;
-      },
-    }),
-    workspace: stubService<Workspace>("Workspace", {
-      getActiveFile: () => file,
-      getLeaf: () =>
-        stubService<WorkspaceLeaf>("WorkspaceLeaf", {
-          openFile: (target: TFile) => {
-            openedFiles.push(target.path);
-            return Promise.resolve();
-          },
-        }),
-    }),
-    metadataCache: stubService<MetadataCache>("MetadataCache", {
-      getFileCache: () => ({
-        frontmatter: activeNote?.itemKey
-          ? { "zotero-key": activeNote.itemKey }
-          : {},
-      }),
-    }),
-    loadLocalStorage: (key: string) => device.get(key) ?? null,
-    saveLocalStorage: (key: string, value: unknown) => {
-      if (value === null) device.delete(key);
-      else device.set(key, value);
-    },
-  });
 
-  const deps: CustomizeDeps = {
-    webWorkbenchEnabled,
-    app,
-    settings: stubService<CustomizeDeps["settings"]>("PluginSettings", {
+  const vault = new MemoryVault();
+  for (const { path } of profiles) vault.add(path);
+  if (invalidDefault) vault.add(DEFAULT_DOCUMENT);
+
+  const layer = Layer.mergeAll(
+    layerHost({ workspace, metadataCache, vault }),
+    layerTestObsidianEnv({ vaultName: "Research" }),
+    testNotifier().layer,
+    Layer.mock(PluginSettings, {
       current: Effect.succeed(settings),
-      update: (patch: Parameters<CustomizeDeps["settings"]["update"]>[0]) =>
-        Effect.sync(() => {
-          update(
-            (typeof patch === "function"
-              ? patch(settings)
-              : patch) as Partial<Settings>,
-          );
+      update: (patch) =>
+        Effect.gen(function* () {
+          const applied = (
+            typeof patch === "function" ? patch(settings) : patch
+          ) as Partial<Settings>;
+          update(applied);
+          // The listener binds once the flow turns the server on.
+          if (serverStarts && applied["server.enabled"])
+            yield* SubscriptionRef.set(port, 9095);
           return settings;
         }),
     }),
-    profile: stubService<CustomizeDeps["profile"]>("PlainProfile", {
-      profiles: [],
-      defaultDocumentPath: "templates/zotlit-profile.default.md",
-      getSource: () => Promise.resolve(source),
+    Layer.mock(Profile, {
+      profiles: Effect.succeed(profiles),
+      defaultDocumentPath: Effect.succeed(DEFAULT_DOCUMENT),
+      getSource: () =>
+        invalidDefault
+          ? Effect.fail(
+              new ProfileOperationError({
+                message: "The Default Profile does not parse",
+                cause: undefined,
+              }),
+            )
+          : Effect.succeed(source),
     }),
-    template: stubService<CustomizeDeps["template"]>("PlainTemplate", {
-      exportLiteratureNotePackSource: (
-        draft: string,
-        options: Parameters<typeof exportLiteratureNotePack>[2],
-      ) => Promise.resolve(exportLiteratureNotePack(draft, partials, options)),
+    Layer.mock(Template, {
+      exportLiteratureNotePackSource: (draft, options) =>
+        Effect.try({
+          try: () => exportLiteratureNotePack(draft, partials, options),
+          catch: (error) => error as LiteratureNotePackError,
+        }),
     }),
-    localServer: stubService<LocalServer["Service"]>("LocalServer", {
-      effectivePort: SubscriptionRef.get(portRef),
-      effectivePortChanges: SubscriptionRef.changes(portRef),
+    Layer.mock(LocalServer, {
+      effectivePort: SubscriptionRef.get(port),
+      effectivePortChanges: SubscriptionRef.changes(port),
     }),
-    effect,
+    Layer.mock(LocalBridge, {
+      launchUrl: (launch) =>
+        Effect.sync(() => {
+          launches.push(launch);
+          return LAUNCH_URL;
+        }),
+    }),
+  );
+
+  const deviceStore = deviceOfMap(device);
+  const ports: CustomizePorts = {
+    webWorkbenchEnabled,
     pluginVersion: PLUGIN_VERSION,
-    bridge: stubService<CustomizeDeps["bridge"]>("LocalBridgeService", {
-      launchUrl: (launch: unknown) => {
-        launches.push(launch);
-        return LAUNCH_URL;
-      },
-    }),
-    confirmLaunch: (details) => {
+    confirmLaunch: (details, settle) => {
       sheets.push(details);
-      return Promise.resolve(consent);
+      if (consent !== "held") settle(consent);
+      return { close: () => closedSheets.push(details) };
     },
     openExternal: (url) => opened.push(url),
-    openNative: async () => {
-      openedFiles.push("templates/zotlit-profile.default.md");
+    openNative: async (_request, target: NativeProfileTarget) => {
+      openedFiles.push(
+        target instanceof TFile ? target.path : target.defaultDocumentPath,
+      );
     },
+    preference: () => profileCustomization(deviceStore),
+    rememberPreference: (value) => saveProfileCustomization(deviceStore, value),
   };
-
-  return {
-    customize: createCustomize(deps),
+  const built: Harness = {
+    customize: (request) =>
+      customize(request, ports).pipe(Effect.provide(layer)),
+    service: Layer.build(layerCustomize(ports).pipe(Layer.provide(layer))).pipe(
+      Effect.map((context) => Context.get(context, Customize)),
+    ),
+    ports,
     device,
     settings,
     update,
     opened,
     sheets,
+    closedSheets,
     launches,
     openedFiles,
   };
-}
+  return built;
+});
+
+/** The common case: the Local Server already on. */
+const serverOn = () => harness({ settings: { "server.enabled": true } });
 
 describe("the Customize flow", () => {
-  let h: Harness;
+  it.effect("opens a named Profile's own document in the native editor", () =>
+    Effect.gen(function* () {
+      const books: LiteratureNoteProfile = {
+        id: "Bk3Qn7XvT2Lp" as ProfileId,
+        label: "Books",
+        document: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
+        bindings: {},
+        match: { state: "absent", summary: m.profile_match_absent() },
+      };
+      const local = yield* harness({
+        webWorkbenchEnabled: false,
+        profiles: [books],
+      });
 
-  beforeEach(() => {
-    h = harness({ settings: { "server.enabled": true } });
-  });
+      yield* local.customize({ profileId: books.id });
+      yield* local.customize({ profileId: "Zz9Zz9Zz9Zz9" as ProfileId });
 
-  it("opens locally when the build gate is off despite persisted web access", async () => {
-    const local = harness({
-      webWorkbenchEnabled: false,
-      settings: { "server.enabled": true, "server.workbench": true },
-    });
-    saveProfileCustomization(deviceOf(local), "web");
-    local.device.set("zotlit-workbench-launch-approved", "1");
+      // A Profile the registry does not hold opens nothing.
+      expect(local.openedFiles).toEqual([books.path]);
+    }),
+  );
 
-    await local.customize({ profileId: "default", destination: "web" });
+  it.effect(
+    "opens a saved Default Profile that does not parse, so it can be repaired",
+    () =>
+      Effect.gen(function* () {
+        const local = yield* harness({
+          webWorkbenchEnabled: false,
+          invalidDefault: true,
+        });
 
-    expect(local.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
-    expect(local.sheets).toEqual([]);
-    expect(local.launches).toEqual([]);
-    expect(local.update).not.toHaveBeenCalled();
-  });
+        yield* local.customize({ profileId: "default" });
 
-  it("skips the sheet once the web choice is remembered", async () => {
-    const asked = harness({
-      settings: { "server.enabled": true },
-      consent: { destination: "web", remember: true },
-    });
-    await asked.customize({ profileId: "default" });
-    expect(asked.sheets).toHaveLength(1);
+        expect(local.openedFiles).toEqual([DEFAULT_DOCUMENT]);
+      }),
+  );
 
-    await asked.customize({ profileId: "default" });
-    expect(asked.sheets).toHaveLength(1);
-    expect(asked.opened).toHaveLength(2);
-  });
+  it.effect(
+    "opens locally when the build gate is off despite persisted web access",
+    () =>
+      Effect.gen(function* () {
+        const local = yield* harness({
+          webWorkbenchEnabled: false,
+          settings: { "server.enabled": true, "server.workbench": true },
+        });
+        saveProfileCustomization(deviceOf(local), "web");
+        local.device.set("zotlit-workbench-launch-approved", "1");
 
-  it("brings the sheet back once the destination preference returns to Ask", async () => {
-    const asked = harness({
-      settings: { "server.enabled": true },
-      consent: { destination: "web", remember: true },
-    });
-    await asked.customize({ profileId: "default" });
-    expect(profileCustomization(deviceOf(asked))).toBe("web");
+        yield* local.customize({ profileId: "default", destination: "web" });
 
-    saveProfileCustomization(deviceOf(asked), "ask");
+        expect(local.openedFiles).toEqual([
+          "templates/zotlit-profile.default.md",
+        ]);
+        expect(local.sheets).toEqual([]);
+        expect(local.launches).toEqual([]);
+        expect(local.update).not.toHaveBeenCalled();
+      }),
+  );
 
-    await asked.customize({ profileId: "default" });
-    expect(asked.sheets).toHaveLength(2);
-  });
+  it.effect("skips the sheet once the web choice is remembered", () =>
+    Effect.gen(function* () {
+      const asked = yield* harness({
+        settings: { "server.enabled": true },
+        consent: { destination: "web", remember: true },
+      });
+      yield* asked.customize({ profileId: "default" });
+      expect(asked.sheets).toHaveLength(1);
 
-  it("always shows the sheet while the Local Server is off, and turns it on", async () => {
-    const off = harness({
-      settings: { "server.enabled": false },
-      consent: { destination: "web", remember: true },
-      effectivePort: null,
-    });
-    // A device that already ticked the box still meets the sheet.
-    saveProfileCustomization(deviceOf(off), "web");
+      yield* asked.customize({ profileId: "default" });
+      expect(asked.sheets).toHaveLength(1);
+      expect(asked.opened).toHaveLength(2);
+    }),
+  );
 
-    await off.customize({ profileId: "default" });
+  it.effect(
+    "brings the sheet back once the destination preference returns to Ask",
+    () =>
+      Effect.gen(function* () {
+        const asked = yield* harness({
+          settings: { "server.enabled": true },
+          consent: { destination: "web", remember: true },
+        });
+        yield* asked.customize({ profileId: "default" });
+        expect(profileCustomization(deviceOf(asked))).toBe("web");
 
-    expect(off.sheets[0]).toMatchObject({ turnServerOn: true });
-    expect(off.update).toHaveBeenCalledWith({ "server.enabled": true });
-    expect(off.opened).toEqual([LAUNCH_URL]);
-  });
+        saveProfileCustomization(deviceOf(asked), "ask");
 
-  it("says the server did not start instead of opening a tab", async () => {
-    vi.useFakeTimers();
-    try {
-      const stuck = harness({
+        yield* asked.customize({ profileId: "default" });
+        expect(asked.sheets).toHaveLength(2);
+      }),
+  );
+
+  it.effect(
+    "always shows the sheet while the Local Server is off, and turns it on",
+    () =>
+      Effect.gen(function* () {
+        const off = yield* harness({
+          settings: { "server.enabled": false },
+          consent: { destination: "web", remember: true },
+          effectivePort: null,
+        });
+        // A device that already ticked the box still meets the sheet.
+        saveProfileCustomization(deviceOf(off), "web");
+
+        yield* off.customize({ profileId: "default" });
+
+        expect(off.sheets[0]).toMatchObject({ turnServerOn: true });
+        expect(off.update).toHaveBeenCalledWith({ "server.enabled": true });
+        expect(off.opened).toEqual([LAUNCH_URL]);
+      }),
+  );
+
+  it.effect("says the server did not start instead of opening a tab", () =>
+    Effect.gen(function* () {
+      const stuck = yield* harness({
         settings: { "server.enabled": false },
         consent: { destination: "web", remember: true },
         effectivePort: null,
         serverStarts: false,
       });
 
-      const launch = stuck.customize({ profileId: "default" });
-      await vi.advanceTimersByTimeAsync(10_000);
-      await launch;
+      const launch = yield* Effect.forkChild(
+        stuck.customize({ profileId: "default" }),
+      );
+      yield* TestClock.adjust("10 seconds");
+      yield* Fiber.join(launch);
 
       expect(stuck.update).toHaveBeenCalledWith({ "server.enabled": true });
       expect(stuck.opened).toEqual([]);
       // The tick is not honoured for a launch that never happened.
       expect(profileCustomization(deviceOf(stuck))).toBe("ask");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it("opens nothing and writes nothing on Cancel", async () => {
-    const cancelled = harness({
-      settings: { "server.enabled": false },
-      consent: null,
-      effectivePort: null,
-    });
+  it.effect("closes the open sheet when the flow is interrupted", () =>
+    Effect.gen(function* () {
+      const held = yield* harness({
+        settings: { "server.enabled": false },
+        consent: "held",
+        effectivePort: null,
+      });
 
-    await cancelled.customize({ profileId: "default" });
+      const launch = yield* Effect.forkChild(
+        held.customize({ profileId: "default" }),
+        { startImmediately: true },
+      );
+      expect(held.sheets).toHaveLength(1);
+      yield* Fiber.interrupt(launch);
 
-    expect(cancelled.opened).toEqual([]);
-    expect(cancelled.update).not.toHaveBeenCalled();
-    expect(cancelled.device.size).toBe(0);
-  });
+      expect(held.closedSheets).toEqual(held.sheets);
+      expect(held.opened).toEqual([]);
+      expect(held.update).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("remembers native editing without enabling either server service", async () => {
-    const native = harness({
-      settings: { "server.enabled": false, "server.workbench": false },
-      consent: { destination: "native", remember: true },
-    });
-    await native.customize({ profileId: "default" });
-    await native.customize({ profileId: "default" });
-    expect(native.sheets).toHaveLength(1);
-    expect(native.openedFiles).toHaveLength(2);
-    expect(native.launches).toEqual([]);
-    expect(native.update).not.toHaveBeenCalled();
-    expect(profileCustomization(deviceOf(native))).toBe("native");
-  });
+  it.effect("closes the open sheet when the plugin unloads", () =>
+    Effect.gen(function* () {
+      const held = yield* harness({
+        settings: { "server.enabled": false },
+        consent: "held",
+        effectivePort: null,
+      });
+      const bridge = openTestBridge();
+      const action = bindCustomize(bridge, yield* held.service);
 
-  it("an explicit web action asks for approval despite a remembered native choice", async () => {
-    saveProfileCustomization(deviceOf(h), "native");
-    await h.customize({ profileId: "default", destination: "web" });
-    expect(h.sheets).toHaveLength(1);
-    expect(h.opened).toEqual([LAUNCH_URL]);
-  });
+      void action({ profileId: "default" });
+      yield* Effect.yieldNow;
+      expect(held.sheets).toHaveLength(1);
+      yield* Effect.promise(() => bridge[Symbol.asyncDispose]());
 
-  it("an explicit native action skips the sheet despite a remembered web choice", async () => {
-    saveProfileCustomization(deviceOf(h), "web");
-    await h.customize({ profileId: "default", destination: "native" });
-    expect(h.sheets).toEqual([]);
-    expect(h.openedFiles).toHaveLength(1);
-    expect(h.update).not.toHaveBeenCalled();
-  });
+      expect(held.closedSheets).toEqual(held.sheets);
+      expect(held.opened).toEqual([]);
+      expect(held.update).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("asks before enabling web access even with a remembered web choice", async () => {
-    const disabled = harness({
-      settings: { "server.enabled": true, "server.workbench": false },
-    });
-    saveProfileCustomization(deviceOf(disabled), "web");
-    await disabled.customize({ profileId: "default" });
-    expect(disabled.sheets[0]).toMatchObject({ turnWorkbenchOn: true });
-    expect(disabled.update).toHaveBeenCalledWith({ "server.workbench": true });
-    expect(disabled.opened).toEqual([LAUNCH_URL]);
-  });
+  it.effect("opens nothing and writes nothing on Cancel", () =>
+    Effect.gen(function* () {
+      const cancelled = yield* harness({
+        settings: { "server.enabled": false },
+        consent: null,
+        effectivePort: null,
+      });
 
-  it("reads the legacy web approval only while the destination preference is absent", async () => {
-    h.device.set("zotlit-workbench-launch-approved", "1");
-    await h.customize({ profileId: "default" });
-    expect(h.sheets).toEqual([]);
-    saveProfileCustomization(deviceOf(h), "ask");
-    await h.customize({ profileId: "default" });
-    expect(h.sheets).toHaveLength(1);
-  });
+      yield* cancelled.customize({ profileId: "default" });
 
-  it("opens JavaScript frontmatter in the native editor", async () => {
-    const javascript = harness({
-      source: LIQUID_PROFILE.replace(
-        "language: liquid",
-        "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
-      ),
-    });
-    await javascript.customize({ profileId: "default", destination: "web" });
-    expect(javascript.openedFiles).toHaveLength(1);
-    expect(javascript.sheets).toEqual([]);
-    expect(javascript.launches).toEqual([]);
-  });
+      expect(cancelled.opened).toEqual([]);
+      expect(cancelled.update).not.toHaveBeenCalled();
+      expect(cancelled.device.size).toBe(0);
+    }),
+  );
 
-  it("takes the active Literature Note's paper, and a Sample Item without one", async () => {
-    const withNote = harness({
-      settings: { "server.enabled": true },
-      activeNote: {
-        basename: "Why most published research findings are false",
-        itemKey: "IANNP5A2",
-      },
-    });
-    await withNote.customize({ profileId: "default" });
-    expect(withNote.launches[0]).toEqual({
-      profileId: "default",
-      item: {
-        key: "IANNP5A2",
-        title: "Why most published research findings are false",
-      },
-    });
+  it.effect(
+    "remembers native editing without enabling either server service",
+    () =>
+      Effect.gen(function* () {
+        const native = yield* harness({
+          settings: { "server.enabled": false, "server.workbench": false },
+          consent: { destination: "native", remember: true },
+        });
+        yield* native.customize({ profileId: "default" });
+        yield* native.customize({ profileId: "default" });
+        expect(native.sheets).toHaveLength(1);
+        expect(native.openedFiles).toHaveLength(2);
+        expect(native.launches).toEqual([]);
+        expect(native.update).not.toHaveBeenCalled();
+        expect(profileCustomization(deviceOf(native))).toBe("native");
+      }),
+  );
 
-    const plain = harness({
-      settings: { "server.enabled": true },
-      activeNote: { basename: "Reading list", itemKey: null },
-    });
-    await plain.customize({ profileId: "default" });
-    expect(plain.launches[0]).toEqual({ profileId: "default", item: null });
-  });
+  it.effect(
+    "an explicit web action asks for approval despite a remembered native choice",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* serverOn();
+        saveProfileCustomization(deviceOf(h), "native");
+        yield* h.customize({ profileId: "default", destination: "web" });
+        expect(h.sheets).toHaveLength(1);
+        expect(h.opened).toEqual([LAUNCH_URL]);
+      }),
+  );
 
-  it("keeps a Profile that calls an Eta partial from the template folder in Obsidian", async () => {
-    const byline = {
-      name: "byline",
-      language: "eta",
-      source: "<%= it.zt.title %>",
-    } as const;
-    const calling = harness({
-      settings: { "server.enabled": true },
-      source: CALLING_PROFILE,
-      partials: [byline],
-    });
-    await calling.customize({ profileId: "default" });
-    expect(calling.opened).toEqual([]);
-    expect(calling.openedFiles).toEqual([
-      "templates/zotlit-profile.default.md",
-    ]);
+  it.effect(
+    "an explicit native action skips the sheet despite a remembered web choice",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* serverOn();
+        saveProfileCustomization(deviceOf(h), "web");
+        yield* h.customize({ profileId: "default", destination: "native" });
+        expect(h.sheets).toEqual([]);
+        expect(h.openedFiles).toHaveLength(1);
+        expect(h.update).not.toHaveBeenCalled();
+      }),
+  );
 
-    // The same call answered by a Liquid partial opens the browser.
-    const liquid = harness({
-      settings: { "server.enabled": true },
-      source: CALLING_PROFILE,
-      partials: [{ ...byline, language: "liquid", source: "{{ zt.title }}" }],
-    });
-    await liquid.customize({ profileId: "default" });
-    expect(liquid.opened).toEqual([LAUNCH_URL]);
-  });
+  it.effect(
+    "asks before enabling web access even with a remembered web choice",
+    () =>
+      Effect.gen(function* () {
+        const disabled = yield* harness({
+          settings: { "server.enabled": true, "server.workbench": false },
+        });
+        saveProfileCustomization(deviceOf(disabled), "web");
+        yield* disabled.customize({ profileId: "default" });
+        expect(disabled.sheets[0]).toMatchObject({ turnWorkbenchOn: true });
+        expect(disabled.update).toHaveBeenCalledWith({
+          "server.workbench": true,
+        });
+        expect(disabled.opened).toEqual([LAUNCH_URL]);
+      }),
+  );
 
-  it("keeps a Profile that asks for a newer plugin in Obsidian", async () => {
-    const newer = harness({
-      settings: { "server.enabled": true },
-      source: LIQUID_PROFILE.replace(
-        "language: liquid",
-        "language: liquid\nminAppVersion: 9.9.9",
-      ),
-    });
+  it.effect(
+    "reads the legacy web approval only while the destination preference is absent",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* serverOn();
+        h.device.set("zotlit-workbench-launch-approved", "1");
+        yield* h.customize({ profileId: "default" });
+        expect(h.sheets).toEqual([]);
+        saveProfileCustomization(deviceOf(h), "ask");
+        yield* h.customize({ profileId: "default" });
+        expect(h.sheets).toHaveLength(1);
+      }),
+  );
 
-    await newer.customize({ profileId: "default" });
+  it.effect("opens JavaScript frontmatter in the native editor", () =>
+    Effect.gen(function* () {
+      const javascript = yield* harness({
+        source: LIQUID_PROFILE.replace(
+          "language: liquid",
+          "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
+        ),
+      });
+      yield* javascript.customize({ profileId: "default", destination: "web" });
+      expect(javascript.openedFiles).toHaveLength(1);
+      expect(javascript.sheets).toEqual([]);
+      expect(javascript.launches).toEqual([]);
+    }),
+  );
 
-    expect(newer.opened).toEqual([]);
-    expect(newer.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
-  });
+  it.effect(
+    "takes the active Literature Note's paper, and a Sample Item without one",
+    () =>
+      Effect.gen(function* () {
+        const withNote = yield* harness({
+          settings: { "server.enabled": true },
+          activeNote: {
+            basename: "Why most published research findings are false",
+            itemKey: "IANNP5A2",
+          },
+        });
+        yield* withNote.customize({ profileId: "default" });
+        expect(withNote.launches[0]).toEqual({
+          profileId: "default",
+          item: {
+            key: "IANNP5A2",
+            title: "Why most published research findings are false",
+          },
+        });
+
+        const plain = yield* harness({
+          settings: { "server.enabled": true },
+          activeNote: { basename: "Reading list", itemKey: null },
+        });
+        yield* plain.customize({ profileId: "default" });
+        expect(plain.launches[0]).toEqual({ profileId: "default", item: null });
+      }),
+  );
+
+  it.effect(
+    "keeps a Profile that calls an Eta partial from the template folder in Obsidian",
+    () =>
+      Effect.gen(function* () {
+        const byline = {
+          name: "byline",
+          language: "eta",
+          source: "<%= it.zt.title %>",
+        } as const;
+        const calling = yield* harness({
+          settings: { "server.enabled": true },
+          source: CALLING_PROFILE,
+          partials: [byline],
+        });
+        yield* calling.customize({ profileId: "default" });
+        expect(calling.opened).toEqual([]);
+        expect(calling.openedFiles).toEqual([
+          "templates/zotlit-profile.default.md",
+        ]);
+
+        // The same call answered by a Liquid partial opens the browser.
+        const liquid = yield* harness({
+          settings: { "server.enabled": true },
+          source: CALLING_PROFILE,
+          partials: [
+            { ...byline, language: "liquid", source: "{{ zt.title }}" },
+          ],
+        });
+        yield* liquid.customize({ profileId: "default" });
+        expect(liquid.opened).toEqual([LAUNCH_URL]);
+      }),
+  );
+
+  it.effect("keeps a Profile that asks for a newer plugin in Obsidian", () =>
+    Effect.gen(function* () {
+      const newer = yield* harness({
+        settings: { "server.enabled": true },
+        source: LIQUID_PROFILE.replace(
+          "language: liquid",
+          "language: liquid\nminAppVersion: 9.9.9",
+        ),
+      });
+
+      yield* newer.customize({ profileId: "default" });
+
+      expect(newer.opened).toEqual([]);
+      expect(newer.openedFiles).toEqual([
+        "templates/zotlit-profile.default.md",
+      ]);
+    }),
+  );
 });
 
-function deviceOf(h: Harness): {
+function deviceOf(h: Harness) {
+  return deviceOfMap(h.device);
+}
+
+function deviceOfMap(device: Map<string, unknown>): {
   loadLocalStorage: (key: string) => unknown;
   saveLocalStorage: (key: string, value: unknown) => void;
 } {
   return {
-    loadLocalStorage: (key) => h.device.get(key) ?? null,
+    loadLocalStorage: (key) => device.get(key) ?? null,
     saveLocalStorage: (key, value) => {
-      if (value === null) h.device.delete(key);
-      else h.device.set(key, value);
+      if (value === null) device.delete(key);
+      else device.set(key, value);
     },
   };
 }

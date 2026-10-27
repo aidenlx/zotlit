@@ -1,5 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { reachable } from "./e2e-run-fixture.ts";
@@ -9,29 +10,68 @@ import { byItem } from "./e2e-run-query-types.ts";
 import type { ItemQueryReport } from "./e2e-run-query-types.ts";
 import { readQueryViewUntil, revealQueryView } from "./note-query-view.ts";
 import type { NoteQueryView, QueryViewTarget } from "./note-query-view.ts";
-import { cliCommand, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
-import { PAGE, TRUSTED } from "./page-gestures.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { obRunUntil } from "./obsidian-cli.ts";
+import { cliCommand, waitFor } from "./obsidian-cli.ts";
+import type { CodeMirrorContent } from "./page-query-types.ts";
+import type { QueryPrintModal, PrintedQueryPage } from "./page-query-types.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
   it("shows a Query File toolbar as icons with tooltips on a narrow pane, and with names on a wide one", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{delete window.zotlitE2EPanes;await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app, page: pageHelpers }, { layout }) => {
+          delete pageHelpers.scratch.zotlitE2EPanes;
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { layout },
       );
     });
     // The Fixture's Query File in two panes side by side: one wide, one
     // narrow, as a user drags the divider.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();const file=app.vault.getFileByPath('query-files/Reading annotations.zotquery');const wide=app.workspace.getLeaf('tab');await wide.openFile(file);app.workspace.setActiveLeaf(wide,{focus:true});const narrow=app.workspace.createLeafBySplit(wide,'vertical');await narrow.openFile(file);await Promise.all([wide.view.query.settled,narrow.view.query.settled]);wide.parent.setDimension(80);narrow.parent.setDimension(20);window.zotlitE2EPanes={wide,narrow};return true;})()`,
+      async ({ app, page: pageHelpers }) => {
+        app.workspace.leftSplit.collapse();
+        app.workspace.rightSplit.collapse();
+        const file = app.vault.getFileByPath(
+          "query-files/Reading annotations.zotquery",
+        )!;
+        const wide = app.workspace.getLeaf("tab");
+        await wide.openFile(file!);
+        app.workspace.setActiveLeaf(wide, { focus: true });
+        const narrow = app.workspace.createLeafBySplit(wide, "vertical");
+        await narrow.openFile(file!);
+        await Promise.all([
+          (wide.view as import("@/views/query-view/file-view").QueryFileView)
+            .query.settled,
+          (narrow.view as import("@/views/query-view/file-view").QueryFileView)
+            .query.settled,
+        ]);
+        (
+          wide.parent as typeof wide.parent & {
+            setDimension(percent: number): void;
+          }
+        ).setDimension(80);
+        (
+          narrow.parent as typeof narrow.parent & {
+            setDimension(percent: number): void;
+          }
+        ).setDimension(20);
+        pageHelpers.scratch.zotlitE2EPanes = { wide, narrow };
+      },
+      undefined,
     );
     const names = {
       filter: run.m.query_view_filter(),
@@ -43,8 +83,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     /** Each toolbar button's tooltip text and whether its name shows beside its icon. */
     // The sidebars fold with an animation; a width the same over three frames
     // is the settled pane.
-    const readPane = (pane: "wide" | "narrow") =>
-      `(async()=>{${PAGE}const bar=window.zotlitE2EPanes.${pane}.view.contentEl.querySelector('[role="toolbar"]');let last=-1,steady=0;await until('toolbar width settles',async()=>{await new Promise(r=>requestAnimationFrame(r));const width=bar.clientWidth;steady=width>0&&width===last?steady+1:0;last=width;return steady>=3;});const button=hook=>hook==='properties'?bar.querySelector('[data-query-properties]'):bar.querySelector('[data-query-toolbar="'+hook+'"]');const out={width:bar.clientWidth,overflow:bar.scrollWidth>bar.clientWidth,buttons:{}};for(const hook of ${JSON.stringify(Object.keys(names))}){const el=button(hook);const name=[...el.querySelectorAll('span')].find(s=>s.textContent.trim()!=='');out.buttons[hook]={tooltip:el.getAttribute('aria-label'),nameShown:!!name&&getComputedStyle(name).display!=='none',iconShown:!!el.querySelector('svg')&&el.querySelector('svg').getBoundingClientRect().width>0};}return JSON.stringify(out);})()`;
+
     interface Pane {
       width: number;
       overflow: boolean;
@@ -61,22 +100,144 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ]),
       );
 
-    const narrow = JSON.parse(
-      await obEval(run.vaultId, readPane("narrow")),
-    ) as Pane;
+    const narrow = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { hookNames }) => {
+        const { until } = pageHelpers;
+        const bar = (
+          pageHelpers.scratch.zotlitE2EPanes!.narrow
+            .view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>('[role="toolbar"]')!;
+        let last = -1,
+          steady = 0;
+        await until("toolbar width settles", async () => {
+          await new Promise((r) => requestAnimationFrame(r));
+          const width = bar!.clientWidth;
+          steady = width > 0 && width === last ? steady + 1 : 0;
+          last = width;
+          return steady >= 3;
+        });
+        const button = (hook: string) =>
+          hook === "properties"
+            ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
+            : bar!.querySelector<HTMLElement>(
+                `[data-query-toolbar="${hook}"]`,
+              )!;
+        const out = {
+          width: bar!.clientWidth,
+          overflow: bar!.scrollWidth > bar!.clientWidth,
+          buttons: {} as Record<
+            string,
+            { tooltip: string | null; nameShown: boolean; iconShown: boolean }
+          >,
+        };
+        for (const hook of hookNames) {
+          const el = button(hook);
+          const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
+            (s) => s.textContent.trim() !== "",
+          );
+          out.buttons[hook] = {
+            tooltip: el!.getAttribute("aria-label"),
+            nameShown: !!name && getComputedStyle(name).display !== "none",
+            iconShown:
+              !!el!.querySelector<SVGSVGElement>("svg")! &&
+              el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
+                .width > 0,
+          };
+        }
+        return out;
+      },
+      { hookNames: Object.keys(names) },
+    )) as Pane;
     expect(narrow.width).toBeLessThan(400);
     expect(narrow).toMatchObject({ overflow: false, buttons: each(false) });
 
-    const wide = JSON.parse(
-      await obEval(run.vaultId, readPane("wide")),
-    ) as Pane;
+    const wide = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { hookNames }) => {
+        const { until } = pageHelpers;
+        const bar = (
+          pageHelpers.scratch.zotlitE2EPanes!.wide
+            .view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>('[role="toolbar"]')!;
+        let last = -1,
+          steady = 0;
+        await until("toolbar width settles", async () => {
+          await new Promise((r) => requestAnimationFrame(r));
+          const width = bar!.clientWidth;
+          steady = width > 0 && width === last ? steady + 1 : 0;
+          last = width;
+          return steady >= 3;
+        });
+        const button = (hook: string) =>
+          hook === "properties"
+            ? bar!.querySelector<HTMLElement>("[data-query-properties]")!
+            : bar!.querySelector<HTMLElement>(
+                `[data-query-toolbar="${hook}"]`,
+              )!;
+        const out = {
+          width: bar!.clientWidth,
+          overflow: bar!.scrollWidth > bar!.clientWidth,
+          buttons: {} as Record<
+            string,
+            { tooltip: string | null; nameShown: boolean; iconShown: boolean }
+          >,
+        };
+        for (const hook of hookNames) {
+          const el = button(hook);
+          const name = [...el!.querySelectorAll<HTMLElement>("span")].find(
+            (s) => s.textContent.trim() !== "",
+          );
+          out.buttons[hook] = {
+            tooltip: el!.getAttribute("aria-label"),
+            nameShown: !!name && getComputedStyle(name).display !== "none",
+            iconShown:
+              !!el!.querySelector<SVGSVGElement>("svg")! &&
+              el!.querySelector<SVGSVGElement>("svg")!.getBoundingClientRect()
+                .width > 0,
+          };
+        }
+        return out;
+      },
+      { hookNames: Object.keys(names) },
+    )) as Pane;
     expect(wide.width).toBeGreaterThan(700);
     expect(wide).toMatchObject({ overflow: false, buttons: each(true) });
 
     // A pointer over an icon-only button shows its name as a tooltip.
-    const tooltip = await obEval(
+    const tooltip = await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}const el=window.zotlitE2EPanes.narrow.view.contentEl.querySelector('[data-query-toolbar="sort"]');const r=el.getBoundingClientRect();const at={bubbles:true,pointerType:'mouse',clientX:r.x+5,clientY:r.y+5};for(let i=0;i<3;i++){el.dispatchEvent(new PointerEvent('pointermove',{...at,clientX:at.clientX+i}));el.dispatchEvent(new MouseEvent('mousemove',{...at,clientX:at.clientX+i}));}el.dispatchEvent(new PointerEvent('pointerover',at));return (await until('tooltip shows',()=>activeDocument.querySelector('.tooltip'),3000)).textContent;})()`,
+      async ({ page: pageHelpers }) => {
+        const { until } = pageHelpers;
+        const el = (
+          pageHelpers.scratch.zotlitE2EPanes!.narrow
+            .view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!;
+        const r = el!.getBoundingClientRect();
+        const at = {
+          bubbles: true,
+          pointerType: "mouse",
+          clientX: r.x + 5,
+          clientY: r.y + 5,
+        };
+        for (let i = 0; i < 3; i++) {
+          el!.dispatchEvent(
+            new PointerEvent("pointermove", { ...at, clientX: at.clientX + i }),
+          );
+          el!.dispatchEvent(
+            new MouseEvent("mousemove", { ...at, clientX: at.clientX + i }),
+          );
+        }
+        el!.dispatchEvent(new PointerEvent("pointerover", at));
+        return (
+          await until(
+            "tooltip shows",
+            () => activeDocument.querySelector<HTMLElement>(".tooltip")!,
+            3000,
+          )
+        ).textContent;
+      },
+      undefined,
     );
     expect(tooltip).toBe(names.sort);
   }, 120000);
@@ -84,28 +245,93 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it.each(["main", "popout"] as const)(
     "draws what reaches past the edge of the Filter popover and the Properties chooser, as an editor's tooltip does, in the %s window",
     async (host) => {
-      const layout = await obEval(
+      const layout = await obRun(
         run.vaultId,
-        "JSON.stringify(app.workspace.getLayout())",
+        async ({ app }) => {
+          return JSON.stringify(app.workspace.getLayout());
+        },
+        undefined,
       );
       await using cleanup = new AsyncDisposableStack();
       cleanup.defer(async () => {
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(async()=>{window.zotlitE2EPastEdge?.detach();delete window.zotlitE2EPastEdge;await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+          async ({ app, page: pageHelpers }, { layout }) => {
+            pageHelpers.scratch.zotlitE2EPastEdge?.detach();
+            delete pageHelpers.scratch.zotlitE2EPastEdge;
+            await app.workspace.changeLayout(JSON.parse(layout));
+          },
+          { layout },
         );
       });
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeaf('tab');window.zotlitE2EPastEdge=leaf;await leaf.openFile(app.vault.getFileByPath('query-files/Reading list.zotquery'));app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);" : ""}return true;})()`,
+        async ({ app, page: pageHelpers }, { isPopout }) => {
+          const { until } = pageHelpers;
+          const leaf = app.workspace.getLeaf("tab");
+          pageHelpers.scratch.zotlitE2EPastEdge = leaf;
+          await leaf.openFile(
+            app.vault.getFileByPath("query-files/Reading list.zotquery")!,
+          );
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          if (isPopout) {
+            app.workspace.moveLeafToPopout(leaf);
+            await until(
+              "view in the popout",
+              () =>
+                (leaf.view as import("obsidian").ItemView).contentEl
+                  .ownerDocument !== document,
+              10000,
+            );
+          } else {
+          }
+        },
+        { isPopout: host === "popout" },
       );
       // A box hung under the surface's root, past its bottom edge, where an
       // expression editor's tooltip lands: the point under the box's middle
       // shows the box, not the view behind the surface.
       const reachesPast = (selector: string) =>
-        obEval(
+        obRun(
           run.vaultId,
-          `(async()=>{${PAGE}using cleanup=new DisposableStack();const el=window.zotlitE2EPastEdge.view.contentEl;const root=await until('surface',()=>el.querySelector(${JSON.stringify(selector)}));root.showPopover();cleanup.defer(()=>root.hidePopover());await until('surface shows',()=>root.matches(':popover-open')&&root.getBoundingClientRect().height>0);const box=root.ownerDocument.createElement('div');box.style.cssText='position:absolute;top:100%;left:0;width:40px;height:40px;';root.append(box);cleanup.defer(()=>box.remove());const edge=root.getBoundingClientRect().bottom;const r=box.getBoundingClientRect();const hit=root.ownerDocument.elementFromPoint(r.left+20,r.top+20);return JSON.stringify({past:r.top>=edge-1,shown:hit===box});})()`,
+          async ({ page: pageHelpers }, { selector }) => {
+            const { until } = pageHelpers;
+            using cleanup = new DisposableStack();
+            const el = (
+              pageHelpers.scratch.zotlitE2EPastEdge!
+                .view as import("obsidian").ItemView
+            ).contentEl;
+            const root = await until("surface", () =>
+              el.querySelector<HTMLElement>(selector)!,
+            );
+            root.showPopover();
+            cleanup.defer(() => root.hidePopover());
+            await until(
+              "surface shows",
+              () =>
+                root.matches(":popover-open") &&
+                root.getBoundingClientRect().height > 0,
+            );
+            const box = root.ownerDocument.createElement("div");
+            box.style.cssText =
+              "position:absolute;top:100%;left:0;width:40px;height:40px;";
+            root.append(box);
+            cleanup.defer(() => box.remove());
+            const edge = root.getBoundingClientRect().bottom;
+            const r = box.getBoundingClientRect();
+            const hit = root.ownerDocument.elementFromPoint(
+              r.left + 20,
+              r.top + 20,
+            );
+            return JSON.stringify({
+              past: r.top >= edge - 1,
+              shown: hit === box,
+            });
+          },
+          { selector },
         );
       expect(
         JSON.parse(await reachesPast('[data-query-popover="filter"]')),
@@ -121,22 +347,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     "shows the Signature Hint of the call at the caret in full above the Filter popover and the Formula page, in the %s window",
     async (host) => {
       const path = `query-files/Signature hint ${host}.zotquery`;
-      const layout = await obEval(
+      const layout = await obRun(
         run.vaultId,
-        "JSON.stringify(app.workspace.getLayout())",
+        async ({ app }) => {
+          return JSON.stringify(app.workspace.getLayout());
+        },
+        undefined,
       );
       await using cleanup = new AsyncDisposableStack();
       cleanup.defer(async () => {
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(async()=>{window.zotlitE2EHint?.detach();delete window.zotlitE2EHint;await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+          async ({ app, page: pageHelpers }, { layout, path }) => {
+            pageHelpers.scratch.zotlitE2EHint?.detach();
+            delete pageHelpers.scratch.zotlitE2EHint;
+            await app.workspace.changeLayout(JSON.parse(layout));
+            const file = app.vault.getFileByPath(path)!;
+            if (file) await app.vault.delete(file);
+          },
+          { layout, path },
         );
       });
       // A view of Items whose filter is one expression condition.
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
-          [
+        async ({ app, page: pageHelpers }, { path, fileContent, isPopout }) => {
+          const { until } = pageHelpers;
+          const file = await app.vault.create(path, fileContent);
+          const leaf = app.workspace.getLeaf("tab");
+          pageHelpers.scratch.zotlitE2EHint = leaf;
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          if (isPopout) {
+            app.workspace.moveLeafToPopout(leaf);
+            await until(
+              "view in the popout",
+              () =>
+                (leaf.view as import("obsidian").ItemView).contentEl
+                  .ownerDocument !== document,
+              10000,
+            );
+            (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
+            await until(
+              "the popout holding the focus",
+              () =>
+                (
+                  leaf.view as import("obsidian").ItemView
+                ).contentEl.ownerDocument.hasFocus(),
+              5000,
+            );
+          } else {
+          }
+        },
+        {
+          path,
+          fileContent: [
             "views:",
             "  - type: table",
             "    name: Hint",
@@ -147,7 +415,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "    limit: 10",
             "",
           ].join("\n"),
-        )});const leaf=app.workspace.getLeaf('tab');window.zotlitE2EHint=leaf;await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('the popout holding the focus',()=>leaf.view.contentEl.ownerDocument.hasFocus(),5000);" : ""}return true;})()`,
+          isPopout: host === "popout",
+        },
       );
       interface Hint {
         caret: number;
@@ -169,8 +438,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
        * in the surface's root, inside the window, and on top at each corner;
        * then whether it closes with the caret at the end, outside the call.
        */
-      const hintIn = (surface: string, caret: number, text?: string) =>
-        `const content=await until('expression field',()=>${surface}?.querySelector('.cm-content'),5000);const root=content.closest('[popover]');const doc=content.ownerDocument;const win=doc.defaultView;const view=content.cmTile.root.view;${text === undefined ? "" : `view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(text)}},userEvent:'input.type'});`}view.dispatch({selection:{anchor:${caret}}});content.focus();const hint=await until('Signature Hint',()=>{const shown=doc.querySelector('.zt-signature-hint');return shown&&!shown.hidden&&shown;},5000);await until('hint placed in the surface and measured',()=>hint.closest('[popover]')===root&&hint.style.top!=='-10000px'&&hint.getBoundingClientRect().width>0,5000);const r=hint.getBoundingClientRect();const corners=[[r.left+2,r.top+2],[r.right-2,r.top+2],[r.left+2,r.bottom-2],[r.right-2,r.bottom-2]];const domSelection=doc.getSelection();const out={caret:view.state.selection.main.head,domCaret:domSelection.anchorNode&&content.contains(domSelection.anchorNode)?view.posAtDOM(domSelection.anchorNode,domSelection.anchorOffset):null,marked:hint.querySelector('mark')?.textContent??null,text:hint.textContent,inSurface:hint.closest('[popover]')===root,inWindow:r.width>0&&r.left>=0&&r.top>=0&&r.right<=win.innerWidth&&r.bottom<=win.innerHeight,shown:corners.every(([x,y])=>{const hit=doc.elementFromPoint(x,y);return !!hit&&hint.contains(hit);})};view.dispatch({selection:{anchor:view.state.doc.length}});out.closed=await until('hint closes',()=>!doc.querySelector('.zt-signature-hint'),5000);return JSON.stringify(out);`;
+
       const expected = {
         marked: "end?: number",
         inSurface: true,
@@ -184,12 +452,121 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(hint.text).not.toContain("The elements of the list");
       };
 
-      const inFilter = JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}const el=window.zotlitE2EHint.view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');await until('Filter popover',()=>popover.matches(':popover-open'));try{${hintIn(`popover.querySelector('[data-filter-section="view"] [data-condition-row]')`, "title.slice(0, ".length)}}finally{popover.hidePopover();}})()`,
-        ),
-      ) as Hint;
+      const inFilter = (await obRun(
+        run.vaultId,
+        async (
+          { page: pageHelpers },
+          { shouldSelect, undefined, cursorAnchor },
+        ) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            pageHelpers.scratch.zotlitE2EHint!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+          await until("Filter popover", () => popover.matches(":popover-open"));
+          try {
+            const content = await until(
+              "expression field",
+              () =>
+                popover
+                  .querySelector<HTMLElement>(
+                    '[data-filter-section="view"] [data-condition-row]',
+                  )
+                  ?.querySelector<CodeMirrorContent>(".cm-content")!,
+              5000,
+            );
+            const root = content.closest<HTMLElement>("[popover]")!;
+            const doc = content.ownerDocument;
+            const win = doc.defaultView;
+            const view = content.cmTile.root.view;
+            if (shouldSelect) {
+            } else {
+              view.dispatch({
+                changes: {
+                  from: 0,
+                  to: view.state.doc.length,
+                  insert: undefined,
+                },
+                userEvent: "input.type",
+              });
+            }
+            view.dispatch({ selection: { anchor: cursorAnchor } });
+            content.focus();
+            const hint = await until(
+              "Signature Hint",
+              () => {
+                const shown =
+                  doc.querySelector<HTMLElement>(".zt-signature-hint")!;
+                return shown && !shown.hidden && shown;
+              },
+              5000,
+            );
+            await until(
+              "hint placed in the surface and measured",
+              () =>
+                hint.closest<HTMLElement>("[popover]")! === root &&
+                hint.style.top !== "-10000px" &&
+                hint.getBoundingClientRect().width > 0,
+              5000,
+            );
+            const r = hint.getBoundingClientRect();
+            const corners = [
+              [r.left + 2, r.top + 2],
+              [r.right - 2, r.top + 2],
+              [r.left + 2, r.bottom - 2],
+              [r.right - 2, r.bottom - 2],
+            ] as const;
+            const domSelection = doc.getSelection();
+            const out = {
+              closed: false,
+              caret: view.state.selection.main.head,
+              domCaret:
+                domSelection!.anchorNode &&
+                content.contains(domSelection!.anchorNode)
+                  ? view.posAtDOM(
+                      domSelection!.anchorNode,
+                      domSelection!.anchorOffset,
+                    )
+                  : null,
+              marked:
+                hint.querySelector<HTMLElement>("mark")?.textContent ?? null,
+              text: hint.textContent,
+              inSurface: hint.closest<HTMLElement>("[popover]")! === root,
+              inWindow:
+                r.width > 0 &&
+                r.left >= 0 &&
+                r.top >= 0 &&
+                r.right <= win!.innerWidth &&
+                r.bottom <= win!.innerHeight,
+              shown: corners.every(([x, y]) => {
+                const hit = doc.elementFromPoint(x, y);
+                return !!hit && hint.contains(hit);
+              }),
+            };
+            view.dispatch({ selection: { anchor: view.state.doc.length } });
+            out.closed = await until(
+              "hint closes",
+              () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
+              5000,
+            );
+            return out;
+          } finally {
+            popover.hidePopover();
+          }
+        },
+        {
+          shouldSelect: undefined === undefined,
+          undefined,
+          cursorAnchor: "title.slice(0, ".length,
+        },
+      )) as Hint;
       // The focus keeps the caret where it was, in the state and on screen.
       expect(inFilter).toMatchObject({
         ...expected,
@@ -198,12 +575,131 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       });
       isStringSlice(inFilter);
 
-      const inFormula = JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}const el=window.zotlitE2EHint.view.contentEl;press(el.querySelector('[data-query-properties]'),'Properties');const popup=await until('Properties popover',()=>el.ownerDocument.querySelector('[data-query-properties-popup]:popover-open [data-query-property]')?.closest('[data-query-properties-popup]'));press([...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(run.m.query_view_formula_add())}),'Add formula');try{${hintIn(`popup.querySelector('[data-chooser-page] [data-query-formula-expression]')`, "title.slice(1, ".length, "title.slice(1, )")}}finally{popup.hidePopover();}})()`,
-        ),
-      ) as Hint;
+      const inFormula = (await obRun(
+        run.vaultId,
+        async (
+          { page: pageHelpers },
+          { buttonLabel, shouldClear, insertText, cursorAnchor },
+        ) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            pageHelpers.scratch.zotlitE2EHint!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          press(
+            el.querySelector<HTMLElement>("[data-query-properties]")!,
+            "Properties",
+          );
+          const popup = await until("Properties popover", () =>
+            el.ownerDocument
+              .querySelector<HTMLElement>(
+                "[data-query-properties-popup]:popover-open [data-query-property]",
+              )
+              ?.closest<HTMLElement>("[data-query-properties-popup]")!,
+          );
+          press(
+            [...popup.querySelectorAll<HTMLElement>('[role="option"]')].find(
+              (n) => n.textContent === buttonLabel,
+            ),
+            "Add formula",
+          );
+          try {
+            const content = await until(
+              "expression field",
+              () =>
+                popup
+                  .querySelector<HTMLElement>(
+                    "[data-chooser-page] [data-query-formula-expression]",
+                  )
+                  ?.querySelector<CodeMirrorContent>(".cm-content")!,
+              5000,
+            );
+            const root = content.closest<HTMLElement>("[popover]")!;
+            const doc = content.ownerDocument;
+            const win = doc.defaultView;
+            const view = content.cmTile.root.view;
+            if (shouldClear) {
+            } else {
+              view.dispatch({
+                changes: {
+                  from: 0,
+                  to: view.state.doc.length,
+                  insert: insertText,
+                },
+                userEvent: "input.type",
+              });
+            }
+            view.dispatch({ selection: { anchor: cursorAnchor } });
+            content.focus();
+            const hint = await until(
+              "Signature Hint",
+              () => {
+                const shown =
+                  doc.querySelector<HTMLElement>(".zt-signature-hint")!;
+                return shown && !shown.hidden && shown;
+              },
+              5000,
+            );
+            await until(
+              "hint placed in the surface and measured",
+              () =>
+                hint.closest<HTMLElement>("[popover]")! === root &&
+                hint.style.top !== "-10000px" &&
+                hint.getBoundingClientRect().width > 0,
+              5000,
+            );
+            const r = hint.getBoundingClientRect();
+            const corners = [
+              [r.left + 2, r.top + 2],
+              [r.right - 2, r.top + 2],
+              [r.left + 2, r.bottom - 2],
+              [r.right - 2, r.bottom - 2],
+            ] as const;
+            const domSelection = doc.getSelection();
+            const out = {
+              closed: false,
+              caret: view.state.selection.main.head,
+              domCaret:
+                domSelection!.anchorNode &&
+                content.contains(domSelection!.anchorNode)
+                  ? view.posAtDOM(
+                      domSelection!.anchorNode,
+                      domSelection!.anchorOffset,
+                    )
+                  : null,
+              marked:
+                hint.querySelector<HTMLElement>("mark")?.textContent ?? null,
+              text: hint.textContent,
+              inSurface: hint.closest<HTMLElement>("[popover]")! === root,
+              inWindow:
+                r.width > 0 &&
+                r.left >= 0 &&
+                r.top >= 0 &&
+                r.right <= win!.innerWidth &&
+                r.bottom <= win!.innerHeight,
+              shown: corners.every(([x, y]) => {
+                const hit = doc.elementFromPoint(x, y);
+                return !!hit && hint.contains(hit);
+              }),
+            };
+            view.dispatch({ selection: { anchor: view.state.doc.length } });
+            out.closed = await until(
+              "hint closes",
+              () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
+              5000,
+            );
+            return out;
+          } finally {
+            popup.hidePopover();
+          }
+        },
+        {
+          buttonLabel: run.m.query_view_formula_add(),
+          shouldClear: "title.slice(1, )" === undefined,
+          insertText: "title.slice(1, )",
+          cursorAnchor: "title.slice(1, ".length,
+        },
+      )) as Hint;
       expect(inFormula).toMatchObject({
         ...expected,
         caret: "title.slice(1, ".length,
@@ -225,7 +721,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // drawn in the surface's root, in Obsidian's suggestion skin with its
       // signature and description cells, its middle on top past the
       // surface's edge where it reaches past it.
-      const LIST = `const listOf=async(root,content,text)=>{const doc=content.ownerDocument;const field=content.cmTile.root.view;field.focus();await until('focus in the field',()=>doc.activeElement===content&&doc.hasFocus());doc.execCommand('insertText',false,text);const list=await until('list opens',()=>root.querySelector('.cm-tooltip-autocomplete'));await until('list placed and measured',()=>list.style.top!=='-10000px'&&list.getBoundingClientRect().width>0,5000);const r=list.getBoundingClientRect();const edge=root.getBoundingClientRect().bottom;const y=r.bottom>edge+8?Math.min(edge+4,r.bottom-4):r.top+r.height/2;const hit=doc.elementFromPoint(r.left+r.width/2,y);const row=list.querySelector('li');return {list,skin:list.classList.contains('suggestion-container')&&row.classList.contains('suggestion-item'),shown:!!hit&&list.contains(hit),first:{label:row.querySelector('.cm-completionLabel')?.textContent,type:row.querySelector('.zt-template-completion-type')?.textContent??null,note:row.querySelector('.suggestion-note')?.textContent??null}};};${TRUSTED}const picked=(list)=>[...list.querySelectorAll('li')].findIndex(li=>li.getAttribute('aria-selected')==='true');const ready=async(input,list)=>{const end=Date.now()+2000;while(Date.now()<end){await input.key('Down');if(picked(list)>0){await input.key('Up');await until('first row picked again',()=>picked(list)===0);return;}}throw new Error('Timed out: the list takes keys');};`;
 
       // A new Formula: `mi` offers `min()`, which Enter writes with the
       // caret between its parentheses. In it, `ti` offers `title`, which
@@ -236,11 +731,281 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // the list below the caret and the call's Signature Hint above it,
       // apart. A click on the row writes it while the Filter popover stays
       // open. The eval restores the vault and the layout before it answers.
-      const { formula, filter } = JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}${LIST}await using cleanup=new AsyncDisposableStack();const layout=app.workspace.getLayout();cleanup.defer(()=>app.workspace.changeLayout(layout));const file=cleanup.adopt(await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)}),file=>app.vault.delete(file));const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());cleanup.defer(()=>{for(const popup of (leaf.view?.contentEl?.doc??document).querySelectorAll('[popover]:popover-open'))popup.hidePopover();});await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('popout focused',()=>leaf.view.contentEl.doc.hasFocus(),5000);" : ""}const formula=await (async()=>{const view=leaf.view;const el=view.contentEl;const input=trusted(el.win);await until('the window takes keys',()=>activeWindow===el.win);press(await until('Properties button',()=>el.querySelector('[data-query-properties]')),'Properties');const popup=await until('Properties popover',()=>el.doc.querySelector('[data-query-properties-popup]:popover-open'));press(await until('Add formula',()=>[...popup.querySelectorAll('[role="option"]')].find(n=>n.textContent===${JSON.stringify(run.m.query_view_formula_add())})),'Add formula');const page=await until('formula page',()=>popup.querySelector('[data-chooser-page] [data-query-formula-page]'));const content=await until('editor',()=>page.querySelector('[data-query-formula-expression] .cm-content'));const editor=content.cmTile.root.view;const offered=await listOf(popup,content,'mi');await ready(input,offered.list);await input.key('Return');await until('Enter writes the entry',()=>editor.state.doc.toString()!=='mi');const accepted={doc:editor.state.doc.toString(),caret:editor.state.selection.main.head};await listOf(popup,content,'ti');await new Promise(r=>setTimeout(r,200));await input.key('Tab');await until('Tab writes the entry',()=>editor.state.doc.toString()!=='min(ti)');const tabbed={doc:editor.state.doc.toString(),list:!!popup.querySelector('.cm-tooltip-autocomplete'),focus:el.doc.activeElement===content};await listOf(popup,content,', ti');await input.key('Escape');await until('Escape closes the list',()=>!popup.querySelector('.cm-tooltip-autocomplete'));const first={page:!!popup.querySelector('[data-chooser-page]'),hint:!!popup.querySelector('.zt-signature-hint')};await input.key('Escape');await until('Escape closes the hint',()=>!popup.querySelector('.zt-signature-hint'));const second={page:!!popup.querySelector('[data-chooser-page]')};await input.key('Escape');await until('Escape leaves the page',()=>!popup.querySelector('[data-chooser-page]'));const third={open:popup.matches(':popover-open')};popup.hidePopover();return {offered:{...offered,list:undefined},accepted,tabbed,first,second,third};})();const filter=await (async()=>{const el=leaf.view.contentEl;const input=trusted(el.win);press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;editor.dispatch({selection:{anchor:editor.state.doc.length}});const offered=await listOf(popup,content,' && max(tit');const hint=await until('Signature Hint',()=>popup.querySelector('.zt-signature-hint'));const caret=editor.coordsAtPos(editor.state.selection.main.head);const h=hint.getBoundingClientRect();const l=offered.list.getBoundingClientRect();const apart={hintAbove:h.bottom<=caret.top+1,listBelow:l.top>=caret.bottom-1};const row=[...offered.list.querySelectorAll('li')].find(li=>li.querySelector('.cm-completionLabel')?.textContent==='title');await input.click(row);await until('the click writes the entry',()=>editor.state.doc.toString().endsWith('(title'));const after={doc:editor.state.doc.toString(),open:popup.matches(':popover-open')};popup.hidePopover();return {offered:{...offered,list:undefined},apart,after};})();return JSON.stringify({formula,filter});})()`,
-        ),
+      const { formula, filter } = await obRun(
+        run.vaultId,
+        async (
+          { app, page: pageHelpers },
+          { path, source, isPopout, buttonLabel },
+        ) => {
+          const { press, until } = pageHelpers;
+          const listOf = async (
+            root: HTMLElement,
+            content: import("./page-query-types.ts").CodeMirrorContent,
+            text: string,
+          ) => {
+            const doc = content.ownerDocument;
+            const field = content.cmTile.root.view;
+            field.focus();
+            await until(
+              "focus in the field",
+              () => doc.activeElement === content && doc.hasFocus(),
+            );
+            doc.execCommand("insertText", false, text);
+            const list = await until("list opens", () =>
+              root.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+            );
+            await until(
+              "list placed and measured",
+              () =>
+                list.style.top !== "-10000px" &&
+                list.getBoundingClientRect().width > 0,
+              5000,
+            );
+            const r = list.getBoundingClientRect();
+            const edge = root.getBoundingClientRect().bottom;
+            const y =
+              r.bottom > edge + 8
+                ? Math.min(edge + 4, r.bottom - 4)
+                : r.top + r.height / 2;
+            const hit = doc.elementFromPoint(r.left + r.width / 2, y);
+            const row = list.querySelector<HTMLElement>("li")!;
+            return {
+              list,
+              skin:
+                list.classList.contains("suggestion-container") &&
+                row.classList.contains("suggestion-item"),
+              shown: !!hit && list.contains(hit),
+              first: {
+                label: row.querySelector<HTMLElement>(".cm-completionLabel")
+                  ?.textContent,
+                type:
+                  row.querySelector<HTMLElement>(".zt-template-completion-type")
+                    ?.textContent ?? null,
+                note:
+                  row.querySelector<HTMLElement>(".suggestion-note")
+                    ?.textContent ?? null,
+              },
+            };
+          };
+          const { trusted } = pageHelpers;
+          const picked = (list: HTMLElement) =>
+            [...list.querySelectorAll<HTMLElement>("li")].findIndex(
+              (li) => li.getAttribute("aria-selected") === "true",
+            );
+          const ready = async (
+            input: ReturnType<
+              import("./page-context.ts").ObsidianContext["page"]["trusted"]
+            >,
+            list: HTMLElement,
+          ) => {
+            const end = Temporal.Now.instant().epochMilliseconds + 2000;
+            while (Temporal.Now.instant().epochMilliseconds < end) {
+              await input.key("Down");
+              if (picked(list) > 0) {
+                await input.key("Up");
+                await until("first row picked again", () => picked(list) === 0);
+                return;
+              }
+            }
+            throw new Error("Timed out: the list takes keys");
+          };
+          await using cleanup = new AsyncDisposableStack();
+          const layout = app.workspace.getLayout();
+          cleanup.defer(() => app.workspace.changeLayout(layout));
+          const file = cleanup.adopt(
+            await app.vault.create(path, source),
+            (file) => app.vault.delete(file),
+          );
+          const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+            leaf.detach(),
+          );
+          cleanup.defer(() => {
+            for (const popup of (
+              (leaf.view as import("obsidian").ItemView)?.contentEl?.doc ??
+              document
+            ).querySelectorAll<HTMLElement>("[popover]:popover-open"))
+              popup.hidePopover();
+          });
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          if (isPopout) {
+            app.workspace.moveLeafToPopout(leaf);
+            await until(
+              "view in the popout",
+              () =>
+                (leaf.view as import("obsidian").ItemView).contentEl
+                  .ownerDocument !== document,
+              10000,
+            );
+            (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
+            await until(
+              "popout focused",
+              () =>
+                (
+                  leaf.view as import("obsidian").ItemView
+                ).contentEl.doc.hasFocus(),
+              5000,
+            );
+          } else {
+          }
+          const formula = await (async () => {
+            const view = leaf.view;
+            const el = (view as import("obsidian").ItemView).contentEl;
+            const input = trusted(el.win);
+            await until("the window takes keys", () => activeWindow === el.win);
+            press(
+              await until("Properties button", () =>
+                el.querySelector<HTMLElement>("[data-query-properties]")!,
+              ),
+              "Properties",
+            );
+            const popup = await until("Properties popover", () =>
+              el.doc.querySelector<HTMLElement>(
+                "[data-query-properties-popup]:popover-open",
+              )!,
+            );
+            press(
+              await until("Add formula", () =>
+                [
+                  ...popup.querySelectorAll<HTMLElement>('[role="option"]'),
+                ].find((n) => n.textContent === buttonLabel),
+              ),
+              "Add formula",
+            );
+            const page = await until("formula page", () =>
+              popup.querySelector<HTMLElement>(
+                "[data-chooser-page] [data-query-formula-page]",
+              )!,
+            );
+            const content = await until("editor", () =>
+              page.querySelector<CodeMirrorContent>(
+                "[data-query-formula-expression] .cm-content",
+              )!,
+            );
+            const editor = content.cmTile.root.view;
+            const offered = await listOf(popup, content, "mi");
+            await ready(input, offered.list);
+            await input.key("Return");
+            await until(
+              "Enter writes the entry",
+              () => editor.state.doc.toString() !== "mi",
+            );
+            const accepted = {
+              doc: editor.state.doc.toString(),
+              caret: editor.state.selection.main.head,
+            };
+            await listOf(popup, content, "ti");
+            await new Promise((r) => setTimeout(r, 200));
+            await input.key("Tab");
+            await until(
+              "Tab writes the entry",
+              () => editor.state.doc.toString() !== "min(ti)",
+            );
+            const tabbed = {
+              doc: editor.state.doc.toString(),
+              list: !!popup.querySelector<HTMLElement>(
+                ".cm-tooltip-autocomplete",
+              )!,
+              focus: el.doc.activeElement === content,
+            };
+            await listOf(popup, content, ", ti");
+            await input.key("Escape");
+            await until(
+              "Escape closes the list",
+              () =>
+                !popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+            );
+            const first = {
+              page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+              hint: !!popup.querySelector<HTMLElement>(".zt-signature-hint")!,
+            };
+            await input.key("Escape");
+            await until(
+              "Escape closes the hint",
+              () => !popup.querySelector<HTMLElement>(".zt-signature-hint")!,
+            );
+            const second = {
+              page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+            };
+            await input.key("Escape");
+            await until(
+              "Escape leaves the page",
+              () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+            );
+            const third = { open: popup.matches(":popover-open") };
+            popup.hidePopover();
+            return {
+              offered: { ...offered, list: undefined },
+              accepted,
+              tabbed,
+              first,
+              second,
+              third,
+            };
+          })();
+          const filter = await (async () => {
+            const el = (leaf.view as import("obsidian").ItemView).contentEl;
+            const input = trusted(el.win);
+            press(
+              await until("Filter button", () =>
+                el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              ),
+              "Filter",
+            );
+            const popup = await until("Filter popover", () =>
+              el.doc.querySelector<HTMLElement>(
+                '[data-query-popover="filter"]:popover-open',
+              )!,
+            );
+            const content = await until("expression row", () =>
+              popup.querySelector<CodeMirrorContent>(
+                '[data-filter-section="view"] [data-condition-row] .cm-content',
+              )!,
+            );
+            const editor = content.cmTile.root.view;
+            editor.dispatch({
+              selection: { anchor: editor.state.doc.length },
+            });
+            const offered = await listOf(popup, content, " && max(tit");
+            const hint = await until("Signature Hint", () =>
+              popup.querySelector<HTMLElement>(".zt-signature-hint")!,
+            );
+            const caret = editor.coordsAtPos(editor.state.selection.main.head);
+            const h = hint.getBoundingClientRect();
+            const l = offered.list.getBoundingClientRect();
+            const apart = {
+              hintAbove: h.bottom <= caret!.top + 1,
+              listBelow: l.top >= caret!.bottom - 1,
+            };
+            const row = [
+              ...offered.list.querySelectorAll<HTMLElement>("li"),
+            ].find(
+              (li) =>
+                li.querySelector<HTMLElement>(".cm-completionLabel")
+                  ?.textContent === "title",
+            );
+            await input.click(row!);
+            await until("the click writes the entry", () =>
+              editor.state.doc.toString().endsWith("(title"),
+            );
+            const after = {
+              doc: editor.state.doc.toString(),
+              open: popup.matches(":popover-open"),
+            };
+            popup.hidePopover();
+            return { offered: { ...offered, list: undefined }, apart, after };
+          })();
+          return { formula, filter };
+        },
+        {
+          path,
+          source,
+          isPopout: host === "popout",
+          buttonLabel: run.m.query_view_formula_add(),
+        },
       );
       expect(formula).toEqual({
         offered: {
@@ -279,11 +1044,106 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // its "…" opens the page menu. Escape closes the menu and keeps the
       // page; Escape again steps back to the rows, the popup still open.
       // The eval restores the layout before it answers.
-      const escapes = JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}${TRUSTED}await using cleanup=new AsyncDisposableStack();const layout=app.workspace.getLayout();cleanup.defer(()=>app.workspace.changeLayout(layout));const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());cleanup.defer(()=>{for(const popup of (leaf.view?.contentEl?.doc??document).querySelectorAll('[popover]:popover-open'))popup.hidePopover();});await leaf.openFile(app.vault.getFileByPath('query-files/Reading list.zotquery'));app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;${host === "popout" ? "app.workspace.moveLeafToPopout(leaf);await until('view in the popout',()=>leaf.view.contentEl.ownerDocument!==document,10000);leaf.view.contentEl.win.focus();await until('popout focused',()=>leaf.view.contentEl.doc.hasFocus(),5000);" : ""}const el=leaf.view.contentEl;const input=trusted(el.win);await until('the window takes keys',()=>activeWindow===el.win);await input.click(await until('View menu',()=>el.querySelector('[data-query-view-menu]')));const popup=await until('view menu opens',()=>el.doc.querySelector('[data-query-view-list]:popover-open'));const row=await until('a view row',()=>popup.querySelector('[data-query-view-row]'));row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const page=await until('Configure view',()=>popup.querySelector('[data-query-configure-view]')?.closest('[data-chooser-page]'));await input.click(page.querySelector('[data-chooser-page-menu]'));const menu=await until('page menu opens',()=>page.querySelector('[role="menu"]:popover-open'));await input.key('Escape');await until('Escape closes the menu',()=>!menu.matches(':popover-open'));await new Promise(r=>setTimeout(r,200));const first={menu:menu.matches(':popover-open'),page:!!popup.querySelector('[data-chooser-page]'),open:popup.matches(':popover-open')};await input.key('Escape');await until('Escape leaves the page',()=>!popup.querySelector('[data-chooser-page]'));const second={open:popup.matches(':popover-open')};return JSON.stringify({first,second});})()`,
-        ),
+      const escapes = await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { isPopout }) => {
+          const { until } = pageHelpers;
+          const { trusted } = pageHelpers;
+          await using cleanup = new AsyncDisposableStack();
+          const layout = app.workspace.getLayout();
+          cleanup.defer(() => app.workspace.changeLayout(layout));
+          const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+            leaf.detach(),
+          );
+          cleanup.defer(() => {
+            for (const popup of (
+              (leaf.view as import("obsidian").ItemView)?.contentEl?.doc ??
+              document
+            ).querySelectorAll<HTMLElement>("[popover]:popover-open"))
+              popup.hidePopover();
+          });
+          await leaf.openFile(
+            app.vault.getFileByPath("query-files/Reading list.zotquery")!,
+          );
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          if (isPopout) {
+            app.workspace.moveLeafToPopout(leaf);
+            await until(
+              "view in the popout",
+              () =>
+                (leaf.view as import("obsidian").ItemView).contentEl
+                  .ownerDocument !== document,
+              10000,
+            );
+            (leaf.view as import("obsidian").ItemView).contentEl.win.focus();
+            await until(
+              "popout focused",
+              () =>
+                (
+                  leaf.view as import("obsidian").ItemView
+                ).contentEl.doc.hasFocus(),
+              5000,
+            );
+          } else {
+          }
+          const el = (leaf.view as import("obsidian").ItemView).contentEl;
+          const input = trusted(el.win);
+          await until("the window takes keys", () => activeWindow === el.win);
+          await input.click(
+            await until("View menu", () =>
+              el.querySelector<HTMLElement>("[data-query-view-menu]")!,
+            ),
+          );
+          const popup = await until("view menu opens", () =>
+            el.doc.querySelector<HTMLElement>(
+              "[data-query-view-list]:popover-open",
+            )!,
+          );
+          const row = await until("a view row", () =>
+            popup.querySelector<HTMLElement>("[data-query-view-row]")!,
+          );
+          row.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: 200,
+              clientY: 200,
+            }),
+          );
+          const page = await until("Configure view", () =>
+            popup
+              .querySelector<HTMLElement>("[data-query-configure-view]")
+              ?.closest<HTMLElement>("[data-chooser-page]")!,
+          );
+          await input.click(
+            page.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
+          );
+          const menu = await until("page menu opens", () =>
+            page.querySelector<HTMLElement>('[role="menu"]:popover-open')!,
+          );
+          await input.key("Escape");
+          await until(
+            "Escape closes the menu",
+            () => !menu.matches(":popover-open"),
+          );
+          await new Promise((r) => setTimeout(r, 200));
+          const first = {
+            menu: menu.matches(":popover-open"),
+            page: !!popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+            open: popup.matches(":popover-open"),
+          };
+          await input.key("Escape");
+          await until(
+            "Escape leaves the page",
+            () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
+          );
+          const second = { open: popup.matches(":popover-open") };
+          return { first, second };
+        },
+        { isPopout: host === "popout" },
       );
       expect(escapes).toEqual({
         first: { menu: false, page: true, open: true },
@@ -311,12 +1171,84 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // What the list offers for each text typed over the expression row's
     // text; the row is never left empty, which would remove it. The eval
     // restores the vault and the layout before it answers.
-    const offered = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}await using cleanup=new AsyncDisposableStack();const layout=app.workspace.getLayout();cleanup.defer(()=>app.workspace.changeLayout(layout));const file=cleanup.adopt(await app.vault.create(${JSON.stringify(path)},${JSON.stringify(source)}),file=>app.vault.delete(file));const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());cleanup.defer(()=>{for(const popup of document.querySelectorAll('[popover]:popover-open'))popup.hidePopover();});await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});await leaf.view.query.settled;const el=leaf.view.contentEl;press(await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]')),'Filter');const popup=await until('Filter popover',()=>el.doc.querySelector('[data-query-popover="filter"]:popover-open'));const content=await until('expression row',()=>popup.querySelector('[data-filter-section="view"] [data-condition-row] .cm-content'));const editor=content.cmTile.root.view;const out={};for(const text of ${JSON.stringify(texts)}){editor.contentDOM.blur();await until('the list closes',()=>!popup.querySelector('.cm-tooltip-autocomplete'));editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});editor.focus();await until('focus in the field',()=>el.doc.activeElement===content&&el.doc.hasFocus());el.doc.execCommand('insertText',false,text);const list=await until('list for '+text,()=>editor.state.doc.toString()===text&&popup.querySelector('.cm-tooltip-autocomplete li')&&popup.querySelector('.cm-tooltip-autocomplete'));out[text]=[...list.querySelectorAll('.cm-completionLabel')].map(n=>n.textContent);}popup.hidePopover();return JSON.stringify(out);})()`,
-      ),
-    ) as Record<string, string[]>;
+    const offered = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { path, source, texts }) => {
+        const { press, until } = pageHelpers;
+        await using cleanup = new AsyncDisposableStack();
+        const layout = app.workspace.getLayout();
+        cleanup.defer(() => app.workspace.changeLayout(layout));
+        const file = cleanup.adopt(
+          await app.vault.create(path, source),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        cleanup.defer(() => {
+          for (const popup of document.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+        });
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        await (
+          leaf.view as import("@/views/query-view/file-view").QueryFileView
+        ).query.settled;
+        const el = (leaf.view as import("obsidian").ItemView).contentEl;
+        press(
+          await until("Filter button", () =>
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          ),
+          "Filter",
+        );
+        const popup = await until("Filter popover", () =>
+          el.doc.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]:popover-open',
+          )!,
+        );
+        const content = await until("expression row", () =>
+          popup.querySelector<CodeMirrorContent>(
+            '[data-filter-section="view"] [data-condition-row] .cm-content',
+          )!,
+        );
+        const editor = content.cmTile.root.view;
+        const out: Record<string, string[]> = {};
+        for (const text of texts) {
+          editor.contentDOM.blur();
+          await until(
+            "the list closes",
+            () =>
+              !popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+          );
+          editor.dispatch({
+            selection: { anchor: 0, head: editor.state.doc.length },
+          });
+          editor.focus();
+          await until(
+            "focus in the field",
+            () => el.doc.activeElement === content && el.doc.hasFocus(),
+          );
+          el.doc.execCommand("insertText", false, text);
+          const list = await until(
+            `list for ${text}`,
+            () =>
+              editor.state.doc.toString() === text &&
+              popup.querySelector<HTMLElement>(
+                ".cm-tooltip-autocomplete li",
+              )! &&
+              popup.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+          );
+          out[text] = [
+            ...list.querySelectorAll<HTMLElement>(".cm-completionLabel"),
+          ].map((n) => n.textContent);
+        }
+        popup.hidePopover();
+        return out;
+      },
+      { path, source, texts },
+    )) as Record<string, string[]>;
     const has = (text: string, names: string[], not: string[] = []) => {
       expect(offered[text], text).toEqual(expect.arrayContaining(names));
       for (const name of not) expect(offered[text], text).not.toContain(name);
@@ -341,16 +1273,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("exports a note with a Query File embed and a Query Block to PDF with their rows and no toolbar", async () => {
     const notePath = "query-files/Export check.md";
     const pdfPath = join(workspaceRoot, ".scratch", "e2e-query-export.pdf");
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await rm(pdfPath, { force: true });
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app }, { layout, notePath }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(notePath)!;
+          if (file) await app.vault.delete(file);
+        },
+        { layout, notePath },
       );
     });
     const note = [
@@ -387,10 +1327,94 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // the save dialog would give. The printed page is read as it is drawn,
     // in the hidden window Obsidian prints from.
     const printed = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const file=await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(note)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'preview'}});app.workspace.setActiveLeaf(leaf,{focus:true});const modalProto=Object.getPrototypeOf(Object.getPrototypeOf(Object.getPrototypeOf(app.setting)));const open=modalProto.open;let modal=null;modalProto.open=function(){modal=this;return open.call(this);};try{leaf.view.printToPdf();}finally{modalProto.open=open;}modal.close();let page=null;const print=modal.print.bind(modal);modal.print=async(el,component,includeName)=>{const out=await print(el,component,includeName);const win=el.win;const shown=n=>win.getComputedStyle(n).display!=='none';const views=[...el.querySelectorAll('.zt-query-view')];page={ownWindow:win!==window,views:views.map(view=>({host:view.classList.contains('internal-embed')?'embed':view.classList.contains('block-language-zotquery')?'block':'other',cards:[...view.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),toolbar:[...view.querySelectorAll('[role="toolbar"]')].some(shown),readOnly:[...view.querySelectorAll('[data-query-read-only]')].some(shown),clipped:[...view.querySelectorAll('.annots-container')].some(list=>list.scrollHeight>list.clientHeight+1),blank:view.offsetHeight-(view.querySelector('[role="grid"]')?.offsetHeight??0)>100}))};return out;};await modal.printToPdf({filepath:${JSON.stringify(pdfPath)},includeName:true,pageSize:'A4',landscape:false,marginsType:0,scaleFactor:100,scale:1,open:false});return JSON.stringify(page);})()`,
-        180000,
+        async ({ app }, { notePath, note, pdfPath }) => {
+          const file = await app.vault.create(notePath, note);
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file, { state: { mode: "preview" } });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          const modalProto = Object.getPrototypeOf(
+            Object.getPrototypeOf(Object.getPrototypeOf(app.setting)),
+          ) as Pick<QueryPrintModal, "open">;
+          const open = modalProto.open;
+          const capture: { modal: QueryPrintModal | null } = { modal: null };
+          modalProto.open = new Proxy(open, {
+            apply(target, receiver: QueryPrintModal, args) {
+              capture.modal = receiver;
+              return Reflect.apply(target, receiver, args);
+            },
+          });
+          try {
+            (
+              leaf.view as import("obsidian").MarkdownView & {
+                printToPdf(): void;
+              }
+            ).printToPdf();
+          } finally {
+            modalProto.open = open;
+          }
+          const modal = capture.modal!;
+          modal.close();
+          let page: PrintedQueryPage | null = null;
+          const print = modal!.print.bind(modal);
+          modal!.print = async (
+            el: HTMLElement,
+            component: import("obsidian").Component,
+            includeName: boolean,
+          ) => {
+            const out = await print(el, component, includeName);
+            const win = el.win;
+            const shown = (n: HTMLElement) =>
+              win.getComputedStyle(n).display !== "none";
+            const views = [
+              ...el.querySelectorAll<HTMLElement>(".zt-query-view"),
+            ];
+            page = {
+              ownWindow: win !== window,
+              views: views.map((view) => ({
+                host: view.classList.contains("internal-embed")
+                  ? "embed"
+                  : view.classList.contains("block-language-zotquery")
+                    ? "block"
+                    : "other",
+                cards: [
+                  ...view.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+                toolbar: [
+                  ...view.querySelectorAll<HTMLElement>('[role="toolbar"]'),
+                ].some(shown),
+                readOnly: [
+                  ...view.querySelectorAll<HTMLElement>(
+                    "[data-query-read-only]",
+                  ),
+                ].some(shown),
+                clipped: [
+                  ...view.querySelectorAll<HTMLElement>(".annots-container"),
+                ].some((list) => list.scrollHeight > list.clientHeight + 1),
+                blank:
+                  view.offsetHeight -
+                    (view.querySelector<HTMLElement>('[role="grid"]')
+                      ?.offsetHeight ?? 0) >
+                  100,
+              })),
+            };
+            return out;
+          };
+          await modal!.printToPdf({
+            filepath: pdfPath,
+            includeName: true,
+            pageSize: "A4",
+            landscape: false,
+            marginsType: 0,
+            scaleFactor: 100,
+            scale: 1,
+            open: false,
+          });
+          return JSON.stringify(page);
+        },
+        { notePath, note, pdfPath },
+        { timeoutMs: 180000 },
       ),
     ) as {
       ownWindow: boolean;
@@ -419,16 +1443,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 240000);
 
   it("filters a Query File tab from its Filter popover, and the file text and the cards follow", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     const path = "query-files/Filtered.zotquery";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app }, { layout, path }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
+          if (file) await app.vault.delete(file);
+        },
+        { layout, path },
       );
     });
     /** The rows ZotLit Query gives for a filter, through the CLI. */
@@ -452,27 +1484,75 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       /** The report of the diagnostic the view shows above the cards. */
       diagnostic: string | null;
     }
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({text:await app.vault.read(view.file),cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),filterError:el.querySelector('[data-query-filter-error]')!==null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,rowIssues:[...el.querySelectorAll('[data-filter-section="view"] [data-condition-row]')].map(n=>n.querySelector('[role="alert"]')?.textContent??null),diagnostic:el.querySelector('[data-query-diagnostic] pre')?.textContent??null});})()`;
+
     const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
       let tab: Tab | null = null;
       const settled = await waitFor(async () => {
-        tab = JSON.parse(await obEval(run.vaultId, readTab)) as Tab | null;
+        tab = JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }, { expectedPath }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (
+                view.getViewType() !== "zotlit-query-file" ||
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
+              )
+                return "null";
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              return JSON.stringify({
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+                cards: [
+                  ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+                filterError:
+                  el.querySelector<HTMLElement>(
+                    "[data-query-filter-error]",
+                  )! !== null,
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                rowIssues: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    '[data-filter-section="view"] [data-condition-row]',
+                  ),
+                ].map(
+                  (n) =>
+                    n.querySelector<HTMLElement>('[role="alert"]')
+                      ?.textContent ?? null,
+                ),
+                diagnostic:
+                  el.querySelector<HTMLElement>("[data-query-diagnostic] pre")
+                    ?.textContent ?? null,
+              });
+            },
+            { expectedPath: path },
+          ),
+        ) as Tab | null;
         return tab !== null && ready(tab);
       }, 120);
       if (!settled) throw new Error(`Filtered tab: ${JSON.stringify(tab)}`);
       return tab!;
     };
     /** Run `body` against the open Filter popover of the active tab. */
-    const inPopover = (body: string) =>
-      obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="filter"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const section=name=>popover.querySelector('[data-filter-section="'+name+'"]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const write=(field,text)=>{const view=field.querySelector('.cm-content').cmTile.root.view;view.dispatch({changes:{from:0,to:view.state.doc.length,insert:text},userEvent:'input.type'});};${body}})()`,
-      );
 
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
-        [
+      async ({ app }, { path, fileContent }) => {
+        const file = await app.vault.create(path, fileContent);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      {
+        path,
+        fileContent: [
           "views:",
           "  - type: annotations",
           "    name: Figures",
@@ -481,7 +1561,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "    limit: 100",
           "",
         ].join("\n"),
-      )});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      },
     );
     const figures = await queryKeys('tags.contains("figure")');
     expect(figures.length).toBeGreaterThan(0);
@@ -492,11 +1572,44 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The popover opens with the two sections; the view's tag condition
     // shows as a visual row, and the empty "All views" section shows one
     // placeholder row.
-    const sections = JSON.parse(
-      await inPopover(
-        `return JSON.stringify({open:popover.matches(':popover-open'),all:section('all').querySelector('[data-filter-heading]').textContent,allRows:section('all').querySelectorAll('[data-condition-row]').length,view:section('view').querySelector('[data-filter-heading]').textContent,tag:section('view').querySelector('[data-condition-row] input[aria-label="${run.m.workbench_filter_value()}"]').value});`,
-      ),
-    ) as Record<string, unknown>;
+    const sections = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { filterLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        return {
+          open: popover.matches(":popover-open"),
+          all: section("all").querySelector<HTMLElement>(
+            "[data-filter-heading]",
+          )!.textContent,
+          allRows: section("all").querySelectorAll<HTMLElement>(
+            "[data-condition-row]",
+          ).length,
+          view: section("view").querySelector<HTMLElement>(
+            "[data-filter-heading]",
+          )!.textContent,
+          tag: section("view").querySelector<HTMLInputElement>(
+            `[data-condition-row] input[aria-label="${filterLabel}"]`,
+          )!.value,
+        };
+      },
+      { filterLabel: run.m.workbench_filter_value() },
+    )) as Record<string, unknown>;
     expect(sections).toEqual({
       open: true,
       all: run.m.query_view_filter_all_views(),
@@ -506,8 +1619,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // A new tag value saves the view's filters and runs them.
-    await inPopover(
-      `set(section('view').querySelector('[data-condition-row] input[aria-label="${run.m.workbench_filter_value()}"]'),'methodology');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { filterLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+        const set = (
+          control: HTMLInputElement | HTMLSelectElement,
+          value: string,
+        ) => {
+          control.value = value;
+          control.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+
+        set(
+          section("view").querySelector<HTMLInputElement>(
+            `[data-condition-row] input[aria-label="${filterLabel}"]`,
+          )!,
+          "methodology",
+        );
+      },
+      { filterLabel: run.m.workbench_filter_value() },
     );
     const methodology = await queryKeys('tags.contains("methodology")');
     expect(methodology).not.toEqual(figures);
@@ -523,8 +1669,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The placeholder row for all views becomes a colour condition, Yellow,
     // and saves as the file's top-level filters; both sections hold. The
     // empty section starts folded, so the reader unfolds it first.
-    await inPopover(
-      `const fold=section('all').querySelector('details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await pick(section('all').querySelector('[data-condition-row] select[aria-label="${run.m.workbench_filter_value()}"]'),'yellow','Value');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { filterLabel }) => {
+        const { press, pick } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const fold =
+          section("all").querySelector<HTMLDetailsElement>("details")!;
+        if (!fold.open)
+          press(
+            fold.querySelector<HTMLElement>("summary")!,
+            "All views heading",
+          );
+        await pick(
+          section("all").querySelector<HTMLSelectElement>(
+            `[data-condition-row] select[aria-label="${filterLabel}"]`,
+          )!,
+          "yellow",
+          "Value",
+        );
+      },
+      { filterLabel: run.m.workbench_filter_value() },
     );
     const yellow = await queryKeys(
       '(colorName == "yellow") && (tags.contains("methodology"))',
@@ -538,8 +1718,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A wrong expression marks its row with the query's diagnostic; the
     // cards stay, and the view says the filter has an error.
-    await inPopover(
-      `press(section('view').querySelector('[data-condition-row] button[aria-label="${run.m.workbench_match_edit_as_expression()}"]'),'Edit as expression');write(await until('expression field',()=>section('view').querySelector('[data-condition-row] .cm-content')?.parentElement),'nosuchfield == 1');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { editButtonLabel }) => {
+        const { press, until } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
+          });
+        };
+        press(
+          section("view").querySelector<HTMLButtonElement>(
+            `[data-condition-row] button[aria-label="${editButtonLabel}"]`,
+          )!,
+          "Edit as expression",
+        );
+        write(
+          await until(
+            "expression field",
+            () =>
+              section("view").querySelector<CodeMirrorContent>(
+                "[data-condition-row] .cm-content",
+              )?.parentElement,
+          ),
+          "nosuchfield == 1",
+        );
+      },
+      { editButtonLabel: run.m.workbench_match_edit_as_expression() },
     );
     const broken = await tabWhen(
       (tab) =>
@@ -558,19 +1783,87 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      */
     const underlines = async (expected: string[]) =>
       JSON.parse(
-        await inPopover(
-          `const read=()=>JSON.stringify([...section('view').querySelectorAll('[data-condition-row] .cm-lintRange-error')].map(n=>n.textContent));await until('underlines',()=>read()===${JSON.stringify(JSON.stringify(expected))}).catch(()=>{});return read();`,
+        await obRun(
+          run.vaultId,
+          async ({ app, page: pageHelpers }, { expectedJson }) => {
+            const { press, until } = pageHelpers;
+            const el = (
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl;
+            const popover = el.querySelector<HTMLElement>(
+              '[data-query-popover="filter"]',
+            )!;
+            if (!popover.matches(":popover-open"))
+              press(
+                el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+                "Filter",
+              );
+            const section = (name: string) =>
+              popover.querySelector<HTMLElement>(
+                `[data-filter-section="${name}"]`,
+              )!;
+
+            const read = () =>
+              JSON.stringify(
+                [
+                  ...section("view").querySelectorAll<HTMLElement>(
+                    "[data-condition-row] .cm-lintRange-error",
+                  ),
+                ].map((n) => n.textContent),
+              );
+            await until("underlines", () => read() === expectedJson).catch(
+              () => {},
+            );
+            return read();
+          },
+          { expectedJson: JSON.stringify(expected) },
         ),
       ) as string[];
     // The row underlines the name the query found wrong.
     expect(await underlines(["nosuchfield"])).toEqual(["nosuchfield"]);
     // The condition shows no tooltip over the underline, not even an empty
     // one, well past CodeMirror's hover delay.
-    const hovered = JSON.parse(
-      await inPopover(
-        `const mark=section('view').querySelector('[data-condition-row] .cm-lintRange-error');const r=mark.getBoundingClientRect();mark.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2}));await new Promise(r=>setTimeout(r,800));return JSON.stringify([...mark.ownerDocument.querySelectorAll('.cm-tooltip-hover, .cm-tooltip-lint')].map(n=>n.className));`,
-      ),
-    ) as string[];
+    const hovered = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const mark = section("view").querySelector<HTMLElement>(
+          "[data-condition-row] .cm-lintRange-error",
+        )!;
+        const r = mark.getBoundingClientRect();
+        mark.dispatchEvent(
+          new MouseEvent("mousemove", {
+            bubbles: true,
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+          }),
+        );
+        await new Promise((r) => setTimeout(r, 800));
+        return [
+          ...mark.ownerDocument.querySelectorAll<HTMLElement>(
+            ".cm-tooltip-hover, .cm-tooltip-lint",
+          ),
+        ].map((n) => n.className);
+      },
+      undefined,
+    )) as string[];
     expect(hovered).toEqual([]);
 
     // The expression field colors each kind of token with Obsidian's code
@@ -583,11 +1876,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       operator: "==",
       punctuation: ".",
     };
-    const colors = JSON.parse(
-      await inPopover(
-        `const row=section('view').querySelector('[data-condition-row]');write(row,'title.lower().contains("fig") == true');const tokens=${JSON.stringify(tokens)};const hook=kind=>'.zt-template-'+(kind==='function'?'filter':kind);const token=(kind,text)=>[...row.querySelectorAll('.cm-line '+hook(kind))].find(n=>n.textContent===text);await until('token hooks',()=>Object.entries(tokens).every(([kind,text])=>token(kind,text)));const doc=row.ownerDocument;const read=()=>Object.fromEntries(Object.entries(tokens).map(([kind,text])=>{const probe=doc.createElement('span');probe.style.color='var(--code-'+kind+')';popover.append(probe);const code=getComputedStyle(probe).color;probe.remove();return [kind,{token:getComputedStyle(token(kind,text)).color,code}];}));const body=doc.body;const wasDark=body.classList.contains('theme-dark');const theme=dark=>{body.classList.toggle('theme-dark',dark);body.classList.toggle('theme-light',!dark);};try{theme(false);const light=read();theme(true);return JSON.stringify({light,dark:read()});}finally{theme(wasDark);}`,
-      ),
-    ) as Record<
+    const colors = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { tokens }) => {
+        const { press, until } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
+          });
+        };
+        const row = section("view").querySelector<HTMLElement>(
+          "[data-condition-row]",
+        )!;
+        write(row, 'title.lower().contains("fig") == true');
+        const hook = (kind: string) =>
+          `.zt-template-${kind === "function" ? "filter" : kind}`;
+        const token = (kind: string, text: string) =>
+          [...row.querySelectorAll<HTMLElement>(`.cm-line ${hook(kind)}`)].find(
+            (n) => n.textContent === text,
+          );
+        await until("token hooks", () =>
+          Object.entries(tokens).every(([kind, text]) => token(kind, text)),
+        );
+        const doc = row.ownerDocument;
+        const read = () =>
+          Object.fromEntries(
+            Object.entries(tokens).map(([kind, text]) => {
+              const probe = doc.createElement("span");
+              probe.style.color = `var(--code-${kind})`;
+              popover.append(probe);
+              const code = getComputedStyle(probe).color;
+              probe.remove();
+              return [
+                kind,
+                { token: getComputedStyle(token(kind, text)!).color, code },
+              ];
+            }),
+          );
+        const body = doc.body;
+        const wasDark = body.classList.contains("theme-dark");
+        const theme = (dark: boolean) => {
+          body.classList.toggle("theme-dark", dark);
+          body.classList.toggle("theme-light", !dark);
+        };
+        try {
+          theme(false);
+          const light = read();
+          theme(true);
+          return { light, dark: read() };
+        } finally {
+          theme(wasDark);
+        }
+      },
+      { tokens },
+    )) as Record<
       "light" | "dark",
       Record<keyof typeof tokens, { token: string; code: string }>
     >;
@@ -604,11 +1966,82 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "text" | "caret" | "field" | "line" | "box",
       number
     >;
-    const aligned = JSON.parse(
-      await inPopover(
-        `const row=section('view').querySelector('[data-condition-row]');const field=row.querySelector('[data-part="expression"]');const box=()=>field.closest('[data-part="statement"]');const centre=el=>{const r=el.getBoundingClientRect();return r.top+r.height/2;};const height=el=>el.getBoundingClientRect().height;const measure=async(text)=>{write(row,text);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const view=field.querySelector('.cm-content').cmTile.root.view;const line=field.querySelector('.cm-line');const caret=view.coordsAtPos(0);return {text:centre(line)-centre(box()),caret:(caret.top+caret.bottom)/2-centre(box()),field:height(field)-height(box()),line:parseFloat(getComputedStyle(line).lineHeight)-parseFloat(getComputedStyle(field).lineHeight),box:height(box())};};const one=await measure('title.contains("fig")');const wrapped=await measure('title.contains("fig") || '.repeat(12)+'true');return JSON.stringify({one,wrapped,input:parseFloat(getComputedStyle(field).getPropertyValue('--input-height'))});`,
-      ),
-    ) as { one: Alignment; wrapped: Alignment; input: number };
+    const aligned = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
+          });
+        };
+        const row = section("view").querySelector<HTMLElement>(
+          "[data-condition-row]",
+        )!;
+        const field = row.querySelector<HTMLElement>(
+          '[data-part="expression"]',
+        )!;
+        const box = () =>
+          field.closest<HTMLElement>('[data-part="statement"]')!;
+        const centre = (el: HTMLElement) => {
+          const r = el.getBoundingClientRect();
+          return r.top + r.height / 2;
+        };
+        const height = (el: HTMLElement) => el.getBoundingClientRect().height;
+        const measure = async (text: string) => {
+          write(row, text);
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          const line = field.querySelector<HTMLElement>(".cm-line")!;
+          const caret = view.coordsAtPos(0);
+          return {
+            text: centre(line) - centre(box()),
+            caret: (caret!.top + caret!.bottom) / 2 - centre(box()),
+            field: height(field) - height(box()),
+            line:
+              Number.parseFloat(getComputedStyle(line).lineHeight) -
+              Number.parseFloat(getComputedStyle(field).lineHeight),
+            box: height(box()),
+          };
+        };
+        const one = await measure('title.contains("fig")');
+        const wrapped = await measure(
+          `${'title.contains("fig") || '.repeat(12)}true`,
+        );
+        return {
+          one,
+          wrapped,
+          input: Number.parseFloat(
+            getComputedStyle(field).getPropertyValue("--input-height"),
+          ),
+        };
+      },
+      undefined,
+    )) as { one: Alignment; wrapped: Alignment; input: number };
     expect(aligned.one.box).toBeCloseTo(aligned.input, 0);
     expect(Math.abs(aligned.one.field)).toBeLessThanOrEqual(1);
     expect(Math.abs(aligned.one.text)).toBeLessThanOrEqual(1);
@@ -621,8 +2054,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A syntax error names the tokens the filter lacks once, with the place
     // in the filter: the hint that lists them again stays out. The fault sits
     // at the ")" after the condition, so the view shows it above the cards.
-    await inPopover(
-      `write(section('view').querySelector('[data-condition-row]'),'place !=');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
+          });
+        };
+        write(
+          section("view").querySelector<HTMLElement>("[data-condition-row]")!,
+          "place !=",
+        );
+      },
+      undefined,
     );
     // The dangling operator is underlined as it is typed.
     expect(await underlines(["!="])).toEqual(["!="]);
@@ -637,8 +2103,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(caret!.trim()).toBe("^");
 
     // "Edit visually" goes back once the expression fits a row.
-    await inPopover(
-      `const row=section('view').querySelector('[data-condition-row]');write(row,'tags.contains("figure")');press(await until('Edit visually enabled',()=>{const button=row.querySelector('button[aria-label="${run.m.workbench_match_edit_visually()}"]');return button&&!button.disabled?button:null;}),'Edit visually');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { editButtonLabel }) => {
+        const { press, until } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const write = (field: HTMLElement, text: string) => {
+          const view =
+            field.querySelector<CodeMirrorContent>(".cm-content")!.cmTile.root
+              .view;
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: text },
+            userEvent: "input.type",
+          });
+        };
+        const row = section("view").querySelector<HTMLElement>(
+          "[data-condition-row]",
+        )!;
+        write(row, 'tags.contains("figure")');
+        press(
+          await until("Edit visually enabled", () => {
+            const button = row.querySelector<HTMLButtonElement>(
+              `button[aria-label="${editButtonLabel}"]`,
+            )!;
+            return button && !button.disabled ? button : null;
+          }),
+          "Edit visually",
+        );
+      },
+      { editButtonLabel: run.m.workbench_match_edit_visually() },
     );
     const back = await queryKeys(
       '(colorName == "yellow") && (tags.contains("figure"))',
@@ -650,8 +2158,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tab.text.includes('        - tags.contains("figure")\n'),
     );
     expect(
-      await inPopover(
-        `return section('view').querySelector('[data-condition-row] input[aria-label="${run.m.workbench_filter_value()}"]')?.value??null;`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { filterLabel }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          return String(
+            section("view").querySelector<HTMLInputElement>(
+              `[data-condition-row] input[aria-label="${filterLabel}"]`,
+            )?.value ?? null,
+          );
+        },
+        { filterLabel: run.m.workbench_filter_value() },
       ),
     ).toBe("figure");
 
@@ -662,17 +2196,113 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const lines = text.split("\n");
       return lines[lines.indexOf(figureLine) + 1] ?? "";
     };
-    await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');await until('new row',()=>section('view').querySelector('[data-condition-row] select[aria-label="${run.m.workbench_filter_value()}"]'));return true;`,
+    await obRun(
+      run.vaultId,
+      async (
+        { app, page: pageHelpers },
+        { addConditionLabel, filterLabel },
+      ) => {
+        const { press, until } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        press(
+          [...section("view").querySelectorAll<HTMLElement>("button")].find(
+            (button) => button.textContent.trim() === addConditionLabel,
+          ),
+          "Add condition",
+        );
+        await until("new row", () =>
+          section("view").querySelector<HTMLSelectElement>(
+            `[data-condition-row] select[aria-label="${filterLabel}"]`,
+          )!,
+        );
+      },
+      {
+        addConditionLabel: run.m.workbench_match_add_condition(),
+        filterLabel: run.m.workbench_filter_value(),
+      },
     );
     // The focus goes to the new row's condition type.
     expect(
-      await inPopover(
-        `return popover.ownerDocument.activeElement?.closest('[data-condition-row]')===[...section('view').querySelectorAll('[data-condition-row]')].at(-1)&&popover.ownerDocument.activeElement.getAttribute('aria-label');`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          return String(
+            popover.ownerDocument.activeElement?.closest<HTMLElement>(
+              "[data-condition-row]",
+            )! ===
+              [
+                ...section("view").querySelectorAll<HTMLElement>(
+                  "[data-condition-row]",
+                ),
+              ].at(-1) &&
+              popover.ownerDocument.activeElement!.getAttribute("aria-label"),
+          );
+        },
+        undefined,
       ),
     ).toBe(run.m.workbench_match_condition_kind());
-    await inPopover(
-      `await pick(section('view').querySelector('[data-condition-row] select[aria-label="${run.m.workbench_filter_value()}"]'),'red','Value');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { filterLabel }) => {
+        const { press, pick } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        await pick(
+          section("view").querySelector<HTMLSelectElement>(
+            `[data-condition-row] select[aria-label="${filterLabel}"]`,
+          )!,
+          "red",
+          "Value",
+        );
+      },
+      { filterLabel: run.m.workbench_filter_value() },
     );
     const added = nextLine(
       (await tabWhen((tab) => nextLine(tab.text).startsWith("        - ")))
@@ -681,34 +2311,218 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // `drag(from, over, y)` drags the grip at path `from` over `over` at the
     // height `y` answers from its box, drops it, and tells whether `over`
     // took the drop.
-    const DRAG = `const grip=path=>section('view').querySelector('[data-reorder-handle="'+path+'"]');const drag=(from,over,y)=>{const transfer=new DataTransfer();const fire=(target,type)=>{const r=target.getBoundingClientRect();const event=new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:r.left+r.width/2,clientY:y(r)});target.dispatchEvent(event);return event.defaultPrevented;};fire(grip(from),'dragstart');const took=fire(over,'dragover');if(took)fire(over,'drop');fire(grip(from),'dragend');return took;};const top=r=>r.top+2;`;
+
     const viewFilters = (...lines: string[]) =>
       `    filters:\n      and:\n${lines.join("\n")}\n`;
-    await inPopover(
-      `${DRAG}return drag('1',grip('0').closest('[data-part="row"]'),top);`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const grip = (path: string) =>
+          section("view").querySelector<HTMLElement>(
+            `[data-reorder-handle="${path}"]`,
+          )!;
+        const drag = (
+          from: string,
+          over: HTMLElement,
+          y: (rect: DOMRect) => number,
+        ) => {
+          const transfer = new DataTransfer();
+          const fire = (target: HTMLElement, type: string) => {
+            const r = target.getBoundingClientRect();
+            const event = new DragEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: transfer,
+              clientX: r.left + r.width / 2,
+              clientY: y(r),
+            });
+            target.dispatchEvent(event);
+            return event.defaultPrevented;
+          };
+          fire(grip(from), "dragstart");
+          const took = fire(over, "dragover");
+          if (took) fire(over, "drop");
+          fire(grip(from), "dragend");
+          return took;
+        };
+        const top = (r: DOMRect) => r.top + 2;
+        return drag(
+          "1",
+          grip("0").closest<HTMLElement>('[data-part="row"]')!,
+          top,
+        );
+      },
+      undefined,
     );
     await tabWhen((tab) => tab.text.includes(viewFilters(added, figureLine)));
 
     // Alt+ArrowDown and Alt+ArrowUp move the focused condition one place,
     // and the focus stays on its grip.
-    const press = (key: string) =>
-      inPopover(
-        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'${key}',altKey:true,bubbles:true,cancelable:true}));return (await until('focus follows',()=>{const path=document.activeElement?.getAttribute('data-reorder-handle');return path&&path!=='${key === "ArrowDown" ? "0" : "1"}'?path:null;})).toString();`,
-      );
-    await inPopover(
-      `section('view').querySelector('[data-reorder-handle="0"]').focus();return true;`,
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        section("view")
+          .querySelector<HTMLElement>('[data-reorder-handle="0"]')!
+          .focus();
+      },
+      undefined,
     );
-    expect(await press("ArrowDown")).toBe("1");
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { enabled }) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+
+          document.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "ArrowDown",
+              altKey: true,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return await until("focus follows", () => {
+            const path = document.activeElement?.getAttribute(
+              "data-reorder-handle",
+            );
+            return path && path !== (enabled ? "0" : "1") ? path : null;
+          });
+        },
+        { enabled: true },
+      ),
+    ).toBe("1");
     await tabWhen((tab) => tab.text.includes(viewFilters(figureLine, added)));
-    expect(await press("ArrowUp")).toBe("0");
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { enabled }) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+
+          document.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "ArrowUp",
+              altKey: true,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return await until("focus follows", () => {
+            const path = document.activeElement?.getAttribute(
+              "data-reorder-handle",
+            );
+            return path && path !== (enabled ? "0" : "1") ? path : null;
+          });
+        },
+        { enabled: false },
+      ),
+    ).toBe("0");
     await tabWhen((tab) => tab.text.includes(viewFilters(added, figureLine)));
 
     // A condition dropped on a nested group's body goes to the end of that
     // group; a group takes no drop inside itself; a nested condition dragged
     // above the first row leaves its group.
     const nested = (line: string) => `    ${line}`;
-    await inPopover(
-      `press([...section('view').querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_group())}),'Add group');await pick(await until('group row',()=>section('view').querySelectorAll('[data-condition-row] select[aria-label="${run.m.workbench_filter_value()}"]')[1]),'red','Value');return true;`,
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { addGroupLabel, filterLabel }) => {
+        const { press, until, pick } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        press(
+          [...section("view").querySelectorAll<HTMLElement>("button")].find(
+            (button) => button.textContent.trim() === addGroupLabel,
+          ),
+          "Add group",
+        );
+        await pick(
+          await until(
+            "group row",
+            () =>
+              section("view").querySelectorAll<HTMLSelectElement>(
+                `[data-condition-row] select[aria-label="${filterLabel}"]`,
+              )[1],
+          ),
+          "red",
+          "Value",
+        );
+      },
+      {
+        addGroupLabel: run.m.workbench_match_add_group(),
+        filterLabel: run.m.workbench_filter_value(),
+      },
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -716,22 +2530,187 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     );
     expect(
-      await inPopover(
-        `${DRAG}const footer=[...section('view').querySelectorAll('[data-part="group"][data-state="nested"] > [data-part="actions"]')].at(-1);return drag('1',footer,r=>r.top+r.height/2);`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          const grip = (path: string) =>
+            section("view").querySelector<HTMLElement>(
+              `[data-reorder-handle="${path}"]`,
+            )!;
+          const drag = (
+            from: string,
+            over: HTMLElement,
+            y: (rect: DOMRect) => number,
+          ) => {
+            const transfer = new DataTransfer();
+            const fire = (target: HTMLElement, type: string) => {
+              const r = target.getBoundingClientRect();
+              const event = new DragEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer: transfer,
+                clientX: r.left + r.width / 2,
+                clientY: y(r),
+              });
+              target.dispatchEvent(event);
+              return event.defaultPrevented;
+            };
+            fire(grip(from), "dragstart");
+            const took = fire(over, "dragover");
+            if (took) fire(over, "drop");
+            fire(grip(from), "dragend");
+            return took;
+          };
+
+          const footer = [
+            ...section("view").querySelectorAll<HTMLElement>(
+              '[data-part="group"][data-state="nested"] > [data-part="actions"]',
+            ),
+          ].at(-1);
+          return drag("1", footer!, (r: DOMRect) => r.top + r.height / 2);
+        },
+        undefined,
       ),
-    ).toBe("true");
+    ).toBe(true);
     await tabWhen((tab) =>
       tab.text.includes(
         viewFilters(added, "        - and:", nested(added), nested(figureLine)),
       ),
     );
     expect(
-      await inPopover(
-        `${DRAG}return drag('1',grip('1.0').closest('[data-part="row"]'),top);`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          const grip = (path: string) =>
+            section("view").querySelector<HTMLElement>(
+              `[data-reorder-handle="${path}"]`,
+            )!;
+          const drag = (
+            from: string,
+            over: HTMLElement,
+            y: (rect: DOMRect) => number,
+          ) => {
+            const transfer = new DataTransfer();
+            const fire = (target: HTMLElement, type: string) => {
+              const r = target.getBoundingClientRect();
+              const event = new DragEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer: transfer,
+                clientX: r.left + r.width / 2,
+                clientY: y(r),
+              });
+              target.dispatchEvent(event);
+              return event.defaultPrevented;
+            };
+            fire(grip(from), "dragstart");
+            const took = fire(over, "dragover");
+            if (took) fire(over, "drop");
+            fire(grip(from), "dragend");
+            return took;
+          };
+          const top = (r: DOMRect) => r.top + 2;
+          return drag(
+            "1",
+            grip("1.0").closest<HTMLElement>('[data-part="row"]')!,
+            top,
+          );
+        },
+        undefined,
       ),
-    ).toBe("false");
-    await inPopover(
-      `${DRAG}return drag('1.1',grip('0').closest('[data-part="row"]'),top);`,
+    ).toBe(false);
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const grip = (path: string) =>
+          section("view").querySelector<HTMLElement>(
+            `[data-reorder-handle="${path}"]`,
+          )!;
+        const drag = (
+          from: string,
+          over: HTMLElement,
+          y: (rect: DOMRect) => number,
+        ) => {
+          const transfer = new DataTransfer();
+          const fire = (target: HTMLElement, type: string) => {
+            const r = target.getBoundingClientRect();
+            const event = new DragEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: transfer,
+              clientX: r.left + r.width / 2,
+              clientY: y(r),
+            });
+            target.dispatchEvent(event);
+            return event.defaultPrevented;
+          };
+          fire(grip(from), "dragstart");
+          const took = fire(over, "dragover");
+          if (took) fire(over, "drop");
+          fire(grip(from), "dragend");
+          return took;
+        };
+        const top = (r: DOMRect) => r.top + 2;
+        return drag(
+          "1.1",
+          grip("0").closest<HTMLElement>('[data-part="row"]')!,
+          top,
+        );
+      },
+      undefined,
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -741,17 +2720,101 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A None group stores as `not`, and its rows after the first read "or".
     const blue = '            - colorName == "blue"';
-    const nestedGroup = `section('view').querySelector('[data-part="group"][data-state="nested"]')`;
-    await inPopover(
-      `set(${nestedGroup}.querySelector('select[aria-label="${run.m.workbench_match_match()}"]'),'none');return true;`,
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { matchLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+        const set = (
+          control: HTMLInputElement | HTMLSelectElement,
+          value: string,
+        ) => {
+          control.value = value;
+          control.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+
+        set(
+          section("view")
+            .querySelector<HTMLElement>(
+              '[data-part="group"][data-state="nested"]',
+            )!
+            .querySelector<HTMLSelectElement>(
+              `select[aria-label="${matchLabel}"]`,
+            )!,
+          "none",
+        );
+      },
+      { matchLabel: run.m.workbench_match_match() },
     );
     await tabWhen((tab) =>
       tab.text.includes(
         viewFilters(figureLine, added, "        - not:", nested(added)),
       ),
     );
-    await inPopover(
-      `const group=()=>${nestedGroup};press([...group().querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');await pick(await until('second row',()=>group()?.querySelectorAll('[data-condition-row] select[aria-label="${run.m.workbench_filter_value()}"]')[1]),'blue','Value');return true;`,
+    await obRun(
+      run.vaultId,
+      async (
+        { app, page: pageHelpers },
+        { addConditionLabel, filterLabel },
+      ) => {
+        const { press, until, pick } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        const group = () =>
+          section("view").querySelector<HTMLElement>(
+            '[data-part="group"][data-state="nested"]',
+          )!;
+        press(
+          [...group().querySelectorAll<HTMLElement>("button")].find(
+            (button) => button.textContent.trim() === addConditionLabel,
+          ),
+          "Add condition",
+        );
+        await pick(
+          await until(
+            "second row",
+            () =>
+              group()?.querySelectorAll<HTMLSelectElement>(
+                `[data-condition-row] select[aria-label="${filterLabel}"]`,
+              )[1],
+          ),
+          "blue",
+          "Value",
+        );
+      },
+      {
+        addConditionLabel: run.m.workbench_match_add_condition(),
+        filterLabel: run.m.workbench_filter_value(),
+      },
     );
     await tabWhen((tab) =>
       tab.text.includes(
@@ -759,10 +2822,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     );
     expect(
-      JSON.parse(
-        await inPopover(
-          `return JSON.stringify([...section('view').querySelectorAll('[data-part="group"][data-state="nested"] [data-part="conjunction"]')].map(label=>label.textContent));`,
-        ),
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          return [
+            ...section("view").querySelectorAll<HTMLElement>(
+              '[data-part="group"][data-state="nested"] [data-part="conjunction"]',
+            ),
+          ].map((label) => label.textContent);
+        },
+        undefined,
       ),
     ).toEqual([
       run.m.workbench_match_conjunction_where(),
@@ -771,48 +2858,239 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // Removing the last row of a nested group removes the group, and
     // removing the last row of the view's filter removes its filter.
-    const removeRow = (scope: string) =>
-      inPopover(
-        `press(${scope}.querySelector('[data-condition-row] button[aria-label="${run.m.workbench_match_remove_condition()}"]'),'Remove condition');return true;`,
-      );
-    await removeRow(nestedGroup);
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { removeConditionLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        press(
+          section("view")
+            .querySelector<HTMLElement>(
+              '[data-part="group"][data-state="nested"]',
+            )!
+            .querySelector<HTMLButtonElement>(
+              `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
+            )!,
+          "Remove condition",
+        );
+      },
+      { removeConditionLabel: run.m.workbench_match_remove_condition() },
+    );
     await tabWhen((tab) =>
       tab.text.includes(viewFilters(figureLine, added, "        - not:", blue)),
     );
-    await removeRow(nestedGroup);
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { removeConditionLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        press(
+          section("view")
+            .querySelector<HTMLElement>(
+              '[data-part="group"][data-state="nested"]',
+            )!
+            .querySelector<HTMLButtonElement>(
+              `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
+            )!,
+          "Remove condition",
+        );
+      },
+      { removeConditionLabel: run.m.workbench_match_remove_condition() },
+    );
     await tabWhen(
       (tab) =>
         tab.text.includes(viewFilters(figureLine, added)) &&
         !tab.text.includes("- not:"),
     );
-    expect(await inPopover(`return ${nestedGroup}===null;`)).toBe("true");
-    await removeRow("section('view')");
-    await removeRow("section('view')");
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          return (
+            section("view").querySelector<HTMLElement>(
+              '[data-part="group"][data-state="nested"]',
+            )! === null
+          );
+        },
+        undefined,
+      ),
+    ).toBe(true);
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { removeConditionLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        press(
+          section("view").querySelector<HTMLButtonElement>(
+            `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
+          )!,
+          "Remove condition",
+        );
+      },
+      { removeConditionLabel: run.m.workbench_match_remove_condition() },
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { removeConditionLabel }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        if (!popover.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            "Filter",
+          );
+        const section = (name: string) =>
+          popover.querySelector<HTMLElement>(
+            `[data-filter-section="${name}"]`,
+          )!;
+
+        press(
+          section("view").querySelector<HTMLButtonElement>(
+            `[data-condition-row] button[aria-label="${removeConditionLabel}"]`,
+          )!,
+          "Remove condition",
+        );
+      },
+      { removeConditionLabel: run.m.workbench_match_remove_condition() },
+    );
     await tabWhen((tab) => !/^ {4}filters:/m.test(tab.text));
     expect(
-      await inPopover(
-        `return section('view').querySelectorAll('[data-condition-row]').length;`,
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          const { press } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          if (!popover.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+              "Filter",
+            );
+          const section = (name: string) =>
+            popover.querySelector<HTMLElement>(
+              `[data-filter-section="${name}"]`,
+            )!;
+
+          return section("view").querySelectorAll<HTMLElement>(
+            "[data-condition-row]",
+          ).length;
+        },
+        undefined,
       ),
-    ).toBe("1");
+    ).toBe(1);
   }, 180000);
 
   it("underlines a condition's Fault in the Filter popover of a Query File tab in a popout window", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     const path = "query-files/Popout faults.zotquery";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))if(leaf.view.file?.path===${JSON.stringify(path)})leaf.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app }, { filePath, layout }) => {
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            if (
+              (leaf.view as import("obsidian").FileView).file?.path === filePath
+            )
+              leaf.detach();
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(filePath)!;
+          if (file) await app.vault.delete(file);
+        },
+        { filePath: path, layout },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(
-        [
+      async ({ app }, { path, fileContent }) => {
+        const file = await app.vault.create(path, fileContent);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.moveLeafToPopout(leaf);
+      },
+      {
+        path,
+        fileContent: [
           "views:",
           "  - type: annotations",
           "    name: Faults",
@@ -820,14 +3098,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "    filters: nosuchfield == 1",
           "",
         ].join("\n"),
-      )});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.moveLeafToPopout(leaf);return true;})()`,
+      },
     );
-    const shown = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const view=await until('the tab in a popout',()=>app.workspace.getLeavesOfType('zotlit-query-file').map(leaf=>leaf.view).find(view=>view.file?.path===${JSON.stringify(path)}&&view.containerEl.win!==window),20000);await view.query.settled;const el=view.contentEl;const doc=el.ownerDocument;const button=await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]'),20000);const popover=el.querySelector('[data-query-popover="filter"]');press(button,'Filter');const mark=await until('underline',()=>popover.querySelector('[data-filter-section="view"] [data-condition-row] .cm-lintRange-error'),20000);const probe=doc.createElement('span');probe.style.color='var(--text-error)';popover.append(probe);const error=getComputedStyle(probe).color;probe.remove();const style=getComputedStyle(mark);return JSON.stringify({popout:doc!==document,text:mark.textContent,line:style.textDecorationStyle,color:style.textDecorationColor===error});})()`,
-      ),
-    ) as { popout: boolean; text: string; line: string; color: boolean };
+    const shown = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { notePath }) => {
+        const { press, until } = pageHelpers;
+        const view = await until(
+          "the tab in a popout",
+          () =>
+            app.workspace
+              .getLeavesOfType("zotlit-query-file")
+              .map((leaf) => leaf.view)
+              .find(
+                (view) =>
+                  (view as import("obsidian").FileView).file?.path ===
+                    notePath && view.containerEl.win !== window,
+              ),
+          20000,
+        );
+        await (view as import("@/views/query-view/file-view").QueryFileView)
+          .query.settled;
+        const el = (view as import("obsidian").ItemView).contentEl;
+        const doc = el.ownerDocument;
+        const button = await until(
+          "Filter button",
+          () => el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          20000,
+        );
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!;
+        press(button, "Filter");
+        const mark = await until(
+          "underline",
+          () =>
+            popover!.querySelector<HTMLElement>(
+              '[data-filter-section="view"] [data-condition-row] .cm-lintRange-error',
+            )!,
+          20000,
+        );
+        const probe = doc.createElement("span");
+        probe.style.color = "var(--text-error)";
+        popover!.append(probe);
+        const error = getComputedStyle(probe).color;
+        probe.remove();
+        const style = getComputedStyle(mark);
+        return {
+          popout: doc !== document,
+          text: mark.textContent,
+          line: style.textDecorationStyle,
+          color: style.textDecorationColor === error,
+        };
+      },
+      { notePath: path },
+    )) as { popout: boolean; text: string; line: string; color: boolean };
     expect(shown).toEqual({
       popout: true,
       text: "nosuchfield",
@@ -840,22 +3165,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   // icon, and broke its chips mid-word. The select keeps its whole name at
   // any depth, and each chip keeps its value on one line.
   it("keeps each condition's property name and chips whole in the Filter popover, in a nested group and with a chip list", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     const deep = "query-files/Nested conditions.zotquery";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const popup of document.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(deep)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app }, { layout, deep }) => {
+          for (const popup of document.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(deep)!;
+          if (file) await app.vault.delete(file);
+        },
+        { layout, deep },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.create(${JSON.stringify(deep)},${JSON.stringify(
-        [
+      async ({ app }, { deep, fileContent }) => {
+        await app.vault.create(deep, fileContent);
+      },
+      {
+        deep,
+        fileContent: [
           "views:",
           "  - type: table",
           "    name: Nested",
@@ -876,7 +3219,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "      - title",
           "",
         ].join("\n"),
-      )});return true;})()`,
+      },
     );
     interface Row {
       kind: string;
@@ -890,12 +3233,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * value takes.
      */
     const rowsOf = async (path: string, view: string) =>
-      JSON.parse(
-        await obEval(
-          run.vaultId,
-          `(async()=>{${PAGE}const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});leaf.view.query.selectView(${JSON.stringify(view)});await leaf.view.query.settled;const el=leaf.view.contentEl;const button=await until('Filter button',()=>el.querySelector('[data-query-toolbar="filter"]'),20000);const popover=el.querySelector('[data-query-popover="filter"]');press(button,'Filter');await until('Filter popover',()=>popover.matches(':popover-open'));const pickers=()=>[...popover.querySelectorAll('[data-filter-section="view"] [data-condition-row] [aria-label=${JSON.stringify(run.m.workbench_match_condition_kind())}]')];await until('condition rows',()=>pickers().length>0,5000);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const lines=node=>{const range=node.ownerDocument.createRange();range.selectNodeContents(node);return new Set([...range.getClientRects()].map(r=>Math.round(r.top))).size;};const rows=pickers().map(picker=>{const label=picker.querySelector(':scope > span:not([data-select-icon])');const row=picker.closest('[data-condition-row]');return {kind:picker.dataset.value,label:Math.round(label.getBoundingClientRect().width),clipped:label.scrollWidth>label.clientWidth,chips:Object.fromEntries([...row.querySelectorAll('[data-chip-input] .multi-select-pill-content')].map(content=>[content.textContent,lines(content)]))};});popover.hidePopover();leaf.detach();return JSON.stringify(rows);})()`,
-        ),
-      ) as Row[];
+      (await obRun(
+        run.vaultId,
+        async (
+          { app, page: pageHelpers },
+          { path, viewName, conditionKindLabel },
+        ) => {
+          const { press, until } = pageHelpers;
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(path)!);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.selectView(viewName);
+          await (
+            leaf.view as import("@/views/query-view/file-view").QueryFileView
+          ).query.settled;
+          const el = (leaf.view as import("obsidian").ItemView).contentEl;
+          const button = await until(
+            "Filter button",
+            () =>
+              el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+            20000,
+          );
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"]',
+          )!;
+          press(button, "Filter");
+          await until("Filter popover", () =>
+            popover!.matches(":popover-open"),
+          );
+          const pickers = () => [
+            ...popover!.querySelectorAll<HTMLElement>(
+              `[data-filter-section="view"] [data-condition-row] [aria-label=${JSON.stringify(conditionKindLabel)}]`,
+            ),
+          ];
+          await until("condition rows", () => pickers().length > 0, 5000);
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const lines = (node: HTMLElement) => {
+            const range = node.ownerDocument.createRange();
+            range.selectNodeContents(node);
+            return new Set(
+              [...range.getClientRects()].map((r) => Math.round(r.top)),
+            ).size;
+          };
+          const rows = pickers().map((picker) => {
+            const label = picker.querySelector<HTMLElement>(
+              ":scope > span:not([data-select-icon])",
+            )!;
+            const row = picker.closest<HTMLElement>("[data-condition-row]")!;
+            return {
+              kind: picker.dataset.value,
+              label: Math.round(label!.getBoundingClientRect().width),
+              clipped: label!.scrollWidth > label!.clientWidth,
+              chips: Object.fromEntries(
+                [
+                  ...row!.querySelectorAll<HTMLInputElement>(
+                    "[data-chip-input] .multi-select-pill-content",
+                  ),
+                ].map((content) => [content.textContent, lines(content)]),
+              ),
+            };
+          });
+          popover!.hidePopover();
+          leaf.detach();
+          return rows;
+        },
+        {
+          path,
+          viewName: view,
+          conditionKindLabel: run.m.workbench_match_condition_kind(),
+        },
+      )) as Row[];
     const whole = (rows: Row[]) =>
       rows.map(({ kind, chips }) => ({
         kind,
@@ -940,26 +3351,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   // and the Live Preview widget stays on the page.
   it("shows a Query Block of its note's Item and saves a sort change into the block", async () => {
     const notePath = "literatures/SAKIMA22.md";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const original = await obEval(
+    const original = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+      async ({ app }, { notePath }) => {
+        return await app.vault.read(app.vault.getFileByPath(notePath)!);
+      },
+      { notePath },
     );
     await using cleanup = new AsyncDisposableStack();
     const scratchFiles: string[] = [];
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(scratchFiles)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+        async ({ app }, { layout, notePath, original, scratchFiles }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          await app.vault.modify(app.vault.getFileByPath(notePath)!, original);
+          for (const path of scratchFiles) {
+            const file = app.vault.getFileByPath(path)!;
+            if (file) await app.vault.delete(file);
+          }
+        },
+        { layout, notePath, original, scratchFiles },
       );
     });
 
     /** What `view` shows, once its query settled. */
-    const readView = (view: NoteQueryView) =>
-      `(async()=>{const el=${view.el};return JSON.stringify({file:app.workspace.getMostRecentLeaf().view.file?.path,mark:el.dataset.e2eMark??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,readOnly:el.querySelector('[data-query-read-only]')?.textContent??null});})()`;
+
     interface Shown {
       file: string;
       mark: string | null;
@@ -969,17 +3393,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       readOnly: string | null;
     }
     const shownWhen = (view: NoteQueryView, ready: (shown: Shown) => boolean) =>
-      readQueryViewUntil<Shown>(run.vaultId, readView(view), {
-        ready,
-        what: "Query View",
-        tries: 120,
-      });
-    /** Runs `script` with `el`, the element that holds `view`. */
-    const inView = (view: NoteQueryView, script: string) =>
-      obEval(
+      readQueryViewUntil(
         run.vaultId,
-        `(async()=>{${PAGE}const el=${view.el};${script};return true;})()`,
+        async ({ app, page: pageHelpers }, { view }) => {
+          const el = await pageHelpers.revealQueryView(view);
+          return {
+            file: (
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").FileView
+            ).file!.path,
+            mark: el.dataset.e2eMark ?? null,
+            count:
+              el
+                .querySelector<HTMLElement>("[data-query-count]")
+                ?.getAttribute("data-query-count") ?? null,
+            cards: [...el.querySelectorAll<HTMLElement>(".zt-annot-card")].map(
+              (n) => n.getAttribute("data-zotero-annotation-key")!,
+            ),
+            diagnostic:
+              el
+                .querySelector<HTMLElement>("[data-query-diagnostic]")
+                ?.getAttribute("data-query-diagnostic") ?? null,
+            readOnly:
+              el.querySelector<HTMLElement>("[data-query-read-only]")
+                ?.textContent ?? null,
+          };
+        },
+        { view },
+        {
+          ready,
+          what: "Query View",
+          tries: 120,
+        },
       );
+    /** Runs `script` with `el`, the element that holds `view`. */
+
     /** The Annotation keys ZotLit Query gives for an Item, through the CLI. */
     const itemAnnotations = async (item: string, sort?: string) => {
       const report = JSON.parse(
@@ -1002,9 +3450,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       mode: "live" | "reading",
       target: QueryViewTarget = { block: 0 },
     ) => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}),{state:${mode === "live" ? "{mode:'source',source:false}" : "{mode:'preview'}"}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        async ({ app }, { path, isLive }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(path)!, {
+            state: isLive
+              ? { mode: "source", source: false }
+              : { mode: "preview" },
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { path, isLive: mode === "live" },
       );
       return revealQueryView(run.vaultId, path, target);
     };
@@ -1024,26 +3481,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A sort change in the toolbar rewrites the block text, and nothing else
     // in the note. Each step of the Sort control saves.
-    await inView(
-      liveView,
-      "el.dataset.e2eMark='kept';press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
+    await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { liveView }) => {
+        const { press } = pageHelpers;
+        const el = await pageHelpers.revealQueryView(liveView);
+        el.dataset.e2eMark = "kept";
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!,
+          "Sort",
+        );
+      },
+      { liveView },
     );
-    await inView(
-      liveView,
-      "press(el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]'),'Add sort')",
+    await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { liveView }) => {
+        const { press } = pageHelpers;
+        const el = await pageHelpers.revealQueryView(liveView);
+        press(
+          el.querySelector<HTMLElement>(
+            '[data-query-popover="sort"] [data-sort-add]',
+          )!,
+          "Add sort",
+        );
+      },
+      { liveView },
     );
     for (const [control, value] of [
       ["data-sort-property", "type"],
       ["data-sort-direction", "DESC"],
     ] as const) {
-      await readQueryViewUntil<boolean>(
+      await readQueryViewUntil(
         run.vaultId,
-        `(async()=>JSON.stringify(!!${liveView.el}.querySelector('[data-query-popover="sort"] [${control}]')))()`,
+        async ({ page: pageHelpers }, { hookNames, control }) => {
+          return !!(await pageHelpers.revealQueryView(hookNames)).querySelector<
+            HTMLButtonElement | HTMLSelectElement
+          >(`[data-query-popover="sort"] [${control}]`)!;
+        },
+        { hookNames: liveView, control },
         { ready: (present) => present, what: `${control} in the Sort popover` },
       );
-      await inView(
-        liveView,
-        `await pick(el.querySelector('[data-query-popover="sort"] [${control}]'),${JSON.stringify(value)},'${control}')`,
+      await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }, { liveView, control, value }) => {
+          const { pick } = pageHelpers;
+          const el = await pageHelpers.revealQueryView(liveView);
+          await pick(
+            el.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              `[data-query-popover="sort"] [${control}]`,
+            )!,
+            value,
+            `${control}`,
+          );
+        },
+        { liveView, control, value },
       );
     }
     const written = original.replace(
@@ -1054,9 +3546,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await waitFor(
         async () =>
-          (await obEval(
+          (await obRun(
             run.vaultId,
-            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+            async ({ app }, { notePath }) => {
+              return await app.vault.read(app.vault.getFileByPath(notePath)!);
+            },
+            { notePath },
           )) === written,
       ),
     ).toBe(true);
@@ -1077,9 +3572,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const other = await itemAnnotations("RUGIER24", "-type");
     expect(other.length).toBeGreaterThan(0);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.fileManager.processFrontMatter(app.vault.getFileByPath(${JSON.stringify(notePath)}),fm=>{fm['zotero-key']='RUGIER24';});return true;})()`,
+      async ({ app }, { notePath }) => {
+        await app.fileManager.processFrontMatter(
+          app.vault.getFileByPath(notePath)!,
+          (fm) => {
+            fm["zotero-key"] = "RUGIER24";
+          },
+        );
+      },
+      { notePath },
     );
     await shownWhen(
       readingView,
@@ -1090,9 +3593,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // note that holds it.
     const embedPath = "Query block embed.md";
     scratchFiles.push(embedPath);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(written)});await app.vault.create(${JSON.stringify(embedPath)},'![[SAKIMA22#Sakima’s song]]\\n');return true;})()`,
+      async ({ app }, { notePath, written, embedPath }) => {
+        await app.vault.modify(app.vault.getFileByPath(notePath)!, written);
+        await app.vault.create(embedPath, "![[SAKIMA22#Sakima’s song]]\n");
+      },
+      { notePath, written, embedPath },
     );
     const sectionView = await open(embedPath, "reading", {
       embed: "SAKIMA22#Sakima’s song",
@@ -1102,13 +3609,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       (shown) => JSON.stringify(shown.cards) === JSON.stringify(sorted),
     );
     expect(embedded.readOnly).toBeNull();
-    await inView(
-      sectionView,
-      "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
+    await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { sectionView }) => {
+        const { press } = pageHelpers;
+        const el = await pageHelpers.revealQueryView(sectionView);
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="sort"]')!,
+          "Sort",
+        );
+      },
+      { sectionView },
     );
-    await inView(
-      sectionView,
-      `const select=el.querySelector('[data-query-popover="sort"] [data-sort-direction]');select.value='ASC';select.dispatchEvent(new Event('change',{bubbles:true}))`,
+    await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { sectionView }) => {
+        const el = await pageHelpers.revealQueryView(sectionView);
+        const select = el.querySelector<HTMLButtonElement>(
+          '[data-query-popover="sort"] [data-sort-direction]',
+        )!;
+        select!.value = "ASC";
+        select!.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      { sectionView },
     );
     const fromEmbed = written.replace(
       "        direction: DESC\n```",
@@ -1118,25 +3641,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await waitFor(
         async () =>
-          (await obEval(
+          (await obRun(
             run.vaultId,
-            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+            async ({ app }, { notePath }) => {
+              return await app.vault.read(app.vault.getFileByPath(notePath)!);
+            },
+            { notePath },
           )) === fromEmbed,
       ),
     ).toBe(true);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(embedPath)})).then(JSON.stringify)`,
+        async ({ app }, { embedPath }) => {
+          return await app.vault
+            .read(app.vault.getFileByPath(embedPath)!)
+            .then(JSON.stringify);
+        },
+        { embedPath },
       ),
     ).toBe(JSON.stringify("![[SAKIMA22#Sakima’s song]]\n"));
 
     // In a note without a `zotero-key`, the view names `this`.
     const plainPath = "Query block without key.md";
     scratchFiles.push(plainPath);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.create(${JSON.stringify(plainPath)},${JSON.stringify("# Without a key\n\n```zotquery\nviews:\n  - type: annotations\n    name: Mine\n    from: annotations\n    filters: item == this.item\n```\n")});return true;})()`,
+      async ({ app }, { plainPath, fileContent }) => {
+        await app.vault.create(plainPath, fileContent);
+      },
+      {
+        plainPath,
+        fileContent:
+          "# Without a key\n\n```zotquery\nviews:\n  - type: annotations\n    name: Mine\n    from: annotations\n    filters: item == this.item\n```\n",
+      },
     );
     const plainView = await open(plainPath, "live");
     const unbound = await shownWhen(
@@ -1151,24 +3689,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("saves a limit typed into a Query Block when its note closes or shows another file before the save delay ends", async () => {
     const notePath = "literatures/SAKIMA22.md";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const original = await obEval(
+    const original = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+      async ({ app }, { notePath }) => {
+        return await app.vault.read(app.vault.getFileByPath(notePath)!);
+      },
+      { notePath },
     );
     expect(original).toContain("    limit: 100\n```");
-    const restore = `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(original)});return true;})()`;
+
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(run.vaultId, restore);
+      await obRun(
+        run.vaultId,
+        async ({ app }, { layout, notePath, original }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          await app.vault.modify(app.vault.getFileByPath(notePath)!, original);
+        },
+        { layout, notePath, original },
+      );
     });
     const read = () =>
-      obEval(
+      obRun(
         run.vaultId,
-        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+        async ({ app }, { notePath }) => {
+          return await app.vault.read(app.vault.getFileByPath(notePath)!);
+        },
+        { notePath },
       );
 
     const cases = [
@@ -1179,24 +3733,76 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const outcomes: { mode: string; leave: string; saved: boolean }[] = [];
     for (const [index, [mode, leave]] of cases.entries()) {
       const limit = String(3 + index);
-      await obEval(run.vaultId, restore);
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(notePath)}),{state:${mode === "live" ? "{mode:'source',source:false}" : "{mode:'preview'}"}});app.workspace.setActiveLeaf(leaf,{focus:true});window.zotlitE2EBlockLeaf=leaf;return true;})()`,
+        async ({ app }, { layout, notePath, original }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          await app.vault.modify(app.vault.getFileByPath(notePath)!, original);
+        },
+        { layout, notePath, original },
+      );
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }, { notePath, isLive }) => {
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(notePath)!, {
+            state: isLive
+              ? { mode: "source", source: false }
+              : { mode: "preview" },
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          pageHelpers.scratch.zotlitE2EBlockLeaf = leaf;
+        },
+        { notePath, isLive: mode === "live" },
       );
       const block = await revealQueryView(run.vaultId, notePath, {
         block: 0,
       });
-      await readQueryViewUntil<boolean>(
+      await readQueryViewUntil(
         run.vaultId,
-        `(async()=>JSON.stringify(!!${block.el}.querySelector('[data-query-count]')))()`,
+        async ({ page: pageHelpers }, { hookNames }) => {
+          return !!(
+            await pageHelpers.revealQueryView(hookNames)
+          ).querySelector<HTMLElement>("[data-query-count]")!;
+        },
+        { hookNames: block },
         { ready: (counted) => counted, what: "Query Block count", tries: 120 },
       );
       // The limit, then the note goes at once, well inside the save delay. The
       // block is the one the mode shows; the other mode's copy stays hidden.
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const leaf=window.zotlitE2EBlockLeaf;const el=${block.el};press(el.querySelector('[data-query-results]'),'Results');const input=await until('limit field',()=>el.querySelector('[data-query-results-popup] [data-query-limit]'));Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(limit)});input.dispatchEvent(new Event('input',{bubbles:true}));${leave === "close" ? "leaf.detach();" : `await leaf.openFile(app.vault.getMarkdownFiles().find(f=>f.path!==${JSON.stringify(notePath)}));`}delete window.zotlitE2EBlockLeaf;return true;})()`,
+        async (
+          { app, page: pageHelpers },
+          { block, limit, closeOnLeave, notePath },
+        ) => {
+          const { press, until } = pageHelpers;
+          const leaf = pageHelpers.scratch.zotlitE2EBlockLeaf;
+          const el = await pageHelpers.revealQueryView(block);
+          press(
+            el.querySelector<HTMLElement>("[data-query-results]")!,
+            "Results",
+          );
+          const input = await until("limit field", () =>
+            el.querySelector<HTMLInputElement>(
+              "[data-query-results-popup] [data-query-limit]",
+            )!,
+          );
+          Object.getOwnPropertyDescriptor(
+            HTMLInputElement.prototype,
+            "value",
+          )!.set!.call(input, limit);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          if (closeOnLeave) {
+            leaf!.detach();
+          } else {
+            await leaf!.openFile(
+              app.vault.getMarkdownFiles().find((f) => f.path !== notePath)!,
+            );
+          }
+          delete pageHelpers.scratch.zotlitE2EBlockLeaf;
+        },
+        { block, limit, closeOnLeave: leave === "close", notePath },
       );
       const expected = original.replace(
         "    limit: 100\n```",
@@ -1212,81 +3818,212 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("adds, renames and sets a default view of a Query File from the view menu, and the file keeps them", async () => {
     const path = "query-files/Reading annotations.zotquery";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const original = await obEval(
+    const original = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+      async ({ app }, { path }) => {
+        return await app.vault.read(app.vault.getFileByPath(path)!);
+      },
+      { path },
     );
     await using cleanup = new AsyncDisposableStack();
     // The tab closes before the text goes back, so no pending save of the
     // tab writes over it.
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app }, { path, original, layout }) => {
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          await app.vault.modify(app.vault.getFileByPath(path)!, original);
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { path, original, layout },
       );
     });
-    const tab = "app.workspace.getMostRecentLeaf().view";
-    const open = `(async()=>{const old=app.workspace.getLeavesOfType('zotlit-query-file');const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});for(const other of old)other.detach();return true;})()`;
+
     /** The view on screen, its cards, and the page labels the cards show. */
     const shown = (view: string) =>
-      obEvalUntil(
+      obRunUntil(
         run.vaultId,
-        `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file')return 'none';await view.query.settled;const el=view.contentEl;const cards=el.querySelectorAll('.zt-annot-card').length;return el.querySelector('[data-query-view-menu]')?.textContent+':'+(cards>0);})()`,
-        { expected: `${view}:true` },
+        async ({ app }) => {
+          const view = app.workspace.getMostRecentLeaf()!.view;
+          if (view.getViewType() !== "zotlit-query-file") return "none";
+          await (view as import("@/views/query-view/file-view").QueryFileView)
+            .query.settled;
+          const el = (view as import("obsidian").ItemView).contentEl;
+          const cards =
+            el.querySelectorAll<HTMLElement>(".zt-annot-card").length;
+          return `${
+            el.querySelector<HTMLElement>("[data-query-view-menu]")?.textContent
+          }:${cards > 0}`;
+        },
+        undefined,
+        {
+          ready: (value) => value === `${view}:true`,
+          what: "the Query File view menu label with annotation cards rendered",
+        },
       );
-    const pages = `(()=>JSON.stringify([...${tab}.contentEl.querySelectorAll('.zt-annot-page-chip')].map(n=>n.textContent).filter(Boolean)))()`;
-    /** The view rows the open view menu shows. */
-    const rows = `(()=>JSON.stringify([...${tab}.contentEl.querySelectorAll('[data-query-view-list]:popover-open [data-query-view-row]')].map(n=>n.getAttribute('data-query-view-row'))))()`;
-    const search = (text: string) =>
-      `(()=>{const input=${tab}.contentEl.querySelector('[data-query-view-list] input');input.value=${JSON.stringify(text)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`;
 
-    await obEval(run.vaultId, open);
-    expect(await shown("All annotations")).toBe(true);
+    /** The view rows the open view menu shows. */
+
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const old = app.workspace.getLeavesOfType("zotlit-query-file");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        for (const other of old) other.detach();
+      },
+      { path },
+    );
+    await shown("All annotations");
     // A page number takes "p."; a named page label reads as it is.
-    const shownPages: string[] = JSON.parse(await obEval(run.vaultId, pages));
+    const shownPages: string[] = await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+        ]
+          .map((n) => n.textContent)
+          .filter(Boolean);
+      },
+      undefined,
+    );
     expect(shownPages).toContain("p. 1");
     expect(shownPages).toContain("Chapter 1");
 
     // The view menu narrows its views as the researcher types.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
+          "View menu",
+        );
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(run.vaultId, rows, {
-        expected: JSON.stringify(["All annotations", "Figures"]),
-      }),
-    ).toBe(true);
-    await obEval(run.vaultId, search("fig"));
-    expect(
-      await obEvalUntil(run.vaultId, rows, {
-        expected: JSON.stringify(["Figures"]),
-      }),
-    ).toBe(true);
-    await obEval(run.vaultId, search(""));
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, ["All annotations", "Figures"]),
+        what: "the Query File view menu rows to list All annotations and Figures",
+      },
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app }, { inputText }) => {
+        const input = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLInputElement>(
+          "[data-query-view-list] input",
+        )!;
+        input!.value = inputText;
+        input!.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+      { inputText: "fig" },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) => isDeepStrictEqual(value, ["Figures"]),
+        what: "the Query File view menu rows to list only Figures",
+      },
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app }, { inputText }) => {
+        const input = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLInputElement>(
+          "[data-query-view-list] input",
+        )!;
+        input!.value = inputText;
+        input!.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+      { inputText: "" },
+    );
 
     // "Add view" adds a view, shows it, and opens Configure view on its
     // name as a page of the menu; the name typed there renames it.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-action="add"]'),'Add view');return true;})()`,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            '[data-query-view-action="add"]',
+          )!,
+          "Add view",
+        );
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!!activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]'))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return !!activeDocument.querySelector<HTMLInputElement>(
+          "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
+        )!;
+      },
+      undefined,
+      { what: "the view name input in the Query File view chooser to open" },
+    );
     // Configure view offers only the layouts built for the view's dataset.
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `JSON.stringify([...activeDocument.querySelectorAll('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout] option')].map(n=>n.textContent))`,
+        async (_context) => {
+          return JSON.stringify(
+            [
+              ...activeDocument.querySelectorAll<HTMLOptionElement>(
+                "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout] option",
+              ),
+            ].map((n) => n.textContent),
+          );
+        },
+        undefined,
       ),
     ).toBe(
       JSON.stringify([
@@ -1295,107 +4032,333 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.m.query_view_layout_cards(),
       ]),
     );
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{const input=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]');input.value='Methods';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
+      async (_context) => {
+        const input = activeDocument.querySelector<HTMLInputElement>(
+          "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
+        )!;
+        input!.value = "Methods";
+        input!.dispatchEvent(new Event("input", { bubbles: true }));
+        input!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        );
+      },
+      undefined,
     );
-    expect(await shown("Methods")).toBe(true);
+    await shown("Methods");
 
     // "Show page" off takes the page labels off the cards at once.
-    expect(JSON.parse(await obEval(run.vaultId, pages))).not.toEqual([]);
-    await obEval(
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return [
+            ...(
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+          ]
+            .map((n) => n.textContent)
+            .filter(Boolean);
+        },
+        undefined,
+      ),
+    ).not.toEqual([]);
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}const page=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]');press(page.querySelector('[data-query-view-option="showPage"] [role="switch"]'),'Show page');press(page.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
+      async ({ page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const page = activeDocument.querySelector<HTMLElement>(
+          "[data-query-view-list]:popover-open [data-chooser-page]",
+        )!;
+        press(
+          page!.querySelector<HTMLElement>(
+            '[data-query-view-option="showPage"] [role="switch"]',
+          )!,
+          "Show page",
+        );
+        press(
+          page!.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+          "Close",
+        );
+      },
+      undefined,
     );
-    expect(await obEvalUntil(run.vaultId, pages, { expected: "[]" })).toBe(
-      true,
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+        ]
+          .map((n) => n.textContent)
+          .filter(Boolean);
+      },
+      undefined,
+      {
+        ready: (value) => isDeepStrictEqual(value, []),
+        what: "the page chips on the Query File annotation cards to clear",
+      },
     );
 
     // A right-click on the view's row opens its Configure view, whose
     // "Default view" moves it to the top of the list.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
+          "View menu",
+        );
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(run.vaultId, rows, {
-        expected: JSON.stringify(["All annotations", "Figures", "Methods"]),
-      }),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      `(async()=>{${PAGE}const row=${tab}.contentEl.querySelector('[data-query-view-row="Methods"]');row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const page=await until('Configure view of Methods',()=>activeDocument.querySelector('[data-query-view-list]:popover-open [data-query-configure-view="Methods"]')?.closest('[data-chooser-page]'));press(page.querySelector('[data-chooser-page-menu]'),'More options');const item=await until('Default view',()=>page.querySelector('[role="menu"]:popover-open [data-chooser-page-menu-item="default"]'));press(item,'Default view');press(page.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, ["All annotations", "Figures", "Methods"]),
+        what: "the Query File view menu rows to list All annotations, Figures and Methods",
+      },
+    );
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press, until } = pageHelpers;
+        const row = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>(
+          '[data-query-view-row="Methods"]',
+        )!;
+        row!.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 200,
+            clientY: 200,
+          }),
+        );
+        const page = await until("Configure view of Methods", () =>
+          activeDocument
+            .querySelector<HTMLElement>(
+              '[data-query-view-list]:popover-open [data-query-configure-view="Methods"]',
+            )
+            ?.closest<HTMLElement>("[data-chooser-page]")!,
+        );
+        press(
+          page.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
+          "More options",
+        );
+        const item = await until("Default view", () =>
+          page.querySelector<HTMLElement>(
+            '[role="menu"]:popover-open [data-chooser-page-menu-item="default"]',
+          )!,
+        );
+        press(item, "Default view");
+        press(
+          page.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+          "Close",
+        );
+      },
+      undefined,
     );
 
     // Each change saved to the file.
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)})).then(t=>String(t.indexOf('name: Methods')>-1&&t.indexOf('name: Methods')<t.indexOf('name: All annotations')&&t.includes('showPage: false')))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        return await app.vault
+          .read(app.vault.getFileByPath(path)!)
+          .then(
+            (t) =>
+              t.indexOf("name: Methods") > -1 &&
+              t.indexOf("name: Methods") < t.indexOf("name: All annotations") &&
+              t.includes("showPage: false"),
+          );
+      },
+      { path },
+      {
+        what: "the saved Query File to order the Methods view first with showPage false",
+      },
+    );
 
     // A plain open of the file shows the first view, as the file holds it.
-    await obEval(run.vaultId, open);
-    expect(await shown("Methods")).toBe(true);
-    expect(await obEval(run.vaultId, pages)).toBe("[]");
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-menu]'),'View menu');return true;})()`,
+      async ({ app }, { path }) => {
+        const old = app.workspace.getLeavesOfType("zotlit-query-file");
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        for (const other of old) other.detach();
+      },
+      { path },
     );
+    await shown("Methods");
     expect(
-      await obEvalUntil(run.vaultId, rows, {
-        expected: JSON.stringify(["Methods", "All annotations", "Figures"]),
-      }),
-    ).toBe(true);
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return JSON.stringify(
+            [
+              ...(
+                app.workspace.getMostRecentLeaf()!
+                  .view as import("obsidian").ItemView
+              ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+            ]
+              .map((n) => n.textContent)
+              .filter(Boolean),
+          );
+        },
+        undefined,
+      ),
+    ).toBe("[]");
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>("[data-query-view-menu]")!,
+          "View menu",
+        );
+      },
+      undefined,
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, ["Methods", "All annotations", "Figures"]),
+        what: "the Query File view menu rows to list Methods first",
+      },
+    );
 
     // The chevron on a view's row opens Configure view on that view and
     // leaves the view on screen as it is.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-view-list]:popover-open [data-query-view-configure="Figures"]'),'Configure Figures');return true;})()`,
+      async ({ app, page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            '[data-query-view-list]:popover-open [data-query-view-configure="Figures"]',
+          )!,
+          "Configure Figures",
+        );
+      },
+      undefined,
     );
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]')?.value)`,
-        { expected: "Figures" },
-      ),
-    ).toBe(true);
-    expect(await shown("Methods")).toBe(true);
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      `(()=>{${PAGE}press(activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-chooser-page-close]'),'Close');return true;})()`,
+      async (_context) => {
+        return activeDocument.querySelector<HTMLInputElement>(
+          "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
+        )?.value;
+      },
+      undefined,
+      {
+        ready: (value) => value === "Figures",
+        what: "the view name input in the Query File view chooser to show Figures",
+      },
+    );
+    await shown("Methods");
+    await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          activeDocument.querySelector<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-chooser-page] [data-chooser-page-close]",
+          )!,
+          "Close",
+        );
+      },
+      undefined,
     );
   }, 180000);
 
   it("switches a Query File view to List and to Cards, and shows the same rows under the same groups", async () => {
     const path = "query-files/Reading annotations.zotquery";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const original = await obEval(
+    const original = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+      async ({ app }, { path }) => {
+        return await app.vault.read(app.vault.getFileByPath(path)!);
+      },
+      { path },
     );
     await using cleanup = new AsyncDisposableStack();
     // The tab closes before the text goes back, so no pending save of the
     // tab writes over it.
     cleanup.defer(async () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app }, { path, original, layout }) => {
+          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          await app.vault.modify(app.vault.getFileByPath(path)!, original);
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { path, original, layout },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      async ({ app }, { path }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(path)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path },
     );
     /** The rows the tab shows, by the Layout that draws them. */
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({layout:el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??'annotations',cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key')),rows:[...el.querySelectorAll('[data-query-row]')].map(n=>n.getAttribute('data-query-row')),headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),markers:el.querySelector('[data-query-markers]')?.getAttribute('data-query-markers')??null,text:await app.vault.read(view.file)});})()`;
+
     interface Tab {
       layout: string;
       cards: string[];
@@ -1407,7 +4370,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
       let tab: Tab | null = null;
       const settled = await waitFor(async () => {
-        tab = JSON.parse(await obEval(run.vaultId, readTab)) as Tab | null;
+        tab = JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (view.getViewType() !== "zotlit-query-file") return "null";
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              return JSON.stringify({
+                layout:
+                  el
+                    .querySelector<HTMLElement>("[data-query-layout]")
+                    ?.getAttribute("data-query-layout") ?? "annotations",
+                cards: [
+                  ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+                rows: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-row]"),
+                ].map((n) => n.getAttribute("data-query-row")),
+                headings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
+                ].map((n) => n.textContent),
+                markers:
+                  el
+                    .querySelector<HTMLElement>("[data-query-markers]")
+                    ?.getAttribute("data-query-markers") ?? null,
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
+            },
+            undefined,
+          ),
+        ) as Tab | null;
         return tab !== null && ready(tab);
       }, 120);
       if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
@@ -1415,9 +4413,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     /** Open Configure view on the view on screen, and pick a Layout there. */
     const pickLayout = (type: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]'))el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));const select=await until('Configure view opens',()=>activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout]'));select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+        async ({ app, page: pageHelpers }, { type }) => {
+          const { until } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          if (
+            !activeDocument.querySelector<HTMLElement>(
+              "[data-query-view-list]:popover-open [data-chooser-page]",
+            )!
+          )
+            el.querySelector<HTMLElement>(
+              "[data-query-view-menu]",
+            )!.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: 200,
+                clientY: 200,
+              }),
+            );
+          const select = await until("Configure view opens", () =>
+            activeDocument.querySelector<HTMLSelectElement>(
+              "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout]",
+            )!,
+          );
+          select.value = type;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          return String(true);
+        },
+        { type },
       );
 
     const annotations = await tabWhen((tab) => tab.cards.length > 0);
@@ -1435,9 +4463,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // A List option in Configure view draws at once and saves to the file.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{const select=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-option="markers"]');select.value='number';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      async (_context) => {
+        const select = activeDocument.querySelector<HTMLSelectElement>(
+          '[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-option="markers"]',
+        )!;
+        select!.value = "number";
+        select!.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      undefined,
     );
     const numbered = await tabWhen(
       (tab) => tab.markers === "number" && tab.text.includes("markers: number"),
@@ -1463,28 +4498,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   it("finds the same Items in the Table, List and Cards from one search, and Cards name and show properties as the Table does", async () => {
     const path = "query-files/Items in three layouts.zotquery";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app }, { path, layout }) => {
+          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          const file = app.vault.getFileByPath(path)!;
+          if (file) await app.vault.delete(file);
+          await app.workspace.changeLayout(JSON.parse(layout));
+        },
+        { path, layout },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify("views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n      - itemType\n      - date\n      - publicationTitle\n    limit: 100\n")});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      async ({ app }, { path, fileContent }) => {
+        const file = await app.vault.create(path, fileContent);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      {
+        path,
+        fileContent:
+          "views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n      - itemType\n      - date\n      - publicationTitle\n    limit: 100\n",
+      },
     );
     /**
      * The Items the tab shows, each with the text of its cells, and the
      * names of the properties: the Table's column headers, or the labels of
      * the first card.
      */
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file')return 'null';await view.query.settled;const el=view.contentEl;const layout=el.querySelector('[data-query-layout]')?.getAttribute('data-query-layout')??(el.querySelector('[data-query-table]')?'table':'annotations');const rows=layout==='table'?[...el.querySelectorAll('tr[data-query-table-row="item"]')].map(n=>({key:n.getAttribute('data-query-key'),cells:[...n.querySelectorAll('td')].slice(1).map(c=>c.textContent)})):[...el.querySelectorAll('[data-query-row]')].map(n=>({key:n.getAttribute('data-query-row'),cells:layout==='cards'?[...n.children].map((part,at)=>at===0?part.textContent:part.children[1]?.textContent):[n.textContent]}));const labels=layout==='table'?[...el.querySelectorAll('th[data-query-column]')].map(n=>n.textContent):[...el.querySelector('[data-query-row]')?.children??[]].slice(1).map(part=>part.children[0]?.textContent);return JSON.stringify({layout,rows,labels});})()`;
+
     interface Tab {
       layout: string;
       rows: { key: string; cells: string[] }[];
@@ -1493,7 +4552,66 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
       let tab: Tab | null = null;
       const settled = await waitFor(async () => {
-        tab = JSON.parse(await obEval(run.vaultId, readTab)) as Tab | null;
+        tab = JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (view.getViewType() !== "zotlit-query-file") return "null";
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              const layout =
+                el
+                  .querySelector<HTMLElement>("[data-query-layout]")
+                  ?.getAttribute("data-query-layout") ??
+                (el.querySelector<HTMLElement>("[data-query-table]")!
+                  ? "table"
+                  : "annotations");
+              const rows =
+                layout === "table"
+                  ? [
+                      ...el.querySelectorAll<HTMLTableRowElement>(
+                        'tr[data-query-table-row="item"]',
+                      ),
+                    ].map((n) => ({
+                      key: n.getAttribute("data-query-key"),
+                      cells: [...n.querySelectorAll<HTMLElement>("td")]
+                        .slice(1)
+                        .map((c) => c.textContent),
+                    }))
+                  : [
+                      ...el.querySelectorAll<HTMLElement>("[data-query-row]"),
+                    ].map((n) => ({
+                      key: n.getAttribute("data-query-row"),
+                      cells:
+                        layout === "cards"
+                          ? [...n.children].map((part, at) =>
+                              at === 0
+                                ? part.textContent
+                                : part.children[1]?.textContent,
+                            )
+                          : [n.textContent],
+                    }));
+              const labels =
+                layout === "table"
+                  ? [
+                      ...el.querySelectorAll<HTMLTableCellElement>(
+                        "th[data-query-column]",
+                      ),
+                    ].map((n) => n.textContent)
+                  : [
+                      ...(el.querySelector<HTMLElement>("[data-query-row]")
+                        ?.children ?? []),
+                    ]
+                      .slice(1)
+                      .map((part) => part.children[0]?.textContent);
+              return JSON.stringify({ layout, rows, labels });
+            },
+            undefined,
+          ),
+        ) as Tab | null;
         return tab !== null && ready(tab);
       }, 120);
       if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
@@ -1501,15 +4619,75 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     /** Pick a Layout in Configure view, then close it. */
     const pickLayout = (type: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;el.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}));await until('Configure view opens',()=>activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout]'));const page=activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]');const select=page.querySelector('[data-query-view-layout]');select.value=${JSON.stringify(type)};select.dispatchEvent(new Event('change',{bubbles:true}));press(page.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
+        async ({ app, page: pageHelpers }, { type }) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          el.querySelector<HTMLElement>(
+            "[data-query-view-menu]",
+          )!.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: 200,
+              clientY: 200,
+            }),
+          );
+          await until("Configure view opens", () =>
+            activeDocument.querySelector<HTMLSelectElement>(
+              "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout]",
+            )!,
+          );
+          const page = activeDocument.querySelector<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-chooser-page]",
+          )!;
+          const select = page!.querySelector<HTMLSelectElement>(
+            "[data-query-view-layout]",
+          )!;
+          select!.value = type;
+          select!.dispatchEvent(new Event("change", { bubbles: true }));
+          press(
+            page!.querySelector<HTMLElement>("[data-chooser-page-close]")!,
+            "Close",
+          );
+          return String(true);
+        },
+        { type },
       );
     /** Type into the toolbar search, which opens on its first use. */
     const search = (text: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;if(!el.querySelector('[data-query-search]')){press(el.querySelector('[data-query-toolbar="search"]'),'Search');await until('search field',()=>el.querySelector('[data-query-search]'));}const input=el.querySelector('[data-query-search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+        async ({ app, page: pageHelpers }, { text }) => {
+          const { press, until } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          if (!el.querySelector<HTMLInputElement>("[data-query-search]")!) {
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="search"]')!,
+              "Search",
+            );
+            await until("search field", () =>
+              el.querySelector<HTMLInputElement>("[data-query-search]")!,
+            );
+          }
+          const input = el.querySelector<HTMLInputElement>(
+            "[data-query-search]",
+          )!;
+          Object.getOwnPropertyDescriptor(
+            HTMLInputElement.prototype,
+            "value",
+          )!.set!.call(input, text);
+          input!.dispatchEvent(new Event("input", { bubbles: true }));
+          return String(true);
+        },
+        { text },
       );
 
     const table = await tabWhen(
@@ -1556,12 +4734,59 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // and a card stays for each Item with nothing in it.
     await pickLayout("table");
     await tabWhen((tab) => tab.layout === "table" && tab.rows.length === total);
-    const hidden = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const view=app.workspace.getMostRecentLeaf().view;const el=view.contentEl;press(el.querySelector('[data-query-properties]'),'Properties');const popup=()=>activeDocument.querySelector('[data-query-properties-popup]');const selected=()=>[...popup().querySelectorAll('[data-query-property][aria-selected="true"]')];await until('Properties popover opens',()=>popup()?.matches(':popover-open')&&selected().length>0);press(popup().querySelector('[data-query-properties-action="hide-all"]'),'Hide all');await until('Hide all clears the ticks',()=>selected().length===0);const ticks=selected().length;popup().hidePopover();await until('Table drops the columns',()=>!el.querySelector('th[data-query-column]'));await view.query.settled;return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent.trim()),rows:el.querySelectorAll('tr[data-query-table-row="item"]').length,ticks});})()`,
-      ),
-    ) as { header: string[]; rows: number; ticks: number };
+    const hidden = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press, until } = pageHelpers;
+        const view = app.workspace.getMostRecentLeaf()!.view;
+        const el = (view as import("obsidian").ItemView).contentEl;
+        press(
+          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          "Properties",
+        );
+        const popup = () =>
+          activeDocument.querySelector<HTMLElement>(
+            "[data-query-properties-popup]",
+          )!;
+        const selected = () => [
+          ...popup()!.querySelectorAll<HTMLElement>(
+            '[data-query-property][aria-selected="true"]',
+          ),
+        ];
+        await until(
+          "Properties popover opens",
+          () => popup()?.matches(":popover-open") && selected().length > 0,
+        );
+        press(
+          popup()!.querySelector<HTMLElement>(
+            '[data-query-properties-action="hide-all"]',
+          )!,
+          "Hide all",
+        );
+        await until("Hide all clears the ticks", () => selected().length === 0);
+        const ticks = selected().length;
+        popup()!.hidePopover();
+        await until(
+          "Table drops the columns",
+          () =>
+            !el.querySelector<HTMLTableCellElement>("th[data-query-column]")!,
+        );
+        await (view as import("@/views/query-view/file-view").QueryFileView)
+          .query.settled;
+        return {
+          header: [
+            ...el.querySelectorAll<HTMLTableCellElement>(
+              "[data-query-table] thead th",
+            ),
+          ].map((n) => n.textContent.trim()),
+          rows: el.querySelectorAll<HTMLTableRowElement>(
+            'tr[data-query-table-row="item"]',
+          ).length,
+          ticks,
+        };
+      },
+      undefined,
+    )) as { header: string[]; rows: number; ticks: number };
     expect(hidden).toEqual({
       header: [""],
       rows: total,
@@ -1576,27 +4801,51 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }, 180000);
 
   it("groups a Query File by colour in a Manual order, hides a colour, and keeps it on reopen", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     const path = "query-files/By colour.zotquery";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(path)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app }, { layout, path }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
+          if (file) await app.vault.delete(file);
+        },
+        { layout, path },
       );
     });
-    const open = `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`;
-    await obEval(
+
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.create(${JSON.stringify(path)},${JSON.stringify("views:\n  - type: annotations\n    name: Colours\n    from: annotations\n    limit: 100\n")});return true;})()`,
+      async ({ app }, { path, fileContent }) => {
+        await app.vault.create(path, fileContent);
+      },
+      {
+        path,
+        fileContent:
+          "views:\n  - type: annotations\n    name: Colours\n    from: annotations\n    limit: 100\n",
+      },
     );
-    await obEval(run.vaultId, open);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const file = app.vault.getFileByPath(path)!;
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path },
+    );
 
     /** The group headings and the Manual order rows of the active tab, once settled. */
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),order:[...el.querySelectorAll('[data-group-row]')].map(n=>[n.getAttribute('data-group-row'),n.querySelector('input').checked])});})()`;
+
     interface Tab {
       count: string | null;
       headings: string[];
@@ -1605,7 +4854,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const tabWhen = async (ready: (tab: Tab) => boolean): Promise<Tab> => {
       let tab: Tab | null = null;
       const settled = await waitFor(async () => {
-        tab = JSON.parse(await obEval(run.vaultId, readTab)) as Tab | null;
+        tab = JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }, { filePath }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (
+                view.getViewType() !== "zotlit-query-file" ||
+                (view as import("obsidian").FileView).file?.path !== filePath
+              )
+                return "null";
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              return JSON.stringify({
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                headings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
+                ].map((n) => n.textContent),
+                order: [
+                  ...el.querySelectorAll<HTMLElement>("[data-group-row]"),
+                ].map((n) => [
+                  n.getAttribute("data-group-row"),
+                  n.querySelector<HTMLInputElement>("input")!.checked,
+                ]),
+              });
+            },
+            { filePath: path },
+          ),
+        ) as Tab | null;
         return tab !== null && ready(tab);
       }, 120);
       if (!settled) throw new Error(`Query File tab: ${JSON.stringify(tab)}`);
@@ -1613,9 +4894,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     /** Choose an option of a select in the Group popover, opening it first. */
     const choose = (selector: string, value: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="group"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="group"]'),'Group');await pick(popover.querySelector('${selector}'),${JSON.stringify(value)},${JSON.stringify(selector)});return true;})()`,
+        async ({ app, page: pageHelpers }, { selector, value }) => {
+          const { press, pick } = pageHelpers;
+          const el = (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const popover = el.querySelector<HTMLElement>(
+            '[data-query-popover="group"]',
+          )!;
+          if (!popover!.matches(":popover-open"))
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="group"]')!,
+              "Group",
+            );
+          await pick(
+            popover!.querySelector<HTMLButtonElement | HTMLSelectElement>(
+              `${selector}`,
+            )!,
+            value,
+            selector,
+          );
+          return String(true);
+        },
+        { selector, value },
       );
 
     await tabWhen((tab) => tab.count !== null);
@@ -1648,9 +4952,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A tick hides the first colour.
     const [hidden, ...shown] = manual.order.map(([colour]) => colour);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}const el=app.workspace.getMostRecentLeaf().view.contentEl;const popover=el.querySelector('[data-query-popover="group"]');if(!popover.matches(':popover-open'))press(el.querySelector('[data-query-toolbar="group"]'),'Group');press(popover.querySelector('[data-group-row=${JSON.stringify(hidden)}] input'),'group row '+${JSON.stringify(hidden)});popover.hidePopover();return true;})()`,
+      async ({ app, page: pageHelpers }, { hidden }) => {
+        const { press } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        const popover = el.querySelector<HTMLElement>(
+          '[data-query-popover="group"]',
+        )!;
+        if (!popover!.matches(":popover-open"))
+          press(
+            el.querySelector<HTMLElement>('[data-query-toolbar="group"]')!,
+            "Group",
+          );
+        press(
+          popover!.querySelector<HTMLInputElement>(
+            `[data-group-row=${hidden}] input`,
+          )!,
+          `group row ${hidden}`,
+        );
+        popover!.hidePopover();
+      },
+      { hidden },
     );
     const after = await tabWhen((tab) => tab.headings.length === shown.length);
     const expectedCount = report.rows!.filter(
@@ -1659,15 +4984,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(after.count).toBe(String(expectedCount));
 
     // The file holds the grouping; a reopened tab shows the same groups.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "(async()=>{app.workspace.getMostRecentLeaf().detach();return true;})()",
+      async ({ app }) => {
+        app.workspace.getMostRecentLeaf()!.detach();
+      },
+      undefined,
     );
     let text = "";
     await waitFor(async () => {
-      text = await obEval(
+      text = await obRun(
         run.vaultId,
-        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+        async ({ app }, { path }) => {
+          return await app.vault.read(app.vault.getFileByPath(path)!);
+        },
+        { path },
       );
       return text.includes("groupOrder");
     }, 30);
@@ -1677,30 +5008,48 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(text).toContain(
       `    groupOrder:\n${shown.map((colour) => `      - ${colour}`).join("\n")}`,
     );
-    await obEval(run.vaultId, open);
+    await obRun(
+      run.vaultId,
+      async ({ app }, { path }) => {
+        const file = app.vault.getFileByPath(path)!;
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { path },
+    );
     const reopened = await tabWhen((tab) => tab.count !== null);
     expect(reopened.headings).toEqual(after.headings);
     expect(reopened.count).toBe(after.count);
   }, 180000);
 
   it("steps the Card Selection through the cards a grouped Query File draws: past a collapsed group, and to each place of a card under two tags", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     const colourPath = "query-files/Step by colour.zotquery";
     const tagPath = "query-files/Step by tag.zotquery";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));for(const path of ${JSON.stringify([colourPath, tagPath])}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
+        async ({ app }, { layout, filePaths }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          for (const path of filePaths) {
+            const file = app.vault.getFileByPath(path)!;
+            if (file) await app.vault.delete(file);
+          }
+        },
+        { layout, filePaths: [colourPath, tagPath] },
       );
     });
-    const tab = "app.workspace.getMostRecentLeaf().view";
+
     /** The cards on screen in DOM order, each at its place, and the headings. */
-    const readCards = (path: string) =>
-      `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const grid=view.contentEl.querySelector('[role="grid"]');return JSON.stringify({cards:[...grid?.querySelectorAll('.zt-annot-card')??[]].map(n=>({key:n.getAttribute('data-zotero-annotation-key'),place:n.getAttribute('data-card-place')})),headings:[...grid?.querySelectorAll('[data-query-group]')??[]].map(n=>({key:n.getAttribute('data-query-group'),collapsed:n.hasAttribute('data-collapsed')}))});})()`;
+
     interface Shown {
       cards: { key: string; place: string }[];
       headings: { key: string; collapsed: boolean }[];
@@ -1710,9 +5059,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       text: string,
       ready: (shown: Shown) => boolean,
     ): Promise<Shown> => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(text)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        async ({ app }, { path, text }) => {
+          const file = await app.vault.create(path, text);
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { path, text },
       );
       return shownWhen(path, ready);
     };
@@ -1722,7 +5077,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ): Promise<Shown> => {
       let shown: Shown | null = null;
       const settled = await waitFor(async () => {
-        shown = JSON.parse(await obEval(run.vaultId, readCards(path))) as Shown;
+        shown = JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }, { filePath }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (
+                view.getViewType() !== "zotlit-query-file" ||
+                (view as import("obsidian").FileView).file?.path !== filePath
+              )
+                return "null";
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const grid = (
+                view as import("obsidian").ItemView
+              ).contentEl.querySelector<HTMLElement>('[role="grid"]')!;
+              return JSON.stringify({
+                cards: [
+                  ...(grid?.querySelectorAll<HTMLElement>(".zt-annot-card") ??
+                    []),
+                ].map((n) => ({
+                  key: n.getAttribute("data-zotero-annotation-key"),
+                  place: n.getAttribute("data-card-place"),
+                })),
+                headings: [
+                  ...(grid?.querySelectorAll<HTMLElement>(
+                    "[data-query-group]",
+                  ) ?? []),
+                ].map((n) => ({
+                  key: n.getAttribute("data-query-group"),
+                  collapsed: n.hasAttribute("data-collapsed"),
+                })),
+              });
+            },
+            { filePath: path },
+          ),
+        ) as Shown;
         return shown !== null && ready(shown);
       }, 120);
       if (!settled) throw new Error(`Query File tab: ${JSON.stringify(shown)}`);
@@ -1732,7 +5123,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * The Card Selection, the place its focus holds, and what the screen
      * shows of it: the card at that place, and the card that has the focus.
      */
-    const readSelection = `(()=>{const view=${tab};const sel=view.query.layout.store.getState().cardSelection;const el=view.contentEl;const at=[...el.querySelectorAll('.zt-annot-card')].find(n=>n.getAttribute('data-card-place')===sel.focus);return JSON.stringify({focus:sel.focus,selected:sel.selected,drawn:!!at&&at.getClientRects().length>0&&at.hasAttribute('data-selected'),active:el.ownerDocument.activeElement?.closest?.('.zt-annot-card')?.getAttribute('data-card-place')??null});})()`;
+
     interface Selection {
       focus: string | null;
       selected: string[];
@@ -1740,12 +5131,49 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       active: string | null;
     }
     const selection = async () =>
-      JSON.parse(await obEval(run.vaultId, readSelection)) as Selection;
+      (await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          const view = app.workspace.getMostRecentLeaf()!.view;
+          const sel = (
+            view as import("@/views/query-view/file-view").QueryFileView
+          ).query.layout.store.getState().cardSelection;
+          const el = (view as import("obsidian").ItemView).contentEl;
+          const at = [
+            ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+          ].find((n) => n.getAttribute("data-card-place") === sel.focus);
+          return {
+            focus: sel.focus,
+            selected: sel.selected,
+            drawn:
+              !!at &&
+              at.getClientRects().length > 0 &&
+              at.hasAttribute("data-selected"),
+            active:
+              el.ownerDocument.activeElement
+                ?.closest?.(".zt-annot-card")
+                ?.getAttribute("data-card-place") ?? null,
+          };
+        },
+        undefined,
+      )) as Selection;
     /** Click the card at one place, as a pointer does. */
     const clickAt = (place: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(()=>{${PAGE}const card=[...${tab}.contentEl.querySelectorAll('.zt-annot-card')].find(n=>n.getAttribute('data-card-place')===${JSON.stringify(place)});press(card,'card '+${JSON.stringify(place)});card.focus();return true;})()`,
+        async ({ app, page: pageHelpers }, { place }) => {
+          const { press } = pageHelpers;
+          const card = [
+            ...(
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-card"),
+          ].find((n) => n.getAttribute("data-card-place") === place);
+          press(card, `card ${place}`);
+          card!.focus();
+          return String(true);
+        },
+        { place },
       );
     /**
      * One key as Obsidian delivers it: through the view's own Scope, with the
@@ -1753,9 +5181,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * @returns whether the view handled it.
      */
     const press = async (key: "ArrowDown" | "ArrowUp" | "Delete") =>
-      (await obEval(
+      (await obRun(
         run.vaultId,
-        `(()=>{const view=${tab};const el=view.contentEl;const active=el.ownerDocument.activeElement;const target=active&&el.contains(active)?active:el.querySelector('[role="grid"]');const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},code:${JSON.stringify(key)},bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:target});return String(view.scope.handleKey(event,{modifiers:'',key:${JSON.stringify(key)},vkey:${JSON.stringify(key)}})===false);})()`,
+        async ({ app }, { entryKey }) => {
+          const view = app.workspace.getMostRecentLeaf()!.view;
+          const el = (view as import("obsidian").ItemView).contentEl;
+          const active = el.ownerDocument.activeElement;
+          const target =
+            active && el.contains(active)
+              ? active
+              : el.querySelector<HTMLElement>('[role="grid"]')!;
+          const event = new KeyboardEvent("keydown", {
+            key: entryKey,
+            code: entryKey,
+            bubbles: true,
+            cancelable: true,
+          });
+          Object.defineProperty(event, "target", { value: target });
+          return String(
+            (
+              view.scope as import("obsidian").Scope & {
+                handleKey(
+                  event: KeyboardEvent,
+                  key: { modifiers: string; key: string; vkey: string },
+                ): boolean;
+              }
+            ).handleKey(event, {
+              modifiers: "",
+              key: entryKey,
+              vkey: entryKey,
+            }) === false,
+          );
+        },
+        { entryKey: key },
       )) === "true";
     /** The card at a place, selected alone, drawn, and holding the focus. */
     const on = (place: string, key: string): Selection => ({
@@ -1777,9 +5235,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const inGroup = (shown: Shown, group: string) =>
       shown.cards.filter((card) => card.place.startsWith(`${group}\n`));
     const secondCards = inGroup(colours, second!.key);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button'),'group heading');return true;})()`,
+      async ({ app, page: pageHelpers }, { secondKey }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            `[data-query-group=${secondKey}] button`,
+          )!,
+          "group heading",
+        );
+      },
+      { secondKey: second!.key },
     );
     const folded = await shownWhen(
       colourPath,
@@ -1797,14 +5267,44 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A collapse that folds the Selected Card away drops it, so a Delete
     // that follows acts on no hidden Annotation.
-    const toggleSecond = `(()=>{${PAGE}press(${tab}.contentEl.querySelector('[data-query-group=${JSON.stringify(second!.key)}] button'),'group heading');return true;})()`;
-    await obEval(run.vaultId, toggleSecond);
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { secondKey }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            `[data-query-group=${secondKey}] button`,
+          )!,
+          "group heading",
+        );
+      },
+      { secondKey: second!.key },
+    );
     await shownWhen(colourPath, (shown) =>
       shown.cards.some((card) => card.place === secondCards[0]!.place),
     );
     await clickAt(secondCards[0]!.place);
     expect((await selection()).selected).toEqual([secondCards[0]!.key]);
-    await obEval(run.vaultId, toggleSecond);
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { secondKey }) => {
+        const { press } = pageHelpers;
+        press(
+          (
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLElement>(
+            `[data-query-group=${secondKey}] button`,
+          )!,
+          "group heading",
+        );
+      },
+      { secondKey: second!.key },
+    );
     await shownWhen(
       colourPath,
       (shown) =>
@@ -1852,27 +5352,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const queryPath = "query-files/Lab annotations.zotquery";
     const labNote = `literatures/${annotationItem.literatureNoteName ?? annotationItem.key}.md`;
     const overview = "query-files/Lab overview.md";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
-    const original = await obEval(
+    const original = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(queryPath)}))`,
+      async ({ app }, { queryPath }) => {
+        return await app.vault.read(app.vault.getFileByPath(queryPath)!);
+      },
+      { queryPath },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(queryPath)}),${JSON.stringify(original)});return true;})()`,
+        async ({ app }, { layout, queryPath, original }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          await app.vault.modify(app.vault.getFileByPath(queryPath)!, original);
+        },
+        { layout, queryPath, original },
       );
     });
 
     // The Literature Note in Reading view, the overview in Live Preview, and the
     // Query File in its own tab, each in a pane of its own so all render.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const open=async(path,state)=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:state?'markdown':'zotlit-query-file',state:{file:path,...state},active:true});};await open(${JSON.stringify(labNote)},{mode:'preview'});await open(${JSON.stringify(overview)},{mode:'source',source:false});await open(${JSON.stringify(queryPath)});return true;})()`,
+      async ({ app }, { labNote, overview, queryPath }) => {
+        const open = async (
+          path: string,
+          state?: { mode: string; source?: boolean },
+        ) => {
+          const leaf = app.workspace.getLeaf("split");
+          await leaf.setViewState({
+            type: state ? "markdown" : "zotlit-query-file",
+            state: { file: path, ...state },
+            active: true,
+          });
+        };
+        await open(labNote, { mode: "preview" });
+        await open(overview, { mode: "source", source: false });
+        await open(queryPath);
+      },
+      { labNote, overview, queryPath },
     );
 
     const labEmbed = await revealQueryView(run.vaultId, labNote, {
@@ -1883,7 +5409,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     /** What each pane shows of the Query File, once every query settled. */
-    const readPanes = `(async()=>{const out={};const show=async(el,query)=>{await query.settled;return {view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null,cards:[...el.querySelectorAll('.zt-annot-card')].map(n=>n.getAttribute('data-zotero-annotation-key'))};};for(const [path,el] of [[${JSON.stringify(labNote)},${labEmbed.el}],[${JSON.stringify(overview)},${overviewEmbed.el}]])out[path]=[{...await show(el,el.zotlitQueryView),interactive:el.classList.contains('interactive-child')}];for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))out.tab=await show(leaf.view.contentEl,leaf.view.query);return JSON.stringify(out);})()`;
+
     interface Pane {
       view: string | null;
       count: string | null;
@@ -1892,11 +5418,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
     type Panes = Record<string, Pane[]> & { tab?: Pane };
     const panesWhen = (ready: (panes: Panes) => boolean) =>
-      readQueryViewUntil<Panes>(run.vaultId, readPanes, {
-        ready,
-        what: "Query File panes",
-        tries: 120,
-      });
+      readQueryViewUntil(
+        run.vaultId,
+        async (
+          { app, page: pageHelpers },
+          { labNote, labEmbed, overview, overviewEmbed },
+        ) => {
+          const out: Record<string, Pane[]> = {};
+          let tab: Pane | undefined;
+          const show = async (
+            el: HTMLElement,
+            query: import("@/views/query-view/view").QueryView,
+          ) => {
+            await query.settled;
+            return {
+              view:
+                el.querySelector<HTMLElement>("[data-query-view-menu]")
+                  ?.textContent ?? null,
+              count:
+                el
+                  .querySelector<HTMLElement>("[data-query-count]")
+                  ?.getAttribute("data-query-count") ?? null,
+              cards: [
+                ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+              ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+            };
+          };
+          for (const [path, el] of [
+            [labNote, await pageHelpers.revealQueryView(labEmbed)],
+            [overview, await pageHelpers.revealQueryView(overviewEmbed)],
+          ] as const)
+            out[path] = [
+              {
+                ...(await show(el, el.zotlitQueryView!)),
+                interactive: el!.classList.contains("interactive-child"),
+              },
+            ];
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            tab = await show(
+              (leaf.view as import("obsidian").ItemView).contentEl,
+              (
+                leaf.view as import("@/views/query-view/file-view").QueryFileView
+              ).query,
+            );
+          return Object.assign(out, { tab });
+        },
+        { labNote, labEmbed, overview, overviewEmbed },
+        {
+          ready,
+          what: "Query File panes",
+          tries: 120,
+        },
+      );
     /** The Annotation rows ZotLit Query gives, through the CLI. */
     const queryRows = async (filter: string | null, thisItem?: string) => {
       const report = JSON.parse(
@@ -1948,9 +5521,62 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A filter for all views, set in the Literature Note's embed, saves to the file;
     // the overview's embed and the open tab show it.
     const figure = 'tags.contains("figure")';
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}const el=${labEmbed.el};press(el.querySelector('[data-query-toolbar="filter"]'),'Filter');const all=()=>el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]');const set=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}));};const fold=el.querySelector('[data-query-popover="filter"] [data-filter-section="all"] details');if(!fold.open)press(fold.querySelector('summary'),'All views heading');await until('placeholder row',all);await pick(all().querySelector('button[aria-label="${run.m.workbench_match_condition_kind()}"]'),'tags','Condition type');set(await until('tag value field',()=>all().querySelector('input[aria-label="${run.m.workbench_filter_value()}"]')),'figure');el.querySelector('[data-query-popover="filter"]').hidePopover();return true;})()`,
+      async (
+        { page: pageHelpers },
+        { labEmbed, conditionKindLabel, filterValueLabel },
+      ) => {
+        const { press, until, pick } = pageHelpers;
+        const el = await pageHelpers.revealQueryView(labEmbed);
+        press(
+          el.querySelector<HTMLElement>('[data-query-toolbar="filter"]')!,
+          "Filter",
+        );
+        const all = () =>
+          el.querySelector<HTMLElement>(
+            '[data-query-popover="filter"] [data-filter-section="all"] [data-condition-row]',
+          )!;
+        const set = (
+          control: HTMLInputElement | HTMLSelectElement,
+          value: string,
+        ) => {
+          control.value = value;
+          control.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        const fold = el.querySelector<HTMLDetailsElement>(
+          '[data-query-popover="filter"] [data-filter-section="all"] details',
+        )!;
+        if (!fold!.open)
+          press(
+            fold!.querySelector<HTMLElement>("summary")!,
+            "All views heading",
+          );
+        await until("placeholder row", all);
+        await pick(
+          all()!.querySelector<HTMLButtonElement>(
+            `button[aria-label="${conditionKindLabel}"]`,
+          )!,
+          "tags",
+          "Condition type",
+        );
+        set(
+          await until("tag value field", () =>
+            all()!.querySelector<HTMLInputElement>(
+              `input[aria-label="${filterValueLabel}"]`,
+            )!,
+          ),
+          "figure",
+        );
+        el.querySelector<HTMLElement>(
+          '[data-query-popover="filter"]',
+        )!.hidePopover();
+      },
+      {
+        labEmbed,
+        conditionKindLabel: run.m.workbench_match_condition_kind(),
+        filterValueLabel: run.m.workbench_filter_value(),
+      },
     );
     const figures = byItem(await queryRows(figure)).cards;
     const myFigures = await queryKeys(
@@ -1965,9 +5591,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         panes[labNote]?.[0]?.cards.length === myFigures.length,
     );
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(queryPath)}))`,
+        async ({ app }, { queryPath }) => {
+          return await app.vault.read(app.vault.getFileByPath(queryPath)!);
+        },
+        { queryPath },
       ),
     ).toMatch(/^filters:\n {2}and:\n {4}- tags\.contains\("figure"\)$/m);
     expect(after[overview]![0]!.cards).toEqual(figures);
@@ -1975,30 +5604,157 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(after[labNote]![0]!.cards).toEqual(myFigures);
 
     // The count in each pane opens that pane's own Results menu.
-    const results = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}const out=[];for(const view of [async()=>${labEmbed.el},async()=>${overviewEmbed.el},...app.workspace.getLeavesOfType('zotlit-query-file').map(l=>()=>l.view.contentEl)]){const el=await view();press(el.querySelector('[data-query-results]'),'Results');const popup=el.querySelector('[data-query-results-popup]');out.push(await until('Results opens',()=>popup.matches(':popover-open'),1000).catch(()=>false));activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());}return JSON.stringify(out);})()`,
-      ),
-    ) as boolean[];
+    const results = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { labEmbed, overviewEmbed }) => {
+        const { press, until } = pageHelpers;
+        const out = [];
+        for (const view of [
+          async () => await pageHelpers.revealQueryView(labEmbed),
+          async () => await pageHelpers.revealQueryView(overviewEmbed),
+          ...app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .map(
+              (l) => () => (l.view as import("obsidian").ItemView).contentEl,
+            ),
+        ]) {
+          const el = await view();
+          press(
+            el.querySelector<HTMLElement>("[data-query-results]")!,
+            "Results",
+          );
+          const popup = el.querySelector<HTMLElement>(
+            "[data-query-results-popup]",
+          )!;
+          out.push(
+            await until(
+              "Results opens",
+              () => popup!.matches(":popover-open"),
+              1000,
+            ).catch(() => false),
+          );
+          activeDocument
+            .querySelectorAll<HTMLElement>(":popover-open")
+            .forEach((p) => p.hidePopover());
+        }
+        return out;
+      },
+      { labEmbed, overviewEmbed },
+    )) as boolean[];
     expect(results).toEqual([true, true, true]);
 
     // A click in the Live Preview embed leaves the editor's selection alone.
     // The 400 ms after the click is the window an absent selection change is
     // checked over; no event marks "nothing happened".
-    const selection = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(overview)});app.workspace.setActiveLeaf(leaf,{focus:true});const cm=leaf.view.editor.cm;cm.dispatch({selection:{anchor:0}});const target=${overviewEmbed.el}.querySelector('[role=toolbar]');const rect=target.getBoundingClientRect();const init={bubbles:true,cancelable:true,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2,button:0,detail:1};target.dispatchEvent(new MouseEvent('mousedown',init));target.dispatchEvent(new MouseEvent('mouseup',init));target.dispatchEvent(new MouseEvent('click',init));await new Promise(r=>setTimeout(r,400));const {from,to}=cm.state.selection.main;return JSON.stringify({from,to});})()`,
-      ),
-    ) as { from: number; to: number };
+    const selection = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }, { overview, overviewEmbed }) => {
+        const leaf = app.workspace
+          .getLeavesOfType("markdown")
+          .find(
+            (l) =>
+              (l.view as import("obsidian").FileView).file!.path === overview,
+          );
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        const cm = (leaf!.view as import("obsidian").MarkdownView).editor.cm;
+        cm.dispatch({ selection: { anchor: 0 } });
+        const target = (
+          await pageHelpers.revealQueryView(overviewEmbed)
+        ).querySelector<HTMLElement>("[role=toolbar]")!;
+        const rect = target!.getBoundingClientRect();
+        const init = {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+          button: 0,
+          detail: 1,
+        };
+        target!.dispatchEvent(new MouseEvent("mousedown", init));
+        target!.dispatchEvent(new MouseEvent("mouseup", init));
+        target!.dispatchEvent(new MouseEvent("click", init));
+        await new Promise((r) => setTimeout(r, 400));
+
+        const { from, to } = cm.state.selection.main;
+        return { from, to };
+      },
+      { overview, overviewEmbed },
+    )) as { from: number; to: number };
     expect(selection).toEqual({ from: 0, to: 0 });
 
     // A hover popover over a link to the file shows the embed's first view.
     const popover = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});const targetEl=leaf.view.containerEl.querySelector('.markdown-reading-view h1')??leaf.view.containerEl;const rect=targetEl.getBoundingClientRect();app.workspace.trigger('hover-link',{event:new MouseEvent('mouseover',{clientX:rect.left+5,clientY:rect.top+5,ctrlKey:true,metaKey:true}),source:'preview',hoverParent:leaf.view,targetEl,linktext:${JSON.stringify(queryPath)},sourcePath:${JSON.stringify(labNote)}});const el=await until('hover popover',()=>[...activeDocument.querySelectorAll('.hover-popover .internal-embed, .hover-popover .zt-query-view')].find(el=>el.zotlitQueryView),10000).catch(()=>null);if(!el)return 'null';await el.zotlitQueryView.settled;const out={view:el.querySelector('[data-query-view-menu]')?.textContent??null,count:el.querySelector('[data-query-count]')?.getAttribute('data-query-count')??null};const popover=leaf.view.hoverPopover;if(popover)typeof popover.hide==='function'?popover.hide():popover.unload();await until('hover popover closes',()=>!leaf.view.containerEl.doc.querySelector('.hover-popover'),5000);return JSON.stringify(out);})()`,
+        async ({ app, page: pageHelpers }, { labNote, queryPath }) => {
+          const { until } = pageHelpers;
+          const leaf = app.workspace
+            .getLeavesOfType("markdown")
+            .find(
+              (l) =>
+                (l.view as import("obsidian").FileView).file!.path === labNote,
+            );
+          const targetEl =
+            leaf!.view.containerEl.querySelector<HTMLElement>(
+              ".markdown-reading-view h1",
+            )! ?? leaf!.view.containerEl;
+          const rect = targetEl.getBoundingClientRect();
+          app.workspace.trigger("hover-link", {
+            event: new MouseEvent("mouseover", {
+              clientX: rect.left + 5,
+              clientY: rect.top + 5,
+              ctrlKey: true,
+              metaKey: true,
+            }),
+            source: "preview",
+            hoverParent: leaf!.view,
+            targetEl,
+            linktext: queryPath,
+            sourcePath: labNote,
+          });
+          const el = await until(
+            "hover popover",
+            () =>
+              [
+                ...activeDocument.querySelectorAll<
+                  import("./page-helpers.ts").QueryViewElement
+                >(
+                  ".hover-popover .internal-embed, .hover-popover .zt-query-view",
+                ),
+              ].find((el) => el.zotlitQueryView),
+            10000,
+          ).catch(() => null);
+          if (!el) return "null";
+          await el.zotlitQueryView!.settled;
+          const out = {
+            view:
+              el.querySelector<HTMLElement>("[data-query-view-menu]")
+                ?.textContent ?? null,
+            count:
+              el
+                .querySelector<HTMLElement>("[data-query-count]")
+                ?.getAttribute("data-query-count") ?? null,
+          };
+          const popover = (
+            leaf!.view as import("obsidian").View & {
+              hoverPopover?: { hide?: () => void; unload: () => void };
+            }
+          ).hoverPopover;
+          if (popover)
+            typeof popover.hide === "function"
+              ? popover.hide()
+              : popover.unload();
+          await until(
+            "hover popover closes",
+            () =>
+              !leaf!.view.containerEl.doc.querySelector<HTMLElement>(
+                ".hover-popover",
+              )!,
+            5000,
+          );
+          return JSON.stringify(out);
+        },
+        { labNote, queryPath },
       ),
     ) as { view: string | null; count: string | null } | null;
     expect(popover).toEqual({
@@ -2007,16 +5763,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // The link button opens the Query File at the view the embed shows.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file.path===${JSON.stringify(labNote)});app.workspace.setActiveLeaf(leaf,{focus:true});press(${labEmbed.el}.querySelector('[data-query-open-file]'),'Open query file');return true;})()`,
+      async ({ app, page: pageHelpers }, { labNote, labEmbed }) => {
+        const { press } = pageHelpers;
+        const leaf = app.workspace
+          .getLeavesOfType("markdown")
+          .find(
+            (l) =>
+              (l.view as import("obsidian").FileView).file!.path === labNote,
+          );
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        press(
+          (
+            await pageHelpers.revealQueryView(labEmbed)
+          ).querySelector<HTMLElement>("[data-query-open-file]")!,
+          "Open query file",
+        );
+      },
+      { labNote, labEmbed },
     );
     expect(
       await waitFor(async () => {
         const state = JSON.parse(
-          await obEval(
+          await obRun(
             run.vaultId,
-            "JSON.stringify(app.workspace.getMostRecentLeaf().getViewState())",
+            async ({ app }) => {
+              return JSON.stringify(
+                app.workspace.getMostRecentLeaf()!.getViewState(),
+              );
+            },
+            undefined,
           ),
         ) as { type: string; state: { file?: string; view?: string } };
         return (
@@ -2033,23 +5810,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("focuses the limit field of the second of two embeds of one Query File when its label is selected", async () => {
     const queryPath = "query-files/Lab annotations.zotquery";
     const notePath = "query-files/Two embeds.md";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return JSON.stringify(app.workspace.getLayout());
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);return true;})()`,
+        async ({ app }, { layout, notePath }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(notePath)!;
+          if (file) await app.vault.delete(file);
+        },
+        { layout, notePath },
       );
     });
 
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.create(${JSON.stringify(notePath)},${JSON.stringify(
-        `![[${queryPath}]]\n\n![[${queryPath}]]\n`,
-      )});const leaf=app.workspace.getLeaf('tab');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'preview'},active:true});return true;})()`,
+      async ({ app }, { notePath, fileContent }) => {
+        await app.vault.create(notePath, fileContent);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.setViewState({
+          type: "markdown",
+          state: { file: notePath, mode: "preview" },
+          active: true,
+        });
+      },
+      { notePath, fileContent: `![[${queryPath}]]\n\n![[${queryPath}]]\n` },
     );
     /** The embeds of the Query File in the note, once each query settled. */
     const first = await revealQueryView(run.vaultId, notePath, {
@@ -2059,21 +5851,70 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       embed: queryPath,
       occurrence: 1,
     });
-    const embeds = `const views=[${first.el},${second.el}];`;
-    await readQueryViewUntil<boolean>(
+
+    await readQueryViewUntil(
       run.vaultId,
-      `(async()=>{${embeds}return JSON.stringify(views.every(el=>!!el.querySelector('[data-query-count]')?.getAttribute('data-query-count')));})()`,
+      async ({ page: pageHelpers }, { isPopout, second }) => {
+        const views = [
+          await pageHelpers.revealQueryView(isPopout),
+          await pageHelpers.revealQueryView(second),
+        ];
+        return views.every(
+          (el) =>
+            !!el
+              .querySelector<HTMLElement>("[data-query-count]")
+              ?.getAttribute("data-query-count"),
+        );
+      },
+      { isPopout: first, second },
       { ready: (counted) => counted, what: "both embeds' counts", tries: 120 },
     );
 
     // The second embed's Results menu opens with its limit field focused;
     // focus leaves it, and its label brings it back.
-    const focus = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{${PAGE}${embeds}const el=views[1];press(el.querySelector('[data-query-results]'),'Results');const popup=el.querySelector('[data-query-results-popup]');const field=await until('limit field',()=>popup.querySelector('[data-query-limit]'));const label=popup.querySelector('label');field.blur();const blurred=activeDocument.activeElement!==field;press(label,'limit label');await until('label focuses the limit field',()=>activeDocument.activeElement===field);const out={blurred,sameId:label.htmlFor===field.id,unique:activeDocument.querySelectorAll('#'+CSS.escape(field.id)).length===1,focused:activeDocument.activeElement===field};activeDocument.querySelectorAll(':popover-open').forEach(p=>p.hidePopover());return JSON.stringify(out);})()`,
-      ),
-    ) as Record<string, boolean>;
+    const focus = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { first, second }) => {
+        const { press, until } = pageHelpers;
+        const views = [
+          await pageHelpers.revealQueryView(first),
+          await pageHelpers.revealQueryView(second),
+        ];
+        const el = views[1];
+        press(
+          el!.querySelector<HTMLElement>("[data-query-results]")!,
+          "Results",
+        );
+        const popup = el!.querySelector<HTMLElement>(
+          "[data-query-results-popup]",
+        )!;
+        const field = await until("limit field", () =>
+          popup!.querySelector<HTMLInputElement>("[data-query-limit]")!,
+        );
+        const label = popup!.querySelector<HTMLLabelElement>("label")!;
+        field.blur();
+        const blurred = activeDocument.activeElement !== field;
+        press(label, "limit label");
+        await until(
+          "label focuses the limit field",
+          () => activeDocument.activeElement === field,
+        );
+        const out = {
+          blurred,
+          sameId: label!.htmlFor === field.id,
+          unique:
+            activeDocument.querySelectorAll<HTMLElement>(
+              `#${CSS.escape(field.id)}`,
+            ).length === 1,
+          focused: activeDocument.activeElement === field,
+        };
+        activeDocument
+          .querySelectorAll<HTMLElement>(":popover-open")
+          .forEach((p) => p.hidePopover());
+        return out;
+      },
+      { first, second },
+    )) as Record<string, boolean>;
     expect(focus).toEqual({
       blurred: true,
       sameId: true,

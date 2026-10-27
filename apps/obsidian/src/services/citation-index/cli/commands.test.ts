@@ -1,9 +1,11 @@
 // Contract 4 selectors, diagnostics and output over the real Citation Index.
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
+import type { App, Vault } from "obsidian";
 import { expect } from "vitest";
 
 import { fakeCliHost } from "@/lib/__fixtures__/cli-host";
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import {
   annotationRows,
   annotationUri,
@@ -13,6 +15,13 @@ import { createCitationIndexHarness } from "@/services/citation-index/test-harne
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 
 import { registerCitationsCli } from "./register";
+
+/** The App the commands read the vault's name from. */
+function cliApp(): App {
+  return stubService<App>("App", {
+    vault: stubService<Vault>("Vault", { getName: () => "Test Vault" }),
+  });
+}
 
 const setup = Effect.fn("CitationsCliTest.setup")(function* (
   body = `[@doe2024] [](${annotationUri})`,
@@ -28,10 +37,10 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
   );
   h.workspace.layoutReady();
   yield* Effect.promise(() => h.index.whenIndexed());
-  Object.assign(h.app.vault, { getName: () => "Test Vault" });
+
   const cli = fakeCliHost();
   registerCitationsCli(cli.host, {
-    app: h.app,
+    app: cliApp(),
     basePath: "/test",
     citationIndex: h.index,
     zoteroPref: {

@@ -2,11 +2,14 @@ import "./style.css";
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
 import type { AnnotActions } from "./actions";
-import type { AnnotState } from "./store";
+import type { AnnotViewModel } from "./model";
+import type { AnnotState } from "./state";
 import { ANNOT_VIEW_TYPE, AnnotationView } from "./view";
 import type { AnnotViewDeps } from "./view";
+import type { AnnotViewState } from "./view-state";
 
 type AnnotViewPlugin = Pick<
   Plugin,
@@ -37,7 +40,7 @@ export function registerAnnotView(
   });
   plugin.addRibbonIcon("highlighter", m.command_open_annot_view_name(), open);
 
-  addFollowModeCommands(plugin, () => targetView(plugin.app));
+  addFollowModeCommands(plugin, deps.registry, () => targetView(plugin.app));
 }
 
 /**
@@ -90,13 +93,15 @@ export function annotationCardShown(app: App, annotationKey: string): boolean {
 }
 
 /**
- * What the five Follow Mode commands need of the view they act on: the state it
- * publishes, and the gestures it publishes. Both are the same surfaces its
- * React tree and its pane menu read, so a command is one more caller of them
- * rather than a set of delegates built for commands alone.
+ * What the five Follow Mode commands need of the view they act on: its model,
+ * whose Follow Mode state the registry holds, the Item on screen it publishes,
+ * and the gestures it publishes. The gestures are the ones its React tree and
+ * its pane menu call, so a command is one more caller of them rather than a
+ * set of delegates built for commands alone.
  */
 export interface FollowModeCommandTarget {
-  readonly snapshot: Pick<AnnotState, "followMode" | "pinnable">;
+  readonly model: Pick<AnnotViewModel, "state">;
+  readonly snapshot: Pick<AnnotState, "pinnable">;
   readonly gestures: Pick<
     AnnotActions,
     "onSetFollowMode" | "onPinCurrentItem" | "onPinItem" | "onUnpin"
@@ -113,6 +118,7 @@ export interface FollowModeCommandTarget {
  */
 export function addFollowModeCommands(
   plugin: Pick<AnnotViewPlugin, "addCommand">,
+  registry: ViewRegistryHandle,
   findView: () => FollowModeCommandTarget | null,
 ): void {
   type Gestures = NonNullable<FollowModeCommandTarget["gestures"]>;
@@ -124,8 +130,10 @@ export function addFollowModeCommands(
   }: {
     id: string;
     name: string;
-    /** Whether the palette offers it against the state the view publishes. */
-    applies: (state: FollowModeCommandTarget["snapshot"]) => boolean;
+    /** Whether the palette offers it against the view's Follow Mode state. */
+    applies: (
+      state: AnnotViewState & FollowModeCommandTarget["snapshot"],
+    ) => boolean;
     run: (gestures: Gestures) => void;
   }): void => {
     plugin.addCommand({
@@ -133,7 +141,12 @@ export function addFollowModeCommands(
       name,
       checkCallback(checking) {
         const view = findView();
-        if (!view?.gestures || !applies(view.snapshot)) return false;
+        if (!view?.gestures) return false;
+        const state = {
+          ...registry.get(view.model.state),
+          pinnable: view.snapshot.pinnable,
+        };
+        if (!applies(state)) return false;
         if (!checking) run(view.gestures);
         return true;
       },

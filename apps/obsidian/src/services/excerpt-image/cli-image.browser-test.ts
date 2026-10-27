@@ -1,10 +1,10 @@
 import { Effect } from "effect";
 
 import { check } from "./__fixtures__/check";
+import { encodeExcerptImage } from "./__fixtures__/encode";
 import { answerAnnotationImage } from "./cli-image";
 import type { AnnotationImagePorts } from "./cli-image";
 import type { ExcerptRequest } from "./contract";
-import { encodeExcerptImage } from "./encode";
 
 export async function run(): Promise<string[]> {
   const canvas = document.createElement("canvas");
@@ -44,33 +44,38 @@ export async function run(): Promise<string[]> {
   const passed: string[] = [];
   const ports: AnnotationImagePorts = {
     read: () => Effect.succeed(request),
-    resolve: async () => ({
-      kind: "available",
-      provenance: "rendered",
-      freshness: "checked",
-      ...image,
-      identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
-    }),
-    publish: async (_fingerprint, bytes) => {
-      check(bytes[0] === 137 && bytes[1] === 80, "Published bytes must be PNG");
-      const bitmap = await createImageBitmap(
-        new Blob([bytes as BlobPart], { type: "image/png" }),
-      );
-      check(
-        bitmap.width === 3 && bitmap.height === 2,
-        "PNG dimensions survive conversion",
-      );
-      context.clearRect(0, 0, 3, 2);
-      context.drawImage(bitmap, 0, 0);
-      bitmap.close();
-      const pixel = context.getImageData(0, 0, 1, 1).data;
-      check(
-        pixel[0] === 255 && pixel[1] === 0 && pixel[3] === 255,
-        "PNG pixels survive conversion",
-      );
-      return "/temp/zotlit-excerpts/image.png";
-    },
-    exists: async () => true,
+    resolve: () =>
+      Effect.succeed({
+        kind: "available",
+        provenance: "rendered",
+        freshness: "checked",
+        ...image,
+        identity: { key: "a".repeat(64), fingerprint: "image", pdf: null },
+      }),
+    publish: (_fingerprint, bytes) =>
+      Effect.promise(async () => {
+        check(
+          bytes[0] === 137 && bytes[1] === 80,
+          "Published bytes must be PNG",
+        );
+        const bitmap = await createImageBitmap(
+          new Blob([bytes as BlobPart], { type: "image/png" }),
+        );
+        check(
+          bitmap.width === 3 && bitmap.height === 2,
+          "PNG dimensions survive conversion",
+        );
+        context.clearRect(0, 0, 3, 2);
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        const pixel = context.getImageData(0, 0, 1, 1).data;
+        check(
+          pixel[0] === 255 && pixel[1] === 0 && pixel[3] === 255,
+          "PNG pixels survive conversion",
+        );
+        return "/temp/zotlit-excerpts/image.png";
+      }),
+    exists: () => Effect.succeed(true),
   };
   for (const provenance of ["rendered", "cache", "zotero"] as const) {
     const answer = JSON.parse(
@@ -79,17 +84,18 @@ export async function run(): Promise<string[]> {
           { key: "ABCDEFGH" },
           {
             ...ports,
-            resolve: async () => ({
-              kind: "available",
-              provenance,
-              freshness: "checked",
-              ...image,
-              identity: {
-                key: "a".repeat(64),
-                fingerprint: "image",
-                pdf: null,
-              },
-            }),
+            resolve: () =>
+              Effect.succeed({
+                kind: "available",
+                provenance,
+                freshness: "checked",
+                ...image,
+                identity: {
+                  key: "a".repeat(64),
+                  fingerprint: "image",
+                  pdf: null,
+                },
+              }),
           },
         ),
       ),
@@ -136,12 +142,11 @@ export async function run(): Promise<string[]> {
                       }
                     : request,
               ),
-            resolve: async () => {
-              if (code === "render-timeout")
-                throw new DOMException("Deadline", "TimeoutError");
-              return { kind: "unavailable" };
-            },
-            exists: async () => code !== "file-unavailable",
+            resolve: () =>
+              code === "render-timeout"
+                ? Effect.fail(new DOMException("Deadline", "TimeoutError"))
+                : Effect.succeed({ kind: "unavailable" }),
+            exists: () => Effect.succeed(code !== "file-unavailable"),
           },
         ),
       ),

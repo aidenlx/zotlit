@@ -1,7 +1,7 @@
 // Runs in a disposable Electron renderer: the canvas encoding path, an
 // independent decode of its output, and the PNG/WebP size and timing comparison.
 import { check } from "./__fixtures__/check";
-import { encodeExcerptImage } from "./encode";
+import { encodeExcerptImage } from "./__fixtures__/encode";
 import { usableExcerptWebp } from "./webp";
 
 interface CropMeasurement {

@@ -1,17 +1,15 @@
 // Resolve saved authoring inputs and prove which exact bytes reconciliation observed.
-import { Clock, Duration, Effect, Schema } from "effect";
+import { Clock, Deferred, Duration, Effect, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import { createHash } from "node:crypto";
 import { basename, join } from "node:path/posix";
-import { MarkdownView } from "obsidian";
-import type { App, CliData } from "obsidian";
+import type { CliData } from "obsidian";
 
 import { renderDiagnostic } from "@zotlit/item-query";
 import { formatPlainTemplateDocument } from "@zotlit/templates/facade";
 
-import type { CliCommandHandler } from "@/lib/cli-command";
 import {
-  catchRejection,
+  CliRejection,
   cliLiterals,
   cliOneOf,
   cliParams,
@@ -24,25 +22,34 @@ import {
 } from "@/lib/cli-params";
 import type { CliOutput, CliParamName } from "@/lib/cli-params";
 import { withLogCategory } from "@/lib/effect-log";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
-import { isErrno } from "@/lib/errno";
+import type { ObsidianEnv } from "@/lib/obsidian-env";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { parseProfileSelector } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import type { FileNotFound, VaultError } from "@/lib/vault-errors";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type { PlainProfile } from "@/services/profile/plain";
-import type { ProfileDiagnostic } from "@/services/profile/service";
+import { Profile } from "@/services/profile/service";
+import type {
+  ProfileDiagnostic,
+  ProfileOperationError,
+} from "@/services/profile/service";
 import { DEFAULT_PROFILE_DOCUMENT } from "@/services/profile/service";
+import { PluginSettings } from "@/services/settings/service";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { citationPath, partialNameRefusal } from "@/services/template/defaults";
-import type { PlainTemplate } from "@/services/template/plain";
+import { Template } from "@/services/template/service";
 import type {
   CompileError,
   LiteratureNoteTemplateStatus,
+  TemplateFailure,
 } from "@/services/template/service";
+import type { ZoteroPref } from "@/services/zotero-pref/service";
 
 import { CONTRACT_VERSION, rejectionDiagnostic } from "./envelope";
-import type { WorkbenchIdentity } from "./envelope";
+import { readWorkbenchIdentity } from "./identity";
 import type { InspectDiagnosticCode } from "./inspect-contract";
 import {
   INSPECT_DIAGNOSTICS,
@@ -67,9 +74,12 @@ export interface SourceVersion {
 }
 
 export interface FreshnessDeps {
-  read: (path: string) => Promise<string>;
-  loaded: (path: string) => string | undefined;
-  onChange: (callback: () => void) => () => void;
+  /** The text on disk at `path`; `FileNotFound` when no file is there. */
+  read: (path: string) => Effect.Effect<string, FileNotFound | VaultError>;
+  /** The text reconciliation loaded from `path`, when it holds one. */
+  loaded: (path: string) => Effect.Effect<string | undefined, TemplateFailure>;
+  /** Each completed reconciliation. */
+  changes: Stream.Stream<void>;
   /** Canonical customization paths whose confirmed absence selects built-in source. */
   absent?: ReadonlySet<string>;
 }
@@ -92,14 +102,15 @@ export const verifySavedSources = Effect.fn(
       versions: SourceVersion[];
       errors?: { path: string; message: string; code?: string }[];
     },
-    never,
+    TemplateFailure,
     Scope.Scope
   > {
     const deadline = (yield* Clock.currentTimeMillis) + timeoutMs;
-    let wake = Promise.withResolvers<void>();
-    yield* Effect.acquireRelease(
-      Effect.sync(() => deps.onChange(() => wake.resolve())),
-      (unsubscribe) => Effect.sync(unsubscribe),
+    let wake = yield* Deferred.make<void>();
+    yield* Effect.forkScoped(
+      Stream.runForEach(deps.changes, () =>
+        Effect.suspend(() => Deferred.succeed(wake, undefined)),
+      ),
     );
     const errors: { path: string; message: string; code?: string }[] = [];
     const finish = (state: FreshnessState, versions: SourceVersion[]) =>
@@ -108,19 +119,18 @@ export const verifySavedSources = Effect.fn(
         Effect.as({ state, versions, ...(errors.length ? { errors } : {}) }),
       );
     const read = (path: string) =>
-      Effect.tryPromise(() => deps.read(path)).pipe(
-        Effect.catch(({ cause: error }) => {
-          if (!isErrno(error, "ENOENT")) {
-            errors.push({
-              path,
-              message: error instanceof Error ? error.message : String(error),
-              ...(error instanceof Error &&
-              "code" in error &&
-              typeof error.code === "string"
-                ? { code: error.code }
-                : {}),
-            });
-          }
+      deps.read(path).pipe(
+        Effect.catchTag("FileNotFound", () => Effect.void),
+        Effect.catchTag("VaultError", ({ message, cause }) => {
+          errors.push({
+            path,
+            message,
+            ...(cause instanceof Error &&
+            "code" in cause &&
+            typeof cause.code === "string"
+              ? { code: cause.code }
+              : {}),
+          });
           return Effect.void;
         }),
       );
@@ -129,10 +139,13 @@ export const verifySavedSources = Effect.fn(
     });
     const requested = yield* readAll;
     while (true) {
-      const changed = wake.promise;
+      const changed = wake;
       const disk = errors.length ? requested : yield* readAll;
+      const loadedSources = yield* Effect.forEach(paths, (path) =>
+        deps.loaded(path),
+      );
       const versions = paths.map((path, index) => {
-        const loaded = deps.loaded(path);
+        const loaded = loadedSources[index];
         return {
           path,
           requested:
@@ -160,47 +173,26 @@ export const verifySavedSources = Effect.fn(
         Effect.annotateLogs({ paths, versions, timeoutMs }),
       );
       yield* Effect.timeoutOption(
-        Effect.promise(() => changed),
+        Deferred.await(changed),
         Duration.millis(remaining),
       );
-      wake = Promise.withResolvers<void>();
+      wake = yield* Deferred.make<void>();
     }
   },
   Effect.scoped,
   withLogCategory("template-workbench"),
 );
 
-export interface InspectDeps {
-  runtime: SubscriptionRuntime;
-  app: App;
-  profile: Pick<
-    PlainProfile,
-    | "resolveProfile"
-    | "profiles"
-    | "diagnostics"
-    | "profileOf"
-    | "getBuiltInSource"
-  >;
-  templates: Pick<
-    PlainTemplate,
-    | "javascriptTemplatesEnabled"
-    | "renderCitationSource"
-    | "renderPartialSource"
-    | "prepareLiteratureNoteTemplateSource"
-    | "frontmatterFields"
-    | "render"
-    | "getLiteratureNoteTemplateStatuses"
-    | "getCitationTemplateStatus"
-    | "compileErrors"
-    | "getPartialDocuments"
-    | "getReservedPartialFiles"
-    | "getLoadedDocumentSource"
-    | "compile-status-changed"
-  >;
-  folder: () => string;
-  identity: () => Promise<WorkbenchIdentity>;
-  timeoutMs?: number;
-}
+/** What an inspection reads. */
+export type InspectServices =
+  | Profile
+  | Template
+  | PluginSettings
+  | Vault
+  | MetadataCache
+  | Workspace
+  | ObsidianEnv
+  | ZoteroPref;
 
 /** One problem drawn from the inspection diagnostics registry. */
 export interface InspectDiagnostic {
@@ -246,16 +238,25 @@ function profileRow(profile: ResolvedProfile) {
   };
 }
 
-export function inspectInventory(deps: InspectDeps): InspectDocument[] {
+/** The folder Template Documents are saved in. */
+export const templateFolder = PluginSettings.use((settings) =>
+  Effect.map(settings.current, (current) => current["template.folder"]),
+);
+
+export const inspectInventory = Effect.fnUntraced(function* () {
+  const profileStore = yield* Profile;
+  const template = yield* Template;
+  const resolve = (selector: ProfileSelector) =>
+    profileStore.resolveProfile(selector);
+  const diagnostics = yield* profileStore.diagnostics;
   const profiles = [
-    deps.profile.resolveProfile("default"),
-    ...deps.profile.profiles.map((entry) =>
-      deps.profile.resolveProfile(entry.id),
-    ),
+    yield* resolve("default"),
+    ...(yield* Effect.forEach(yield* profileStore.profiles, (entry) =>
+      resolve(entry.id),
+    )),
   ].filter((entry) => entry !== undefined);
-  const documents: InspectDocument[] = deps.templates
-    .getLiteratureNoteTemplateStatuses()
-    .map((entry) => {
+  const documents: InspectDocument[] =
+    (yield* template.getLiteratureNoteTemplateStatuses).map((entry) => {
       const owner = profiles.find(
         (profile) => profile.document === entry.reference,
       );
@@ -283,9 +284,7 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
           ...(entry.validation.state === "invalid"
             ? [entry.validation.error]
             : []),
-          ...deps.profile.diagnostics.filter(
-            (problem) => problem.path === entry.path,
-          ),
+          ...diagnostics.filter((problem) => problem.path === entry.path),
         ],
       };
     });
@@ -296,7 +295,9 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
       kind: "profile",
       id: profile.document ?? "default",
       label: profile.label ?? "Default",
-      path: profile.document ? join(deps.folder(), profile.document) : null,
+      path: profile.document
+        ? join(yield* templateFolder, profile.document)
+        : null,
       profile: profileRow(profile),
       problems: profile.document
         ? [
@@ -308,27 +309,28 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
         : [],
     });
   }
-  const citation = deps.templates.getCitationTemplateStatus();
+  const citation = yield* template.getCitationTemplateStatus;
+  const compileErrors = yield* template.compileErrors;
   documents.push({
     kind: "citation",
     id: "citation",
     label: "Citation Template",
     path: citation.customized ? citation.path : null,
-    problems: deps.templates.compileErrors.has("citation")
-      ? [deps.templates.compileErrors.get("citation")!]
+    problems: compileErrors.has("citation")
+      ? [compileErrors.get("citation")!]
       : [],
   });
-  for (const partial of deps.templates.getPartialDocuments())
+  for (const partial of yield* template.getPartialDocuments)
     documents.push({
       kind: "partial",
       id: `partial:${partial.name}`,
       label: partial.name,
       path: partial.path,
-      problems: deps.templates.compileErrors.has(partial.name)
-        ? [deps.templates.compileErrors.get(partial.name)!]
+      problems: compileErrors.has(partial.name)
+        ? [compileErrors.get(partial.name)!]
         : [],
     });
-  for (const partial of deps.templates.getReservedPartialFiles())
+  for (const partial of yield* template.getReservedPartialFiles)
     documents.push({
       kind: "partial",
       id: `partial:${partial.name}`,
@@ -342,7 +344,7 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
       ],
     });
   return documents;
-}
+});
 
 /** The one target an inspection names. */
 type InspectSelection = Pick<InspectRequest, "profile" | "document">;
@@ -371,34 +373,6 @@ export function selectInspectDocument(
       entry.path === params.document ||
       (entry.path && basename(entry.path) === params.document),
   );
-}
-
-/** The same Literature Note selector for document inspection and field discovery. */
-export function selectInspectionNote(
-  deps: Pick<InspectDeps, "app" | "profile">,
-  name: string,
-) {
-  const files = deps.app.vault.getMarkdownFiles();
-  const exact = files.filter((file) => file.path === name);
-  const candidates = exact.length
-    ? exact
-    : files.filter((file) => file.basename === name);
-  if (candidates.length !== 1)
-    return {
-      error: candidates.length
-        ? ("AMBIGUOUS_TARGET" as const)
-        : ("TARGET_NOT_FOUND" as const),
-      matches: candidates.map((file) => file.path),
-    };
-  const file = candidates[0]!;
-  const key = itemKeyFromFrontmatter(deps.app.metadataCache.getFileCache(file));
-  if (!key) return { error: "NOT_LITERATURE_NOTE" as const };
-  const owner = deps.profile.profileOf(file);
-  const profile = owner.ok
-    ? owner.profile.selector
-    : (owner.stamped.id ?? parseProfileSelector(owner.stamped.stamp));
-  if (profile === undefined) return { error: "UNKNOWN_PROFILE_STAMP" as const };
-  return { note: { path: file.path, key }, profile };
 }
 
 const INVALID_TARGET = INSPECT_DIAGNOSTICS.INVALID_SELECTOR.message;
@@ -437,30 +411,78 @@ const inspectParams = cliParams({
 export type InspectRequest = CliOutput<typeof inspectParams>;
 export type InspectParam = CliParamName<typeof inspectParams>;
 
+/** The note an inspection or a field discovery selected, or why none is. */
+export type InspectionNote =
+  | {
+      error: "AMBIGUOUS_TARGET" | "TARGET_NOT_FOUND";
+      matches: string[];
+    }
+  | { error: "NOT_LITERATURE_NOTE" | "UNKNOWN_PROFILE_STAMP" }
+  | {
+      error?: undefined;
+      note: { path: string; key: string };
+      profile: string;
+    };
+
+/** The same Literature Note selector for document inspection and field discovery. */
+export const selectInspectionNote = Effect.fnUntraced(function* (
+  name: string,
+): Effect.fn.Return<
+  InspectionNote,
+  ProfileOperationError,
+  Vault | MetadataCache | Profile
+> {
+  const files = yield* (yield* Vault).getMarkdownFiles;
+  const exact = files.filter((file) => file.path === name);
+  const candidates = exact.length
+    ? exact
+    : files.filter((file) => file.basename === name);
+  if (candidates.length !== 1)
+    return {
+      error: candidates.length ? "AMBIGUOUS_TARGET" : "TARGET_NOT_FOUND",
+      matches: candidates.map((file) => file.path),
+    };
+  const file = candidates[0]!;
+  const key = itemKeyFromFrontmatter(
+    yield* (yield* MetadataCache).fileCache(file),
+  );
+  if (!key) return { error: "NOT_LITERATURE_NOTE" };
+  const owner = yield* (yield* Profile).profileOf(file);
+  const profile = owner.ok
+    ? owner.profile.selector
+    : (owner.stamped.id ?? parseProfileSelector(owner.stamped.stamp));
+  if (profile === undefined) return { error: "UNKNOWN_PROFILE_STAMP" };
+  return { note: { path: file.path, key }, profile };
+});
+
 export function createInspectHandler(
-  deps: InspectDeps,
   draft?: { source: string; path: string },
   replacedDependency?: string,
-): CliCommandHandler {
+): (params: CliData) => Effect.Effect<string, unknown, InspectServices> {
   return Effect.fn("TemplateWorkbenchCli.inspect")(function* (params: CliData) {
-    const identity = yield* Effect.promise(() => deps.identity());
+    const identity = yield* readWorkbenchIdentity;
+    const profileStore = yield* Profile;
+    const template = yield* Template;
+    const vault = yield* Vault;
     const answer = (result: object) =>
-      JSON.stringify(
-        {
-          contractVersion: CONTRACT_VERSION,
-          command: TEMPLATE_INSPECT_COMMAND,
-          identity,
-          profileDiagnostics: deps.profile.diagnostics,
-          ...result,
-        },
-        (_key, value: unknown) =>
-          value instanceof Error
-            ? Object.assign({}, value, {
-                name: value.name,
-                message: value.message,
-                cause: value.cause,
-              })
-            : value,
+      Effect.map(profileStore.diagnostics, (profileDiagnostics) =>
+        JSON.stringify(
+          {
+            contractVersion: CONTRACT_VERSION,
+            command: TEMPLATE_INSPECT_COMMAND,
+            identity,
+            profileDiagnostics,
+            ...result,
+          },
+          (_key, value: unknown) =>
+            value instanceof Error
+              ? Object.assign({}, value, {
+                  name: value.name,
+                  message: value.message,
+                  cause: value.cause,
+                })
+              : value,
+        ),
       );
     const fail = (code: keyof typeof INSPECT_DIAGNOSTICS, context?: object) =>
       answer({
@@ -476,7 +498,7 @@ export function createInspectHandler(
         query["expect-source"] !== undefined &&
         query["expect-source"] !== identity.source.id
       )
-        return fail("TARGET_MISMATCH");
+        return yield* fail("TARGET_MISMATCH");
       const draftDocument: InspectDocument | undefined =
         draft && query.document?.startsWith("partial:")
           ? {
@@ -488,34 +510,36 @@ export function createInspectHandler(
             }
           : undefined;
       if (draftDocument && partialNameRefusal(draftDocument.label, new Set()))
-        return fail("INVALID_SELECTOR");
-      const inventoryWithDraft = () => {
-        const documents = inspectInventory(deps);
+        return yield* fail("INVALID_SELECTOR");
+      const inventoryWithDraft = Effect.map(inspectInventory(), (documents) => {
         if (
           draftDocument &&
           !documents.some((document) => document.id === draftDocument.id)
         )
           documents.push(draftDocument);
         return documents;
-      };
-      let inventory = inventoryWithDraft();
+      });
+      let inventory = yield* inventoryWithDraft;
       if (
         query.note === undefined &&
         query.profile === undefined &&
         query.document === undefined
       ) {
-        return answer({
+        return yield* answer({
           ok: true,
           documents: inventory,
-          problems: deps.profile.diagnostics,
+          problems: yield* profileStore.diagnostics,
         });
       }
       let selection: InspectSelection = query;
       let note: { path: string; key: string } | undefined;
       if (query.note !== undefined) {
-        const selected = selectInspectionNote(deps, query.note);
+        const selected = yield* selectInspectionNote(query.note);
         if (selected.error)
-          return fail(selected.error, { matches: selected.matches });
+          return yield* fail(
+            selected.error,
+            "matches" in selected ? { matches: selected.matches } : {},
+          );
         note = selected.note;
         selection = { profile: selected.profile };
       }
@@ -526,9 +550,10 @@ export function createInspectHandler(
         selectionOptions,
       );
       if (matches.length !== 1)
-        return fail(matches.length ? "AMBIGUOUS_TARGET" : "TARGET_NOT_FOUND", {
-          matches,
-        });
+        return yield* fail(
+          matches.length ? "AMBIGUOUS_TARGET" : "TARGET_NOT_FOUND",
+          { matches },
+        );
       let document = matches[0]!;
       // Eta includes can be dynamic. Verify the complete installed partial registry
       // and the Citation Template so a selected Profile cannot hide an old dependency.
@@ -539,12 +564,13 @@ export function createInspectHandler(
           (document.kind !== "citation" && entry.kind === "citation"));
       let dependencies = inventory.filter(isDependency);
       const editor = query.editor === true;
+      const folder = yield* templateFolder;
       const builtinPaths = [...(draft ? [] : [document]), ...dependencies]
         .filter((entry) => entry.path === null)
         .map((entry) =>
           entry.kind === "profile"
-            ? join(deps.folder(), DEFAULT_PROFILE_DOCUMENT)
-            : citationPath(deps.folder()),
+            ? join(folder, DEFAULT_PROFILE_DOCUMENT)
+            : citationPath(folder),
         );
       const paths = [
         ...new Set([
@@ -555,30 +581,24 @@ export function createInspectHandler(
       ];
       const freshness = yield* verifySavedSources(
         {
-          read: (path) => deps.app.vault.adapter.read(path),
-          loaded: (path) => deps.templates.getLoadedDocumentSource(path),
-          onChange: (callback) =>
-            subscribe(
-              deps.runtime,
-              deps.templates["compile-status-changed"],
-              callback,
-            ),
+          read: (path) => vault.readPath(path),
+          loaded: (path) => template.getLoadedDocumentSource(path),
+          changes: template.compileEvents,
           absent: new Set(builtinPaths),
         },
         paths,
-        { timeoutMs: deps.timeoutMs },
       );
       if (freshness.state !== "current")
-        return fail(
+        return yield* fail(
           freshness.state === "read-failed"
             ? "SOURCE_READ_FAILED"
             : "SOURCE_NOT_LOADED",
           { document, note, freshness },
         );
-      inventory = inventoryWithDraft();
+      inventory = yield* inventoryWithDraft;
       matches = selectInspectDocument(inventory, selection, selectionOptions);
       if (matches.length !== 1 || matches[0]!.path !== document.path)
-        return fail("SOURCE_SUPERSEDED", { freshness });
+        return yield* fail("SOURCE_SUPERSEDED", { freshness });
       document = matches[0]!;
       dependencies = inventory.filter(isDependency);
       if (
@@ -586,22 +606,26 @@ export function createInspectHandler(
           (entry) => entry.path !== null && !paths.includes(entry.path),
         )
       )
-        return fail("SOURCE_SUPERSEDED", { document, dependencies, freshness });
+        return yield* fail("SOURCE_SUPERSEDED", {
+          document,
+          dependencies,
+          freshness,
+        });
       let source: string;
       if (draft) source = draft.source;
       else if (editor) {
-        const view = deps.app.workspace.getActiveViewOfType(MarkdownView);
+        const view = yield* (yield* Workspace).activeMarkdownView;
         if (!document.path || view?.file?.path !== document.path)
-          return fail("EDITOR_TARGET_MISMATCH");
+          return yield* fail("EDITOR_TARGET_MISMATCH");
         source = view.editor.getValue();
       } else if (document.path)
-        source = deps.templates.getLoadedDocumentSource(document.path)!;
+        source = (yield* template.getLoadedDocumentSource(document.path))!;
       else
         source =
           document.kind === "profile"
-            ? deps.profile.getBuiltInSource()
+            ? yield* profileStore.getBuiltInSource()
             : formatPlainTemplateDocument(CITATION_TEMPLATE_SOURCE, "liquid");
-      return answer({
+      return yield* answer({
         ok: true,
         document,
         note,
@@ -633,15 +657,17 @@ export function createInspectHandler(
         problems: document.problems,
       });
     }).pipe(
-      catchRejection((rejection) =>
-        answer({
-          ok: false,
-          diagnostic: rejectionDiagnostic(
-            amendRejection(rejection, {
-              hint: rejection.hint ?? INSPECT_DIAGNOSTICS.INVALID_SELECTOR.hint,
-            }),
-          ),
-        }),
+      Effect.catchIf(
+        (error): error is CliRejection => error instanceof CliRejection,
+        (error) =>
+          answer({
+            ok: false,
+            diagnostic: rejectionDiagnostic(
+              amendRejection(error, {
+                hint: error.hint ?? INSPECT_DIAGNOSTICS.INVALID_SELECTOR.hint,
+              }),
+            ),
+          }),
       ),
     );
   });

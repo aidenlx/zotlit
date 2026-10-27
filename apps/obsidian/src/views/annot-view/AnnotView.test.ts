@@ -15,6 +15,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { editorApp } from "./__fixtures__/editor-app";
+import { makeAnnotHost } from "./__fixtures__/host";
 import { AnnotActionsContext, NOOP_ACTIONS } from "./actions";
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
@@ -25,9 +26,7 @@ import {
   sameKeys,
 } from "./card-selection";
 import type { CardSelection } from "./card-selection";
-import { AnnotStoreProvider, createAnnotStore, visibleOrder } from "./store";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+import { AnnotStoreProvider, visibleOrder } from "./store";
 
 const KEYS = ["AAAA1111", "BBBB2222", "CCCC3333"];
 
@@ -53,8 +52,11 @@ const TEXTS = ["alpha", "beta shared", "gamma shared"];
 
 let root: Root | undefined;
 
+let cleanup = new AsyncDisposableStack();
 afterEach(async () => {
   await act(() => root?.unmount());
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   root = undefined;
   document.body.replaceChildren();
 });
@@ -63,7 +65,9 @@ async function mountList({
   app = stubService<App>("App", {}),
   actions = {},
 }: { app?: App; actions?: Partial<AnnotActions> } = {}) {
-  const store = createAnnotStore();
+  const hostModel = makeAnnotHost();
+  cleanup.use(hostModel);
+  const store = hostModel.openCards();
   store.setState({
     attachments: [
       { itemID: 1, indexedKey: "PDF00001", path: null, annotCount: 3 },

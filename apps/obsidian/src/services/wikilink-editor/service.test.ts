@@ -1,256 +1,185 @@
 import type { Extension } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
-import { Effect, Layer, PubSub, Stream } from "effect";
-import { MarkdownView, TFile } from "obsidian";
-import type { App, Editor, WorkspaceLeaf } from "obsidian";
-import {
-  beforeEach as beforeStreamTest,
-  afterEach as afterStreamTest,
-} from "vitest";
-import { describe, expect, it } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Exit, Layer, Scope, Stream } from "effect";
+import { TFile } from "obsidian";
+import { describe, expect } from "vitest";
 
-import { stubService } from "@/lib/__fixtures__/service-stub";
-import { buildRuntime } from "@/lib/effect-layer";
-import { CitationLookupStub } from "@/services/citation-index/__fixtures__/citation-lookup";
-import { openNoteVault } from "@/services/note-index/__fixtures__";
-import { buildSeededSettings } from "@/services/settings/__fixtures__";
-import type { SettingsFixture } from "@/services/settings/__fixtures__";
+import { testEvent } from "@/lib/__fixtures__/event-stream";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { CitationLookupState } from "@/services/citation-index/lookup-service";
+import { CitationPopover } from "@/services/citation-popover/service";
+import { CitationText } from "@/services/citation-text/service";
+import type { CitationTextEvent } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
+import { NoteIndex } from "@/services/note-index/service";
+import type { NoteIndexChange } from "@/services/note-index/service";
+import { settingsFeed } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 
-import { WikilinkEditor } from "./service";
-import type { WikilinkEditorDeps } from "./service";
+import { layerWikilinkEditor } from "./service";
 
-let streamStack: AsyncDisposableStack;
-let streamRuntime: ReturnType<typeof buildRuntime<never>>;
-beforeStreamTest(() => {
-  streamStack = new AsyncDisposableStack();
-  streamRuntime = buildRuntime(Layer.empty, streamStack);
-});
-afterStreamTest(() => streamStack.disposeAsync());
-
-/** The markdown leaves two notes are open in, as the workspace hands them out. */
-const leaves = (dispatched: string[]) =>
-  ["note.md", "other.md"].map((path) => {
-    const file = new TFile();
-    file.path = path;
-    const view = stubService<MarkdownView>("MarkdownView", {
-      file,
-      editor: stubService<Editor>("Editor", {
-        cm: stubService<EditorView>("EditorView", {
-          dispatch: () => dispatched.push(path),
-        }),
-      }),
-    });
-    // The service narrows a leaf's view with `instanceof`.
-    Object.setPrototypeOf(view, MarkdownView.prototype);
-    return stubService<WorkspaceLeaf>("WorkspaceLeaf", { view });
-  });
-
-interface Harness extends AsyncDisposable {
-  service: WikilinkEditor;
-  settings: SettingsFixture;
-  bridge: SettingsFixture["bridge"];
-  /** Gives the vault's one Literature Note another Item key, or none. */
-  writeNote: (itemKey: string | undefined) => Promise<void>;
-  citationText: CitationTextStub;
-  citationLookup: LookupStub;
-  registered: Extension[];
-  reconfigures: () => number;
-  dispatched: string[];
-}
-
-async function harness(overrides: Partial<Settings> = {}): Promise<Harness> {
-  await using stack = new AsyncDisposableStack();
-  const settings = stack.use(await buildSeededSettings(overrides));
-  const notes = await openNoteVault({ "Doe 2024.md": "DEE23456" }, stack);
-  const { noteIndex } = notes;
-  const citationText = new CitationTextStub();
-  const citationLookup = new LookupStub();
-  const dispatched: string[] = [];
-  let registered: Extension[] = [];
-  let reconfigures = 0;
-  const app = stubService<App>("App", {
-    workspace: stubService<App["workspace"]>("Workspace", {
-      updateOptions: () => reconfigures++,
-      getLeavesOfType: () => leaves(dispatched),
-    }),
-  });
-  const plugin = stubService<WikilinkEditorDeps["plugin"]>("Plugin", {
-    registerEditorExtension: (extension: Extension) => {
-      registered = extension as Extension[];
+/**
+ * The Wikilink Editor over settings seeded with `overrides`, and a workspace
+ * with editors open on `note.md` and `other.md`. `unload` closes it.
+ */
+const openEditor = Effect.fnUntraced(function* (
+  overrides: Partial<Settings> = {},
+) {
+  const settings = settingsFeed(overrides);
+  const extensions: Extension[][] = [];
+  const host = testPluginHost({
+    registerEditorExtension: (extension) => {
+      if (Array.isArray(extension)) extensions.push(extension);
     },
   });
-  const service = new WikilinkEditor(
-    stubService<WikilinkEditorDeps>("WikilinkEditorDeps", {
-      runtime: streamRuntime,
-      app,
-      plugin,
-      noteIndex: stubService<WikilinkEditorDeps["noteIndex"]>("NoteIndex", {
-        changed: noteIndex.changed,
-        indexed: noteIndex.indexed,
-        "frontmatter-changed": noteIndex["frontmatter-changed"],
-      }),
-      citationText: stubService<WikilinkEditorDeps["citationText"]>(
-        "CitationText",
-        {
-          changed: citationText.changed,
-          invalidated: citationText.invalidated.pipe(
-            Stream.map(() => undefined),
-          ),
-          peek: () => citationText.peek(),
-        },
+  const workspace = new MemoryWorkspace();
+  workspace.openMarkdownEditor("note.md");
+  workspace.openMarkdownEditor("other.md");
+  const notes = testEvent<NoteIndexChange>();
+  const text = testEvent<CitationTextEvent>();
+  const lookup = testEvent<CitationLookupState>();
+  const scope = yield* Scope.fork(yield* Scope.Scope);
+  yield* Layer.buildWithScope(
+    layerWikilinkEditor.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          host.layer,
+          layerWorkspaceFrom(workspace),
+          settings.layer,
+          Layer.mock(MetadataCache, {}),
+          Layer.mock(NoteIndex, { changes: notes.stream }),
+          Layer.mock(CitekeyEditor, {}),
+          Layer.mock(CitationText, { events: text.stream }),
+          Layer.mock(CitationLookup, {
+            changes: lookup.stream,
+            invalidated: lookup.stream.pipe(Stream.map(() => undefined)),
+          }),
+          Layer.mock(CitationPopover, {}),
+        ),
       ),
-      citekeyEditor: stubService<WikilinkEditorDeps["citekeyEditor"]>(
-        "CitekeyEditor",
-        {},
-      ),
-      citationPopover: stubService<WikilinkEditorDeps["citationPopover"]>(
-        "CitationPopover",
-        {},
-      ),
-      citationLookup,
-      bridge: settings.bridge,
-      settings,
-    }),
+    ),
+    scope,
   );
-  await service.ready;
-  const owned = stack.move();
   return {
-    service,
     settings,
-    bridge: settings.bridge,
-    writeNote: (itemKey) => notes.writeNote("Doe 2024.md", itemKey),
-    citationText,
-    citationLookup,
-    registered,
-    reconfigures: () => reconfigures,
-    dispatched,
-    [Symbol.asyncDispose]: async () => {
-      await service[Symbol.asyncDispose]();
-      await owned.disposeAsync();
-    },
+    registered: () => extensions.at(-1)!,
+    workspace,
+    notes,
+    text,
+    lookup,
+    unload: Scope.close(scope, Exit.void),
   };
-}
+});
 
 describe("WikilinkEditor registration", () => {
-  it("installs the extension once so source settings can change live", async () => {
-    const { service, registered, reconfigures } = await harness({
-      "citation.wikilink-citations": false,
-      "citation.show-formatted": false,
-    });
+  it.effect(
+    "installs the extension once so source settings can change live",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* openEditor({
+          "citation.wikilink-citations": false,
+          "citation.show-formatted": false,
+        });
 
-    expect(registered).toHaveLength(1);
-    expect(reconfigures()).toBe(1);
+        expect(h.registered()).toHaveLength(1);
+        expect(h.workspace.reconfigures).toBe(1);
 
-    await service[Symbol.asyncDispose]();
-    expect(registered).toEqual([]);
-    expect(reconfigures()).toBe(2);
-  });
+        yield* h.unload;
+        expect(h.registered()).toEqual([]);
+        expect(h.workspace.reconfigures).toBe(2);
+      }),
+  );
 });
 
 describe("WikilinkEditor redraw", () => {
-  it("redraws every open editor when a Literature Note changes", async () => {
-    await using harnessed = await harness();
-    const { writeNote, dispatched } = harnessed;
+  it.effect("redraws every open editor when a Literature Note changes", () =>
+    Effect.gen(function* () {
+      const h = yield* openEditor();
 
-    await writeNote("REE34567");
-    await expect.poll(() => dispatched).toEqual(["note.md", "other.md"]);
-  });
+      h.notes.emit({
+        type: "changed",
+        file: Object.assign(new TFile(), { path: "Doe 2024.md" }),
+      });
 
-  it("redraws when a gating setting changes", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": false,
-    });
-    const { bridge, settings, dispatched } = harnessed;
+      expect(h.workspace.dispatched).toEqual(["note.md", "other.md"]);
+    }),
+  );
 
-    bridge.runSync(settings.update({ "citation.wikilink-citations": true }));
-    expect(dispatched).toEqual(["note.md", "other.md"]);
+  it.effect("redraws when a gating setting changes", () =>
+    Effect.gen(function* () {
+      const h = yield* openEditor({ "citation.wikilink-citations": false });
 
-    dispatched.length = 0;
-    bridge.runSync(settings.update({ "citation.show-formatted": false }));
-    expect(dispatched).toEqual(["note.md", "other.md"]);
-  });
+      h.settings.update({ "citation.wikilink-citations": true });
+      expect(h.workspace.dispatched).toEqual(["note.md", "other.md"]);
 
-  it("redraws when the Hover Action changes who answers a hover", async () => {
-    await using harnessed = await harness();
-    const { bridge, settings, dispatched } = harnessed;
+      h.workspace.dispatched.length = 0;
+      h.settings.update({ "citation.show-formatted": false });
+      expect(h.workspace.dispatched).toEqual(["note.md", "other.md"]);
+    }),
+  );
 
-    bridge.runSync(settings.update({ "citation.hover-action": "off" }));
-    expect(dispatched).toEqual(["note.md", "other.md"]);
+  it.effect("redraws when the Hover Action changes who answers a hover", () =>
+    Effect.gen(function* () {
+      const h = yield* openEditor();
 
-    // Which mode holds a hover back for a modifier is read at hover time, so
-    // nothing drawn depends on it.
-    dispatched.length = 0;
-    bridge.runSync(
-      settings.update({ "citation.hover-require-mod-live-preview": true }),
-    );
-    expect(dispatched).toEqual([]);
-  });
+      h.settings.update({ "citation.hover-action": "off" });
+      expect(h.workspace.dispatched).toEqual(["note.md", "other.md"]);
 
-  it("leaves lookup redraws to each open editor view", async () => {
-    await using harnessed = await harness();
-    const { citationLookup, dispatched } = harnessed;
+      // Which mode holds a hover back for a modifier is read at hover time, so
+      // nothing drawn depends on it.
+      h.workspace.dispatched.length = 0;
+      h.settings.update({ "citation.hover-require-mod-live-preview": true });
+      expect(h.workspace.dispatched).toEqual([]);
+    }),
+  );
 
-    citationLookup.emit();
-    expect(dispatched).toEqual([]);
-  });
+  it.effect("leaves lookup redraws to each open editor view", () =>
+    Effect.gen(function* () {
+      const h = yield* openEditor();
 
-  it("leaves the editors alone when an unrelated setting changes", async () => {
-    await using harnessed = await harness();
-    const { bridge, settings, dispatched } = harnessed;
+      h.lookup.emit({ status: "fresh", revision: "2", stopped: false });
 
-    bridge.runSync(settings.update({ "citation.open-as-links": false }));
-    expect(dispatched).toEqual([]);
-  });
+      expect(h.lookup.subscribers).toBe(0);
+      expect(h.workspace.dispatched).toEqual([]);
+    }),
+  );
 
-  it("redraws the one document whose citation text landed", async () => {
-    await using harnessed = await harness();
-    const { citationText, dispatched } = harnessed;
+  it.effect("leaves the editors alone when an unrelated setting changes", () =>
+    Effect.gen(function* () {
+      const h = yield* openEditor();
 
-    citationText.emit("changed", "note.md");
-    expect(dispatched).toEqual(["note.md"]);
+      h.settings.update({ "citation.open-as-links": false });
 
-    dispatched.length = 0;
-    citationText.emit("invalidated");
-    expect(dispatched).toEqual(["note.md", "other.md"]);
-  });
+      expect(h.workspace.dispatched).toEqual([]);
+    }),
+  );
 
-  it("leaves the editors alone when Wikilink Citations is off and formatted presentation changes", async () => {
-    await using harnessed = await harness({
-      "citation.wikilink-citations": false,
-    });
-    const { bridge, settings, dispatched } = harnessed;
+  it.effect("redraws the one document whose citation text landed", () =>
+    Effect.gen(function* () {
+      const h = yield* openEditor();
 
-    bridge.runSync(settings.update({ "citation.show-formatted": false }));
-    expect(dispatched).toEqual([]);
-  });
+      h.text.emit({ type: "changed", path: "note.md" });
+      expect(h.workspace.dispatched).toEqual(["note.md"]);
+
+      h.workspace.dispatched.length = 0;
+      h.text.emit({ type: "invalidated" });
+      expect(h.workspace.dispatched).toEqual(["note.md", "other.md"]);
+    }),
+  );
+
+  it.effect(
+    "leaves the editors alone when Wikilink Citations is off and formatted presentation changes",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* openEditor({ "citation.wikilink-citations": false });
+
+        h.settings.update({ "citation.show-formatted": false });
+
+        expect(h.workspace.dispatched).toEqual([]);
+      }),
+  );
 });
-
-class CitationTextStub {
-  readonly #changedBus = Effect.runSync(PubSub.unbounded<string>());
-  readonly #invalidatedBus = Effect.runSync(PubSub.unbounded<void>());
-  readonly changed = Stream.fromPubSub(this.#changedBus);
-  readonly invalidated = Stream.fromPubSub(this.#invalidatedBus);
-
-  peek(): null {
-    return null;
-  }
-
-  load(): Promise<never[]> {
-    return Promise.resolve([]);
-  }
-
-  emit(event: "changed" | "invalidated", path?: string): void {
-    if (event === "changed") PubSub.publishUnsafe(this.#changedBus, path!);
-    else PubSub.publishUnsafe(this.#invalidatedBus, undefined);
-  }
-}
-
-class LookupStub extends CitationLookupStub {
-  constructor() {
-    super(() => null);
-  }
-  emit(): void {
-    this.refresh();
-  }
-}

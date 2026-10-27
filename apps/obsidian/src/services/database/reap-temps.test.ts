@@ -1,16 +1,17 @@
-import { it } from "@effect/vitest";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { layer } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect } from "vitest";
+import { afterEach, beforeEach, expect } from "vitest";
 
 import {
   ZOTERO_DB_READ_PARENT_DIRNAME,
   ZOTERO_DB_READ_TEMP_PREFIX,
 } from "@/lib/constants";
 
-import { reapReadClonesEffect, reapWorkerClones } from "./reap-temps";
+import { reapReadClones, reapWorkerClones } from "./reap-temps";
 
 let parent: string;
 
@@ -44,11 +45,11 @@ async function names(): Promise<string[]> {
 /** A PID no process can hold: above the highest value any platform assigns. */
 const DEAD_PID = 4_194_305;
 
-describe("reapReadClonesEffect", () => {
+layer(NodeFileSystem.layer)("reapReadClones", (it) => {
   it.effect("removes a clone owned by a dead process, with its contents", () =>
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
@@ -56,7 +57,7 @@ describe("reapReadClonesEffect", () => {
   it.effect("keeps a clone owned by this process", () =>
     Effect.gen(function* () {
       const own = yield* Effect.promise(() => readClone(process.pid));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([own]);
     }),
   );
@@ -64,7 +65,7 @@ describe("reapReadClonesEffect", () => {
   it.effect("keeps a clone owned by another live process", () =>
     Effect.gen(function* () {
       const other = yield* Effect.promise(() => readClone(process.ppid));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([other]);
     }),
   );
@@ -78,7 +79,7 @@ describe("reapReadClonesEffect", () => {
       yield* Effect.promise(() =>
         writeFile(join(parent, `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`), "x"),
       );
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([
         "unrelated-dir",
         `${ZOTERO_DB_READ_TEMP_PREFIX}-0-x`,
@@ -96,7 +97,7 @@ describe("reapReadClonesEffect", () => {
       );
       const own = `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-aBcDeF`;
       yield* Effect.promise(() => mkdir(join(beside, own)));
-      yield* reapReadClonesEffect({ parent: beside });
+      yield* reapReadClones({ parent: beside });
       expect(yield* Effect.promise(() => readdir(beside))).toEqual([own]);
     }),
   );
@@ -104,7 +105,7 @@ describe("reapReadClonesEffect", () => {
   it.effect("removes a dead process's clone that names its worker", () =>
     Effect.gen(function* () {
       yield* Effect.promise(() => readClone(DEAD_PID, "0123456789ab"));
-      yield* reapReadClonesEffect({ parent });
+      yield* reapReadClones({ parent });
       expect(yield* Effect.promise(() => names())).toEqual([]);
     }),
   );
@@ -112,7 +113,7 @@ describe("reapReadClonesEffect", () => {
   it.effect("leaves every clone in place when interrupted before it runs", () =>
     Effect.gen(function* () {
       const dead = yield* Effect.promise(() => readClone(DEAD_PID));
-      const reap = yield* Effect.forkChild(reapReadClonesEffect({ parent }), {
+      const reap = yield* Effect.forkChild(reapReadClones({ parent }), {
         startImmediately: false,
       });
       yield* Fiber.interrupt(reap);
@@ -121,7 +122,7 @@ describe("reapReadClonesEffect", () => {
   );
 });
 
-describe("reapWorkerClones", () => {
+layer(NodeFileSystem.layer)("reapWorkerClones", (it) => {
   const DEAD_WORKER = "0123456789ab";
   const LIVE_WORKER = "ba9876543210";
 

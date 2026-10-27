@@ -17,6 +17,7 @@ import {
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { createFixtureNote } from "./e2e-run-note-helpers.ts";
+import { EFFECT_MODULE_PATH } from "./effect-module.ts";
 import {
   verifyMultiPdfExcerptBatch,
   verifyReaderBackedExcerpts,
@@ -24,8 +25,8 @@ import {
 } from "./excerpt-acceptance.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import { useListingProfile } from "./listing-profile.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { clearNotices } from "./obsidian-cli.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -49,14 +50,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   // to is writable — the answer the case used to skip on. The capability itself
   // is stubbed here, so the key the case asks with is the whole observation.
   it("asks the Fixture Attachment's Capability, not its Annotation's, before a saved edit", async () => {
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{
-        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
-        app.__zotlitCapabilitySubjects=[];
-        repository.capabilityFor=key=>{app.__zotlitCapabilitySubjects.push(key);return {kind:'read-only',reason:'stubbed'};};
-        return true;
-      })()`,
+      async ({ zotlit, page }, { EFFECT_MODULE_PATH }) => {
+        const { Effect } = require(
+          EFFECT_MODULE_PATH,
+        ) as typeof import("@/lib/effect");
+        const repository = zotlit.services.annotationRepository;
+        page.scratch.__zotlitCapabilitySubjects = [];
+        page.scratch.__zotlitCapabilityFor = repository.capabilityFor;
+        repository.capabilityFor = (key) => {
+          page.scratch.__zotlitCapabilitySubjects!.push(key);
+          return Effect.succeed({
+            kind: "read-only",
+            reason: "zotero-unavailable",
+          });
+        };
+      },
+      { EFFECT_MODULE_PATH },
     );
     const skips: string[] = [];
     let asked: string[] = [];
@@ -64,21 +75,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await verifySavedEditDisplay(run.vaultId, {
         skip: (note) => void skips.push(note ?? ""),
       });
-      asked = JSON.parse(
-        await obEval(
-          run.vaultId,
-          "JSON.stringify(app.__zotlitCapabilitySubjects)",
-        ),
-      ) as string[];
-    } finally {
-      await obEval(
+      asked = (await obRun(
         run.vaultId,
-        `(()=>{
-          const repository=app.plugins.plugins.zotlit.services.annotationRepository;
-          delete repository.capabilityFor;
-          delete app.__zotlitCapabilitySubjects;
-          return true;
-        })()`,
+        async ({ page }) => {
+          return page.scratch.__zotlitCapabilitySubjects;
+        },
+        undefined,
+      )) as string[];
+    } finally {
+      await obRun(
+        run.vaultId,
+        async ({ zotlit, page }) => {
+          zotlit.services.annotationRepository.capabilityFor =
+            page.scratch.__zotlitCapabilityFor!;
+          delete page.scratch.__zotlitCapabilityFor;
+          delete page.scratch.__zotlitCapabilitySubjects;
+        },
+        undefined,
       );
     }
     expect(
@@ -172,73 +185,180 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   );
 
   it("closes the annotation sidebar while its worker read is pending", async () => {
-    const result = await obEval(
+    const result = await obRun(
       run.vaultId,
-      `(async()=>{
-        await using cleanup=new AsyncDisposableStack();
-        const pending=[];
-        const started=Promise.withResolvers();
-        const post=Worker.prototype.postMessage;
-        const release=()=>{
-          Worker.prototype.postMessage=post;
-          for(const [worker,args] of pending.splice(0))post.apply(worker,args);
+      async ({ app, zotlit }, { key }) => {
+        await using cleanup = new AsyncDisposableStack();
+        const pending: [Worker, Parameters<Worker["postMessage"]>][] = [];
+        const started = Promise.withResolvers<void>();
+        const post = Worker.prototype.postMessage;
+        const release = () => {
+          Worker.prototype.postMessage = post;
+          for (const [worker, args] of pending.splice(0))
+            Reflect.apply(post, worker, args);
         };
         cleanup.defer(release);
-        Worker.prototype.postMessage=function(...args){
-          const request=args[0]?.[1];
-          if(request?.tag==='AnnotViewAttachments'&&request.payload.key===${JSON.stringify(annotationItem.key)}){
-            pending.push([this,args]);started.resolve();return;
-          }
-          return post.apply(this,args);
-        };
-        const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
-        await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+        Worker.prototype.postMessage = new Proxy(post, {
+          apply: (
+            target,
+            worker: Worker,
+            args: Parameters<Worker["postMessage"]>,
+          ) => {
+            const request = (
+              args[0] as [string, { tag?: string; payload: { key: string } }]
+            )?.[1];
+            if (
+              request?.tag === "AnnotViewAttachments" &&
+              request.payload.key === key
+            ) {
+              pending.push([worker, args]);
+              started.resolve();
+              return;
+            }
+            return Reflect.apply(target, worker, args);
+          },
+        });
+        const leaf = cleanup.adopt(app.workspace.getRightLeaf(true)!, (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.setViewState({
+          type: "zotero-annotation-view",
+          state: { followMode: "pinned", pinnedItemKey: key },
+        });
         await started.promise;
-        let settled=false;
-        const reading=leaf.view.read.then(()=>{settled=true;});
+        let settled = false;
+        const reading = (
+          leaf.view as import("../../../apps/obsidian/src/views/annot-view/view.tsx").AnnotationView
+        ).read.then(() => {
+          settled = true;
+        });
         await Promise.resolve();
-        if(settled)throw new Error('View read settled before its attachments loaded');
+        if (settled)
+          throw new Error("View read settled before its attachments loaded");
         leaf.detach();
-        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
-        const on=repository.on,read=repository.read;
-        const afterClose={subscriptions:0,reads:0};
-        cleanup.defer(()=>{repository.on=on;repository.read=read;});
-        repository.on=function(event,...args){if(event==='annotations-changed')afterClose.subscriptions++;return on.call(this,event,...args);};
-        repository.read=function(...args){afterClose.reads++;return read.apply(this,args);};
+        const repository = zotlit.services.annotationRepository;
+        const property = "annotationsChanged" satisfies keyof typeof repository;
+        const changed = Object.getOwnPropertyDescriptor(
+            repository,
+            property,
+          ) as PropertyDescriptor & {
+            value: typeof repository.annotationsChanged;
+          },
+          read = repository.read;
+        const afterClose = { subscriptions: 0, reads: 0 };
+        cleanup.defer(() => {
+          Object.defineProperty(repository, property, changed);
+          repository.read = read;
+        });
+        Object.defineProperty(repository, property, {
+          get: () => {
+            afterClose.subscriptions++;
+            return changed.value;
+          },
+          configurable: true,
+          enumerable: true,
+        });
+        repository.read = new Proxy(read, {
+          apply: (
+            target,
+            receiver: typeof repository,
+            args: Parameters<typeof read>,
+          ) => {
+            afterClose.reads++;
+            return Reflect.apply(target, receiver, args) as ReturnType<
+              typeof read
+            >;
+          },
+        });
         release();
         await reading;
-        return JSON.stringify(afterClose);
-      })()`,
+        return afterClose;
+      },
+      { key: annotationItem.key },
     );
-    expect(JSON.parse(result)).toEqual({ subscriptions: 0, reads: 0 });
+    expect(result).toEqual({ subscriptions: 0, reads: 0 });
   });
 
   it("copies an Annotation's citation after the database read, through Electron when the web clipboard refuses", async () => {
     const citation = `[@${annotationItem.citationKey}, {p. ${copiedAnnotation.pageLabel}}]`;
     // Electron's clipboard here is the run's in-memory one (prepareRunWindow).
     const copy = (refuse: boolean) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(async()=>{${PAGE}
-          await using cleanup=new AsyncDisposableStack();
-          const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
-          await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
-          const view=leaf.view;await view.read;
-          const button=await until('Annotation card menu missing',()=>view.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(copiedAnnotation.key)}] [aria-label=${JSON.stringify(run.m.annot_view_more_tooltip())}]'),5000);
-          const clipboard=require('electron').clipboard;
-          const write=navigator.clipboard.writeText;
-          cleanup.defer(()=>{navigator.clipboard.writeText=write;});
-          clipboard.writeText('');
-          if(${refuse})navigator.clipboard.writeText=()=>Promise.reject(new Error('Clipboard write refused'));
-          button.scrollIntoView({block:'center',behavior:'instant'});
-          await stands(button,'card More options');
-          press(button,'card More options');
-          const item=await until('Copy citation missing from the card menu',()=>Array.from(activeDocument.querySelectorAll('.menu .menu-item')).find(e=>e.textContent.trim()===${JSON.stringify(run.m.annot_view_menu_copy_citation())}),2500);
-          press(item,'Copy citation');
-          let text='';
-          await until('citation on the clipboard',()=>(text=clipboard.readText())===${JSON.stringify(citation)},5000).catch(()=>{});
+        async (
+          { app, page },
+          {
+            annotationItemKey,
+            copiedAnnotationKey,
+            tooltipLabel,
+            refuse,
+            menuItemLabel,
+            citation,
+          },
+        ) => {
+          const { press, until, stands } = page;
+          await using cleanup = new AsyncDisposableStack();
+          const leaf = cleanup.adopt(
+            app.workspace.getRightLeaf(true)!,
+            (leaf) => leaf.detach(),
+          );
+          await leaf.setViewState({
+            type: "zotero-annotation-view",
+            state: { followMode: "pinned", pinnedItemKey: annotationItemKey },
+          });
+          const view =
+            leaf.view as import("../../../apps/obsidian/src/views/annot-view/view.tsx").AnnotationView;
+          await view.read;
+          const button = await until(
+            "Annotation card menu missing",
+            () =>
+              view.contentEl.querySelector<HTMLElement>(
+                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+                  copiedAnnotationKey,
+                )}] [aria-label=${JSON.stringify(tooltipLabel)}]`,
+              ),
+            5000,
+          );
+          const clipboard = (require("electron") as typeof import("electron"))
+            .clipboard;
+          const write = navigator.clipboard.writeText;
+          cleanup.defer(() => {
+            navigator.clipboard.writeText = write;
+          });
+          clipboard.writeText("");
+          if (refuse)
+            navigator.clipboard.writeText = () =>
+              Promise.reject(new Error("Clipboard write refused"));
+          button.scrollIntoView({ block: "center", behavior: "instant" });
+          await stands(button, "card More options");
+          press(button, "card More options");
+          const item = await until(
+            "Copy citation missing from the card menu",
+            () =>
+              Array.from(
+                activeDocument.querySelectorAll<HTMLElement>(
+                  ".menu .menu-item",
+                ),
+              ).find((e) => e.textContent.trim() === menuItemLabel),
+            2500,
+          );
+          press(item, "Copy citation");
+          let text = "";
+          await until(
+            "citation on the clipboard",
+            () => (text = clipboard.readText()) === citation,
+            5000,
+          ).catch(() => {});
           return text;
-        })()`,
+        },
+        {
+          annotationItemKey: annotationItem.key,
+          copiedAnnotationKey: copiedAnnotation.key,
+          tooltipLabel: run.m.annot_view_more_tooltip(),
+          refuse,
+          menuItemLabel: run.m.annot_view_menu_copy_citation(),
+          citation,
+        },
       );
     expect(await copy(false)).toBe(citation);
     expect(await copy(true)).toBe(citation);
@@ -274,11 +394,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await prepareRunWindow(id);
     // No Zotero process runs on this suite's Fixture.
     expect(
-      await obEval(
+      await obRun(
         id,
-        "(()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();return String(app.workspace.getLeavesOfType('pdf').length);})()",
+        async ({ app }) => {
+          for (const leaf of app.workspace.getLeavesOfType("pdf"))
+            leaf.detach();
+          return app.workspace.getLeavesOfType("pdf").length;
+        },
+        undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
     // The default Profile shows Annotations in a Query Block; a Profile that
     // lists them in the note renders their excerpts.
     await useListingProfile(id);
@@ -287,11 +412,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     if (result.outcome !== "created")
       throw new Error("Excerpt note was not created");
     const markdown = await readFile(join(path, result.path), "utf8");
-    const files: string[] = JSON.parse(
-      await obEval(
-        id,
-        "JSON.stringify(app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).map(f=>f.path))",
-      ),
+    const files: string[] = await obRun(
+      id,
+      async ({ app }) => {
+        return app.vault
+          .getFiles()
+          .filter((f) => f.name.startsWith("zotlit-excerpt-"))
+          .map((f) => f.path);
+      },
+      undefined,
     );
     expect(files).toHaveLength(3);
     const targets = new Set(
@@ -316,11 +445,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(bytes.length).toBeGreaterThan(1000);
     }
     expect(
-      JSON.parse(
-        await obEval(
-          id,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(result.path)});if(!file)throw new Error('Created note missing');const updated=await services.noteFeature.overwriteNote(file,${JSON.stringify(result.indexedKey)});return JSON.stringify({diagnostic:updated.diagnostic??null});})()`,
-        ),
+      await obRun(
+        id,
+        async ({ app, zotlit }, { resultPath, indexedKey }) => {
+          const services = zotlit.services;
+          const file = app.vault.getFileByPath(resultPath)!;
+          if (!file) throw new Error("Created note missing");
+          const updated = await services.noteFeature.overwriteNote(
+            file,
+            indexedKey,
+          );
+          return { diagnostic: updated.diagnostic ?? null };
+        },
+        { resultPath: result.path, indexedKey: result.indexedKey },
       ),
     ).toEqual({ diagnostic: null });
     const overwritten = await readFile(join(path, result.path), "utf8");
@@ -328,23 +465,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const [file, initial] of initialImages)
       expect(await readFile(join(path, file))).toEqual(initial);
 
-    const frozenImport = JSON.parse(
-      await obEval(
-        id,
-        `(async()=>{const result=await app.plugins.plugins.zotlit.services.batchImport.runBatchImport('note',[13]);return JSON.stringify(result);})()`,
-      ),
-    ) as { outcome: string; write?: string };
-    expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
-    expect(
-      await obEvalUntil(
-        id,
-        "String(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA').length)",
-        { expected: "1" },
-      ),
-    ).toBe(true);
-    const importedPath = await obEval(
+    const frozenImport = (await obRun(
       id,
-      "app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0].path",
+      async ({ zotlit }) => {
+        const result = await zotlit.services.batchImport.runBatchImport(
+          "note",
+          [13],
+        );
+        return result;
+      },
+      undefined,
+    )) as { outcome: string; write?: string };
+    expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
+    await obRunUntil(
+      id,
+      async ({ zotlit }) => {
+        return zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")
+          .length;
+      },
+      undefined,
+      {
+        ready: (value) => value === 1,
+        what: "the imported note for NNNNAAAA to index one note",
+      },
+    );
+    const importedPath = await obRun(
+      id,
+      async ({ zotlit }) => {
+        return zotlit.services.noteIndex.getImportedNoteByNoteKey(
+          "NNNNAAAA",
+        )[0]!.path;
+      },
+      undefined,
     );
     const frozenMarkdown = await readFile(join(path, importedPath), "utf8");
     expect(frozenMarkdown).toContain("Saved snapshot");
@@ -358,12 +510,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       frozenTargets.map((target) => readFile(join(path, target))),
     );
 
-    const liveImport = JSON.parse(
-      await obEval(
-        id,
-        `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
-      ),
-    ) as { outcome: string };
+    const liveImport = (await obRun(
+      id,
+      async ({ app, zotlit }, { importedPath }) => {
+        const services = zotlit.services;
+        services.bridge.runSync(
+          services.settings.updateDefaultLiteratureNoteProfileBindings({
+            "note.import-annotations-as-template": true,
+          }),
+        );
+        const file = app.vault.getFileByPath(importedPath)!;
+        if (!file) throw new Error("Imported Note missing");
+        return await services.batchImport.reimportNoteByKey("NNNNAAAA", file);
+      },
+      { importedPath },
+    )) as { outcome: string };
     expect(liveImport).toEqual({ outcome: "overwritten" });
     const liveMarkdown = await readFile(join(path, importedPath), "utf8");
     expect(liveMarkdown).toContain("Saved snapshot");
@@ -382,51 +543,85 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
 
-    await obEval(
-      id,
-      `(()=>{const feature=app.plugins.plugins.zotlit.services.noteFeature;window.__zotlitExcerptReports=[];window.__zotlitExcerptReportOff=feature.on('excerpt-images-reported',summary=>window.__zotlitExcerptReports.push(summary));return true;})()`,
-    );
-    cleanup.defer(async () => {
-      await obEval(
-        id,
-        `(()=>{window.__zotlitExcerptReportOff?.();delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return true;})()`,
-      );
-    });
+    await clearNotices(id);
     const sourcePdf = join(path, "attachments/rougier-2014.pdf");
     const unavailablePdf = `${sourcePdf}.unavailable`;
     await rename(sourcePdf, unavailablePdf);
     try {
       expect(
-        JSON.parse(
-          await obEval(
-            id,
-            `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
-          ),
+        await obRun(
+          id,
+          async ({ app, zotlit }, { importedPath }) => {
+            const services = zotlit.services;
+            const file = app.vault.getFileByPath(importedPath)!;
+            return await services.batchImport.reimportNoteByKey(
+              "NNNNAAAA",
+              file,
+            );
+          },
+          { importedPath },
         ),
       ).toEqual({ outcome: "overwritten" });
     } finally {
       await rename(unavailablePdf, sourcePdf);
     }
-    const pooledReports = JSON.parse(
-      await obEval(
-        id,
-        `JSON.stringify((()=>{window.__zotlitExcerptReportOff?.();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
-      ),
-    ) as { zotero: number; unchecked: number; unavailable: number }[];
-    expect(pooledReports).toEqual([
-      { zotero: 0, unchecked: 2, unavailable: 0 },
+    // The reimport pools its excerpt outcomes into one summary notice.
+
+    const pooledSummary = JSON.stringify([
+      "Excerpt images: 0 from Zotero with uncertain freshness, 2 with unchecked PDF freshness, 0 unavailable, 0 kept from the note and not refreshed.",
     ]);
+    await obRunUntil(
+      id,
+      async ({ page }) => {
+        return JSON.stringify(
+          [...page.windowDocuments()]
+            .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+            .map((node) => node.textContent)
+            .filter((text) => text.includes("Excerpt images:")),
+        );
+      },
+      undefined,
+      {
+        ready: (value) => value === pooledSummary,
+        what: "the Excerpt images notice to match the pooled summary",
+      },
+    );
     expect(
-      JSON.parse(
-        await obEval(
-          id,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
-        ),
+      await obRun(
+        id,
+        async ({ page }) => {
+          return JSON.stringify(
+            [...page.windowDocuments()]
+              .flatMap((doc) => [
+                ...doc.querySelectorAll<HTMLElement>(".notice"),
+              ])
+              .map((node) => node.textContent)
+              .filter((text) => text.includes("Excerpt images:")),
+          );
+        },
+        undefined,
+      ),
+    ).toBe(pooledSummary);
+    expect(
+      await obRun(
+        id,
+        async ({ app, zotlit }, { importedPath }) => {
+          const services = zotlit.services;
+          const file = app.vault.getFileByPath(importedPath)!;
+          return await services.batchImport.reimportNoteByKey("NNNNAAAA", file);
+        },
+        { importedPath },
       ),
     ).toEqual({ outcome: "overwritten" });
 
     expect(
-      await obEval(id, "String(app.workspace.getLeavesOfType('pdf').length)"),
-    ).toBe("0");
+      await obRun(
+        id,
+        async ({ app }) => {
+          return app.workspace.getLeavesOfType("pdf").length;
+        },
+        undefined,
+      ),
+    ).toBe(0);
   });
 });

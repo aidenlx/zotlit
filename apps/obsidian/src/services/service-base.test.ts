@@ -109,7 +109,17 @@ it("disposes services newest first, so an older service keeps its vault and meta
 
   const stack = new AsyncDisposableStack();
   const { services } = new ServiceContainer(stack, () => undefined)
-    .useValue({ noteIndex: () => buildNoteIndex(app, stack) })
+    .useValue({
+      noteIndex: () =>
+        buildNoteIndex(
+          {
+            vault: app.vault,
+            metadataCache: app.metadataCache,
+            workspace: app.workspace,
+          },
+          stack,
+        ),
+    })
     .use({ newer: ({ noteIndex }) => new ReadsOnTeardown(noteIndex) });
   expect(vault.listened().sort()).toEqual([
     "create",

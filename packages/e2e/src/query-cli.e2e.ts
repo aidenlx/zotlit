@@ -46,15 +46,9 @@ import type {
   ItemQuerySchemaReport,
   LibraryScopeReport,
 } from "./e2e-run-query-types.ts";
-import {
-  cli,
-  cliCommand,
-  obEval,
-  obEvalUntil,
-  obJson,
-  waitFor,
-} from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { obRunUntil } from "./obsidian-cli.ts";
+import { cli, cliCommand, waitFor } from "./obsidian-cli.ts";
 import { clearVault, e2eVaultDir, vaultScript } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
@@ -338,18 +332,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(() => rm(otherDir, { recursive: true, force: true }));
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{
-        const state=window.__zotlitQuerySource;
-        if(!state)return true;
-        const services=app.plugins.plugins.zotlit.services;
-        services.zoteroPref.setDataDir(state.previous);
-        await state.lease?.[Symbol.asyncDispose]();
-        delete window.__zotlitQuerySource;
-        await services.zoteroReads.refresh();
-        return true;
-      })()`,
+        async ({ zotlit, page: pageHelpers }) => {
+          const state = pageHelpers.scratch.__zotlitQuerySource;
+          if (!state) return;
+          const services = zotlit.services;
+          services.zoteroPref.setDataDir(state.previous);
+          await state.lease?.[Symbol.asyncDispose]();
+          delete pageHelpers.scratch.__zotlitQuerySource;
+          await services.zoteroReads.refresh();
+        },
+        undefined,
       );
     });
     await mkdir(otherDir, { recursive: true });
@@ -364,16 +358,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           from fieldsCombined where fieldName = 'volume' and custom = 0;
       `);
     }
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{
-      const services=app.plugins.plugins.zotlit.services;
-      const lease=await services.zoteroReads.acquireRead();
-      window.__zotlitQuerySource={lease,previous:services.zoteroPref.dataDirOverride};
-      services.zoteroPref.setDataDir(${JSON.stringify(otherDir)});
-      await services.zoteroReads.refresh();
-      return true;
-    })()`,
+      async ({ zotlit, page: pageHelpers }, { otherDir }) => {
+        const services = zotlit.services;
+        const lease = await services.zoteroReads.acquireRead();
+        pageHelpers.scratch.__zotlitQuerySource = {
+          lease,
+          previous: services.zoteroPref.dataDirOverride,
+        };
+        services.zoteroPref.setDataDir(otherDir);
+        await services.zoteroReads.refresh();
+      },
+      { otherDir },
     );
     const integerQuery = {
       library: "personal",
@@ -849,7 +846,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     const groupsOf = (report: ItemQueryReport) =>
       new Map(
-        report.groups!.map(({ value, count, rows }) => [
+        report.groups!.map(({ value, rows, count }) => [
           value,
           { count, keys: rows.map((row) => row.indexedKey).toSorted() },
         ]),
@@ -1120,9 +1117,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   });
 
   it("describes ZotLit Query through zotlit:query-schema", async () => {
-    const version = await obEval(
+    const version = await obRun(
       run.vaultId,
-      "app.plugins.plugins.zotlit.manifest.version",
+      async ({ app }) => {
+        return app.plugins.plugins.zotlit!.manifest.version;
+      },
+      undefined,
     );
     const answer = JSON.parse(
       await cliCommand(run.vaultId, "zotlit:query-schema"),
@@ -1545,59 +1545,117 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ]);
   });
   it("refreshes the database from a Freshness Signal", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const autoRefresh = await obEval(
+    const autoRefresh = await obRun(
       run.vaultId,
-      `String(${services}.settings.current['zotero.auto-refresh'])`,
+      async ({ zotlit }) => {
+        return String(
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "zotero.auto-refresh"
+          ],
+        );
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     // Only the signal may refresh: the file watchers stay unbound.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `${services}.settings.update({'zotero.auto-refresh':false});true`,
+      async ({ zotlit }) => {
+        zotlit.services.bridge.runSync(
+          zotlit.services.settings.update({ "zotero.auto-refresh": false }),
+        );
+      },
+      undefined,
     );
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `${services}.settings.update({'zotero.auto-refresh':${autoRefresh}});true`,
+        async ({ zotlit }, { autoRefreshEnabled }) => {
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({
+              "zotero.auto-refresh": autoRefreshEnabled,
+            }),
+          );
+        },
+        { autoRefreshEnabled: autoRefresh === "true" },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.zoteroReads.on('changed',function(){window.zotlitE2EChanged++;});true`,
+      async ({ zotlit, page: pageHelpers }) => {
+        pageHelpers.scratch.zotlitE2EChanged = 0;
+        pageHelpers.scratch.zotlitE2EOffChanged =
+          zotlit.services.bridge.subscribe(
+            zotlit.services.zoteroReads.changed,
+            function () {
+              pageHelpers.scratch.zotlitE2EChanged!++;
+            },
+          );
+      },
+      undefined,
     );
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        "window.zotlitE2EOffChanged();delete window.zotlitE2EOffChanged;delete window.zotlitE2EChanged;true",
+        async ({ page: pageHelpers }) => {
+          pageHelpers.scratch.zotlitE2EOffChanged!();
+          delete pageHelpers.scratch.zotlitE2EOffChanged;
+          delete pageHelpers.scratch.zotlitE2EChanged;
+        },
+        undefined,
       );
     });
     // The annotation sidebar keeps its cards while the refresh reads again.
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        "(async()=>{await window.zotlitE2ESidebar?.cleanup.disposeAsync();delete window.zotlitE2ESidebar;return true;})()",
+        async ({ page: pageHelpers }) => {
+          await pageHelpers.scratch.zotlitE2ESidebar?.cleanup.disposeAsync();
+          delete pageHelpers.scratch.zotlitE2ESidebar;
+        },
+        undefined,
       );
     });
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}
-          await using cleanup=new AsyncDisposableStack();
-          const leaf=cleanup.adopt(app.workspace.getRightLeaf(true),leaf=>leaf.detach());
-          await leaf.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
-          const view=leaf.view;await view.read;
-          const count=()=>view.contentEl.querySelectorAll('.zt-annot-card').length;
-          await until('sidebar cards',()=>count()>0,5000).catch(()=>{});
-          const watch={before:count(),least:count()};
-          watch.observer=new MutationObserver(()=>{watch.least=Math.min(watch.least,count());});
-          cleanup.defer(()=>watch.observer.disconnect());
-          watch.observer.observe(view.contentEl,{childList:true,subtree:true});
-          watch.cleanup=cleanup.move();window.zotlitE2ESidebar=watch;
-          return String(watch.before);
-        })()`,
+        async ({ app, page: pageHelpers }, { annotationItemKey }) => {
+          const { until } = pageHelpers;
+          await using cleanup = new AsyncDisposableStack();
+          const leaf = cleanup.adopt(app.workspace.getRightLeaf(true), (leaf) =>
+            leaf!.detach(),
+          );
+          await leaf!.setViewState({
+            type: "zotero-annotation-view",
+            state: { followMode: "pinned", pinnedItemKey: annotationItemKey },
+          });
+          const view = leaf!.view;
+          await (view as import("@/views/annot-view/view").AnnotationView).read;
+          const count = () =>
+            (
+              view as import("obsidian").ItemView
+            ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-card").length;
+          await until("sidebar cards", () => count() > 0, 5000).catch(() => {});
+          const observer = new MutationObserver(() => {
+            watch.least = Math.min(watch.least, count());
+          });
+          cleanup.defer(() => observer.disconnect());
+          observer.observe((view as import("obsidian").ItemView).contentEl, {
+            childList: true,
+            subtree: true,
+          });
+          const watch = {
+            before: count(),
+            least: count(),
+            observer,
+            cleanup: cleanup.move(),
+          };
+          pageHelpers.scratch.zotlitE2ESidebar = watch;
+          return watch.before;
+        },
+        { annotationItemKey: annotationItem.key },
       ),
-    ).toBe(String(attachmentAnnotations.length));
+    ).toBe(attachmentAnnotations.length);
     const signal = () => signalDatabaseUpdated(run.vaultId);
     // A Zotero edit moves the Item's title and its modification time.
     const edit = (title: string, dateModified: string) => {
@@ -1618,40 +1676,71 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .get(targetItem.itemID) as { dateModified: string };
     })();
     const finds = (query: string) =>
-      obEvalUntil(
+      obRunUntil(
         run.vaultId,
-        `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${targetItem.itemID};}));})()`,
-        { expected: "true" },
+        async ({ zotlit }, { query, targetItemId }) => {
+          var hits = await zotlit.services.itemLookup.search(query);
+          return hits.some(function (hit) {
+            return hit.item.itemID === targetItemId;
+          });
+        },
+        { query, targetItemId: targetItem.itemID },
+        {
+          what: "the target item to appear in item lookup results after the database refresh",
+        },
       );
 
     edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
     cleanup.defer(async () => {
       edit(targetItem.title, original.dateModified);
       await signal();
-      expect(await finds(targetItem.title)).toBe(true);
+      await finds(targetItem.title);
     });
     await signal();
+    await obRunUntil(
+      run.vaultId,
+      async ({ page: pageHelpers }) => {
+        return pageHelpers.scratch.zotlitE2EChanged! >= 1;
+      },
+      undefined,
+      { what: "the Freshness Signal to be counted in the page scratch" },
+    );
+    await finds("zqxv");
     expect(
-      await obEvalUntil(run.vaultId, "String(window.zotlitE2EChanged>=1)", {
-        expected: "true",
-      }),
-    ).toBe(true);
-    expect(await finds("zqxv")).toBe(true);
-    expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        "JSON.stringify({least:window.zotlitE2ESidebar.least,now:window.zotlitE2ESidebar.observer&&document.querySelectorAll('.workspace-leaf .zt-annot-card').length>0})",
+        async ({ page: pageHelpers }) => {
+          return JSON.stringify({
+            least: pageHelpers.scratch.zotlitE2ESidebar!.least,
+            now:
+              pageHelpers.scratch.zotlitE2ESidebar!.observer &&
+              document.querySelectorAll<HTMLElement>(
+                ".workspace-leaf .zt-annot-card",
+              ).length > 0,
+          });
+        },
+        undefined,
       ),
     ).toBe(JSON.stringify({ least: attachmentAnnotations.length, now: true }));
   });
 
   it("rebuilds the worker's Item Index off the renderer, then inserts a citation from it", async () => {
-    const finds = (query: string, itemID: number) =>
-      `(async function(){var hits=await app.plugins.plugins.zotlit.services.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${itemID};}));})()`;
     // An empty index answers fast; it fails the run here, before any timing.
     expect(
-      await obEval(run.vaultId, finds("simple rules", annotationItem.itemID)),
-    ).toBe("true");
+      await obRun(
+        run.vaultId,
+        async ({ zotlit }, { searchQuery, annotationItemId }) => {
+          var hits = await zotlit.services.itemLookup.search(searchQuery);
+          return hits.some(function (hit) {
+            return hit.item.itemID === annotationItemId;
+          });
+        },
+        {
+          searchQuery: "simple rules",
+          annotationItemId: annotationItem.itemID,
+        },
+      ),
+    ).toBe(true);
     await using cleanup = new AsyncDisposableStack();
 
     // A sync lands a large Library: the worker builds its index while the
@@ -1665,23 +1754,64 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       added[Symbol.dispose]();
       await signalDatabaseUpdated(run.vaultId);
-      expect(
-        await obEvalUntil(run.vaultId, finds(lastTitleQuery, lastItemID), {
-          expected: "false",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { lastTitleQuery, lastItemID }) => {
+          var hits = await zotlit.services.itemLookup.search(lastTitleQuery);
+          return hits.some(function (hit) {
+            return hit.item.itemID === lastItemID;
+          });
+        },
+        { lastTitleQuery, lastItemID },
+        {
+          ready: (value) => value === false,
+          what: "the last item to drop out of item lookup results for the title query",
+        },
+      );
     });
     await signalDatabaseUpdated(run.vaultId);
     // Until the build completes, the held index answers: a known Item stays
     // found. The new Items show once it completes. The 10 ms pause is the
     // sampling cadence of the measurement, not a wait for a state.
-    const rebuild = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async function(){var lookup=app.plugins.plugins.zotlit.services.itemLookup;var has=function(hits,id){return hits.some(function(hit){return hit.item.itemID===id;});};var start=performance.now();var waits=[];var staleMisses=0;while(performance.now()-start<60000){if(has(await lookup.search(${JSON.stringify(lastTitleQuery)}),${lastItemID}))return JSON.stringify({builtMs:Math.round(performance.now()-start),polls:waits.length,staleMisses:staleMisses,waitMedianMs:waits.sort(function(a,b){return a-b;})[waits.length>>1],waitMaxMs:waits.at(-1)});var t0=performance.now();if(!has(await lookup.search('simple rules'),${annotationItem.itemID}))staleMisses++;waits.push(Math.round((performance.now()-t0)*10)/10);await new Promise(function(resolve){setTimeout(resolve,10);});}return JSON.stringify({builtMs:null});})()`,
-        90_000,
-      ),
-    ) as {
+    const rebuild = (await obRun(
+      run.vaultId,
+      async ({ zotlit }, { lastTitleQuery, lastItemID, annotationItemId }) => {
+        var lookup = zotlit.services.itemLookup;
+        var has = function (
+          hits: Awaited<ReturnType<typeof lookup.search>>,
+          id: number,
+        ) {
+          return hits.some(function (hit) {
+            return hit.item.itemID === id;
+          });
+        };
+        var start = performance.now();
+        var waits = [];
+        var staleMisses = 0;
+        while (performance.now() - start < 60000) {
+          if (has(await lookup.search(lastTitleQuery), lastItemID))
+            return {
+              builtMs: Math.round(performance.now() - start),
+              polls: waits.length,
+              staleMisses: staleMisses,
+              waitMedianMs: waits.sort(function (a, b) {
+                return a - b;
+              })[waits.length >> 1],
+              waitMaxMs: waits.at(-1),
+            };
+          var t0 = performance.now();
+          if (!has(await lookup.search("simple rules"), annotationItemId))
+            staleMisses++;
+          waits.push(Math.round((performance.now() - t0) * 10) / 10);
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 10);
+          });
+        }
+        return { builtMs: null };
+      },
+      { lastTitleQuery, lastItemID, annotationItemId: annotationItem.itemID },
+      { timeoutMs: 90000 },
+    )) as {
       builtMs: number | null;
       polls: number;
       staleMisses: number;
@@ -1718,43 +1848,94 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `Synthauthor${added.firstItemID + 12}`,
       lastTitleQuery,
     ];
-    const timings = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async function(){var lookup=app.plugins.plugins.zotlit.services.itemLookup;var out={};for(var query of ${JSON.stringify(queries)}){var times=[];var hits=0;for(var i=0;i<21;i++){var t0=performance.now();hits=(await lookup.search(query)).length;times.push(performance.now()-t0);}times.sort(function(a,b){return a-b;});out[query]={hits:hits,medianMs:Math.round(times[10]*10)/10,p95Ms:Math.round(times[19]*10)/10};}return JSON.stringify(out);})()`,
-        90_000,
-      ),
-    ) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
+    const timings = (await obRun(
+      run.vaultId,
+      async ({ zotlit }, { queries }) => {
+        var lookup = zotlit.services.itemLookup;
+        var out: Record<
+          string,
+          { hits: number; medianMs: number; p95Ms: number }
+        > = {};
+        for (var query of queries) {
+          var times = [];
+          var hits = 0;
+          for (var i = 0; i < 21; i++) {
+            var t0 = performance.now();
+            hits = (await lookup.search(query)).length;
+            times.push(performance.now() - t0);
+          }
+          times.sort(function (a, b) {
+            return a - b;
+          });
+          out[query] = {
+            hits: hits,
+            medianMs: Math.round(times[10]! * 10) / 10,
+            p95Ms: Math.round(times[19]! * 10) / 10,
+          };
+        }
+        return out;
+      },
+      { queries },
+      { timeoutMs: 90000 },
+    )) as Record<string, { hits: number; medianMs: number; p95Ms: number }>;
     console.info("Item Index queries, 10,000 Items", timings);
     for (const query of queries)
       expect(timings[query]!.hits).toBeGreaterThan(0);
 
     // A large classification bounds renderer request encoding as well as
     // worker replies, while every request uses the same Snapshot (#1351).
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{const original=Worker.prototype.postMessage;const requests=[];Worker.prototype.postMessage=function(message,...rest){const request=message?.[1];if(request?.tag==='DisplayRefs')requests.push({count:request.payload.itemIDs.length,snapshot:request.payload.snapshot});return original.call(this,message,...rest);};window.zotlitE2EClassifyRequests={requests,restore:()=>{Worker.prototype.postMessage=original;}};return true;})()`,
+      async ({ page: pageHelpers }) => {
+        const original = Worker.prototype.postMessage;
+        const requests: { count: number; snapshot: string }[] = [];
+        Worker.prototype.postMessage = new Proxy(original, {
+          apply(target, receiver, args) {
+            const request = args[0]?.[1];
+            if (request?.tag === "DisplayRefs")
+              requests.push({
+                count: request.payload.itemIDs.length,
+                snapshot: request.payload.snapshot,
+              });
+            return Reflect.apply(target, receiver, args);
+          },
+        });
+        pageHelpers.scratch.zotlitE2EClassifyRequests = {
+          requests,
+          restore: () => {
+            Worker.prototype.postMessage = original;
+          },
+        };
+      },
+      undefined,
     );
     try {
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          "app.commands.executeCommandById('zotlit:update-all-notes')",
-        ),
-      ).toBe("true");
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          `String(Array.from(activeDocument.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(run.m.batch_update_confirm_button())}))`,
-          { expected: "true" },
+          async ({ app }) => {
+            return app.commands.executeCommandById("zotlit:update-all-notes");
+          },
+          undefined,
         ),
       ).toBe(true);
-      const requests = JSON.parse(
-        await obEval(
-          run.vaultId,
-          "JSON.stringify(window.zotlitE2EClassifyRequests.requests)",
-        ),
-      ) as { count: number; snapshot: string }[];
+      await obRunUntil(
+        run.vaultId,
+        async (_context, { confirmButtonLabel }) => {
+          return Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".modal button"),
+          ).some((button) => button.textContent.trim() === confirmButtonLabel);
+        },
+        { confirmButtonLabel: run.m.batch_update_confirm_button() },
+        { what: "the modal button labelled with the confirm label to appear" },
+      );
+      const requests = (await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          return pageHelpers.scratch.zotlitE2EClassifyRequests!.requests;
+        },
+        undefined,
+      )) as { count: number; snapshot: string }[];
       expect(
         requests.reduce((total, request) => total + request.count, 0),
       ).toBeGreaterThanOrEqual(SYNTHETIC_CORPUS_SIZE);
@@ -1763,9 +1944,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(new Set(requests.map(({ snapshot }) => snapshot)).size).toBe(1);
     } finally {
       await clickModalButton(run.vaultId, run.m.modal_cancel());
-      await obEval(
+      await obRun(
         run.vaultId,
-        "window.zotlitE2EClassifyRequests.restore();delete window.zotlitE2EClassifyRequests;true",
+        async ({ page: pageHelpers }) => {
+          pageHelpers.scratch.zotlitE2EClassifyRequests!.restore();
+          delete pageHelpers.scratch.zotlitE2EClassifyRequests;
+        },
+        undefined,
       );
     }
 
@@ -1773,68 +1958,227 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // measurement: a rendered citation can start the Pandoc engine, and that
     // start is renderer work of its own.
     const source = "Citation suggester source.md";
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){var file=await app.vault.create(${JSON.stringify(source)},'');var leaf=app.workspace.getLeaf(true);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.focus();return true;})()`,
+      async ({ app }, { notePath }) => {
+        var file = await app.vault.create(notePath, "");
+        var leaf = app.workspace.getLeaf(true);
+        await leaf.openFile(file, { state: { mode: "source", source: true } });
+        (leaf.view as import("obsidian").MarkdownView).editor.focus();
+      },
+      { notePath: source },
     );
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(source)});for(var leaf of app.workspace.getLeavesOfType('markdown'))if(leaf.view.file===file)leaf.detach();await app.fileManager.trashFile(file);return true;})()`,
+        async ({ app }, { source }) => {
+          var file = app.vault.getAbstractFileByPath(source)!;
+          for (var leaf of app.workspace.getLeavesOfType("markdown"))
+            if ((leaf.view as import("obsidian").FileView).file === file)
+              leaf.detach();
+          await app.fileManager.trashFile(file!);
+        },
+        { source },
       );
     });
-    const editor = `app.workspace.getLeavesOfType('markdown').find(function(leaf){return leaf.view.file?.path===${JSON.stringify(source)};}).view.editor`;
+
     // One key every 70 ms, past Obsidian's 50 ms suggester delay, so each
     // keystroke sends its own search. The popup opens at `[@` and stays
     // open through every answer after it.
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async function(){var cm=${editor}.cm;var watch={opened:false,closed:false};var observer=new MutationObserver(function(records){for(var record of records)for(var node of record.removedNodes)if(node.classList?.contains('suggestion-container'))watch.closed=true;});try{for(var ch of ${JSON.stringify("[@ten simple")}){cm.dispatch(cm.state.replaceSelection(ch),{userEvent:'input.type'});await new Promise(function(resolve){setTimeout(resolve,70);});if(!watch.opened&&activeDocument.querySelector('.suggestion-container')){watch.opened=true;observer.observe(activeDocument.body,{childList:true,subtree:true});}}}finally{observer.disconnect();}return JSON.stringify(watch);})()`,
+        async ({ app }, { source, typedKeys }) => {
+          var cm = (
+            app.workspace.getLeavesOfType("markdown").find(function (leaf) {
+              return (
+                (leaf.view as import("obsidian").FileView).file?.path === source
+              );
+            })!.view as import("obsidian").MarkdownView
+          ).editor.cm;
+          var watch = { opened: false, closed: false };
+          var observer = new MutationObserver(function (records) {
+            for (var record of records)
+              for (var node of record.removedNodes)
+                if (
+                  (node as Element).classList?.contains("suggestion-container")
+                )
+                  watch.closed = true;
+          });
+          try {
+            for (var ch of typedKeys) {
+              cm.dispatch(cm.state.replaceSelection(ch), {
+                userEvent: "input.type",
+              });
+              await new Promise(function (resolve) {
+                setTimeout(resolve, 70);
+              });
+              if (
+                !watch.opened &&
+                activeDocument.querySelector<HTMLElement>(
+                  ".suggestion-container",
+                )!
+              ) {
+                watch.opened = true;
+                observer.observe(activeDocument.body, {
+                  childList: true,
+                  subtree: true,
+                });
+              }
+            }
+          } finally {
+            observer.disconnect();
+          }
+          return JSON.stringify(watch);
+        },
+        { source, typedKeys: "[@ten simple" },
       ),
     ).toBe(JSON.stringify({ opened: true, closed: false }));
-    const popup =
-      "Array.from(activeDocument.querySelectorAll('.suggestion-container')).at(-1)";
+
     // The list matches the final query: its Item comes first. The popup is
     // `aria-busy` while its rows answer an earlier query.
-    expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!!${popup}&&!${popup}.hasAttribute('aria-busy')&&!!${popup}.querySelector('.suggestion-item')?.textContent.includes(${JSON.stringify(annotationItem.title)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      `(function(){var row=${popup}.querySelector('.suggestion-item');row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));row.dispatchEvent(new activeWindow.MouseEvent('click',{bubbles:true}));return true;})()`,
+      async (_context, { annotationItemTitle }) => {
+        return (
+          !!Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          ).at(-1) &&
+          !Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          )
+            .at(-1)!
+            .hasAttribute("aria-busy") &&
+          !!Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          )
+            .at(-1)!
+            .querySelector<HTMLElement>(".suggestion-item")
+            ?.textContent.includes(annotationItemTitle)
+        );
+      },
+      { annotationItemTitle: annotationItem.title },
+      {
+        what: "the citation suggestion list to settle on the annotation item as its first row",
+      },
     );
-    expect(
-      await obEvalUntil(run.vaultId, `${editor}.getValue()`, {
-        expected: `[@${annotationItem.citationKey}]`,
-      }),
-    ).toBe(true);
+    await obRun(
+      run.vaultId,
+      async (_context) => {
+        var row = Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".suggestion-container"),
+        )
+          .at(-1)!
+          .querySelector<HTMLElement>(".suggestion-item")!;
+        row!.dispatchEvent(
+          new (activeWindow as Window & typeof globalThis).MouseEvent(
+            "mousemove",
+            { bubbles: true },
+          ),
+        );
+        row!.dispatchEvent(
+          new (activeWindow as Window & typeof globalThis).MouseEvent("click", {
+            bubbles: true,
+          }),
+        );
+      },
+      undefined,
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { source }) => {
+        return (
+          app.workspace.getLeavesOfType("markdown").find(function (leaf) {
+            return (
+              (leaf.view as import("obsidian").FileView).file?.path === source
+            );
+          })!.view as import("obsidian").MarkdownView
+        ).editor.getValue();
+      },
+      { source },
+      {
+        ready: (value) => value === `[@${annotationItem.citationKey}]`,
+        what: "the source note to contain the inserted citation for the annotation item",
+      },
+    );
   }, 180_000);
 
   it("finds a word inside a Chinese title once the Chinese Segmenter is installed, with no reload", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const segmenter = `${services}.chineseSegmenter`;
     await using cleanup = new AsyncDisposableStack();
     // The binary cache is device-wide: copy it now and put the copy back at
     // the end, whatever happens between.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){var saved=[];try{var dir=await (await (await navigator.storage.getDirectory()).getDirectoryHandle('zotlit')).getDirectoryHandle(${JSON.stringify(SEGMENTER_CACHE_DIR)});for await(var [name,handle] of dir.entries())if(handle.kind==='file')saved.push({name:name,bytes:new Uint8Array(await (await handle.getFile()).arrayBuffer())});}catch(error){if(error.name!=='NotFoundError')throw error;}window.zotlitE2ESegmenterCache=saved;return true;})()`,
+      async ({ page: pageHelpers }, { SEGMENTER_CACHE_DIR }) => {
+        var saved = [];
+        try {
+          var dir = await (
+            await (
+              await navigator.storage.getDirectory()
+            ).getDirectoryHandle("zotlit")
+          ).getDirectoryHandle(SEGMENTER_CACHE_DIR);
+          for await (var [name, handle] of dir.entries())
+            if (handle.kind === "file")
+              saved.push({
+                name: name,
+                bytes: new Uint8Array(
+                  await (await handle.getFile()).arrayBuffer(),
+                ),
+              });
+        } catch (error) {
+          if ((error as Error).name !== "NotFoundError") throw error;
+        }
+        pageHelpers.scratch.zotlitE2ESegmenterCache = saved;
+      },
+      { SEGMENTER_CACHE_DIR },
     );
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async function(){var root=await (await navigator.storage.getDirectory()).getDirectoryHandle('zotlit',{create:true});await root.removeEntry(${JSON.stringify(SEGMENTER_CACHE_DIR)},{recursive:true}).catch(function(error){if(error.name!=='NotFoundError')throw error;});var saved=window.zotlitE2ESegmenterCache;if(saved.length>0){var dir=await root.getDirectoryHandle(${JSON.stringify(SEGMENTER_CACHE_DIR)},{create:true});for(var entry of saved){var writable=await (await dir.getFileHandle(entry.name,{create:true})).createWritable();await writable.write(entry.bytes);await writable.close();}}delete window.zotlitE2ESegmenterCache;return true;})()`,
+        async ({ page: pageHelpers }, { SEGMENTER_CACHE_DIR }) => {
+          var root = await (
+            await navigator.storage.getDirectory()
+          ).getDirectoryHandle("zotlit", { create: true });
+          await root
+            .removeEntry(SEGMENTER_CACHE_DIR, { recursive: true })
+            .catch(function (error) {
+              if ((error as Error).name !== "NotFoundError") throw error;
+            });
+          var saved = pageHelpers.scratch.zotlitE2ESegmenterCache;
+          if (saved!.length > 0) {
+            var dir = await root.getDirectoryHandle(SEGMENTER_CACHE_DIR, {
+              create: true,
+            });
+            for (var entry of saved!) {
+              var writable = await (
+                await dir.getFileHandle(entry.name, { create: true })
+              ).createWritable();
+              await writable.write(entry.bytes);
+              await writable.close();
+            }
+          }
+          delete pageHelpers.scratch.zotlitE2ESegmenterCache;
+        },
+        { SEGMENTER_CACHE_DIR },
       );
     });
     // Start from no binary, as a user who has not installed it yet.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `${segmenter}.uninstall().then(function(){return true;})`,
+      async ({ zotlit }) => {
+        return await zotlit.services.chineseSegmenter
+          .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
     );
     const added = addMyLibraryItems(e2eFixture.databasePath, [
       "长江流域的城市化研究",
@@ -1844,86 +2188,231 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await signalDatabaseUpdated(run.vaultId);
     });
     await signalDatabaseUpdated(run.vaultId);
-    const finds = (query: string) =>
-      `(async function(){var hits=await ${services}.itemLookup.search(${JSON.stringify(query)});return String(hits.some(function(hit){return hit.item.itemID===${added.firstItemID};}));})()`;
-    expect(
-      await obEvalUntil(run.vaultId, finds("长江流域"), { expected: "true" }),
-    ).toBe(true);
-    // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
-    expect(await obEval(run.vaultId, finds("流域"))).toBe("false");
 
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      "window.zotlitE2EPlugin=app.plugins.plugins.zotlit;true",
+      async ({ zotlit }, { searchTerm, firstItemID }) => {
+        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        return hits.some(function (hit) {
+          return hit.item.itemID === firstItemID;
+        });
+      },
+      { searchTerm: "长江流域", firstItemID: added.firstItemID },
+      {
+        what: "the first item to appear in lookup results for the Chinese search term",
+      },
+    );
+    // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ zotlit }, { searchTerm, firstItemID }) => {
+          var hits = await zotlit.services.itemLookup.search(searchTerm);
+          return hits.some(function (hit) {
+            return hit.item.itemID === firstItemID;
+          });
+        },
+        { searchTerm: "流域", firstItemID: added.firstItemID },
+      ),
+    ).toBe(false);
+
+    await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        pageHelpers.scratch.zotlitE2EPlugin = app.plugins.plugins.zotlit;
+      },
+      undefined,
     );
     cleanup.defer(async () => {
-      await obEval(run.vaultId, "delete window.zotlitE2EPlugin;true");
+      await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          delete pageHelpers.scratch.zotlitE2EPlugin;
+        },
+        undefined,
+      );
     });
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `${segmenter}.install().then(function(){return ${segmenter}.getStatus().kind;})`,
-        120_000,
+        async ({ zotlit }) => {
+          return await zotlit.services.chineseSegmenter
+            .runPromise(zotlit.services.chineseSegmenter.binary.install)
+            .then(function () {
+              return zotlit.services.chineseSegmenter.runSync(
+                zotlit.services.chineseSegmenter.binary.getStatus,
+              ).kind;
+            });
+        },
+        undefined,
+        { timeoutMs: 120000 },
       ),
     ).toBe("installed");
-    expect(
-      await obEvalUntil(run.vaultId, finds("流域"), { expected: "true" }),
-    ).toBe(true);
-
-    await obEval(
+    await obRunUntil(
       run.vaultId,
-      `${segmenter}.uninstall().then(function(){return true;})`,
+      async ({ zotlit }, { searchTerm, firstItemID }) => {
+        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        return hits.some(function (hit) {
+          return hit.item.itemID === firstItemID;
+        });
+      },
+      { searchTerm: "流域", firstItemID: added.firstItemID },
+      {
+        what: "the first item to appear in lookup results for the Chinese search term after the segmenter install",
+      },
+    );
+
+    await obRun(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return await zotlit.services.chineseSegmenter
+          .runPromise(zotlit.services.chineseSegmenter.binary.uninstall)
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { searchTerm, firstItemID }) => {
+        var hits = await zotlit.services.itemLookup.search(searchTerm);
+        return hits.some(function (hit) {
+          return hit.item.itemID === firstItemID;
+        });
+      },
+      { searchTerm: "流域", firstItemID: added.firstItemID },
+      {
+        ready: (value) => value === false,
+        what: "the Chinese search term to stop matching the first item in lookup results",
+      },
     );
     expect(
-      await obEvalUntil(run.vaultId, finds("流域"), { expected: "false" }),
-    ).toBe(true);
-    expect(await obEval(run.vaultId, finds("长江流域"))).toBe("true");
-    expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        "String(window.zotlitE2EPlugin===app.plugins.plugins.zotlit)",
+        async ({ zotlit }, { searchTerm, firstItemID }) => {
+          var hits = await zotlit.services.itemLookup.search(searchTerm);
+          return hits.some(function (hit) {
+            return hit.item.itemID === firstItemID;
+          });
+        },
+        { searchTerm: "长江流域", firstItemID: added.firstItemID },
       ),
-    ).toBe("true");
+    ).toBe(true);
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app, page: pageHelpers }) => {
+          return (
+            pageHelpers.scratch.zotlitE2EPlugin === app.plugins.plugins.zotlit
+          );
+        },
+        undefined,
+      ),
+    ).toBe(true);
   }, 180_000);
 
   it("writes the database worker's log records to the plugin's log file at the configured level", async () => {
-    const services = "app.plugins.plugins.zotlit.services";
-    const logPath =
-      "app.plugins.plugins.zotlit.manifest.dir+'/zotlit.log.jsonl'";
     /** Note where the log file ends, then refresh the database. */
-    const refresh = `(async function(){window.zotlitE2ELogStart=(await app.vault.adapter.read(${logPath})).length;await ${services}.zoteroReads.refresh();return true;})()`;
+
     /**
      * Once the refresh's `Opened Zotero database` record is in the file, the
      * count of `DEBUG` records the refresh added under categories only the
      * database worker logs to; `pending` before.
      */
-    const workerDebugRecords = `(async function(){var added=(await app.vault.adapter.read(${logPath})).slice(window.zotlitE2ELogStart).split('\\n').filter(Boolean).map(function(line){return JSON.parse(line);});if(!added.some(function(record){return record.message==='Opened Zotero database';}))return 'pending';return String(added.filter(function(record){return record.level==='DEBUG'&&/^zotlit\\.(db|item-lookup|obsidian\\.database)\\./.test(record.logger);}).length);})()`;
+
     /** Refresh, and count its worker `DEBUG` records once they are written. */
     const workerDebugRecordsOfARefresh = async () => {
-      await obEval(run.vaultId, refresh);
+      await obRun(
+        run.vaultId,
+        async ({ app, zotlit, page: pageHelpers }) => {
+          pageHelpers.scratch.zotlitE2ELogStart = (
+            await app.vault.adapter.read(
+              `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
+            )
+          ).length;
+          await zotlit.services.zoteroReads.refresh();
+        },
+        undefined,
+      );
       let count = "pending";
       await waitFor(async () => {
-        count = await obEval(run.vaultId, workerDebugRecords);
+        count = await obRun(
+          run.vaultId,
+          async ({ app, page: pageHelpers }) => {
+            var added = (
+              await app.vault.adapter.read(
+                `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
+              )
+            )
+              .slice(pageHelpers.scratch.zotlitE2ELogStart)
+              .split("\n")
+              .filter(Boolean)
+              .map(function (line) {
+                return JSON.parse(line);
+              });
+            if (
+              !added.some(function (record) {
+                return record.message === "Opened Zotero database";
+              })
+            )
+              return "pending";
+            return String(
+              added.filter(function (record) {
+                return (
+                  record.level === "DEBUG" &&
+                  /^zotlit\.(db|item-lookup|obsidian\.database)\./.test(
+                    record.logger,
+                  )
+                );
+              }).length,
+            );
+          },
+          undefined,
+        );
         return count !== "pending";
       });
       return count;
     };
-    const previous = await obEval(
+    const previous = await obRun(
       run.vaultId,
-      `JSON.stringify({'log.level':${services}.settings.current['log.level'],'log.to-file':${services}.settings.current['log.to-file']})`,
+      async ({ zotlit }) => {
+        return {
+          "log.level": zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["log.level"],
+          "log.to-file": zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["log.to-file"],
+        };
+      },
+      undefined,
     );
     try {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `${services}.settings.update({'log.level':'debug','log.to-file':true});true`,
+        async ({ zotlit }) => {
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({
+              "log.level": "debug",
+              "log.to-file": true,
+            }),
+          );
+        },
+        undefined,
       );
-      expect(
-        await obEvalUntil(
-          run.vaultId,
-          `app.vault.adapter.exists(${logPath}).then(String)`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return await app.vault.adapter.exists(
+            `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
+          );
+        },
+        undefined,
+        {
+          what: "the zotlit.log.jsonl log file to exist in the plugin folder",
+        },
+      );
       // At `debug`, the worker's read snapshot and Item Index records reach the file.
       expect(
         await waitFor(
@@ -1934,9 +2423,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // At `info`, the worker forwards its `Opened Zotero database` record and
       // none of them. The level reaches the worker after the settings change,
       // so a refresh repeats until it does.
-      await obEval(
+      await obRun(
         run.vaultId,
-        `${services}.settings.update({'log.level':'info'});true`,
+        async ({ zotlit }) => {
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({ "log.level": "info" }),
+          );
+        },
+        undefined,
       );
       expect(
         await waitFor(
@@ -1945,9 +2439,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ).toBe(true);
     } finally {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `${services}.settings.update(${previous});true`,
+        async ({ zotlit }, { previous }) => {
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update(previous),
+          );
+        },
+        { previous },
       );
     }
   }, 180_000);
@@ -1955,31 +2454,49 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("removes every ZotLit vault and metadata cache handler as ZotLit is disabled, while its database worker still closes", async () => {
     // ZotLit's handlers are the entries its enable adds to the listener
     // lists. The worker may take seconds to close; the handlers go at once.
-    const survivors = await obJson<string[]>(
+    const survivors = await obRun(
       run.vaultId,
-      `(async()=>{
-        const listed=()=>[app.vault,app.metadataCache].flatMap(e=>Object.entries(e._??{}).flatMap(([name,entries])=>entries.map(entry=>[name,entry])));
-        try{
-          await app.plugins.disablePlugin('zotlit');
-          const before=new Set(listed().map(([,entry])=>entry));
-          await app.plugins.enablePlugin('zotlit');
-          await app.plugins.plugins.zotlit.services.zoteroReads.ready;
-          const added=listed().filter(([,entry])=>!before.has(entry));
-          if(added.length===0)throw new Error('ZotLit added no handler');
-          await app.plugins.disablePlugin('zotlit');
-          const end=Date.now()+1000;
-          let left=added;
-          while(true){
-            const now=new Set(listed().map(([,entry])=>entry));
-            left=added.filter(([,entry])=>now.has(entry));
-            if(left.length===0||Date.now()>end)break;
-            await new Promise(r=>setTimeout(r,20));
+      async ({ app }) => {
+        const listed = () =>
+          [app.vault, app.metadataCache].flatMap((e) =>
+            Object.entries(
+              (
+                e as typeof e & {
+                  _?: Record<string, { fn: (...args: never[]) => unknown }[]>;
+                }
+              )._ ?? {},
+            ).flatMap(([name, entries]) =>
+              entries.map((entry) => [name, entry] as const),
+            ),
+          );
+        try {
+          await app.plugins.disablePlugin("zotlit");
+          const before = new Set(listed().map(([, entry]) => entry));
+          await app.plugins.enablePlugin("zotlit");
+          const added = listed().filter(([, entry]) => !before.has(entry));
+          if (added.length === 0) throw new Error("ZotLit added no handler");
+          await app.plugins.disablePlugin("zotlit");
+          const end = Temporal.Now.instant().epochMilliseconds + 1000;
+          let left = added;
+          while (true) {
+            const now = new Set(listed().map(([, entry]) => entry));
+            left = added.filter(([, entry]) => now.has(entry));
+            if (
+              left.length === 0 ||
+              Temporal.Now.instant().epochMilliseconds > end
+            )
+              break;
+            await new Promise((r) => setTimeout(r, 20));
           }
-          return JSON.stringify(left.map(([name,entry])=>name+': '+String(entry.fn).slice(0,120)));
-        }finally{
-          if(!app.plugins.plugins.zotlit)await app.plugins.enablePlugin('zotlit');
+          return left.map(
+            ([name, entry]) => `${name}: ${String(entry!.fn).slice(0, 120)}`,
+          );
+        } finally {
+          if (!app.plugins.plugins.zotlit)
+            await app.plugins.enablePlugin("zotlit");
         }
-      })()`,
+      },
+      undefined,
     );
     expect(survivors).toEqual([]);
   }, 120_000);

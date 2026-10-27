@@ -85,7 +85,7 @@ let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "desktop-slot-"));
   process.env[DESKTOP_DIR_ENV] = dir;
-  // The Memory Gate has its own tests; here it would add a 30 s settle.
+  // The Memory Gate has its own tests; these cases isolate Desktop Slots.
   process.env[MEMORY_GATE_ENV] = "off";
   // One slot, unless a test says otherwise; children inherit it.
   process.env[DESKTOP_SLOTS_ENV] = "1";
@@ -760,8 +760,8 @@ setInterval(() => {}, 1000);`,
   });
 
   it("does not start while the holder waits at the Memory Gate, so no waiter evicts it there", async () => {
-    // A run admitted just now keeps the gate shut for its settle window.
-    await writeFile(join(dir, "last-start"), Temporal.Now.instant().toString());
+    // A run currently checking memory holds the start lock.
+    await mkdir(join(dir, "last-start.lock"));
     const holder = child(
       `await slot.acquireDesktopSlot({ command: "holder", leaseMs: 30 * 60_000, pollMs: 10, log: (message) => console.log(message) });
 console.log("held");`,

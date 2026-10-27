@@ -1,25 +1,24 @@
 // Writes immutable excerpt assets and verifies their bytes before exposing a link.
-import { createHash, randomUUID } from "node:crypto";
 import {
-  link,
-  mkdir,
-  open,
-  readFile,
-  realpath,
-  unlink,
-} from "node:fs/promises";
+  Cause,
+  Effect,
+  Exit,
+  FileSystem,
+  RcMap,
+  Schema,
+  Semaphore,
+} from "effect";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, isAbsolute, sep } from "node:path";
-import { FileSystemAdapter } from "obsidian";
-import type { App } from "obsidian";
 
 import { parseIndexedKey } from "@zotlit/db";
 
-import {
-  joinFolderPath,
-  resolveAttachmentFolderPath,
-} from "@/lib/ensure-folder";
-import { isErrno } from "@/lib/errno";
-import { getLogger } from "@/lib/log";
+import { attachmentFolderPath } from "@/lib/attachment-folder";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
+import { joinFolderPath } from "@/lib/ensure-folder";
+import type { FileManager } from "@/lib/obsidian-file-manager";
+import { Vault } from "@/lib/obsidian-vault";
 import type { Settings } from "@/services/settings/schema";
 
 import { excerptKey, excerptSourceIdentities } from "./contract";
@@ -34,7 +33,7 @@ import { usableExcerptPng } from "./png";
 import type { ExcerptOutcome } from "./service";
 import { usableExcerptWebpPixels } from "./webp-pixels";
 
-const logger = getLogger("excerpt-materialize");
+const logged = withLogCategory("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
 const SHA256_HEX_LENGTH = 64;
 
@@ -51,38 +50,82 @@ const SHA256_HEX_LENGTH = 64;
  * which the cache read bundles without a decoder for a check that runs before
  * every hit.
  */
-async function usableExternalAsset(bytes: Uint8Array): Promise<boolean> {
-  const format = detectExcerptImageFormat(bytes);
-  if (!format || !isExcerptPayload(format, bytes)) return false;
-  if (format.format === "webp") return usableExcerptWebpPixels(bytes);
-  return usableExcerptPng(
-    Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-  );
-}
-
-async function readPreviousImage(path: string): Promise<Buffer> {
-  await using file = await open(path, "r");
-  const { size } = await file.stat();
-  if (size > MAX_PREVIOUS_BYTES)
-    throw new Error("Previous excerpt exceeds byte limit");
-  const buffer = Buffer.alloc(size + 1);
-  let offset = 0;
-  while (offset < buffer.length) {
-    const { bytesRead } = await file.read(
-      buffer,
-      offset,
-      buffer.length - offset,
-      offset,
+const usableExternalAsset = (bytes: Uint8Array) =>
+  Effect.promise(async () => {
+    const format = detectExcerptImageFormat(bytes);
+    if (!format || !isExcerptPayload(format, bytes)) return false;
+    if (format.format === "webp") return usableExcerptWebpPixels(bytes);
+    return usableExcerptPng(
+      Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
     );
-    if (bytesRead === 0) break;
-    offset += bytesRead;
-  }
-  if (offset > size)
-    throw new Error("Previous excerpt grew during verification");
-  return buffer.subarray(0, offset);
-}
-// Hold publication ownership until cancellation cleanup or successful handoff.
-const publications = new Map<string, Promise<void>>();
+  });
+
+/**
+ * An excerpt asset this process refuses to read or publish: too large, grown
+ * while read, not the bytes its name claims, not registered, or for a target
+ * that is no longer current. The caller logs it and keeps no link.
+ */
+export class ExcerptAssetRefused extends Schema.TaggedError<
+  ExcerptAssetRefused,
+  { readonly brand: unique symbol }
+>()("ExcerptAssetRefused", { message: Schema.String }) {}
+
+/** The file at `path`, refused past {@link MAX_PREVIOUS_BYTES} or when it grows while read. */
+const readPreviousImage = (path: string) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const file = yield* (yield* FileSystem.FileSystem).open(path, {
+        flag: "r",
+      });
+      const size = Number((yield* file.stat).size);
+      if (size > MAX_PREVIOUS_BYTES)
+        return yield* new ExcerptAssetRefused({
+          message: "Previous excerpt exceeds byte limit",
+        });
+      const buffer = Buffer.alloc(size + 1);
+      let offset = 0;
+      while (offset < buffer.length) {
+        const bytesRead = yield* file.read(buffer.subarray(offset));
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      if (offset > size)
+        return yield* new ExcerptAssetRefused({
+          message: "Previous excerpt grew during verification",
+        });
+      return buffer.subarray(0, offset);
+    }),
+  );
+
+/** Remove the file at `path`; a file that is already gone is no failure. */
+const removeIgnoringAbsent = (path: string) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(path)).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.void),
+  );
+
+/**
+ * Admits one publication per destination at a time, across every preparation
+ * that shares it, and holds it until cancellation cleanup or a successful
+ * handoff.
+ */
+export type PublicationGate = (
+  destination: string,
+) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+
+/** A {@link PublicationGate} for the life of the Scope. */
+export const makePublicationGate = Effect.gen(function* () {
+  const locks = yield* RcMap.make({
+    lookup: (_destination: string) => Semaphore.make(1),
+  });
+  const gate: PublicationGate = (destination) => (effect) =>
+    Effect.scoped(
+      Effect.flatMap(RcMap.get(locks, destination), (lock) =>
+        lock.withPermits(1)(effect),
+      ),
+    );
+  return gate;
+});
+
 export type MaterializedExcerpt =
   | {
       kind: "saved";
@@ -93,16 +136,22 @@ export type MaterializedExcerpt =
   | { kind: "unavailable"; reason: "disabled" | "source" | "write" };
 
 /** Only referenced, vault-contained images with proven ownership can survive a failed refresh. */
-export async function retainExcerpt(options: {
-  app: App;
+export const retainExcerpt = Effect.fnUntraced(function* (options: {
   request: ExcerptRequest;
   paths: readonly string[];
-}): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
-  const adapter = options.app.vault.adapter;
-  if (!(adapter instanceof FileSystemAdapter)) return;
+}): Effect.fn.Return<
+  Extract<MaterializedExcerpt, { kind: "retained" }> | undefined,
+  never,
+  FileSystem.FileSystem | Vault
+> {
+  const vault = yield* Vault;
+  const fs = yield* FileSystem.FileSystem;
+  const root = yield* vault.fullPath("");
+  if (root === null) return;
   const identities = excerptAssetIdentities(options.request);
   for (const path of options.paths) {
-    const local = relative(adapter.getFullPath(""), adapter.getFullPath(path));
+    const full = (yield* vault.fullPath(path)) ?? path;
+    const local = relative(root, full);
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
       continue;
     const name = basename(path);
@@ -110,31 +159,40 @@ export async function retainExcerpt(options: {
     const legacy =
       name === `${parseIndexedKey(options.request.annotation.key)?.key}.png`;
     if (!owned && !legacy) continue;
-    try {
-      const actualPath = await realpath(adapter.getFullPath(path));
-      const actualRoot = await realpath(adapter.getFullPath(""));
+    const verified = yield* Effect.gen(function* () {
+      const actualPath = yield* fs.realPath(full);
+      const actualRoot = yield* fs.realPath(root);
       const actualRelative = relative(actualRoot, actualPath);
       if (
         isAbsolute(actualRelative) ||
         actualRelative === ".." ||
         actualRelative.startsWith(`..${sep}`)
       )
-        continue;
-      const bytes = await readPreviousImage(actualPath);
-      if (!(await usableExternalAsset(bytes))) continue;
+        return false;
+      const bytes = yield* readPreviousImage(actualPath);
+      if (!(yield* usableExternalAsset(bytes))) return false;
       // Legacy names carry no source identity. The current source's bytes must prove ownership.
+      const { zoteroPngPath } = options.request;
       if (
         !owned &&
-        (!options.request.zoteroPngPath ||
-          !bytes.equals(await readPreviousImage(options.request.zoteroPngPath)))
+        (!zoteroPngPath ||
+          !bytes.equals(yield* readPreviousImage(zoteroPngPath)))
       )
-        continue;
-      return { kind: "retained", path };
-    } catch (error) {
-      logger.debug("Previous excerpt could not be verified", { path, error });
-    }
+        return false;
+      return true;
+    }).pipe(
+      recover(
+        (cause) =>
+          Effect.logDebug("Previous excerpt could not be verified").pipe(
+            Effect.annotateLogs({ path, cause }),
+            logged,
+          ),
+        Effect.succeed(false),
+      ),
+    );
+    if (verified) return { kind: "retained", path };
   }
-}
+});
 
 /**
  * Every identity form this request's existing assets may carry, the current
@@ -180,16 +238,27 @@ export function isOwnedExcerptAssetPath(
   });
 }
 
-export async function materializeExcerpt(options: {
-  app: App;
+/**
+ * Publish an available outcome as the vault asset its content names, and add
+ * it to the vault. Gives `unavailable` when attachment import is off, the
+ * bytes are not the image they claim, or the write fails, also when `valid`
+ * answers false between two steps. An interrupt passes through. An
+ * interrupted or stale insertion takes back the bytes this call published.
+ */
+export const materializeExcerpt = Effect.fnUntraced(function* (options: {
+  gate: PublicationGate;
   notePath: string;
   settings: Readonly<Settings>;
   request: ExcerptRequest;
   outcome: ExcerptOutcome;
-  signal?: AbortSignal;
-  valid?: () => boolean;
-}): Promise<MaterializedExcerpt> {
-  const { app, request, outcome, settings } = options;
+  /** Whether the insertion target is still current. */
+  valid?: Effect.Effect<boolean>;
+}): Effect.fn.Return<
+  MaterializedExcerpt,
+  never,
+  FileManager | FileSystem.FileSystem | Vault
+> {
+  const { request, outcome, settings } = options;
   if (!settings["attachment.import"])
     return { kind: "unavailable", reason: "disabled" };
   if (outcome.kind === "unavailable")
@@ -197,10 +266,13 @@ export async function materializeExcerpt(options: {
   // Bytes that disagree with their format must not become a vault asset whose
   // name and link claim the declared extension.
   if (!isExcerptImage(outcome)) {
-    logger.debug("Excerpt payload does not match its format", {
-      format: outcome.format.format,
-      bytes: outcome.bytes.byteLength,
-    });
+    yield* Effect.logDebug("Excerpt payload does not match its format").pipe(
+      Effect.annotateLogs({
+        format: outcome.format.format,
+        bytes: outcome.bytes.byteLength,
+      }),
+      logged,
+    );
     return { kind: "unavailable", reason: "source" };
   }
   // A rendered outcome's bytes are this process's own encoder output; every
@@ -209,30 +281,39 @@ export async function materializeExcerpt(options: {
   // become an asset whose name and link claim that image.
   if (
     outcome.provenance !== "rendered" &&
-    !(await usableExternalAsset(outcome.bytes))
+    !(yield* usableExternalAsset(outcome.bytes))
   ) {
-    logger.debug("Excerpt payload has no usable pixels", {
-      provenance: outcome.provenance,
-      format: outcome.format.format,
-      bytes: outcome.bytes.byteLength,
-    });
+    yield* Effect.logDebug("Excerpt payload has no usable pixels").pipe(
+      Effect.annotateLogs({
+        provenance: outcome.provenance,
+        format: outcome.format.format,
+        bytes: outcome.bytes.byteLength,
+      }),
+      logged,
+    );
     return { kind: "unavailable", reason: "source" };
   }
-  const assertCurrent = () => {
-    options.signal?.throwIfAborted();
-    if (options.valid && !options.valid())
-      throw new Error("Excerpt insertion target is no longer current");
-  };
-  try {
-    assertCurrent();
-    const folder = await resolveAttachmentFolderPath(
-      app,
+  const valid = options.valid ?? Effect.succeed(true);
+  const assertCurrent = Effect.gen(function* () {
+    if (!(yield* valid))
+      return yield* new ExcerptAssetRefused({
+        message: "Excerpt insertion target is no longer current",
+      });
+  });
+  const vault = yield* Vault;
+  const fs = yield* FileSystem.FileSystem;
+  const cleanupFailed = (message: string) =>
+    recover(
+      (cause) =>
+        Effect.logWarning(message).pipe(Effect.annotateLogs({ cause }), logged),
+      Effect.void,
+    );
+  const publish = Effect.gen(function* () {
+    yield* assertCurrent;
+    const folder = yield* attachmentFolderPath(
       settings["attachment.folder-path"],
       options.notePath,
     );
-    const adapter = app.vault.adapter;
-    if (!(adapter instanceof FileSystemAdapter))
-      throw new Error("Excerpt import requires a filesystem vault");
     const digest = createHash("sha256")
       .update(excerptKey(request))
       .update(outcome.bytes)
@@ -242,17 +323,17 @@ export async function materializeExcerpt(options: {
       folder,
       `zotlit-excerpt-${identity}-${digest}.${outcome.format.extension}`,
     );
-    const destination = adapter.getFullPath(path);
-    const previous = publications.get(destination);
-    const gate = Promise.withResolvers<void>();
-    publications.set(destination, gate.promise);
-    await previous;
+    const destination = yield* vault.fullPath(path);
+    if (destination === null)
+      return yield* new ExcerptAssetRefused({
+        message: "Excerpt import requires a filesystem vault",
+      });
     // Set once this call creates the destination rather than adopting an
     // existing one, so a cancelled insertion can take back only its own bytes.
     let created = false;
-    try {
-      assertCurrent();
-      await mkdir(dirname(destination), { recursive: true });
+    const write = Effect.gen(function* () {
+      yield* assertCurrent;
+      yield* fs.makeDirectory(dirname(destination), { recursive: true });
       // A dot-file name keeps the temporary out of the vault index: the vault
       // drops an indexed file only on a watcher event, which can be lost.
       const temporary = join(
@@ -260,60 +341,85 @@ export async function materializeExcerpt(options: {
         `.${basename(destination)}.${randomUUID()}.tmp`,
       );
       // Publish only complete bytes, using an exclusive hard link to preserve every existing version.
-      try {
-        await using file = await open(temporary, "wx");
-        await file.writeFile(outcome.bytes, { signal: options.signal });
-        await file.sync();
-        assertCurrent();
-        try {
-          await link(temporary, destination);
-          created = true;
-        } catch (error) {
-          if (!isErrno(error, "EEXIST")) throw error;
-        }
-        const actual = await readFile(destination);
-        if (!actual.equals(outcome.bytes))
-          throw new Error(
-            "Excerpt destination does not match its content identity",
-          );
-        assertCurrent();
-      } finally {
-        await unlink(temporary).catch((error) => {
-          if (!isErrno(error, "ENOENT"))
-            logger.warn("Excerpt temporary cleanup failed", { error });
-        });
-      }
+      yield* Effect.gen(function* () {
+        yield* Effect.addFinalizer(() =>
+          removeIgnoringAbsent(temporary).pipe(
+            cleanupFailed("Excerpt temporary cleanup failed"),
+          ),
+        );
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const file = yield* fs.open(temporary, { flag: "wx" });
+            yield* file.writeAll(outcome.bytes);
+            yield* file.sync;
+          }),
+        );
+        yield* assertCurrent;
+        // The link and its flag are one step: an interrupt between them would
+        // keep bytes that no rollback knows this call created.
+        yield* Effect.uninterruptible(
+          fs.link(temporary, destination).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                created = true;
+              }),
+            ),
+            Effect.catchReason(
+              "PlatformError",
+              "AlreadyExists",
+              () => Effect.void,
+            ),
+          ),
+        );
+        const actual = yield* fs.readFile(destination);
+        if (!Buffer.from(actual).equals(outcome.bytes))
+          return yield* new ExcerptAssetRefused({
+            message: "Excerpt destination does not match its content identity",
+          });
+        yield* assertCurrent;
+      }).pipe(Effect.scoped);
       // The atomic filesystem publish precedes the vault's asynchronous watcher.
       // Register it now so the first rendered embed can resolve its TFile. A
       // failure keeps the content-addressed asset for another caller.
-      assertCurrent();
-      await adapter.reconcileInternalFile(path);
-      assertCurrent();
-      if (!app.vault.getFileByPath(path))
-        throw new Error("Published excerpt is not registered in the vault");
-      return { kind: "saved", path, outcome };
-    } catch (error) {
-      // A cancelled insertion keeps no excerpt, so the bytes this call
-      // published are taken back with it. A destination this call adopted
-      // instead, and a failure its caller survived, both keep their bytes.
-      if (
-        created &&
-        (options.signal?.aborted || (options.valid && !options.valid()))
-      )
-        await unlink(destination).catch((cleanupError) => {
-          if (!isErrno(cleanupError, "ENOENT"))
-            logger.warn("Excerpt rollback cleanup failed", {
-              error: cleanupError,
-            });
+      yield* assertCurrent;
+      yield* vault.reconcileFile(path);
+      yield* assertCurrent;
+      if (!(yield* vault.getFileByPath(path)))
+        return yield* new ExcerptAssetRefused({
+          message: "Published excerpt is not registered in the vault",
         });
-      throw error;
-    } finally {
-      gate.resolve();
-      if (publications.get(destination) === gate.promise)
-        publications.delete(destination);
-    }
-  } catch (error) {
-    logger.debug("Excerpt materialization failed", { error });
-    return { kind: "unavailable", reason: "write" };
-  }
-}
+      const saved: MaterializedExcerpt = { kind: "saved", path, outcome };
+      return saved;
+    });
+    // A cancelled insertion keeps no excerpt, so the bytes this call
+    // published are taken back with it. A destination this call adopted
+    // instead, and a failure its caller survived, both keep their bytes.
+    const takeBack = (exit: Exit.Exit<unknown, unknown>) =>
+      Effect.gen(function* () {
+        if (!created || !Exit.isFailure(exit)) return;
+        // A rollback, not a failure boundary: any interrupt means the insert
+        // did not happen, also when a failure came with it.
+        // oxlint-disable-next-line zotlit-services/interrupt-predicate
+        if (!Cause.hasInterrupts(exit.cause) && (yield* valid)) return;
+        yield* removeIgnoringAbsent(destination).pipe(
+          cleanupFailed("Excerpt rollback cleanup failed"),
+        );
+      });
+    return yield* options.gate(destination)(
+      write.pipe(Effect.onExit((exit) => takeBack(exit))),
+    );
+  });
+  return yield* publish.pipe(
+    recover(
+      (cause) =>
+        Effect.logDebug("Excerpt materialization failed").pipe(
+          Effect.annotateLogs({ cause }),
+          logged,
+        ),
+      Effect.succeed<MaterializedExcerpt>({
+        kind: "unavailable",
+        reason: "write",
+      }),
+    ),
+  );
+});

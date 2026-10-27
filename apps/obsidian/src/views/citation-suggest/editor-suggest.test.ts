@@ -1,5 +1,6 @@
 import { Text } from "@codemirror/state";
-import { Effect, Stream } from "effect";
+import { it as effectIt } from "@effect/vitest";
+import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -9,7 +10,7 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
+import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -23,16 +24,18 @@ import {
   createCitationIndexHarness,
   KEY_A,
 } from "@/services/citation-index/test-harness";
-import { ItemLookup } from "@/services/item-lookup/service";
+import { buildItemLookup } from "@/services/item-lookup/__fixtures__";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { defaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import { layerRcRef } from "@/services/zotero-reads/connection";
 import {
-  inProcessReadsService,
+  inProcessClient,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 import { placeInsertion } from "@/views/annot-view/async-insert";
 
+import { readDocumentCitedKeys } from "./document-citations";
 import {
   CitationEditorSuggest,
   resolveCitationInsert,
@@ -70,7 +73,7 @@ function insertDeps(
 ): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup"> {
   return {
     noteFeature: stubService<CitationSuggestDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       { renderCitation },
     ),
     citationLookup: stubService<CitationSuggestDeps["citationLookup"]>(
@@ -526,37 +529,27 @@ describe("Citation Suggester document citations", () => {
 
   it("keeps the newest hits visible when keystrokes overlap a document read", async () => {
     const document = Promise.withResolvers<DocumentCitationSet>();
-    await using reads = inProcessReadsService(
-      memoryOpener(
-        () => `
-      insert into libraries (libraryID, type, version, clientVersion)
-        values (1, 'user', 1, 0);
-      insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
-      insert into fieldsCombined (fieldID, fieldName, custom) values (10, 'title', 0);
-      insert into itemDataValues (valueID, value) values (1, 'Alpha');
-      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
-        values (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ALPHA222');
-      insert into itemData (itemID, fieldID, valueID) values (1, 10, 1);
-    `,
-      ).open,
+    await using stack = new AsyncDisposableStack();
+    const lookup = await buildItemLookup(
+      inProcessClient(
+        layerRcRef(
+          memoryOpener(
+            () => `
+        insert into libraries (libraryID, type, version, clientVersion)
+          values (1, 'user', 1, 0);
+        insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+        insert into fieldsCombined (fieldID, fieldName, custom) values (10, 'title', 0);
+        insert into itemDataValues (valueID, value) values (1, 'Alpha');
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+          values (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ALPHA222');
+        insert into itemData (itemID, fieldID, valueID) values (1, 10, 1);
+      `,
+          ).open,
+        ),
+      ),
+      [{ selector: { type: "personal" }, libraryID: 1, name: null }],
+      stack,
     );
-    await using lookup = new ItemLookup({
-      runtime: testRuntime(),
-      reads,
-      useLedger: { uses: {} },
-      libraryScope: {
-        changed: Stream.empty,
-        "libraries-changed": Stream.empty,
-        current: {
-          mode: "all",
-          invalid: false,
-          unavailable: [],
-          available: [
-            { selector: { type: "personal" }, libraryID: 1, name: null },
-          ],
-        },
-      },
-    });
     const suggest = new CitationEditorSuggest(
       stubService<CitationSuggestDeps>("CitationSuggestDeps", {
         app: stubService<App>("App", {}),
@@ -594,6 +587,39 @@ describe("Citation Suggester document citations", () => {
     ]);
     expect(close).not.toHaveBeenCalled();
   });
+
+  effectIt.effect(
+    "#1789 unload leaves the document citation fallback silent",
+    () =>
+      Effect.promise(async () => {
+        await using bridge = openTestBridge();
+        using debug = vi.spyOn(
+          getLogger(["views", "citation-suggest"]),
+          "debug",
+        );
+        const started = Promise.withResolvers<void>();
+        const pending = readDocumentCitedKeys(
+          {
+            bridge,
+            citationIndex: {
+              getDocumentCitationSet: () => {
+                started.resolve();
+                return new Promise<DocumentCitationSet>(() => {});
+              },
+            },
+          },
+          file,
+          new AbortController().signal,
+        ).then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        );
+        await started.promise;
+        await bridge[Symbol.asyncDispose]();
+        expect(await pending).toEqual({ value: [] });
+        expect(debug).not.toHaveBeenCalled();
+      }),
+  );
 
   it("keeps searching when document citations fail", async () => {
     using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");

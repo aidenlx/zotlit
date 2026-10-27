@@ -5,7 +5,9 @@ import { expect, vi } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { FileExists } from "@/lib/vault-errors";
 import { createTemplateHost } from "@/services/template/__fixtures__";
+import { TemplateOperationError } from "@/services/template/errors";
 
 import { profileOver, profileRuntimeOf } from "./__fixtures__";
 import { Profile } from "./service";
@@ -124,19 +126,19 @@ it.effect(
           }),
         ),
       );
-      const { profile } = yield* profileRuntimeOf(host);
+      const { profile, profileService } = yield* profileRuntimeOf(host);
       yield* Effect.promise(() =>
         expect(profile.materializeDefault()).rejects.toThrow(),
       );
-      yield* Effect.promise(() =>
-        expect(profile.ejectDefault()).rejects.toThrow(),
+      expect(yield* Effect.flip(profileService.ejectDefault())).toBeInstanceOf(
+        TemplateOperationError,
       );
       expect([...host.vault.contents.keys()]).toEqual([]);
     }),
 );
 
 it.effect(
-  "#1705: runtime disposal stops Profile listeners and retains the plain read surface",
+  "#1705: runtime disposal stops Profile listeners and calls, and retains the plain sync reads",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost();
@@ -157,13 +159,11 @@ it.effect(
       expect(profile.profiles).toBe(retained);
       expect(profile.loaded).toBe(true);
       expect(profile.resolveProfile("default")).toBeDefined();
-      expect(yield* Effect.promise(() => profile.getSource("default"))).toBe(
-        source,
+      yield* Effect.promise(() =>
+        expect(profile.getSource("default")).rejects.toMatchObject({
+          name: "AbortError",
+        }),
       );
-      expect(
-        (yield* Effect.promise(() => profile.prepareShare("default"))).manifest
-          .name,
-      ).toBe("Default");
       subscribe(profile.runtime, profile.changes, () => {
         throw new Error("late listener");
       })();
@@ -188,18 +188,20 @@ it.effect(
         await release.promise;
         return create(...args);
       };
-      const writing = profile.materializeDefault();
+      // Unload stops the waiting caller; the write itself finishes.
+      const writing = expect(
+        profile.materializeDefault(),
+      ).rejects.toMatchObject({ name: "AbortError" });
       yield* Effect.promise(() => started.promise);
       let closed = false;
       const closing = runtime.dispose().then(() => {
         closed = true;
       });
+      yield* TestClock.adjust(500);
       expect(closed).toBe(false);
       release.resolve();
       yield* TestClock.adjust(500);
-      expect(yield* Effect.promise(() => writing)).toMatchObject({
-        created: true,
-      });
+      yield* Effect.promise(() => writing);
       yield* Effect.promise(() => closing);
       expect(
         host.vault.contents.has("templates/zotlit-profile.default.md"),
@@ -207,12 +209,13 @@ it.effect(
     }),
 );
 
-it.effect.each(["read", "create", "duplicate"] as const)(
-  "#1705: a stalled Profile source %s does not hold runtime disposal",
+it.effect.each(["read", "create", "duplicate", "save"] as const)(
+  "#1705, #1792: a stalled Profile source %s does not hold runtime disposal",
   (operation) =>
     Effect.gen(function* () {
       const host = createTemplateHost();
-      const { runtime, profile } = yield* profileRuntimeOf(host);
+      const { runtime, profile, profileService } =
+        yield* profileRuntimeOf(host);
       const creating = profile.materializeDefault();
       yield* TestClock.adjust(500);
       yield* Effect.promise(() => creating);
@@ -222,18 +225,30 @@ it.effect.each(["read", "create", "duplicate"] as const)(
         started.resolve();
         return release.promise;
       });
-      const pending =
+      const settled = (pending: Promise<unknown>) => {
+        const caught = pending.catch((error: unknown) => error);
+        return Effect.promise(() => caught);
+      };
+      const reading: Effect.Effect<unknown> =
         operation === "read"
-          ? profile.getSource("default")
-          : operation === "create"
-            ? profile.create({ label: "Late creation" })
-            : profile.duplicate("default");
-      const reading = pending.catch((error: unknown) => error);
+          ? settled(profile.getSource("default"))
+          : operation === "save"
+            ? settled(
+                profile.saveSource("default", "Unwritten replacement", {
+                  state: "absent",
+                }),
+              )
+            : operation === "create"
+              ? settled(profile.create({ label: "Late creation" }))
+              : Fiber.join(
+                  yield* Effect.forkChild(
+                    Effect.exit(profileService.duplicate("default")),
+                    { startImmediately: true },
+                  ),
+                );
       yield* Effect.promise(() => started.promise);
       yield* Effect.promise(() => runtime.dispose());
-      expect(String(yield* Effect.promise(() => reading))).not.toContain(
-        "ManagedRuntime disposed",
-      );
+      expect(String(yield* reading)).not.toContain("ManagedRuntime disposed");
       release.resolve(profile.getBuiltInSource());
       yield* TestClock.adjust(500);
       expect([...host.vault.contents.keys()]).toEqual([
@@ -243,7 +258,7 @@ it.effect.each(["read", "create", "duplicate"] as const)(
 );
 
 it.effect(
-  "#1705: disposal cancels deletion waiting for the first note index",
+  "#1792: disposal interrupts a Profile write waiting for the first note index",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost({
@@ -276,11 +291,26 @@ Annotation`,
       // Release the old implementation too, so a failing case can close cleanly.
       for (const callback of layouts) callback();
       yield* TestClock.adjust(500);
-      yield* Effect.promise(() => deleting);
+      expect(yield* Effect.promise(() => deleting)).toMatchObject({
+        name: "AbortError",
+      });
       yield* Effect.promise(() => closing);
       expect(closedBeforeLayout).toBe(true);
       expect(host.vault.contents.has("templates/zotlit-profile.books.md")).toBe(
         true,
       );
     }),
+);
+
+it.effect("#1792: a Profile create preserves the FileExists error type", () =>
+  Effect.gen(function* () {
+    const host = createTemplateHost();
+    const { profileService } = yield* profileRuntimeOf(host);
+    const path = "templates/zotlit-profile.default.md";
+    yield* Effect.promise(() => host.vault.createFolder(path));
+    const error = yield* Effect.flip(profileService.materializeDefault());
+    expect(error).toBeInstanceOf(FileExists);
+    expect(error).toMatchObject({ path });
+    expect(host.vault.contents.has(path)).toBe(false);
+  }),
 );

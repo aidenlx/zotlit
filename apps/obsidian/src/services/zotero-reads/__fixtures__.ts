@@ -1,8 +1,9 @@
 /** The real service and adapter over a test's scoped RPC transport. */
 import { Context, Effect, Layer, Stream } from "effect";
-import type { Scope } from "effect";
+import type { ManagedRuntime, Scope } from "effect";
 import { RpcSchema } from "effect/rpc";
 
+import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import type { ZoteroReadsClient } from "./in-process";
@@ -44,7 +45,7 @@ async function openReads(
 /** Legacy consumer fixtures can construct synchronously; only the test owner awaits ready. */
 export type TestReads = PlainZoteroReads &
   AsyncDisposable & {
-    runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+    runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>;
     ready: Promise<{ reads: ZoteroReadsApi; client: ZoteroReadsApi }>;
   };
 
@@ -109,9 +110,6 @@ export function testReads(
     get dbFileMissing() {
       return plain?.dbFileMissing ?? false;
     },
-    get activeReadMode() {
-      return plain?.activeReadMode ?? null;
-    },
     snapshot: Effect.flatMap(
       Effect.promise(() => loaded),
       (adapter) => adapter.snapshot,
@@ -169,4 +167,25 @@ export function testReads(
       await stack.disposeAsync();
     },
   };
+}
+
+/** One answer per read a test calls: the read's input in, its result out. */
+export type ReadsAnswers = {
+  readonly [K in keyof ZoteroReadsApi]?: (
+    input: Parameters<ZoteroReadsApi[K]>[0],
+  ) => ReturnType<ZoteroReadsApi[K]>;
+};
+
+/**
+ * A {@link ZoteroReadsApi} that answers the reads in `answers`; any other read
+ * throws.
+ */
+export function readsAnswering(answers: ReadsAnswers): ZoteroReadsApi {
+  // The one cast: the RPC client's methods are generic over their call
+  // options, which a plain function cannot state. ReadsAnswers checks each
+  // answer against its read's input and result.
+  return stubService<ZoteroReadsApi>(
+    "ZoteroReadsApi",
+    answers as Partial<ZoteroReadsApi>,
+  );
 }

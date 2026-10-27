@@ -1,6 +1,7 @@
 // The typed failures of the Vault and FileManager capability tags. An expected
 // outcome is its own tagged error, which the tag decides from the vault cache
-// before it calls Obsidian; `VaultError` is every other rejection.
+// before it calls Obsidian, or from the adapter's `ENOENT` for a read by path;
+// `VaultError` is every other rejection.
 import { Schema } from "effect";
 
 /**
@@ -23,6 +24,19 @@ export class FileExists extends Schema.TaggedError<
 }
 
 /**
+ * The vault adapter has no file at `path`: its read rejected with `ENOENT`.
+ * `cause` holds what the adapter threw.
+ */
+export class FileNotFound extends Schema.TaggedError<
+  FileNotFound,
+  { readonly brand: unique symbol }
+>()("FileNotFound", {
+  /** The vault path that holds no file. */
+  path: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+/**
  * A vault or file manager call rejected. `message` is Obsidian's own, for logs and
  * notices; `cause` holds what Obsidian threw. Nothing classifies it.
  */
@@ -37,6 +51,19 @@ export class VaultError extends Schema.TaggedError<
   message: Schema.String,
   cause: Schema.Defect(),
 }) {}
+
+/** A file, not a folder, holds the vault path where a folder belongs. */
+export class VaultFolderBlockedError extends Schema.TaggedError<
+  VaultFolderBlockedError,
+  { readonly brand: unique symbol }
+>()("VaultFolderBlockedError", {
+  /** The folder's vault path. */
+  path: Schema.String,
+}) {
+  override get message(): string {
+    return `Cannot create folder; a file exists at "${this.path}"`;
+  }
+}
 
 /** A `VaultError` for `operation` on `path`, from what Obsidian threw. */
 export const vaultError =

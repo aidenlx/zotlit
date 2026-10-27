@@ -1,4 +1,4 @@
-import { getLanguage, Plugin, requestUrl, View } from "obsidian";
+import { Plugin, View } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import type { CliCommand, CliHost } from "@/lib/cli-command";
@@ -8,57 +8,39 @@ import {
   DOCS_SITE_URL,
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
-import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
+import { ViewRegistry } from "@/lib/view-atoms";
 
-import { initI18n } from "./lib/i18n";
-import type { LanguagePackLifecycle } from "./lib/i18n";
-import {
-  installLanguagePack,
-  toastLanguagePackDownload,
-} from "./lib/i18n/install-toast";
+import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
-import { openSettingsTab } from "./lib/open-settings";
 import { addAnnotationHistoryActions } from "./services/annotation-repository/actions";
 import type { HistorySurface } from "./services/annotation-repository/actions";
 import { annotationHistoryFileMenu } from "./services/annotation-repository/menu";
-import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
 import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
-import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
-import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
-import { reapReadClones } from "./services/database/reap-temps";
-import { reapExcerptTemps } from "./services/excerpt-image/reap-temps";
-import { registerAnnotationImageCli } from "./services/excerpt-image/register-cli";
-import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { indexedKeyFileMenu } from "./services/indexed-key/menu";
-import { registerQueryCli } from "./services/item-query/cli";
-import { registerQueryMeasureCli } from "./services/item-query/measure";
 import {
   addCustomizeActions,
   customizeFileMenu,
 } from "./services/local-bridge/actions";
-import { createCustomize } from "./services/local-bridge/customize";
-import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import {
   addNoteFeatureActions,
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
-import { runBatchUpdateAll } from "./services/note-feature/update-batch";
-import { reapCslStore } from "./services/pandoc/reap-temps";
 import { addProfileActions } from "./services/profile/actions";
-import { registerProtocolHandlers } from "./services/protocol/register";
 import { ServiceStartupFailed } from "./services/startup-failure";
-import { registerTemplateWorkbench } from "./services/template-workbench/register";
-import { ZotLitSettingTab } from "./setting-tab";
+import {
+  createProfileDialog,
+  importProfileDialog,
+} from "./setting-tab/profile-dialogs";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
@@ -92,7 +74,6 @@ import {
   registerTemplateDataExplorer,
 } from "./views/template-data-explorer/register";
 import {
-  openNativeProfile,
   templateWorkbenchFileMenu,
   registerTemplateWorkbenchView,
 } from "./views/template-workbench/register";
@@ -174,53 +155,6 @@ function reportStartupFailure(error: unknown): never {
   throw error;
 }
 
-function showLanguagePackLifecycle(lifecycle: LanguagePackLifecycle): void {
-  const situation = lifecycle.getSituation();
-  switch (situation.kind) {
-    case "offered":
-      showLanguagePackInstallOffer(lifecycle);
-      break;
-    case "downloading":
-      void toastLanguagePackDownload(situation.done);
-      break;
-  }
-}
-
-function showLanguagePackInstallOffer(lifecycle: LanguagePackLifecycle): void {
-  const { endonym } = lifecycle;
-  const notice = new BaseNotice(
-    BaseNotice.render((renderer) => {
-      renderer.setTitle(m.notice_language_pack_install({ language: endonym }));
-      renderer.addAction((button) => {
-        button
-          .setButtonText(m.notice_language_pack_decline_action())
-          .onClick(() => {
-            lifecycle.decline();
-            notice.hide();
-          });
-      });
-      renderer.addAction((button) => {
-        button
-          .setButtonText(m.notice_language_pack_install_action())
-          .setCta()
-          .onClick(() => {
-            notice.hide();
-            installLanguagePack(lifecycle);
-          });
-      });
-    }),
-    0,
-  );
-  // Installing from the settings tab must also hide this notice, not just the
-  // settings tab's own row, so the two entry points onto the same download
-  // never disagree about whether it's still being offered.
-  const unsubscribe = lifecycle.subscribe(() => {
-    if (lifecycle.getSituation().kind === "offered") return;
-    unsubscribe();
-    notice.hide();
-  });
-}
-
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
 export default class ZotLitPlugin extends Plugin implements CliHost {
   // Owns every service/resource registered during onload after startup commits.
@@ -286,17 +220,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     if (__DEV__) enableStartupLogging();
 
-    // Install the current session's pack before any service can call `m.*`.
-    const languagePack = initI18n({
-      pluginVersion: this.manifest.version,
-      ports: {
-        getLanguage,
-        loadLocalStorage: (key) => this.app.loadLocalStorage(key),
-        saveLocalStorage: (key, value) => this.app.saveLocalStorage(key, value),
-        requestUrl,
-      },
-    });
-    showLanguagePackLifecycle(languagePack);
+    // Install the current session's pack before any copy shows: the installer
+    // and startup-failure notices below read `m.*` outside the service graph.
+    // The graph's LanguagePack carries on from here and shows the consent
+    // notice or the refresh toast once it builds.
+    const languagePack = startI18n(this.app, this.manifest.version);
 
     // Block load on too-old Obsidian installers before allocating any resources.
     assertElectronVersion();
@@ -305,107 +233,35 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
-    // Clear the temp residue of crashed runs before any service adds more.
-    // Fire-and-forget: a launch never waits on housekeeping, and unloading
-    // mid-sweep aborts it. Each producer owns what its own residue is, and
-    // each reap reports its own failures rather than raising them. A reap the
-    // abort ends rejects with its reason, which unload means to ignore.
-    const { signal: reapSignal } = stack.use(new DisposableAbortController());
-    const ignoreReapAbort = (error: unknown) => {
-      if (error !== reapSignal.reason) throw error;
-    };
-    void reapReadClones({ signal: reapSignal }).catch(ignoreReapAbort);
-    void reapCslStore({ signal: reapSignal }).catch(ignoreReapAbort);
-    void reapExcerptTemps({ signal: reapSignal }).catch(ignoreReapAbort);
-
-    const { services } = await buildServices(this, stack).catch(
+    const { services } = await buildServices(this, stack, languagePack).catch(
       reportStartupFailure,
     );
 
     // One Customize flow shared by every entry action.
-    const customize = createCustomize({
-      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      app: this.app,
-      settings: services.settings,
-      profile: services.profile,
-      template: services.template,
-      localServer: services.localServer,
-      effect: services.bridge,
-      bridge: services.localBridge,
-      pluginVersion: this.manifest.version,
-      confirmLaunch: createLaunchSheet(this.app),
-      openExternal: (url) => window.open(url),
-      openNative: async ({ profileId, item, originatingNote }) => {
-        const entry = services.profile.profiles.find(
-          (profile) => profile.id === profileId,
-        );
-        const target =
-          profileId === "default"
-            ? services.profile
-            : entry && this.app.vault.getFileByPath(entry.path);
-        if (target)
-          await openNativeProfile(this.app, target, {
-            ...(item ? { itemIndexedKey: item.key } : {}),
-            originatingNote,
-            explainUnsupported: false,
-            customize: true,
-          });
-      },
-    });
-
-    this.addSettingTab(
-      new ZotLitSettingTab({
-        runtime: services.runtime,
-        bridge: services.bridge,
-        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        importProfile: services.importProfile,
-        profile: services.profile,
-        plugin: this,
-        settings: services.settings,
-        db: services.zoteroReads,
-        libraryScope: services.libraryScope,
-        zoteroPref: services.zoteroPref,
-        localServer: services.localServer,
-        localBridge: services.localBridge,
-        customize,
-        attachmentImport: services.attachmentImport,
-        citationIndex: services.citationIndex,
-        excerptImage: services.excerptImage,
-        excerptDisplay: services.excerptDisplay,
-        annotations: services.annotationRepository,
-        writeAuthorization: {
-          allowEditing: () => services.capabilityNotices.allowEditing(),
-          forgetAuthorization: services.zoteroLocalApi.forgetAuthorization,
-          remembered: services.zoteroLocalApi.remembered,
-        },
-        template: services.template,
-        release: services.release,
-        pandocEngine: services.pandocEngine,
-        chineseSegmenter: services.chineseSegmenter,
-        languagePack,
-      }),
-    );
+    const customize = services.customize;
 
     const customizeDeps = {
       settings: services.settings,
-      profile: services.profile,
+      profile: services.profileService,
       customize,
-      effect: services.bridge,
+      bridge: services.bridge,
     };
     addCustomizeActions(this, customizeDeps);
     addProfileActions(this, { importProfile: services.importProfile });
     addIndexedKeyActions(this);
-    addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
+    addCitekeyEditorActions(this, {
+      citekeyEditor: services.citekeyEditor,
+      bridge: services.bridge,
+    });
     addGraphCitationsActions(this, {
       app: this.app,
       graphCitations: services.graphCitations,
+      bridge: services.bridge,
     });
     const attachmentOpenDeps = {
       app: this.app,
-      reads: services.zoteroReads,
-      zoteroPref: services.zoteroPref,
+      attachments: services.literatureNoteAttachments,
       opener: services.targetOpener,
-      bridge: services.bridge,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
@@ -416,34 +272,16 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         bridge: services.bridge,
       }),
     );
-    const updateAll = () =>
-      runBatchUpdateAll({
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        zoteroPref: services.zoteroPref,
-        profile: services.profile,
-        app: this.app,
-        zoteroReads: services.zoteroReads,
-        settings: services.settings,
-        bridge: services.bridge,
-        libraryScope: services.libraryScope,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-      });
     const noteFeatureDeps = {
-      createProfile: services.createProfile,
-      importProfile: services.importProfile,
       app: this.app,
-      noteFeature: services.noteFeature,
-      zoteroPref: services.zoteroPref,
+      noteActions: services.noteActions,
       batchImport: services.batchImport,
-      updateAll,
     };
     addNoteFeatureActions(this, noteFeatureDeps);
     stack.defer(
       registerWorkbenchSavedNotice({
         localBridge: services.localBridge,
-        updateAll,
+        updateAll: () => services.noteActions.updateAll(),
       }),
     );
     registerCitationSuggest(this, {
@@ -476,69 +314,34 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       });
     }
     registerQuickSwitch(this, {
-      createProfile: services.createProfile,
-      importProfile: services.importProfile,
       app: this.app,
-      reads: services.zoteroReads,
+      attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
       settings: services.settings,
       bridge: services.bridge,
-      zoteroPref: services.zoteroPref,
       opener: services.targetOpener,
       showInLibrary: (indexedKey) => showInLibrary(this.app, indexedKey),
     });
 
-    void stack.use(
-      registerProtocolHandlers(this, {
-        useLedger: services.useLedger,
-        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        profile: services.profile,
-        app: this.app,
-        settings: services.settings,
-        zoteroReads: services.zoteroReads,
-        libraryScope: services.libraryScope,
-        zoteroPref: services.zoteroPref,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        batchImport: services.batchImport,
-        liveUpdate: services.localServer,
-        bridge: services.bridge,
-        opener: services.targetOpener,
-      }),
-    );
-
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
+      registry: services.runtime.runSync(ViewRegistry),
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       query: services.query,
-      annotations: services.annotationRepository,
-      bridge: services.bridge,
-      excerptDisplay: services.excerptDisplay,
-      allowEditing: () => void services.capabilityNotices.allowEditing(),
-      reportBlockedGesture: (attachmentKey) =>
-        services.capabilityNotices.reportBlockedGesture(attachmentKey),
-      libraryTagNames: services.libraryTagNames,
-      zoteroPref: services.zoteroPref,
-      noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
-        runtime: services.runtime,
+        registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        profile: services.profile,
-        template: services.template,
-        zoteroPref: services.zoteroPref,
-        zoteroReads: services.zoteroReads,
+        creation: {
+          app: this.app,
+          createProfile: (options) => createProfileDialog(this.app, options),
+          importProfile: (options) => importProfileDialog(this.app, options),
+        },
       }),
       opener: services.targetOpener,
     };
@@ -546,53 +349,32 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
-      excerptDisplay: services.excerptDisplay,
-      liveUpdate: services.localServer,
       bridge: services.bridge,
       pdfReaders: services.pdfAnnotationEditor,
-      noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
+      registry: services.runtime.runSync(ViewRegistry),
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
-      useLedger: services.useLedger,
       ...queryViewDeps,
+      reads: services.zoteroReads,
       libraryScope: services.libraryScope,
-      settings: services.settings,
       welcome: {
-        runtime: services.runtime,
-        bridge: services.bridge,
-        app: this.app,
-        reads: services.zoteroReads,
-        queries: services.queryClient,
-        zoteroPref: services.zoteroPref,
-        settings: services.settings,
+        registry: services.runtime.runSync(ViewRegistry),
         setupActions: createSetupActions({
           app: this.app,
-          settings: services.settings,
-          bridge: services.bridge,
-          zoteroPref: services.zoteroPref,
+          registry: services.runtime.runSync(ViewRegistry),
           pluginId: this.manifest.id,
         }),
-        templateMigration: services.templateMigration,
-        release: services.release,
       },
       items: itemActions({
+        registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
-        createProfile: services.createProfile,
-        importProfile: services.importProfile,
         noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        reads: services.zoteroReads,
-        zoteroPref: services.zoteroPref,
-        citationLookup: services.citationLookup,
-        useLedger: services.useLedger,
         opener: services.targetOpener,
-        notify: (message) => new BaseNotice(message),
       }),
-      lookup: services.itemLookup,
     });
 
     // The Annotation History's own verbs. A bound PDF view and an Annotation
@@ -614,108 +396,50 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
-      runtime: services.runtime,
+      registry: services.runtime.runSync(ViewRegistry),
       bridge: services.bridge,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
-      app: this.app,
-      zoteroReads: services.zoteroReads,
-      query: services.query,
-      noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      templates: services.template,
-      profile: services.profile,
       nativePreview: {
-        runtime: services.runtime,
-        bridge: services.bridge,
-        citationParse: services.citationParse,
         app: this.app,
-        zoteroReads: services.zoteroReads,
-        noteIndex: services.noteIndex,
-        zoteroPref: services.zoteroPref,
-        settings: services.settings,
-        templates: services.template,
-        profile: services.profile,
-        bibliographyRender: services.bibliographyRender,
-        citationLookup: services.citationLookup,
+        registry: services.runtime.runSync(ViewRegistry),
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
 
     registerTemplateDataExplorer(this, {
-      runtime: services.runtime,
       bridge: services.bridge,
       app: this.app,
-      zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
+      registry: services.runtime.runSync(ViewRegistry),
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
     });
 
     registerNotePreview(this, {
-      runtime: services.runtime,
-      bridge: services.bridge,
-      citationParse: services.citationParse,
       app: this.app,
+      registry: services.runtime.runSync(ViewRegistry),
+      bridge: services.bridge,
       itemLookup: services.itemLookup,
-      profile: services.profile,
-      zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
       settings: services.settings,
-      templates: services.template,
-      bibliographyRender: services.bibliographyRender,
-      citationLookup: services.citationLookup,
     });
 
     registerReferencesView(this, {
-      runtime: services.runtime,
-      profile: services.profile,
       app: this.app,
-      db: services.zoteroReads,
-      citationIndex: services.citationIndex,
-      citationLookup: services.citationLookup,
-      libraryScope: services.libraryScope,
-      citationText: services.citationText,
-      citekeyEditor: services.citekeyEditor,
-      pandocEngine: services.pandocEngine,
-      bibliographyRender: services.bibliographyRender,
+      registry: services.runtime.runSync(ViewRegistry),
     });
 
     registerCitedByView(this, {
       app: this.app,
-      citationIndex: services.citationIndex,
+      registry: services.runtime.runSync(ViewRegistry),
     });
-
-    registerTemplateWorkbench(this, {
-      runtime: services.runtime,
-      profile: services.profile,
-      app: this.app,
-      zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
-      settings: services.settings,
-      bridge: services.bridge,
-      templates: services.template,
-      zoteroPref: services.zoteroPref,
-    });
-
-    registerQueryCli(this, services.query);
-    registerAnnotationImageCli(this, services);
-
-    // Measurement-only: lets packages/e2e/src/query-measure.ts read the
-    // slices, statements, heap, and cancel times of a run. A dev-build port,
-    // never registered in a production build.
-    if (__DEV__) {
-      registerQueryMeasureCli(this, services.query);
-    }
 
     registerPandocExport(this, {
-      citationParse: services.citationParse,
+      fileSystem: services.fileSystem,
+      citationParse: services.citationParseService,
       profile: services.profile,
       app: this.app,
       db: services.zoteroReads,
@@ -732,6 +456,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const citationPresentationDeps = {
+      fileSystem: services.fileSystem,
       app: this.app,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
@@ -763,28 +488,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     registerWelcomeView(this, {
-      runtime: services.runtime,
-      reads: services.zoteroReads,
-      queries: services.queryClient,
-      settings: services.settings,
-      bridge: services.bridge,
+      registry: services.runtime.runSync(ViewRegistry),
     });
-
-    stack.defer(
-      registerAttachmentSkipNotice({
-        attachmentImport: services.attachmentImport,
-        openSettings: () => {
-          openSettingsTab(this.app, this.manifest.id, [
-            "settings_page_attachments",
-            "settings_attachment_approved",
-          ]);
-        },
-      }),
-    );
-    stack.defer(registerCitekeyEditorNotices(services.citekeyEditor));
-    stack.defer(
-      registerCitekeyCandidatePicker(this.app, services.citekeyEditor),
-    );
 
     // The companion's Freshness Signal means the database changed and its
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
@@ -793,35 +498,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       services.bridge.subscribe(services.localServer.dbUpdated, () => {
         services.zoteroReads.notifyExternalChange();
       }),
-    );
-
-    // A saved pixel edit revalidates its Excerpt Image wherever the image
-    // stands: the card that shows the Annotation, and — with no card on screen —
-    // the device-local image the store already holds for it. One subscriber
-    // covers every surface that can save an edit. Each request reads the
-    // database first, so only the newest edit of an Annotation is revalidated:
-    // an older read that lands late would cancel the newer replacement.
-    const latestEdit = new Map<string, symbol>();
-    stack.defer(
-      services.bridge.subscribe(
-        services.annotationRepository.excerptPixelsChanged,
-        ({ record, source }) => {
-          const edit = Symbol(record.key);
-          latestEdit.set(record.key, edit);
-          void savedExcerptRequest({
-            annotation: record,
-            source,
-            sourceScope: services.zoteroPref.dataDir,
-            zoteroReads: services.zoteroReads,
-            paths: services.zoteroPref,
-            bridge: services.bridge,
-          }).then((request) => {
-            if (latestEdit.get(record.key) !== edit) return;
-            latestEdit.delete(record.key);
-            if (request) services.excerptDisplay.revalidate(request);
-          });
-        },
-      ),
     );
 
     this.#services = services;

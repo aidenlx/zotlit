@@ -3,9 +3,7 @@
 import { TFile, TFolder } from "obsidian";
 import type { DataWriteOptions, EventRef, TAbstractFile } from "obsidian";
 
-import { Effect } from "effect";
-import { makeVault } from "@/lib/obsidian-vault";
-import type { Vault, VaultSource } from "@/lib/obsidian-vault";
+import type { VaultSource } from "@/lib/obsidian-vault";
 
 type Callback = (...args: unknown[]) => unknown;
 
@@ -38,6 +36,11 @@ export class MemoryVault implements VaultSource {
     return this.files.get(path) ?? this.folders.get(path) ?? null;
   }
 
+  /** As Obsidian: the files whose extension is `md`. */
+  getMarkdownFiles(): TFile[] {
+    return [...this.files.values()].filter((file) => file.extension === "md");
+  }
+
   async read(file: TFile): Promise<string> {
     const text = this.contents.get(file.path);
     if (text === undefined) throw new Error(`ENOENT: ${file.path}`);
@@ -47,6 +50,16 @@ export class MemoryVault implements VaultSource {
   cachedRead(file: TFile): Promise<string> {
     return this.read(file);
   }
+
+  /** As Obsidian's adapter: the text at a path, rejecting with `ENOENT` when none. */
+  readonly adapter = {
+    read: async (path: string): Promise<string> => {
+      const text = this.contents.get(path);
+      if (text === undefined)
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
+      return text;
+    },
+  };
 
   async process(
     file: TFile,
@@ -66,6 +79,11 @@ export class MemoryVault implements VaultSource {
   ): Promise<TFile> {
     if (this.files.has(path)) throw new Error("File already exists.");
     return this.add(path, data);
+  }
+
+  async createFolder(path: string): Promise<TFolder> {
+    if (this.getAbstractFileByPath(path)) throw new Error("Folder already exists.");
+    return this.addFolder(path);
   }
 
   async trash(file: TAbstractFile, _system: boolean): Promise<void> {
@@ -142,13 +160,4 @@ export class MemoryVault implements VaultSource {
     for (const callback of this.#listeners.get(name) ?? [])
       callback(...args);
   }
-}
-
-/**
- * The tag's service over `source`, for Promise code under test that takes the
- * service as a dep. Its event listeners are already removed: use the layer
- * (`layerVaultFrom`) where the test reads `changes`.
- */
-export function vaultOver(source: VaultSource): Vault["Service"] {
-  return Effect.runSync(Effect.scoped(makeVault(source)));
 }

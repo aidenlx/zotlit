@@ -115,7 +115,7 @@ describe("Managed Binary with a bare .wasm pin", () => {
 
       expect(handle.runSync(service.getStatus)).toEqual({
         kind: "installing",
-        done: expect.any(Promise),
+        done: expect.anything(),
         binary: null,
       });
       await done;
@@ -134,7 +134,7 @@ describe("Managed Binary with a bare .wasm pin", () => {
 
       expect(handle.runSync(service.getStatus)).toEqual({
         kind: "installing",
-        done: expect.any(Promise),
+        done: expect.anything(),
         binary: installed,
       });
       await done;

@@ -9,11 +9,10 @@ import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
 import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
+import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
-import { ObsidianApp } from "@/lib/obsidian-app";
-import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -179,6 +178,8 @@ async function makeHarness(
     {
       app: stubService<App>("App", {
         vault: stubService<App["vault"]>("Vault", {
+          ...eventMethods(new MemoryWorkspace()),
+          getAbstractFileByPath: (path: string) => files.get(path) ?? null,
           getFileByPath: (path: string) => files.get(path) ?? null,
           create,
         }),
@@ -190,17 +191,18 @@ async function makeHarness(
       settings,
       bridge,
       template,
-      loadVerificationData: async () => ({
-        note: { title: "Paper" },
-        filename: { citationKey: "doePaper" },
-        annotation:
-          options && "verificationAnnotation" in options
-            ? (options.verificationAnnotation ?? null)
-            : options?.ejectedAnnotation
-              ? { text: "Excerpt" }
-              : null,
-        citation: [{ citationKey: "smith2024" }],
-      }),
+      loadVerificationData: () =>
+        Effect.succeed({
+          note: { title: "Paper" },
+          filename: { citationKey: "doePaper" },
+          annotation:
+            options && "verificationAnnotation" in options
+              ? (options.verificationAnnotation ?? null)
+              : options?.ejectedAnnotation
+                ? { text: "Excerpt" }
+                : null,
+          citation: [{ citationKey: "smith2024" }],
+        }),
       openPrompt,
     },
     context,
@@ -332,6 +334,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         expect(harness.create).toHaveBeenCalledWith(
           "templates/zotlit-profile.default.md",
           "converted source",
+          undefined,
         );
         expect(
           harness.bridge.runSync(harness.settings.current)[
@@ -355,6 +358,58 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           trashed: 3,
           pendingCleanup: [],
         });
+        expect(
+          harness.flushRuns.mock.invocationCallOrder.at(-1),
+        ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
+      }),
+  );
+
+  it.effect(
+    "finishes a conversion that unload reaches during its document write",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const harness = yield* Effect.promise(() =>
+          makeHarness({ pending: true }, context),
+        );
+        const write = harness.create.getMockImplementation()!;
+        const started = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        harness.create.mockImplementationOnce(async (path, source) => {
+          started.resolve();
+          await held.promise;
+          return write(path, source);
+        });
+
+        // A flush that yields runs past unload's start, as a real save does.
+        harness.flushRuns.mockImplementation(() => Effect.yieldNow);
+
+        // Unload stops the waiting caller; the conversion itself finishes.
+        const converting = expect(
+          harness.service.convert(),
+        ).rejects.toMatchObject({ name: "AbortError" });
+        yield* Effect.promise(() => started.promise);
+        const unloading = harness.service[Symbol.asyncDispose]();
+        held.resolve();
+        yield* Effect.promise(() => unloading);
+        yield* Effect.promise(() => converting);
+
+        // The document stands, the legacy files are gone, and the result is
+        // recorded, so no retry meets a half-done conversion.
+        expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(
+          true,
+        );
+        expect(harness.trashFile).toHaveBeenCalledTimes(3);
+        expect(
+          harness.bridge.runSync(harness.settings.current)[
+            "note.template-conversion-result"
+          ],
+        ).toEqual({
+          document: "templates/zotlit-profile.default.md",
+          trashed: 3,
+          pendingCleanup: [],
+        });
+        // The settings flush is the conversion's last step; unload waits for it.
         expect(
           harness.flushRuns.mock.invocationCallOrder.at(-1),
         ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
@@ -787,12 +842,13 @@ async function makeVaultHarness(
         settings,
         bridge: settings.bridge,
         template,
-        loadVerificationData: async () => ({
-          note: { title: "Paper" },
-          filename: { citationKey: "smith2024" },
-          annotation: null,
-          citation: [{ citationKey: "smith2024" }],
-        }),
+        loadVerificationData: () =>
+          Effect.succeed({
+            note: { title: "Paper" },
+            filename: { citationKey: "smith2024" },
+            annotation: null,
+            citation: [{ citationKey: "smith2024" }],
+          }),
         openPrompt,
       },
       context,
@@ -1466,8 +1522,13 @@ async function buildMigration(
   const template = options.template;
   const runtime = buildRuntime(
     layerTemplateMigration(options).pipe(
-      Layer.provide(Layer.succeed(ObsidianApp, options.app)),
-      Layer.provide(layerWorkspaceFrom(options.app.workspace)),
+      Layer.provide(
+        layerHost({
+          vault: options.app.vault,
+          fileManager: options.app.fileManager,
+          workspace: options.app.workspace,
+        }),
+      ),
       Layer.provide(templateSettings(options.settings)),
       Layer.provide(
         Layer.succeed(
