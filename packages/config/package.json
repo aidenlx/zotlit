@@ -19,6 +19,9 @@
   "scripts": {
     "test": "node --test"
   },
+  "dependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@types/node": "catalog:",

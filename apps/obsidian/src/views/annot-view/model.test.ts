@@ -1,6 +1,6 @@
-import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { describe, expect, it, vi } from "vitest";
 
+import { makeAnnotHost } from "./__fixtures__/host";
 import {
   holdAnnotViewModel,
   makeAnnotViewModel,
@@ -52,10 +52,8 @@ describe("Follow Mode transitions", () => {
 
 describe("the Annotation View model", () => {
   it("keeps its state in the registry while it is held", async () => {
-    const registry = AtomRegistry.make({
-      defaultIdleTTL: 0,
-      timeoutResolution: 1,
-    });
+    await using host = makeAnnotHost();
+    const { registry } = host;
     const held = makeAnnotViewModel();
     const unheld = makeAnnotViewModel();
     const release = holdAnnotViewModel(registry, held);
@@ -64,11 +62,11 @@ describe("the Annotation View model", () => {
     registry.update(unheld.state, pinItem("ITEMAAAA"));
     // An unread atom is removed on a later task and drops its state.
     await vi.waitFor(() =>
-      expect(registry.get(unheld.state).pinnedItemKey).toBeNull(),
+      expect(registry.getNodes().has(unheld.cards)).toBe(false),
     );
+    expect(registry.get(unheld.state).pinnedItemKey).toBeNull();
 
     expect(registry.get(held.state).pinnedItemKey).toBe("ITEMAAAA");
     release();
-    registry.dispose();
   });
 });

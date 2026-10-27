@@ -251,9 +251,7 @@ it.effect(
         expect(migration.convert()).rejects.toMatchObject(aborted),
       );
       yield* Effect.promise(() =>
-        expect(migration.retryCleanup()).rejects.toThrow(
-          "Cleanup retry needs a completed conversion",
-        ),
+        expect(migration.retryCleanup()).rejects.toMatchObject(aborted),
       );
     }),
 );
@@ -427,7 +425,7 @@ it.effect(
       expect(
         yield* Effect.flip(template.getTemplateSource("filename")),
       ).toMatchObject({
-        _tag: "TemplateOperationError",
+        _tag: "VaultError",
         cause,
       });
     }),
@@ -456,6 +454,58 @@ it.effect(
       }>();
       expect(yield* Effect.flip(migration.convert)).toMatchObject({
         _tag: "TemplateOperationError",
+        cause,
+      });
+    }),
+);
+
+it.effect("#1791: unload interrupts a reconcile in flight", () =>
+  Effect.gen(function* () {
+    const path = "templates/zotlit-note.liquid.md";
+    const host = createTemplateHost({ [path]: "Loaded" });
+    const context = yield* Effect.context<never>();
+    const stack = yield* Effect.acquireDisposable(
+      Effect.tryPromise(async () => new AsyncDisposableStack()),
+    );
+    const runtime = buildRuntime(
+      templateOver(host).pipe(
+        Layer.provideMerge(Layer.succeedContext(context)),
+      ),
+      stack,
+    );
+    yield* Effect.promise(() => runtime.context());
+    const template = plainTemplate(runtime);
+    const started = yield* Queue.unbounded<void>();
+    const stalled = Promise.withResolvers<string>();
+    host.vault.cachedRead.mockImplementationOnce(() => {
+      Queue.offerUnsafe(started, undefined);
+      return stalled.promise;
+    });
+    host.vault.modifyFile(path, "Late source");
+    yield* TestClock.adjust(500);
+    yield* Queue.take(started);
+    yield* Effect.promise(() => runtime.dispose());
+    stalled.resolve("Late source");
+    yield* TestClock.adjust(0);
+    expect(template.render("note", {})).toBe("Loaded");
+  }),
+);
+
+it.effect.each(["citation", "partial"] as const)(
+  "#1791: a %s write keeps its VaultError",
+  (kind) =>
+    Effect.gen(function* () {
+      const host = createTemplateHost();
+      const template = yield* templateOf(host);
+      const cause = new Error("disk is full");
+      vi.spyOn(host.vault, "create").mockRejectedValueOnce(cause);
+      const writing =
+        kind === "citation"
+          ? template.materializeCitationTemplate
+          : template.createPartial("authors");
+      expect(yield* Effect.flip(writing)).toMatchObject({
+        _tag: "VaultError",
+        operation: "create",
         cause,
       });
     }),

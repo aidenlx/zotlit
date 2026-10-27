@@ -81,9 +81,7 @@ it("opens conversion review from the pending reminder and removes it after accep
   const review = reviewButton(rendered);
   expect(review).toBeDefined();
   review!.click();
-  expect(openWelcomeView).toHaveBeenCalledWith(ctx.app, settings, {
-    runSync: expect.any(Function),
-  });
+  expect(openWelcomeView).toHaveBeenCalledWith(ctx.app);
 
   current = {
     ...defaults,

@@ -11,12 +11,12 @@ import type {
 import { awaitConfirm } from "@/lib/confirm";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { showMenuAtButton } from "@/lib/menu";
 import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
 import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
+import { openCitationTemplate } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
 import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
@@ -363,10 +363,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
  */
 function openCitationText(ctx: SettingTabContext) {
   return Effect.gen(function* () {
-    const file = yield* (yield* Template).materializeCitationTemplate;
-    yield* portCall("open-template-workbench", () =>
-      openTemplateWorkbench(ctx.app, file, { explainUnsupported: false }),
-    );
+    yield* openCitationTemplate(ctx.app, yield* Template);
   }).pipe(Effect.ensuring(rebuild));
 }
 

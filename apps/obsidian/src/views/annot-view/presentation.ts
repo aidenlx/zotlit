@@ -15,8 +15,8 @@ import type { ItemSummary } from "@/lib/item-summary";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 
-import { selectActiveAttachment } from "./store";
-import type { AnnotState, FollowMode } from "./store";
+import { selectActiveAttachment } from "./state";
+import type { AnnotState, FollowMode } from "./state";
 
 /** The label and icon each Follow Mode is named by, everywhere it is named. */
 const FOLLOW_MODES = {

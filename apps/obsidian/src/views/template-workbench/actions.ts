@@ -1,3 +1,4 @@
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -13,6 +14,7 @@ export async function runTemplateWorkbenchAction(
     await action();
     return true;
   } catch (error) {
+    if (AbortError.test(error)) return false;
     logger.error("Template Workbench action {operation} failed", {
       operation,
       error,

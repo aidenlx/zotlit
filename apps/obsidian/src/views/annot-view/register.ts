@@ -6,7 +6,7 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
 import type { AnnotActions } from "./actions";
 import type { AnnotViewModel } from "./model";
-import type { AnnotState } from "./store";
+import type { AnnotState } from "./state";
 import { ANNOT_VIEW_TYPE, AnnotationView } from "./view";
 import type { AnnotViewDeps } from "./view";
 import type { AnnotViewState } from "./view-state";

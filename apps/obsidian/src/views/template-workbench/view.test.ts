@@ -28,8 +28,8 @@ import {
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
-import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -38,11 +38,13 @@ import {
   memoryOpener,
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
+import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
 
-import { createSharedPartial } from "./new-partial";
+import { makeWorkbenchHost } from "./__fixtures__";
+import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
+import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
 import { TemplateWorkbenchView, originatingNoteUpdateNotice } from "./view";
-import type { TemplateWorkbenchDeps } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
   openWorkbenchLayout: vi.fn(async () => {}),
@@ -51,8 +53,8 @@ vi.mock("@/views/note-preview/register", () => ({
 // The create flow is #1046's own, driven end to end by new-partial.test.ts.
 // Here it stands in, so a right-click reports the source and the language it
 // was handed and the extraction's own edit is what the assertions read.
-vi.mock("./new-partial", () => ({
-  createSharedPartial: vi.fn(async () => null),
+vi.mock("./partial-command", () => ({
+  createSharedPartialEffect: vi.fn(() => Effect.succeed(null)),
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
@@ -75,6 +77,13 @@ vi.mock("@/views/note-preview/render", async (importOriginal) => {
   return {
     ...actual,
     renderNativeTemplate: stub(),
+    makeNativeRenderer: (
+      deps: Parameters<typeof actual.makeNativeRenderer>[0],
+    ) => ({
+      ...actual.makeNativeRenderer(deps),
+      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
+        stub()(deps, request),
+    }),
     renderNativeProfile: stub(),
   };
 });
@@ -150,10 +159,8 @@ function setup(
     updateHeader: vi.fn(),
   });
   Object.defineProperty(leaf, "app", { value: app });
-  const view = new TestTemplateWorkbenchView(
-    leaf,
+  const host = makeWorkbenchHost(
     stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
-      fileSystem: nodeFileSystem,
       settings: stubService<TemplateWorkbenchDeps["settings"]>(
         "PluginSettings",
         {
@@ -163,7 +170,6 @@ function setup(
       ),
       bridge: stubService<TemplateWorkbenchDeps["bridge"]>("EffectBridge", {
         runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
       }),
       pluginVersion: "2.1.3",
       noteFeature: undefined,
@@ -190,6 +196,8 @@ function setup(
       ...deps,
     }),
   );
+  const view = new TestTemplateWorkbenchView(leaf, host.deps);
+  host.own(() => view.close());
   leaf.view = view;
   const requestSave = vi.fn();
   view.requestSave = requestSave;
@@ -198,7 +206,7 @@ function setup(
 }
 
 describe("TemplateWorkbenchView", () => {
-  function originHarness() {
+  async function originHarness() {
     const updateNote = vi.fn<
       NonNullable<TemplateWorkbenchDeps["noteFeature"]>["updateNote"]
     >(async () => ({
@@ -245,7 +253,7 @@ describe("TemplateWorkbenchView", () => {
     Object.assign(h.app.vault, { getFileByPath, read });
     Object.assign(h.app, { metadataCache: { getFileCache } });
     h.view.file = template;
-    h.view.setOriginatingNote(file);
+    await h.view.setOriginatingNote(file);
     return {
       ...h,
       file,
@@ -259,7 +267,7 @@ describe("TemplateWorkbenchView", () => {
   }
 
   it("updates the originating note after saving, independent of focus and preview selection", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     const saved = Promise.withResolvers<void>();
     using save = vi.spyOn(h.view, "save").mockReturnValue(saved.promise);
     const other = Object.assign(new TFile(), { path: "Other.md" });
@@ -286,7 +294,7 @@ describe("TemplateWorkbenchView", () => {
   });
 
   it("waits for an automatic save already in progress before applying the latest edit", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     const pending = Promise.withResolvers<void>();
     const started = Promise.withResolvers<void>();
     using save = vi
@@ -309,7 +317,7 @@ describe("TemplateWorkbenchView", () => {
   it.each(["rejected", "not-written"])(
     "reports a %s save without updating the note",
     async (failure) => {
-      const h = originHarness();
+      const h = await originHarness();
       using save = vi.spyOn(h.view, "save");
       if (failure === "rejected")
         save.mockRejectedValue(new Error("disk full"));
@@ -322,21 +330,19 @@ describe("TemplateWorkbenchView", () => {
     },
   );
 
-  it.each(["deleted", "replaced", "closed"])(
+  it.each(["deleted", "replaced"])(
     "refuses an origin that is %s while the template compiles",
     async (change) => {
-      const h = originHarness();
+      const h = await originHarness();
       const compilation = Promise.withResolvers<"settled">();
       h.waitUntilSettled.mockReturnValue(compilation.promise);
       const updating = h.view.updateOriginatingNote();
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
-      if (change === "closed") await h.view.close();
-      else
-        h.getFileByPath.mockReturnValue(
-          change === "deleted"
-            ? null!
-            : Object.assign(new TFile(), { path: h.file.path }),
-        );
+      h.getFileByPath.mockReturnValue(
+        change === "deleted"
+          ? null!
+          : Object.assign(new TFile(), { path: h.file.path }),
+      );
       compilation.resolve("settled");
       expect(await updating).toEqual({
         outcome: "unavailable",
@@ -347,7 +353,7 @@ describe("TemplateWorkbenchView", () => {
   );
 
   it("names a successful metadata-only result and retains update failures", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     h.updateNote.mockResolvedValueOnce({
       bodyUpdated: false,
       duplicateRegionCount: 0,
@@ -372,8 +378,28 @@ describe("TemplateWorkbenchView", () => {
     });
   });
 
+  // #1819: unload releases a waiting update without a failure notice.
+  it.each(["settlement", "write", "closed"])(
+    "stays silent when unload stops the originating note update at %s",
+    async (stage) => {
+      const h = await originHarness();
+      const waiting = Promise.withResolvers<"settled">();
+      if (stage === "write")
+        h.updateNote.mockRejectedValueOnce(new AbortError());
+      else h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
+      const updating = h.view.updateOriginatingNote();
+      await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
+      if (stage === "closed") await h.view.close();
+      if (stage !== "write") waiting.reject(new AbortError());
+      const outcome = await updating;
+      expect.soft(outcome).toEqual({ outcome: "released" });
+      expect(originatingNoteUpdateNotice(h.app, outcome)).toBeNull();
+      expect(h.updateNote).toHaveBeenCalledTimes(stage === "write" ? 1 : 0);
+    },
+  );
+
   it("keeps the existing template diagnostic on a refused update", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     const result = {
       bodyUpdated: false,
       duplicateRegionCount: 0,
@@ -392,7 +418,7 @@ describe("TemplateWorkbenchView", () => {
   });
 
   it("rejects an edit saved during the final disk read after compilation settled", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     h.read
       .mockImplementationOnce(async () => h.view.getViewData())
       .mockImplementationOnce(async () => {
@@ -407,7 +433,7 @@ describe("TemplateWorkbenchView", () => {
   });
 
   it("guards the originating target when the note operation reaches its write boundary", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     h.updateNote.mockImplementationOnce(async (_file, options) => {
       h.getFileByPath.mockReturnValue(
         Object.assign(new TFile(), { path: h.file.path }),
@@ -422,7 +448,7 @@ describe("TemplateWorkbenchView", () => {
   });
 
   it("sends the user back to Customize when the note's Zotero key changed", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     h.updateNote.mockResolvedValueOnce({
       bodyUpdated: false,
       duplicateRegionCount: 0,
@@ -441,7 +467,7 @@ describe("TemplateWorkbenchView", () => {
   });
 
   it("updates while the note's metadata cache has not parsed its latest write", async () => {
-    const h = originHarness();
+    const h = await originHarness();
     h.updateNote.mockImplementationOnce(async (_file, options) => {
       h.getFileCache.mockReturnValue(null as never);
       options.beforeWrite?.();
@@ -454,8 +480,8 @@ describe("TemplateWorkbenchView", () => {
   });
 
   it("clears the action when the editor is opened without an originating note", async () => {
-    const h = originHarness();
-    h.view.setOriginatingNote(null);
+    const h = await originHarness();
+    await h.view.setOriginatingNote(null);
     await h.view.updateOriginatingNote();
     expect(h.view.originatingNote).toBeNull();
     expect(h.updateNote).not.toHaveBeenCalled();
@@ -1381,6 +1407,7 @@ An annotation.
     view.store.getState().setRoot("annotation");
     Object.defineProperty(view, "preview", {
       value: {
+        [Symbol.dispose]() {},
         state: createStore(() => ({
           current: [],
           example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
@@ -1405,6 +1432,7 @@ An annotation.
     const annotation = { id: "real", root: { indexedKey: "ANNO0001g42" } };
     Object.defineProperty(view, "preview", {
       value: {
+        [Symbol.dispose]() {},
         state: createStore(() => ({
           current: [annotation],
           example: annotation,
@@ -1625,6 +1653,7 @@ function sharedWorkspace() {
       requestSaveLayout,
       setActiveLeaf,
       on,
+      offref: vi.fn(),
       trigger,
       iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void) {
         leaves.forEach(callback);
@@ -2674,14 +2703,16 @@ An annotation.
 
   it("keeps the document and selection when the partial prompt is cancelled", async () => {
     await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce(null);
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.succeed(null),
+    );
     const { view, editor } = await openProfile("liquid");
     cleanup.defer(() => act(async () => view.close()));
     cleanup.defer(() => view.contentEl.remove());
 
     await extract(editor, SELECTION.length);
 
-    expect(createSharedPartial).toHaveBeenCalledOnce();
+    expect(createSharedPartialEffect).toHaveBeenCalledOnce();
     expect(view.getViewData()).toBe(EXTRACT_SOURCE);
     expect(editor.state.selection.main.anchor).toBe(0);
     expect(editor.state.selection.main.head).toBe(SELECTION.length);
@@ -2689,14 +2720,16 @@ An annotation.
 
   it("leaves a Liquid render tag over the three lines it moved out", async () => {
     await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.succeed("authors"),
+    );
     const { view, editor } = await openProfile("liquid");
     cleanup.defer(() => act(async () => view.close()));
     cleanup.defer(() => view.contentEl.remove());
 
     await extract(editor, SELECTION.length);
 
-    expect(vi.mocked(createSharedPartial).mock.lastCall?.[2]).toEqual({
+    expect(vi.mocked(createSharedPartialEffect).mock.lastCall?.[1]).toEqual({
       source: SELECTION,
       language: "liquid",
       open: "split",
@@ -2706,7 +2739,9 @@ An annotation.
 
   it("keeps a selection that opens with a rule out of the manifest", async () => {
     await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.succeed("authors"),
+    );
     // A Markdown rule on the first line reads as a manifest opener where the
     // create flow writes the raw source.
     const ruled = `---\n${SELECTION}`;
@@ -2719,7 +2754,7 @@ An annotation.
 
     await extract(editor, ruled.length);
 
-    const options = vi.mocked(createSharedPartial).mock.lastCall![2]!;
+    const options = vi.mocked(createSharedPartialEffect).mock.lastCall![1]!;
     expect(options).toEqual({
       source: ruled,
       language: "liquid",
@@ -2734,14 +2769,16 @@ An annotation.
 
   it("writes an Eta include and asks the create flow for an Eta partial", async () => {
     await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.succeed("authors"),
+    );
     const { view, editor } = await openProfile("eta");
     cleanup.defer(() => act(async () => view.close()));
     cleanup.defer(() => view.contentEl.remove());
 
     await extract(editor, SELECTION.length);
 
-    expect(vi.mocked(createSharedPartial).mock.lastCall?.[2]).toEqual({
+    expect(vi.mocked(createSharedPartialEffect).mock.lastCall?.[1]).toEqual({
       source: SELECTION,
       language: "eta",
       open: "split",
@@ -2756,7 +2793,9 @@ An annotation.
 
   it("keeps the keystrokes around it out of its undo step", async () => {
     await using cleanup = new AsyncDisposableStack();
-    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.succeed("authors"),
+    );
     const { view, editor } = await openProfile("liquid");
     cleanup.defer(() => act(async () => view.close()));
     cleanup.defer(() => view.contentEl.remove());
@@ -2789,7 +2828,12 @@ An annotation.
   it("keeps a changed template rather than writing the call", async () => {
     await using cleanup = new AsyncDisposableStack();
     const prompt = Promise.withResolvers<string | null>();
-    vi.mocked(createSharedPartial).mockReturnValueOnce(prompt.promise);
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.promise((signal) => {
+        signal.throwIfAborted();
+        return prompt.promise;
+      }),
+    );
     const { view, editor } = await openProfile("liquid");
     cleanup.defer(() => act(async () => view.close()));
     cleanup.defer(() => view.contentEl.remove());
@@ -2851,7 +2895,7 @@ An annotation.
 
     expect(writeText).toHaveBeenCalledExactlyOnceWith(SELECTION);
     expect(view.getViewData()).toBe(EXTRACT_SOURCE.replace(SELECTION, ""));
-    expect(createSharedPartial).not.toHaveBeenCalled();
+    expect(createSharedPartialEffect).not.toHaveBeenCalled();
   });
 
   it("offers no action over an empty selection", async () => {
@@ -2866,7 +2910,7 @@ An annotation.
     });
 
     expect(rightClick(editor)).toBeNull();
-    expect(createSharedPartial).not.toHaveBeenCalled();
+    expect(createSharedPartialEffect).not.toHaveBeenCalled();
   });
 });
 
@@ -2877,44 +2921,11 @@ language: liquid
 {{ zt.citations | pandoc_cite }}
 `;
 
-  function openCitation() {
+  async function openCitation() {
+    const fixture = await createRenderFixture();
     const harness = setup({
       runtime: testRuntime(),
-      nativePreview: stubService<
-        NonNullable<TemplateWorkbenchDeps["nativePreview"]>
-      >("NativeRenderDeps", {
-        runtime: testRuntime(),
-        app: stubService<App>("App", {
-          vault: stubService<App["vault"]>("Vault", {
-            on: vi.fn(),
-            offref: vi.fn(),
-          }),
-        }),
-        zoteroReads: stubService<
-          NonNullable<TemplateWorkbenchDeps["nativePreview"]>["zoteroReads"]
-        >("ZoteroReads", {
-          changed: Stream.empty,
-          degraded: Stream.empty,
-          "refresh-failed": Stream.empty,
-          refreshing: Stream.empty,
-          "db-file-missing": Stream.empty,
-          "refresh-requested": Stream.empty,
-          acquireRead: vi.fn(),
-        }),
-        templates: stubService<
-          NonNullable<TemplateWorkbenchDeps["nativePreview"]>["templates"]
-        >("Templates", { "compile-status-changed": Stream.empty }),
-        bibliographyRender: stubService<
-          NonNullable<
-            TemplateWorkbenchDeps["nativePreview"]
-          >["bibliographyRender"]
-        >("BibliographyRender", {
-          changed: Stream.empty,
-          settled: Stream.empty,
-          invalidated: Stream.empty,
-          "style-missing": Stream.empty,
-        }),
-      }),
+      nativePreview: fixture.deps,
       templates: stubService<TemplateWorkbenchDeps["templates"]>("Templates", {
         "compile-status-changed": Stream.empty,
         loaded: true,
@@ -2927,12 +2938,13 @@ language: liquid
     file.path = "templates/zotlit-citation.md";
     harness.view.file = file;
     harness.view.setViewData(CITATION_SOURCE, true);
-    return harness;
+    return { ...harness, fixture };
   }
 
   it("follows the document context and the source the editor holds", async () => {
     await using cleanup = new AsyncDisposableStack();
-    const { view } = openCitation();
+    const { view, fixture } = await openCitation();
+    cleanup.use(fixture);
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
 

@@ -21,7 +21,7 @@ import type {
 } from "./actions";
 import type { CopiedBibliography } from "./copied-bibliography";
 import type { ReferenceEntry } from "./entries";
-import type { ReferencesCopyTarget } from "./store";
+import type { ReferencesCopyTarget } from "./state";
 
 /** What the toolbar offered when the copy action was clicked. */
 const offered: ReferencesCopyTarget = {
@@ -93,6 +93,9 @@ describe("onOpenNote", () => {
       }),
       getSourcePath: () => "notes/tidal.md",
       openIndexedKey,
+      openLinkText,
+      nextOccurrence: () => 0,
+      revealOccurrence: () => undefined,
       onOpenEngineSettings: () => undefined,
       onChangeStyle: () => undefined,
       onDismissEngineHint: () => undefined,
@@ -175,6 +178,9 @@ describe("onCopyBibliography", () => {
       app: stubService<App>("App", {}),
       getSourcePath: () => "notes/tidal.md",
       openIndexedKey: () => undefined,
+      openLinkText: () => undefined,
+      nextOccurrence: () => 0,
+      revealOccurrence: () => undefined,
       onOpenEngineSettings: () => undefined,
       onChangeStyle: () => undefined,
       onDismissEngineHint: () => undefined,

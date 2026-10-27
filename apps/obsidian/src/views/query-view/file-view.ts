@@ -6,6 +6,7 @@ import { Scope, TextFileView } from "obsidian";
 import type { TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 
 import "./file-view.css";
+import { readSavedQueryViewName } from "./model";
 import { QueryView } from "./view";
 import type { QueryViewDeps } from "./view";
 
@@ -25,7 +26,6 @@ export class QueryFileView extends TextFileView {
       scope: this.scope,
       sourcePath: () => this.file?.path ?? "",
       context: () => undefined,
-      onSelectView: () => this.app.workspace.requestSaveLayout(),
       // Each change writes at once, after the write before it: Obsidian's
       // own save returns early while a write runs, and would not report
       // whether the later text was written.
@@ -51,6 +51,12 @@ export class QueryFileView extends TextFileView {
   override onload(): void {
     super.onload();
     this.addChild(this.query);
+    this.query.register(
+      this.query.registry.subscribe(this.query.model.wanted, () => {
+        this.app.workspace.requestSaveLayout();
+        this.leaf.updateHeader();
+      }),
+    );
     this.query.render(this.contentEl);
   }
 
@@ -82,13 +88,7 @@ export class QueryFileView extends TextFileView {
     state: unknown,
     result: ViewStateResult,
   ): Promise<void> {
-    const view =
-      typeof state === "object" &&
-      state !== null &&
-      "view" in state &&
-      typeof state.view === "string"
-        ? state.view
-        : null;
+    const view = readSavedQueryViewName(state);
     this.query.selectView(view);
     await super.setState(state, result);
   }

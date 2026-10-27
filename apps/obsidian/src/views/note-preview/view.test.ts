@@ -20,9 +20,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { templateRevisionAtom } from "@/services/template/atoms";
+import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "@/views/template-workbench/__fixtures__";
+import { makeWorkbenchHost } from "@/views/template-workbench/__fixtures__";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
-import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
 
 import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
 import {
@@ -31,7 +33,6 @@ import {
 } from "./register";
 import { renderNativeTemplate } from "./render";
 import { NotePreviewView } from "./view";
-import type { PreviewViewDeps } from "./view";
 
 vi.mock("@zotlit/workbench/ui", async (original) => {
   const actual = await original<typeof import("@zotlit/workbench/ui")>();
@@ -87,9 +88,17 @@ vi.mock("obsidian", async (original) => ({
 }));
 vi.mock("./render", async (original) => {
   const actual = await original<typeof import("./render")>();
+  const render = vi.fn(actual.renderNativeTemplate);
   return {
     ...actual,
-    renderNativeTemplate: vi.fn(actual.renderNativeTemplate),
+    renderNativeTemplate: render,
+    makeNativeRenderer: (
+      deps: Parameters<typeof actual.makeNativeRenderer>[0],
+    ) => ({
+      ...actual.makeNativeRenderer(deps),
+      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
+        render(deps, request),
+    }),
   };
 });
 
@@ -118,7 +127,9 @@ afterEach(() => {
     delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
-const NO_PROFILES: PreviewViewDeps["profile"] = {
+const NO_PROFILES: Awaited<
+  ReturnType<typeof createRenderFixture>
+>["deps"]["profile"] = {
   getBuiltInSource: () => DEFAULT_PROFILE_SOURCE,
   profiles: [],
   resolveProfile: () => undefined,
@@ -134,9 +145,14 @@ function leafWithApp(app: App): WorkspaceLeaf {
   return leaf;
 }
 
-async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
+async function setup(
+  profile: Awaited<
+    ReturnType<typeof createRenderFixture>
+  >["deps"]["profile"] = NO_PROFILES,
+) {
   const fixture = await createRenderFixture();
   const { app } = fixture.deps;
+  Object.assign(fixture.deps.profile, profile);
   const events = new Map<
     EventRef,
     { name: string; callback: (...args: unknown[]) => void }
@@ -164,34 +180,36 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   const editorLeaf = leafWithApp(app);
   const editor = new Editor(
     editorLeaf,
-    stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
-      runtime: testRuntime(),
-      settings: fixture.settings,
-      bridge: { ...fixture.deps.bridge, runPromise: Effect.runPromise },
-      zoteroReads: fixture.zoteroReads,
-      zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
-        "ZoteroPref",
-        { dataDir: "/Zotero" },
-      ),
-      templates: fixture.templates,
-      nativePreview: fixture.deps,
-      itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
-        "ItemLookup",
-        {
-          search: async () => [],
-          openSession: () => ({
+    makeWorkbenchHost(
+      stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+        runtime: testRuntime(),
+        settings: fixture.settings,
+        bridge: fixture.deps.bridge,
+        zoteroReads: fixture.zoteroReads,
+        zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
+          "ZoteroPref",
+          { dataDir: "/Zotero" },
+        ),
+        templates: fixture.templates,
+        nativePreview: fixture.deps,
+        itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
+          "ItemLookup",
+          {
             search: async () => [],
-            close: () => {},
-            [Symbol.dispose]() {},
-          }),
-        },
-      ),
-      noteFeature: undefined,
-      query: undefined,
-      render: undefined,
-      profile: undefined,
-      pluginVersion: undefined,
-    }),
+            openSession: () => ({
+              search: async () => [],
+              close: () => {},
+              [Symbol.dispose]() {},
+            }),
+          },
+        ),
+        noteFeature: undefined,
+        query: undefined,
+        render: undefined,
+        profile: undefined,
+        pluginVersion: undefined,
+      }),
+    ).deps,
   );
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
   editor.file = file;
@@ -221,7 +239,6 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     const preview = new Preview(leafWithApp(app), "zotlit", {
       ...fixture.deps,
       settings: fixture.settings,
-      profile,
       itemLookup: { search: vi.fn(), openSession: vi.fn() },
     });
     // The lightweight ItemView mock leaves this native base property to its test.
@@ -817,19 +834,30 @@ Annotation`,
 
   it("rolls back failed binding resources and can retry the same view", async () => {
     await using test = await setup();
+    const started = vi.fn();
     const released = vi.fn();
-    Object.defineProperty(test.fixture.deps.zoteroReads, "changed", {
-      value: Stream.unwrap(
-        Effect.acquireRelease(Effect.succeed(Stream.never), () =>
-          Effect.sync(released),
+    Object.defineProperty(
+      test.fixture.deps.templates,
+      "compile-status-changed",
+      {
+        value: Stream.unwrap(
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              started();
+              return Stream.never;
+            }),
+            () => Effect.sync(released),
+          ),
         ),
-      ),
-    });
+      },
+    );
+    test.fixture.deps.registry.refresh(templateRevisionAtom);
+    await vi.waitFor(() => expect(started).toHaveBeenCalledOnce());
     vi.mocked(createTemplateWorkbenchHost).mockImplementationOnce(() => {
       throw new Error("Host unavailable");
     });
     await expect(test.open()).rejects.toThrow("Host unavailable");
-    expect(released).toHaveBeenCalledOnce();
+    expect(released).not.toHaveBeenCalled();
     expect(test.events.size).toBe(2);
     expect(test.subscriptions.size).toBe(0);
     const scheduler = vi
@@ -851,7 +879,9 @@ Annotation`,
     await rendered(preview);
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () => preview.close());
-    expect(released).toHaveBeenCalledTimes(2);
+    expect(released).not.toHaveBeenCalled();
+    test.editor.preview![Symbol.dispose]();
+    await vi.waitFor(() => expect(released).toHaveBeenCalledOnce());
     expect(test.events.size).toBe(2);
     expect(test.subscriptions.size).toBe(0);
   });
@@ -2479,7 +2509,7 @@ language: liquid
       ...NO_PROFILES,
       profiles: [
         { id: "reading12345", label: "Reading" },
-      ] as unknown as PreviewViewDeps["profile"]["profiles"],
+      ] as unknown as typeof NO_PROFILES.profiles,
     });
     vi.useFakeTimers();
     const preview = await openPartialPreview(test);

@@ -5,12 +5,13 @@ import type { App } from "obsidian";
 import { expect } from "vitest";
 
 import { createObsidianHost } from "@/lib/__fixtures__/obsidian-host";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { readsFixture } from "@/services/zotero-reads/__fixtures__";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import { layerSource } from "@/services/zotero-reads/source";
 import { inProcessClient } from "@/services/zotero-reads/test-utils";
 
+import { makeWelcomeHost, waitFor } from "./__fixtures__";
 import type { NotFoundSignal } from "./not-found-notice";
 import { watchNotFound } from "./register";
 
@@ -59,6 +60,12 @@ it.effect(
           for (const callback of callbacks.toReversed()) callback();
         }),
       );
+      const views = yield* Effect.acquireRelease(
+        Effect.promise(() =>
+          makeWelcomeHost({ services: Layer.succeed(ZoteroReads, service) }),
+        ),
+        (views) => Effect.promise(() => views.close()),
+      );
       const signals: NotFoundSignal[] = [];
       watchNotFound(
         {
@@ -67,10 +74,12 @@ it.effect(
             callbacks.push(callback);
           },
         },
-        { runtime: testRuntime(), reads: plain },
+        { registry: views.registry },
         (signal) => signals.push(signal),
       );
-      expect(signals).toEqual(["db-file-missing"]);
+      yield* Effect.promise(() =>
+        waitFor(() => expect(signals).toEqual(["db-file-missing"])),
+      );
       expect(plain.dbFileMissing).toBe(true);
       expect(yield* Stream.runHead(service.changes)).toMatchObject({
         value: { dbFileMissing: true },

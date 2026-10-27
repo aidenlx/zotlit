@@ -21,13 +21,12 @@ import type {
 import type { ExcerptRequest } from "@/services/excerpt-image/contract";
 
 import { editorApp } from "./__fixtures__/editor-app";
+import { makeAnnotHost } from "./__fixtures__/host";
 import { AnnotActionsContext } from "./actions";
 import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
 import { cardPlace } from "./card-selection";
-import { AnnotStoreProvider, createAnnotStore } from "./store";
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+import { AnnotStoreProvider } from "./store";
 
 const CARD: AnnotationRecord = {
   key: "AAAA1111",
@@ -52,8 +51,11 @@ beforeEach(() => {
   );
 });
 
+let cleanup = new AsyncDisposableStack();
 afterEach(async () => {
   await act(() => root?.unmount());
+  await cleanup.disposeAsync();
+  cleanup = new AsyncDisposableStack();
   root = undefined;
   document.body.replaceChildren();
   vi.restoreAllMocks();
@@ -118,7 +120,9 @@ async function mountCard({
       ...draft,
     },
   ];
-  const store = createAnnotStore();
+  const hostModel = makeAnnotHost();
+  cleanup.use(hostModel);
+  const store = hostModel.openCards();
   store.setState({
     capability,
     cardSelection: { selected, anchor: null, focus: null },
@@ -621,7 +625,9 @@ describe("an image card's Excerpt Image demand", () => {
       text: null,
       comment: null,
     };
-    const store = createAnnotStore();
+    const hostModel = makeAnnotHost();
+    cleanup.use(hostModel);
+    const store = hostModel.openCards();
     store.setState({
       sources: new Map([
         [

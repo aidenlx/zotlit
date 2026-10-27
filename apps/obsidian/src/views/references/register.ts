@@ -1,17 +1,10 @@
 import type { App, Plugin } from "obsidian";
 
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
+import { revealSetting } from "@/lib/open-settings";
 
 import "./style.css";
-import { revealSetting } from "@/lib/open-settings";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
-import type { PlainBibliographyRender } from "@/services/pandoc/render-cache/plain";
-import type { ProfileReader } from "@/services/profile/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
 import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
 import type { ReferencesViewDeps } from "./view";
@@ -22,36 +15,8 @@ type ReferencesPlugin = Pick<
 >;
 
 export interface ReferencesRegistrationDeps {
-  runtime: SubscriptionRuntime;
-  profile: ProfileReader;
+  registry: ViewRegistryHandle;
   app: App;
-  db: Pick<
-    PlainZoteroReads,
-    | "acquireRead"
-    | "reads"
-    | "state"
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-  >;
-  citationIndex: PlainCitationIndex;
-  citationLookup: ReferencesViewDeps["citationLookup"];
-  libraryScope: Pick<PlainLibraryScope, "current">;
-  citationText: ReferencesViewDeps["citationText"];
-  citekeyEditor: ReferencesViewDeps["citekeyEditor"];
-  pandocEngine: Pick<ManagedBinaryHandle, "binary" | "runSync">;
-  bibliographyRender: Pick<
-    PlainBibliographyRender,
-    | "render"
-    | "changed"
-    | "settled"
-    | "invalidated"
-    | "style-missing"
-    | "vaultPresentation"
-  >;
 }
 
 export function registerReferencesView(
@@ -59,17 +24,8 @@ export function registerReferencesView(
   deps: ReferencesRegistrationDeps,
 ): void {
   const viewDeps: ReferencesViewDeps = {
-    runtime: deps.runtime,
+    registry: deps.registry,
     app: deps.app,
-    profile: deps.profile,
-    db: deps.db,
-    citationIndex: deps.citationIndex,
-    citationLookup: deps.citationLookup,
-    libraryScope: deps.libraryScope,
-    citationText: deps.citationText,
-    citekeyEditor: deps.citekeyEditor,
-    pandocEngine: deps.pandocEngine,
-    bibliographyRender: deps.bibliographyRender,
     openSettings: () => {
       revealSetting(plugin.app, plugin.manifest.id, "settings_citation_engine");
     },

@@ -15,27 +15,15 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { PaneState } from "@/components/pane-state";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import { refreshFailed, unavailable } from "@/views/welcome/connection";
 import type { SetupActions } from "@/views/welcome/setup-actions";
 
 export interface ZoteroNotFoundDeps {
-  runtime: SubscriptionRuntime;
-  reads: Pick<
-    PlainZoteroReads,
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "state"
-    | "error"
-    | "moved"
-  >;
+  registry: ViewRegistryHandle;
   setupActions: Pick<SetupActions, "locateZotero" | "openSettings">;
 }
 
@@ -70,31 +58,25 @@ export class ZoteroNotFound extends Component {
   }
 
   override onload(): void {
-    const { reads, setupActions } = this.#deps;
+    const { registry, setupActions } = this.#deps;
     const { shell, tree, list, note } = this.#slots;
     this.#note = this.#mount(note, null);
     // Read from the database service on each of its changes, so a folder
     // that is set brings the papers back.
-    const update = () => {
-      const missing = unavailable(this.#deps);
+    const update = (reads: ZoteroReadsState) => {
+      const missing = unavailable({ reads });
       const was = shell.hasAttribute("data-zotero-missing");
       shell.toggleAttribute("data-zotero-missing", missing);
       this.#note?.render(
-        refreshFailed(this.#deps) ? (
+        refreshFailed({ reads }) ? (
           <RefreshFailedNote actions={setupActions} />
         ) : null,
       );
       if (was && !missing) this.#found();
     };
-    this.register(subscribe(this.#deps.runtime, reads["changed"], update));
-    this.register(subscribe(this.#deps.runtime, reads["degraded"], update));
     this.register(
-      subscribe(this.#deps.runtime, reads["refresh-failed"], update),
+      registry.subscribe(zoteroStateAtom, update, { immediate: true }),
     );
-    this.register(
-      subscribe(this.#deps.runtime, reads["db-file-missing"], update),
-    );
-    update();
     this.#mount(tree, <TreeNotFound />);
     this.#mount(list, <ListNotFound actions={setupActions} />);
   }
