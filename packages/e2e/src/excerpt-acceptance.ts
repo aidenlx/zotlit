@@ -1359,7 +1359,7 @@ export async function verifyReaderBackedExcerpts(
         pixels.height !== pixelsHeight ||
         pixels.pixels !== pixelData
       )
-        return "false";
+        return false;
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
@@ -1384,11 +1384,11 @@ export async function verifyReaderBackedExcerpts(
         !diagnostics.jobActive &&
         diagnostics.phase === "idle"
       )
-        return "true";
-      return await String(
+        return true;
+      return (
         state.created.length > createdLength &&
-          image!.src === state.created[state.created.length - 1] &&
-          state.revoked.includes(imageSrc!),
+        image!.src === state.created[state.created.length - 1] &&
+        state.revoked.includes(imageSrc!)
       );
     },
     {
@@ -1400,7 +1400,6 @@ export async function verifyReaderBackedExcerpts(
       imageSrc: demand.src,
     },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the card image to show the expected cropped pixels and URL",
     },

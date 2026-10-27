@@ -179,9 +179,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ready: (value) => value === styleId,
         what: "the zotlit-csl frontmatter of the note to match the selected CSL style",
       },
-    ).then(
-      () => true,
-      () => false,
     );
     const document = JSON.parse(
       await cliCommand(vaultId, "zotlit:csl", {
@@ -1555,15 +1552,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         // Choose item action; the in-pane trigger is for a sidebar alone.
         const trigger =
           ready && view.containerEl.querySelector<HTMLElement>(actionSelector);
-        if (!trigger) return "false";
+        if (!trigger) return false;
         press(trigger, "Choose item");
-        return "true";
+        return true;
       },
       {
         actionSelector: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
       },
       {
-        ready: (value) => value === "true",
         what: "the Choose item trigger to appear once the workbench companion panes load",
       },
     );
@@ -1580,18 +1576,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           )
           ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(".prompt")
           ?.querySelector<HTMLInputElement>("input");
-        if (!input) return "false";
+        if (!input) return false;
         input.value = "rougier";
         input.dispatchEvent(
           new input.ownerDocument.defaultView!.Event("input", {
             bubbles: true,
           }),
         );
-        return "true";
+        return true;
       },
       undefined,
       {
-        ready: (value) => value === "true",
         what: "the Choose item search input in the workbench to appear",
       },
     );
@@ -1618,18 +1613,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             !row.closest("[aria-busy]") &&
             row.textContent.includes("Ten Simple Rules for Better Figures"),
         );
-        if (!row) return "false";
+        if (!row) return false;
         row.dispatchEvent(
           new row.ownerDocument.defaultView!.MouseEvent("mousemove", {
             bubbles: true,
           }),
         );
         press(row, "search result");
-        return "true";
+        return true;
       },
       undefined,
       {
-        ready: (value) => value === "true",
         what: "the Ten Simple Rules result row in Choose item to settle out of aria-busy",
       },
     );

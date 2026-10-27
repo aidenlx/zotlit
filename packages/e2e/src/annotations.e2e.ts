@@ -87,34 +87,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         keys: expected,
       });
 
-      const cardsReady = await obRunUntil(
-        run.vaultId,
-        async ({ app }) => {
-          return (() => {
-            const annotationView = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as AnnotationLeaf[]
-            )[0]?.view;
-            const cards = Array.from(
-              annotationView?.containerEl.querySelectorAll<HTMLElement>(
-                ".zt-annot-card[data-zotero-annotation-key]",
-              ) ?? [],
-              (el) => el.getAttribute("data-zotero-annotation-key"),
-            ).filter(Boolean);
-            return [...new Set(cards)].sort();
-          })();
-        },
-        undefined,
-        {
-          ready: (value) => isDeepStrictEqual(value, expected),
-          what: "the Annotation View card keys to match the expected fixture keys",
-        },
-      ).then(
-        () => true,
-        () => false,
-      );
-      if (!cardsReady) {
+      try {
+        await obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return (() => {
+              const annotationView = (
+                app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[]
+              )[0]?.view;
+              const cards = Array.from(
+                annotationView?.containerEl.querySelectorAll<HTMLElement>(
+                  ".zt-annot-card[data-zotero-annotation-key]",
+                ) ?? [],
+                (el) => el.getAttribute("data-zotero-annotation-key"),
+              ).filter(Boolean);
+              return [...new Set(cards)].sort();
+            })();
+          },
+          undefined,
+          {
+            ready: (value) => isDeepStrictEqual(value, expected),
+            what: "the Annotation View card keys to match the expected fixture keys",
+          },
+        );
+      } catch (error) {
         const state = await obRun(
           run.vaultId,
           async ({ app, zotlit }) => {
@@ -157,7 +155,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
           undefined,
         );
-        throw new Error(`Annotation cards did not render: ${state}`);
+        throw new Error(`Annotation cards did not render: ${state}`, {
+          cause: error,
+        });
       }
       expect(
         await obRun(

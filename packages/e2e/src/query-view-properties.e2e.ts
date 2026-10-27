@@ -353,31 +353,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     popup: string;
     ready: string;
   }): Promise<void> {
-    expect(
-      await obRunUntil(
-        run.vaultId,
-        ({ app, page }, { button, popup: selector, ready }) => {
-          const popup = activeDocument.querySelector<HTMLElement>(
-            `${selector}:popover-open`,
-          )!;
-          if (popup?.querySelector<HTMLElement>(ready)!) return true;
-          if (!popup)
-            page.press(
-              (
-                app.workspace.getMostRecentLeaf()!
-                  .view as import("obsidian").ItemView
-              ).contentEl.querySelector<HTMLElement>(button)!,
-              button,
-            );
-          return false;
-        },
-        { button, popup, ready },
-        { what: "Query View toolbar popover" },
-      ).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      ({ app, page }, { button, popup: selector, ready }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(
+          `${selector}:popover-open`,
+        )!;
+        if (popup?.querySelector<HTMLElement>(ready)!) return true;
+        if (!popup)
+          page.press(
+            (
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(button)!,
+            button,
+          );
+        return false;
+      },
+      { button, popup, ready },
+      { what: "Query View toolbar popover" },
+    );
   }
   /** The open Properties popover. */
 

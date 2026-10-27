@@ -585,9 +585,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) => value === pooledSummary,
         what: "the Excerpt images notice to match the pooled summary",
       },
-    ).then(
-      () => true,
-      () => false,
     );
     expect(
       await obRun(

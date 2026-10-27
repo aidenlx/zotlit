@@ -2404,15 +2404,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ app }) => {
-          return await app.vault.adapter
-            .exists(
-              `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
-            )
-            .then(String);
+          return await app.vault.adapter.exists(
+            `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
+          );
         },
         undefined,
         {
-          ready: (value) => value === "true",
           what: "the zotlit.log.jsonl log file to exist in the plugin folder",
         },
       );

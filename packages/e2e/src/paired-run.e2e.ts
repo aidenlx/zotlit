@@ -9889,9 +9889,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               {
                 what: "the Q8ZR4TDH mutation to go idle with no comment draft",
               },
-            ).then(
-              () => true,
-              () => false,
             );
             await restoreAnnotationComment(api, {
               serverID,
@@ -14159,13 +14156,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 (el) => el.textContent.trim() === "Allow editing",
               );
             if (!button || button.disabled || button.style.display === "none")
-              return "false";
+              return false;
             press(button, "Allow editing");
-            return "true";
+            return true;
           },
           undefined,
           {
-            ready: (value) => value === "true",
             what: "the Allow editing button in the Zotero editing setting to be clicked",
           },
         );

@@ -4191,18 +4191,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app }, { path }) => {
         return await app.vault
           .read(app.vault.getFileByPath(path)!)
-          .then((t) =>
-            String(
+          .then(
+            (t) =>
               t.indexOf("name: Methods") > -1 &&
-                t.indexOf("name: Methods") <
-                  t.indexOf("name: All annotations") &&
-                t.includes("showPage: false"),
-            ),
+              t.indexOf("name: Methods") < t.indexOf("name: All annotations") &&
+              t.includes("showPage: false"),
           );
       },
       { path },
       {
-        ready: (value) => value === "true",
         what: "the saved Query File to order the Methods view first with showPage false",
       },
     );
