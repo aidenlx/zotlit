@@ -66,7 +66,6 @@ export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(QueryService, {}),
   Layer.mock(LibraryScope, {}),
   Layer.mock(UseLedger, {}),
-  Layer.mock(Notifier, {}),
   Layer.mock(PluginSettings, {}),
   Layer.mock(Release, { version: "" }),
   Layer.mock(QueryClients, {

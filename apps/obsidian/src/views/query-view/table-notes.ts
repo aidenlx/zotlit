@@ -216,7 +216,10 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   const events = createNanoEvents<VaultEvents>();
   let listeners = 0;
   let offSources: (() => void) | null = null;
-  const replacedSubscriptions = new Map<TFile, () => void>();
+  const replacedSubscriptions = new Map<
+    TFile,
+    { path: string; release: () => void }
+  >();
   const listen = () => {
     if (listeners++ === 0) {
       const releases = [
@@ -237,7 +240,7 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       }
       offSources = () => {
         for (const release of releases) release();
-        for (const release of replacedSubscriptions.values()) release();
+        for (const { release } of replacedSubscriptions.values()) release();
         replacedSubscriptions.clear();
       };
     }
@@ -251,13 +254,16 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   const replacedOf = (file: TFile) => {
     const atom = replacedKeysAtom(file.path);
     const result = registry.get(atom);
-    if (listeners > 0 && !replacedSubscriptions.has(file))
-      replacedSubscriptions.set(
-        file,
-        registry.subscribe(atom, (result) => {
+    const subscribed = replacedSubscriptions.get(file);
+    if (listeners > 0 && subscribed?.path !== file.path) {
+      subscribed?.release();
+      replacedSubscriptions.set(file, {
+        path: file.path,
+        release: registry.subscribe(atom, (result) => {
           if (!result.waiting) events.emit("frontmatter-changed");
         }),
-      );
+      });
+    }
     return result;
   };
   // An assigned type is read live: listened to while any listener listens.
