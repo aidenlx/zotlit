@@ -23,8 +23,9 @@ import { stateEditor } from "./__fixtures__/editor";
 import {
   createDragInsertHandler,
   createInsertHandler,
-  insertFailureMessage,
+  insertOutcomeMessage,
 } from "./drag-insert";
+import type { AnnotationInsertOutcome } from "./drag-insert";
 
 const card: AnnotationRecord = {
   key: "PUPR5FG5",
@@ -141,7 +142,10 @@ it("inserts at the note's selection after the annotation sidebar takes focus", a
   const operation = f.insert(card);
   expect(f.prepare).toHaveBeenCalledOnce();
   f.pending[0]!.resolve(result("EXCERPT"));
-  await operation;
+  expect(await operation).toEqual({
+    kind: "inserted",
+    summary: { zotero: 0, unchecked: 0, unavailable: 0 },
+  });
   expect(f.cm.state.doc.toString()).toBe("one EXCERPT ");
 });
 
@@ -156,7 +160,7 @@ it("offers no insert into a note in Reading view", async () => {
   f.workspace.getMostRecentLeaf = () => leaf;
 
   expect(f.insert.offer()).toBeNull();
-  await f.insert(card);
+  expect(await f.insert(card)).toEqual({ kind: "no-note" });
   expect(f.prepare).not.toHaveBeenCalled();
   expect(f.cm.state.doc.toString()).toBe("one two");
 });
@@ -190,25 +194,19 @@ it("keeps the established text fallback for a Profile error", async () => {
       hint: "Restore the document",
     }),
   );
-  await operation;
+  expect(await operation).toMatchObject({
+    kind: "profile-error",
+    landed: true,
+  });
   expect(f.cm.state.doc.toString()).toBe("one Original highlight ");
 });
 
-it("leaves the note unchanged where the insertion fails", async () => {
+it("leaves the note unchanged, and the error to the log, where the insertion fails", async () => {
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.reject(new Error("private failure detail"));
-  await operation;
+  expect(await operation).toEqual({ kind: "failed" });
   expect(f.cm.state.doc.toString()).toBe("one two");
-});
-
-it("keeps internal insertion errors out of the notice", () => {
-  expect(
-    insertFailureMessage(
-      stubService<App>("App", {}),
-      new Error("private failure detail"),
-    ),
-  ).toBe(m.annot_view_insert_failed());
 });
 
 it("supersedes the pending action and inserts once with one undo", async () => {
@@ -218,9 +216,9 @@ it("supersedes the pending action and inserts once with one undo", async () => {
   expect(f.prepare.mock.calls[0]?.[0].signal.aborted).toBe(true);
   f.cm.dispatch({ changes: { from: 0, insert: "user " } });
   f.pending[1]!.resolve(result("EXCERPT"));
-  await second;
+  expect(await second).toMatchObject({ kind: "inserted" });
   f.pending[0]!.resolve(result("STALE"));
-  await first;
+  expect(await first).toEqual({ kind: "cancelled" });
   expect(f.cm.state.doc.toString()).toBe("user one EXCERPT ");
   undo(f.cm);
   expect(f.cm.state.doc.toString()).toBe("user one two");
@@ -246,7 +244,7 @@ it.each(["switch", "close", "cancel"])(
     if (mode === "close") f.cm.dom.remove();
     if (mode === "cancel") f.insert.cancel();
     f.pending[0]!.resolve(result("late"));
-    await operation;
+    expect(await operation).toEqual({ kind: "cancelled" });
     expect(f.cm.state.doc.toString()).toBe("one two");
   },
 );
@@ -257,7 +255,10 @@ it("inserts an unavailable-image result", async () => {
     text: "Image unavailable [Zotero](zotero://open)",
     summary: { zotero: 0, unchecked: 0, unavailable: 1 },
   });
-  await operation;
+  expect(await operation).toEqual({
+    kind: "inserted",
+    summary: { zotero: 0, unchecked: 0, unavailable: 1 },
+  });
   expect(f.cm.state.doc.toString()).toBe(
     "one Image unavailable [Zotero](zotero://open) ",
   );
@@ -266,9 +267,42 @@ it("uses a source-link fallback when preparation cannot build template context",
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.resolve(null);
-  await operation;
+  expect(await operation).toEqual({ kind: "fallback", landed: true });
   expect(f.cm.state.doc.toString()).toContain("annotation=PUPR5FG5");
 });
+
+it.each([
+  [{ kind: "no-note" }, m.annot_view_insert_no_note()],
+  [{ kind: "source-unavailable" }, m.annot_view_drag_unavailable()],
+  [{ kind: "fallback", landed: true }, m.annot_view_drag_unavailable()],
+  [{ kind: "fallback", landed: false }, null],
+  [
+    {
+      kind: "inserted",
+      summary: { zotero: 0, unchecked: 0, unavailable: 1 },
+    },
+    m.excerpt_image_summary({
+      zotero: 0,
+      unchecked: 0,
+      unavailable: 1,
+      notRefreshed: 0,
+    }),
+  ],
+  [
+    { kind: "inserted", summary: { zotero: 0, unchecked: 0, unavailable: 0 } },
+    null,
+  ],
+  // The error's own detail stays in the log.
+  [{ kind: "failed" }, m.annot_view_insert_failed()],
+  [{ kind: "cancelled" }, null],
+] satisfies [AnnotationInsertOutcome, string | null][])(
+  "reports %o with its notice",
+  (outcome, message) => {
+    expect(insertOutcomeMessage(stubService<App>("App", {}), outcome)).toBe(
+      message,
+    );
+  },
+);
 
 function dragFixture() {
   const cm = stateEditor({ doc: "one two", extensions: [history()] });
