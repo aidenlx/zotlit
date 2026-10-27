@@ -9,8 +9,6 @@ import type { App } from "obsidian";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import {
   normalizePartialName,
   partialFilename,
@@ -25,10 +23,6 @@ import {
   frameDialog,
   note,
 } from "@/setting-tab/profile-dialog";
-
-import { openTemplateWorkbench } from "./register";
-
-const logger = getLogger(["views", "template-workbench"]);
 
 /** The template surface every Shared Partial entry point reads. */
 export type SharedPartialActions = Pick<
@@ -50,41 +44,6 @@ export interface CreateSharedPartialOptions {
    * @default "split"
    */
   open?: "split" | "tab" | false;
-}
-
-/**
- * Ask a name, create the Shared Partial, and open it.
- *
- * @returns the created name, which a caller writes into the call it is
- *   completing, or `null` when the reader dismisses the prompt.
- */
-export async function createSharedPartial(
-  app: App,
-  template: SharedPartialActions,
-  options: CreateSharedPartialOptions = {},
-): Promise<string | null> {
-  const taken = template.getPartialNames();
-  const modal = new NewPartialModal(app, taken, options.name ?? "");
-  modal.open();
-  const name = await modal.result;
-  if (name === null) return null;
-  try {
-    const file = await template.createPartial(name, {
-      ...(options.source === undefined ? {} : { source: options.source }),
-      ...(options.language === undefined ? {} : { language: options.language }),
-    });
-    const open = options.open ?? "split";
-    if (open !== false)
-      await openTemplateWorkbench(app, file, {
-        leaf: app.workspace.getLeaf(open === "split" ? "split" : "tab"),
-        explainUnsupported: false,
-      });
-    return name;
-  } catch (error) {
-    logger.error("Failed to create a Shared Partial", { name, error });
-    new BaseNotice(m.notice_partial_create_failed());
-    return null;
-  }
 }
 
 /**
