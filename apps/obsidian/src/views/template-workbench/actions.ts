@@ -23,6 +23,30 @@ export const templateWorkbenchAction = <A, E, R>(
     withLogCategory("template-workbench"),
   );
 
+/** What an open of the Template Workbench View asks the reader to know. */
+export interface WorkbenchOpened {
+  /** The document uses Eta or JavaScript fields, which only this editor runs. */
+  readonly nativeRequired: boolean;
+  /** The note the reader launched from, which this editor cannot update. */
+  readonly unavailableNote: string | null;
+}
+
+/** Show a notice for each thing `opened` asks the reader to know. */
+export const explainWorkbenchOpen = Effect.fn("explainWorkbenchOpen")(
+  function* (opened: WorkbenchOpened | void) {
+    if (!opened) return;
+    const notifier = yield* Notifier;
+    if (opened.nativeRequired)
+      yield* notifier.show(m.template_workbench_native_required());
+    if (opened.unavailableNote !== null)
+      yield* notifier.show(
+        m.template_workbench_update_unavailable({
+          name: opened.unavailableNote,
+        }),
+      );
+  },
+);
+
 /** What a plain Obsidian callback needs to start a Workbench action. */
 export interface WorkbenchActionDeps {
   readonly bridge: Pick<EffectBridge, "runAndForget">;
@@ -32,15 +56,19 @@ export interface WorkbenchActionDeps {
 /**
  * Start the Workbench action `open` from a plain Obsidian callback, such as a
  * command or a menu entry, on the plugin's bridge: unload stops it quietly.
+ * What the open asks the reader to know shows as a notice.
  */
 export function startTemplateWorkbenchAction(
   deps: WorkbenchActionDeps,
   operation: string,
-  open: () => Promise<void>,
+  open: () => Promise<WorkbenchOpened | void>,
 ): void {
   deps.bridge.runAndForget(
-    templateWorkbenchAction(operation, portCall(operation, open)).pipe(
-      Effect.provideService(Notifier, deps.notifier),
-    ),
+    templateWorkbenchAction(
+      operation,
+      portCall(operation, open).pipe(
+        Effect.flatMap((opened) => explainWorkbenchOpen(opened)),
+      ),
+    ).pipe(Effect.provideService(Notifier, deps.notifier)),
   );
 }

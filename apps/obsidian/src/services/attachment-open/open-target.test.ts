@@ -261,7 +261,7 @@ describe("open", () => {
       });
 
       expect(notices.map(({ messages }) => messages)).toEqual([
-        [m.notice_pdf_open_failed()],
+        [m.notice_attachment_open_failed()],
       ]);
       expect(opened).toEqual([]);
       expect(handed).toEqual([]);
@@ -284,7 +284,7 @@ describe("open", () => {
       ).toEqual({ kind: "failed" });
 
       expect(notices.map(({ messages }) => messages)).toEqual([
-        [m.notice_pdf_open_failed()],
+        [m.notice_attachment_open_failed()],
       ]);
     }),
   );
@@ -418,12 +418,12 @@ describe("follow", () => {
   );
 
   // An Attachment File Link names nothing Zotero can open in its stead, so
-  // the caller says the file is missing.
+  // the opener says the file is missing.
   it.effect(
     "reports a missing file behind an Attachment File Link, and hands nothing to Zotero",
     () =>
       Effect.gen(function* () {
-        const { opener, handed } = yield* openerFixture({
+        const { opener, handed, notices } = yield* openerFixture({
           missing: [FILES.stored],
         });
 
@@ -432,6 +432,9 @@ describe("follow", () => {
         });
 
         expect(handed).toEqual([]);
+        expect(notices.map(({ messages }) => messages)).toEqual([
+          [m.notice_pdf_file_missing()],
+        ]);
       }),
   );
 
@@ -561,7 +564,7 @@ describe("follow", () => {
         });
 
         expect(notices.map(({ messages }) => messages)).toEqual([
-          [m.notice_pdf_open_failed()],
+          [m.notice_attachment_open_failed()],
         ]);
       }),
   );

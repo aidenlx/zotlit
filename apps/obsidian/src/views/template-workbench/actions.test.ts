@@ -8,7 +8,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { LegacyPortError, portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 
-import { templateWorkbenchAction } from "./actions";
+import { explainWorkbenchOpen, templateWorkbenchAction } from "./actions";
 
 /** The notices and error logs one action leaves. */
 function recorder() {
@@ -73,4 +73,22 @@ it.effect.each(["interrupt", "abort"] as const)(
       expect(record.notices()).toEqual([]);
       expect(record.errors).toEqual([]);
     }),
+);
+
+it.effect("explains what an open asks the reader to know", () =>
+  Effect.gen(function* () {
+    const record = recorder();
+    yield* explainWorkbenchOpen({
+      nativeRequired: true,
+      unavailableNote: "Original",
+    }).pipe(Effect.provide(record.layer));
+    yield* explainWorkbenchOpen({
+      nativeRequired: false,
+      unavailableNote: null,
+    }).pipe(Effect.provide(record.layer));
+    expect(record.notices()).toEqual([
+      [m.template_workbench_native_required()],
+      [m.template_workbench_update_unavailable({ name: "Original" })],
+    ]);
+  }),
 );

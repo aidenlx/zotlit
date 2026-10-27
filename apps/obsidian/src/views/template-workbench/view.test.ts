@@ -378,10 +378,10 @@ describe("TemplateWorkbenchView", () => {
     );
     const error = new Error("write failed");
     h.updateNote.mockRejectedValueOnce(error);
-    expect(await h.view.updateOriginatingNote()).toEqual({
-      outcome: "failed",
-      name: "Original",
-      error,
+    await expect(h.view.updateOriginatingNote()).rejects.toMatchObject({
+      _tag: "OriginatingNoteUpdateError",
+      note: "Original",
+      cause: error,
     });
   });
 
@@ -394,13 +394,20 @@ describe("TemplateWorkbenchView", () => {
       if (stage === "write")
         h.updateNote.mockRejectedValueOnce(new AbortError());
       else h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
-      const updating = h.view.updateOriginatingNote();
+      // An abort, bare or as the cause of the typed failure, which the
+      // Notifier passes over without a notice.
+      const stopping = h.view.updateOriginatingNote().then(
+        () => null,
+        (error: unknown) => error,
+      );
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
       if (stage === "closed") await h.view.close();
       if (stage !== "write") waiting.reject(new AbortError());
-      const outcome = await updating;
-      expect.soft(outcome).toEqual({ outcome: "released" });
-      expect(originatingNoteUpdateNotice(h.app, outcome)).toBeNull();
+      const stopped: unknown = await stopping;
+      expect(
+        AbortError.test(stopped) ||
+          (stopped instanceof Error && AbortError.test(stopped.cause)),
+      ).toBe(true);
       expect(h.updateNote).toHaveBeenCalledTimes(stage === "write" ? 1 : 0);
     },
   );
@@ -484,6 +491,13 @@ describe("TemplateWorkbenchView", () => {
       outcome: "updated",
       name: "Original",
     });
+  });
+
+  it("names a launch note this editor cannot update", async () => {
+    const h = await originHarness();
+    h.getFileCache.mockReturnValue(null as never);
+    expect(await h.view.setOriginatingNote(h.file)).toBe("Original");
+    expect(h.view.originatingNote).toBeNull();
   });
 
   it("clears the action when the editor is opened without an originating note", async () => {

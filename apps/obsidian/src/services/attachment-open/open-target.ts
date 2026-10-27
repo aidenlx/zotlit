@@ -7,7 +7,7 @@
 //
 // @see apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md
 
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schema } from "effect";
 import type { Duration } from "effect";
 import { fileURLToPath } from "node:url";
 import type { PaneType } from "obsidian";
@@ -21,9 +21,10 @@ import {
   parseIndexedKey,
 } from "@zotlit/db";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError, portCall } from "@/lib/legacy-port";
+import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import {
@@ -68,6 +69,16 @@ export type OpenOutcome =
   /** The reader or the system handler failed; the Notifier said so. */
   | { kind: "failed" };
 
+/** The system handler threw as it was handed a `zotero://` link. */
+export class SystemOpenFailed extends Schema.TaggedError<
+  SystemOpenFailed,
+  { readonly brand: unique symbol }
+>()("SystemOpenFailed", {
+  /** The link the handler was handed. */
+  url: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
 /** Whether Obsidian's PDF view opened the file, which it learns at the open itself. */
 export type ReaderOutcome = "opened" | "file-missing";
 
@@ -98,7 +109,7 @@ export class TargetOpener extends Context.Service<
      * the index never fails outright; it is only late.
      *
      * An interrupt opens nothing and shows nothing. A reader or system
-     * handler that fails shows a notice and ends `failed`.
+     * handler that fails shows a notice and ends `failed`; so does a defect.
      */
     open(
       target: OpenTarget,
@@ -184,7 +195,7 @@ export function layerTargetOpener<R>({
       const toZotero = (url: string) =>
         Effect.try({
           try: () => native(url),
-          catch: (cause) => new LegacyPortError({ step: "open-system", cause }),
+          catch: (cause) => new SystemOpenFailed({ url, cause }),
         }).pipe(Effect.as<OpenOutcome>({ kind: "zotero", url }));
 
       /** Opens in the reader, or hands `fallback` to Zotero when the file is gone. */
@@ -199,29 +210,30 @@ export function layerTargetOpener<R>({
           reader.open(attachment, pane),
         );
         if (outcome === "opened") return { kind: "reader" } as OpenOutcome;
-        if (fallback === null) return { kind: "file-missing" } as OpenOutcome;
+        if (fallback === null) {
+          yield* notifier.show(m.notice_pdf_file_missing());
+          return { kind: "file-missing" } as OpenOutcome;
+        }
         yield* Effect.logDebug(
           "Target handed to Zotero: the reader found no file",
         ).pipe(Effect.annotateLogs({ attachmentKey: attachment.indexedKey }));
         return yield* toZotero(fallback);
       });
 
-      /** A reader or system handler that failed shows a notice; an interrupt passes on. */
-      const reported = (open: Effect.Effect<OpenOutcome, LegacyPortError>) =>
-        open.pipe(
-          Effect.catch((error) =>
-            Effect.gen(function* () {
-              yield* Effect.logError("Target did not open").pipe(
-                Effect.annotateLogs({ step: error.step, error: error.cause }),
-              );
-              yield* notifier.show(m.notice_pdf_open_failed(), {
-                duration: 4000,
-              });
-              return { kind: "failed" } as OpenOutcome;
-            }),
+      /**
+       * A reader or system handler that failed, or a defect, shows a notice
+       * and ends `failed`; an interrupt passes on.
+       */
+      const reported = recover(
+        (cause) =>
+          Effect.logError("Target did not open").pipe(
+            Effect.annotateLogs({ cause }),
+            withLogCategory("attachment-open"),
           ),
-          withLogCategory("attachment-open"),
-        );
+        notifier
+          .show(m.notice_attachment_open_failed(), { duration: 4000 })
+          .pipe(Effect.as<OpenOutcome>({ kind: "failed" })),
+      );
 
       /**
        * The index's answer for `attachmentKey`, waiting a bounded time for the
@@ -385,6 +397,9 @@ export function layerTargetOpener<R>({
                       pane,
                       fallback: claimed.fallback,
                     }),
+                  ).pipe(
+                    Effect.withSpan("TargetOpener.follow.open"),
+                    withLogCategory("attachment-open"),
                   ),
             ),
           withLogCategory("attachment-open"),

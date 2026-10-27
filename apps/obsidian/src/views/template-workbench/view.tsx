@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { useAtomValue } from "@effect/atom-react";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
@@ -101,6 +101,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { AbortError, passAborted } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { awaitConfirm } from "@/lib/confirm";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { portCall } from "@/lib/legacy-port";
@@ -193,10 +194,20 @@ import {
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
 const logger = getLogger(["views", "template-workbench"]);
 export type OriginatingNoteUpdateOutcome =
-  | { outcome: "no-target" | "released" }
+  | { outcome: "no-target" }
   | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
-  | { outcome: "updated" | "refused"; name: string; result: UpdateResult }
-  | { outcome: "failed"; name: string; error: unknown };
+  | { outcome: "updated" | "refused"; name: string; result: UpdateResult };
+
+/** The note operation failed while updating the originating note `note`. */
+export class OriginatingNoteUpdateError extends Schema.TaggedError<
+  OriginatingNoteUpdateError,
+  { readonly brand: unique symbol }
+>()("OriginatingNoteUpdateError", {
+  /** The originating note's name. */
+  note: Schema.String,
+  /** What the note operation rejected with. */
+  cause: Schema.Defect(),
+}) {}
 
 /** The notices that report what unpacking a Profile's bundled partials did. */
 export function unpackedPartialNotices(
@@ -238,7 +249,6 @@ export function originatingNoteUpdateNotice(
   const feedback = updateNoteToast("full", { app });
   switch (result.outcome) {
     case "no-target":
-    case "released":
       return null;
     case "unavailable":
       return m.template_workbench_update_unavailable({ name: result.name });
@@ -246,8 +256,6 @@ export function originatingNoteUpdateNotice(
       return m.template_workbench_update_save_failed();
     case "not-ready":
       return m.template_workbench_update_not_ready();
-    case "failed":
-      return feedback.error(result.error);
     case "refused":
     case "updated": {
       if (result.result.bodyUpdated && !result.result.diagnostic)
@@ -410,15 +418,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get updatingNote(): boolean {
     return this.#updatingNote !== null;
   }
-  /** A launch explicitly sets the target; focus and preview changes leave it intact. */
-  async setOriginatingNote(file: TFile | null): Promise<void> {
+  /**
+   * A launch explicitly sets the target; focus and preview changes leave it
+   * intact.
+   *
+   * @returns the name of a note this editor cannot update, for the launch to
+   *   explain, or `null`.
+   */
+  async setOriginatingNote(file: TFile | null): Promise<string | null> {
     const indexedKey =
       file && itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file));
     const resolved = file && (await this.#commands.profileOf.run(file));
-    if (file && (!indexedKey || !resolved?.ok))
-      new BaseNotice(
-        m.template_workbench_update_unavailable({ name: file.basename }),
-      );
     this.#originatingNote =
       file && indexedKey && resolved?.ok
         ? {
@@ -429,19 +439,16 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           }
         : null;
     this.#mount();
+    return file && (!indexedKey || !resolved?.ok) ? file.basename : null;
   }
   updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
     if (this.#updatingNote) return this.#updatingNote;
-    this.#updatingNote = this.#updateOriginatingNote().finally(() => {
+    this.#updatingNote = this.#noteUpdate.run().finally(() => {
       this.#updatingNote = null;
       this.#mount();
     });
     this.#mount();
     return this.#updatingNote;
-  }
-  /** Update the originating note, and show what came of it. */
-  reportOriginatingNoteUpdate(): Promise<void> {
-    return this.#noteUpdate.run().catch(passAborted);
   }
   /** Run a Workbench action on this leaf; closing the leaf stops it quietly. */
   #run(
@@ -450,76 +457,99 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   ): Promise<void> {
     return this.#action.run({ operation, action }).catch(passAborted);
   }
-  async #updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
-    const origin = this.#originatingNote;
-    const update = this.#deps.noteFeature;
-    if (!origin || !update) return { outcome: "no-target" };
-    // Session state only: the note update checks the note's own Zotero key
-    // against the content its one write replaces.
-    const available = () =>
-      !this.#closed &&
-      this.#originatingNote === origin &&
-      this.file === origin.template &&
-      this.app.vault.getFileByPath(origin.file.path) === origin.file;
-    if (!available())
-      return { outcome: "unavailable", name: origin.file.basename };
-    try {
-      await this.save();
-      if (
-        !this.file ||
-        (await this.app.vault.read(this.file)) !== this.getViewData()
-      )
-        return { outcome: "save-failed", name: origin.file.basename };
-    } catch (error) {
-      logger.error("Failed to save template before note update", { error });
-      return { outcome: "save-failed", name: origin.file.basename };
-    }
-    // Settlement covers this revision. Later edits get their own update attempt.
-    const revision = this.#sourceRevision;
-    const unavailable = new Error("Originating note is unavailable");
-    const changed = new Error("Template changed during note update");
-    const beforeWrite = () => {
-      if (!available()) throw unavailable;
-      if (this.#sourceRevision !== revision) throw changed;
-    };
-    try {
-      if ((await this.#commands.settle.run()) !== "settled")
-        return { outcome: "not-ready", name: origin.file.basename };
-      if (
-        !this.file ||
-        (await this.app.vault.read(this.file)) !== this.getViewData()
-      )
-        return { outcome: "save-failed", name: origin.file.basename };
-      beforeWrite();
-      const result = await update.updateNote(origin.file, {
-        indexedKey: origin.indexedKey,
-        scope: "full",
-        profile: origin.profile,
-        beforeWrite,
+  /**
+   * Save this template, wait for it to compile, and update the originating
+   * note with it. What stands in the way is an outcome; the note operation's
+   * own failure is an {@link OriginatingNoteUpdateError}.
+   */
+  #updateOriginatingNote(): Effect.Effect<
+    OriginatingNoteUpdateOutcome,
+    OriginatingNoteUpdateError,
+    ViewServices
+  > {
+    return Effect.gen({ self: this }, function* () {
+      const origin = this.#originatingNote;
+      const update = this.#deps.noteFeature;
+      if (!origin || !update) return { outcome: "no-target" } as const;
+      const name = origin.file.basename;
+      // Session state only: the note update checks the note's own Zotero key
+      // against the content its one write replaces.
+      const available = () =>
+        !this.#closed &&
+        this.#originatingNote === origin &&
+        this.file === origin.template &&
+        this.app.vault.getFileByPath(origin.file.path) === origin.file;
+      if (!available()) return { outcome: "unavailable", name } as const;
+      /** Whether the file on disk holds what this editor shows. */
+      const saved = Effect.gen({ self: this }, function* () {
+        const file = this.file;
+        return (
+          file !== null &&
+          (yield* portCall("read-template", () =>
+            this.app.vault.read(file),
+          )) === this.getViewData()
+        );
       });
-      // The note no longer belongs to the item this editor opened it for, so
-      // another update from here would be refused the same way.
-      if (result.diagnostic?.code === "literature-note-key-changed")
-        return { outcome: "unavailable", name: origin.file.basename };
-      return {
-        outcome: result.diagnostic ? "refused" : "updated",
-        name: origin.file.basename,
-        result,
-      };
-    } catch (error) {
-      if (AbortError.test(error)) return { outcome: "released" };
-      if (!available())
-        return { outcome: "unavailable", name: origin.file.basename };
-      if (error === unavailable)
-        return { outcome: "unavailable", name: origin.file.basename };
-      if (error === changed)
-        return { outcome: "not-ready", name: origin.file.basename };
-      logger.error("Failed to update originating note at {path}", {
-        path: origin.file.path,
-        error,
-      });
-      return { outcome: "failed", name: origin.file.basename, error };
-    }
+      const written = yield* portCall("save-template", () => this.save()).pipe(
+        Effect.andThen(saved),
+        Effect.catch((error) =>
+          Effect.logError("Failed to save template before note update").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as(false),
+          ),
+        ),
+      );
+      if (!written) return { outcome: "save-failed", name } as const;
+      // Settlement covers this revision. Later edits get their own update attempt.
+      const revision = this.#sourceRevision;
+      const settled = yield* (yield* Template).waitUntilSettled(10_000);
+      if (settled !== "settled") return { outcome: "not-ready", name } as const;
+      if (!(yield* saved.pipe(Effect.orElseSucceed(() => false))))
+        return { outcome: "save-failed", name } as const;
+      /** What a write this editor can no longer stand behind answers. */
+      const refusal = () =>
+        !available()
+          ? ({ outcome: "unavailable", name } as const)
+          : this.#sourceRevision !== revision
+            ? ({ outcome: "not-ready", name } as const)
+            : null;
+      const before = refusal();
+      if (before) return before;
+      return yield* portCall("update-note", () =>
+        update.updateNote(origin.file, {
+          indexedKey: origin.indexedKey,
+          scope: "full",
+          profile: origin.profile,
+          // The note operation stops its write where this throws.
+          beforeWrite: () => {
+            if (refusal()) throw new Error("The originating note moved on");
+          },
+        }),
+      ).pipe(
+        Effect.map((result): OriginatingNoteUpdateOutcome =>
+          // The note no longer belongs to the item this editor opened it for,
+          // so another update from here would be refused the same way.
+          result.diagnostic?.code === "literature-note-key-changed"
+            ? { outcome: "unavailable", name }
+            : {
+                outcome: result.diagnostic ? "refused" : "updated",
+                name,
+                result,
+              },
+        ),
+        Effect.catch((error) => {
+          const refused = refusal();
+          return refused
+            ? Effect.succeed(refused)
+            : Effect.fail(
+                new OriginatingNoteUpdateError({
+                  note: name,
+                  cause: error.cause,
+                }),
+              );
+        }),
+      );
+    }).pipe(withLogCategory("template-workbench"));
   }
 
   constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
@@ -545,15 +575,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       { concurrent: true },
     );
     this.#noteUpdate = makeWorkbenchTask(deps.registry, () =>
-      reportOutcome(
-        portCall("update-originating-note", () => this.updateOriginatingNote()),
-        {
+      Effect.gen({ self: this }, function* () {
+        const exit = yield* Effect.exit(this.#updateOriginatingNote());
+        yield* reportOutcome(exit, {
           success: (result): NoticeMessage | undefined =>
             originatingNoteUpdateNotice(this.app, result) ?? undefined,
           error: (error) =>
-            updateNoteToast("full", { app: this.app }).error(error),
-        },
-      ),
+            updateNoteToast("full", { app: this.app }).error(
+              error instanceof OriginatingNoteUpdateError ? error.cause : error,
+            ),
+        });
+        return yield* exit;
+      }),
     );
     this.store = workbenchStore(deps.registry, this.model);
     this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
@@ -2589,7 +2622,10 @@ function EditorContent({
             <button
               className={originatingNoteNotice.button}
               disabled={view.updatingNote}
-              onClick={() => void view.reportOriginatingNoteUpdate()}
+              onClick={() =>
+                // The update reports its own outcome, failures included.
+                void view.updateOriginatingNote().catch(() => {})
+              }
             >
               <span className={originatingNoteNotice.labels}>
                 <span

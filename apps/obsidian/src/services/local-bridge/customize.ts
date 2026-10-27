@@ -27,6 +27,8 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
+import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
+import type { WorkbenchOpened } from "@/views/template-workbench/actions";
 import type { ProfileCustomization } from "@/views/template-workbench/preferences";
 
 import { profileDisplayName } from "./profile-name";
@@ -97,11 +99,14 @@ export interface CustomizePorts {
   readonly pluginVersion: string;
   readonly confirmLaunch: ConfirmLaunch;
   readonly openExternal: (url: string) => void;
-  /** Open `target` in the Template Workbench inside Obsidian. */
+  /**
+   * Open `target` in the Template Workbench inside Obsidian, answering what
+   * the open asks the reader to know.
+   */
   readonly openNative: (
     request: CustomizeRequest,
     target: NativeProfileTarget,
-  ) => Promise<void>;
+  ) => Promise<WorkbenchOpened | void>;
   /** The destination this device remembers (`views/template-workbench/preferences`). */
   readonly preference: () => ProfileCustomization;
   readonly rememberPreference: (
@@ -177,8 +182,10 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
   const openNative = Effect.gen(function* () {
     const target = yield* nativeTarget(request.profileId);
     if (target)
-      yield* portCall("open-native", () =>
-        ports.openNative(nativeRequest, target),
+      yield* explainWorkbenchOpen(
+        yield* portCall("open-native", () =>
+          ports.openNative(nativeRequest, target),
+        ),
       );
   });
   if (!ports.webWorkbenchEnabled) {
