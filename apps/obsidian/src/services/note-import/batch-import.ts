@@ -100,7 +100,7 @@ export interface BatchImportPorts {
 
 /**
  * The note-import command surface for callers outside Effect: the
- * interactive batch/single/child import routing. `build.ts` binds it over the
+ * interactive batch/single/child import routing. `plugin-runtime.ts` binds it over the
  * plugin's services (`batch-import-handle.ts`).
  */
 export interface BatchImport {

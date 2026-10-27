@@ -9,7 +9,7 @@ import { literatureNoteAttachments } from "./literature-note";
 import type { LiteratureNoteServices } from "./literature-note";
 import type { ObsidianOpenableAttachment } from "./resolve";
 
-/** The edge handle `build.ts` binds; see {@link bindLiteratureNoteAttachments}. */
+/** The edge handle `plugin-runtime.ts` binds; see {@link bindLiteratureNoteAttachments}. */
 export interface LiteratureNoteAttachmentsHandle {
   /**
    * The Obsidian-Openable PDF Attachments of the Item `indexedKey` names; none

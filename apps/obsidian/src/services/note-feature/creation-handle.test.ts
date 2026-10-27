@@ -22,7 +22,7 @@ import { NoteFeature } from "./service";
 const ITEM = { indexedKey: "ABCD2345" } as Item;
 const FILE = Object.assign(new TFile(), { path: "Literature/Paper.md" });
 
-/** The handle over a Note Feature whose plan is `plan`, bound as `build.ts` binds it. */
+/** The handle over a Note Feature whose plan is `plan`, bound as `plugin-runtime.ts` binds it. */
 function handleOver(planCreations: NoteFeature["Service"]["planCreations"]) {
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(

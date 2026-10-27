@@ -313,7 +313,7 @@ const settled = <A>(call: () => Promise<A>) =>
   );
 
 /**
- * The real {@link bindBatchImport}, as `build.ts` binds it, over services
+ * The real {@link bindBatchImport}, as `plugin-runtime.ts` binds it, over services
  * that answer from `deps` at the time of each call. The case's resources
  * dispose the runtime.
  */

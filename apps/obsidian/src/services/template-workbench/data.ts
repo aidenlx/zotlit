@@ -76,7 +76,7 @@ export type TemplateDataServices =
   | FileManager;
 
 /**
- * Template data for a caller outside Effect: an edge handle `build.ts` binds
+ * Template data for a caller outside Effect: an edge handle `plugin-runtime.ts` binds
  * over the bridge (`bindTemplateData`). A load resolves with its result and
  * rejects with what failed, as a read or a Template does.
  */

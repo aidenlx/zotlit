@@ -30,7 +30,7 @@ export type VersionedCliHost = CliHost & {
   readonly manifest: Pick<PluginManifest, "version">;
 };
 
-/** Runs one command's Effect; `build.ts` makes it from the plugin's runtime. */
+/** Runs one command's Effect; `plugin-runtime.ts` makes it from the plugin's runtime. */
 export type CliRunner = (
   effect: Effect.Effect<string, unknown>,
 ) => Promise<string>;

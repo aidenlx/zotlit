@@ -330,7 +330,10 @@ export default defineConfig({
       // Helpers and constructors that take a raw App object
       // (`documentPresentation(app.metadataCache, …)`,
       // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
-      files: ["src/services/build.ts", "src/services/pandoc/register.ts"],
+      files: [
+        "src/services/plugin-runtime.ts",
+        "src/services/pandoc/register.ts",
+      ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -582,8 +585,6 @@ export default defineConfig({
         "vite.config.ts",
         "src/services/pandoc/filter/zotlit-cite.pandoc.test.ts",
         "src/zt-main.ts",
-        "src/services/build.ts",
-        "src/services/service-base.ts",
         "src/services/log/**",
       ],
       rules: {
