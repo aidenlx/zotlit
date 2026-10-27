@@ -9,7 +9,6 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import { Profile } from "@/services/profile/service";
 import { reportCitationTemplateOpen } from "@/services/template/actions";
-import { Template } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -42,11 +41,6 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
     profileOf: makeWorkbenchCommand(registry, (file: TFile) =>
       Effect.gen(function* () {
         return yield* (yield* Profile).profileOf(file);
-      }),
-    ),
-    settle: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        return yield* (yield* Template).waitUntilSettled(10_000);
       }),
     ),
     materialize: makeWorkbenchTask(registry, () =>

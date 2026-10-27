@@ -15,7 +15,7 @@ import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
 import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
-import { openCitationTemplate } from "@/services/template/actions";
+import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
 import { createSharedPartial } from "@/views/template-workbench/partial-command";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
@@ -328,8 +328,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
         void ctx.tab.run(
-          openCitationTemplate(ctx.app).pipe(Effect.ensuring(rebuild)),
-          m.settings_failed_citation_text_open(),
+          reportCitationTemplateOpen(ctx.app).pipe(Effect.ensuring(rebuild)),
         );
       }),
   );

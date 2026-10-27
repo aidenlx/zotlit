@@ -85,6 +85,7 @@ import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
+import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { showProtocolOutcome } from "./notices";
@@ -650,8 +651,10 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* portCall("open-template-workbench", () =>
-      openTemplateWorkbench(deps.app, file, options),
+    yield* explainWorkbenchOpen(
+      yield* portCall("open-template-workbench", () =>
+        openTemplateWorkbench(deps.app, file, options),
+      ),
     );
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(
       Effect.annotateLogs({ path: profile.path }),

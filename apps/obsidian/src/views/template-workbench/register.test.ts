@@ -45,7 +45,6 @@ import {
   openNativeProfile,
   openTemplateWorkbench,
   registerTemplateWorkbenchView,
-  requiresNative,
   templateWorkbenchFileMenu,
 } from "./register";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
@@ -56,9 +55,9 @@ vi.mock("@/views/note-preview/register", () => ({
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-const setOriginatingNote = vi.fn<(file: TFile | null) => Promise<void>>(
-  async () => {},
-);
+const setOriginatingNote = vi.fn<
+  (file: TFile | null) => Promise<string | null>
+>(async () => null);
 beforeEach(() => {
   vi.spyOn(
     TemplateWorkbenchView.prototype,
@@ -666,9 +665,23 @@ Annotation`);
       const { app, file, setViewState } = setup();
       const source = `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`;
       vi.spyOn(app.vault, "cachedRead").mockResolvedValue(source);
-      await openNativeProfile(app, file);
+      expect(await openNativeProfile(app, file)).toEqual({
+        nativeRequired: true,
+        unavailableNote: null,
+      });
       expect(setViewState).toHaveBeenCalledOnce();
-      expect(requiresNative(source)).toBe(true);
+    },
+  );
+  it.each([true, false])(
+    "asks for the native editor only when the open explains it: %s",
+    async (explainUnsupported) => {
+      const { app, file } = setup();
+      vi.spyOn(app.vault, "cachedRead").mockResolvedValue(
+        "---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\nlanguage: eta\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n",
+      );
+      expect(
+        await openTemplateWorkbench(app, file, { explainUnsupported }),
+      ).toEqual({ nativeRequired: explainUnsupported, unavailableNote: null });
     },
   );
   it.each(["ask", "web"])(
