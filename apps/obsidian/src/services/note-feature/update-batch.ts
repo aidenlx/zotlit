@@ -173,6 +173,8 @@ export type BatchUpdateResult =
   | { outcome: "collection-not-found" }
   | { outcome: "not-found" }
   | { outcome: "single-update" }
+  /** A metadata-only single update found no note, so it created none. */
+  | { outcome: "metadata-no-note" }
   | { outcome: "batch-modal" };
 
 export interface BatchUpdateOptions {
@@ -220,7 +222,7 @@ const literatureNoteWithWarning = Effect.fnUntraced(function* (
  * Returns a discriminated result so the caller can map outcomes to UI feedback
  * (notice / toast) without coupling the logic to presentation.
  */
-export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
+export const batchUpdateItems = Effect.fn("batchUpdateItems")(function* (
   ports: BatchUpdatePorts,
   itemIDs: readonly number[],
   opts: BatchUpdateOptions = {},
@@ -254,8 +256,7 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
     if (!ref) {
       return updateResult({ outcome: "not-found" });
     }
-    yield* updateNote(ports, ref, { scope, profile });
-    return updateResult({ outcome: "single-update" });
+    return yield* updateNote(ports, ref, { scope, profile });
   }
 
   yield* openBatchUpdateModal(ports, itemIDs, {
@@ -267,13 +268,38 @@ export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
   return updateResult({ outcome: "batch-modal" });
 });
 
+/** The notice {@link runBatchUpdate} shows for `result`, or none. */
+export function batchUpdateResultNotice(
+  result: BatchUpdateResult,
+): string | undefined {
+  return result.outcome === "metadata-no-note"
+    ? m.notice_update_metadata_no_note()
+    : undefined;
+}
+
+/**
+ * {@link batchUpdateItems}, and a notice for a metadata-only single update
+ * that found no note. The caller renders the other outcomes.
+ */
+export const runBatchUpdate = Effect.fn("runBatchUpdate")(function* (
+  ports: BatchUpdatePorts,
+  itemIDs: readonly number[],
+  opts: BatchUpdateOptions = {},
+) {
+  const result = yield* batchUpdateItems(ports, itemIDs, opts);
+  const notice = batchUpdateResultNotice(result);
+  if (notice) yield* (yield* Notifier).show(notice);
+  return result;
+});
+
 /**
  * Update the existing literature note, or create + open one if none exists.
  * `scope` controls how much an existing note is refreshed (see {@link UpdateScope}).
  *
  * A `metadata` scope never creates: the whole point of the narrowing is to leave
- * the body alone, and `createNote` would write a full templated one. Missing
- * notes report and stop, leaving the full-scope action as the way to create.
+ * the body alone, and `createNote` would write a full templated one. A missing
+ * note answers `metadata-no-note`, leaving the full-scope action as the way to
+ * create.
  */
 const updateNote = Effect.fnUntraced(function* (
   ports: BatchUpdatePorts,
@@ -285,24 +311,23 @@ const updateNote = Effect.fnUntraced(function* (
   );
 
   if (!file) {
-    if (scope === "metadata") {
-      yield* (yield* Notifier).show(m.notice_update_metadata_no_note());
-      return;
-    }
+    if (scope === "metadata")
+      return updateResult({ outcome: "metadata-no-note" });
     yield* createAndOpen(ports, ref, profile);
-    return;
+    return updateResult({ outcome: "single-update" });
   }
 
   const itemKey = itemKeyFromFrontmatter(
     yield* (yield* MetadataCache).fileCache(file),
   );
-  if (!itemKey) return;
+  if (!itemKey) return updateResult({ outcome: "single-update" });
 
   yield* updateWithNotice(
     file,
     { indexedKey: itemKey, scope, profile },
     ports.notices.updateToast(scope),
   );
+  return updateResult({ outcome: "single-update" });
 });
 
 /** Lazily resolve the full Item and create + open a new literature note. */

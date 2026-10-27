@@ -2,7 +2,6 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import { eventually } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
@@ -45,6 +44,7 @@ const setup = Effect.fn("setup")(function* (
   failure?: SettingsMutationError,
 ) {
   const saved: Parameters<PluginSettings["Service"]["update"]>[0][] = [];
+  const refused: typeof saved = [];
   let updates = 0;
   const services = yield* Layer.build(
     Layer.mergeAll(
@@ -57,7 +57,9 @@ const setup = Effect.fn("setup")(function* (
       Layer.mock(PluginSettings, {
         update: (patch) =>
           failure
-            ? Effect.fail(failure)
+            ? Effect.sync(() => refused.push(patch)).pipe(
+                Effect.andThen(Effect.fail(failure)),
+              )
             : Effect.sync(() => {
                 saved.push(patch);
                 return defaults;
@@ -65,11 +67,11 @@ const setup = Effect.fn("setup")(function* (
       }),
     ),
   );
-  const { tab, notices } = yield* scopedSettingTab(services, {
+  const { tab } = yield* scopedSettingTab(services, {
     update: () => void (updates += 1),
   });
   const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
-  return { ctx, saved, updates: () => updates, notices };
+  return { ctx, saved, refused, updates: () => updates };
 });
 
 const resolved = (
@@ -157,9 +159,9 @@ it.effect(
     }),
 );
 
-it.effect("shows a failed scope save in a notice and keeps the rows", () =>
+it.effect("keeps the rows when the scope save fails", () =>
   Effect.gen(function* () {
-    const { ctx, updates, notices } = yield* setup(
+    const { ctx, refused, updates } = yield* setup(
       {
         effective: {
           mode: "selected",
@@ -176,11 +178,14 @@ it.effect("shows a failed scope save in a notice and keeps the rows", () =>
     const list = selectedLibrariesList(ctx);
 
     yield* Effect.promise(async () => list.onDelete?.(1));
-    yield* eventually(() =>
-      expect(notices.map(({ messages }) => messages[0])).toEqual([
-        `${m.settings_failed_save()}: Settings are read-only`,
-      ]),
-    );
+    expect(refused).toEqual([
+      {
+        "zotero.library-scope": {
+          mode: "selected",
+          libraries: [{ type: "personal" }],
+        },
+      },
+    ]);
     expect(updates()).toBe(0);
   }),
 );

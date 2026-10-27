@@ -44,6 +44,7 @@ import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
 import { openPandocExportModal } from "./modal";
 import { showEngineMissing, showExportFailure } from "./notices";
+import type { ExportProblem } from "./notices";
 
 const logger = getLogger(["views", "pandoc-export"]);
 
@@ -85,41 +86,72 @@ export function registerPandocExport(
 }
 
 /**
- * One export, from the dialog to the written file. The engine is the one
- * prerequisite the command cannot supply itself, so its absence is answered
- * with the settings page that installs it.
+ * One export, from the dialog to the written file, with its outcome shown as
+ * a notice. The engine is the one prerequisite the command cannot supply
+ * itself, so its absence is answered with the settings page that installs it.
  */
 export async function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<void> {
-  const { app, bridge, pandocEngine, zoteroPref, settings } = deps;
-  if (
-    pandocEngine.runSync(pandocEngine.binary.getStatus).kind !== "installed"
-  ) {
-    showEngineMissing(deps.openSettings);
-    return;
+  const outcome = await exportWithCitations(file, deps);
+  switch (outcome.kind) {
+    case "engine-missing":
+      showEngineMissing(deps.openSettings);
+      return;
+    case "failed":
+      showExportFailure(outcome.problem);
+      return;
+    case "exported":
+      new BaseNotice(
+        m.notice_pandoc_export_done({
+          file: basename(outcome.destination),
+          style: outcome.styleTitle,
+        }),
+      );
+      return;
+    case "stopped":
+      return;
   }
+}
+
+/** How one export ended. */
+export type PandocExportOutcome =
+  | { kind: "engine-missing" }
+  | { kind: "failed"; problem: ExportProblem }
+  /** The user dismissed the dialog, or the plugin unloaded during the run. */
+  | { kind: "stopped" }
+  | { kind: "exported"; destination: string; styleTitle: string };
+
+/** One export, from the dialog to the written file. */
+export async function exportWithCitations(
+  file: TFile,
+  deps: PandocExportDeps,
+): Promise<PandocExportOutcome> {
+  const { app, bridge, pandocEngine, zoteroPref, settings } = deps;
+  if (pandocEngine.runSync(pandocEngine.binary.getStatus).kind !== "installed")
+    return { kind: "engine-missing" };
   // A note whose own presentation property names nothing stops here: a vault
   // selection never stands in for it, in the dialog or in the exported run.
   const declared = documentPresentation(app.metadataCache, file, deps.profile);
   if (declared.kind === "unusable") {
-    showExportFailure(
-      declared.property === "profile"
-        ? {
-            kind: "document-profile-invalid",
-            stamp: declared.diagnostic.stamp,
-            target: declared.target,
-            recover: () => requestProfileSwitch(app, declared.target),
-          }
-        : {
-            kind:
-              declared.property === "language"
-                ? "document-language-invalid"
-                : "document-style-invalid",
-          },
-    );
-    return;
+    return {
+      kind: "failed",
+      problem:
+        declared.property === "profile"
+          ? {
+              kind: "document-profile-invalid",
+              stamp: declared.diagnostic.stamp,
+              target: declared.target,
+              recover: () => requestProfileSwitch(app, declared.target),
+            }
+          : {
+              kind:
+                declared.property === "language"
+                  ? "document-language-invalid"
+                  : "document-style-invalid",
+            },
+    };
   }
   // Where this export starts: the document's own effective Citation
   // Presentation, read through the boundary every in-app surface reads it
@@ -143,7 +175,7 @@ export async function runPandocExport(
     styleSource: styleSourceOf(declared),
     notePath: absolutePath(app, file),
   });
-  if (!choices) return;
+  if (!choices) return { kind: "stopped" };
 
   // A style Zotero cannot supply stops the run, whichever place selected it:
   // the run never falls back to another style.
@@ -153,14 +185,17 @@ export async function runPandocExport(
   });
   if (style === null) {
     const noteStyle = choices.styleId === declared.presentation.styleId;
-    showExportFailure(
-      noteStyle && declared.profileStyle && typeof choices.styleId === "string"
-        ? { kind: "profile-style-invalid", styleId: choices.styleId }
-        : noteStyle
-          ? { kind: "document-style-invalid" }
-          : { kind: "style-invalid", style: choices.styleId ?? "" },
-    );
-    return;
+    return {
+      kind: "failed",
+      problem:
+        noteStyle &&
+        declared.profileStyle &&
+        typeof choices.styleId === "string"
+          ? { kind: "profile-style-invalid", styleId: choices.styleId }
+          : noteStyle
+            ? { kind: "document-style-invalid" }
+            : { kind: "style-invalid", style: choices.styleId ?? "" },
+    };
   }
 
   const { title: styleTitle, ...engineStyle } = style;
@@ -170,7 +205,7 @@ export async function runPandocExport(
   let output: Uint8Array;
   try {
     const engine = await pandocEngine.runPromise(pandocEngine.binary.getEngine);
-    if (!engine) return;
+    if (!engine) return { kind: "stopped" };
     const result = valueOr(
       await bridge.runPromiseExit(
         exportCitedDocument(
@@ -189,17 +224,16 @@ export async function runPandocExport(
       null,
     );
     // The plugin unloaded during the export.
-    if (!result) return;
-    if ("error" in result) {
-      showExportFailure(result.error);
-      return;
-    }
+    if (!result) return { kind: "stopped" };
+    if ("error" in result) return { kind: "failed", problem: result.error };
     output = result.output;
   } catch (error) {
-    if (AbortError.test(error)) return;
+    if (AbortError.test(error)) return { kind: "stopped" };
     logger.error("The Pandoc export failed", { error });
-    showExportFailure({ kind: "engine", detail: describeError(error) });
-    return;
+    return {
+      kind: "failed",
+      problem: { kind: "engine", detail: describeError(error) },
+    };
   }
 
   // The bytes exist by now, so a refusal here is the destination's, not Pandoc's.
@@ -210,18 +244,16 @@ export async function runPandocExport(
       error,
       destination: choices.destination,
     });
-    showExportFailure({
-      kind: "destination-unwritable",
-      detail: describeError(error),
-    });
-    return;
+    return {
+      kind: "failed",
+      problem: { kind: "destination-unwritable", detail: describeError(error) },
+    };
   }
-  new BaseNotice(
-    m.notice_pandoc_export_done({
-      file: basename(choices.destination),
-      style: styleTitle,
-    }),
-  );
+  return {
+    kind: "exported",
+    destination: choices.destination,
+    styleTitle,
+  };
 }
 
 /**

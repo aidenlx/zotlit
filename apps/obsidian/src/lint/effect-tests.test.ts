@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 
 import {
   noEffectRunInTest,
+  noNoticeMock,
   noRealTimerInEffectTest,
   serviceStub,
   typedFake,
@@ -105,6 +106,25 @@ tester.run("no-real-timer-in-effect-test", noRealTimerInEffectTest, {
       code: 'layer(Probe)("probe", (it) => { it.effect("waits", () => Effect.promise(() => delay(5))); })',
       errors: timer,
     },
+  ],
+});
+
+const mock = [{ messageId: "mock" }];
+
+// Failure modes: a test mocks a notice module and goes unflagged, or a mock
+// of the Notifier or another module is flagged.
+tester.run("no-notice-mock", noNoticeMock, {
+  valid: [
+    'vi.mock("@/lib/notifier")',
+    'vi.mock("zustand", async (importOriginal) => ({ ...(await importOriginal()) }))',
+  ],
+  invalid: [
+    {
+      code: 'vi.mock("@/lib/notice", async (importOriginal) => ({ ...(await importOriginal()) }))',
+      errors: mock,
+    },
+    { code: 'vi.mock("@/lib/toast")', errors: mock },
+    { code: 'vi.doMock("@/lib/notice")', errors: mock },
   ],
 });
 

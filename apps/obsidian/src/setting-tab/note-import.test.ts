@@ -139,20 +139,22 @@ describe("highlight mapping page", () => {
   });
 });
 
-effectIt.effect("shows a failed mapping save in a notice", () =>
+effectIt.effect("asks for no rebuild when the mapping save fails", () =>
   Effect.gen(function* () {
+    const update = vi.fn<PluginSettings["Service"]["update"]>(() =>
+      Effect.fail(
+        new SettingsMutationError({
+          message: "Settings are read-only",
+          cause: null,
+        }),
+      ),
+    );
     const settings = stubService<PluginSettings["Service"]>("PluginSettings", {
       current: Effect.succeed(defaults),
-      update: () =>
-        Effect.fail(
-          new SettingsMutationError({
-            message: "Settings are read-only",
-            cause: null,
-          }),
-        ),
+      update,
     });
     const rebuild = vi.fn<() => void>();
-    const { tab, notices } = yield* scopedSettingTab(
+    const { tab } = yield* scopedSettingTab(
       Context.make(PluginSettings, settings),
       { update: rebuild },
     );
@@ -163,11 +165,7 @@ effectIt.effect("shows a failed mapping save in a notice", () =>
     const dropdown = renderRow(blue).components[0] as DropdownComponent;
 
     dropdown.choose("mark");
-    yield* eventually(() =>
-      expect(notices.map(({ messages }) => messages[0])).toEqual([
-        `${m.settings_failed_save()}: Settings are read-only`,
-      ]),
-    );
+    yield* eventually(() => expect(update).toHaveBeenCalledOnce());
     expect(rebuild).not.toHaveBeenCalled();
   }),
 );

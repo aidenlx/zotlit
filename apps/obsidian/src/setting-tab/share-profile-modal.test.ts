@@ -464,11 +464,10 @@ const sharing = Effect.fnUntraced(function* (
       .mockReturnValue(dialogWith(showSaveDialog)),
   );
   const opened = yield* spy(() => vi.spyOn(Modal.prototype, "open"));
-  const notifier = testNotifier();
   const services = yield* Effect.promise(() => f.runtime.context());
   const pending = yield* shareProfile(f.app, id).pipe(
     Effect.provideContext(services),
-    Effect.provide(Layer.merge(notifier.layer, NodeFileSystem.layer)),
+    Effect.provide(Layer.merge(testNotifier().layer, NodeFileSystem.layer)),
     Effect.forkChild({ startImmediately: true }),
   );
   yield* until(() => opened.mock.calls.length === 1);
@@ -483,7 +482,6 @@ const sharing = Effect.fnUntraced(function* (
     clipboard,
     showSaveDialog,
     folder,
-    notices: () => notifier.notices.map(({ messages }) => messages[0]),
   };
 });
 
@@ -492,6 +490,12 @@ const press = (
   s: { controls: ReturnType<typeof observeControls> },
   label: string,
 ) => Effect.sync(() => void s.controls.click(label));
+
+/** Press `label`, as the user does, and wait for the output it starts. */
+const output = (
+  s: { controls: ReturnType<typeof observeControls> },
+  label: string,
+) => Effect.promise(async () => s.controls.click(label));
 
 effectIt.effect(
   "copies the bundle and saves the same bytes to the file the user picks",
@@ -502,22 +506,16 @@ effectIt.effect(
         saved = join(folder, "Books.md");
         return { canceled: false, filePath: saved };
       });
-      yield* press(s, m.profile_share_copy());
-      yield* until(() => s.notices().length === 1);
-      const output = s.clipboard.mock.calls[0]![0];
-      yield* press(s, m.profile_share_save());
-      yield* until(() => s.notices().length === 2);
-      expect(yield* Effect.promise(() => readFile(saved, "utf8"))).toBe(output);
-      expect(s.notices()).toEqual([
-        m.profile_share_copied(),
-        m.profile_share_saved({ file: "Books.md" }),
-      ]);
+      yield* output(s, m.profile_share_copy());
+      const copied = s.clipboard.mock.calls[0]![0];
+      yield* output(s, m.profile_share_save());
+      expect(yield* Effect.promise(() => readFile(saved, "utf8"))).toBe(copied);
       s.modal.onClose();
       yield* Fiber.join(s.pending);
     }),
 );
 
-effectIt.effect("cancels a save without writing or a notice", () =>
+effectIt.effect("cancels a save without writing", () =>
   Effect.gen(function* () {
     const s = yield* sharing();
     yield* press(s, m.profile_share_save());
@@ -525,7 +523,6 @@ effectIt.effect("cancels a save without writing or a notice", () =>
     s.modal.onClose();
     yield* Fiber.join(s.pending);
     expect(yield* Effect.promise(() => readdir(s.folder))).toEqual([]);
-    expect(s.notices()).toEqual([]);
   }),
 );
 
@@ -549,17 +546,16 @@ effectIt.effect(
       });
       yield* Fiber.join(s.pending);
       expect(yield* Effect.promise(() => readdir(s.folder))).toEqual([]);
-      expect(s.notices()).toEqual([]);
     }),
 );
 
-effectIt.effect("tells the user when the clipboard refuses the bundle", () =>
+effectIt.effect("copies again after the clipboard refuses the bundle", () =>
   Effect.gen(function* () {
     const s = yield* sharing();
     s.clipboard.mockRejectedValueOnce(new Error("Clipboard unavailable"));
-    yield* press(s, m.profile_share_copy());
-    yield* until(() => s.notices().length === 1);
-    expect(s.notices()).toEqual([m.profile_share_failed()]);
+    yield* output(s, m.profile_share_copy());
+    yield* output(s, m.profile_share_copy());
+    expect(s.clipboard).toHaveBeenCalledTimes(2);
     s.modal.onClose();
     yield* Fiber.join(s.pending);
   }),

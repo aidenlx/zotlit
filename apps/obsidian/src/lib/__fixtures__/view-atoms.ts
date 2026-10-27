@@ -4,6 +4,7 @@ import { Effect, Layer } from "effect";
 import type { Context } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Notifier } from "@/lib/notifier";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
@@ -21,6 +22,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  */
 export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(CitationIndex, {}),
+  Layer.mock(Notifier, {}),
   Layer.mock(PluginSettings, {}),
   Layer.mock(Release, { version: "" }),
   Layer.mock(QueryClients, {

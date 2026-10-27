@@ -4,7 +4,7 @@ import { Cause, Effect, Exit } from "effect";
 import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
+import { Notifier } from "@/lib/notifier";
 import { requireDialog } from "@/lib/require";
 import { viewRuntime } from "@/lib/view-atoms";
 import { Release } from "@/services/release/service";
@@ -100,7 +100,9 @@ export const makeConversionCommand = () =>
         const result = yield* request.retry
           ? migration.retryCleanup
           : migration.convert;
-        new BaseNotice(templateMigrationNotice(result));
+        yield* Notifier.use((notifier) =>
+          notifier.show(templateMigrationNotice(result)),
+        );
         request.result.resolve(result);
       }).pipe(
         Effect.onExit((exit) =>
