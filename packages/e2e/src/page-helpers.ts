@@ -241,6 +241,39 @@ export function createPageHelpers(app: PageApp) {
     });
     return [...docs];
   }
+  /** The Template Workbench leaves, their companions, and the focus they sit under. */
+  function workbenchSurfaces() {
+    const surfaces = (type: keyof WalkthroughViews) =>
+      leavesOfType(type).map((leaf) => {
+        const win = leaf.getContainer().win;
+        return {
+          window: win === window ? "main" : "popout",
+          closed: win.closed,
+          state: JSON.stringify(leaf.view.getState()),
+          tabs: Array.from(
+            leaf.view.containerEl.querySelectorAll("[role=tab]"),
+            (tab) => tab.textContent.trim(),
+          ),
+          content:
+            leaf.view.containerEl.querySelector(".view-content")
+              ?.childElementCount ?? null,
+        };
+      });
+    return {
+      workbench: surfaces("zotlit-template-workbench"),
+      explorer: surfaces("zotlit-template-data-explorer"),
+      preview: surfaces("zotlit-note-preview"),
+      activeLeaf: app.workspace.activeLeaf?.view.getViewType() ?? null,
+      activeWindow: activeWindow === window ? "main" : "popout",
+      focused: activeDocument.hasFocus(),
+      modals: windowDocuments().flatMap((doc) =>
+        Array.from(
+          doc.querySelectorAll(".modal-container .modal"),
+          (modal) => modal.className,
+        ),
+      ),
+    };
+  }
   function popupEditor() {
     return document.querySelector<HTMLElement>(
       ".zt-pdf-mark-popup .cm-content",
@@ -886,6 +919,7 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
+    workbenchSurfaces,
     pdfView,
     clientOfFirstPage,
     toolButton,

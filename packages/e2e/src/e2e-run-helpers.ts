@@ -9,6 +9,7 @@ import { readingState } from "./e2e-run-fixture.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { waitFor } from "./obsidian-cli.ts";
 import type { CodeMirrorElement, PagePdfView } from "./page-notes-types.ts";
+import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 
 export async function availableLoopbackPort(): Promise<number> {
   await using server = createServer();
@@ -76,19 +77,22 @@ export async function changeNativeAnnotationCallout(
   },
 ): Promise<void> {
   const { view, vaultPath, tabLabel } = options;
-  await obRunUntil(
+  await withWorkbenchSurfaces(
     vaultId,
-    ({ page }, { view, tabLabel }) => {
-      const host = page.workbench(view);
-      const tab = Array.from(
-        host?.contentEl.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
-      ).find((element) => element.textContent.trim() === tabLabel);
-      if (!tab) return false;
-      page.press(tab, tabLabel);
-      return true;
-    },
-    { view, tabLabel },
-    { what: "annotation template tab" },
+    obRunUntil(
+      vaultId,
+      ({ page }, { view, tabLabel }) => {
+        const host = page.workbench(view);
+        const tab = Array.from(
+          host?.contentEl.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
+        ).find((element) => element.textContent.trim() === tabLabel);
+        if (!tab) return false;
+        page.press(tab, tabLabel);
+        return true;
+      },
+      { view, tabLabel },
+      { what: "annotation template tab" },
+    ),
   );
   await obRunUntil(
     vaultId,

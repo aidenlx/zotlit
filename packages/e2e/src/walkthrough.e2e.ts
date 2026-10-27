@@ -21,6 +21,7 @@ import {
   isObsidianReachable,
   vaultScript,
 } from "./vault-script.ts";
+import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
 const fixture = join(root, ".scratch/e2e-walkthrough-fixture");
@@ -1582,57 +1583,65 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           what: "the note frontmatter zotero-key to be DMRGRART before the preview check",
         },
       );
-      const result = await obRun(
+      const result = await withWorkbenchSurfaces(
         vaultId,
-        async ({ app: host, zotlit, page }) => {
-          const app = host as WalkthroughApp;
+        obRun(
+          vaultId,
+          async ({ app: host, zotlit, page }) => {
+            const app = host as WalkthroughApp;
 
-          const { waitFor } = page;
-          const editors = () => page.leavesOfType("zotlit-template-workbench");
-          let mainSamples = 0;
-          const sample = () => {
-            for (const leaf of editors()) {
-              const el = leaf.view.containerEl;
-              if (
-                el.ownerDocument === document &&
-                el.isConnected &&
-                el.getBoundingClientRect().width > 0
-              )
-                mainSamples++;
-            }
-          };
-          using resources = new DisposableStack();
-          const observer = resources.adopt(
-            new MutationObserver(sample),
-            (value) => value.disconnect(),
-          );
-          observer.observe(document.body, { childList: true, subtree: true });
-          resources.adopt(setInterval(sample, 10), clearInterval);
-          const accepted = app.commands.executeCommandById(
-            "zotlit:customize-note-template",
-          );
-          const ready = () =>
-            editors().some(
-              (leaf) =>
-                leaf.view.file &&
-                leaf.view.containerEl.ownerDocument !== document,
-            ) &&
-            page.leavesOfType("zotlit-note-preview").length > 0 &&
-            page.leavesOfType("zotlit-template-data-explorer").length > 0;
-          await waitFor(ready, true, "Template Workbench and companion views");
-          sample();
-          return {
-            accepted,
-            ready: ready(),
-            mainSamples,
-            customized: !!app.vault.getFileByPath(
-              zotlit.services.bridge.runSync(
-                zotlit.services.profile.defaultDocumentPath,
-              ),
-            )!,
-          };
-        },
-        undefined,
+            const { waitFor } = page;
+            const editors = () =>
+              page.leavesOfType("zotlit-template-workbench");
+            let mainSamples = 0;
+            const sample = () => {
+              for (const leaf of editors()) {
+                const el = leaf.view.containerEl;
+                if (
+                  el.ownerDocument === document &&
+                  el.isConnected &&
+                  el.getBoundingClientRect().width > 0
+                )
+                  mainSamples++;
+              }
+            };
+            using resources = new DisposableStack();
+            const observer = resources.adopt(
+              new MutationObserver(sample),
+              (value) => value.disconnect(),
+            );
+            observer.observe(document.body, { childList: true, subtree: true });
+            resources.adopt(setInterval(sample, 10), clearInterval);
+            const accepted = app.commands.executeCommandById(
+              "zotlit:customize-note-template",
+            );
+            const ready = () =>
+              editors().some(
+                (leaf) =>
+                  leaf.view.file &&
+                  leaf.view.containerEl.ownerDocument !== document,
+              ) &&
+              page.leavesOfType("zotlit-note-preview").length > 0 &&
+              page.leavesOfType("zotlit-template-data-explorer").length > 0;
+            await waitFor(
+              ready,
+              true,
+              "Template Workbench and companion views",
+            );
+            sample();
+            return {
+              accepted,
+              ready: ready(),
+              mainSamples,
+              customized: !!app.vault.getFileByPath(
+                zotlit.services.bridge.runSync(
+                  zotlit.services.profile.defaultDocumentPath,
+                ),
+              )!,
+            };
+          },
+          undefined,
+        ),
       );
       expect(result).toEqual({
         accepted: true,
@@ -2279,15 +2288,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    await obRunUntil(
+    await withWorkbenchSurfaces(
       vaultId,
-      async ({ page }) => {
-        return !!page
-          .leavesOfType("zotlit-template-workbench")[0]
-          ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
-      },
-      undefined,
-      { what: "the workbench tab bar to render after Customize reopens it" },
+      obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return !!page
+            .leavesOfType("zotlit-template-workbench")[0]
+            ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
+        },
+        undefined,
+        { what: "the workbench tab bar to render after Customize reopens it" },
+      ),
     );
     await obRun(
       vaultId,
