@@ -213,6 +213,7 @@ group in vault-wide answers because other Fixture pages cite the same Items.
 
 | Fixture Vault page | Purpose |
 | --- | --- |
+| `citation-only-test.md` | Run Set citation presentation, confirm a language, cancel a change, and disable ZotLit with the dialog open. The page states the expected note text and dialog state for each case. |
 | `citation-scan-forms.md` | Compare Pandoc citation forms, Citation Fragments, and normalised wikilinks across References, Cited By, the popover, CitationText, CLI, and export. |
 | `Scan target.md` | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, as the only Literature Note of the My Library Item `PUBJRNL3` (`marshMarginaliaEvidence2019`). |
 | `citation-scan-exclusions.md` | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases. |

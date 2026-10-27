@@ -9,3 +9,17 @@ cited work's Literature Note cites a second work, so local-graph depth 2 from he
 second literature node.
 
 Better figures repay the effort [@rougierTenSimpleRules2014].
+
+## Citation Presentation
+
+1. Run **Set citation presentation** on this note. The dialog shows the note's
+   current style and language, with the vault choices available as defaults.
+2. Enter `de-DE` as the language and confirm. The note gains `lang: de-DE` and
+   keeps its title and body. Reopen the dialog: it shows `de-DE`.
+3. Enter `fr-FR` and cancel. The note keeps `de-DE`.
+4. Open the dialog again and disable ZotLit. The dialog closes and the note keeps
+   `de-DE`. Enable ZotLit again before continuing.
+5. Clear the language and confirm to return to the vault language.
+
+If the note cannot be written, confirmation shows the existing failure notice.
+The failed operation leaves the note's previous text in place.

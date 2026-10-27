@@ -46,6 +46,7 @@ export function openCitationPresentationModal(
     vaultLocale,
     declared,
   }: CitationPresentationModalOptions,
+  signal?: AbortSignal,
 ): Promise<CitationPresentationChoice | null> {
   const { promise, resolve } =
     Promise.withResolvers<CitationPresentationChoice | null>();
@@ -111,7 +112,12 @@ export function openCitationPresentationModal(
         .onClick(() => submit()),
     );
 
-  modal.setCloseCallback(() => resolve(null));
+  const abort = () => modal.close();
+  modal.setCloseCallback(() => {
+    signal?.removeEventListener("abort", abort);
+    resolve(null);
+  });
+  signal?.addEventListener("abort", abort, { once: true });
   modal.open();
   return promise;
 

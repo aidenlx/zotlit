@@ -65,6 +65,54 @@ import { clearVault, e2eVaultDir } from "./vault-script.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
+  it("sets Citation Presentation and dismisses pending changes on cancel and unload (#1858)", async () => {
+    const result = JSON.parse(
+      await obEval(
+        run.vaultId,
+        `(async()=>{
+      ${PAGE}
+      await using cleanup=new AsyncDisposableStack();
+      const file=app.vault.getFileByPath('citation-only-test.md');
+      const original=await app.vault.read(file);
+      cleanup.defer(()=>app.vault.modify(file,original));
+      const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
+      await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});
+      const doc=leaf.view.containerEl.ownerDocument;
+      const dialog=()=>[...doc.querySelectorAll('.modal')].find(el=>el.querySelector('.modal-title')?.textContent===${JSON.stringify(run.m.citation_presentation_title())});
+      cleanup.defer(()=>dialog()?.parentElement.querySelector('.modal-bg')?.click());
+      const open=async()=>{app.commands.executeCommandById('zotlit:set-citation-presentation');return await until('Citation Presentation dialog',dialog);};
+      const language=modal=>modal.querySelector('input[type=text]');
+      const button=(modal,label)=>[...modal.querySelectorAll('button')].find(el=>el.textContent===label);
+      const setLanguage=(modal,value)=>{const input=language(modal);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};
+      let modal=await open();
+      setLanguage(modal,'de-DE');
+      press(button(modal,${JSON.stringify(run.m.citation_presentation_confirm())}),'Confirm');
+      await until('language written',()=>app.metadataCache.getFileCache(file)?.frontmatter?.lang==='de-DE');
+      const confirmed=leaf.view.getViewData();
+      modal=await open();
+      const reopened=language(modal).value;
+      setLanguage(modal,'fr-FR');
+      press(button(modal,${JSON.stringify(run.m.modal_cancel())}),'Cancel');
+      const cancelled=leaf.view.getViewData()===confirmed;
+      modal=await open();
+      setLanguage(modal,'fr-FR');
+      cleanup.defer(()=>app.plugins.enablePlugin('zotlit'));
+      await app.plugins.disablePlugin('zotlit');
+      await until('dialog closes after unload',()=>!dialog(),10000);
+      const closed=!dialog();
+      const unchanged=leaf.view.getViewData()===confirmed;
+      return JSON.stringify({reopened,cancelled,closed,unchanged});
+    })()`,
+      ),
+    );
+    expect(result).toEqual({
+      reopened: "de-DE",
+      cancelled: true,
+      closed: true,
+      unchanged: true,
+    });
+  });
+
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
     const freshPath = e2eVaultDir(workspaceRoot, "first-note-vault");
