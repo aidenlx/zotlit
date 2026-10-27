@@ -20,7 +20,10 @@ Reach for the lowest rung that fits:
    answers a typed value, a dismissal included (`awaitConfirm`,
    `lib/confirm.ts`).
 
-Tests observe the core: returns, events, and Notifier calls through
-`testNotifier()` / `layerSignalling` (`lib/__fixtures__/notifier.ts`). A test
-that would mock `@/lib/notice` or `@/lib/toast` marks a module to move behind
-the Notifier. Lint rule `zotlit-effect-tests/no-notice-mock` enforces this.
+Tests observe the core: returns, events, and decision answers. Only a test of
+notice behavior itself checks Notifier calls through `testNotifier()` /
+`layerSignalling` (`lib/__fixtures__/notifier.ts`): the Notifier, a notices
+layer, a function that renders an outcome. A test that needs a notice to see
+what its module did marks a module to reshape onto a rung above. A test that
+would mock `@/lib/notice` or `@/lib/toast` marks a module to move behind the
+Notifier; lint rule `zotlit-effect-tests/no-notice-mock` enforces this.
