@@ -1,23 +1,4 @@
-import { normalizePath, TFile, TFolder } from "obsidian";
-import type { Vault } from "obsidian";
-
-/** The vault surface {@link ensureFolder} touches. */
-type FolderVaultApp = {
-  vault: Pick<Vault, "getRoot" | "getAbstractFileByPath" | "createFolder">;
-};
-
-export async function ensureFolder(
-  app: FolderVaultApp,
-  folderPath: string,
-): Promise<TFolder> {
-  if (folderPath === "/") return app.vault.getRoot();
-  const existing = app.vault.getAbstractFileByPath(folderPath);
-  if (existing instanceof TFolder) return existing;
-  if (existing instanceof TFile) {
-    throw new Error(`Cannot create folder; a file exists at "${folderPath}"`);
-  }
-  return await app.vault.createFolder(folderPath);
-}
+import { normalizePath } from "obsidian";
 
 export function normalizeFolderPath(dir: string): string;
 export function normalizeFolderPath(dir: string | null): string | null;

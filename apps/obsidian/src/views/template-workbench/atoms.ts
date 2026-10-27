@@ -1,6 +1,6 @@
 // Service gestures owned by one Workbench leaf.
 import { Effect } from "effect";
-import type { TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 
 import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
 import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
@@ -9,6 +9,7 @@ import { itemSummary } from "@/lib/item-summary";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
 import { Profile } from "@/services/profile/service";
+import { openCitationTemplate } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -61,9 +62,9 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
         return yield* profile.getSource("default");
       }),
     ),
-    citation: makeWorkbenchTask(registry, () =>
+    citation: makeWorkbenchCommand(registry, (app: App) =>
       Effect.gen(function* () {
-        return yield* (yield* Template).materializeCitationTemplate;
+        yield* openCitationTemplate(app, yield* Template);
       }),
     ),
     unpack: makeWorkbenchCommand(
