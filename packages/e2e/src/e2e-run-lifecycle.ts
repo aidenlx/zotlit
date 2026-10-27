@@ -56,33 +56,21 @@ async function bootstrap(): Promise<void> {
     },
     { __typedArg0: serverPort },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              !zotlit.services.bridge.runSync(
-                zotlit.services.localServer.available,
-              ) &&
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.port"] === __typedArg0,
-            ),
-          );
-        },
-        { __typedArg0: serverPort },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lifecycle.ts:45",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ zotlit }, { __typedArg0 }) => {
+      return (
+        !zotlit.services.bridge.runSync(
+          zotlit.services.localServer.available,
+        ) &&
+        zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "server.port"
+        ] === __typedArg0
+      );
+    },
+    { __typedArg0: serverPort },
+    { what: "lifecycle.ts:45" },
+  );
   await obRun(
     run.vaultId,
     async ({ zotlit }) => {
@@ -93,33 +81,19 @@ async function bootstrap(): Promise<void> {
     },
     undefined,
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              zotlit.services.bridge.runSync(
-                zotlit.services.localServer.available,
-              ) &&
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["server.port"] === __typedArg0,
-            ),
-          );
-        },
-        { __typedArg0: serverPort },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lifecycle.ts:56",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ zotlit }, { __typedArg0 }) => {
+      return (
+        zotlit.services.bridge.runSync(zotlit.services.localServer.available) &&
+        zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+          "server.port"
+        ] === __typedArg0
+      );
+    },
+    { __typedArg0: serverPort },
+    { what: "lifecycle.ts:56" },
+  );
 }
 
 async function teardown(): Promise<void> {

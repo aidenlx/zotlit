@@ -495,29 +495,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ) as { outcome: string; write?: string };
     expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          id,
-          async ({ zotlit }) => {
-            return String(
-              String(
-                zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")
-                  .length,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "excerpts.ts:347",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "1" }),
-    ).toBe(true);
+    await obRunUntil(
+      id,
+      async ({ zotlit }) => {
+        return zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")
+          .length;
+      },
+      undefined,
+      { ready: (value) => value === 1, what: "excerpts.ts:347" },
+    );
     const importedPath = await obRun(
       id,
       async ({ zotlit }) => {
@@ -612,31 +598,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const pooledSummary = JSON.stringify([
       "Excerpt images: 0 from Zotero with uncertain freshness, 2 with unchecked PDF freshness, 0 unavailable, 0 kept from the note and not refreshed.",
     ]);
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        id,
-        async ({ page }) => {
-          return String(
-            JSON.stringify(
-              [...page.windowDocuments()]
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .map((node) => node.textContent)
-                .filter((text) => text.includes("Excerpt images:")),
-            ),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpts.ts:414",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: pooledSummary });
+    await obRunUntil(
+      id,
+      async ({ page }) => {
+        return JSON.stringify(
+          [...page.windowDocuments()]
+            .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+            .map((node) => node.textContent)
+            .filter((text) => text.includes("Excerpt images:")),
+        );
+      },
+      undefined,
+      { ready: (value) => value === pooledSummary, what: "excerpts.ts:414" },
+    ).then(
+      () => true,
+      () => false,
+    );
     expect(
       await obRun(
         id,

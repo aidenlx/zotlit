@@ -160,67 +160,47 @@ export async function verifyExternalAnnotationLock({
   await openPdfWithAnnotationView(vaultId, { attachmentPath, cleanup });
   // The lock is the only thing in the way: the Attachment is writable, so a
   // press that says the Lock Reason says it for the lock alone.
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-          const { annotationRepository: repository, bridge } = zotlit.services;
-          await bridge.runPromise(repository.probe);
-          const list = await bridge.runPromise(repository.read(__typedArg0));
-          return String(
-            `${String(list?.source.kind)}/${
-              bridge.runSync(repository.capabilityFor(__typedArg1)).kind
-            }`,
-          );
-        },
-        { __typedArg0: attachment.key, __typedArg1: attachment.key },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:174",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "zotero-local-api/writable" }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+      const { annotationRepository: repository, bridge } = zotlit.services;
+      await bridge.runPromise(repository.probe);
+      const list = await bridge.runPromise(repository.read(__typedArg0));
+      return `${String(list?.source.kind)}/${
+        bridge.runSync(repository.capabilityFor(__typedArg1)).kind
+      }`;
+    },
+    { __typedArg0: attachment.key, __typedArg1: attachment.key },
+    {
+      ready: (value) => value === "zotero-local-api/writable",
+      what: "lock.ts:174",
+    },
+  );
 
   const reason = m.annot_view_lock_external();
   /** Selects the card alone, in whichever window its view stands. */
   const selectCardAlone = async () => {
     // Setup inside a poll that retries until the card shows, not the press
     // under test.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            const card = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as AnnotationLeaf[]
-            )[0]?.view?.containerEl.querySelector<HTMLElement>(
-              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                __typedArg0,
-              )}]`,
-            )!;
-            if (!card) return String("no card");
-            if (!card!.hasAttribute("data-alone")) card!.click();
-            return String(String(card!.hasAttribute("data-alone")));
-          },
-          { __typedArg0: annotationKey },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "lock.ts:191",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-      "the card is not selected alone",
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        const card = (
+          app.workspace.getLeavesOfType(
+            "zotero-annotation-view",
+          ) as AnnotationLeaf[]
+        )[0]?.view?.containerEl.querySelector<HTMLElement>(
+          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+            __typedArg0,
+          )}]`,
+        )!;
+        if (!card) return "no card";
+        if (!card!.hasAttribute("data-alone")) card!.click();
+        return card!.hasAttribute("data-alone");
+      },
+      { __typedArg0: annotationKey },
+      { what: "lock.ts:191" },
+    );
   };
   /** Whether the node that takes a verb's press is dimmed, or `absent`. */
   const dimmed = (node: string) =>
@@ -247,36 +227,21 @@ export async function verifyExternalAnnotationLock({
 
   // The card quotes the text Zotero took from the page, and shows the lock
   // with the Lock Reason as its name.
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          return String(
-            String(
-              !!app.workspace
-                .getLeavesOfType("zotero-annotation-view")[0]
-                ?.view?.containerEl.querySelector<HTMLElement>(
-                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                    __typedArg0,
-                  )}]`,
-                )
-                ?.querySelector<HTMLElement>(".zt-annot-lock")!,
-            ),
-          );
-        },
-        { __typedArg0: annotationKey },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:209",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-    "the imported Annotation's card shows no lock",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ app }, { __typedArg0 }) => {
+      return !!app.workspace
+        .getLeavesOfType("zotero-annotation-view")[0]
+        ?.view?.containerEl.querySelector<HTMLElement>(
+          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+            __typedArg0,
+          )}]`,
+        )
+        ?.querySelector<HTMLElement>(".zt-annot-lock")!;
+    },
+    { __typedArg0: annotationKey },
+    { what: "lock.ts:209" },
+  );
   expect(
     await obRun(
       vaultId,
@@ -347,37 +312,17 @@ export async function verifyExternalAnnotationLock({
     );
     // The press says the Lock Reason, and offers nothing to press: a lock
     // is not lifted from here.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }, { __typedArg0 }) => {
-            return String(
-              String(
-                page
-                  .windowDocuments()
-                  .flatMap((doc) => [
-                    ...doc.querySelectorAll<HTMLElement>(".notice"),
-                  ])
-                  .filter((node) => node.textContent.includes(__typedArg0))
-                  .length,
-              ),
-            );
-          },
-          { __typedArg0: reason },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "lock.ts:249",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "1",
-      }),
-      `a press on ${verb} gives no Lock Reason`,
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }, { __typedArg0 }) => {
+        return page
+          .windowDocuments()
+          .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+          .filter((node) => node.textContent.includes(__typedArg0)).length;
+      },
+      { __typedArg0: reason },
+      { ready: (value) => value === 1, what: "lock.ts:249" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -446,33 +391,16 @@ export async function verifyExternalAnnotationLock({
     { __typedArg0: annotationKey },
   );
 
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async (_context, { __typedArg0 }) => {
-          return String(
-            String(
-              !![
-                ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-              ].find((node) => node.textContent.trim() === __typedArg0),
-            ),
-          );
-        },
-        { __typedArg0: m.annot_view_menu_delete() },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:279",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({
-      expected: "true",
-    }),
-    "the card menu has no delete entry",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async (_context, { __typedArg0 }) => {
+      return !![
+        ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+      ].find((node) => node.textContent.trim() === __typedArg0);
+    },
+    { __typedArg0: m.annot_view_menu_delete() },
+    { what: "lock.ts:279" },
+  );
   await obRun(
     vaultId,
     async ({ page }, { __typedArg0 }) => {
@@ -487,37 +415,17 @@ export async function verifyExternalAnnotationLock({
     },
     { __typedArg0: m.annot_view_menu_delete() },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page }, { __typedArg0 }) => {
-          return String(
-            String(
-              page
-                .windowDocuments()
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .filter((node) => node.textContent.includes(__typedArg0))
-                .length,
-            ),
-          );
-        },
-        { __typedArg0: reason },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:289",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({
-      expected: "1",
-    }),
-    "a press on the card menu's delete entry gives no Lock Reason",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page }, { __typedArg0 }) => {
+      return page
+        .windowDocuments()
+        .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+        .filter((node) => node.textContent.includes(__typedArg0)).length;
+    },
+    { __typedArg0: reason },
+    { ready: (value) => value === 1, what: "lock.ts:289" },
+  );
   expect(
     await obRun(
       vaultId,
@@ -548,61 +456,36 @@ export async function verifyExternalAnnotationLock({
     },
     undefined,
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async (_context) => {
-          return String(
-            String(document.querySelectorAll<HTMLElement>(".menu").length),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:305",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({
-      expected: "0",
-    }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async (_context) => {
+      return document.querySelectorAll<HTMLElement>(".menu").length;
+    },
+    undefined,
+    { ready: (value) => value === 0, what: "lock.ts:305" },
+  );
 
   // ── The Mark Popup ────────────────────────────────────────────────────────
   // A fresh binding holds no selection, so the mark click below opens the
   // popup on this mark.
   await reopenPdfView(vaultId, attachmentPath);
 
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page }, { __typedArg0, __typedArg1 }) => {
-          const rect = page
-            .pdfView(__typedArg0)
-            ?.containerEl.querySelector<HTMLElement>(
-              `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
-                __typedArg1,
-              )}]`,
-            )
-            ?.getBoundingClientRect();
-          return String(String(!!rect && rect.width > 0));
-        },
-        { __typedArg0: attachmentPath, __typedArg1: annotationKey },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:320",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-    "the PDF view draws no mark for the imported Annotation",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page }, { __typedArg0, __typedArg1 }) => {
+      const rect = page
+        .pdfView(__typedArg0)
+        ?.containerEl.querySelector<HTMLElement>(
+          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
+            __typedArg1,
+          )}]`,
+        )
+        ?.getBoundingClientRect();
+      return !!rect && rect.width > 0;
+    },
+    { __typedArg0: attachmentPath, __typedArg1: annotationKey },
+    { what: "lock.ts:320" },
+  );
   await obRun(
     vaultId,
     async ({ page }, { __typedArg0, __typedArg1 }) => {
@@ -619,36 +502,23 @@ export async function verifyExternalAnnotationLock({
     },
     { __typedArg0: attachmentPath, __typedArg1: annotationKey },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page }, { __typedArg0, __typedArg1 }) => {
-          return String(
-            String(
-              !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup")! &&
-                (page
-                  .pdfView(__typedArg0)
-                  ?.containerEl.querySelector<HTMLElement>(
-                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
-                      __typedArg1,
-                    )}]`,
-                  )!).classList.contains("is-selected"),
-            ),
-          );
-        },
-        { __typedArg0: attachmentPath, __typedArg1: annotationKey },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:332",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-    "a click on the mark opens no Mark Popup",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page }, { __typedArg0, __typedArg1 }) => {
+      return (
+        !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup")! &&
+        (page
+          .pdfView(__typedArg0)
+          ?.containerEl.querySelector<HTMLElement>(
+            `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
+              __typedArg1,
+            )}]`,
+          )!).classList.contains("is-selected")
+      );
+    },
+    { __typedArg0: attachmentPath, __typedArg1: annotationKey },
+    { what: "lock.ts:332" },
+  );
   expect(
     await obRun(
       vaultId,
@@ -774,40 +644,27 @@ export async function verifyExternalAnnotationLock({
       undefined,
     );
   });
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          const card = (
-            app.workspace.getLeavesOfType(
-              "zotero-annotation-view",
-            ) as AnnotationLeaf[]
-          )[0]?.view?.containerEl.querySelector<HTMLElement>(
-            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-              __typedArg0,
-            )}]`,
-          )!;
-          return String(
-            String(
-              !!card &&
-                card!.win !== window &&
-                !!card!.querySelector<HTMLElement>(".zt-annot-lock")!,
-            ),
-          );
-        },
-        { __typedArg0: annotationKey },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:397",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-    "the pop-out Annotation View shows no locked card",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ app }, { __typedArg0 }) => {
+      const card = (
+        app.workspace.getLeavesOfType(
+          "zotero-annotation-view",
+        ) as AnnotationLeaf[]
+      )[0]?.view?.containerEl.querySelector<HTMLElement>(
+        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+          __typedArg0,
+        )}]`,
+      )!;
+      return (
+        !!card &&
+        card!.win !== window &&
+        !!card!.querySelector<HTMLElement>(".zt-annot-lock")!
+      );
+    },
+    { __typedArg0: annotationKey },
+    { what: "lock.ts:397" },
+  );
   expect(
     await obRun(
       vaultId,
@@ -853,37 +710,17 @@ export async function verifyExternalAnnotationLock({
     },
     { __typedArg0: annotationKey, __typedArg1: cardVerbs.colour },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page }, { __typedArg0 }) => {
-          return String(
-            String(
-              page
-                .windowDocuments()
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .filter((node) => node.textContent.includes(__typedArg0))
-                .length,
-            ),
-          );
-        },
-        { __typedArg0: reason },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "lock.ts:421",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({
-      expected: "1",
-    }),
-    "a press on colour in the pop-out window gives no Lock Reason",
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page }, { __typedArg0 }) => {
+      return page
+        .windowDocuments()
+        .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+        .filter((node) => node.textContent.includes(__typedArg0)).length;
+    },
+    { __typedArg0: reason },
+    { ready: (value) => value === 1, what: "lock.ts:421" },
+  );
   expect(
     await obRun(
       vaultId,

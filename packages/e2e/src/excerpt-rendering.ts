@@ -88,24 +88,18 @@ function identity(result: PixelResult): Omit<PixelResult, "released"> {
 }
 
 async function waitForPlugin(vaultId: string): Promise<void> {
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }) => {
-          return String(await String(!!zotlit.services.excerptImage));
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:123",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 80 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return await String(!!zotlit.services.excerptImage);
+    },
+    undefined,
+    {
+      ready: (value) => value === "true",
+      tries: 80,
+      what: "excerpt-rendering.ts:123",
+    },
+  );
 }
 
 async function resolveDigest(
@@ -215,30 +209,22 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
     undefined,
   );
   if (state === "absent") return;
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page: helpers }) => {
-          return String(
-            await String(
-              helpers.scratch.__zotlitExcerptProbe?.settled &&
-                !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                  .jobActive,
-            ),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:150",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 80 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }) => {
+      return await String(
+        helpers.scratch.__zotlitExcerptProbe?.settled &&
+          !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
+            .jobActive,
+      );
+    },
+    undefined,
+    {
+      ready: (value) => value === "true",
+      tries: 80,
+      what: "excerpt-rendering.ts:150",
+    },
+  );
   const released = JSON.parse(
     await obRun(
       vaultId,
@@ -419,29 +405,21 @@ async function startRenderProbe(
       __typedArg4: phase,
     },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page: helpers }, { __typedArg0 }) => {
-          return String(
-            await String(
-              helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                .phase === __typedArg0,
-            ),
-          );
-        },
-        { __typedArg0: phase },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:201",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 80 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }, { __typedArg0 }) => {
+      return await String(
+        helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().phase ===
+          __typedArg0,
+      );
+    },
+    { __typedArg0: phase },
+    {
+      ready: (value) => value === "true",
+      tries: 80,
+      what: "excerpt-rendering.ts:201",
+    },
+  );
   const ownership = stack.move();
   return {
     abort: async () => {
@@ -508,30 +486,22 @@ async function startRenderProbe(
         ),
       ),
     result: async () => {
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page: helpers }) => {
-              return String(
-                await String(
-                  helpers.scratch.__zotlitExcerptProbe?.settled &&
-                    !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                      .jobActive,
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "excerpt-rendering.ts:234",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true", tries: 80 }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page: helpers }) => {
+          return await String(
+            helpers.scratch.__zotlitExcerptProbe?.settled &&
+              !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
+                .jobActive,
+          );
+        },
+        undefined,
+        {
+          ready: (value) => value === "true",
+          tries: 80,
+          what: "excerpt-rendering.ts:234",
+        },
+      );
       return JSON.parse(
         await obRun(
           vaultId,
@@ -857,26 +827,18 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       },
     ),
   ).toBe("true");
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page: helpers }) => {
-          return String(
-            await String(!!helpers.scratch.__zotlitExcerptAcceptance?.settled),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:304",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 120 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }) => {
+      return await String(!!helpers.scratch.__zotlitExcerptAcceptance?.settled);
+    },
+    undefined,
+    {
+      ready: (value) => value === "true",
+      tries: 120,
+      what: "excerpt-rendering.ts:304",
+    },
+  );
   const result = JSON.parse(
     await obRun(
       vaultId,
@@ -1024,25 +986,22 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     await using probe = await startRenderProbe(vaultId, 0, phase);
     const workerReady =
       phase !== "document-loading" ||
-      (await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page: helpers }) => {
-            return String(
-              await helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
-                .worker,
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "excerpt-rendering.ts:446",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "web-worker", tries: 80 }));
+      (await obRunUntil(
+        vaultId,
+        async ({ page: helpers }) => {
+          return await helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
+            .worker;
+        },
+        undefined,
+        {
+          ready: (value) => value === "web-worker",
+          tries: 80,
+          what: "excerpt-rendering.ts:446",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ));
     const active = await probe.snapshot();
     expect(active.jobActive).toBe(true);
     expect(workerReady, JSON.stringify(active)).toBe(true);

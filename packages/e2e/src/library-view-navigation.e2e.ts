@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { WorkspaceLeaf, MarkdownView, FileView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
@@ -1164,51 +1165,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async () => {
-            const modal = document.querySelector<HTMLElement>(
-              ".modal.zt-save-query-file-modal",
-            );
-            return String(
-              JSON.stringify(
-                modal
-                  ? {
-                      title:
-                        modal.querySelector<HTMLElement>(".modal-title")
-                          ?.textContent ?? null,
-                      fields: [
-                        ...modal.querySelectorAll<HTMLElement>(
-                          "[data-save-field]",
-                        ),
-                      ].map((n) => n.getAttribute("data-save-field")),
-                      records: modal.querySelectorAll<HTMLElement>(
-                        "[data-save-records]",
-                      ).length,
-                    }
-                  : null,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:548",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          title: run.m.annot_view_save_title(),
-          fields: ["name", "folder"],
-          records: 0,
-        }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async () => {
+        const modal = document.querySelector<HTMLElement>(
+          ".modal.zt-save-query-file-modal",
+        );
+        return modal
+          ? {
+              title:
+                modal.querySelector<HTMLElement>(".modal-title")?.textContent ??
+                null,
+              fields: [
+                ...modal.querySelectorAll<HTMLElement>("[data-save-field]"),
+              ].map((n) => n.getAttribute("data-save-field")),
+              records: modal.querySelectorAll<HTMLElement>(
+                "[data-save-records]",
+              ).length,
+            }
+          : null;
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            title: run.m.annot_view_save_title(),
+            fields: ["name", "folder"],
+            records: 0,
+          }),
+        what: "library-view-navigation.e2e.ts:548",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ page }) => {
@@ -1988,33 +1975,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // A plugin reload comes back on the Collection with the facet on.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              await app.plugins
-                .disablePlugin("zotlit")
-                .then(function () {
-                  return app.plugins.enablePlugin("zotlit");
-                })
-                .then(function () {
-                  return true;
-                }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:834",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 20 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      { tries: 20, what: "library-view-navigation.e2e.ts:834" },
+    );
     const reloaded = await shownWith(
       ["unread"],
       (shown) =>
@@ -2302,33 +2277,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(filtered.rows).toEqual(two.rows);
 
     // A plugin reload comes back with the tags selected.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              await app.plugins
-                .disablePlugin("zotlit")
-                .then(function () {
-                  return app.plugins.enablePlugin("zotlit");
-                })
-                .then(function () {
-                  return true;
-                }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:979",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 20 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      { tries: 20, what: "library-view-navigation.e2e.ts:979" },
+    );
     const reloaded = await shownWith(both);
     expect(reloaded.rows).toEqual(two.rows);
 
@@ -3482,32 +3445,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
     // The picker reads every Profile's preview before it shows.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { booksProfileLabel }) => {
-            return String(
-              String(
-                Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(
-                    ".prompt .suggestion-item",
-                  ),
-                ).some((el) => el.textContent.includes(booksProfileLabel)),
-              ),
-            );
-          },
-          { booksProfileLabel: booksProfile.label },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1288",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 120 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { booksProfileLabel }) => {
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(
+            ".prompt .suggestion-item",
+          ),
+        ).some((el) => el.textContent.includes(booksProfileLabel));
+      },
+      { booksProfileLabel: booksProfile.label },
+      { tries: 120, what: "library-view-navigation.e2e.ts:1288" },
+    );
     expect(await selectSuggestion(run.vaultId, booksProfile.label)).toContain(
       booksProfile.label,
     );
@@ -3792,75 +3741,48 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { notepath: notePath },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async () => {
-            return String(
-              String(
-                !!activeDocument.querySelector<HTMLElement>(".prompt input"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1352",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async () => {
+        return !!activeDocument.querySelector<HTMLElement>(".prompt input");
+      },
+      undefined,
+      { what: "library-view-navigation.e2e.ts:1352" },
+    );
     await selectItemSuggestion(run.vaultId, filed.title, filed.key);
     await pressPromptKey(run.vaultId, "Enter", { altKey: true });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]?.view;
-            if (app.workspace.activeLeaf?.view !== view)
-              return String("not active");
-            await view!.query.settled;
-            const el = view!.contentEl;
-            return String(
-              JSON.stringify({
-                node: el
-                  .querySelector<HTMLElement>(
-                    "[data-library-node][aria-selected=true]",
-                  )
-                  ?.getAttribute("data-library-node"),
-                row: el
-                  .querySelector<HTMLElement>(
-                    "[data-query-item-row][data-selected]",
-                  )
-                  ?.getAttribute("data-query-item-row"),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1361",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          node: JSON.stringify(["personal", parent.name, child.name]),
-          row: filed.key,
-        }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]?.view;
+        if (app.workspace.activeLeaf?.view !== view) return "not active";
+        await view!.query.settled;
+        const el = view!.contentEl;
+        return {
+          node: el
+            .querySelector<HTMLElement>(
+              "[data-library-node][aria-selected=true]",
+            )
+            ?.getAttribute("data-library-node"),
+          row: el
+            .querySelector<HTMLElement>("[data-query-item-row][data-selected]")
+            ?.getAttribute("data-query-item-row"),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            node: JSON.stringify(["personal", parent.name, child.name]),
+            row: filed.key,
+          }),
+        what: "library-view-navigation.e2e.ts:1361",
+      },
+    );
   }, 180000);
 
   it("opens the Library View once on a fresh install, shows the Welcome View banner above it until dismissed, whose Search your library focuses the Library View's search box, and says where Zotero's data folder is missing until it is set", async () => {
@@ -3923,61 +3845,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            await app.plugins
-              .disablePlugin("zotlit")
-              .then(function () {
-                return app.plugins.enablePlugin("zotlit");
-              })
-              .then(function () {
-                return true;
-              });
-            return String(true);
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1405",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-        tries: 20,
-      }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                (
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                ).length,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1415",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "1" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+        return true;
+      },
+      undefined,
+      { tries: 20, what: "library-view-navigation.e2e.ts:1405" },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        ).length;
+      },
+      undefined,
+      {
+        ready: (value) => value === 1,
+        what: "library-view-navigation.e2e.ts:1415",
+      },
+    );
     // The release check recorded this launch in plugin data, which the next
     // launch reads.
     await obRun(
@@ -4046,70 +3944,60 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelector<HTMLElement>(
-              "[data-welcome-banner]",
-            );
-            if (!el) return String("null");
-            return String(
-              JSON.stringify({
-                steps: [
-                  ...el.querySelectorAll<HTMLElement>(
-                    '[role=heading][aria-level="3"]',
-                  ),
-                ].map((n) => n.textContent),
-                open: el.querySelector<HTMLElement>(
-                  "[data-welcome-step][data-open] [role=heading]",
-                )?.textContent,
-                help: [
-                  ...el.querySelectorAll<HTMLElement>("[data-welcome-help] a"),
-                ].map((a) => a.getAttribute("href")),
-                companion: el.textContent.includes("Companion"),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1440",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+        if (!el) return "null";
+        return {
           steps: [
-            run.m.welcome_step_connect_title(),
-            run.m.welcome_step_folder_title(),
-            run.m.welcome_step_library_title(),
-          ],
-          // Zotero reads, so the folder is the one step still open.
-          open: run.m.welcome_step_folder_title(),
-          // The Help Links show beside the checklist.
+            ...el.querySelectorAll<HTMLElement>(
+              '[role=heading][aria-level="3"]',
+            ),
+          ].map((n) => n.textContent),
+          open: el.querySelector<HTMLElement>(
+            "[data-welcome-step][data-open] [role=heading]",
+          )?.textContent,
           help: [
-            "https://zotlit.aidenlx.site/docs",
-            "https://zotlit.aidenlx.site/community",
-            "https://github.com/aidenlx/zotlit",
-            "https://zotlit.aidenlx.site/docs/reference/templates",
-            "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
-            "https://zotlit.aidenlx.site/blog",
-            "https://zotlit.aidenlx.site/changelog",
-            "https://github.com/sponsors/aidenlx",
-            "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
-          ],
-          companion: false,
-        }),
-      }),
-    ).toBe(true);
+            ...el.querySelectorAll<HTMLElement>("[data-welcome-help] a"),
+          ].map((a) => a.getAttribute("href")),
+          companion: el.textContent.includes("Companion"),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            steps: [
+              run.m.welcome_step_connect_title(),
+              run.m.welcome_step_folder_title(),
+              run.m.welcome_step_library_title(),
+            ],
+            // Zotero reads, so the folder is the one step still open.
+            open: run.m.welcome_step_folder_title(),
+            // The Help Links show beside the checklist.
+            help: [
+              "https://zotlit.aidenlx.site/docs",
+              "https://zotlit.aidenlx.site/community",
+              "https://github.com/aidenlx/zotlit",
+              "https://zotlit.aidenlx.site/docs/reference/templates",
+              "https://zotlit.aidenlx.site/docs/how-to/insert-citations",
+              "https://zotlit.aidenlx.site/blog",
+              "https://zotlit.aidenlx.site/changelog",
+              "https://github.com/sponsors/aidenlx",
+              "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
+            ],
+            companion: false,
+          }),
+        what: "library-view-navigation.e2e.ts:1440",
+      },
+    );
     // Search your library puts the cursor in the Library View's own search
     // box, just under the banner.
     expect(
@@ -4205,36 +4093,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                !!(
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                )[0]!.view.contentEl.querySelector<HTMLElement>(
-                  "[data-welcome-banner]",
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1491",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return !!(
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+      },
+      undefined,
+      { what: "library-view-navigation.e2e.ts:1491" },
+    );
     // So does the Welcome & help view action in the tab header, with the
     // setup steps, and focus moves to the banner; the action reads as
     // pressed while the banner shows, and a second press dismisses it.
@@ -4474,75 +4346,60 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { emptydir: emptyDir },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl;
-            const shown = (n: Element | null) => !!n && n.checkVisibility();
-            const part = (name: string) =>
-              el.querySelector<HTMLElement>(
-                `[data-library-not-found="${name}"]`,
-              );
-            const pane = el.querySelector<HTMLElement>("[data-library-tree]");
-            return String(
-              JSON.stringify({
-                tree:
-                  shown(part("tree")) ||
-                  getComputedStyle(pane!).display === "none"
-                    ? part("tree")!.textContent
-                    : null,
-                list: shown(part("list"))
-                  ? [
-                      ...part("list")!.querySelectorAll<HTMLElement>("button"),
-                    ].map((b) => b.textContent)
-                  : null,
-                papers: [
-                  ...el.querySelectorAll<HTMLElement>(
-                    "[data-query-table], [data-query-layout]",
-                  ),
-                ].some(shown),
-                search: shown(
-                  el.querySelector<HTMLElement>("[data-library-search]"),
-                ),
-                nodes: [
-                  ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
-                ].some(shown),
-                facets: [
-                  ...el.querySelectorAll<HTMLElement>("[data-library-facet]"),
-                ].some(shown),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1550",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          tree: run.m.library_view_not_found(),
-          list: [
-            run.m.library_view_locate(),
-            run.m.welcome_action_open_settings(),
-          ],
-          papers: false,
-          search: false,
-          nodes: false,
-          facets: false,
-        }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const shown = (n: Element | null) => !!n && n.checkVisibility();
+        const part = (name: string) =>
+          el.querySelector<HTMLElement>(`[data-library-not-found="${name}"]`);
+        const pane = el.querySelector<HTMLElement>("[data-library-tree]");
+        return {
+          tree:
+            shown(part("tree")) || getComputedStyle(pane!).display === "none"
+              ? part("tree")!.textContent
+              : null,
+          list: shown(part("list"))
+            ? [...part("list")!.querySelectorAll<HTMLElement>("button")].map(
+                (b) => b.textContent,
+              )
+            : null,
+          papers: [
+            ...el.querySelectorAll<HTMLElement>(
+              "[data-query-table], [data-query-layout]",
+            ),
+          ].some(shown),
+          search: shown(el.querySelector<HTMLElement>("[data-library-search]")),
+          nodes: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-node]"),
+          ].some(shown),
+          facets: [
+            ...el.querySelectorAll<HTMLElement>("[data-library-facet]"),
+          ].some(shown),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            tree: run.m.library_view_not_found(),
+            list: [
+              run.m.library_view_locate(),
+              run.m.welcome_action_open_settings(),
+            ],
+            papers: false,
+            search: false,
+            nodes: false,
+            facets: false,
+          }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "library-view-navigation.e2e.ts:1550",
+      },
+    );
 
     // "Locate data folder" saves the folder the system dialog returns; the
     // case sets the same folder, since no reader can press a native dialog.
@@ -4555,49 +4412,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { dataDir: JSON.parse(snapshot).dataDir },
     );
     // The papers the Library View listed before come back.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view;
-            await view.query.settled;
-            const el = view.contentEl;
-            return String(
-              JSON.stringify({
-                missing:
-                  el.querySelector<HTMLElement>("[data-zotero-missing]") !==
-                  null,
-                rows: [
-                  ...el.querySelectorAll<HTMLElement>(
-                    'tr[data-query-table-row="item"], [data-query-papers-row]',
-                  ),
-                ].map(
-                  (n) =>
-                    n.getAttribute("data-query-key")! ??
-                    n.getAttribute("data-query-papers-row")!,
-                ),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1574",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ missing: false, rows: listed.rows }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view;
+        await view.query.settled;
+        const el = view.contentEl;
+        return {
+          missing:
+            el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
+          rows: [
+            ...el.querySelectorAll<HTMLElement>(
+              'tr[data-query-table-row="item"], [data-query-papers-row]',
+            ),
+          ].map(
+            (n) =>
+              n.getAttribute("data-query-key")! ??
+              n.getAttribute("data-query-papers-row")!,
+          ),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { missing: false, rows: listed.rows }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "library-view-navigation.e2e.ts:1574",
+      },
+    );
   });
 
   it("leaves the search box unfocused on a fresh install's first screen, under the Welcome View banner", async () => {
@@ -4864,70 +4710,58 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelector<HTMLElement>(
-              "[data-welcome-banner]",
-            );
-            return String(
-              JSON.stringify({
-                library: (
-                  app.workspace.getLeavesOfType(
-                    "zotlit-library",
-                  ) as (WorkspaceLeaf & { view: LibraryView })[]
-                ).length,
-                banner: !!el && {
-                  badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
-                    ?.textContent,
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[role=heading][aria-level="3"]',
-                    ),
-                  ].map((n) => n.textContent),
-                  buttons: [...el.querySelectorAll<HTMLElement>("button")]
-                    .map((n) => n.textContent)
-                    .filter(Boolean),
-                  help: el.querySelectorAll<HTMLElement>(
-                    "[data-welcome-help] a",
-                  ).length,
-                },
-                notices:
-                  activeDocument.querySelectorAll<HTMLElement>(".notice")
-                    .length,
-              }),
-            );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+        return {
+          library: (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          ).length,
+          banner: !!el && {
+            badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
+              ?.textContent,
+            headings: [
+              ...el.querySelectorAll<HTMLElement>(
+                '[role=heading][aria-level="3"]',
+              ),
+            ].map((n) => n.textContent),
+            buttons: [...el.querySelectorAll<HTMLElement>("button")]
+              .map((n) => n.textContent)
+              .filter(Boolean),
+            help: el.querySelectorAll<HTMLElement>("[data-welcome-help] a")
+              .length,
           },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1671",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          library: 1,
-          banner: {
-            badge: run.m.welcome_badge_updated(),
-            // The update alone: setup is done.
-            headings: [run.m.welcome_update_title({ version })],
-            buttons: [run.m.welcome_update_action()],
-            help: 9,
-          },
-          // The banner says it in place of the update notice.
-          notices: 0,
-        }),
-      }),
-    ).toBe(true);
+          notices:
+            activeDocument.querySelectorAll<HTMLElement>(".notice").length,
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            library: 1,
+            banner: {
+              badge: run.m.welcome_badge_updated(),
+              // The update alone: setup is done.
+              headings: [run.m.welcome_update_title({ version })],
+              buttons: [run.m.welcome_update_action()],
+              help: 9,
+            },
+            // The banner says it in place of the update notice.
+            notices: 0,
+          }),
+        what: "library-view-navigation.e2e.ts:1671",
+      },
+    );
     expect(
       await obRun(
         run.vaultId,
@@ -5114,62 +4948,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelector<HTMLElement>(
-              "[data-welcome-banner]",
-            );
-            return String(
-              JSON.stringify(
-                !!el && {
-                  badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
-                    ?.textContent,
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[role=heading][aria-level="3"]',
-                    ),
-                  ].map((n) => n.textContent),
-                  folded: !!el.querySelector<HTMLElement>(
-                    "[data-welcome-setup-done]",
-                  ),
-                  how: [
-                    ...el.querySelectorAll<HTMLDetailsElement>("details"),
-                  ].map(
-                    (d) =>
-                      `${d.open}:${d.querySelector<HTMLElement>("summary")!.textContent}`,
-                  ),
-                },
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl.querySelector<HTMLElement>(
+          "[data-welcome-banner]",
+        );
+        return (
+          !!el && {
+            badge: el.querySelector<HTMLElement>("[data-welcome-badge]")
+              ?.textContent,
+            headings: [
+              ...el.querySelectorAll<HTMLElement>(
+                '[role=heading][aria-level="3"]',
               ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-navigation.e2e.ts:1727",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          badge: run.m.welcome_badge_updated(),
-          headings: [
-            run.m.welcome_update_title({ version }),
-            run.m.welcome_template_conversion_title(),
-          ],
-          folded: true,
-          how: [`false:${run.m.welcome_how_it_works()}`],
-        }),
-      }),
-    ).toBe(true);
+            ].map((n) => n.textContent),
+            folded: !!el.querySelector<HTMLElement>(
+              "[data-welcome-setup-done]",
+            ),
+            how: [...el.querySelectorAll<HTMLDetailsElement>("details")].map(
+              (d) =>
+                `${d.open}:${d.querySelector<HTMLElement>("summary")!.textContent}`,
+            ),
+          }
+        );
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            badge: run.m.welcome_badge_updated(),
+            headings: [
+              run.m.welcome_update_title({ version }),
+              run.m.welcome_template_conversion_title(),
+            ],
+            folded: true,
+            how: [`false:${run.m.welcome_how_it_works()}`],
+          }),
+        what: "library-view-navigation.e2e.ts:1727",
+      },
+    );
 
     // The dismiss button puts every combination away, and it stays away
     // after a reload, until a later update.

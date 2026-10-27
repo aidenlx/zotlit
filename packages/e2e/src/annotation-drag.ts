@@ -90,30 +90,16 @@ export async function verifyAnnotationDrag(
         __typedArg4: sourceHost,
       },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                !!page.scratch.__zotlitDragTrial!.view.contentEl.querySelector<HTMLElement>(
-                  '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-drag.ts:34",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page.scratch.__zotlitDragTrial!.view.contentEl.querySelector<HTMLElement>(
+          '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
+        );
+      },
+      undefined,
+      { what: "annotation-drag.ts:34" },
+    );
     // The unrelated drop enters through CodeMirror's DOM input handler. The
     // tagged drop enters at Obsidian's editor-drop event, the plugin's public
     // consumer boundary, so core focus handling cannot activate the target.
@@ -248,28 +234,14 @@ export async function verifyAnnotationDrag(
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(page.scratch.__zotlitDragTrial!.prepareCalls === 1),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-drag.ts:95",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch.__zotlitDragTrial!.prepareCalls === 1;
+      },
+      undefined,
+      { what: "annotation-drag.ts:95" },
+    );
     const capture = JSON.parse(
       await obRun(
         vaultId,
@@ -351,28 +323,14 @@ export async function verifyAnnotationDrag(
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(page.scratch.__zotlitDragTrial!.finished === 1),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-drag.ts:142",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch.__zotlitDragTrial!.finished === 1;
+      },
+      undefined,
+      { what: "annotation-drag.ts:142" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -389,30 +347,16 @@ export async function verifyAnnotationDrag(
         undefined,
       ),
     ).toBe("true");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                page.scratch
-                  .__zotlitDragTrial!.editor.getValue()
-                  .includes("![[zotlit-excerpt-"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-drag.ts:153",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page.scratch
+          .__zotlitDragTrial!.editor.getValue()
+          .includes("![[zotlit-excerpt-");
+      },
+      undefined,
+      { what: "annotation-drag.ts:153" },
+    );
     const text = JSON.parse(
       await obRun(
         vaultId,
@@ -438,37 +382,23 @@ export async function verifyAnnotationDrag(
     const suffix = "LEFT RIGHT".slice(capture.directPosition);
     expect(text.slice(0, text.indexOf("> [!note]"))).toBe(`user ${prefix}\n\n`);
     if (suffix) expect(text.endsWith(`\n\n${suffix}`)).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                Array.from(
-                  page.scratch.__zotlitDragTrial!.editor.cm.dom.querySelectorAll<HTMLImageElement>(
-                    "img",
-                  ),
-                ).some(
-                  (img) =>
-                    img.src.includes("zotlit-excerpt-") &&
-                    img.complete &&
-                    img.naturalWidth > 0,
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-drag.ts:177",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return Array.from(
+          page.scratch.__zotlitDragTrial!.editor.cm.dom.querySelectorAll<HTMLImageElement>(
+            "img",
+          ),
+        ).some(
+          (img) =>
+            img.src.includes("zotlit-excerpt-") &&
+            img.complete &&
+            img.naturalWidth > 0,
+        );
+      },
+      undefined,
+      { what: "annotation-drag.ts:177" },
+    );
     await obRun(
       vaultId,
       async ({ page }) => {

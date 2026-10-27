@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { reachable } from "./e2e-run-fixture.ts";
@@ -821,32 +822,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         ),
       ) as { marks: string[]; styles: string[]; gutter: boolean };
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!activeDocument
-                  .querySelector<HTMLElement>(__typedArg0)
-                  ?.querySelector<HTMLElement>("[data-chooser-page]")!,
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:348",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !!activeDocument
+          .querySelector<HTMLElement>(__typedArg0)
+          ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+      },
+      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { what: "query-view-properties.e2e.ts:348" },
+    );
     // The Formula field looks and focuses as the text input above it: the
     // same border, radius, fill and focus ring, its text at the same inset,
     // and no focus outline of the editor's own.
@@ -1175,32 +1160,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // its property, and steps back to the rows.
     await editFormula();
     await runPageMenuItem("remove-formula");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            return String(
-              String(
-                !!popup &&
-                  !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
-                  !!popup.querySelector<HTMLElement>("[data-query-property]")!,
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:535",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+        return (
+          !!popup &&
+          !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
+          !!popup.querySelector<HTMLElement>("[data-query-property]")!
+        );
+      },
+      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { what: "query-view-properties.e2e.ts:535" },
+    );
     await obRun(
       run.vaultId,
       async (_context, { __typedArg0 }) => {
@@ -1992,33 +1964,19 @@ views:
       },
       { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            return String(
-              String(
-                !!popup &&
-                  !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
-                  popup.ownerDocument.activeElement?.getAttribute("role") ===
-                    "combobox",
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:987",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+        return (
+          !!popup &&
+          !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
+          popup.ownerDocument.activeElement?.getAttribute("role") === "combobox"
+        );
+      },
+      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { what: "query-view-properties.e2e.ts:987" },
+    );
     await obRun(
       run.vaultId,
       async (_context, { __typedArg0 }) => {
@@ -2105,39 +2063,28 @@ views:
     // The popover opens again with an empty search and every property, so
     // the next typed text replaces the last search instead of adding to it.
     await openProperties();
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            const rows = [
-              ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
-            ].map((n) => n.dataset.queryProperty);
-            return String(
-              JSON.stringify({
-                search: popup!.querySelector<HTMLInputElement>(
-                  'input[role="combobox"]',
-                )!.value,
-                title: rows.includes("title"),
-                year: rows.includes("formula.year"),
-              }),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:1051",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ search: "", title: true, year: true }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+        const rows = [
+          ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
+        ].map((n) => n.dataset.queryProperty);
+        return {
+          search: popup!.querySelector<HTMLInputElement>(
+            'input[role="combobox"]',
+          )!.value,
+          title: rows.includes("title"),
+          year: rows.includes("formula.year"),
+        };
+      },
+      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { search: "", title: true, year: true }),
+        what: "query-view-properties.e2e.ts:1051",
+      },
+    );
     await obRun(
       run.vaultId,
       async (_context, { __typedArg0 }) => {
@@ -2193,32 +2140,19 @@ views:
     // Removing the Formula also removes its Display Name; the field keeps its own.
     await editYear();
     await runPageMenuItem("remove-formula");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            return String(
-              String(
-                !!popup &&
-                  !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
-                  !!popup.querySelector<HTMLElement>("[data-query-property]")!,
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:1078",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+        return (
+          !!popup &&
+          !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
+          !!popup.querySelector<HTMLElement>("[data-query-property]")!
+        );
+      },
+      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { what: "query-view-properties.e2e.ts:1078" },
+    );
     await obRun(
       run.vaultId,
       async (_context, { __typedArg0 }) => {

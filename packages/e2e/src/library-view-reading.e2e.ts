@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { WorkspaceLeaf, MarkdownView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
@@ -569,48 +570,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as (WorkspaceLeaf & { view: AnnotView })[]
-            )[0]?.view;
-            if (!view) return String("none");
-            await view.read;
-            return String(
-              JSON.stringify({
-                pinned: view.getState().pinnedItemKey,
-                cards: [
-                  ...view.contentEl.querySelectorAll<HTMLElement>(
-                    ".zt-annot-card[data-zotero-annotation-key]",
-                  ),
-                ]
-                  .map((n) => n.getAttribute("data-zotero-annotation-key")!)
-                  .toSorted(),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-reading.e2e.ts:186",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          pinned: paper.key,
-          cards: seededCards.map(({ key }) => key),
-        }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType(
+            "zotero-annotation-view",
+          ) as (WorkspaceLeaf & { view: AnnotView })[]
+        )[0]?.view;
+        if (!view) return "none";
+        await view.read;
+        return {
+          pinned: view.getState().pinnedItemKey as string,
+          cards: [
+            ...view.contentEl.querySelectorAll<HTMLElement>(
+              ".zt-annot-card[data-zotero-annotation-key]",
+            ),
+          ]
+            .map((n) => n.getAttribute("data-zotero-annotation-key")!)
+            .toSorted(),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            pinned: paper.key,
+            cards: seededCards.map(({ key }) => key),
+          }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "library-view-reading.e2e.ts:186",
+      },
+    );
 
     // A narrow pane shows the card over the list, and a wide one beside it;
     // the row stays selected.
@@ -1366,41 +1357,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { emptydir: emptyDir },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const el = (
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl;
-            return String(
-              JSON.stringify({
-                missing:
-                  el.querySelector<HTMLElement>("[data-zotero-missing]") !==
-                  null,
-                card: el
-                  .querySelector<HTMLElement>("[data-library-card]")!
-                  .checkVisibility(),
-              }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view-reading.e2e.ts:320",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ missing: true, card: false }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        return {
+          missing:
+            el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
+          card: el
+            .querySelector<HTMLElement>("[data-library-card]")!
+            .checkVisibility(),
+        };
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { missing: true, card: false }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "library-view-reading.e2e.ts:320",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ zotlit }, { dataDir }) => {

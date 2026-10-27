@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { reachable } from "./e2e-run-fixture.ts";
@@ -47,36 +48,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       const expected = [...annotationKeys].sort();
 
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }, { __typedArg0 }) => {
-              const { annotationRepository: repository, bridge } =
-                zotlit.services;
-              const list = await bridge.runPromise(
-                repository.read(__typedArg0),
-              );
-              return String(
-                JSON.stringify({
-                  source: list?.source.kind ?? null,
-                  keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
-                }),
-              );
-            },
-            { __typedArg0: annotationAttachment.key },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "annotations.ts:33",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: JSON.stringify({ source: "zotero-db", keys: expected }),
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0 }) => {
+          const { annotationRepository: repository, bridge } = zotlit.services;
+          const list = await bridge.runPromise(repository.read(__typedArg0));
+          return {
+            source: list?.source.kind ?? null,
+            keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
+          };
+        },
+        { __typedArg0: annotationAttachment.key },
+        {
+          ready: (value) =>
+            isDeepStrictEqual(value, { source: "zotero-db", keys: expected }),
+          what: "annotations.ts:33",
+        },
+      );
       expect(
         JSON.parse(
           await obRun(
@@ -102,44 +90,33 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         keys: expected,
       });
 
-      const cardsReady = await ((options: {
-        expected: string;
-        tries?: number;
-      }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              JSON.stringify(
-                (() => {
-                  const annotationView = (
-                    app.workspace.getLeavesOfType(
-                      "zotero-annotation-view",
-                    ) as AnnotationLeaf[]
-                  )[0]?.view;
-                  const cards = Array.from(
-                    annotationView?.containerEl.querySelectorAll<HTMLElement>(
-                      ".zt-annot-card[data-zotero-annotation-key]",
-                    ) ?? [],
-                    (el) => el.getAttribute("data-zotero-annotation-key"),
-                  ).filter(Boolean);
-                  return [...new Set(cards)].sort();
-                })(),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:42",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(expected),
-      });
+      const cardsReady = await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return (() => {
+            const annotationView = (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view;
+            const cards = Array.from(
+              annotationView?.containerEl.querySelectorAll<HTMLElement>(
+                ".zt-annot-card[data-zotero-annotation-key]",
+              ) ?? [],
+              (el) => el.getAttribute("data-zotero-annotation-key"),
+            ).filter(Boolean);
+            return [...new Set(cards)].sort();
+          })();
+        },
+        undefined,
+        {
+          ready: (value) => isDeepStrictEqual(value, expected),
+          what: "annotations.ts:42",
+        },
+      ).then(
+        () => true,
+        () => false,
+      );
       if (!cardsReady) {
         const state = await obRun(
           run.vaultId,
@@ -412,123 +389,108 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // rule it depends on. `rows` names the vocabulary, which is what proves
       // the popup under measurement is the tag one.
 
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ app }, { __typedArg0, __typedArg1 }) => {
-              return String(
-                JSON.stringify(
-                  (() => {
-                    const popup = (() => {
-                      const root = (
-                        app.workspace.getLeavesOfType(
-                          "zotero-annotation-view",
-                        ) as AnnotationLeaf[]
-                      )[0]?.view.containerEl;
-                      const trigger = Array.from(
-                        root?.querySelectorAll<HTMLButtonElement>(
-                          "button[popovertarget]",
-                        ) ?? [],
-                      ).find((b) => {
-                        const label = b.getAttribute("aria-label") ?? "";
-                        return (
-                          label === __typedArg0 || label.startsWith(__typedArg1)
-                        );
-                      });
-                      return trigger
-                        ? root!.ownerDocument.getElementById(
-                            trigger.getAttribute("popovertarget")!,
-                          )!
-                        : null;
-                    })();
-                    if (!popup)
-                      return {
-                        open: false,
-                        rows: [],
-                        rowsInsidePopup: false,
-                        menuChrome: false,
-                      };
-                    const box = popup!.getBoundingClientRect();
-                    const rows = Array.from(
-                      popup!.querySelectorAll<HTMLElement>('[role="option"]'),
-                    );
-                    const probe = popup!.parentElement!.appendChild(
-                      document.createElement("div"),
-                    );
-                    probe.style.cssText =
-                      "position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)";
-                    const got = getComputedStyle(
-                        popup,
-                      ) as CSSStyleDeclaration & { cornerShape: string },
-                      want = getComputedStyle(probe) as CSSStyleDeclaration & {
-                        cornerShape: string;
-                      };
-                    const list =
-                      popup!.querySelector<HTMLElement>('[role="listbox"]')!;
-                    const reads = [
-                      "backgroundColor",
-                      "borderTopWidth",
-                      "borderTopColor",
-                      "borderTopLeftRadius",
-                      "cornerShape",
-                    ] as const;
-                    const chrome =
-                      reads.every((name) => got[name] === want[name]) &&
-                      list !== null &&
-                      getComputedStyle(list).paddingTop === want.paddingTop &&
-                      got.boxShadow.endsWith(want.boxShadow) &&
-                      want.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-                      Number.parseFloat(want.borderTopWidth) > 0 &&
-                      Number.parseFloat(want.borderTopLeftRadius) > 0 &&
-                      Number.parseFloat(want.paddingTop) > 0 &&
-                      want.cornerShape !== "" &&
-                      want.boxShadow !== "none";
-                    probe.remove();
-                    return {
-                      open: popup!.matches(":popover-open"),
-                      rows: rows.map((row) => row.textContent).sort(),
-                      rowsInsidePopup:
-                        rows.length > 0 &&
-                        rows.every((row) => {
-                          const r = row.getBoundingClientRect();
-                          return (
-                            r.height > 0 &&
-                            r.top >= box.top &&
-                            r.bottom <= box.bottom &&
-                            r.left >= box.left &&
-                            r.right <= box.right
-                          );
-                        }),
-                      menuChrome: chrome,
-                    };
-                  })(),
-                ),
-              );
-            },
-            {
-              __typedArg0: run.m.annot_view_filter_tag_trigger(),
-              __typedArg1: run.m.annot_view_filter_tag_trigger_active({
-                tags: "",
-              }),
-            },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "annotations.ts:141",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: JSON.stringify({
-            open: true,
-            rows: attachmentTags,
-            rowsInsidePopup: true,
-            menuChrome: true,
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          return (() => {
+            const popup = (() => {
+              const root = (
+                app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[]
+              )[0]?.view.containerEl;
+              const trigger = Array.from(
+                root?.querySelectorAll<HTMLButtonElement>(
+                  "button[popovertarget]",
+                ) ?? [],
+              ).find((b) => {
+                const label = b.getAttribute("aria-label") ?? "";
+                return label === __typedArg0 || label.startsWith(__typedArg1);
+              });
+              return trigger
+                ? root!.ownerDocument.getElementById(
+                    trigger.getAttribute("popovertarget")!,
+                  )!
+                : null;
+            })();
+            if (!popup)
+              return {
+                open: false,
+                rows: [],
+                rowsInsidePopup: false,
+                menuChrome: false,
+              };
+            const box = popup!.getBoundingClientRect();
+            const rows = Array.from(
+              popup!.querySelectorAll<HTMLElement>('[role="option"]'),
+            );
+            const probe = popup!.parentElement!.appendChild(
+              document.createElement("div"),
+            );
+            probe.style.cssText =
+              "position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)";
+            const got = getComputedStyle(popup) as CSSStyleDeclaration & {
+                cornerShape: string;
+              },
+              want = getComputedStyle(probe) as CSSStyleDeclaration & {
+                cornerShape: string;
+              };
+            const list = popup!.querySelector<HTMLElement>('[role="listbox"]')!;
+            const reads = [
+              "backgroundColor",
+              "borderTopWidth",
+              "borderTopColor",
+              "borderTopLeftRadius",
+              "cornerShape",
+            ] as const;
+            const chrome =
+              reads.every((name) => got[name] === want[name]) &&
+              list !== null &&
+              getComputedStyle(list).paddingTop === want.paddingTop &&
+              got.boxShadow.endsWith(want.boxShadow) &&
+              want.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+              Number.parseFloat(want.borderTopWidth) > 0 &&
+              Number.parseFloat(want.borderTopLeftRadius) > 0 &&
+              Number.parseFloat(want.paddingTop) > 0 &&
+              want.cornerShape !== "" &&
+              want.boxShadow !== "none";
+            probe.remove();
+            return {
+              open: popup!.matches(":popover-open"),
+              rows: rows.map((row) => row.textContent).sort(),
+              rowsInsidePopup:
+                rows.length > 0 &&
+                rows.every((row) => {
+                  const r = row.getBoundingClientRect();
+                  return (
+                    r.height > 0 &&
+                    r.top >= box.top &&
+                    r.bottom <= box.bottom &&
+                    r.left >= box.left &&
+                    r.right <= box.right
+                  );
+                }),
+              menuChrome: chrome,
+            };
+          })();
+        },
+        {
+          __typedArg0: run.m.annot_view_filter_tag_trigger(),
+          __typedArg1: run.m.annot_view_filter_tag_trigger_active({
+            tags: "",
           }),
-        }),
-      ).toBe(true);
+        },
+        {
+          ready: (value) =>
+            isDeepStrictEqual(value, {
+              open: true,
+              rows: attachmentTags,
+              rowsInsidePopup: true,
+              menuChrome: true,
+            }),
+          what: "annotations.ts:141",
+        },
+      );
       await obRun(
         run.vaultId,
         async ({ app }, { __typedArg0, __typedArg1 }) => {
@@ -567,106 +529,85 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // reads as a popup that will not close and has lost its background.
       // Only a running Obsidian has that user-agent rule, so this is the one
       // place the closed state can be proven.
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ app }, { __typedArg0, __typedArg1 }) => {
-              return String(
-                JSON.stringify(
-                  (() => {
-                    const popup = (() => {
-                      const root = (
-                        app.workspace.getLeavesOfType(
-                          "zotero-annotation-view",
-                        ) as AnnotationLeaf[]
-                      )[0]?.view.containerEl;
-                      const trigger = Array.from(
-                        root?.querySelectorAll<HTMLButtonElement>(
-                          "button[popovertarget]",
-                        ) ?? [],
-                      ).find((b) => {
-                        const label = b.getAttribute("aria-label") ?? "";
-                        return (
-                          label === __typedArg0 || label.startsWith(__typedArg1)
-                        );
-                      });
-                      return trigger
-                        ? root!.ownerDocument.getElementById(
-                            trigger.getAttribute("popovertarget")!,
-                          )!
-                        : null;
-                    })();
-                    if (!popup) return { open: false, hidden: false };
-                    return {
-                      open: popup!.matches(":popover-open"),
-                      hidden:
-                        !popup!.checkVisibility() &&
-                        popup!.getBoundingClientRect().height === 0,
-                    };
-                  })(),
-                ),
-              );
-            },
-            {
-              __typedArg0: run.m.annot_view_filter_tag_trigger(),
-              __typedArg1: run.m.annot_view_filter_tag_trigger_active({
-                tags: "",
-              }),
-            },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "annotations.ts:162",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: JSON.stringify({ open: false, hidden: true }),
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          return (() => {
+            const popup = (() => {
+              const root = (
+                app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[]
+              )[0]?.view.containerEl;
+              const trigger = Array.from(
+                root?.querySelectorAll<HTMLButtonElement>(
+                  "button[popovertarget]",
+                ) ?? [],
+              ).find((b) => {
+                const label = b.getAttribute("aria-label") ?? "";
+                return label === __typedArg0 || label.startsWith(__typedArg1);
+              });
+              return trigger
+                ? root!.ownerDocument.getElementById(
+                    trigger.getAttribute("popovertarget")!,
+                  )!
+                : null;
+            })();
+            if (!popup) return { open: false, hidden: false };
+            return {
+              open: popup!.matches(":popover-open"),
+              hidden:
+                !popup!.checkVisibility() &&
+                popup!.getBoundingClientRect().height === 0,
+            };
+          })();
+        },
+        {
+          __typedArg0: run.m.annot_view_filter_tag_trigger(),
+          __typedArg1: run.m.annot_view_filter_tag_trigger_active({
+            tags: "",
+          }),
+        },
+        {
+          ready: (value) =>
+            isDeepStrictEqual(value, { open: false, hidden: true }),
+          what: "annotations.ts:162",
+        },
+      );
       for (const [pageIndex, annotations] of annotationKeysByPage) {
         const pageKeys = annotations.map(({ key }) => key).sort();
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              run.vaultId,
-              async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
-                const pdfView = (
-                  app.workspace.getLeavesOfType(
-                    "pdf",
-                  ) as (import("obsidian").WorkspaceLeaf & {
-                    view: PagePdfView;
-                  })[]
-                ).find(({ view }) => view.file?.path === __typedArg0)?.view;
-                const pdfPage = pdfView?.containerEl.querySelector<HTMLElement>(
-                  `.page[data-page-number="${JSON.stringify(__typedArg1)}"]`,
-                )!;
-                pdfPage?.scrollIntoView({ block: "center" });
-                const marks = Array.from(
-                  pdfView?.containerEl.querySelectorAll<HTMLElement>(
-                    ".zt-pdf-annotation-mark[data-zotero-annotation-key]",
-                  ) ?? [],
-                  (el) => el.getAttribute("data-zotero-annotation-key"),
-                ).filter((key) => __typedArg2.includes(key!));
-                return String(JSON.stringify([...new Set(marks)].sort()));
-              },
-              {
-                __typedArg0: annotationAttachment.path,
-                __typedArg1: pageIndex + 1,
-                __typedArg2: pageKeys,
-              },
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "annotations.ts:169",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: JSON.stringify(pageKeys) }),
-        ).toBe(true);
+        await obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+            const pdfView = (
+              app.workspace.getLeavesOfType(
+                "pdf",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: PagePdfView;
+              })[]
+            ).find(({ view }) => view.file?.path === __typedArg0)?.view;
+            const pdfPage = pdfView?.containerEl.querySelector<HTMLElement>(
+              `.page[data-page-number="${JSON.stringify(__typedArg1)}"]`,
+            )!;
+            pdfPage?.scrollIntoView({ block: "center" });
+            const marks = Array.from(
+              pdfView?.containerEl.querySelectorAll<HTMLElement>(
+                ".zt-pdf-annotation-mark[data-zotero-annotation-key]",
+              ) ?? [],
+              (el) => el.getAttribute("data-zotero-annotation-key"),
+            ).filter((key) => __typedArg2.includes(key!));
+            return [...new Set(marks)].sort();
+          },
+          {
+            __typedArg0: annotationAttachment.path,
+            __typedArg1: pageIndex + 1,
+            __typedArg2: pageKeys,
+          },
+          {
+            ready: (value) => isDeepStrictEqual(value, pageKeys),
+            what: "annotations.ts:169",
+          },
+        );
       }
       expect(
         await obRun(
@@ -838,36 +779,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-                ).find(
-                  (item) =>
-                    item!.querySelector<HTMLElement>(".menu-item-title")
-                      ?.textContent === __typedArg0,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: run.m.annot_view_group_by() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:259",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !!Array.from(
+          document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+        ).find(
+          (item) =>
+            item!.querySelector<HTMLElement>(".menu-item-title")
+              ?.textContent === __typedArg0,
+        );
+      },
+      { __typedArg0: run.m.annot_view_group_by() },
+      { what: "annotations.ts:259" },
+    );
     await obRun(
       run.vaultId,
       async ({ page }, { __typedArg0 }) => {
@@ -885,34 +810,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { __typedArg0: run.m.annot_view_group_by() },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-                ).find(
-                  (item) =>
-                    item!.querySelector<HTMLElement>(".menu-item-title")
-                      ?.textContent === __typedArg0,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: run.m.query_view_property_color() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:272",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !!Array.from(
+          document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+        ).find(
+          (item) =>
+            item!.querySelector<HTMLElement>(".menu-item-title")
+              ?.textContent === __typedArg0,
+        );
+      },
+      { __typedArg0: run.m.query_view_property_color() },
+      { what: "annotations.ts:272" },
+    );
     await obRun(
       run.vaultId,
       async ({ page }, { __typedArg0 }) => {
@@ -971,34 +882,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       ),
     ).toBe("true");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-                ).find(
-                  (item) =>
-                    item!.querySelector<HTMLElement>(".menu-item-title")
-                      ?.textContent === __typedArg0,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: run.m.annot_view_filter() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:309",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !!Array.from(
+          document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+        ).find(
+          (item) =>
+            item!.querySelector<HTMLElement>(".menu-item-title")
+              ?.textContent === __typedArg0,
+        );
+      },
+      { __typedArg0: run.m.annot_view_filter() },
+      { what: "annotations.ts:309" },
+    );
     await obRun(
       run.vaultId,
       async ({ page }, { __typedArg0 }) => {
@@ -1018,50 +915,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { __typedArg0: run.m.annot_view_filter() },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            const modal = document.querySelector<HTMLElement>(
-              ".modal.zt-annot-filter-modal",
-            )!;
-            return String(
-              JSON.stringify(
-                modal
-                  ? {
-                      title:
-                        modal!.querySelector<HTMLElement>(".modal-title")
-                          ?.textContent ?? null,
-                      sections: Array.from(
-                        modal!.querySelectorAll<HTMLElement>(
-                          "[data-filter-section]",
-                        ),
-                        (el) => el.getAttribute("data-filter-section"),
-                      ),
-                      text: modal!.textContent.includes("this.attachment"),
-                    }
-                  : null,
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        const modal = document.querySelector<HTMLElement>(
+          ".modal.zt-annot-filter-modal",
+        )!;
+        return modal
+          ? {
+              title:
+                modal!.querySelector<HTMLElement>(".modal-title")
+                  ?.textContent ?? null,
+              sections: Array.from(
+                modal!.querySelectorAll<HTMLElement>("[data-filter-section]"),
+                (el) => el.getAttribute("data-filter-section"),
               ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:321",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({
-          title: run.m.annot_view_filter_title(),
-          sections: ["view"],
-          text: false,
-        }),
-      }),
-    ).toBe(true);
+              text: modal!.textContent.includes("this.attachment"),
+            }
+          : null;
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, {
+            title: run.m.annot_view_filter_title(),
+            sections: ["view"],
+            text: false,
+          }),
+        what: "annotations.ts:321",
+      },
+    );
     // In an expression condition of the dialog, Escape closes the completion
     // list, then the Signature Hint, and leaves the dialog open each time; a
     // list the typing opens over the hint closes first. Tab takes the
@@ -1302,30 +1185,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
     // No menu or dialog stays over the window for the cases after this one.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                document.querySelectorAll<HTMLElement>(
-                  ".menu, .modal-container",
-                ).length,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:363",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "0" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return document.querySelectorAll<HTMLElement>(".menu, .modal-container")
+          .length;
+      },
+      undefined,
+      { ready: (value) => value === 0, what: "annotations.ts:363" },
+    );
   }, 120000);
 
   it("saves the sidebar filtered by one colour as a Query File, and a Literature Note that embeds it shows its Annotations of that colour", async () => {
@@ -1459,44 +1327,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     const expected = [...annotationKeys].sort();
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as AnnotationLeaf[]
-            )[0]?.view;
-            if (!view) return String("null");
-            await view.read;
-            return String(
-              JSON.stringify(
-                [
-                  ...view.contentEl.querySelectorAll<HTMLElement>(
-                    ".zt-annot-card[data-zotero-annotation-key]",
-                  ),
-                ]
-                  .map((n) => n.getAttribute("data-zotero-annotation-key"))
-                  .sort(),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:407",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(expected),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType(
+            "zotero-annotation-view",
+          ) as AnnotationLeaf[]
+        )[0]?.view;
+        if (!view) return "null";
+        await view.read;
+        return [
+          ...view.contentEl.querySelectorAll<HTMLElement>(
+            ".zt-annot-card[data-zotero-annotation-key]",
+          ),
+        ]
+          .map((n) => n.getAttribute("data-zotero-annotation-key"))
+          .sort();
+      },
+      undefined,
+      {
+        ready: (value) => isDeepStrictEqual(value, expected),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "annotations.ts:407",
+      },
+    );
 
     // Filter the sidebar by the colour of the Fixture's first Annotation.
     const color = attachmentAnnotations[0]!.color;
@@ -1508,44 +1363,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(ofColor.length).toBeLessThan(expected.length);
     expect(await pickColor(color)).toBe("picked");
     picked = true;
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = (
-              app.workspace.getLeavesOfType(
-                "zotero-annotation-view",
-              ) as AnnotationLeaf[]
-            )[0]?.view;
-            if (!view) return String("null");
-            await view.read;
-            return String(
-              JSON.stringify(
-                [
-                  ...view.contentEl.querySelectorAll<HTMLElement>(
-                    ".zt-annot-card[data-zotero-annotation-key]",
-                  ),
-                ]
-                  .map((n) => n.getAttribute("data-zotero-annotation-key"))
-                  .sort(),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:424",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(ofColor),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = (
+          app.workspace.getLeavesOfType(
+            "zotero-annotation-view",
+          ) as AnnotationLeaf[]
+        )[0]?.view;
+        if (!view) return "null";
+        await view.read;
+        return [
+          ...view.contentEl.querySelectorAll<HTMLElement>(
+            ".zt-annot-card[data-zotero-annotation-key]",
+          ),
+        ]
+          .map((n) => n.getAttribute("data-zotero-annotation-key"))
+          .sort();
+      },
+      undefined,
+      {
+        ready: (value) => isDeepStrictEqual(value, ofColor),
         tries: 80,
-      }),
-    ).toBe(true);
+        what: "annotations.ts:424",
+      },
+    );
 
     // More options → "Save as query file…", through Obsidian's own menu. A
     // side dock hides the view header, so the reader presses the header
@@ -1577,36 +1419,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toEqual({ label: run.m.annot_view_more_tooltip() });
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-                ).find(
-                  (item) =>
-                    item!.querySelector<HTMLElement>(".menu-item-title")
-                      ?.textContent === __typedArg0,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: run.m.annot_view_save_as_query_file() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:443",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !!Array.from(
+          document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+        ).find(
+          (item) =>
+            item!.querySelector<HTMLElement>(".menu-item-title")
+              ?.textContent === __typedArg0,
+        );
+      },
+      { __typedArg0: run.m.annot_view_save_as_query_file() },
+      { what: "annotations.ts:443" },
+    );
     await obRun(
       run.vaultId,
       async ({ page }, { __typedArg0 }) => {
@@ -1721,46 +1547,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The file opens in a tab, where `this` has no value.
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            const view = app.workspace.getMostRecentLeaf()?.view as
-              | import("../../../apps/obsidian/src/views/query-view/file-view.ts").QueryFileView
-              | undefined;
-            if (
-              view?.getViewType() !== "zotlit-query-file" ||
-              view.file?.path !== __typedArg0
-            )
-              return String("null");
-            await view.query.settled;
-            return String(
-              JSON.stringify({
-                diagnostic:
-                  view.contentEl
-                    .querySelector<HTMLElement>("[data-query-diagnostic]")
-                    ?.getAttribute("data-query-diagnostic") ?? null,
-                cards:
-                  view.contentEl.querySelectorAll<HTMLElement>(".zt-annot-card")
-                    .length,
-              }),
-            );
-          },
-          { __typedArg0: savedPath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotations.ts:490",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ diagnostic: "unbound-context", cards: 0 }),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        const view = app.workspace.getMostRecentLeaf()?.view as
+          | import("../../../apps/obsidian/src/views/query-view/file-view.ts").QueryFileView
+          | undefined;
+        if (
+          view?.getViewType() !== "zotlit-query-file" ||
+          view.file?.path !== __typedArg0
+        )
+          return "null";
+        await view.query.settled;
+        return {
+          diagnostic:
+            view.contentEl
+              .querySelector<HTMLElement>("[data-query-diagnostic]")
+              ?.getAttribute("data-query-diagnostic") ?? null,
+          cards:
+            view.contentEl.querySelectorAll<HTMLElement>(".zt-annot-card")
+              .length,
+        };
+      },
+      { __typedArg0: savedPath },
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { diagnostic: "unbound-context", cards: 0 }),
         tries: 120,
-      }),
-    ).toBe(true);
+        what: "annotations.ts:490",
+      },
+    );
     const saved = await obRun(
       run.vaultId,
       async ({ app }, { __typedArg0 }) => {

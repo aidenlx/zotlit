@@ -440,63 +440,40 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ))!,
       1,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return String(
-              JSON.stringify(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["library.document"]?.sort,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view.e2e.ts:196",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify([
-          { property: "dateModified", direction: "ASC" },
-        ]),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return JSON.stringify(
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "library.document"
+          ]?.sort,
+        );
+      },
+      undefined,
+      {
+        ready: (value) =>
+          value ===
+          JSON.stringify([{ property: "dateModified", direction: "ASC" }]),
+        what: "library-view.e2e.ts:196",
+      },
+    );
 
     // A plugin reload brings the tab back with the sort it kept.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              await app.plugins
-                .disablePlugin("zotlit")
-                .then(function () {
-                  return app.plugins.enablePlugin("zotlit");
-                })
-                .then(function () {
-                  return true;
-                }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view.e2e.ts:209",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 20 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      { tries: 20, what: "library-view.e2e.ts:209" },
+    );
     const reloaded = await obRunUntil(
       run.vaultId,
       async ({ app }) => {
@@ -625,30 +602,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { readItemTitle }) => {
-            return String(
-              String(
-                activeDocument
-                  .querySelector<HTMLElement>(".prompt .suggestion-item")
-                  ?.textContent.includes(readItemTitle),
-              ),
-            );
-          },
-          { readItemTitle: readItem.title },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view.e2e.ts:267",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { readItemTitle }) => {
+        return activeDocument
+          .querySelector<HTMLElement>(".prompt .suggestion-item")
+          ?.textContent.includes(readItemTitle);
+      },
+      { readItemTitle: readItem.title },
+      { what: "library-view.e2e.ts:267" },
+    );
   });
 
   it("opens a new Library View on Recent, lists the Library Scope newest activity first in rows of two lines at most, keeps the tree toggle beside the search box on a narrow pane, sorts that way again when Recent is selected again, and leaves Recent's own sort behind on a Collection", async () => {
@@ -1947,32 +1910,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ) as { triggers: number };
     expect(picked).toEqual({ triggers: 1 });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return String(
-              JSON.stringify(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["library.document"]?.sort,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view.e2e.ts:602",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify([{ property: "title", direction: "DESC" }]),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }) => {
+        return JSON.stringify(
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "library.document"
+          ]?.sort,
+        );
+      },
+      undefined,
+      {
+        ready: (value) =>
+          value === JSON.stringify([{ property: "title", direction: "DESC" }]),
+        what: "library-view.e2e.ts:602",
+      },
+    );
   });
 
   it("filters the Library View from the Library Tree, with counts that match the seed and follow a database change", async () => {
@@ -2560,33 +2513,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // A plugin reload comes back on the Collection.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              await app.plugins
-                .disablePlugin("zotlit")
-                .then(function () {
-                  return app.plugins.enablePlugin("zotlit");
-                })
-                .then(function () {
-                  return true;
-                }),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view.e2e.ts:805",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 20 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      { tries: 20, what: "library-view.e2e.ts:805" },
+    );
     const reloaded = await obRunUntil(
       run.vaultId,
       async ({ app }) => {
@@ -2758,32 +2699,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
     await cli([`vault=${run.vaultId}`, "reload"]);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app, zotlit, page }) => {
-            return String(
-              String(
-                !page.scratch.libraryBeforeReload &&
-                  !!zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  ) &&
-                  app.workspace.layoutReady,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "library-view.e2e.ts:865",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 120 }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app, zotlit, page }) => {
+        return (
+          !page.scratch.libraryBeforeReload &&
+          !!zotlit.services.bridge.runSync(zotlit.services.settings.current) &&
+          app.workspace.layoutReady
+        );
+      },
+      undefined,
+      { tries: 120, what: "library-view.e2e.ts:865" },
+    );
     await prepareRunWindow(run.vaultId);
   }
 

@@ -178,27 +178,20 @@ export async function activeTab(vaultId: string): Promise<ActiveTab> {
 }
 
 export function pdfOpened(vaultId: string, path: string): Promise<boolean> {
-  return ((options: { expected: string; tries?: number }) =>
-    obRunUntil(
-      vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        const view = app.workspace.activeLeaf?.view as PagePdfView | undefined;
-        return String(
-          String(
-            view?.getViewType() === "pdf" &&
-              view.file?.path === __typedArg0 &&
-              (view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) > 0,
-          ),
-        );
-      },
-      { __typedArg0: path },
-      {
-        ready: (value) => value === options.expected,
-        tries: options.tries,
-        what: "e2e-run-helpers.ts:111",
-      },
-    ).then(
-      () => true,
-      () => false,
-    ))({ expected: "true", tries: 120 });
+  return obRunUntil(
+    vaultId,
+    async ({ app }, { __typedArg0 }) => {
+      const view = app.workspace.activeLeaf?.view as PagePdfView | undefined;
+      return (
+        view?.getViewType() === "pdf" &&
+        view.file?.path === __typedArg0 &&
+        (view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) > 0
+      );
+    },
+    { __typedArg0: path },
+    { tries: 120, what: "e2e-run-helpers.ts:111" },
+  ).then(
+    () => true,
+    () => false,
+  );
 }

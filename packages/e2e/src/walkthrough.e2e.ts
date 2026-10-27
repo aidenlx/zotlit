@@ -184,28 +184,21 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       styleId,
       path: expect.any(String),
     });
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ app: host }, { __typedArg0 }) => {
-          const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-          return String(
-            await app.metadataCache.getFileCache(
-              app.vault.getFileByPath(__typedArg0)!,
-            )?.frontmatter?.["zotlit-csl"],
-          );
-        },
-        { __typedArg0: note },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "walkthrough.e2e.ts:135",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: styleId });
+        return await app.metadataCache.getFileCache(
+          app.vault.getFileByPath(__typedArg0)!,
+        )?.frontmatter?.["zotlit-csl"];
+      },
+      { __typedArg0: note },
+      { ready: (value) => value === styleId, what: "walkthrough.e2e.ts:135" },
+    ).then(
+      () => true,
+      () => false,
+    );
     const document = JSON.parse(
       await cliCommand(vaultId, "zotlit:csl", {
         args: { file: join(path, note) },
@@ -349,31 +342,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         { __typedArg0: noteId, __typedArg1: notePath },
       );
     });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.workspace.activeLeaf?.view.getViewType() ===
-                  "zotlit-library",
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:224",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          app.workspace.activeLeaf?.view.getViewType() === "zotlit-library"
+        );
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:224" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -411,28 +391,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       { __typedArg0: noteId },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
 
-            return String(await app.workspace.activeLeaf?.id);
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:242",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: welcomeId,
-      }),
-    ).toBe(true);
+        return await app.workspace.activeLeaf?.id;
+      },
+      undefined,
+      { ready: (value) => value === welcomeId, what: "walkthrough.e2e.ts:242" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -487,30 +455,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         { __typedArg0: notePath, __typedArg1: notePath },
       );
     });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit }, { __typedArg0 }) => {
-            return String(
-              String(
-                zotlit.services.noteIndex
-                  .getNotesByItemKey("DMRGRART")
-                  .some((file) => file.path === __typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: notePath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:274",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit }, { __typedArg0 }) => {
+        return zotlit.services.noteIndex
+          .getNotesByItemKey("DMRGRART")
+          .some((file) => file.path === __typedArg0);
+      },
+      { __typedArg0: notePath },
+      { what: "walkthrough.e2e.ts:274" },
+    );
     await obRun(
       vaultId,
       async ({ app: host }) => {
@@ -529,30 +483,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument
-                  .querySelector<HTMLElement>(".prompt-results")
-                  ?.textContent.includes("Ten Simple Rules for Better Figures"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:285",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return activeDocument
+          .querySelector<HTMLElement>(".prompt-results")
+          ?.textContent.includes("Ten Simple Rules for Better Figures");
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:285" },
+    );
     await obRun(
       vaultId,
       async ({ page }) => {
@@ -567,31 +507,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }, { __typedArg0 }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                (app.workspace.activeLeaf?.view as MarkdownView | undefined)
-                  ?.file?.path === __typedArg0,
-              ),
-            );
-          },
-          { __typedArg0: notePath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:299",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          (app.workspace.activeLeaf?.view as MarkdownView | undefined)?.file
+            ?.path === __typedArg0
+        );
+      },
+      { __typedArg0: notePath },
+      { what: "walkthrough.e2e.ts:299" },
+    );
     expect(
       JSON.parse(
         await obRun(
@@ -742,31 +670,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       { __typedArg0: source },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                !!page
-                  .leavesOfType("markdown")
-                  .find((leaf) => leaf.view.file?.path === "Citation click.md")!
-                  .view.contentEl.querySelector<HTMLElement>(".zt-citation"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:385",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === "Citation click.md")!
+          .view.contentEl.querySelector<HTMLElement>(".zt-citation");
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:385" },
+    );
     const result = JSON.parse(
       await obRun(
         vaultId,
@@ -924,32 +838,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("keeps citation suggestions when a word reaches eight letters", async () => {
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit }) => {
-            return String(
-              String(
-                (
-                  await zotlit.services.itemLookup.search("researc", {
-                    limit: 5,
-                  })
-                ).some((hit) => hit.item.key === "DMIANART"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:464",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit }) => {
+        return (
+          await zotlit.services.itemLookup.search("researc", {
+            limit: 5,
+          })
+        ).some((hit) => hit.item.key === "DMIANART");
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:464" },
+    );
     const results = JSON.parse(
       await obRun(
         vaultId,
@@ -1042,41 +942,27 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                (app.workspace.editorSuggest.suggests.find(
-                  (suggest) =>
-                    suggest.constructor.name === "CitationEditorSuggest",
-                ) as WalkthroughCitationSuggest)!.isOpen &&
-                  app.workspace.editorSuggest.suggests
-                    .find(
-                      (suggest) =>
-                        suggest.constructor.name === "CitationEditorSuggest",
-                    )!
-                    .suggestEl.textContent.includes(
-                      "Ten Simple Rules for Better Figures",
-                    ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:519",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          (app.workspace.editorSuggest.suggests.find(
+            (suggest) => suggest.constructor.name === "CitationEditorSuggest",
+          ) as WalkthroughCitationSuggest)!.isOpen &&
+          app.workspace.editorSuggest.suggests
+            .find(
+              (suggest) => suggest.constructor.name === "CitationEditorSuggest",
+            )!
+            .suggestEl.textContent.includes(
+              "Ten Simple Rules for Better Figures",
+            )
+        );
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:519" },
+    );
     await obRun(
       vaultId,
       async ({ page }) => {
@@ -1092,31 +978,20 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              await page
-                .leavesOfType("markdown")
-                .find((leaf) => leaf.view.file?.path === "Citation locator.md")!
-                .view.editor.getValue(),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:535",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "[@rougier2014]",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return await page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === "Citation locator.md")!
+          .view.editor.getValue();
+      },
+      undefined,
+      {
+        ready: (value) => value === "[@rougier2014]",
+        what: "walkthrough.e2e.ts:535",
+      },
+    );
     const result = JSON.parse(
       await obRun(
         vaultId,
@@ -1325,32 +1200,20 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       { __typedArg0: initial },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath("Focus update.md")!,
-                )?.frontmatter?.["zotero-key"] === "DMRGRART",
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:644",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          app.metadataCache.getFileCache(
+            app.vault.getFileByPath("Focus update.md")!,
+          )?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:644" },
+    );
     for (const selector of [
       ".cm-content",
       ".inline-title",
@@ -1436,32 +1299,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       { __typedArg0: notePath, __typedArg1: source },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }, { __typedArg0 }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath(__typedArg0)!,
-                )?.frontmatter?.["zotero-key"] === "DMRGRART",
-              ),
-            );
-          },
-          { __typedArg0: notePath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:703",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          app.metadataCache.getFileCache(app.vault.getFileByPath(__typedArg0)!)
+            ?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      { __typedArg0: notePath },
+      { what: "walkthrough.e2e.ts:703" },
+    );
     await obRun(
       vaultId,
       async ({ app: host }) => {
@@ -1473,32 +1323,20 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }, { __typedArg0 }) => {
-            return String(
-              String(
-                page
-                  .leavesOfType("markdown")
-                  .find((leaf) => leaf.view.file?.path === __typedArg0)!
-                  .view.editor.getValue()
-                  .split("[!note]").length > 2,
-              ),
-            );
-          },
-          { __typedArg0: notePath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:715",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }, { __typedArg0 }) => {
+        return (
+          page
+            .leavesOfType("markdown")
+            .find((leaf) => leaf.view.file?.path === __typedArg0)!
+            .view.editor.getValue()
+            .split("[!note]").length > 2
+        );
+      },
+      { __typedArg0: notePath },
+      { what: "walkthrough.e2e.ts:715" },
+    );
     const result = JSON.parse(
       await obRun(
         vaultId,
@@ -1565,32 +1403,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(result.after.cursor).toEqual(result.before.cursor);
     expect(result.after.height).toBe(result.before.height);
     expect(Math.abs(result.after.top - result.before.top)).toBeLessThan(2);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }, { __typedArg0 }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                (
-                  await app.vault.read(app.vault.getFileByPath(__typedArg0)!)
-                ).includes("Unsaved researcher text."),
-              ),
-            );
-          },
-          { __typedArg0: notePath },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:752",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          await app.vault.read(app.vault.getFileByPath(__typedArg0)!)
+        ).includes("Unsaved researcher text.");
+      },
+      { __typedArg0: notePath },
+      { what: "walkthrough.e2e.ts:752" },
+    );
   });
 
   it.each(["built-in", "customized"])(
@@ -1623,32 +1447,20 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         },
         { __typedArg0: kind, __typedArg1: notePath },
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ app: host }, { __typedArg0 }) => {
-              const app = host as WalkthroughApp;
+      await obRunUntil(
+        vaultId,
+        async ({ app: host }, { __typedArg0 }) => {
+          const app = host as WalkthroughApp;
 
-              return String(
-                String(
-                  app.metadataCache.getFileCache(
-                    app.vault.getFileByPath(__typedArg0)!,
-                  )?.frontmatter?.["zotero-key"] === "DMRGRART",
-                ),
-              );
-            },
-            { __typedArg0: notePath },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "walkthrough.e2e.ts:777",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+          return (
+            app.metadataCache.getFileCache(
+              app.vault.getFileByPath(__typedArg0)!,
+            )?.frontmatter?.["zotero-key"] === "DMRGRART"
+          );
+        },
+        { __typedArg0: notePath },
+        { what: "walkthrough.e2e.ts:777" },
+      );
       const result = JSON.parse(
         await obRun(
           vaultId,
@@ -1715,35 +1527,23 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         customized: true,
       });
       // The template's Query Block shows a placeholder in the note preview.
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }) => {
-              const el = page.leavesOfType("zotlit-note-preview")[0]?.view
-                .contentEl;
-              return String(
-                String(
-                  !!el?.querySelector<HTMLElement>(
-                    "[data-zotlit-draft] [data-query-placeholder]",
-                  ) &&
-                    !el.querySelector<HTMLElement>(
-                      '[data-zotlit-draft] [role="toolbar"]',
-                    ),
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "walkthrough.e2e.ts:817",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          const el = page.leavesOfType("zotlit-note-preview")[0]?.view
+            .contentEl;
+          return (
+            !!el?.querySelector<HTMLElement>(
+              "[data-zotlit-draft] [data-query-placeholder]",
+            ) &&
+            !el.querySelector<HTMLElement>(
+              '[data-zotlit-draft] [role="toolbar"]',
+            )
+          );
+        },
+        undefined,
+        { what: "walkthrough.e2e.ts:817" },
+      );
     },
   );
 
@@ -1806,188 +1606,141 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
     // Opening the layout can move and reload the editor. Use the button only
     // after its companion panes arrive in the same popout document.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit, page }, { __typedArg0 }) => {
-            const { press } = page;
-            const view = page
-              .leavesOfType("zotlit-template-workbench")
-              .find(
-                (leaf) =>
-                  leaf.view.file?.path ===
-                  zotlit.services.profile.defaultDocumentPath,
-              )?.view;
-            const doc = view?.contentEl?.ownerDocument;
-            const ready =
-              doc &&
-              doc !== document &&
-              (
-                [
-                  "zotlit-template-data-explorer",
-                  "zotlit-note-preview",
-                ] as const
-              ).every((type) =>
-                page
-                  .leavesOfType(type)
-                  .some((leaf) => leaf.view.contentEl?.ownerDocument === doc),
-              );
-            // A main-area pane shows the view header, so the reader presses its
-            // Choose item action; the in-pane trigger is for a sidebar alone.
-            const trigger =
-              ready && view.containerEl.querySelector<HTMLElement>(__typedArg0);
-            if (!trigger) return String("false");
-            press(trigger, "Choose item");
-            return String("true");
-          },
-          {
-            __typedArg0: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:862",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }, { __typedArg0 }) => {
+        const { press } = page;
+        const view = page
+          .leavesOfType("zotlit-template-workbench")
+          .find(
+            (leaf) =>
+              leaf.view.file?.path ===
+              zotlit.services.profile.defaultDocumentPath,
+          )?.view;
+        const doc = view?.contentEl?.ownerDocument;
+        const ready =
+          doc &&
+          doc !== document &&
+          (
+            ["zotlit-template-data-explorer", "zotlit-note-preview"] as const
+          ).every((type) =>
+            page
+              .leavesOfType(type)
+              .some((leaf) => leaf.view.contentEl?.ownerDocument === doc),
+          );
+        // A main-area pane shows the view header, so the reader presses its
+        // Choose item action; the in-pane trigger is for a sidebar alone.
+        const trigger =
+          ready && view.containerEl.querySelector<HTMLElement>(__typedArg0);
+        if (!trigger) return "false";
+        press(trigger, "Choose item");
+        return "true";
+      },
+      {
+        __typedArg0: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
+      },
+      { ready: (value) => value === "true", what: "walkthrough.e2e.ts:862" },
+    );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit, page }) => {
-            const input = page
-              .leavesOfType("zotlit-template-workbench")
-              .find(
-                (leaf) =>
-                  leaf.view.file?.path ===
-                  zotlit.services.profile.defaultDocumentPath,
-              )
-              ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(
-                ".prompt",
-              )
-              ?.querySelector<HTMLInputElement>("input");
-            if (!input) return String("false");
-            input.value = "rougier";
-            input.dispatchEvent(
-              new input.ownerDocument.defaultView!.Event("input", {
-                bubbles: true,
-              }),
-            );
-            return String("true");
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:880",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }) => {
+        const input = page
+          .leavesOfType("zotlit-template-workbench")
+          .find(
+            (leaf) =>
+              leaf.view.file?.path ===
+              zotlit.services.profile.defaultDocumentPath,
+          )
+          ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(".prompt")
+          ?.querySelector<HTMLInputElement>("input");
+        if (!input) return "false";
+        input.value = "rougier";
+        input.dispatchEvent(
+          new input.ownerDocument.defaultView!.Event("input", {
+            bubbles: true,
+          }),
+        );
+        return "true";
+      },
+      undefined,
+      { ready: (value) => value === "true", what: "walkthrough.e2e.ts:880" },
+    );
     // The results are `aria-busy` while they answer an earlier query.
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit, page }) => {
-            const { press } = page;
-            const row = Array.from(
-              page
-                .leavesOfType("zotlit-template-workbench")
-                .find(
-                  (leaf) =>
-                    leaf.view.file?.path ===
-                    zotlit.services.profile.defaultDocumentPath,
-                )
-                ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(
-                  ".prompt",
-                )
-                ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
-            ).find(
-              (row) =>
-                !row.closest("[aria-busy]") &&
-                row.textContent.includes("Ten Simple Rules for Better Figures"),
-            );
-            if (!row) return String("false");
-            row.dispatchEvent(
-              new row.ownerDocument.defaultView!.MouseEvent("mousemove", {
-                bubbles: true,
-              }),
-            );
-            press(row, "search result");
-            return String("true");
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:889",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }) => {
+        const { press } = page;
+        const row = Array.from(
+          page
+            .leavesOfType("zotlit-template-workbench")
+            .find(
+              (leaf) =>
+                leaf.view.file?.path ===
+                zotlit.services.profile.defaultDocumentPath,
+            )
+            ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(
+              ".prompt",
+            )
+            ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
+        ).find(
+          (row) =>
+            !row.closest("[aria-busy]") &&
+            row.textContent.includes("Ten Simple Rules for Better Figures"),
+        );
+        if (!row) return "false";
+        row.dispatchEvent(
+          new row.ownerDocument.defaultView!.MouseEvent("mousemove", {
+            bubbles: true,
+          }),
+        );
+        press(row, "search result");
+        return "true";
+      },
+      undefined,
+      { ready: (value) => value === "true", what: "walkthrough.e2e.ts:889" },
+    );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit, page }) => {
-            return String(
-              String(
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit, page }) => {
+        return (
+          page
+            .leavesOfType("zotlit-note-preview")
+            .find(
+              (leaf) =>
+                leaf.view.contentEl?.ownerDocument ===
                 page
-                  .leavesOfType("zotlit-note-preview")
+                  .leavesOfType("zotlit-template-workbench")
                   .find(
                     (leaf) =>
-                      leaf.view.contentEl?.ownerDocument ===
-                      page
-                        .leavesOfType("zotlit-template-workbench")
-                        .find(
-                          (leaf) =>
-                            leaf.view.file?.path ===
-                            zotlit.services.profile.defaultDocumentPath,
-                        )?.view?.contentEl?.ownerDocument,
-                  )
-                  ?.view.contentEl?.querySelectorAll<HTMLElement>(".callout")
-                  .length! > 0 &&
-                  !(page
-                    .leavesOfType("zotlit-note-preview")
-                    .find(
-                      (leaf) =>
-                        leaf.view.contentEl?.ownerDocument ===
-                        page
-                          .leavesOfType("zotlit-template-workbench")
-                          .find(
-                            (leaf) =>
-                              leaf.view.file?.path ===
-                              zotlit.services.profile.defaultDocumentPath,
-                          )?.view?.contentEl?.ownerDocument,
-                    )?.view.contentEl)!.querySelector<HTMLElement>(
-                    "[data-zotlit-preview-pending]",
-                  ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:897",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+                      leaf.view.file?.path ===
+                      zotlit.services.profile.defaultDocumentPath,
+                  )?.view?.contentEl?.ownerDocument,
+            )
+            ?.view.contentEl?.querySelectorAll<HTMLElement>(".callout")
+            .length! > 0 &&
+          !(page
+            .leavesOfType("zotlit-note-preview")
+            .find(
+              (leaf) =>
+                leaf.view.contentEl?.ownerDocument ===
+                page
+                  .leavesOfType("zotlit-template-workbench")
+                  .find(
+                    (leaf) =>
+                      leaf.view.file?.path ===
+                      zotlit.services.profile.defaultDocumentPath,
+                  )?.view?.contentEl?.ownerDocument,
+            )?.view.contentEl)!.querySelector<HTMLElement>(
+            "[data-zotlit-preview-pending]",
+          )
+        );
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:897" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -2382,32 +2135,20 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath("Reopen workbench.md")!,
-                )?.frontmatter?.["zotero-key"] === "DMRGRART",
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1064",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          app.metadataCache.getFileCache(
+            app.vault.getFileByPath("Reopen workbench.md")!,
+          )?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:1064" },
+    );
     await obRun(
       vaultId,
       async ({ app: host }) => {
@@ -2419,30 +2160,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                !!page
-                  .leavesOfType("zotlit-template-workbench")[0]
-                  ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]'),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1077",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page
+          .leavesOfType("zotlit-template-workbench")[0]
+          ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:1077" },
+    );
     await obRun(
       vaultId,
       async ({ page }) => {
@@ -2465,41 +2192,29 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       preview: "annotation",
       fields: "annotation",
     };
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }, { __typedArg0 }) => {
-            return String(
-              String(
-                JSON.stringify(
-                  (() => ({
-                    tab: (page.leavesOfType("zotlit-template-workbench")[0]
-                      ?.view)!.store.getState().tab,
-                    editor: (page.leavesOfType("zotlit-template-workbench")[0]
-                      ?.view)!.store.getState().root,
-                    preview: page
-                      .leavesOfType("zotlit-note-preview")[0]
-                      ?.view.getState().root,
-                    fields: page
-                      .leavesOfType("zotlit-template-data-explorer")[0]
-                      ?.view.getState().root,
-                  }))(),
-                ) === __typedArg0,
-              ),
-            );
-          },
-          { __typedArg0: JSON.stringify(expected) },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1100",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }, { __typedArg0 }) => {
+        return (
+          JSON.stringify(
+            (() => ({
+              tab: (page.leavesOfType("zotlit-template-workbench")[0]
+                ?.view)!.store.getState().tab,
+              editor: (page.leavesOfType("zotlit-template-workbench")[0]
+                ?.view)!.store.getState().root,
+              preview: page
+                .leavesOfType("zotlit-note-preview")[0]
+                ?.view.getState().root,
+              fields: page
+                .leavesOfType("zotlit-template-data-explorer")[0]
+                ?.view.getState().root,
+            }))(),
+          ) === __typedArg0
+        );
+      },
+      { __typedArg0: JSON.stringify(expected) },
+      { what: "walkthrough.e2e.ts:1100" },
+    );
     await obRun(
       vaultId,
       async ({ app: host, page }) => {
@@ -2518,32 +2233,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host, page }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.workspace.activeLeaf ===
-                  (page.leavesOfType("zotlit-template-workbench")[0]?.view)!
-                    .leaf,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1115",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          app.workspace.activeLeaf ===
+          (page.leavesOfType("zotlit-template-workbench")[0]?.view)!.leaf
+        );
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:1115" },
+    );
     expect(
       JSON.parse(
         await obRun(
@@ -2602,32 +2304,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         undefined,
       ),
     ) as { id: string; path: string };
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }, { __typedArg0 }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath(__typedArg0)!,
-                )?.frontmatter?.["zotero-key"] === "DMRGRART",
-              ),
-            );
-          },
-          { __typedArg0: created.path },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1145",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return (
+          app.metadataCache.getFileCache(app.vault.getFileByPath(__typedArg0)!)
+            ?.frontmatter?.["zotero-key"] === "DMRGRART"
+        );
+      },
+      { __typedArg0: created.path },
+      { what: "walkthrough.e2e.ts:1145" },
+    );
     await obRun(
       vaultId,
       async ({ app: host }) => {
@@ -2643,34 +2332,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     );
     const target = "books/2024/Subfolder move.md";
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(".prompt"),
-                  )
-                    .at(-1)
-                    ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
-                ).find((el) => el.textContent.includes(__typedArg0)),
-              ),
-            );
-          },
-          { __typedArg0: target },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1158",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !!Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".prompt"))
+            .at(-1)
+            ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
+        ).find((el) => el.textContent.includes(__typedArg0));
+      },
+      { __typedArg0: target },
+      { what: "walkthrough.e2e.ts:1158" },
+    );
     await obRun(
       vaultId,
       async ({ page }, { __typedArg0 }) => {
@@ -2688,53 +2361,36 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       { __typedArg0: target },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context) => {
-            return String(
-              String(
-                !!(() => {
-                  const modal = Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                  ).at(-1);
-                  return Array.from(
-                    modal?.querySelectorAll<HTMLInputElement>(
-                      "input[type=checkbox]",
-                    ) ?? [],
-                  ).find((input) => {
-                    for (
-                      let el = input.parentElement;
-                      el && el !== modal;
-                      el = el.parentElement
-                    ) {
-                      if (
-                        el.querySelectorAll<HTMLInputElement>(
-                          "input[type=checkbox]",
-                        ).length > 1
-                      )
-                        return false;
-                      if (el.textContent.includes("Move to books/2024/"))
-                        return true;
-                    }
-                    return false;
-                  });
-                })(),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1166",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return !!(() => {
+          const modal = Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".modal"),
+          ).at(-1);
+          return Array.from(
+            modal?.querySelectorAll<HTMLInputElement>("input[type=checkbox]") ??
+              [],
+          ).find((input) => {
+            for (
+              let el = input.parentElement;
+              el && el !== modal;
+              el = el.parentElement
+            ) {
+              if (
+                el.querySelectorAll<HTMLInputElement>("input[type=checkbox]")
+                  .length > 1
+              )
+                return false;
+              if (el.textContent.includes("Move to books/2024/")) return true;
+            }
+            return false;
+          });
+        })();
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:1166" },
+    );
     await obRun(
       vaultId,
       async ({ page }) => {
@@ -2770,59 +2426,39 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            const { press } = page;
-            const modal = Array.from(
-              activeDocument.querySelectorAll<HTMLElement>(".modal"),
-            ).at(-1);
-            const button = Array.from(
-              modal?.querySelectorAll<HTMLButtonElement>("button") ?? [],
-            ).find((el) => el.textContent.trim() === "Switch to “Books”");
-            if (!button) return String(false);
-            press(button, "Switch to Books");
-            return String(true);
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1173",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }, { __typedArg0 }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        const { press } = page;
+        const modal = Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1);
+        const button = Array.from(
+          modal?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+        ).find((el) => el.textContent.trim() === "Switch to “Books”");
+        if (!button) return false;
+        press(button, "Switch to Books");
+        return true;
+      },
+      undefined,
+      { what: "walkthrough.e2e.ts:1173" },
+    );
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath(__typedArg0)!,
-                )?.frontmatter?.["zotlit-profile"] ?? "",
-              ),
-            );
-          },
-          { __typedArg0: target },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1180",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: `Books (${created.id})` }),
-    ).toBe(true);
+        return (
+          app.metadataCache.getFileCache(app.vault.getFileByPath(__typedArg0)!)
+            ?.frontmatter?.["zotlit-profile"] ?? ""
+        );
+      },
+      { __typedArg0: target },
+      {
+        ready: (value) => value === `Books (${created.id})`,
+        what: "walkthrough.e2e.ts:1180",
+      },
+    );
     expect(
       await obRun(
         vaultId,
@@ -2891,32 +2527,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app: host }, { __typedArg0 }) => {
-            const app = host as WalkthroughApp;
+    await obRunUntil(
+      vaultId,
+      async ({ app: host }, { __typedArg0 }) => {
+        const app = host as WalkthroughApp;
 
-            return String(
-              String(
-                !!app.setting.containerEl.querySelector<HTMLElement>(
-                  `[aria-label=${JSON.stringify(__typedArg0)}]`,
-                ),
-              ),
-            );
-          },
-          { __typedArg0: m.settings_profile_add() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1216",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+        return !!app.setting.containerEl.querySelector<HTMLElement>(
+          `[aria-label=${JSON.stringify(__typedArg0)}]`,
+        );
+      },
+      { __typedArg0: m.settings_profile_add() },
+      { what: "walkthrough.e2e.ts:1216" },
+    );
     await obRun(
       vaultId,
       async ({ app: host, page }, { __typedArg0 }) => {
@@ -2934,38 +2556,25 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       { __typedArg0: m.settings_profile_add() },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                )
-                  .find(
-                    (el) =>
-                      el.querySelector<HTMLElement>(".modal-title")
-                        ?.textContent === __typedArg0,
-                  )
-                  ?.querySelector<HTMLElement>('p[role="status"]')?.textContent,
-              ),
-            );
-          },
-          { __typedArg0: m.settings_profile_add() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1225",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: m.settings_profile_name_invalid(),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context, { __typedArg0 }) => {
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        )
+          .find(
+            (el) =>
+              el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+              __typedArg0,
+          )
+          ?.querySelector<HTMLElement>('p[role="status"]')?.textContent;
+      },
+      { __typedArg0: m.settings_profile_add() },
+      {
+        ready: (value) => value === m.settings_profile_name_invalid(),
+        what: "walkthrough.e2e.ts:1225",
+      },
+    );
     expect(
       await obRun(
         vaultId,
@@ -3045,45 +2654,27 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         __typedArg1: m.settings_profile_name_name(),
       },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context, { __typedArg0, __typedArg1 }) => {
-            return String(
-              String(
-                Array.from(
-                  Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                  )
-                    .find(
-                      (el) =>
-                        el.querySelector<HTMLElement>(".modal-title")
-                          ?.textContent === __typedArg0,
-                    )!
-                    .querySelectorAll<HTMLButtonElement>(
-                      ".modal-button-container button",
-                    ),
-                ).find((el) => el.textContent === __typedArg1)!.disabled,
-              ),
-            );
-          },
-          {
-            __typedArg0: m.settings_profile_add(),
-            __typedArg1: m.settings_profile_add(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1242",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "false",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context, { __typedArg0, __typedArg1 }) => {
+        return Array.from(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .find(
+              (el) =>
+                el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                __typedArg0,
+            )!
+            .querySelectorAll<HTMLButtonElement>(
+              ".modal-button-container button",
+            ),
+        ).find((el) => el.textContent === __typedArg1)!.disabled;
+      },
+      {
+        __typedArg0: m.settings_profile_add(),
+        __typedArg1: m.settings_profile_add(),
+      },
+      { ready: (value) => value === false, what: "walkthrough.e2e.ts:1242" },
+    );
     await obRun(
       vaultId,
       async ({ page }, { __typedArg0, __typedArg1 }) => {
@@ -3110,37 +2701,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       },
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                page
-                  .leavesOfType("zotlit-template-workbench")
-                  .map((leaf) => leaf.view)
-                  .find(
-                    (view) =>
-                      view.file?.name === "zotlit-profile.reading-group.md",
-                  )
-                  ?.store.getState().tab,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "walkthrough.e2e.ts:1252",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "name",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return page
+          .leavesOfType("zotlit-template-workbench")
+          .map((leaf) => leaf.view)
+          .find((view) => view.file?.name === "zotlit-profile.reading-group.md")
+          ?.store.getState().tab;
+      },
+      undefined,
+      { ready: (value) => value === "name", what: "walkthrough.e2e.ts:1252" },
+    );
     expect(
       await obRun(
         vaultId,

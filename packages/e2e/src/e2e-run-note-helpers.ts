@@ -137,26 +137,17 @@ function hasIndexedNotes(
   indexedKey: string,
   count: number,
 ): Promise<boolean> {
-  return ((options: { expected: string; tries?: number }) =>
-    obRunUntil(
-      vaultId,
-      async ({ zotlit }, { __typedArg0 }) => {
-        return String(
-          String(
-            zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
-          ),
-        );
-      },
-      { __typedArg0: indexedKey },
-      {
-        ready: (value) => value === options.expected,
-        tries: options.tries,
-        what: "e2e-run-note-helpers.ts:81",
-      },
-    ).then(
-      () => true,
-      () => false,
-    ))({ expected: String(count) });
+  return obRunUntil(
+    vaultId,
+    async ({ zotlit }, { __typedArg0 }) => {
+      return zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length;
+    },
+    { __typedArg0: indexedKey },
+    { ready: (value) => value === count, what: "e2e-run-note-helpers.ts:81" },
+  ).then(
+    () => true,
+    () => false,
+  );
 }
 
 /** A Fixture Item's Indexed Key and its current Literature Note, if any. */

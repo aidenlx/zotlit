@@ -1,5 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { reachable } from "./e2e-run-fixture.ts";
@@ -4031,35 +4032,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     /** The view on screen, its cards, and the page labels the cards show. */
     const shown = (view: string) =>
-      ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = app.workspace.getMostRecentLeaf()!.view;
-            if (view.getViewType() !== "zotlit-query-file")
-              return String("none");
-            await (view as import("@/views/query-view/file-view").QueryFileView)
-              .query.settled;
-            const el = (view as import("obsidian").ItemView).contentEl;
-            const cards =
-              el.querySelectorAll<HTMLElement>(".zt-annot-card").length;
-            return String(
-              `${
-                el.querySelector<HTMLElement>("[data-query-view-menu]")
-                  ?.textContent
-              }:${cards > 0}`,
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1236",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: `${view}:true` });
+      obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          const view = app.workspace.getMostRecentLeaf()!.view;
+          if (view.getViewType() !== "zotlit-query-file") return "none";
+          await (view as import("@/views/query-view/file-view").QueryFileView)
+            .query.settled;
+          const el = (view as import("obsidian").ItemView).contentEl;
+          const cards =
+            el.querySelectorAll<HTMLElement>(".zt-annot-card").length;
+          return `${
+            el.querySelector<HTMLElement>("[data-query-view-menu]")?.textContent
+          }:${cards > 0}`;
+        },
+        undefined,
+        {
+          ready: (value) => value === `${view}:true`,
+          what: "query-view.e2e.ts:1236",
+        },
+      ).then(
+        () => true,
+        () => false,
+      );
 
     /** The view rows the open view menu shows. */
 
@@ -4118,37 +4113,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getMostRecentLeaf()!
-                      .view as import("obsidian").ItemView
-                  ).contentEl.querySelectorAll<HTMLElement>(
-                    "[data-query-view-list]:popover-open [data-query-view-row]",
-                  ),
-                ].map((n) => n.getAttribute("data-query-view-row")),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1260",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(["All annotations", "Figures"]),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, ["All annotations", "Figures"]),
+        what: "query-view.e2e.ts:1260",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ app }, { __typedArg0 }) => {
@@ -4163,37 +4146,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { __typedArg0: "fig" },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getMostRecentLeaf()!
-                      .view as import("obsidian").ItemView
-                  ).contentEl.querySelectorAll<HTMLElement>(
-                    "[data-query-view-list]:popover-open [data-query-view-row]",
-                  ),
-                ].map((n) => n.getAttribute("data-query-view-row")),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1266",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(["Figures"]),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) => isDeepStrictEqual(value, ["Figures"]),
+        what: "query-view.e2e.ts:1266",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ app }, { __typedArg0 }) => {
@@ -4228,30 +4198,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                !!activeDocument.querySelector<HTMLInputElement>(
-                  "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
-                )!,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1279",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return !!activeDocument.querySelector<HTMLInputElement>(
+          "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
+        )!;
+      },
+      undefined,
+      { what: "query-view.e2e.ts:1279" },
+    );
     // Configure view offers only the layouts built for the view's dataset.
     expect(
       await obRun(
@@ -4339,37 +4295,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getMostRecentLeaf()!
-                      .view as import("obsidian").ItemView
-                  ).contentEl.querySelectorAll<HTMLElement>(
-                    ".zt-annot-page-chip",
-                  ),
-                ]
-                  .map((n) => n.textContent)
-                  .filter(Boolean),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1310",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "[]" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+        ]
+          .map((n) => n.textContent)
+          .filter(Boolean);
+      },
+      undefined,
+      {
+        ready: (value) => isDeepStrictEqual(value, []),
+        what: "query-view.e2e.ts:1310",
+      },
+    );
 
     // A right-click on the view's row opens its Configure view, whose
     // "Default view" moves it to the top of the list.
@@ -4388,37 +4331,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getMostRecentLeaf()!
-                      .view as import("obsidian").ItemView
-                  ).contentEl.querySelectorAll<HTMLElement>(
-                    "[data-query-view-list]:popover-open [data-query-view-row]",
-                  ),
-                ].map((n) => n.getAttribute("data-query-view-row")),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1321",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(["All annotations", "Figures", "Methods"]),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, ["All annotations", "Figures", "Methods"]),
+        what: "query-view.e2e.ts:1321",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ app, page: pageHelpers }) => {
@@ -4463,35 +4394,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // Each change saved to the file.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              await app.vault
-                .read(app.vault.getFileByPath(__typedArg0)!)
-                .then((t) =>
-                  String(
-                    t.indexOf("name: Methods") > -1 &&
-                      t.indexOf("name: Methods") <
-                        t.indexOf("name: All annotations") &&
-                      t.includes("showPage: false"),
-                  ),
-                ),
-            );
-          },
-          { __typedArg0: path },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1332",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        return await app.vault
+          .read(app.vault.getFileByPath(__typedArg0)!)
+          .then((t) =>
+            String(
+              t.indexOf("name: Methods") > -1 &&
+                t.indexOf("name: Methods") <
+                  t.indexOf("name: All annotations") &&
+                t.includes("showPage: false"),
+            ),
+          );
+      },
+      { __typedArg0: path },
+      { ready: (value) => value === "true", what: "query-view.e2e.ts:1332" },
+    );
 
     // A plain open of the file shows the first view, as the file holds it.
     await obRun(
@@ -4544,37 +4463,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getMostRecentLeaf()!
-                      .view as import("obsidian").ItemView
-                  ).contentEl.querySelectorAll<HTMLElement>(
-                    "[data-query-view-list]:popover-open [data-query-view-row]",
-                  ),
-                ].map((n) => n.getAttribute("data-query-view-row")),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1348",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify(["Methods", "All annotations", "Figures"]),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return [
+          ...(
+            app.workspace.getMostRecentLeaf()!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-query-view-row]",
+          ),
+        ].map((n) => n.getAttribute("data-query-view-row"));
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, ["Methods", "All annotations", "Figures"]),
+        what: "query-view.e2e.ts:1348",
+      },
+    );
 
     // The chevron on a view's row opens Configure view on that view and
     // leaves the view on screen as it is.
@@ -4595,30 +4502,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.querySelector<HTMLInputElement>(
-                  "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
-                )?.value,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view.e2e.ts:1360",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "Figures" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return activeDocument.querySelector<HTMLInputElement>(
+          "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-name]",
+        )?.value;
+      },
+      undefined,
+      { ready: (value) => value === "Figures", what: "query-view.e2e.ts:1360" },
+    );
     expect(await shown("Methods")).toBe(true);
     await obRun(
       run.vaultId,

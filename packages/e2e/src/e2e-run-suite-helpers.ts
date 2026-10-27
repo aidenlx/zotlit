@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { expect } from "vitest";
 
 import type { FixtureItem } from "@zotlit/scripts/fixture";
@@ -53,38 +54,28 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
   );
   // The renderer lays out at the new width once its window has it and
   // both sidebars have finished collapsing.
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ app }) => {
-          return String(
-            JSON.stringify([
-              activeWindow.outerWidth,
-              ...[app.workspace.leftSplit, app.workspace.rightSplit].map(
-                (split) =>
-                  Math.round(
-                    (
-                      split as import("obsidian").WorkspaceSidedock & {
-                        containerEl: HTMLElement;
-                      }
-                    ).containerEl.getBoundingClientRect().width,
-                  ),
-              ),
-            ]),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:39",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "[1600,0,0]" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ app }) => {
+      return [
+        activeWindow.outerWidth,
+        ...[app.workspace.leftSplit, app.workspace.rightSplit].map((split) =>
+          Math.round(
+            (
+              split as import("obsidian").WorkspaceSidedock & {
+                containerEl: HTMLElement;
+              }
+            ).containerEl.getBoundingClientRect().width,
+          ),
+        ),
+      ];
+    },
+    undefined,
+    {
+      ready: (value) => isDeepStrictEqual(value, [1600, 0, 0]),
+      what: "suite.ts:39",
+    },
+  );
 }
 /**
  * The Library View heading, as {@link LIBRARY_HEADING} reads it: the
@@ -238,70 +229,47 @@ async function addLibraryCondition(selector: string): Promise<void> {
 
 async function openMatchEditor(): Promise<void> {
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ app, page }, { __typedArg0, __typedArg1 }) => {
-          const { press } = page;
-          var settings = app.setting.containerEl;
-          var row = Array.from(settings.querySelectorAll(".setting-item")).find(
-            (el) =>
-              el.querySelector(".setting-item-name")?.textContent ===
-              __typedArg0,
-          );
-          var button =
-            row &&
-            Array.from(row.querySelectorAll("button")).find(
-              (button) => button.getAttribute("aria-label") === __typedArg1,
-            );
-          if (!button || button.disabled) return String(false);
-          press(button, "Edit profile");
-          return String(true);
-        },
-        {
-          __typedArg0: booksProfile.label,
-          __typedArg1: run.m.settings_profile_edit(),
-        },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:138",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ page }, { __typedArg0 }) => {
-          const { press } = page;
-          var editor = page.workbench()?.contentEl;
-          var tab = Array.from(
-            editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
-          ).find((tab) => tab.textContent.trim() === __typedArg0);
-          press(tab, "Match tab");
-          return String(
-            String(
-              !!editor?.querySelector("[data-part=fieldset]") &&
-                !editor?.ownerDocument.querySelector(".modal.mod-settings"),
-            ),
-          );
-        },
-        { __typedArg0: run.m.workbench_tab_match() },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:145",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+      const { press } = page;
+      var settings = app.setting.containerEl;
+      var row = Array.from(settings.querySelectorAll(".setting-item")).find(
+        (el) =>
+          el.querySelector(".setting-item-name")?.textContent === __typedArg0,
+      );
+      var button =
+        row &&
+        Array.from(row.querySelectorAll("button")).find(
+          (button) => button.getAttribute("aria-label") === __typedArg1,
+        );
+      if (!button || button.disabled) return false;
+      press(button, "Edit profile");
+      return true;
+    },
+    {
+      __typedArg0: booksProfile.label,
+      __typedArg1: run.m.settings_profile_edit(),
+    },
+    { what: "suite.ts:138" },
+  );
+  await obRunUntil(
+    run.vaultId,
+    async ({ page }, { __typedArg0 }) => {
+      const { press } = page;
+      var editor = page.workbench()?.contentEl;
+      var tab = Array.from(
+        editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
+      ).find((tab) => tab.textContent.trim() === __typedArg0);
+      press(tab, "Match tab");
+      return (
+        !!editor?.querySelector("[data-part=fieldset]") &&
+        !editor?.ownerDocument.querySelector(".modal.mod-settings")
+      );
+    },
+    { __typedArg0: run.m.workbench_tab_match() },
+    { what: "suite.ts:145" },
+  );
 }
 
 async function mainSettings() {
@@ -344,70 +312,53 @@ async function mainSettings() {
 }
 
 function clickTemplateCustomize() {
-  return ((options: { expected: string; tries?: number }) =>
-    obRunUntil(
-      run.vaultId,
-      async ({ app, page }, { __typedArg0, __typedArg1 }) => {
-        const { press } = page;
-        var settings = app.setting.containerEl;
-        var row = Array.from(settings.querySelectorAll(".setting-item")).find(
-          (el) =>
-            el.querySelector(".setting-item-name")?.textContent === __typedArg0,
+  return obRunUntil(
+    run.vaultId,
+    async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+      const { press } = page;
+      var settings = app.setting.containerEl;
+      var row = Array.from(settings.querySelectorAll(".setting-item")).find(
+        (el) =>
+          el.querySelector(".setting-item-name")?.textContent === __typedArg0,
+      );
+      var button =
+        row &&
+        Array.from(row.querySelectorAll("button")).find(
+          (el) => el.getAttribute("aria-label") === __typedArg1,
         );
-        var button =
-          row &&
-          Array.from(row.querySelectorAll("button")).find(
-            (el) => el.getAttribute("aria-label") === __typedArg1,
-          );
-        if (!button || button.disabled) return String(false);
-        press(button, "Edit template");
-        return String(true);
-      },
-      {
-        __typedArg0: run.m.settings_profile_document_name(),
-        __typedArg1: run.m.settings_profile_edit(),
-      },
-      {
-        ready: (value) => value === options.expected,
-        tries: options.tries,
-        what: "suite.ts:175",
-      },
-    ).then(
-      () => true,
-      () => false,
-    ))({ expected: "true" });
+      if (!button || button.disabled) return false;
+      press(button, "Edit template");
+      return true;
+    },
+    {
+      __typedArg0: run.m.settings_profile_document_name(),
+      __typedArg1: run.m.settings_profile_edit(),
+    },
+    { what: "suite.ts:175" },
+  ).then(
+    () => true,
+    () => false,
+  );
 }
 
 async function saveMatch(match: unknown): Promise<void> {
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-          return String(
-            String(
-              JSON.stringify(
-                (() => {
-                  const match = zotlit.services.profile.profiles.find(
-                    (p) => p.id === __typedArg0,
-                  )?.match;
-                  return match && "tree" in match ? match.tree : undefined;
-                })(),
-              ) === __typedArg1,
-            ),
-          );
-        },
-        { __typedArg0: booksProfile.id, __typedArg1: JSON.stringify(match) },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:184",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+      return (
+        JSON.stringify(
+          (() => {
+            const match = zotlit.services.profile.profiles.find(
+              (p) => p.id === __typedArg0,
+            )?.match;
+            return match && "tree" in match ? match.tree : undefined;
+          })(),
+        ) === __typedArg1
+      );
+    },
+    { __typedArg0: booksProfile.id, __typedArg1: JSON.stringify(match) },
+    { what: "suite.ts:184" },
+  );
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
 }
 
@@ -428,35 +379,23 @@ async function writeMatch(
     path,
     `${header}\nmatch: ${JSON.stringify(match)}${source.slice(headerEnd)}`,
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-          return String(
-            String(
-              JSON.stringify(
-                (() => {
-                  const match = zotlit.services.profile.profiles.find(
-                    (p) => p.id === __typedArg0,
-                  )?.match;
-                  return match && "tree" in match ? match.tree : undefined;
-                })(),
-              ) === __typedArg1,
-            ),
-          );
-        },
-        { __typedArg0: profile.id, __typedArg1: JSON.stringify(match) },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:211",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    run.vaultId,
+    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+      return (
+        JSON.stringify(
+          (() => {
+            const match = zotlit.services.profile.profiles.find(
+              (p) => p.id === __typedArg0,
+            )?.match;
+            return match && "tree" in match ? match.tree : undefined;
+          })(),
+        ) === __typedArg1
+      );
+    },
+    { __typedArg0: profile.id, __typedArg1: JSON.stringify(match) },
+    { what: "suite.ts:211" },
+  );
 }
 
 async function quickSwitchCreate(
@@ -521,26 +460,14 @@ async function quickSwitchCreate(
       { timeout: 5000 },
     )
     .toBe("true");
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        targetVaultId,
-        async ({ app }) => {
-          return String(
-            String(!!app.commands.commands["zotlit:note-quick-switcher"]),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:257",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    targetVaultId,
+    async ({ app }) => {
+      return !!app.commands.commands["zotlit:note-quick-switcher"];
+    },
+    undefined,
+    { what: "suite.ts:257" },
+  );
   // The picker and its backdrop stay transparent until the first answer
   // settles, then show with rows, or with a loading row when that answer is
   // slow; no visible frame holds an empty list.
@@ -557,34 +484,22 @@ async function quickSwitchCreate(
       undefined,
     ),
   ).toBe("true");
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        targetVaultId,
-        async (_context) => {
-          var modal = Array.from(
-            activeDocument.querySelectorAll(".modal-container"),
-          ).at(-1)!;
-          return String(
-            String(
-              activeWindow.getComputedStyle(modal).opacity === "1" &&
-                !!modal.querySelector(
-                  ".prompt .suggestion-item, .prompt .suggestion-empty",
-                ),
-            ),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "suite.ts:273",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    targetVaultId,
+    async (_context) => {
+      var modal = Array.from(
+        activeDocument.querySelectorAll(".modal-container"),
+      ).at(-1)!;
+      return (
+        activeWindow.getComputedStyle(modal).opacity === "1" &&
+        !!modal.querySelector(
+          ".prompt .suggestion-item, .prompt .suggestion-empty",
+        )
+      );
+    },
+    undefined,
+    { what: "suite.ts:273" },
+  );
   await selectItemSuggestion(targetVaultId, item.title, item.key);
   await pressPromptKey(targetVaultId, "Enter");
 }

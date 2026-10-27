@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { ATTACHMENTS, ITEMS, LIBRARIES, NOTES } from "@zotlit/scripts/fixture";
@@ -86,36 +87,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { __typedArg0: path },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            const view = app.workspace.getMostRecentLeaf()!.view;
-            if (view.getViewType() !== "zotlit-query-file")
-              return String("none");
-            await (view as import("@/views/query-view/file-view").QueryFileView)
-              .query.settled;
-            return String(
-              String(
-                (
-                  view as import("obsidian").ItemView
-                ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-card")
-                  .length > 0,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:52",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        const view = app.workspace.getMostRecentLeaf()!.view;
+        if (view.getViewType() !== "zotlit-query-file") return "none";
+        await (view as import("@/views/query-view/file-view").QueryFileView)
+          .query.settled;
+        return (
+          (
+            view as import("obsidian").ItemView
+          ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-card").length > 0
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:52" },
+    );
     /** What the Table shows once its query settled. */
 
     interface Table {
@@ -233,33 +220,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     // The Configure view page this view's menu opened.
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                activeDocument
-                  .querySelector<HTMLElement>(
-                    "[data-query-view-list]:popover-open [data-chooser-page]",
-                  )
-                  ?.querySelector<HTMLInputElement>("[data-query-view-name]")
-                  ?.value === __typedArg0,
-              ),
-            );
-          },
-          { __typedArg0: "All annotations" },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:103",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return (
+          activeDocument
+            .querySelector<HTMLElement>(
+              "[data-query-view-list]:popover-open [data-chooser-page]",
+            )
+            ?.querySelector<HTMLInputElement>("[data-query-view-name]")
+            ?.value === __typedArg0
+        );
+      },
+      { __typedArg0: "All annotations" },
+      { what: "query-view-table.e2e.ts:103" },
+    );
     await obRun(
       run.vaultId,
       async (_context) => {
@@ -274,74 +249,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...activeDocument
-                    .querySelector<HTMLElement>(
-                      "[data-query-view-list]:popover-open [data-chooser-page]",
-                    )!
-                    .querySelectorAll<HTMLOptionElement>(
-                      "[data-query-view-layout] option",
-                    ),
-                ].map((n) => [n.textContent, n.selected]),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:114",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify([
-          [run.m.query_view_layout_table(), true],
-          [run.m.query_view_layout_list(), false],
-          [run.m.query_view_layout_cards(), false],
-          [run.m.query_view_layout_papers(), false],
-        ]),
-      }),
-    ).toBe(true);
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                (
-                  app.workspace.getMostRecentLeaf()!
-                    .view as import("obsidian").ItemView
-                ).contentEl.querySelector<HTMLElement>("[data-query-unused]")
-                  ?.textContent,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:128",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: run.m.query_view_unused({
-          dataset: run.m.query_view_dataset_items(),
-          properties: run.m.query_view_property_parent_item(),
-        }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return [
+          ...activeDocument
+            .querySelector<HTMLElement>(
+              "[data-query-view-list]:popover-open [data-chooser-page]",
+            )!
+            .querySelectorAll<HTMLOptionElement>(
+              "[data-query-view-layout] option",
+            ),
+        ].map((n) => [n.textContent, n.selected]);
+      },
+      undefined,
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, [
+            [run.m.query_view_layout_table(), true],
+            [run.m.query_view_layout_list(), false],
+            [run.m.query_view_layout_cards(), false],
+            [run.m.query_view_layout_papers(), false],
+          ]),
+        what: "query-view-table.e2e.ts:114",
+      },
+    );
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl.querySelector<HTMLElement>("[data-query-unused]")
+          ?.textContent;
+      },
+      undefined,
+      {
+        ready: (value) =>
+          value ===
+          run.m.query_view_unused({
+            dataset: run.m.query_view_dataset_items(),
+            properties: run.m.query_view_property_parent_item(),
+          }),
+        what: "query-view-table.e2e.ts:128",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ page: pageHelpers }) => {
@@ -359,36 +310,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
     );
     // The view saves as a Table of Items, and keeps its grouping.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
-            const text = await app.vault.read(
-              app.vault.getFileByPath(__typedArg0)!,
-            );
-            const first = text.split("name: Figures")[0];
-            return String(
-              String(
-                first!.includes(__typedArg1) && first!.includes("groupBy"),
-              ),
-            );
-          },
-          {
-            __typedArg0: path,
-            __typedArg1:
-              "  - type: table\n    name: All annotations\n    from: items\n",
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:145",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { __typedArg0, __typedArg1 }) => {
+        const text = await app.vault.read(
+          app.vault.getFileByPath(__typedArg0)!,
+        );
+        const first = text.split("name: Figures")[0];
+        return first!.includes(__typedArg1) && first!.includes("groupBy");
+      },
+      {
+        __typedArg0: path,
+        __typedArg1:
+          "  - type: table\n    name: All annotations\n    from: items\n",
+      },
+      { what: "query-view-table.e2e.ts:145" },
+    );
 
     // The rows are the Items ZotLit Query gives for the view, in its order.
     const items = await query({
@@ -501,36 +438,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { __typedArg0: annotationAttachment.key },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              String(
-                app.workspace
-                  .getLeavesOfType("pdf")
-                  .filter(
-                    (l) =>
-                      (l.view as import("obsidian").FileView).file?.name ===
-                      __typedArg0,
-                  ).length,
-              ),
-            );
-          },
-          { __typedArg0: pdfName },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:221",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: String(before + 1),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        return app.workspace
+          .getLeavesOfType("pdf")
+          .filter(
+            (l) =>
+              (l.view as import("obsidian").FileView).file?.name ===
+              __typedArg0,
+          ).length;
+      },
+      { __typedArg0: pdfName },
+      {
+        ready: (value) => value === before + 1,
+        what: "query-view-table.e2e.ts:221",
+      },
+    );
     await obRun(
       run.vaultId,
       async ({ app }, { __typedArg0 }) => {
@@ -553,36 +477,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { __typedArg0: annotationAttachment.key },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              String(
-                app.workspace
-                  .getLeavesOfType("pdf")
-                  .filter(
-                    (l) =>
-                      (l.view as import("obsidian").FileView).file?.name ===
-                      __typedArg0,
-                  ).length,
-              ),
-            );
-          },
-          { __typedArg0: pdfName },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:230",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: String(before + 2),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        return app.workspace
+          .getLeavesOfType("pdf")
+          .filter(
+            (l) =>
+              (l.view as import("obsidian").FileView).file?.name ===
+              __typedArg0,
+          ).length;
+      },
+      { __typedArg0: pdfName },
+      {
+        ready: (value) => value === before + 2,
+        what: "query-view-table.e2e.ts:230",
+      },
+    );
     expect(
       await obRun(
         run.vaultId,
@@ -1138,30 +1049,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // An empty cell is a click target across the whole cell, so the first
     // value of a property goes in with one click (bug A).
     await click({ key: tieSecond, name: "zt-status", part: "td" });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  "[data-query-vault-input]",
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:507",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches("[data-query-vault-input]") ??
+          false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:507" },
+    );
     await typeText("to-read");
     await key("Enter");
     await frontmatterWhen(
@@ -1239,30 +1137,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       );
       await click({ key: tieFirst, name });
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async (_context) => {
-              return String(
-                String(
-                  activeDocument.activeElement?.matches(
-                    "[data-query-vault-input]",
-                  ) ?? false,
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-view-table.e2e.ts:531",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async (_context) => {
+          return (
+            activeDocument.activeElement?.matches("[data-query-vault-input]") ??
+            false
+          );
+        },
+        undefined,
+        { what: "query-view-table.e2e.ts:531" },
+      );
       const editLine = Number(
         await obRun(
           run.vaultId,
@@ -1358,85 +1243,60 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await sameLine(name);
       await key("Escape");
       if (
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async (_context) => {
-              return String(
-                String(
-                  !!activeDocument.querySelector<HTMLElement>(
-                    "[data-query-vault-editor]",
-                  )!,
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-view-table.e2e.ts:551",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "false", tries: 5 })
-      )
-        continue;
-      await key("Escape");
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async (_context) => {
-              return String(
-                String(
-                  !!activeDocument.querySelector<HTMLElement>(
-                    "[data-query-vault-editor]",
-                  )!,
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-view-table.e2e.ts:556",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "false" }),
-      ).toBe(true);
-    }
-    await sameLine("zt-status");
-    // The vault's values for the property show as the edit starts, before
-    // a key is typed, as in a Bases cell (#1531): those that match the text.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
+        await obRunUntil(
           run.vaultId,
           async (_context) => {
-            return String(
-              [
-                ...activeDocument.querySelectorAll<HTMLElement>(
-                  ".suggestion-container .suggestion-item",
-                ),
-              ]
-                .map((item) => item.textContent)
-                .join("|"),
-            );
+            return !!activeDocument.querySelector<HTMLElement>(
+              "[data-query-vault-editor]",
+            )!;
           },
           undefined,
           {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:563",
+            ready: (value) => value === false,
+            tries: 5,
+            what: "query-view-table.e2e.ts:551",
           },
         ).then(
           () => true,
           () => false,
-        ))({ expected: "unread" }),
-    ).toBe(true);
+        )
+      )
+        continue;
+      await key("Escape");
+      await obRunUntil(
+        run.vaultId,
+        async (_context) => {
+          return !!activeDocument.querySelector<HTMLElement>(
+            "[data-query-vault-editor]",
+          )!;
+        },
+        undefined,
+        {
+          ready: (value) => value === false,
+          what: "query-view-table.e2e.ts:556",
+        },
+      );
+    }
+    await sameLine("zt-status");
+    // The vault's values for the property show as the edit starts, before
+    // a key is typed, as in a Bases cell (#1531): those that match the text.
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return [
+          ...activeDocument.querySelectorAll<HTMLElement>(
+            ".suggestion-container .suggestion-item",
+          ),
+        ]
+          .map((item) => item.textContent)
+          .join("|");
+      },
+      undefined,
+      {
+        ready: (value) => value === "unread",
+        what: "query-view-table.e2e.ts:563",
+      },
+    );
     // The field's text, selected, is replaced by what is typed; it matches
     // vault values, and Shift+Enter keeps the text over the highlighted one.
     await obRun(
@@ -1469,85 +1329,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // outside the Table takes it (bug B). Backspace in the empty field
     // selects the last item, as in a Bases list cell.
     await click({ key: tieFirst, name: "zt-projects" });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  "[data-query-vault-input]",
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:596",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches("[data-query-vault-input]") ??
+          false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:596" },
+    );
     await typeText("c");
     await key("Enter");
     await key("Backspace");
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  '[data-query-vault-chip="c"]',
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:603",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches(
+            '[data-query-vault-chip="c"]',
+          ) ?? false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:603" },
+    );
     // While the pill's menu stands it holds the keys: Delete removes no
     // item, and Escape hides the menu alone, its Scope above the menu's own
     // (#1668). The next Escape is the pill's, which gives focus to the field.
     await key("F10", ["shift"]);
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:611",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return !!activeDocument.querySelector<HTMLElement>("body > .menu")!;
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:611" },
+    );
     expect(
       await obRun(
         run.vaultId,
@@ -1580,28 +1401,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("true");
     await key("Escape");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:623",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "false" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return !!activeDocument.querySelector<HTMLElement>("body > .menu")!;
+      },
+      undefined,
+      {
+        ready: (value) => value === false,
+        what: "query-view-table.e2e.ts:623",
+      },
+    );
     expect(
       await obRun(
         run.vaultId,
@@ -1618,55 +1428,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("true");
     await key("Escape");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  "[data-query-vault-input]",
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:628",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches("[data-query-vault-input]") ??
+          false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:628" },
+    );
     await key("Backspace");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  '[data-query-vault-chip="c"]',
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:632",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches(
+            '[data-query-vault-chip="c"]',
+          ) ?? false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:632" },
+    );
     // A chip edits in place from its menu, as in a Bases list cell: a
     // right click opens it, Edit makes the chip's text a field, and a comma
     // stays inside the item.
@@ -1679,34 +1464,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "right",
     );
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !![
-                  ...activeDocument.querySelectorAll<HTMLElement>(
-                    "body > .menu .menu-item",
-                  ),
-                ].find((entry) => entry.textContent === __typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: run.m.query_view_vault_chip_edit() },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:643",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return !![
+          ...activeDocument.querySelectorAll<HTMLElement>(
+            "body > .menu .menu-item",
+          ),
+        ].find((entry) => entry.textContent === __typedArg0);
+      },
+      { __typedArg0: run.m.query_view_vault_chip_edit() },
+      { what: "query-view-table.e2e.ts:643" },
+    );
     expect(
       await obRun(
         run.vaultId,
@@ -1717,30 +1486,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("ready");
     await click({ menuLabel: run.m.query_view_vault_chip_edit() });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  "[data-query-vault-chip-input]",
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:650",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches(
+            "[data-query-vault-chip-input]",
+          ) ?? false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:650" },
+    );
     await typeText(", d");
     expect(
       await ((options: { expected: string; tries?: number }) =>
@@ -1767,30 +1524,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ))({ expected: "c, d" }),
     ).toBe(true);
     await key("Enter");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  '[data-query-vault-chip="c, d"]',
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:666",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches(
+            '[data-query-vault-chip="c, d"]',
+          ) ?? false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:666" },
+    );
     // A click on an empty spot of the view, outside the Table.
     expect(
       await obRun(
@@ -1850,30 +1595,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The first edit of a row with no note creates the note, then writes
     // the value to it.
     await click({ key: fresh, name: "zt-status", part: "td" });
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context) => {
-            return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  "[data-query-vault-input]",
-                ) ?? false,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-table.e2e.ts:690",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context) => {
+        return (
+          activeDocument.activeElement?.matches("[data-query-vault-input]") ??
+          false
+        );
+      },
+      undefined,
+      { what: "query-view-table.e2e.ts:690" },
+    );
     await typeText("queued");
     await key("Enter");
     // Where several Profiles fit the Item, the prompt asks; its first

@@ -125,50 +125,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     // An ordinary user action (the Community Plugins toggle), not a bypass —
     // it makes the plugin re-read data.json from disk.
-    const toggled = await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ app }) => {
-          return String(
-            await app.plugins
-              .disablePlugin("zotlit")
-              .then(function () {
-                return app.plugins.enablePlugin("zotlit");
-              })
-              .then(function () {
-                return true;
-              }),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "query-cli-scope.e2e.ts:78",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 20 });
-    expect(toggled).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return await app.plugins
+          .disablePlugin("zotlit")
+          .then(function () {
+            return app.plugins.enablePlugin("zotlit");
+          })
+          .then(function () {
+            return true;
+          });
+      },
+      undefined,
+      { tries: 20, what: "query-cli-scope.e2e.ts:78" },
+    );
 
-    const reloaded = await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        run.vaultId,
-        async ({ app }) => {
-          return String(String("zotlit" in app.plugins.plugins));
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "query-cli-scope.e2e.ts:85",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" });
-    expect(reloaded).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return "zotlit" in app.plugins.plugins;
+      },
+      undefined,
+      { what: "query-cli-scope.e2e.ts:85" },
+    );
 
     // Dispatched as a registered CLI command, not `eval` — the way a real
     // caller would invoke it. Retried a few times: a window fresh off a
@@ -220,48 +200,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           undefined,
         ),
       ).toBe("1");
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }) => {
-              return String(String(zotlit.services.zoteroReads.state));
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:135",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "ready" }),
-      ).toBe(true);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-              return String(
-                await zotlit.services.citationLookup
-                  .read({ indexedKeys: [__typedArg0] })
-                  .then(function (answer) {
-                    return String(answer.citekeyOf(__typedArg1));
-                  }),
-              );
-            },
-            { __typedArg0: targetItem.key, __typedArg1: targetItem.key },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:142",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: targetItem.citationKey! }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.zoteroReads.state;
+        },
+        undefined,
+        {
+          ready: (value) => value === "ready",
+          what: "query-cli-scope.e2e.ts:135",
+        },
+      );
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+          return await zotlit.services.citationLookup
+            .read({ indexedKeys: [__typedArg0] })
+            .then(function (answer) {
+              return String(answer.citekeyOf(__typedArg1));
+            });
+        },
+        { __typedArg0: targetItem.key, __typedArg1: targetItem.key },
+        {
+          ready: (value) => value === targetItem.citationKey!,
+          what: "query-cli-scope.e2e.ts:142",
+        },
+      );
       // Termination emits no browser error event: liveness must detect it.
       await obRun(
         run.vaultId,
@@ -278,24 +242,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }) => {
-              return String(String(zotlit.services.citationLookup.status));
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:156",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "failed", tries: 160 }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.citationLookup.status;
+        },
+        undefined,
+        {
+          ready: (value) => value === "failed",
+          tries: 160,
+          what: "query-cli-scope.e2e.ts:156",
+        },
+      );
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
@@ -307,24 +265,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }) => {
-              return String(String(zotlit.services.zoteroReads.state));
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:167",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "ready" }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.zoteroReads.state;
+        },
+        undefined,
+        {
+          ready: (value) => value === "ready",
+          what: "query-cli-scope.e2e.ts:167",
+        },
+      );
       // SearchItems hydrates its hits from SQLite in the interactive worker.
       const hits = JSON.parse(
         await obRun(
@@ -347,52 +298,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
         },
       ]);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }) => {
-              return String(String(zotlit.services.citationLookup.status));
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:189",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "fresh" }),
-      ).toBe(true);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-              return String(
-                await zotlit.services.citationLookup
-                  .whenResolved()
-                  .then(function () {
-                    return zotlit.services.citationLookup
-                      .read({ indexedKeys: [__typedArg0] })
-                      .then(function (answer) {
-                        return String(answer.citekeyOf(__typedArg1));
-                      });
-                  }),
-              );
-            },
-            { __typedArg0: targetItem.key, __typedArg1: targetItem.key },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:196",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: targetItem.citationKey! }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.citationLookup.status;
+        },
+        undefined,
+        {
+          ready: (value) => value === "fresh",
+          what: "query-cli-scope.e2e.ts:189",
+        },
+      );
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+          return await zotlit.services.citationLookup
+            .whenResolved()
+            .then(function () {
+              return zotlit.services.citationLookup
+                .read({ indexedKeys: [__typedArg0] })
+                .then(function (answer) {
+                  return String(answer.citekeyOf(__typedArg1));
+                });
+            });
+        },
+        { __typedArg0: targetItem.key, __typedArg1: targetItem.key },
+        {
+          ready: (value) => value === targetItem.citationKey!,
+          what: "query-cli-scope.e2e.ts:196",
+        },
+      );
       // Hold the lookup request so unload must cancel the pending worker read.
       await obRun(
         run.vaultId,
@@ -425,27 +360,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ page: pageHelpers }) => {
-              var record = pageHelpers.scratch.zotlitE2EWorkers;
-              return String(String(record!.heldSnapshot));
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli-scope.e2e.ts:220",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: "true",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          return record!.heldSnapshot;
+        },
+        undefined,
+        { what: "query-cli-scope.e2e.ts:220" },
+      );
       // Unload ends the recovered worker and its pending citation read.
       await obRun(
         run.vaultId,
@@ -458,33 +381,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
       );
-      const ended = await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ page: pageHelpers }) => {
-            var record = pageHelpers.scratch.zotlitE2EWorkers;
-            return String(
-              String(
-                record!.spawned
-                  .filter(function (entry) {
-                    return entry.name === "zotlit-zotero-reads";
-                  })
-                  .every(function (entry) {
-                    return record!.ended.has(entry.worker);
-                  }),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli-scope.e2e.ts:229",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true", tries: 120 });
+      const ended = await obRunUntil(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          var record = pageHelpers.scratch.zotlitE2EWorkers;
+          return record!.spawned
+            .filter(function (entry) {
+              return entry.name === "zotlit-zotero-reads";
+            })
+            .every(function (entry) {
+              return record!.ended.has(entry.worker);
+            });
+        },
+        undefined,
+        { tries: 120, what: "query-cli-scope.e2e.ts:229" },
+      ).then(
+        () => true,
+        () => false,
+      );
       expect(
         ended,
         await obRun(

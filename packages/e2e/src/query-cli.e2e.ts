@@ -1685,29 +1685,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .get(targetItem.itemID) as { dateModified: string };
     })();
     const finds = (query: string) =>
-      ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: query, __typedArg1: targetItem.itemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1621",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" });
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+          var hits = await zotlit.services.itemLookup.search(__typedArg0);
+          return hits.some(function (hit) {
+            return hit.item.itemID === __typedArg1;
+          });
+        },
+        { __typedArg0: query, __typedArg1: targetItem.itemID },
+        { what: "query-cli.e2e.ts:1621" },
+      ).then(
+        () => true,
+        () => false,
+      );
 
     edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
     cleanup.defer(async () => {
@@ -1716,26 +1707,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(await finds(targetItem.title)).toBe(true);
     });
     await signal();
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ page: pageHelpers }) => {
-            return String(String(pageHelpers.scratch.zotlitE2EChanged! >= 1));
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1635",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ page: pageHelpers }) => {
+        return pageHelpers.scratch.zotlitE2EChanged! >= 1;
+      },
+      undefined,
+      { what: "query-cli.e2e.ts:1635" },
+    );
     expect(await finds("zqxv")).toBe(true);
     expect(
       await obRun(
@@ -1788,33 +1767,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       added[Symbol.dispose]();
       await signalDatabaseUpdated(run.vaultId);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-              var hits = await zotlit.services.itemLookup.search(__typedArg0);
-              return String(
-                String(
-                  hits.some(function (hit) {
-                    return hit.item.itemID === __typedArg1;
-                  }),
-                ),
-              );
-            },
-            { __typedArg0: lastTitleQuery, __typedArg1: lastItemID },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli.e2e.ts:1669",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: "false",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+          var hits = await zotlit.services.itemLookup.search(__typedArg0);
+          return hits.some(function (hit) {
+            return hit.item.itemID === __typedArg1;
+          });
+        },
+        { __typedArg0: lastTitleQuery, __typedArg1: lastItemID },
+        { ready: (value) => value === false, what: "query-cli.e2e.ts:1669" },
+      );
     });
     await signalDatabaseUpdated(run.vaultId);
     // Until the build completes, the held index answers: a known Item stays
@@ -1979,32 +1942,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           undefined,
         ),
       ).toBe("true");
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async (_context, { __typedArg0 }) => {
-              return String(
-                String(
-                  Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(
-                      ".modal button",
-                    ),
-                  ).some((button) => button.textContent.trim() === __typedArg0),
-                ),
-              );
-            },
-            { __typedArg0: run.m.batch_update_confirm_button() },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli.e2e.ts:1746",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async (_context, { __typedArg0 }) => {
+          return Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(".modal button"),
+          ).some((button) => button.textContent.trim() === __typedArg0);
+        },
+        { __typedArg0: run.m.batch_update_confirm_button() },
+        { what: "query-cli.e2e.ts:1746" },
+      );
       const requests = JSON.parse(
         await obRun(
           run.vaultId,
@@ -2123,47 +2070,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The list matches the final query: its Item comes first. The popup is
     // `aria-busy` while its rows answer an earlier query.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(
-                    ".suggestion-container",
-                  ),
-                ).at(-1) &&
-                  !Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(
-                      ".suggestion-container",
-                    ),
-                  )
-                    .at(-1)!
-                    .hasAttribute("aria-busy") &&
-                  !!Array.from(
-                    activeDocument.querySelectorAll<HTMLElement>(
-                      ".suggestion-container",
-                    ),
-                  )
-                    .at(-1)!
-                    .querySelector<HTMLElement>(".suggestion-item")
-                    ?.textContent.includes(__typedArg0),
-              ),
-            );
-          },
-          { __typedArg0: annotationItem.title },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1801",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { __typedArg0 }) => {
+        return (
+          !!Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          ).at(-1) &&
+          !Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          )
+            .at(-1)!
+            .hasAttribute("aria-busy") &&
+          !!Array.from(
+            activeDocument.querySelectorAll<HTMLElement>(
+              ".suggestion-container",
+            ),
+          )
+            .at(-1)!
+            .querySelector<HTMLElement>(".suggestion-item")
+            ?.textContent.includes(__typedArg0)
+        );
+      },
+      { __typedArg0: annotationItem.title },
+      { what: "query-cli.e2e.ts:1801" },
+    );
     await obRun(
       run.vaultId,
       async (_context) => {
@@ -2187,35 +2122,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
-            return String(
-              (
-                app.workspace.getLeavesOfType("markdown").find(function (leaf) {
-                  return (
-                    (leaf.view as import("obsidian").FileView).file?.path ===
-                    __typedArg0
-                  );
-                })!.view as import("obsidian").MarkdownView
-              ).editor.getValue(),
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }, { __typedArg0 }) => {
+        return (
+          app.workspace.getLeavesOfType("markdown").find(function (leaf) {
+            return (
+              (leaf.view as import("obsidian").FileView).file?.path ===
+              __typedArg0
             );
-          },
-          { __typedArg0: source },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1812",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: `[@${annotationItem.citationKey}]`,
-      }),
-    ).toBe(true);
+          })!.view as import("obsidian").MarkdownView
+        ).editor.getValue();
+      },
+      { __typedArg0: source },
+      {
+        ready: (value) => value === `[@${annotationItem.citationKey}]`,
+        what: "query-cli.e2e.ts:1812",
+      },
+    );
   }, 180_000);
 
   it("finds a word inside a Chinese title once the Chinese Segmenter is installed, with no reload", async () => {
@@ -2302,31 +2226,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     await signalDatabaseUpdated(run.vaultId);
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: "长江流域", __typedArg1: added.firstItemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1850",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+        var hits = await zotlit.services.itemLookup.search(__typedArg0);
+        return hits.some(function (hit) {
+          return hit.item.itemID === __typedArg1;
+        });
+      },
+      { __typedArg0: "长江流域", __typedArg1: added.firstItemID },
+      { what: "query-cli.e2e.ts:1850" },
+    );
     // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
     expect(
       await obRun(
@@ -2381,31 +2291,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { timeoutMs: 120000 },
       ),
     ).toBe("installed");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: "流域", __typedArg1: added.firstItemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1870",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+        var hits = await zotlit.services.itemLookup.search(__typedArg0);
+        return hits.some(function (hit) {
+          return hit.item.itemID === __typedArg1;
+        });
+      },
+      { __typedArg0: "流域", __typedArg1: added.firstItemID },
+      { what: "query-cli.e2e.ts:1870" },
+    );
 
     await obRun(
       run.vaultId,
@@ -2420,31 +2316,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
-            var hits = await zotlit.services.itemLookup.search(__typedArg0);
-            return String(
-              String(
-                hits.some(function (hit) {
-                  return hit.item.itemID === __typedArg1;
-                }),
-              ),
-            );
-          },
-          { __typedArg0: "流域", __typedArg1: added.firstItemID },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-cli.e2e.ts:1878",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "false" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+        var hits = await zotlit.services.itemLookup.search(__typedArg0);
+        return hits.some(function (hit) {
+          return hit.item.itemID === __typedArg1;
+        });
+      },
+      { __typedArg0: "流域", __typedArg1: added.firstItemID },
+      { ready: (value) => value === false, what: "query-cli.e2e.ts:1878" },
+    );
     expect(
       await obRun(
         run.vaultId,
@@ -2570,30 +2452,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            run.vaultId,
-            async ({ app }) => {
-              return String(
-                await app.vault.adapter
-                  .exists(
-                    `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
-                  )
-                  .then(String),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "query-cli.e2e.ts:1921",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return await app.vault.adapter
+            .exists(
+              `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
+            )
+            .then(String);
+        },
+        undefined,
+        { ready: (value) => value === "true", what: "query-cli.e2e.ts:1921" },
+      );
       // At `debug`, the worker's read snapshot and Item Index records reach the file.
       expect(
         await waitFor(

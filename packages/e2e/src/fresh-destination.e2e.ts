@@ -77,26 +77,16 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       },
       { __typedArg0: first.path },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:customize-note-template"),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:75",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById(
+          "zotlit:customize-note-template",
+        );
+      },
+      undefined,
+      { what: "fresh-destination.e2e.ts:75" },
+    );
     await changeNativeAnnotationCallout(vaultId, {
       view: {
         path: await obRun(
@@ -127,64 +117,38 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         { __typedArg0: first.path },
       );
       await openProfilesSettings(vaultId, "settings_page_profiles");
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ app, page }, { __typedArg0, __typedArg1 }) => {
-              const { press } = page;
-              var settings = app.setting.containerEl;
-              var button = Array.from(
-                settings.querySelectorAll<HTMLButtonElement>(
-                  "[aria-label],button",
-                ),
-              ).find(
-                (el) =>
-                  el.getAttribute("aria-label") === __typedArg0 ||
-                  el.textContent.trim() === __typedArg1,
-              );
-              if (!button || button.disabled) return String(false);
-              press(button, "Add profile");
-              return String(true);
-            },
-            {
-              __typedArg0: m.settings_profile_add(),
-              __typedArg1: m.settings_profile_add(),
-            },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "fresh-destination.e2e.ts:97",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async (_context, { __typedArg0 }) => {
-              return String(
-                String(
-                  Array.from(document.querySelectorAll(".modal-title")).some(
-                    (el) => el.textContent === __typedArg0,
-                  ),
-                ),
-              );
-            },
-            { __typedArg0: m.settings_profile_add() },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "fresh-destination.e2e.ts:104",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+          const { press } = page;
+          var settings = app.setting.containerEl;
+          var button = Array.from(
+            settings.querySelectorAll<HTMLButtonElement>("[aria-label],button"),
+          ).find(
+            (el) =>
+              el.getAttribute("aria-label") === __typedArg0 ||
+              el.textContent.trim() === __typedArg1,
+          );
+          if (!button || button.disabled) return false;
+          press(button, "Add profile");
+          return true;
+        },
+        {
+          __typedArg0: m.settings_profile_add(),
+          __typedArg1: m.settings_profile_add(),
+        },
+        { what: "fresh-destination.e2e.ts:97" },
+      );
+      await obRunUntil(
+        vaultId,
+        async (_context, { __typedArg0 }) => {
+          return Array.from(document.querySelectorAll(".modal-title")).some(
+            (el) => el.textContent === __typedArg0,
+          );
+        },
+        { __typedArg0: m.settings_profile_add() },
+        { what: "fresh-destination.e2e.ts:104" },
+      );
     };
     await openAdd();
     expect(await clickModalButton(vaultId, m.modal_cancel())).toBe(true);
@@ -250,66 +214,40 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       );
     };
     await fill("Default", "books");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context, { __typedArg0, __typedArg1 }) => {
-            var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
-            var status = modal?.querySelector("[role=status]");
-            var button = Array.from(
-              modal?.querySelectorAll("button") ?? [],
-            ).find((el) => el.textContent === __typedArg0);
-            return String(
-              String(
-                status?.textContent === __typedArg1 &&
-                  status.getBoundingClientRect().height > 0 &&
-                  button?.disabled,
-              ),
-            );
-          },
-          {
-            __typedArg0: m.settings_profile_add(),
-            __typedArg1: m.settings_profile_name_invalid(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:142",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context, { __typedArg0, __typedArg1 }) => {
+        var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
+        var status = modal?.querySelector("[role=status]");
+        var button = Array.from(modal?.querySelectorAll("button") ?? []).find(
+          (el) => el.textContent === __typedArg0,
+        );
+        return (
+          status?.textContent === __typedArg1 &&
+          status.getBoundingClientRect().height > 0 &&
+          button?.disabled
+        );
+      },
+      {
+        __typedArg0: m.settings_profile_add(),
+        __typedArg1: m.settings_profile_name_invalid(),
+      },
+      { what: "fresh-destination.e2e.ts:142" },
+    );
     await fill("Books", "books");
     expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
       true,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit }) => {
-            return String(
-              String(
-                zotlit.services.profile.profiles.some(
-                  (p) => p.label === "Books",
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:153",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit }) => {
+        return zotlit.services.profile.profiles.some(
+          (p) => p.label === "Books",
+        );
+      },
+      undefined,
+      { what: "fresh-destination.e2e.ts:153" },
+    );
     const books = JSON.parse(
       await obRun(
         vaultId,
@@ -327,37 +265,25 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(saved).toContain("[!quote]");
     expect(saved).toContain("folder: books");
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }, { __typedArg0, __typedArg1 }) => {
-            var view = page.workbench({ path: __typedArg0 });
-            return String(
-              String(
-                view?.contentEl
-                  .querySelector("[role=tab][aria-selected=true]")
-                  ?.textContent.trim() === __typedArg1 &&
-                  Array.from(view!.contentEl.querySelectorAll("input")).some(
-                    (el) => el.value === "books",
-                  ),
-              ),
-            );
-          },
-          {
-            __typedArg0: books.path,
-            __typedArg1: m.workbench_tab_name_and_folder(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:170",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }, { __typedArg0, __typedArg1 }) => {
+        var view = page.workbench({ path: __typedArg0 });
+        return (
+          view?.contentEl
+            .querySelector("[role=tab][aria-selected=true]")
+            ?.textContent.trim() === __typedArg1 &&
+          Array.from(view!.contentEl.querySelectorAll("input")).some(
+            (el) => el.value === "books",
+          )
+        );
+      },
+      {
+        __typedArg0: books.path,
+        __typedArg1: m.workbench_tab_name_and_folder(),
+      },
+      { what: "fresh-destination.e2e.ts:170" },
+    );
 
     await obRun(
       vaultId,
@@ -375,26 +301,14 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       },
       { __typedArg0: first.path },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context) => {
-            return String(String(activeWindow === window));
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:182",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return activeWindow === window;
+      },
+      undefined,
+      { what: "fresh-destination.e2e.ts:182" },
+    );
     await obRun(
       vaultId,
       async ({ app }) => {
@@ -404,26 +318,14 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context) => {
-            return String(
-              String(!!activeDocument.querySelector(".prompt input")),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:191",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return !!activeDocument.querySelector(".prompt input");
+      },
+      undefined,
+      { what: "fresh-destination.e2e.ts:191" },
+    );
     const kahneman = ITEMS.find(({ itemID }) => itemID === 61)!;
     await selectItemSuggestion(vaultId, kahneman.title, kahneman.key);
     await pressPromptKey(vaultId, "Enter");

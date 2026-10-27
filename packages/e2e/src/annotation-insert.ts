@@ -98,30 +98,16 @@ export async function verifyAnnotationInsert(
         __typedArg5: host,
       },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                !!page.scratch.__zotlitInsertTrial!.view.snapshot.annotations?.some(
-                  (a) => a.key === "FDRFQ7C2",
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-insert.ts:43",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page.scratch.__zotlitInsertTrial!.view.snapshot.annotations?.some(
+          (a) => a.key === "FDRFQ7C2",
+        );
+      },
+      undefined,
+      { what: "annotation-insert.ts:43" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -136,29 +122,15 @@ export async function verifyAnnotationInsert(
         undefined,
       ),
     ).toBe(String(host === "main"));
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                !!page.scratch.__zotlitInsertTrial!.leaf.view.editor?.cm?.dom
-                  .isConnected,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-insert.ts:56",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page.scratch.__zotlitInsertTrial!.leaf.view.editor?.cm?.dom
+          .isConnected;
+      },
+      undefined,
+      { what: "annotation-insert.ts:56" },
+    );
     expect(
       await obRun(
         vaultId,
@@ -176,30 +148,16 @@ export async function verifyAnnotationInsert(
       ),
     ).toBe("true");
     // The cards render once the read lands, a frame after the snapshot.
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }) => {
-            return String(
-              String(
-                !!page.scratch.__zotlitInsertTrial!.view.contentEl.querySelector<HTMLElement>(
-                  '.zt-annot-card[data-zotero-annotation-key="FDRFQ7C2"] [aria-label="More options"]',
-                ),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "annotation-insert.ts:70",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }) => {
+        return !!page.scratch.__zotlitInsertTrial!.view.contentEl.querySelector<HTMLElement>(
+          '.zt-annot-card[data-zotero-annotation-key="FDRFQ7C2"] [aria-label="More options"]',
+        );
+      },
+      undefined,
+      { what: "annotation-insert.ts:70" },
+    );
     for (const mode of [
       "success",
       "ink",
@@ -279,26 +237,14 @@ export async function verifyAnnotationInsert(
         },
         { mode, host },
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }) => {
-              return String(String(page.scratch.__zotlitInsertTrial!.started));
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "annotation-insert.ts:113",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: "true",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return page.scratch.__zotlitInsertTrial!.started;
+        },
+        undefined,
+        { what: "annotation-insert.ts:113" },
+      );
       await obRun(
         vaultId,
         ({ app, page }, { mode }) => {
@@ -345,60 +291,28 @@ export async function verifyAnnotationInsert(
         },
         { mode },
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }, { __typedArg0 }) => {
-              return String(
-                String(
-                  page.scratch.__zotlitInsertTrial!.finished === __typedArg0,
-                ),
-              );
-            },
-            { __typedArg0: mode === "supersede" ? 2 : 1 },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "annotation-insert.ts:128",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({
-          expected: "true",
-        }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }, { __typedArg0 }) => {
+          return page.scratch.__zotlitInsertTrial!.finished === __typedArg0;
+        },
+        { __typedArg0: mode === "supersede" ? 2 : 1 },
+        { what: "annotation-insert.ts:128" },
+      );
       if (mode !== "escape" && mode !== "switch" && mode !== "close") {
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              vaultId,
-              async ({ page }, { __typedArg0 }) => {
-                return String(
-                  String(
-                    page.scratch
-                      .__zotlitInsertTrial!.editor.getValue()
-                      .includes(__typedArg0),
-                  ),
-                );
-              },
-              {
-                __typedArg0:
-                  mode === "disabled"
-                    ? "[Zotero](zotero://"
-                    : "zotlit-excerpt-",
-              },
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "annotation-insert.ts:138",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
+        await obRunUntil(
+          vaultId,
+          async ({ page }, { __typedArg0 }) => {
+            return page.scratch
+              .__zotlitInsertTrial!.editor.getValue()
+              .includes(__typedArg0);
+          },
+          {
+            __typedArg0:
+              mode === "disabled" ? "[Zotero](zotero://" : "zotlit-excerpt-",
+          },
+          { what: "annotation-insert.ts:138" },
+        );
       }
       const text =
         mode === "close"
@@ -442,37 +356,23 @@ export async function verifyAnnotationInsert(
           /\]\] \[@rougierTenSimpleRules2014, \{p\. \d+\}\]/,
         );
         expect(text.split("zotlit-excerpt-")).toHaveLength(2);
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              vaultId,
-              async ({ page }) => {
-                return String(
-                  String(
-                    Array.from(
-                      page.scratch.__zotlitInsertTrial!.editor.cm.dom.querySelectorAll<HTMLImageElement>(
-                        "img",
-                      ),
-                    ).some(
-                      (img) =>
-                        img.src.includes("zotlit-excerpt-") &&
-                        img.complete &&
-                        img.naturalWidth > 0,
-                    ),
-                  ),
-                );
-              },
-              undefined,
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "annotation-insert.ts:173",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
+        await obRunUntil(
+          vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page.scratch.__zotlitInsertTrial!.editor.cm.dom.querySelectorAll<HTMLImageElement>(
+                "img",
+              ),
+            ).some(
+              (img) =>
+                img.src.includes("zotlit-excerpt-") &&
+                img.complete &&
+                img.naturalWidth > 0,
+            );
+          },
+          undefined,
+          { what: "annotation-insert.ts:173" },
+        );
         expect(
           text.startsWith(mode === "edit" ? "user before " : "before "),
         ).toBe(true);

@@ -34,33 +34,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                !!(
-                  app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                    ?.view as AnnotationView | undefined
-                )?.contentEl.querySelector("button.zt-annot-header"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "follow-mode.e2e.ts:30",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return !!(
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.querySelector("button.zt-annot-header");
+      },
+      undefined,
+      { what: "follow-mode.e2e.ts:30" },
+    );
     await obRun(
       run.vaultId,
       async ({ app, page }) => {
@@ -79,33 +64,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                !!(
-                  app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                    ?.view as AnnotationView | undefined
-                )?.contentEl.doc.querySelector(".menu"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "follow-mode.e2e.ts:39",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return !!(
+          app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+            | AnnotationView
+            | undefined
+        )?.contentEl.doc.querySelector(".menu");
+      },
+      undefined,
+      { what: "follow-mode.e2e.ts:39" },
+    );
 
     const report = JSON.parse(
       await obRun(
@@ -193,33 +163,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async ({ app }) => {
-            return String(
-              String(
-                (
-                  app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                    ?.view as AnnotationView | undefined
-                )?.contentEl.doc.querySelector(".menu") === null,
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "follow-mode.e2e.ts:83",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async ({ app }) => {
+        return (
+          (
+            app.workspace.getLeavesOfType("zotero-annotation-view")[0]?.view as
+              | AnnotationView
+              | undefined
+          )?.contentEl.doc.querySelector(".menu") === null
+        );
+      },
+      undefined,
+      { what: "follow-mode.e2e.ts:83" },
+    );
 
     await obRun(
       run.vaultId,

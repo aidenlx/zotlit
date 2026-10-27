@@ -141,28 +141,16 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           __typedArg5: body,
         },
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }) => {
-              return String(
-                !!page.scratch.citationScan!.annotations!.view.contentEl.querySelector(
-                  '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "citation-scan.e2e.ts:73",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return !!page.scratch.citationScan!.annotations!.view.contentEl.querySelector(
+            '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
+          );
+        },
+        undefined,
+        { what: "citation-scan.e2e.ts:73" },
+      );
       await obRun(
         vaultId,
         async ({ app, page }) => {
@@ -201,28 +189,16 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }, { __typedArg0 }) => {
-              return String(
-                page.scratch
-                  .citationScan!.editor!.getValue()
-                  .includes(__typedArg0),
-              );
-            },
-            { __typedArg0: `![](${uri})` },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "citation-scan.e2e.ts:98",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }, { __typedArg0 }) => {
+          return page.scratch
+            .citationScan!.editor!.getValue()
+            .includes(__typedArg0);
+        },
+        { __typedArg0: `![](${uri})` },
+        { what: "citation-scan.e2e.ts:98" },
+      );
       await obRun(
         vaultId,
         async ({ app, page }) => {
@@ -285,38 +261,26 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         expect(group?.occurrences.map((occurrence) => occurrence.form)).toEqual(
           ["citation", "embed"],
         );
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              vaultId,
-              async ({ page }) => {
-                return String(
-                  Array.from(
-                    page.scratch.citationScan!.references!.view.contentEl.querySelectorAll(
-                      "li",
-                    ),
-                  ).some(
-                    (row) =>
-                      row.textContent.includes(
-                        "Ten Simple Rules for Better Figures",
-                      ) &&
-                      Array.from(row.querySelectorAll("[aria-hidden]")).some(
-                        (badge) => badge.textContent === "3",
-                      ),
-                  ),
-                );
-              },
-              undefined,
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "citation-scan.e2e.ts:162",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
+        await obRunUntil(
+          vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page.scratch.citationScan!.references!.view.contentEl.querySelectorAll(
+                "li",
+              ),
+            ).some(
+              (row) =>
+                row.textContent.includes(
+                  "Ten Simple Rules for Better Figures",
+                ) &&
+                Array.from(row.querySelectorAll("[aria-hidden]")).some(
+                  (badge) => badge.textContent === "3",
+                ),
+            );
+          },
+          undefined,
+          { what: "citation-scan.e2e.ts:162" },
+        );
         return { references: references.entries, uses: group!.occurrences };
       };
       await expect
@@ -401,28 +365,18 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }) => {
-              return String(
-                page.scratch.citationScan!.sessions.length === 2 &&
-                  page.scratch.citationScan!.sessions[0] !==
-                    page.scratch.citationScan!.sessions[1],
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "citation-scan.e2e.ts:212",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return (
+            page.scratch.citationScan!.sessions.length === 2 &&
+            page.scratch.citationScan!.sessions[0] !==
+              page.scratch.citationScan!.sessions[1]
+          );
+        },
+        undefined,
+        { what: "citation-scan.e2e.ts:212" },
+      );
       expect(await readAnswers()).toEqual(before);
       // New offsets prove the replacement worker parsed a new edit, rather than serving held records alone.
       await obRun(

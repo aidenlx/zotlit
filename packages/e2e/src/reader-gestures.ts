@@ -182,30 +182,16 @@ export async function openPdfWithAnnotationView(
     },
     { __typedArg0: attachmentPath },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              !!zotlit.services.pdfAnnotationEditor.bindings.find(
-                (b) => b.filePath === __typedArg0,
-              )?.session,
-            ),
-          );
-        },
-        { __typedArg0: attachmentPath },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "reader-gestures.ts:198",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }, { __typedArg0 }) => {
+      return !!zotlit.services.pdfAnnotationEditor.bindings.find(
+        (b) => b.filePath === __typedArg0,
+      )?.session;
+    },
+    { __typedArg0: attachmentPath },
+    { what: "reader-gestures.ts:198" },
+  );
   await obRun(
     vaultId,
     async ({ app }) => {

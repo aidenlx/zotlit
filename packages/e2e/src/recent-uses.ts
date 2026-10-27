@@ -431,24 +431,14 @@ export async function verifyRecentUses(
   for (const use of Object.values(JSON.parse(ledger)) as { instant: string }[])
     expect(pluginData).not.toContain(use.instant);
   await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }) => {
-          return String(String(!!zotlit.services));
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "recent-uses.ts:140",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return !!zotlit.services;
+    },
+    undefined,
+    { what: "recent-uses.ts:140" },
+  );
   expect(await timeline()).toEqual(beforeReload);
   expect(
     await obRun(
