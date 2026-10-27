@@ -70,11 +70,6 @@ const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
       "A view on view atoms keeps its state in a per-leaf model of atoms (ADR 0082).",
   }),
 );
-const plainAdapterPattern = {
-  group: ["@/services/*/plain"],
-  message:
-    "A view on view atoms reads the service tag through an atom (ADR 0082).",
-};
 
 const runtimeImports = {
   ...commonImports,
@@ -451,19 +446,10 @@ export default defineConfig({
       rules: { "zotlit-services/temporal-in-effect": "error" },
     },
     {
-      // The edge between Effect and plain code: a plain adapter hands Effect
-      // values to plain callers as Temporal; @zotlit/db rows carry
-      // Temporal.Instant, the date type of the template contract, and
-      // instant-codec.ts codes it for the ZoteroReads wire.
-      files: [
-        "src/services/**/plain.ts",
-        "src/services/zotero-reads/instant-codec.ts",
-      ],
+      // @zotlit/db rows carry Temporal.Instant, the date type of the template
+      // contract, and instant-codec.ts codes it for the ZoteroReads wire.
+      files: ["src/services/zotero-reads/instant-codec.ts"],
       rules: { "zotlit-services/temporal-in-effect": "off" },
-    },
-    {
-      files: ["src/services/**/plain.ts"],
-      rules: { "zotlit-services/plain-adapter-streams": "error" },
     },
     {
       // Legacy emitters, written before no-nanoevents. A file moves off this
@@ -529,30 +515,6 @@ export default defineConfig({
           {
             ...runtimeImports,
             paths: [...runtimeImports.paths, ...viewStorePaths],
-          },
-        ],
-      },
-    },
-    {
-      // Views on view atoms with no Plain dependency left.
-      files: [
-        "src/views/template-data-explorer/**",
-        "src/views/library/**",
-        "src/views/query-view/**",
-        "src/views/annot-view/**",
-        "src/views/cited-by/**",
-        "src/views/references/**",
-        "src/views/note-preview/**",
-        "src/views/template-workbench/**",
-        "src/views/welcome/**",
-      ],
-      rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            ...runtimeImports,
-            paths: [...runtimeImports.paths, ...viewStorePaths],
-            patterns: [...runtimeImports.patterns, plainAdapterPattern],
           },
         ],
       },

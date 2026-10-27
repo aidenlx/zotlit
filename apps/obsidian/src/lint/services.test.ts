@@ -12,7 +12,6 @@ import {
   noPlainServiceAdapters,
   layerStreamConsumer,
   obsidianCapabilities,
-  plainAdapterStreams,
   scopeClosed,
   scopedRunner,
   serviceTagId,
@@ -174,39 +173,6 @@ tester.run("no-nanoevents", noNanoevents, {
     {
       code: 'const events = await import("nanoevents");',
       errors: [{ messageId: "nanoevents" }],
-    },
-  ],
-});
-
-tester.run("plain-adapter-streams", plainAdapterStreams, {
-  valid: [
-    // The adapter hands out the Stream; plain code subscribes through the helper.
-    `export function plainProfile(runtime) {
-      return { changes: Profile.changes, current: () => runtime.runSync(Profile.current) };
-    }`,
-    `const stop = subscribe(runtime, adapter.changes, refresh);`,
-    "interface PlainProfile { readonly changes: Stream.Stream<Snapshot>; }",
-  ],
-  invalid: [
-    {
-      code: "const adapter = { on(event, callback) { return () => {}; } };",
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: "const adapter = { subscribe: (callback) => () => {} };",
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: 'interface PlainIndex { on(event: "changed", callback: () => void): () => void; }',
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: "interface PlainSettings { subscribe: (callback: () => void) => () => void; }",
-      errors: [{ messageId: "emitter" }],
-    },
-    {
-      code: "class PlainLookup { on() {} }",
-      errors: [{ messageId: "emitter" }],
     },
   ],
 });

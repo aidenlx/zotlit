@@ -25,7 +25,7 @@ export type PairedScope = Scope & {
 
 declare module "./page-helpers.ts" {
   interface PageScratch {
-    __zlPendingDatabaseRead?: {
+    __zlHeldAnnotationQuery?: {
       changed: boolean;
       heldReads: number;
       restore: (() => void) | null;

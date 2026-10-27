@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Exit } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { expect } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
@@ -67,7 +67,9 @@ it.effect("interrupts pending native reads when the runtime closes", () =>
       await started.promise;
       await queries[Symbol.asyncDispose]();
       for (const exit of await Promise.all([asking, reading, composing]))
-        expect(Exit.hasInterrupts(exit)).toBe(true);
+        expect(
+          Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+        ).toBe(true);
       gate.resolve("late");
       expect(queries.client.getQueryData(["pending"])).toBeUndefined();
     });

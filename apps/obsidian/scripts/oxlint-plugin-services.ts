@@ -373,58 +373,6 @@ export const noNanoevents: Rule = {
   },
 };
 
-const EMITTER_KEYS = new Set(["on", "subscribe"]);
-
-/** The name of a non-computed property, method, or signature key. */
-function keyName(node: EventNode): string | undefined {
-  const key = node.computed ? undefined : node.key;
-  if (key?.type === "Identifier") return String(key.name);
-  if (key?.type === "Literal" && typeof key.value === "string")
-    return key.value;
-  return undefined;
-}
-
-/**
- * A plain adapter (`<service>/plain.ts`, policies/services.md → Plain adapter)
- * hands out its service's Streams and state. Plain code subscribes with `subscribe(runtime, stream, callback)`
- * from `@/lib/effect-stream`. The helper attaches before returning, isolates
- * each callback's failures, and goes quiet after runtime disposal. An
- * adapter's own `on`/`subscribe` would each have to re-earn those guarantees.
- */
-export const plainAdapterStreams: Rule = {
-  meta: {
-    type: "problem",
-    docs: {
-      description:
-        "Forbid emitter-shaped on/subscribe members on plain adapters.",
-    },
-    messages: {
-      emitter:
-        "Expose the Stream or state instead of `{{name}}`; plain code subscribes with subscribe(runtime, stream, callback) from @/lib/effect-stream (policies/events.md).",
-    },
-    schema: [],
-  },
-  create(context) {
-    const check = (node: unknown) => {
-      const member = node as EventNode;
-      const name = keyName(member);
-      if (name && EMITTER_KEYS.has(name))
-        context.report({
-          node: member.key as never,
-          messageId: "emitter",
-          data: { name },
-        });
-    };
-    return {
-      Property: check,
-      MethodDefinition: check,
-      PropertyDefinition: check,
-      TSMethodSignature: check,
-      TSPropertySignature: check,
-    };
-  },
-};
-
 const CAPABILITY_TAGS: Readonly<Record<string, string>> = {
   vault: "Vault tag (@/lib/obsidian-vault)",
   metadataCache: "MetadataCache tag (@/lib/obsidian-metadata-cache)",
@@ -625,8 +573,9 @@ function isStateTag(node: AstNode | undefined): boolean {
 }
 
 /**
- * A plain adapter asks whether its runtime is released through `isScopeClosed`
- * from `@/lib/effect-scope`, so every adapter reads release the same way.
+ * Code that asks whether its Scope is released reads it through
+ * `isScopeClosed` from `@/lib/effect-scope`, so every caller reads release the
+ * same way.
  */
 export const scopeClosed: Rule = {
   meta: {
@@ -742,7 +691,7 @@ const CAPTURED_RUNNERS = new Set(["runPromiseWith", "runPromiseExitWith"]);
  * pending runs going, and a run after unload answers from the released
  * services. A service that keeps a runner for later callbacks builds it on a
  * Scope instead — `scopedBridge`, `forkedBridge` for a write runner, the
- * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in a plain adapter —
+ * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in the container —
  * so unload stops what is pending (`policies/unload.md`). oxlint.config.ts
  * turns the rule on for `src/services/**`, which leaves out the helpers that
  * build those runners (`lib/effect-bridge.ts`, `lib/effect-scope.ts`).
@@ -1024,16 +973,26 @@ export const temporalInEffect: Rule = {
   },
 };
 
-/** Service consumers use the native tag; adapters cannot return through fixtures. */
+/**
+ * Rejects an import or re-export of a `<service>/plain` module under
+ * `src/services/`, in source, tests and fixtures alike. A caller reads the
+ * service's Effect tag: Effect code `yield*`s it, and code outside Effect holds
+ * the service that `build.ts` reads once and runs each call through the
+ * container's `bridge`. Every run then lives in a Scope, so unload stops it and
+ * the caller gets its released answer from one helper, where each per-service
+ * adapter re-implemented that answer on its own runtime
+ * (policies/services.md → Bridge, policies/unload.md).
+ */
 export const noPlainServiceAdapters: Rule = {
   meta: {
     type: "problem",
     docs: {
-      description: "Read native service contracts instead of plain adapters.",
+      description:
+        "Forbid a `<service>/plain` adapter; read the service's Effect tag.",
     },
     messages: {
       adapter:
-        "Read the Effect service tag. Plain service adapters have been retired (#1863).",
+        "Read the Effect service tag, and from outside Effect run its calls through the container's `bridge` (policies/services.md → Bridge).",
     },
     schema: [],
   },
@@ -1073,7 +1032,6 @@ export default {
     "no-nanoevents": noNanoevents,
     "no-plain-service-adapters": noPlainServiceAdapters,
     "obsidian-capabilities": obsidianCapabilities,
-    "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
     "scoped-runner": scopedRunner,
     "service-tag-id": serviceTagId,

@@ -11118,15 +11118,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
 
-          // Keep the database replacement pending while the user changes
-          // editors: a refresh must preserve the card's editing capability.
-          await using pendingRead = new AsyncDisposableStack();
-          pendingRead.defer(async () => {
+          // Hold the annotation ItemQuery worker message while the user
+          // changes editors: a refresh must preserve the card's editing
+          // capability.
+          await using heldQuery = new AsyncDisposableStack();
+          heldQuery.defer(async () => {
             await obRun(
               vaultId!,
               async ({ page: pageHelpers }) => {
-                pageHelpers.scratch.__zlPendingDatabaseRead?.restore!();
-                delete pageHelpers.scratch.__zlPendingDatabaseRead;
+                pageHelpers.scratch.__zlHeldAnnotationQuery?.restore!();
+                delete pageHelpers.scratch.__zlHeldAnnotationQuery;
                 return String(true);
               },
               undefined,
@@ -11153,7 +11154,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 off();
                 for (const send of pending.splice(0)) send();
               };
-              pageHelpers.scratch.__zlPendingDatabaseRead = state;
+              pageHelpers.scratch.__zlHeldAnnotationQuery = state;
               Worker.prototype.postMessage = new Proxy(post, {
                 apply: (
                   postTarget,
@@ -11182,8 +11183,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 vaultId!,
                 async ({ page: pageHelpers }) => {
                   return String(
-                    pageHelpers.scratch.__zlPendingDatabaseRead!.changed &&
-                      pageHelpers.scratch.__zlPendingDatabaseRead!.heldReads >
+                    pageHelpers.scratch.__zlHeldAnnotationQuery!.changed &&
+                      pageHelpers.scratch.__zlHeldAnnotationQuery!.heldReads >
                         0,
                   );
                 },
