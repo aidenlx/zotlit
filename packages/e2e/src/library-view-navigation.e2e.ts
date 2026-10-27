@@ -83,36 +83,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       frames: Frame[];
       /** The title's text after each batch of mutations of the card. */
       mutations: (string | null)[];
+      /** Card item reads sent after the worker delay elapsed. */
+      delayedCards: number;
     }
     /**
      * Select the row `from`, or none for `null`, wait for its card, then move
      * the selection to the row `to` by `how`: the arrow key, a click, or the selection set
-     * as "Show in Library" sets it, with each ZotLit Query run held `delay` ms
-     * first, and read each frame the window draws until half a second after
+     * as "Show in Library" sets it, with each ZotLit Query worker request held
+     * `delay` ms first. This reaches both native card reads and the embedded
+     * Query View. Read each frame the window draws until half a second after
      * that.
      */
     const switchCard = async (
       how: "key" | "click" | "show",
       [from, to]: readonly [string | null, string],
       delay: number,
-    ) =>
-      JSON.parse(
+    ) => {
+      const step = JSON.parse(
         await obEval(
           run.vaultId,
           `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];const view=leaf.view;await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});await view.query.settled;const el=view.contentEl;const card=el.querySelector('[data-library-card]');const row=key=>el.querySelector('[data-query-item-row="'+key+'"]');const frame=()=>new Promise(r=>requestAnimationFrame(r));const title=()=>card.querySelector('[data-library-card-title]');await until('rows',()=>row(${JSON.stringify(to)}),10000);${
             from === null
-              ? "view.selection.setState({key:null,card:false});await until('no card',()=>!card.checkVisibility(),10000);await view.card.settled;await frame();await frame();"
-              : `view.selection.setState({key:${JSON.stringify(from)},card:true});await until('card',()=>card.checkVisibility()&&title()?.textContent,10000);await view.card.settled;await frame();await frame();row(${JSON.stringify(from)}).focus({preventScroll:true});`
-          }const sample=()=>{const button=card.querySelector('[data-library-card-action="pdf"]');const box=card.getBoundingClientRect();return{title:title()?title().textContent:null,top:button&&card.checkVisibility()?Math.round(button.getBoundingClientRect().top-box.top):null,cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')),shown:card.checkVisibility()};};const mutations=[];const observer=new MutationObserver(()=>mutations.push(title()?title().textContent:null));observer.observe(card,{childList:true,subtree:true,characterData:true});const frames=[sample()];const service=${services}.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};try{${
+              ? "view.card.registry.set(view.model.selection,{key:null,card:false});await until('no card',()=>!card.checkVisibility(),10000);await view.card.settled;await frame();await frame();"
+              : `view.card.registry.set(view.model.selection,{key:${JSON.stringify(from)},card:true});await until('card',()=>card.checkVisibility()&&title()?.textContent,10000);await view.card.settled;await frame();await frame();row(${JSON.stringify(from)}).focus({preventScroll:true});`
+          }const sample=()=>{const button=card.querySelector('[data-library-card-action="pdf"]');const box=card.getBoundingClientRect();return{title:title()?title().textContent:null,top:button&&card.checkVisibility()?Math.round(button.getBoundingClientRect().top-box.top):null,cards:[...card.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')),shown:card.checkVisibility()};};const mutations=[];const observer=new MutationObserver(()=>mutations.push(title()?title().textContent:null));observer.observe(card,{childList:true,subtree:true,characterData:true});const frames=[sample()];const post=Worker.prototype.postMessage;const pending=new Map();let delayedCards=0;if(${delay}>0)Worker.prototype.postMessage=function(...args){const request=args[0]?.[1];const query=request?.tag==='ItemQuery'?request.payload.job.view:null;const target=${JSON.stringify(to)};if(!query||!(query.from==='items'&&query.limit===1&&query.filter===JSON.stringify([target])+'.contains(indexedKey)'||query.from==='annotations'&&query.context?.item===target))return post.apply(this,args);const worker=this;const send=()=>post.apply(worker,args);const timer=setTimeout(()=>{pending.delete(timer);if(query.from==='items'&&query.limit===1)delayedCards++;send();},${delay});pending.set(timer,send);};try{${
             {
               key: "activeDocument.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));",
               click: `press(row(${JSON.stringify(to)}),'row');`,
               // As "Show in Library" does for a row the list shows.
-              show: `view.selection.setState({key:${JSON.stringify(to)},card:true});`,
+              show: `view.card.registry.set(view.model.selection,{key:${JSON.stringify(to)},card:true});`,
             }[how]
-          }const start=performance.now();while(performance.now()-start<${delay}+600){await frame();frames.push(sample());}await view.card.settled;await frame();frames.push(sample());}finally{service.run=run;observer.disconnect();}return JSON.stringify({from:frames[0].title,to:frames.at(-1).title,frames,mutations});})()`,
+          }const start=performance.now();while(performance.now()-start<${delay}+600){await frame();frames.push(sample());}await view.card.settled;await frame();frames.push(sample());}finally{Worker.prototype.postMessage=post;for(const [timer,send] of pending){clearTimeout(timer);send();}observer.disconnect();}return JSON.stringify({from:frames[0].title,to:frames.at(-1).title,frames,mutations,delayedCards});})()`,
         ),
       ) as Switch;
+      expect(
+        step.delayedCards > 0,
+        "the Reading Card item read crosses the delayed worker boundary when requested",
+      ).toBe(delay > 0);
+      return step;
+    };
 
     /**
      * The card goes from the first paper to the second in one step: its
@@ -270,7 +279,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Over a narrow list.
     await obEval(
       run.vaultId,
-      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];const beside=window.zotlitE2EBeside??=app.workspace.createLeafBySplit(leaf,'vertical');leaf.parent.setDimension(30);beside.parent.setDimension(70);const card=leaf.view.contentEl.querySelector('[data-library-card]');leaf.view.selection.setState({key:${JSON.stringify(rows[0])},card:true});await until('card over the list',()=>card.checkVisibility()&&getComputedStyle(card).position==='absolute',5000);return true;})()`,
+      `(async()=>{${PAGE}const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];const beside=window.zotlitE2EBeside??=app.workspace.createLeafBySplit(leaf,'vertical');leaf.parent.setDimension(30);beside.parent.setDimension(70);const card=leaf.view.contentEl.querySelector('[data-library-card]');leaf.view.card.registry.set(leaf.view.model.selection,{key:${JSON.stringify(rows[0])},card:true});await until('card over the list',()=>card.checkVisibility()&&getComputedStyle(card).position==='absolute',5000);return true;})()`,
     );
     await switches("narrow", true);
   }, 240000);
