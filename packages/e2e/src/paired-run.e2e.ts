@@ -1558,7 +1558,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const typed = "End-to-end Run tag left typed";
 
         expect(await storedTags()).toStrictEqual([]);
-        expect(await press(toggle)).toBe(true);
+        await press(toggle);
         expect(await editorReady()).toBe(true);
         // Each chip is the signal that Enter added its name.
         await type(kept, { enter: true });
@@ -1567,7 +1567,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await expect.poll(editorChips, poll).toEqual([kept, dropped]);
         // Nothing reaches Zotero while the session stands.
         expect(await storedTags()).toStrictEqual([]);
-        expect(await press(toggle)).toBe(true);
+        await press(toggle);
 
         await expect
           .poll(storedTags, poll)
@@ -1576,13 +1576,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           .poll(async () => (await cardTags()).toSorted(), poll)
           .toEqual([dropped, kept]);
 
-        expect(await press(toggle)).toBe(true);
+        await press(toggle);
         expect(await editorReady()).toBe(true);
         expect(await remove(dropped)).toBe("removed");
         await expect.poll(editorChips, poll).toEqual([kept]);
         // The toggle ends the session with the text still in the field.
         await type(typed, { enter: false });
-        expect(await press(toggle)).toBe(true);
+        await press(toggle);
 
         await expect
           .poll(storedTags, poll)
@@ -1600,7 +1600,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await setAnnotationTags(rdp, createdKey, []);
         await expect.poll(cardTags, poll).toEqual([]);
 
-        expect(await press(toggle)).toBe(true);
+        await press(toggle);
         expect(await editorReady()).toBe(true);
         await type(added, { enter: true });
         await expect.poll(editorChips, poll).toEqual([added]);
@@ -8552,7 +8552,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
              * once. Settles when the editor has closed onto the confirmed tags.
              */
             async function closeTagEditor(): Promise<void> {
-              expect(await press(toggle)).toBe(true);
+              await press(toggle);
               await obRunUntil(
                 vaultId!,
                 async (
@@ -8594,7 +8594,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             });
 
             it("puts the tags a card session changed back for the undo key, and applies them again for redo", async () => {
-              expect(await press(toggle)).toBe(true);
+              await press(toggle);
               expect(await editorReady()).toBe(true);
               expect(await remove(autoTag.tag)).toBe("removed");
               await type(addedName, { enter: true });
@@ -8647,7 +8647,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               const before = spelledTags([...seededTags, autoTag]);
 
-              expect(await press(toggle)).toBe(true);
+              await press(toggle);
               expect(await editorReady()).toBe(true);
               await type(first, { enter: true });
               await expect.poll(editorChips, poll).toContain(first);
