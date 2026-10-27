@@ -37,6 +37,10 @@ async function bootstrap(): Promise<void> {
     run.vaultId,
     async ({ app }) => {
       app.vault.setConfig("nativeMenus", false);
+      // Customize opens the Template Workbench in Obsidian, as on a device
+      // that remembered "Edit here in Obsidian". A build with the web
+      // Workbench asks for the destination first; its cases choose one.
+      app.saveLocalStorage("zotlit-profile-customization", "native");
     },
     undefined,
   );

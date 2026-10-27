@@ -45,10 +45,13 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await prepareRunWindow(vaultId);
     await obRun(
       vaultId,
-      async ({ zotlit }) => {
+      async ({ app, zotlit }) => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({ "server.live-update": false }),
         );
+        // Customize opens the Template Workbench in Obsidian, also in a build
+        // with the web Workbench, which otherwise asks for the destination.
+        app.saveLocalStorage("zotlit-profile-customization", "native");
       },
       undefined,
     );

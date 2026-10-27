@@ -269,7 +269,11 @@ export function createPageHelpers(app: PageApp) {
       modals: windowDocuments().flatMap((doc) =>
         Array.from(
           doc.querySelectorAll(".modal-container .modal"),
-          (modal) => modal.className,
+          (modal) => ({
+            className: modal.className,
+            title: modal.querySelector(".modal-title")?.textContent ?? null,
+            text: modal.textContent.slice(0, 400),
+          }),
         ),
       ),
     };

@@ -36,6 +36,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const opened = await run(["open", path, "--vault-case", "demo"]);
     vaultId = opened.stdout.trim().split("\n")[0]!.trim();
     await prepareRunWindow(vaultId);
+    // Customize opens the Template Workbench in Obsidian, also in a build
+    // with the web Workbench, which otherwise asks for the destination.
+    await obRun(
+      vaultId,
+      async ({ app }) => {
+        app.saveLocalStorage("zotlit-profile-customization", "native");
+      },
+      undefined,
+    );
   }, 180_000);
 
   afterAll(async () => {
