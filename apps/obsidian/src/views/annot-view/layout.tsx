@@ -9,18 +9,22 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { AbortError, passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { AppContext } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
+import {
+  annotationChangeAtom,
+  annotationListsChangeAtom,
+  annotationCapabilityAtom,
+  attachmentCapabilityAtom,
+} from "@/services/annotation-repository/atoms";
 import type {
   AnnotationList,
   AnnotationRecord,
-  AnnotationRepository,
   AnnotationSource,
   HistoryDirection,
 } from "@/services/annotation-repository/service";
@@ -30,19 +34,35 @@ import {
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
-import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
-import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
-import type { NoteFeatureHandle } from "@/services/note-feature";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
-import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { zoteroDataDirAtom } from "@/services/zotero-pref/atoms";
+import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActionDeps, AnnotActions } from "./actions";
 import { blocksNow } from "./Annotation";
 import { AnnotList } from "./AnnotView";
+import {
+  annotationStateAtom,
+  heldListAtom,
+  makeAttachmentRead,
+  makeHoldAttachmentsCommand,
+  makeRefreshCommand,
+  annotationHistoryCommand,
+  annotationWriteCommand,
+  annotationDraftCommand,
+  editingCapabilityCommand,
+  makeLibraryTagNamesCommand,
+  makeExcerptRequestCommand,
+  makePrepareInsertCommand,
+  copyCitationCommand,
+  openExcerptDemandCommand,
+  refreshExcerptDisplayCommand,
+  resultValue,
+  requireResult,
+} from "./atoms";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import {
@@ -60,23 +80,17 @@ import type {
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
 import { CARD_SELECTOR, mountCardHistoryKeys } from "./history";
+import { AnnotStoreProvider, createAnnotStore, observeRead } from "./model";
+import type { AnnotStore } from "./model";
 import {
-  AnnotStoreProvider,
   capabilityOf,
-  createAnnotStore,
   editorOpen,
   noFieldDrafts,
   selectedAlone,
   toggledTags,
   visibleOrder,
-} from "./store";
-import type {
-  AnnotState,
-  AnnotStore,
-  CardGroup,
-  CardPlacement,
-  HeldSource,
-} from "./store";
+} from "./state";
+import type { AnnotState, CardGroup, CardPlacement, HeldSource } from "./state";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -113,62 +127,9 @@ export interface AnnotationsLayoutDeps {
    * Table's Attachment and Annotation links.
    */
   opener: Pick<TargetOpener, "open">;
-  /** The database the Excerpt Image requests resolve through. */
-  reads: Pick<PlainZoteroReads, "acquireRead">;
-  /**
-   * The one read and write path for each Attachment's Annotations, so the
-   * cards and the reader overlay show one Annotation Source's records rather
-   * than two, and an edit stamps its precondition off the record they show.
-   */
-  annotations: Pick<
-    AnnotationRepository["Service"],
-    | "annotationState"
-    | "annotationChanged"
-    | "annotationsChanged"
-    | "capability"
-    | "capabilityChanges"
-    | "capabilityFor"
-    | "textDraftFor"
-    | "deleteAnnotation"
-    | "deleteAnnotations"
-    | "discardTextDraft"
-    | "discardTagDraft"
-    | "discardConflict"
-    | "patchColor"
-    | "patchColors"
-    | "editTextField"
-    | "editTags"
-    | "hold"
-    | "peek"
-    | "read"
-    | "redo"
-    | "refresh"
-    | "retryWrite"
-    | "retryTextDraft"
-    | "submitTextField"
-    | "submitTags"
-    | "tagDraftFor"
-    | "undo"
-  >;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "subscribe">;
-  /** Allow editing, from every entry the cards offer, which the UI seam owns. */
-  allowEditing: () => void;
-  /**
-   * An edit gesture met a block on this Attachment, which the one notice
-   * ledger answers — the same seam the reader's blocked keystrokes reach.
-   *
-   * @param attachmentKey the Attachment's Indexed Key.
-   */
-  reportBlockedGesture: (attachmentKey: string) => void;
-  /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
-  zoteroPref: Pick<PlainZoteroPref, "dataDir" | "baseAttachmentPath">;
-  /** The plugin's live display surface for Excerpt Images. */
-  excerptDisplay: Pick<ExcerptDisplayService, "open" | "refresh">;
-  noteFeature: Pick<
-    NoteFeatureHandle,
-    "renderAnnotationCitation" | "prepareAnnotationInsert"
-  >;
+  registry: ViewRegistryHandle;
+  /** The Query View still reads its filter choices through this legacy input. */
+  reads: { acquireRead(): Promise<ZoteroReadLease> };
 }
 
 /**
@@ -246,16 +207,6 @@ export interface AnnotationsLayoutHost {
 /** One Attachment's list as the layout last took it, or `null` where its read failed. */
 type Landed = { list: AnnotationList; scope: string | null } | null;
 
-/** The keys of the Annotations the repository holds for an Attachment now. */
-function annotationKeys(
-  annotations: Pick<AnnotationRepository["Service"], "peek">,
-  bridge: Pick<EffectBridge, "runSync">,
-  attachmentKey: string,
-): ReadonlySet<string> | null {
-  const held = bridge.runSync(annotations.peek(attachmentKey));
-  return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
-}
-
 /**
  * What started a run of the query whose rows the layout shows: a list
  * change, another run of the request on screen, or a new request.
@@ -277,7 +228,7 @@ export interface LayoutRow {
 
 export class AnnotationsLayout extends Component {
   /** What the cards show, which the host's own chrome may read and extend. */
-  readonly store: AnnotStore = createAnnotStore();
+  readonly store: AnnotStore;
   readonly #deps: AnnotationsLayoutDeps;
   readonly #host: AnnotationsLayoutHost;
   #actions: AnnotActions | null = null;
@@ -305,8 +256,12 @@ export class AnnotationsLayout extends Component {
   /** The list each shown Attachment's last read left. */
   readonly #landed = new Map<string, Landed>();
   /** The last read started for each Attachment; a slower one never lands after it. */
-  readonly #latest = new Map<string, number>();
-  #nextRead = 0;
+  readonly #reads = new Map<string, Disposable>();
+  readonly #holdAttachmentsCommand = makeHoldAttachmentsCommand();
+  readonly #refreshCommand = makeRefreshCommand();
+  readonly #insertCommand = makePrepareInsertCommand();
+  readonly #excerptCommand = makeExcerptRequestCommand();
+  readonly #tagNamesCommand = makeLibraryTagNamesCommand();
   #reading: Promise<void> = Promise.resolve();
   #closed = false;
   /** The reader the Card Selection is kept in step with, while the host binds one. */
@@ -328,6 +283,7 @@ export class AnnotationsLayout extends Component {
     super();
     this.#deps = deps;
     this.#host = host;
+    this.store = createAnnotStore(deps.registry);
   }
 
   /** Settles once the cards show the last read the layout started. Never rejects. */
@@ -349,6 +305,7 @@ export class AnnotationsLayout extends Component {
   }
 
   override onload(): void {
+    this.store.hold();
     this.#closed = false;
     const deps = this.#deps;
     const subscriptions = new DisposableStack();
@@ -357,7 +314,12 @@ export class AnnotationsLayout extends Component {
 
     const insertDeps: Parameters<typeof createInsertHandler>[0] = {
       app: deps.app,
-      noteFeature: deps.noteFeature,
+      noteFeature: {
+        prepareAnnotationInsert: (input) =>
+          new Promise((resolve, reject) =>
+            deps.registry.set(this.#insertCommand, { input, resolve, reject }),
+          ),
+      },
       notify: (message) => void new BaseNotice(message),
       snapshot: (annotation) => {
         const state = this.store.getState();
@@ -378,21 +340,25 @@ export class AnnotationsLayout extends Component {
     this.#actions = createAnnotActions({
       app: deps.app,
       opener: deps.opener,
-      excerptDisplay: deps.excerptDisplay,
       excerptImageRequest: (target) => this.#excerptRequest(target),
-      annotations: deps.annotations,
-      bridge: deps.bridge,
+      registry: deps.registry,
       controls: (annot) => this.#cardControls(annot),
       selectedCards: () => this.#selectedCards(),
-      libraryTagNames: (annot) => deps.libraryTagNames(annot.key),
+      libraryTagNames: (annot) =>
+        new Promise((complete) =>
+          deps.registry.set(this.#tagNamesCommand, {
+            key: annot.key,
+            complete,
+          }),
+        ),
       getState: () => this.store.getState(),
       toggleSelectedTag: (tag) =>
         this.store.setState({
           selectedTags: toggledTags(this.store.getState().selectedTags, tag),
         }),
       refresh: () => this.refresh(),
-      noteFeature: deps.noteFeature,
-      onAllowEditing: () => deps.allowEditing(),
+      onAllowEditing: () =>
+        deps.registry.set(editingCapabilityCommand, { kind: "allow" }),
       onSelectAnnotation: (annot, gesture, place) =>
         this.#clickFromView({ kind: gesture, key: annot.key, place }),
       onClearSelection: () => void this.#clearFromView(),
@@ -420,23 +386,40 @@ export class AnnotationsLayout extends Component {
       ...gestures,
     });
 
+    const commands: import("effect/reactivity/Atom").Atom<unknown>[] = [
+      annotationDraftCommand,
+      annotationWriteCommand,
+      copyCitationCommand,
+      this.#insertCommand,
+      openExcerptDemandCommand,
+      refreshExcerptDisplayCommand,
+      this.#excerptCommand,
+      editingCapabilityCommand,
+      this.#tagNamesCommand,
+      this.#holdAttachmentsCommand,
+      this.#refreshCommand,
+      annotationHistoryCommand,
+    ];
+    for (const command of commands)
+      subscriptions.defer(deps.registry.mount(command));
     this.#mountKeys(subscriptions);
     this.#subscribe(subscriptions);
   }
 
   override onunload(): void {
     this.#closed = true;
-    this.#latest.clear();
+    this.cancelReads();
     this.#submitOpenEditor();
+    // An open tag editor saves while its command is still mounted.
+    this.#root?.unmount();
+    this.#root = null;
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
     this.#hold?.[Symbol.dispose]();
     this.#hold = null;
-    // An open tag editor ends its session, and saves it, as it unmounts.
-    this.#root?.unmount();
-    this.#root = null;
     this.#el = null;
     this.#actions = null;
+    this.store[Symbol.dispose]();
   }
 
   /**
@@ -503,11 +486,17 @@ export class AnnotationsLayout extends Component {
       ...new Set([...rows.map((row) => row.attachmentKey), ...also]),
     ];
     const previous = this.#hold;
-    this.#hold = this.#deps.bridge.runSync(
-      this.#deps.annotations.hold(attachmentKeys),
+    this.#deps.registry.set(this.#holdAttachmentsCommand, attachmentKeys);
+    this.#hold = requireResult(
+      this.#deps.registry.get(this.#holdAttachmentsCommand),
     );
     if (!sameKeys(attachmentKeys, this.#shown)) {
       this.#shown = [...attachmentKeys];
+      for (const [key, read] of this.#reads) {
+        if (attachmentKeys.includes(key)) continue;
+        read[Symbol.dispose]();
+        this.#reads.delete(key);
+      }
       for (const key of this.#landed.keys())
         if (!attachmentKeys.includes(key)) this.#landed.delete(key);
       this.#syncCapabilities();
@@ -524,11 +513,7 @@ export class AnnotationsLayout extends Component {
       previous?.[Symbol.dispose]();
       if (this.#rows !== rows) return;
       for (const attachmentKey of attachmentKeys) {
-        const keys = annotationKeys(
-          this.#deps.annotations,
-          this.#deps.bridge,
-          attachmentKey,
-        );
+        const keys = this.#annotationKeys(attachmentKey);
         if (keys) this.#listKeys.set(attachmentKey, keys);
       }
     });
@@ -558,14 +543,7 @@ export class AnnotationsLayout extends Component {
     }
     const named = new Set(rowKeys);
     for (const [key, attachmentKey] of this.#listAdded) {
-      if (
-        named.has(key) ||
-        !annotationKeys(
-          this.#deps.annotations,
-          this.#deps.bridge,
-          attachmentKey,
-        )?.has(key)
-      )
+      if (named.has(key) || !this.#annotationKeys(attachmentKey)?.has(key))
         this.#listAdded.delete(key);
     }
     return cause === "list-change" && this.#listAdded.size > 0;
@@ -615,7 +593,8 @@ export class AnnotationsLayout extends Component {
 
   /** Drop the answers of the reads still running: a later `showRows` replaces them. */
   cancelReads(): void {
-    this.#latest.clear();
+    for (const read of this.#reads.values()) read[Symbol.dispose]();
+    this.#reads.clear();
   }
 
   /**
@@ -625,21 +604,20 @@ export class AnnotationsLayout extends Component {
   async refresh(): Promise<void> {
     const shown = this.#shown;
     if (shown.length === 0) return;
-    await Promise.all(
-      shown.map((key) =>
-        this.#deps.bridge.runPromise(this.#deps.annotations.refresh(key)),
-      ),
+    await new Promise<void>((complete) =>
+      this.#deps.registry.set(this.#refreshCommand, { keys: shown, complete }),
     );
     await this.#reading;
-    if (sameKeys(this.#shown, shown)) this.#deps.excerptDisplay.refresh();
+    if (sameKeys(this.#shown, shown))
+      this.#deps.registry.set(refreshExcerptDisplayCommand, undefined);
   }
 
   /** Revalidate every Attachment shown, without waiting for the answer. */
   revalidate(): void {
-    for (const key of this.#shown)
-      void this.#deps.bridge
-        .runPromise(this.#deps.annotations.refresh(key))
-        .catch(passAborted);
+    this.#deps.registry.set(this.#refreshCommand, {
+      keys: this.#shown,
+      complete: () => {},
+    });
   }
 
   /**
@@ -650,42 +628,34 @@ export class AnnotationsLayout extends Component {
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
    */
   #readAttachment(attachmentKey: string): Promise<boolean> {
-    const read = ++this.#nextRead;
-    this.#latest.set(attachmentKey, read);
-    const scope = this.#deps.zoteroPref.dataDir;
-    const current = () =>
-      this.#latest.get(attachmentKey) === read &&
-      this.#shown.includes(attachmentKey);
-    return this.#deps.bridge
-      .runPromise(this.#deps.annotations.read(attachmentKey))
-      .then((list) => {
-        // A slower read never overwrites a later one. A null answer is a read
-        // an invalidation cancelled; the same invalidation announces the
-        // change the layout re-reads on, so the list is not left waiting.
-        if (!current() || scope !== this.#deps.zoteroPref.dataDir) return false;
-        if (list === null) {
-          // The rows of a query wait for no list: an Attachment no read has
-          // answered for yet names its rows unresolved until one does.
-          if (!this.#landed.has(attachmentKey)) {
-            this.#landed.set(attachmentKey, null);
-            this.#publish();
-          }
-          return false;
-        }
-        this.#landed.set(attachmentKey, { list, scope });
-        this.#publish();
-        return true;
-      })
-      .catch((error: unknown) => {
-        if (!current() || AbortError.test(error)) return false;
+    this.#reads.get(attachmentKey)?.[Symbol.dispose]();
+    const read = observeRead(
+      this.#deps.registry,
+      makeAttachmentRead(attachmentKey),
+    );
+    this.#reads.set(attachmentKey, read);
+    return read.promise.then((answer) => {
+      if (this.#reads.get(attachmentKey) !== read) return false;
+      if (!answer) {
         logger.warn("Failed to read the annotations of an attachment", {
           attachmentKey,
-          error,
         });
         this.#landed.set(attachmentKey, null);
         this.#publish();
         return false;
-      });
+      }
+      const { list, scope } = answer;
+      if (list === null) {
+        if (!this.#landed.has(attachmentKey)) {
+          this.#landed.set(attachmentKey, null);
+          this.#publish();
+        }
+        return false;
+      }
+      this.#landed.set(attachmentKey, { list, scope });
+      this.#publish();
+      return true;
+    });
   }
 
   /** The cards of every shown Attachment, once each list has landed. */
@@ -767,23 +737,22 @@ export class AnnotationsLayout extends Component {
     const composed = this.#composed();
     if (!composed?.annotations) return;
     const { annotations } = composed;
-    const repository = this.#deps.annotations;
     const fieldDrafts = byTextField(
       (field) =>
         new Map(
           annotations.flatMap((annotation) => {
-            const draft = this.#deps.bridge.runSync(
-              repository.textDraftFor(field, annotation.key),
-            );
+            const draft = resultValue(
+              this.#deps.registry.get(annotationStateAtom(annotation.key)),
+            )?.textDrafts[field];
             return draft ? [[annotation.key, draft] as const] : [];
           }),
         ),
     );
     const tagDrafts = new Map(
       annotations.flatMap((annotation) => {
-        const draft = this.#deps.bridge.runSync(
-          repository.tagDraftFor(annotation.key),
-        );
+        const draft = resultValue(
+          this.#deps.registry.get(annotationStateAtom(annotation.key)),
+        )?.tagDraft;
         return draft ? [[annotation.key, draft] as const] : [];
       }),
     );
@@ -806,12 +775,11 @@ export class AnnotationsLayout extends Component {
     attachmentKey: string,
   ): Pick<AnnotState, "annotations" | "sources"> | null {
     if (!this.#shown.includes(attachmentKey)) return null;
-    const held = this.#deps.bridge.runSync(
-      this.#deps.annotations.peek(attachmentKey),
+    const held = resultValue(
+      this.#deps.registry.get(heldListAtom(attachmentKey)),
     );
     if (!held) return null;
-    const scope =
-      this.#landed.get(attachmentKey)?.scope ?? this.#deps.zoteroPref.dataDir;
+    const scope = this.#landed.get(attachmentKey)?.scope ?? this.#dataDir();
     this.#landed.set(attachmentKey, { list: held.value, scope });
     return this.#composed();
   }
@@ -820,11 +788,7 @@ export class AnnotationsLayout extends Component {
   #listChanged(attachmentKey: string): void {
     const before = this.#listKeys.get(attachmentKey);
     if (!before) return;
-    const now = annotationKeys(
-      this.#deps.annotations,
-      this.#deps.bridge,
-      attachmentKey,
-    );
+    const now = this.#annotationKeys(attachmentKey);
     if (
       now === null ||
       (now.size === before.size && [...now].every((key) => before.has(key)))
@@ -846,7 +810,8 @@ export class AnnotationsLayout extends Component {
       capabilities: new Map(
         this.#shown.map((key) => [
           key,
-          this.#deps.bridge.runSync(this.#deps.annotations.capabilityFor(key)),
+          resultValue(this.#deps.registry.get(attachmentCapabilityAtom(key))) ??
+            this.#deps.registry.get(annotationCapabilityAtom),
         ]),
       ),
     });
@@ -855,40 +820,34 @@ export class AnnotationsLayout extends Component {
   // #endregion
 
   #subscribe(subscriptions: DisposableStack): void {
-    const { annotations } = this.#deps;
+    const { registry } = this.#deps;
     subscriptions.defer(
-      this.#deps.bridge.subscribe(annotations.capabilityChanges, () =>
+      registry.subscribe(annotationCapabilityAtom, () =>
         this.#syncCapabilities(),
       ),
     );
-    // The repository's own event is the only word that a list was superseded;
-    // a held read says nothing about an invalidation of its own.
+    let previousLists = registry.get(annotationListsChangeAtom);
     subscriptions.defer(
-      this.#deps.bridge.subscribe(
-        annotations.annotationsChanged,
-        (attachmentKey) => {
-          if (!this.#shown.includes(attachmentKey)) return;
-          // What the repository holds now, a write's Pending Proposal among
-          // it, stands in the same task; the read that follows replaces it.
-          const held = this.#heldList(attachmentKey);
+      registry.subscribe(annotationListsChangeAtom, (changes) => {
+        const last = previousLists;
+        previousLists = changes;
+        for (const [key, event] of changes) {
+          if (event === last.get(key) || !this.#shown.includes(key)) continue;
+          const held = this.#heldList(key);
           if (held) this.store.setState(held);
-          this.#reading = this.#readAttachment(attachmentKey).then(() => {});
-          // An Annotation added to or removed from a list the rows hold runs
-          // the query again, so it takes its place.
-          this.#listChanged(attachmentKey);
-        },
-      ),
+          this.#reading = this.#readAttachment(key).then(() => {});
+          this.#listChanged(key);
+        }
+      }),
     );
-    // One snapshot per Annotation: what a write left on it, its drafts, and
-    // whether a complete read found it gone, which ends its editors.
+    let previousAnnotations = registry.get(annotationChangeAtom);
     subscriptions.defer(
-      this.#deps.bridge.subscribe(
-        annotations.annotationChanged,
-        (annotationKey) => {
+      registry.subscribe(annotationChangeAtom, (changes) => {
+        const last = previousAnnotations;
+        previousAnnotations = changes;
+        for (const [annotationKey, now] of changes) {
+          if (now === last.get(annotationKey)) continue;
           const state = this.store.getState();
-          const now = this.#deps.bridge.runSync(
-            annotations.annotationState(annotationKey),
-          );
           const mutations = new Map(state.mutations);
           mutations.set(annotationKey, now.mutation);
           const fieldDrafts = byTextField((field) => {
@@ -912,8 +871,8 @@ export class AnnotationsLayout extends Component {
                 editing: null,
               }),
           });
-        },
-      ),
+        }
+      }),
     );
     // A filter, a search, or a list that lost an Annotation drops the cards it
     // no longer shows. It only prunes: a reader selection is never applied
@@ -1115,16 +1074,10 @@ export class AnnotationsLayout extends Component {
    * @see apps/obsidian/policies/ui-seams.md
    */
   stepHistory(direction: HistoryDirection, attachmentKey: string): void {
-    const stepping =
-      direction === "undo"
-        ? this.#deps.bridge.runPromise(
-            this.#deps.annotations.undo(attachmentKey),
-          )
-        : this.#deps.bridge.runPromise(
-            this.#deps.annotations.redo(attachmentKey),
-          );
-    void stepping
-      .then((outcome) => {
+    this.#deps.registry.set(annotationHistoryCommand, {
+      key: attachmentKey,
+      direction,
+      complete: (outcome) => {
         // The layout can unload while the step is away, and an unloaded one
         // neither scrolls nor speaks.
         if (this.#closed) return;
@@ -1139,7 +1092,10 @@ export class AnnotationsLayout extends Component {
             // PDF lands on the page they sat on.
             return;
           case "blocked":
-            this.#deps.reportBlockedGesture(attachmentKey);
+            this.#deps.registry.set(editingCapabilityCommand, {
+              kind: "blocked",
+              key: attachmentKey,
+            });
             return;
           case "changed":
           case "failed":
@@ -1151,8 +1107,8 @@ export class AnnotationsLayout extends Component {
             outcome satisfies never;
             return;
         }
-      })
-      .catch(passAborted);
+      },
+    });
   }
 
   // #endregion
@@ -1163,12 +1119,19 @@ export class AnnotationsLayout extends Component {
     source: AnnotationSource | null;
     sourceScope: string | null;
   }): Promise<ExcerptRequest | null> {
-    return savedExcerptRequest({
-      ...input,
-      zoteroReads: this.#deps.reads,
-      paths: this.#deps.zoteroPref,
-      bridge: this.#deps.bridge,
-    });
+    return new Promise((complete) =>
+      this.#deps.registry.set(this.#excerptCommand, { ...input, complete }),
+    );
+  }
+
+  #dataDir(): string {
+    return this.#deps.registry.get(zoteroDataDirAtom);
+  }
+
+  #annotationKeys(key: string): ReadonlySet<string> | null {
+    this.#deps.registry.refresh(heldListAtom(key));
+    const held = resultValue(this.#deps.registry.get(heldListAtom(key)));
+    return held ? new Set(held.value.annotations.map(({ key }) => key)) : null;
   }
 
   /**
@@ -1418,21 +1381,19 @@ export class AnnotationsLayout extends Component {
     // The tag editor saves its session as it unmounts. A text field's text is
     // already its draft, which this submits as the editor's own close would.
     if (!editing || editing.field === "tags") return;
-    const submitting = this.#deps.bridge.runPromise(
-      this.#deps.annotations.submitTextField(
-        editing.field,
-        editing.annotationKey,
-        { automatic: true },
-      ),
-    );
-    void submitting
-      .then((outcome) => {
-        if (outcome.kind === "failed")
-          new BaseNotice(
-            writeFailureMessage(outcome.failure, Temporal.Now.instant()),
-          );
-      })
-      .catch(passAborted);
+    this.#deps.registry.set(annotationWriteCommand, {
+      kind: "submit-field",
+      key: editing.annotationKey,
+      field: editing.field,
+      automatic: true,
+      complete: (outcomes) => {
+        for (const outcome of outcomes)
+          if (outcome.kind === "failed")
+            new BaseNotice(
+              writeFailureMessage(outcome.failure, Temporal.Now.instant()),
+            );
+      },
+    });
   }
 
   /**

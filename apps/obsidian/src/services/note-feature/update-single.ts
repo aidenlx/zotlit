@@ -142,10 +142,11 @@ export const createWithNotice = Effect.fnUntraced(function* <E, R>(
  * The create notice's messages. `plainError` gives what a failure threw, for
  * a caller that holds the failure around it.
  */
-function createNoteToast(
+export function createNoteToast(
   options: { app?: App; created?: (file: TFile) => string },
   plainError: (error: unknown) => unknown = (error) => error,
 ): ProgressCopy<CreateNoteResult> & {
+  success: (result: CreateNoteResult) => string | DocumentFragment;
   error: (error: unknown) => string | DocumentFragment;
 } {
   return {

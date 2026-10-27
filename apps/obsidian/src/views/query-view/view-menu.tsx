@@ -17,7 +17,6 @@
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 // @see apps/obsidian/docs/adr/0075-the-papers-layout-is-a-query-view-layout-the-library-view-offers-with-the-table.md
 import { useMemo, useRef, useState } from "react";
-import { useStore } from "zustand";
 
 import {
   Chooser,
@@ -32,6 +31,7 @@ import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { ConfigureViewFields, viewActions } from "./configure-view";
 import { layoutOf, layoutsFor } from "./layouts";
+import { useQueryViewState } from "./model";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import { popoverFallbacks } from "./toolbar-popover";
 import type { QueryView } from "./view";
@@ -50,8 +50,8 @@ export function ViewMenu({ view }: { view: QueryView }) {
 }
 
 function ViewSwitch({ view }: { view: QueryView }) {
-  const file = useStore(view.state, (s) => s.file);
-  const current = useStore(view.state, (s) => s.view);
+  const file = useQueryViewState(view, (s) => s.file);
+  const current = useQueryViewState(view, (s) => s.view);
   const popup = useRef<HTMLDivElement>(null);
 
   const views = useMemo(() => file?.views ?? [], [file]);
@@ -96,8 +96,8 @@ function ViewSwitch({ view }: { view: QueryView }) {
 
 /** The menu as a switch between the Layouts the host offers for the view on screen. */
 function LayoutSwitch({ view }: { view: QueryView }) {
-  const file = useStore(view.state, (s) => s.file);
-  const current = useStore(view.state, (s) => s.view);
+  const file = useQueryViewState(view, (s) => s.file);
+  const current = useQueryViewState(view, (s) => s.view);
   const popup = useRef<HTMLDivElement>(null);
   const offered = view.layouts;
   const layouts = useMemo(
@@ -167,8 +167,8 @@ function LayoutSwitch({ view }: { view: QueryView }) {
 }
 
 function ViewMenuTrigger({ view }: { view: QueryView }) {
-  const file = useStore(view.state, (s) => s.file);
-  const current = useStore(view.state, (s) => s.view);
+  const file = useQueryViewState(view, (s) => s.file);
+  const current = useQueryViewState(view, (s) => s.view);
   const openPage = useChooserOpenPage();
   const shown = current ?? file?.views[0];
   if (!shown) return null;
@@ -197,7 +197,7 @@ function ViewMenuTrigger({ view }: { view: QueryView }) {
 }
 
 function ViewList({ view }: { view: QueryView }) {
-  const file = useStore(view.state, (s) => s.file);
+  const file = useQueryViewState(view, (s) => s.file);
   const { openPage } = useChooserPage();
   const views = useMemo(() => file?.views ?? [], [file]);
   const groups = useMemo<ChooserGroup<ChooserRow>[]>(
@@ -313,7 +313,7 @@ function ConfigureViewPage({ view, name }: { view: QueryView; name: string }) {
   // The name the view holds now, which a rename on this page moves.
   const [current, setCurrent] = useState(name);
   // The menu reads the view's place in the file as it stands.
-  const file = useStore(view.state, (s) => s.file);
+  const file = useQueryViewState(view, (s) => s.file);
   const index =
     file?.views.findIndex((candidate) => candidate.name === current) ?? -1;
   // A view that leaves the file leaves no page to show.

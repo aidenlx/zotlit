@@ -1,18 +1,20 @@
-// The template folder every Template Document view classifies within.
+// View atoms over the plugin settings, shared by every leaf.
 import { Effect, Stream } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 
 import { held } from "@/lib/view-atoms";
 
 import { defaults } from "./schema";
 import { PluginSettings } from "./service";
 
-export const templateFolderAtom = held(
-  Stream.unwrap(
-    Effect.map(PluginSettings, (service) =>
-      Stream.map(service.changes, (settings) => settings["template.folder"]),
-    ),
-  ),
-  "templates",
+export const settingsAtom = held(
+  Stream.unwrap(Effect.map(PluginSettings, (settings) => settings.changes)),
+  defaults,
+);
+
+export const templateFolderAtom = Atom.map(
+  settingsAtom,
+  (settings) => settings["template.folder"],
 );
 
 /** Only the default bindings invalidate Workbench renders. */

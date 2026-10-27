@@ -11,7 +11,7 @@
 // stops once no leaf reads it.
 import { RegistryContext } from "@effect/atom-react";
 import { Context, Effect, Layer, Option } from "effect";
-import type { Stream } from "effect";
+import type { FileSystem, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -20,20 +20,36 @@ import type { ReactNode } from "react";
 
 import { scheduleBrowserTask } from "@/lib/browser-scheduler";
 import type { Notifier } from "@/lib/notifier";
+import type { ObsidianEnv } from "@/lib/obsidian-env";
 import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
+import type { CapabilityNotices } from "@/services/annotation-repository/notices";
+import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationParse } from "@/services/citation-parse/service";
+import type { CitationText } from "@/services/citation-text/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import type { ExcerptDisplays } from "@/services/excerpt-image/display";
+import type { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
+import type { LibraryScope } from "@/services/library-scope/service";
+import type { LocalServer } from "@/services/local-server/service";
+import type { NoteFeature } from "@/services/note-feature/service";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { BibliographyRender } from "@/services/pandoc/render-cache";
+import type { PandocEngine } from "@/services/pandoc/service";
 import type { Profile } from "@/services/profile/service";
+import type { QueryClients } from "@/services/query-client/service";
+import type { Release } from "@/services/release/service";
 import type { PluginSettings } from "@/services/settings/service";
 import type { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import type { TemplateMigration } from "@/services/template/migration";
 import type { Template } from "@/services/template/service";
+import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -43,22 +59,39 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
-  | QueryService
-  | CitationLookup
   | CitationParse
+  | PandocEngine
   | BibliographyRender
-  | Profile
-  | PluginSettings
-  | Template
-  | NoteIndex
-  | ZoteroPref
-  | FileManager
+  | CitekeyEditor
+  | CitationText
+  | AnnotationNoteActions
+  | ExcerptDisplays
+  | CapabilityNotices
+  | AnnotationRepository
+  | LocalServer
   | CitationIndex
-  | MetadataCache
-  | TemplateDataReads
+  | CitationLookup
+  | FileManager
+  | FileSystem.FileSystem
+  | ObsidianEnv
+  | ItemLookup
+  | NoteIndex
+  | NoteFeature
   | Notifier
+  | Profile
+  | Template
+  | QueryService
+  | LibraryScope
+  | UseLedger
+  | MetadataCache
+  | PluginSettings
+  | QueryClients
+  | Release
+  | TemplateDataReads
+  | TemplateMigration
   | Vault
   | Workspace
+  | ZoteroPref
   | ZoteroReads;
 
 /**

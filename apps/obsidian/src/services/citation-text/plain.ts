@@ -7,8 +7,6 @@ import { settleAtEdge } from "@/lib/signal-edge";
 
 import { CitationText } from "./service";
 
-export type PlainCitationText = ReturnType<typeof plainCitationText>;
-
 export function plainCitationText(
   runtime: ManagedRuntime.ManagedRuntime<CitationText, never>,
 ) {

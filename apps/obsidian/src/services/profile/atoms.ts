@@ -61,3 +61,18 @@ export const fileProfileValueAtom = Atom.family((path: string) =>
     AsyncResult.isSuccess(result) ? result.value : null,
   ),
 );
+
+export const profileRevisionAtom = held(
+  Stream.unwrap(
+    Effect.map(Profile, (profiles) =>
+      profiles.changes.pipe(
+        Stream.drop(1),
+        Stream.scan(
+          () => 0,
+          (revision) => revision + 1,
+        ),
+      ),
+    ),
+  ),
+  0,
+);

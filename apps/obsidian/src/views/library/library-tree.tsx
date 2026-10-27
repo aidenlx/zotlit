@@ -8,77 +8,45 @@
 // @see apps/obsidian/docs/adr/0072-the-library-tree-writes-filters.md
 // @see apps/obsidian/docs/adr/0076-recent-is-a-library-tree-node-that-writes-a-sort.md
 // @see apps/obsidian/docs/adr/0078-the-tag-selector-writes-tag-filters.md
-import { Effect } from "effect";
+import { Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { Component } from "obsidian";
 import type { IconName } from "obsidian";
 import { Fragment } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
-import type { StoreApi } from "zustand/vanilla";
 
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import type { SubscriptionRuntime } from "@/lib/effect-stream";
-import { subscribe } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { cn, tooltipAttrs } from "@/lib/utils";
-import type { QueryHandle } from "@/services/item-query/handle";
+import { ViewRegistryProvider } from "@/lib/view-atoms";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { libraryLabel } from "@/services/library-scope/label";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
-import type {
-  AvailableLibrary,
-  LibraryScope,
-} from "@/services/library-scope/scope";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-import type { LiteratureNotes } from "@/views/query-view/table-notes";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
 
 import { FILTER_CHIP_CLASS } from "./chip";
 import { nodeKey, READING_STATE_FACETS, sortTags } from "./document";
 import type { LibraryNode, ReadingStateFacet } from "./document";
-import {
-  paperCountRequest,
-  tagListRequest,
-  tagNames,
-  unreadCount,
-} from "./document";
+import { waitForRead } from "./model";
 import { TagSelector } from "./tag-selector";
 import { TextAction } from "./text-action";
+import { CLOSED_PREFIX, findNode, knowsNode, sameLibrary } from "./tree";
+import type { TreeCollection, TreeLibrary } from "./tree";
 import {
-  CLOSED_PREFIX,
-  collectionTree,
-  findNode,
-  knowsNode,
-  sameLibrary,
-} from "./tree";
-import type { LibraryCounts, TreeCollection, TreeLibrary } from "./tree";
-
-const logger = getLogger(["library-view", "tree"]);
+  makeTreeModel,
+  patchTree,
+  refreshTree,
+  TreeModelProvider,
+  useTreeState,
+} from "./tree-model";
+import type { TreeSession } from "./tree-model";
 
 export interface LibraryTreeDeps {
-  runtime: SubscriptionRuntime;
-  reads: Pick<
-    PlainZoteroReads,
-    | "changed"
-    | "degraded"
-    | "refresh-failed"
-    | "refreshing"
-    | "db-file-missing"
-    | "refresh-requested"
-    | "acquireRead"
-  >;
-  query: Pick<QueryHandle, "run">;
-  libraryScope: Pick<
-    PlainLibraryScope,
-    "changed" | "libraries-changed" | "current" | "libraries"
-  >;
-  /** The Literature Notes the unread count leaves out. */
-  literatureNotes: Pick<LiteratureNotes, "find" | "on">;
+  registry: ViewRegistryHandle;
 }
 
 export interface LibraryTreeHost {
@@ -88,83 +56,41 @@ export interface LibraryTreeHost {
   filter: (facets: readonly ReadingStateFacet[]) => void;
   /** The researcher selected or let go of a tag: `tags` are those selected now. */
   tag: (tags: readonly string[]) => void;
-  /** The Library Scope in force, which Recent reads. */
-  scope: () => LibraryScope;
   /** The researcher opened or closed a node: `expanded` are the nodes open now. */
   expand: (expanded: readonly string[]) => void;
   /** A read of the tree landed: the open nodes it does not `know` are gone. */
   prune: (know: (key: string) => boolean) => void;
 }
 
-interface TreeState {
-  /** The Libraries the tree shows; `null` before the first read settles. */
-  readonly libraries: readonly TreeLibrary[] | null;
-  readonly node: LibraryNode;
-  /**
-   * Whether the list shows {@link node}; it does not while a search of all
-   * libraries reads past it, and the tree then marks no node selected.
-   */
-  readonly listed: boolean;
-  /** Whether the tree shows every Library, not only those in the Library Scope. */
-  readonly all: boolean;
-  /**
-   * The nodes open to their children, by {@link nodeKey}, as the Library
-   * View Document holds them; a Library is open unless it is marked closed.
-   */
-  readonly expanded: ReadonlySet<string>;
-  /** Whether a narrow pane shows the tree over the list. */
-  readonly open: boolean;
-  /** The active Reading State facets, in {@link READING_STATE_FACETS} order. */
-  readonly facets: readonly ReadingStateFacet[];
-  /** The unread Items of the selected node; `null` while unknown. */
-  readonly unread: number | null;
-  /** The tags selected in the Tag Selector, sorted by name. */
-  readonly tags: readonly string[];
-  /**
-   * The tags the Tag Selector lists, the selected ones among them; `null`
-   * before the first list lands. A new list replaces it once it lands.
-   */
-  readonly tagList: readonly string[] | null;
-  /** The text in the "Filter tags" box, which narrows the names shown. */
-  readonly tagFilter: string;
-}
-
 export class LibraryTree extends Component {
-  readonly store: StoreApi<TreeState>;
-  readonly #deps: LibraryTreeDeps;
-  readonly #host: LibraryTreeHost;
-  #run: AbortController | null = null;
-  #unreadRun: AbortController | null = null;
-  #unreadSettled: Promise<void> = Promise.resolve();
-  #tagRun: AbortController | null = null;
-  #tagSettled: Promise<void> = Promise.resolve();
-  /** Settles once a read first lands, so a caller can wait for it before it starts. */
-  readonly #first = Promise.withResolvers<void>();
-  #settled: Promise<void> = this.#first.promise;
+  readonly model;
+  readonly registry;
+  readonly #host;
+  #release: (() => void) | null;
+  readonly #waiting = new Set<() => void>();
   #roots: Root[] = [];
 
   constructor(deps: LibraryTreeDeps, host: LibraryTreeHost) {
     super();
-    this.#deps = deps;
     this.#host = host;
-    this.store = createStore<TreeState>(() => ({
-      libraries: null,
-      node: { kind: "library", library: { type: "personal" } },
-      listed: true,
-      all: false,
-      expanded: new Set(),
-      open: false,
-      facets: [],
-      unread: null,
-      tags: [],
-      tagList: null,
-      tagFilter: "",
-    }));
+    this.registry = deps.registry;
+    this.model = makeTreeModel();
+    this.#release = this.registry.mount(this.model.session);
+  }
+
+  get state() {
+    return this.registry.get(this.model.state);
+  }
+  #update(transition: (state: TreeSession) => TreeSession): void {
+    this.registry.update(this.model.session, transition);
+  }
+  subscribe(listener: (state: LibraryTree["state"]) => void): () => void {
+    return this.registry.subscribe(this.model.state, listener);
   }
 
   /** The name of the selected node, as a file saved from it is first called. */
   get name(): string {
-    const { libraries, node } = this.store.getState();
+    const { libraries, node } = this.state;
     return node.kind === "collection"
       ? node.path.at(-1)!
       : nodeLabel(libraries, node);
@@ -176,54 +102,55 @@ export class LibraryTree extends Component {
    */
   get settled(): Promise<void> {
     return Promise.all([
-      this.#settled,
-      this.#unreadSettled,
-      this.#tagSettled,
-    ]).then(() => this.#first.promise);
+      waitForRead(this.registry, this.model.loaded, this.#waiting),
+      waitForRead(this.registry, this.model.unread, this.#waiting),
+      waitForRead(this.registry, this.model.tagList, this.#waiting),
+    ]).then(() => {});
+  }
+
+  #patch(patch: Partial<TreeSession>): void {
+    this.#update(patchTree(patch));
   }
 
   override onload(): void {
-    const { reads, libraryScope } = this.#deps;
-    const refresh = () => this.refresh();
-    // A database change, a database that cannot be read, and another Library
-    // Scope each change what the tree holds.
-    this.register(subscribe(this.#deps.runtime, reads["changed"], refresh));
-    this.register(subscribe(this.#deps.runtime, reads["degraded"], refresh));
+    this.#release ??= this.registry.mount(this.model.session);
+    this.register(this.registry.mount(this.model.state));
     this.register(
-      subscribe(this.#deps.runtime, reads["db-file-missing"], refresh),
+      this.registry.subscribe(this.model.canWiden, (canWiden) => {
+        if (!canWiden && this.registry.get(this.model.session).all)
+          this.#patch({ all: false });
+      }),
     );
     this.register(
-      subscribe(this.#deps.runtime, libraryScope["changed"], refresh),
+      this.registry.subscribe(this.model.loaded, (result) => {
+        if (result.waiting || AsyncResult.isFailure(result)) return;
+        const libraries = Option.getOrNull(AsyncResult.value(result));
+        if (!libraries) return;
+        this.#host.prune(knowsNode(libraries));
+        const { node } = this.state;
+        if (node.kind !== "collection") return;
+        const read = libraries.find(({ tree }) =>
+          sameLibrary(tree.library.selector, node.library),
+        );
+        if (read?.complete && !findNode([read.tree], node))
+          this.#host.select({ kind: "library", library: node.library });
+      }),
     );
-    this.register(
-      subscribe(this.#deps.runtime, libraryScope["libraries-changed"], refresh),
-    );
-    // A Literature Note added or removed makes an Item read or unread.
-    this.register(
-      this.#deps.literatureNotes.on("changed", () => this.#countUnread()),
-    );
+    this.register(() => {
+      this.#release?.();
+      this.#release = null;
+    });
   }
 
   override onunload(): void {
-    this.#run?.abort();
-    this.#run = null;
-    this.#unreadRun?.abort();
-    this.#unreadRun = null;
-    this.#tagRun?.abort();
-    this.#tagRun = null;
-    this.#first.resolve();
+    for (const finish of this.#waiting) finish();
     for (const root of this.#roots) root.unmount();
     this.#roots = [];
   }
 
   /** Show `node` as the selection. */
   show(node: LibraryNode): void {
-    const { node: shown } = this.store.getState();
-    this.store.setState({ node, open: false });
-    if (nodeKey(node) !== nodeKey(shown)) {
-      this.#countUnread();
-      this.#listTags();
-    }
+    this.#patch({ node, open: false });
   }
 
   /**
@@ -231,19 +158,17 @@ export class LibraryTree extends Component {
    * libraries reads past it.
    */
   showListed(listed: boolean): void {
-    this.store.setState({ listed });
+    this.#patch({ listed });
   }
 
   /** Show `tags` as the selected ones, and list the tags they leave. */
   showTags(tags: readonly string[]): void {
-    const now = this.store.getState().tags;
-    this.store.setState({ tags });
-    if (tags.join("\0") !== now.join("\0")) this.#listTags();
+    this.#patch({ tags });
   }
 
   /** The researcher selected or let go of the tag `name`. */
   toggleTag(name: string): void {
-    const { tags } = this.store.getState();
+    const { tags } = this.state;
     this.#host.tag(
       tags.includes(name)
         ? tags.filter((tag) => tag !== name)
@@ -258,17 +183,17 @@ export class LibraryTree extends Component {
 
   /** Narrow the tag names shown to those that hold `text`. */
   setTagFilter(text: string): void {
-    this.store.setState({ tagFilter: text });
+    this.#patch({ tagFilter: text });
   }
 
   /** Show `facets` as the active ones. */
   showFacets(facets: readonly ReadingStateFacet[]): void {
-    this.store.setState({ facets });
+    this.#patch({ facets });
   }
 
   /** The researcher turned `facet` on or off. */
   toggleFacet(facet: ReadingStateFacet): void {
-    const { facets } = this.store.getState();
+    const { facets } = this.state;
     this.#host.filter(
       READING_STATE_FACETS.filter((each) =>
         each === facet ? !facets.includes(each) : facets.includes(each),
@@ -283,18 +208,18 @@ export class LibraryTree extends Component {
 
   /** Show every Library, or only those in the Library Scope, and read them. */
   showAll(all: boolean): void {
-    this.store.setState({ all });
+    this.#patch({ all });
     this.refresh();
   }
 
   /** Show `expanded` as the nodes open to their children. */
   showExpanded(expanded: readonly string[]): void {
-    this.store.setState({ expanded: new Set(expanded) });
+    this.#patch({ expanded: new Set(expanded) });
   }
 
   /** The researcher opened or closed the node `key`. */
   toggle(key: string, open: boolean): void {
-    const expanded = new Set(this.store.getState().expanded);
+    const expanded = new Set(this.state.expanded);
     if (open) expanded.add(key);
     else expanded.delete(key);
     this.#host.expand([...expanded]);
@@ -302,206 +227,22 @@ export class LibraryTree extends Component {
 
   /** Show the tree over the list on a narrow pane, or hide it. */
   setOpen(open: boolean): void {
-    this.store.setState({ open });
+    this.#patch({ open });
   }
 
   /** The count of the selected node; `null` while unknown. */
   get count(): number | null {
-    const { libraries, node } = this.store.getState();
+    const { libraries, node } = this.state;
     return libraries ? (findNode(libraries, node)?.count ?? null) : null;
   }
 
   /** Whether some Library of the database lies outside the Library Scope. */
   get canWiden(): boolean {
-    const scope = this.#deps.libraryScope.current;
-    return (
-      scope !== null &&
-      this.#deps.libraryScope.libraries.length > scope.available.length
-    );
+    return this.registry.get(this.model.canWiden);
   }
 
-  /** The Libraries to read: those in scope, or all, and the selected one. */
-  #shown(): readonly AvailableLibrary[] {
-    const { all, node } = this.store.getState();
-    const scope = this.#deps.libraryScope.current?.available ?? [];
-    return this.#deps.libraryScope.libraries.filter(
-      ({ selector }) =>
-        all ||
-        (node.kind !== "recent" && sameLibrary(selector, node.library)) ||
-        scope.some((library) => sameLibrary(library.selector, selector)),
-    );
-  }
-
-  /** Read the Collections and the counts of the shown Libraries again. */
   refresh(): void {
-    // "Show all libraries" widens the Library Scope the researcher saw: once
-    // no Library lies outside the scope, there is nothing left to widen, and
-    // a later narrower scope starts unwidened.
-    if (this.store.getState().all && !this.canWiden)
-      this.store.setState({ all: false });
-    this.#countUnread();
-    this.#listTags();
-    this.#run?.abort();
-    const controller = new AbortController();
-    this.#run = controller;
-    this.#settled = this.#read(this.#shown(), controller.signal).then(
-      (libraries) => {
-        if (controller.signal.aborted) return;
-        this.#run = null;
-        this.store.setState({ libraries: libraries.map(({ tree }) => tree) });
-        this.#first.resolve();
-        // A Collection renamed or removed in Zotero leaves no node to open.
-        this.#host.prune(knowsNode(libraries));
-        // A Collection renamed or removed in Zotero leaves its saved path
-        // with nothing to list: the selection moves up to its Library.
-        const { node } = this.store.getState();
-        if (node.kind !== "collection") return;
-        const read = libraries.find(({ tree }) =>
-          sameLibrary(tree.library.selector, node.library),
-        );
-        if (read?.complete)
-          if (!findNode([read.tree], node))
-            this.#host.select({ kind: "library", library: node.library });
-      },
-    );
-  }
-
-  async #read(
-    shown: readonly AvailableLibrary[],
-    signal: AbortSignal,
-  ): Promise<{ tree: TreeLibrary; complete: boolean }[]> {
-    const paths = await this.#paths(shown);
-    return Promise.all(
-      shown.map(async (library, index) => {
-        const counts = await this.#counts(library, signal);
-        return {
-          tree: {
-            library,
-            count: counts?.totalCount ?? null,
-            collections: collectionTree(paths[index] ?? [], counts),
-          },
-          complete: paths[index] !== null,
-        };
-      }),
-    );
-  }
-
-  /** Each Library's Collections as root-first names; `null` where the read failed. */
-  async #paths(
-    shown: readonly AvailableLibrary[],
-  ): Promise<(readonly (readonly string[])[] | null)[]> {
-    try {
-      await using lease = await this.#deps.reads.acquireRead();
-      const paths: (readonly (readonly string[])[] | null)[] = [];
-      for (const { libraryID } of shown)
-        paths.push(
-          await Effect.runPromise(
-            lease.reads.CollectionPaths({ libraryIDs: [libraryID] }),
-          ),
-        );
-      return paths;
-    } catch (error) {
-      logger.warn("The Library Tree could not read the Collections", {
-        error,
-      });
-      return shown.map(() => null);
-    }
-  }
-
-  /** One Library's Items grouped by the Collections they are filed in. */
-  async #counts(
-    library: AvailableLibrary,
-    signal: AbortSignal,
-  ): Promise<LibraryCounts | null> {
-    try {
-      const outcome = await this.#deps.query.run(
-        paperCountRequest(library.selector),
-        signal,
-      );
-      if (outcome.kind === "result" && outcome.result.groups)
-        return outcome.result;
-      if (outcome.kind === "failed")
-        logger.warn("The Library Tree could not count a Library", {
-          code: outcome.diagnostic.code,
-        });
-      return null;
-    } catch (error) {
-      logger.warn("The Library Tree could not count a Library", { error });
-      return null;
-    }
-  }
-
-  /**
-   * Count the unread Items of the selected node again: those the query finds
-   * with no Annotation, less those with a Literature Note in the vault.
-   */
-  #countUnread(): void {
-    this.#unreadRun?.abort();
-    const controller = new AbortController();
-    this.#unreadRun = controller;
-    const { node } = this.store.getState();
-    this.store.setState({ unread: null });
-    // Recent names no paper count, so it names no unread count either.
-    const unread = unreadCount(node, this.#deps.literatureNotes);
-    if (!unread) {
-      this.#unreadRun = null;
-      this.#unreadSettled = Promise.resolve();
-      return;
-    }
-    this.#unreadSettled = this.#deps.query
-      .run(unread.request, controller.signal)
-      .then(
-        (outcome) => {
-          if (controller.signal.aborted) return;
-          this.#unreadRun = null;
-          if (outcome.kind === "result" && outcome.result.rows)
-            this.store.setState({ unread: unread.count(outcome.result.rows) });
-          else if (outcome.kind === "failed")
-            logger.warn("The Library Tree could not count the unread Items", {
-              code: outcome.diagnostic.code,
-            });
-        },
-        (error: unknown) => {
-          logger.warn("The Library Tree could not count the unread Items", {
-            error,
-          });
-        },
-      );
-  }
-
-  /**
-   * List the tags of the selected node again, as the paper count reads its
-   * Items, narrowed to those with every selected tag.
-   */
-  #listTags(): void {
-    this.#tagRun?.abort();
-    const controller = new AbortController();
-    this.#tagRun = controller;
-    const { node, tags } = this.store.getState();
-    this.#tagSettled = this.#deps.query
-      .run(tagListRequest(node, tags, this.#host.scope()), controller.signal)
-      .then(
-        (outcome) => {
-          if (controller.signal.aborted) return;
-          this.#tagRun = null;
-          const { tags: selected } = this.store.getState();
-          if (outcome.kind === "result" && outcome.result.groups) {
-            this.store.setState({
-              tagList: tagNames(outcome.result.groups, selected),
-            });
-            return;
-          }
-          if (outcome.kind === "failed")
-            logger.warn("The Library Tree could not list the tags", {
-              code: outcome.diagnostic.code,
-            });
-          this.store.setState({ tagList: tagNames(null, selected) });
-        },
-        (error: unknown) => {
-          if (controller.signal.aborted) return;
-          logger.warn("The Library Tree could not list the tags", { error });
-        },
-      );
+    this.#update(refreshTree);
   }
 
   /** Draw the tree into `el`. */
@@ -519,7 +260,11 @@ export class LibraryTree extends Component {
 
   #mount(el: HTMLElement, content: ReactNode): void {
     const root = createRoot(el);
-    root.render(content);
+    root.render(
+      <ViewRegistryProvider registry={this.registry}>
+        <TreeModelProvider value={this.model}>{content}</TreeModelProvider>
+      </ViewRegistryProvider>,
+    );
     this.#roots.push(root);
   }
 }
@@ -540,7 +285,7 @@ export function nodeLabel(
 }
 
 function TreeToggle({ tree }: { tree: LibraryTree }) {
-  const open = useStore(tree.store, (s) => s.open);
+  const open = useTreeState((s) => s.open);
   return (
     // Obsidian's own rule shows a clickable icon, so the narrow pane shows
     // and hides a wrapper.
@@ -625,11 +370,11 @@ function rows(
 }
 
 function TreePane({ tree }: { tree: LibraryTree }) {
-  const libraries = useStore(tree.store, (s) => s.libraries);
-  const node = useStore(tree.store, (s) => s.node);
-  const expanded = useStore(tree.store, (s) => s.expanded);
-  const all = useStore(tree.store, (s) => s.all);
-  const listed = useStore(tree.store, (s) => s.listed);
+  const libraries = useTreeState((s) => s.libraries);
+  const node = useTreeState((s) => s.node);
+  const expanded = useTreeState((s) => s.expanded);
+  const all = useTreeState((s) => s.all);
+  const listed = useTreeState((s) => s.listed);
   const recent: Row = {
     key: nodeKey(RECENT),
     node: RECENT,
@@ -780,7 +525,7 @@ export const FACET_LABELS: Record<ReadingStateFacet, () => string> = {
 
 /** The Reading State facets, each a toggle that narrows the list. */
 function Facets({ tree }: { tree: LibraryTree }) {
-  const facets = useStore(tree.store, (s) => s.facets);
+  const facets = useTreeState((s) => s.facets);
   const headingId = useUniqueId();
   return (
     // Named by a hidden heading: an `aria-label` would show a tooltip, and

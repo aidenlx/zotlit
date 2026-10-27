@@ -9,18 +9,22 @@ import { BaseNotice } from "@/lib/notice";
 
 import { LIBRARY_VIEW_ROW_LIMIT } from "./document";
 import { ZOTLIT_MARK_ICON, zotlitMarkSvg } from "./icon";
+import { libraryItemCommand, openLibraryTargetCommand } from "./item-actions";
 import { LIBRARY_VIEW_TYPE, LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
 type LibraryViewPlugin = Pick<
   Plugin,
-  "registerView" | "addCommand" | "addRibbonIcon" | "app"
+  "registerView" | "register" | "addCommand" | "addRibbonIcon" | "app"
 >;
 
 export function registerLibraryView(
   plugin: LibraryViewPlugin,
   deps: LibraryViewDeps,
 ): void {
+  // Item gestures can outlive the Library tab that started them.
+  plugin.register(deps.registry.mount(libraryItemCommand));
+  plugin.register(deps.registry.mount(openLibraryTargetCommand));
   addIcon(ZOTLIT_MARK_ICON, zotlitMarkSvg());
   plugin.registerView(LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, deps));
   const open = () => void openLibraryView(plugin.app);

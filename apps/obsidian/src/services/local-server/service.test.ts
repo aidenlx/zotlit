@@ -1,5 +1,6 @@
-import { Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { Hono } from "hono/tiny";
+import { get } from "node:http";
 import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
 import { expect, it } from "vitest";
@@ -229,6 +230,43 @@ it("answers a mounted route group beside the Live Update routes", async () => {
     headers: companionHeaders,
   });
   expect(liveUpdate.status).toBe(200);
+});
+
+it("answers a note-status query as unavailable when unload ends the first scan", async () => {
+  const stack = new AsyncDisposableStack();
+  const waiting = Promise.withResolvers<void>();
+  const service = await buildLocalServer(
+    {
+      "server.enabled": true,
+      "server.port": 0,
+    },
+    stack,
+    {
+      // The first scan is still running; the keys so far are a part of the vault.
+      whenIndexed: Effect.sync(() => waiting.resolve()).pipe(
+        Effect.andThen(Effect.never),
+      ),
+    },
+  );
+  const port = await whenListening(service);
+
+  // A connection the client keeps alive would hold the listener's close open.
+  const status = new Promise<number | undefined>((resolve, reject) => {
+    get(
+      `http://127.0.0.1:${port}/literature-notes`,
+      { headers: companionHeaders, agent: false },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode);
+      },
+    ).on("error", reject);
+  });
+  await waiting.promise;
+  await stack.disposeAsync();
+
+  // The Companion reads any answer other than 200 as a failed refresh and
+  // keeps the status it has; a 200 would show the partial keys as complete.
+  expect(await status).toBe(404);
 });
 
 /** POST one companion notify event, the way the Zotero plugin's sender does. */

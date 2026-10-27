@@ -793,7 +793,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   get unavailableDependencies(): string[] {
     return [
-      ...(this.registry.get(zoteroStateAtom) === "degraded"
+      ...(this.registry.get(zoteroStateAtom).state === "degraded"
         ? [m.template_workbench_database_unavailable()]
         : []),
       ...(this.#stylesUnavailable

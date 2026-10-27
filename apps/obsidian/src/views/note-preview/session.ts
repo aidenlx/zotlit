@@ -26,7 +26,7 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { bibliographyRevisionAtom } from "@/services/pandoc/render-cache/atoms";
+import { bibliographyRevisionAtom } from "@/services/pandoc/atoms";
 import { templateRevisionAtom } from "@/services/template/atoms";
 import { getSampleAnnotationParent } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";

@@ -4,6 +4,7 @@
 // failed.
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Stream } from "effect";
+import { Layer } from "effect";
 import { Scope } from "obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
@@ -12,15 +13,17 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
 import type { QueryViewOutcome } from "@/services/item-query/query-view";
-import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { buildSettings } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
+import { makeAnnotHost } from "@/views/annot-view/__fixtures__/host";
+import { makeQueryHost } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
+import { makeLibraryHost } from "./__fixtures__";
 import {
   DEFAULT_LIBRARY_VIEW_DOCUMENT,
   libraryViewQuery,
@@ -108,9 +111,10 @@ async function openLibrary() {
   await settings.bridge.runPromise(settings.loaded);
   const saveData = vi.spyOn(plugin, "saveData");
   const runtime = testRuntime();
+  const cardsHost = cleanup.use(makeAnnotHost());
   const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+    registry: cardsHost.registry,
     runtime,
-    bridge: effectBridge(runtime),
     app,
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
     reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
@@ -124,33 +128,24 @@ async function openLibrary() {
     libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
+      current: null,
     }),
     query: fakeQuery(() => Promise.resolve(EMPTY)),
     cardFocus: { hold: () => ({ [Symbol.dispose]: () => {} }) },
-    annotations: stubService<QueryViewDeps["annotations"]>(
-      "AnnotationRepository",
-      annotationReads(),
-    ),
-    excerptDisplay: stubService<QueryViewDeps["excerptDisplay"]>(
-      "ExcerptDisplay",
-      {},
-    ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
-      "NoteFeatureHandle",
-      {},
-    ),
-    zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    libraryTagNames: async () => [],
-    allowEditing: vi.fn(),
-    reportBlockedGesture: vi.fn(),
     literatureNotes: noLiteratureNotes(),
   });
+  const queryHost = cleanup.use(await makeQueryHost(deps));
+  deps.registry = queryHost.registry;
   // The view's text is the toolbar's, which the storage takes changes from.
   const toolbar = { text: (): string | null => null };
-  const storage = new LibraryViewStorage(settings, settings.bridge, () =>
-    toolbar.text(),
+  const host = cleanup.use(
+    await makeLibraryHost({
+      services: Layer.succeed(PluginSettings, settings),
+    }),
   );
-  storage.load();
+  const storage = new LibraryViewStorage(host.registry, () => toolbar.text());
+  cleanup.defer(() => storage.close());
+  await storage.load();
   const query = new QueryView(deps, {
     scope: new Scope(),
     sourcePath: () => "",

@@ -6,7 +6,6 @@
 // the arrow keys and Enter, which a Chooser's key scope would hold.
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { useStore } from "zustand";
 
 import { useUniqueId } from "@zotlit/ui";
 
@@ -19,6 +18,7 @@ import { BaseNotice } from "@/lib/notice";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn } from "@/lib/utils";
 
+import { useQueryViewState } from "./model";
 import { toCSV, toHTML, toTSV } from "./table";
 import { ToolbarButtonContent, toolbarButtonClass } from "./toolbar-button";
 import {
@@ -53,9 +53,9 @@ export function exportResults(view: QueryView): void {
 }
 
 function CountText({ view }: { view: QueryView }) {
-  const phase = useStore(view.state, (s) => s.phase);
+  const phase = useQueryViewState(view, (s) => s.phase);
   // A failed run that keeps the last rows keeps their count too.
-  const results = useStore(view.state, (s) => s.results);
+  const results = useQueryViewState(view, (s) => s.results);
   if (phase === "loading")
     return <span data-query-count="">{m.query_view_loading()}</span>;
   if (!results) return null;
@@ -74,7 +74,7 @@ function CountText({ view }: { view: QueryView }) {
 }
 
 function LimitField({ view, close }: { view: QueryView; close: () => void }) {
-  const limit = useStore(view.state, (s) => s.view?.limit);
+  const limit = useQueryViewState(view, (s) => s.view?.limit);
   const [text, setText] = useState(limit === undefined ? "" : String(limit));
   const [invalid, setInvalid] = useState(false);
   const id = useUniqueId();
@@ -120,11 +120,11 @@ function LimitField({ view, close }: { view: QueryView; close: () => void }) {
 }
 
 export function ResultsMenu({ view }: { view: QueryView }) {
-  const current = useStore(view.state, (s) => s.view);
-  const phase = useStore(view.state, (s) => s.phase);
-  const matched = useStore(view.state, (s) => s.results?.matched ?? 0);
+  const current = useQueryViewState(view, (s) => s.view);
+  const phase = useQueryViewState(view, (s) => s.phase);
+  const matched = useQueryViewState(view, (s) => s.results?.matched ?? 0);
   // A limit the host writes itself shows as not set.
-  useStore(view.state, (s) => s.defaults);
+  useQueryViewState(view, (s) => s.defaults);
   const [open, setOpen] = useState(false);
   const popup = useRef<HTMLDivElement>(null);
   const popupId = useUniqueId();

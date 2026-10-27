@@ -1,4 +1,4 @@
-// Shared revision of the service inputs a preview renders.
+// Shared invalidation of view reads that depend on compiled templates.
 import { Effect, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
@@ -8,14 +8,14 @@ import { Template } from "@/services/template/service";
 
 export const templateRevisionAtom = held(
   Stream.unwrap(
-    Effect.gen(function* () {
-      const service = yield* Template;
-      return Stream.scan(
-        service.compileEvents,
-        () => 0,
-        (revision) => revision + 1,
-      );
-    }),
+    Effect.map(Template, (template) =>
+      template.compileEvents.pipe(
+        Stream.scan(
+          () => 0,
+          (revision) => revision + 1,
+        ),
+      ),
+    ),
   ),
   0,
 );
