@@ -1,5 +1,6 @@
 // Engine status and render revisions shared by bibliography reading surfaces.
 import { Effect, Stream } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 
 import { held } from "@/lib/view-atoms";
 
@@ -26,4 +27,10 @@ export const bibliographyRevisionsAtom = held(
     ),
   ),
   {},
+);
+
+/** Global bibliography invalidation, shared by Template Document previews. */
+export const bibliographyRevisionAtom = Atom.map(
+  bibliographyRevisionsAtom,
+  (revisions) => revisions["*"] ?? 0,
 );

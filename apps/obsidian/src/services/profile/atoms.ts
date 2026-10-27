@@ -4,6 +4,7 @@ import { Effect, Stream } from "effect";
 import { held } from "@/lib/view-atoms";
 
 import { Profile } from "./service";
+import type { LiteratureNoteProfile } from "./service";
 
 export const profileRevisionAtom = held(
   Stream.unwrap(
@@ -18,4 +19,13 @@ export const profileRevisionAtom = held(
     ),
   ),
   0,
+);
+
+export const profilesAtom = held(
+  Stream.unwrap(
+    Effect.map(Profile, (service) =>
+      Stream.map(service.changes, (state) => state.profiles),
+    ),
+  ),
+  [] as readonly LiteratureNoteProfile[],
 );

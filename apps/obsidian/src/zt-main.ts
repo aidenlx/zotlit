@@ -412,18 +412,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       templateData: services.templateData,
       profile: services.profile,
       nativePreview: {
-        runtime: services.runtime,
-        bridge: services.bridge,
-        citationParse: services.citationParse,
         app: this.app,
-        zoteroReads: services.zoteroReads,
-        noteIndex: services.noteIndex,
-        settings: services.settings,
-        templateData: services.templateData,
-        templates: services.template,
-        profile: services.profile,
-        bibliographyRender: services.bibliographyRender,
-        citationLookup: services.citationLookup,
+        registry: services.runtime.runSync(ViewRegistry),
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
@@ -438,19 +428,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerNotePreview(this, {
-      runtime: services.runtime,
-      bridge: services.bridge,
-      citationParse: services.citationParse,
       app: this.app,
+      registry: services.runtime.runSync(ViewRegistry),
+      bridge: services.bridge,
       itemLookup: services.itemLookup,
-      profile: services.profile,
-      zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
       settings: services.settings,
-      templates: services.template,
-      templateData: services.templateData,
-      bibliographyRender: services.bibliographyRender,
-      citationLookup: services.citationLookup,
     });
 
     registerReferencesView(this, {

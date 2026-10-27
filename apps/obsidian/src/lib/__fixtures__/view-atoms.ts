@@ -16,6 +16,7 @@ import { CitationText } from "@/services/citation-text/service";
 import { CitekeyEditor } from "@/services/citekey-editor/service";
 import { BibliographyRender } from "@/services/pandoc/render-cache";
 import { PandocEngine } from "@/services/pandoc/service";
+import { CitationParse } from "@/services/citation-parse/service";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
@@ -42,6 +43,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  * it first: a service the test reads, merged after it, takes its place.
  */
 export const layerUnreadViewServices = Layer.mergeAll(
+  Layer.mock(CitationParse, {}),
   Layer.mock(PandocEngine, {}),
   Layer.mock(BibliographyRender, {}),
   Layer.mock(CitekeyEditor, {}),

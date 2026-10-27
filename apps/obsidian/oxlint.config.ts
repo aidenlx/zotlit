@@ -519,6 +519,7 @@ export default defineConfig({
         "src/views/query-view/**",
         "src/views/cited-by/**",
         "src/views/references/**",
+        "src/views/note-preview/**",
         "src/views/welcome/**",
         "src/views/template-data-explorer/**",
         "src/views/annot-view/**",
@@ -542,6 +543,7 @@ export default defineConfig({
         "src/views/annot-view/**",
         "src/views/cited-by/**",
         "src/views/references/**",
+        "src/views/note-preview/**",
         "src/views/welcome/**",
       ],
       rules: {

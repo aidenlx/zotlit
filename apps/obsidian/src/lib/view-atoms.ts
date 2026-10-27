@@ -29,6 +29,7 @@ import type { CapabilityNotices } from "@/services/annotation-repository/notices
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationParse } from "@/services/citation-parse/service";
 import type { CitationText } from "@/services/citation-text/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { ExcerptDisplays } from "@/services/excerpt-image/display";
@@ -58,6 +59,7 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
+  | CitationParse
   | PandocEngine
   | BibliographyRender
   | CitekeyEditor

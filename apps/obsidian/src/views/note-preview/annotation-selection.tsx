@@ -1,4 +1,4 @@
-import { useStore } from "zustand";
+import { useAtomValue, RegistryContext } from "@effect/atom-react";
 
 import { AnnotationSampleBar } from "@zotlit/workbench/ui";
 
@@ -9,7 +9,14 @@ export function PreviewAnnotationSelection({
 }: {
   session: NativePreviewSession;
 }) {
-  const { current, example } = useStore(session.state, (state) => state);
+  return (
+    <RegistryContext.Provider value={session.state.registry}>
+      <Selection session={session} />
+    </RegistryContext.Provider>
+  );
+}
+function Selection({ session }: { session: NativePreviewSession }) {
+  const { current, example } = useAtomValue(session.state.model.state);
   return (
     <AnnotationSampleBar
       compact
