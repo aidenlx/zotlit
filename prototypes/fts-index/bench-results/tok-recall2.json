@@ -1,0 +1,752 @@
+[
+  {
+    "name": "intl",
+    "mode": "phrase",
+    "tokMB": 0.84,
+    "perfect": 13,
+    "partial": 5,
+    "missAll": 0,
+    "avgRecall": 0.986,
+    "avgPrec": 0.998,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版本"
+        ],
+        "gt": 171,
+        "found": 170,
+        "recall": 0.99
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控制"
+        ],
+        "gt": 61,
+        "found": 56,
+        "recall": 0.92
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      },
+      {
+        "q": "快进",
+        "qToks": [
+          "快",
+          "进"
+        ],
+        "gt": 19,
+        "found": 17,
+        "recall": 0.89
+      }
+    ]
+  },
+  {
+    "name": "intl",
+    "mode": "and",
+    "tokMB": 0.84,
+    "perfect": 13,
+    "partial": 5,
+    "missAll": 0,
+    "avgRecall": 0.987,
+    "avgPrec": 0.955,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版本"
+        ],
+        "gt": 171,
+        "found": 170,
+        "recall": 0.99
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控制"
+        ],
+        "gt": 61,
+        "found": 56,
+        "recall": 0.92
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      },
+      {
+        "q": "快进",
+        "qToks": [
+          "快",
+          "进"
+        ],
+        "gt": 19,
+        "found": 17,
+        "recall": 0.89
+      }
+    ]
+  },
+  {
+    "name": "intl",
+    "mode": "or",
+    "tokMB": 0.84,
+    "perfect": 15,
+    "partial": 3,
+    "missAll": 0,
+    "avgRecall": 0.995,
+    "avgPrec": 0.706,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版本"
+        ],
+        "gt": 171,
+        "found": 170,
+        "recall": 0.99
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控制"
+        ],
+        "gt": 61,
+        "found": 56,
+        "recall": 0.92
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      }
+    ]
+  },
+  {
+    "name": "cut",
+    "mode": "phrase",
+    "tokMB": 1.08,
+    "perfect": 6,
+    "partial": 12,
+    "missAll": 0,
+    "avgRecall": 0.856,
+    "avgPrec": 1,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版本"
+        ],
+        "gt": 171,
+        "found": 164,
+        "recall": 0.96
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控制"
+        ],
+        "gt": 61,
+        "found": 20,
+        "recall": 0.33
+      },
+      {
+        "q": "系统",
+        "qToks": [
+          "系统"
+        ],
+        "gt": 107,
+        "found": 75,
+        "recall": 0.7
+      },
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      }
+    ]
+  },
+  {
+    "name": "cut",
+    "mode": "and",
+    "tokMB": 1.08,
+    "perfect": 6,
+    "partial": 12,
+    "missAll": 0,
+    "avgRecall": 0.856,
+    "avgPrec": 0.984,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版本"
+        ],
+        "gt": 171,
+        "found": 164,
+        "recall": 0.96
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控制"
+        ],
+        "gt": 61,
+        "found": 20,
+        "recall": 0.33
+      },
+      {
+        "q": "系统",
+        "qToks": [
+          "系统"
+        ],
+        "gt": 107,
+        "found": 75,
+        "recall": 0.7
+      },
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      }
+    ]
+  },
+  {
+    "name": "cut",
+    "mode": "or",
+    "tokMB": 1.08,
+    "perfect": 7,
+    "partial": 11,
+    "missAll": 0,
+    "avgRecall": 0.859,
+    "avgPrec": 0.895,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版本"
+        ],
+        "gt": 171,
+        "found": 164,
+        "recall": 0.96
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控制"
+        ],
+        "gt": 61,
+        "found": 20,
+        "recall": 0.33
+      },
+      {
+        "q": "系统",
+        "qToks": [
+          "系统"
+        ],
+        "gt": 107,
+        "found": 75,
+        "recall": 0.7
+      },
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      }
+    ]
+  },
+  {
+    "name": "cut_for_search",
+    "mode": "phrase",
+    "tokMB": 1.12,
+    "perfect": 11,
+    "partial": 7,
+    "missAll": 0,
+    "avgRecall": 0.922,
+    "avgPrec": 1,
+    "bad": [
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本",
+          "控制",
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      },
+      {
+        "q": "分布式",
+        "qToks": [
+          "分布",
+          "布式",
+          "分布式"
+        ],
+        "gt": 13,
+        "found": 12,
+        "recall": 0.92
+      },
+      {
+        "q": "暂存区",
+        "qToks": [
+          "暂存",
+          "暂存区"
+        ],
+        "gt": 40,
+        "found": 32,
+        "recall": 0.8
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      }
+    ]
+  },
+  {
+    "name": "cut_for_search",
+    "mode": "and",
+    "tokMB": 1.12,
+    "perfect": 12,
+    "partial": 6,
+    "missAll": 0,
+    "avgRecall": 0.927,
+    "avgPrec": 0.984,
+    "bad": [
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本",
+          "控制",
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      },
+      {
+        "q": "暂存区",
+        "qToks": [
+          "暂存",
+          "暂存区"
+        ],
+        "gt": 40,
+        "found": 32,
+        "recall": 0.8
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      },
+      {
+        "q": "变基",
+        "qToks": [
+          "变基"
+        ],
+        "gt": 53,
+        "found": 46,
+        "recall": 0.87
+      }
+    ]
+  },
+  {
+    "name": "cut_for_search",
+    "mode": "or",
+    "tokMB": 1.12,
+    "perfect": 15,
+    "partial": 3,
+    "missAll": 0,
+    "avgRecall": 0.972,
+    "avgPrec": 0.77,
+    "bad": [
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      },
+      {
+        "q": "变基",
+        "qToks": [
+          "变基"
+        ],
+        "gt": 53,
+        "found": 46,
+        "recall": 0.87
+      },
+      {
+        "q": "快进",
+        "qToks": [
+          "快进"
+        ],
+        "gt": 19,
+        "found": 12,
+        "recall": 0.63
+      }
+    ]
+  },
+  {
+    "name": "cut_all",
+    "mode": "phrase",
+    "tokMB": 1.67,
+    "perfect": 10,
+    "partial": 8,
+    "missAll": 0,
+    "avgRecall": 0.921,
+    "avgPrec": 1,
+    "bad": [
+      {
+        "q": "版本",
+        "qToks": [
+          "版",
+          "版本",
+          "本"
+        ],
+        "gt": 171,
+        "found": 156,
+        "recall": 0.91
+      },
+      {
+        "q": "控制",
+        "qToks": [
+          "控",
+          "控制",
+          "制"
+        ],
+        "gt": 61,
+        "found": 35,
+        "recall": 0.57
+      },
+      {
+        "q": "系统",
+        "qToks": [
+          "系",
+          "系统",
+          "统"
+        ],
+        "gt": 107,
+        "found": 106,
+        "recall": 0.99
+      },
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版",
+          "版本",
+          "版本控制",
+          "本",
+          "控",
+          "控制",
+          "制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      }
+    ]
+  },
+  {
+    "name": "cut_all",
+    "mode": "and",
+    "tokMB": 1.67,
+    "perfect": 18,
+    "partial": 0,
+    "missAll": 0,
+    "avgRecall": 1,
+    "avgPrec": 0.923,
+    "bad": []
+  },
+  {
+    "name": "cut_all",
+    "mode": "or",
+    "tokMB": 1.67,
+    "perfect": 18,
+    "partial": 0,
+    "missAll": 0,
+    "avgRecall": 1,
+    "avgPrec": 0.326,
+    "bad": []
+  },
+  {
+    "name": "node-rs-search",
+    "mode": "phrase",
+    "tokMB": 1.16,
+    "perfect": 11,
+    "partial": 7,
+    "missAll": 0,
+    "avgRecall": 0.922,
+    "avgPrec": 1,
+    "bad": [
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本",
+          "控制",
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      },
+      {
+        "q": "分布式",
+        "qToks": [
+          "分布",
+          "布式",
+          "分布式"
+        ],
+        "gt": 13,
+        "found": 12,
+        "recall": 0.92
+      },
+      {
+        "q": "暂存区",
+        "qToks": [
+          "暂存",
+          "暂存区"
+        ],
+        "gt": 40,
+        "found": 32,
+        "recall": 0.8
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      }
+    ]
+  },
+  {
+    "name": "node-rs-search",
+    "mode": "and",
+    "tokMB": 1.16,
+    "perfect": 12,
+    "partial": 6,
+    "missAll": 0,
+    "avgRecall": 0.927,
+    "avgPrec": 0.984,
+    "bad": [
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本",
+          "控制",
+          "版本控制"
+        ],
+        "gt": 36,
+        "found": 16,
+        "recall": 0.44
+      },
+      {
+        "q": "暂存区",
+        "qToks": [
+          "暂存",
+          "暂存区"
+        ],
+        "gt": 40,
+        "found": 32,
+        "recall": 0.8
+      },
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      },
+      {
+        "q": "变基",
+        "qToks": [
+          "变基"
+        ],
+        "gt": 53,
+        "found": 46,
+        "recall": 0.87
+      }
+    ]
+  },
+  {
+    "name": "node-rs-search",
+    "mode": "or",
+    "tokMB": 1.16,
+    "perfect": 15,
+    "partial": 3,
+    "missAll": 0,
+    "avgRecall": 0.972,
+    "avgPrec": 0.77,
+    "bad": [
+      {
+        "q": "分支",
+        "qToks": [
+          "分支"
+        ],
+        "gt": 248,
+        "found": 247,
+        "recall": 1
+      },
+      {
+        "q": "变基",
+        "qToks": [
+          "变基"
+        ],
+        "gt": 53,
+        "found": 46,
+        "recall": 0.87
+      },
+      {
+        "q": "快进",
+        "qToks": [
+          "快进"
+        ],
+        "gt": 19,
+        "found": 12,
+        "recall": 0.63
+      }
+    ]
+  },
+  {
+    "name": "intl+bigram",
+    "mode": "phrase",
+    "tokMB": 1.88,
+    "perfect": 9,
+    "partial": 0,
+    "missAll": 9,
+    "avgRecall": 0.5,
+    "avgPrec": 0.5,
+    "bad": [
+      {
+        "q": "版本控制",
+        "qToks": [
+          "版本",
+          "控制",
+          "本控"
+        ],
+        "gt": 36,
+        "found": 0
+      },
+      {
+        "q": "版本控制系统",
+        "qToks": [
+          "版本",
+          "控制",
+          "系统",
+          "本控",
+          "制系"
+        ],
+        "gt": 24,
+        "found": 0
+      },
+      {
+        "q": "分布式",
+        "qToks": [
+          "分布",
+          "式",
+          "布式"
+        ],
+        "gt": 13,
+        "found": 0
+      },
+      {
+        "q": "暂存区",
+        "qToks": [
+          "暂存区",
+          "暂存",
+          "存区"
+        ],
+        "gt": 40,
+        "found": 0
+      }
+    ]
+  },
+  {
+    "name": "intl+bigram",
+    "mode": "and",
+    "tokMB": 1.88,
+    "perfect": 16,
+    "partial": 2,
+    "missAll": 0,
+    "avgRecall": 0.992,
+    "avgPrec": 1,
+    "bad": [
+      {
+        "q": "快进",
+        "qToks": [
+          "快",
+          "进",
+          "快进"
+        ],
+        "gt": 19,
+        "found": 17,
+        "recall": 0.89
+      },
+      {
+        "q": "子模块",
+        "qToks": [
+          "子",
+          "模",
+          "块",
+          "子模",
+          "模块"
+        ],
+        "gt": 32,
+        "found": 31,
+        "recall": 0.97
+      }
+    ]
+  },
+  {
+    "name": "intl+bigram",
+    "mode": "or",
+    "tokMB": 1.88,
+    "perfect": 18,
+    "partial": 0,
+    "missAll": 0,
+    "avgRecall": 1,
+    "avgPrec": 0.679,
+    "bad": []
+  }
+]

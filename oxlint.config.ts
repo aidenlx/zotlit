@@ -21,6 +21,8 @@ export default defineConfig({
     "packages/scripts/lib/fixture/vault-plugins/**",
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
+    // Standalone research trees. The workspace lint pass does not apply.
+    "prototypes/**",
   ],
   overrides: [
     {

@@ -1,0 +1,26 @@
+[package]
+name = "zotlit-fts-ext"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+name = "zotlit_cjk"
+
+[features]
+default = ["jieba"]
+jieba = ["zotlit-cjk-core/jieba"]
+
+[dependencies]
+zotlit-cjk-core = { path = "../zotlit-cjk-core", default-features = false }
+libsqlite3-sys = { version = "0.30", default-features = true, features = ["loadable_extension", "bundled_bindings"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
+
+[workspace]
+members = ["."]

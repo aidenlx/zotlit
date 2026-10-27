@@ -1,0 +1,55 @@
+{
+  "ok": true,
+  "electron": "37.6.0",
+  "node": "22.19.0",
+  "chrome": "138.0.7204.251",
+  "steps": [
+    {
+      "name": "node_sqlite_available",
+      "ok": true,
+      "detail": {
+        "keys": [
+          "DatabaseSync"
+        ]
+      }
+    },
+    {
+      "name": "open_allowExtension",
+      "ok": true,
+      "detail": {
+        "sqlite": "3.50.4",
+        "fts5_vtab": true
+      }
+    },
+    {
+      "name": "loadExtension",
+      "ok": true,
+      "detail": {
+        "path": "/workspace/bench/zotlit-fts-addon/dist/zotlit_cjk.so"
+      }
+    },
+    {
+      "name": "tokenizer_works",
+      "ok": true,
+      "detail": {
+        "phrase": [
+          "版本控制系统是软件工程的基础"
+        ],
+        "andq": [
+          "版本控制系统是软件工程的基础"
+        ],
+        "subword_控制": [
+          "版本控制系统是软件工程的基础"
+        ]
+      }
+    },
+    {
+      "name": "allowExtension_false_rejected",
+      "ok": true,
+      "detail": {
+        "rejected": true,
+        "message": "extension loading is not allowed"
+      }
+    }
+  ]
+}

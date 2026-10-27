@@ -1,0 +1,642 @@
+{
+  "so_sizes": {
+    "icu_only": 2710656,
+    "icu_jieba": 5868944
+  },
+  "zh": {
+    "icu-only": {
+      "label": "icu-only",
+      "index_ms": 98.6,
+      "index_bytes": 2195456,
+      "hand": {
+        "n": 15,
+        "and_recall": 0.9929,
+        "and_prec": 0.9993,
+        "phrase_recall": 0.9929,
+        "phrase_prec": 0.9993,
+        "samples": [
+          {
+            "q": "版本",
+            "gt": 171,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "控制",
+            "gt": 61,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制",
+            "gt": 36,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制系统",
+            "gt": 24,
+            "and_r": 1,
+            "and_p": 0.96,
+            "ph_r": 1
+          },
+          {
+            "q": "分支",
+            "gt": 248,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "提交",
+            "gt": 330,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      },
+      "sampled300": {
+        "n": 292,
+        "and_recall": 0.919,
+        "and_prec": 0.9965,
+        "phrase_recall": 0.919,
+        "phrase_prec": 0.9965,
+        "samples": [
+          {
+            "q": "正符合你的要求",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "通过这种方式",
+            "gt": 6,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "命令会将",
+            "gt": 5,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "都是真正的",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "的已被跟踪的文件",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "你已经学习了管理",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      }
+    },
+    "icu-only icu": {
+      "label": "icu-only icu",
+      "index_ms": 94.1,
+      "index_bytes": 2195456,
+      "hand": {
+        "n": 15,
+        "and_recall": 0.9929,
+        "and_prec": 0.9993,
+        "phrase_recall": 0.9929,
+        "phrase_prec": 0.9993,
+        "samples": [
+          {
+            "q": "版本",
+            "gt": 171,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "控制",
+            "gt": 61,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制",
+            "gt": 36,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制系统",
+            "gt": 24,
+            "and_r": 1,
+            "and_p": 0.96,
+            "ph_r": 1
+          },
+          {
+            "q": "分支",
+            "gt": 248,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "提交",
+            "gt": 330,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      },
+      "sampled300": {
+        "n": 292,
+        "and_recall": 0.919,
+        "and_prec": 0.9965,
+        "phrase_recall": 0.919,
+        "phrase_prec": 0.9965,
+        "samples": [
+          {
+            "q": "正符合你的要求",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "通过这种方式",
+            "gt": 6,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "命令会将",
+            "gt": 5,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "都是真正的",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "的已被跟踪的文件",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "你已经学习了管理",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      }
+    },
+    "full jieba": {
+      "label": "full jieba",
+      "index_ms": 137.7,
+      "index_bytes": 1622016,
+      "hand": {
+        "n": 15,
+        "and_recall": 0.9987,
+        "and_prec": 0.9004,
+        "phrase_recall": 0.9987,
+        "phrase_prec": 0.9004,
+        "samples": [
+          {
+            "q": "版本",
+            "gt": 171,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "控制",
+            "gt": 61,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制",
+            "gt": 36,
+            "and_r": 1,
+            "and_p": 0.196,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制系统",
+            "gt": 24,
+            "and_r": 1,
+            "and_p": 0.857,
+            "ph_r": 1
+          },
+          {
+            "q": "分支",
+            "gt": 248,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "提交",
+            "gt": 330,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      },
+      "sampled300": {
+        "n": 292,
+        "and_recall": 0.9882,
+        "and_prec": 0.2087,
+        "phrase_recall": 0.9882,
+        "phrase_prec": 0.2087,
+        "samples": [
+          {
+            "q": "正符合你的要求",
+            "gt": 1,
+            "and_r": 0,
+            "and_p": 0,
+            "ph_r": 0
+          },
+          {
+            "q": "通过这种方式",
+            "gt": 6,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "命令会将",
+            "gt": 5,
+            "and_r": 1,
+            "and_p": 0.011,
+            "ph_r": 1
+          },
+          {
+            "q": "都是真正的",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 0.002,
+            "ph_r": 1
+          },
+          {
+            "q": "的已被跟踪的文件",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 0.05,
+            "ph_r": 1
+          },
+          {
+            "q": "你已经学习了管理",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      }
+    },
+    "full icu": {
+      "label": "full icu",
+      "index_ms": 222.4,
+      "index_bytes": 2195456,
+      "hand": {
+        "n": 15,
+        "and_recall": 0.9929,
+        "and_prec": 0.9993,
+        "phrase_recall": 0.9929,
+        "phrase_prec": 0.9993,
+        "samples": [
+          {
+            "q": "版本",
+            "gt": 171,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "控制",
+            "gt": 61,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制",
+            "gt": 36,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制系统",
+            "gt": 24,
+            "and_r": 1,
+            "and_p": 0.96,
+            "ph_r": 1
+          },
+          {
+            "q": "分支",
+            "gt": 248,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "提交",
+            "gt": 330,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      },
+      "sampled300": {
+        "n": 292,
+        "and_recall": 0.919,
+        "and_prec": 0.9965,
+        "phrase_recall": 0.919,
+        "phrase_prec": 0.9965,
+        "samples": [
+          {
+            "q": "正符合你的要求",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "通过这种方式",
+            "gt": 6,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "命令会将",
+            "gt": 5,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "都是真正的",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "的已被跟踪的文件",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "你已经学习了管理",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      }
+    },
+    "full default": {
+      "label": "full default",
+      "index_ms": 148.7,
+      "index_bytes": 1622016,
+      "hand": {
+        "n": 15,
+        "and_recall": 0.9987,
+        "and_prec": 0.9004,
+        "phrase_recall": 0.9987,
+        "phrase_prec": 0.9004,
+        "samples": [
+          {
+            "q": "版本",
+            "gt": 171,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "控制",
+            "gt": 61,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制",
+            "gt": 36,
+            "and_r": 1,
+            "and_p": 0.196,
+            "ph_r": 1
+          },
+          {
+            "q": "版本控制系统",
+            "gt": 24,
+            "and_r": 1,
+            "and_p": 0.857,
+            "ph_r": 1
+          },
+          {
+            "q": "分支",
+            "gt": 248,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "提交",
+            "gt": 330,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      },
+      "sampled300": {
+        "n": 292,
+        "and_recall": 0.9882,
+        "and_prec": 0.2087,
+        "phrase_recall": 0.9882,
+        "phrase_prec": 0.2087,
+        "samples": [
+          {
+            "q": "正符合你的要求",
+            "gt": 1,
+            "and_r": 0,
+            "and_p": 0,
+            "ph_r": 0
+          },
+          {
+            "q": "通过这种方式",
+            "gt": 6,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          },
+          {
+            "q": "命令会将",
+            "gt": 5,
+            "and_r": 1,
+            "and_p": 0.011,
+            "ph_r": 1
+          },
+          {
+            "q": "都是真正的",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 0.002,
+            "ph_r": 1
+          },
+          {
+            "q": "的已被跟踪的文件",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 0.05,
+            "ph_r": 1
+          },
+          {
+            "q": "你已经学习了管理",
+            "gt": 1,
+            "and_r": 1,
+            "and_p": 1,
+            "ph_r": 1
+          }
+        ]
+      }
+    }
+  },
+  "reject_jieba_on_icu_only": {
+    "ok": false,
+    "error": "error in tokenizer constructor"
+  },
+  "english": {
+    "text": "Use pre-commit on git-scm.com with C++ and v2.4.0 — café",
+    "icu": [
+      "and",
+      "c",
+      "cafe",
+      "commit",
+      "git",
+      "on",
+      "pre",
+      "scm.com",
+      "use",
+      "v2.4.0",
+      "with"
+    ],
+    "unicode61": [
+      "0",
+      "4",
+      "and",
+      "c",
+      "cafe",
+      "com",
+      "commit",
+      "git",
+      "on",
+      "pre",
+      "scm",
+      "use",
+      "v2",
+      "with"
+    ]
+  },
+  "thai": {
+    "tokens": [
+      "ของ",
+      "คือ",
+      "ชาติ",
+      "ประจำ",
+      "ประเทศ",
+      "ภาษา",
+      "ไทย"
+    ]
+  },
+  "ja_hand_full": {
+    "n": 6,
+    "and_recall": 0.9645,
+    "and_prec": 1,
+    "phrase_recall": 0.9645,
+    "phrase_prec": 1,
+    "samples": [
+      {
+        "q": "ブランチ",
+        "gt": 205,
+        "and_r": 0.937,
+        "and_p": 1,
+        "ph_r": 0.937
+      },
+      {
+        "q": "リポジトリ",
+        "gt": 198,
+        "and_r": 0.97,
+        "and_p": 1,
+        "ph_r": 0.97
+      },
+      {
+        "q": "コミット",
+        "gt": 261,
+        "and_r": 0.943,
+        "and_p": 1,
+        "ph_r": 0.943
+      },
+      {
+        "q": "変更",
+        "gt": 197,
+        "and_r": 1,
+        "and_p": 1,
+        "ph_r": 1
+      },
+      {
+        "q": "管理",
+        "gt": 82,
+        "and_r": 1,
+        "and_p": 1,
+        "ph_r": 1
+      },
+      {
+        "q": "バージョン管理システム",
+        "gt": 15,
+        "and_r": 1,
+        "and_p": 1,
+        "ph_r": 1
+      }
+    ]
+  },
+  "generated_at": "2026-10-27T09:44:51.011Z"
+}

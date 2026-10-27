@@ -1,0 +1,110 @@
+{
+  "bytes": 836029,
+  "pages": 501,
+  "wasmInitMs": 14.423563000000009,
+  "nodeInitMs": 90.684221,
+  "intlInitMs": 9.670524999999998,
+  "thr": [
+    {
+      "name": "intl",
+      "ms": 93.5,
+      "msPerPage": 0.187,
+      "MBps": 8.95
+    },
+    {
+      "name": "wasm-cut-hmm",
+      "ms": 143.3,
+      "msPerPage": 0.286,
+      "MBps": 5.84
+    },
+    {
+      "name": "wasm-cut-nohmm",
+      "ms": 120.4,
+      "msPerPage": 0.24,
+      "MBps": 6.95
+    },
+    {
+      "name": "wasm-cut_for_search-hmm",
+      "ms": 150.3,
+      "msPerPage": 0.3,
+      "MBps": 5.56
+    },
+    {
+      "name": "wasm-cut_for_search-nohmm",
+      "ms": 122.7,
+      "msPerPage": 0.245,
+      "MBps": 6.81
+    },
+    {
+      "name": "wasm-cut_all",
+      "ms": 130.5,
+      "msPerPage": 0.26,
+      "MBps": 6.41
+    },
+    {
+      "name": "node-rs-cut-hmm",
+      "ms": 45.4,
+      "msPerPage": 0.091,
+      "MBps": 18.42
+    },
+    {
+      "name": "node-rs-cutForSearch-hmm",
+      "ms": 52.1,
+      "msPerPage": 0.104,
+      "MBps": 16.04
+    }
+  ],
+  "thrP": [
+    {
+      "name": "intl/page",
+      "ms": 75.4,
+      "msPerPage": 0.151,
+      "MBps": 11.08
+    },
+    {
+      "name": "wasm-cut-hmm/page",
+      "ms": 144.4,
+      "msPerPage": 0.288,
+      "MBps": 5.79
+    },
+    {
+      "name": "wasm-cut-nohmm/page",
+      "ms": 118.6,
+      "msPerPage": 0.237,
+      "MBps": 7.05
+    },
+    {
+      "name": "wasm-cut_for_search-hmm/page",
+      "ms": 153,
+      "msPerPage": 0.305,
+      "MBps": 5.46
+    },
+    {
+      "name": "wasm-cut_for_search-nohmm/page",
+      "ms": 132.2,
+      "msPerPage": 0.264,
+      "MBps": 6.33
+    },
+    {
+      "name": "wasm-cut_all/page",
+      "ms": 128.4,
+      "msPerPage": 0.256,
+      "MBps": 6.51
+    },
+    {
+      "name": "node-rs-cut-hmm/page",
+      "ms": 43.2,
+      "msPerPage": 0.086,
+      "MBps": 19.35
+    },
+    {
+      "name": "node-rs-cutForSearch-hmm/page",
+      "ms": 43.5,
+      "msPerPage": 0.087,
+      "MBps": 19.2
+    }
+  ],
+  "wasmSize": 4015140,
+  "wasmGzip": 2805489,
+  "rssEnd": 390
+}

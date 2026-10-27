@@ -1,0 +1,14 @@
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
+const require = createRequire(import.meta.url);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const t0 = performance.now();
+const addon = require(path.join(root, 'dist', 'zotlit_fts.node'));
+const db = addon.FtsDb.open(':memory:');
+db.exec(`CREATE VIRTUAL TABLE docs USING fts5(content, tokenize='zotlit_cjk');`);
+db.run('INSERT INTO docs(content) VALUES (?)', ['版本控制系统']);
+const rows = db.all(`SELECT count(*) FROM docs WHERE docs MATCH '控制'`);
+const ms = performance.now() - t0;
+console.log(JSON.stringify({ ms: +ms.toFixed(2), hit: rows }));

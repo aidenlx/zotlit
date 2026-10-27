@@ -1,0 +1,10 @@
+target/
+node_modules/
+dist/*.so
+dist/*.dylib
+dist/*.dll
+dist/*.node
+dist/*.db
+dist/e2e-demo.json
+samples/progit-*.pdf
+*.log

@@ -1,0 +1,16 @@
+[package]
+name = "zotlit-cjk-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[features]
+default = ["jieba"]
+jieba = ["dep:jieba-rs", "dep:parking_lot"]
+jk-lindera = ["dep:lindera"]
+
+[dependencies]
+icu_segmenter = { version = "2.4", default-features = true }
+jieba-rs = { version = "0.11", default-features = true, optional = true }
+parking_lot = { version = "0.12", optional = true }
+lindera = { version = "6.2", default-features = false, features = ["embed-ipadic", "embed-ko-dic"], optional = true }

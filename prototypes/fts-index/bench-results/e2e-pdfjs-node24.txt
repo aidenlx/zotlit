@@ -1,0 +1,59 @@
+=== ZotLit FTS e2e ===
+pdf: ./samples/sample-cjk.pdf
+variant: icu tokenize: zotlit_cjk
+ZOTLIT_PDF_WORKER: (unset → pdf.js fallback)
+extract: pdfjs-fallback units 4 340ms
+index mode: ext:zotlit_cjk_icu.so:zotlit_cjk
+indexed 4 units in 1.5ms → ./dist/e2e-demo.db
+
+QUERY "版本控制" → 3 hit(s)
+  p3 label=3 § 2. 进阶主题
+  snip: …internationalization across a line break (Latin).中文断行测试：«版本控制»系统应保持页码索引稳定。查询「«版本控制»」或「控制」应能…
+  link: zotero://open-pdf/library/items/ATT1?page=4&annotation=
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: 1.1 分布式工作流分布式«版本控制»系统允许每位贡献者拥有完整历史。 Remote remotes track upstream branches.快进…
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+  p0 label=i § 前言
+  snip: 前言ZotLit PDF Full-Text Search Prototype本样本为自拟演示文稿，许可 CC0 1.0。«版本控制»系统（VCS）帮助团队协作…
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "控制" → 3 hit(s)
+  p3 label=3 § 2. 进阶主题
+  snip: …internationalization across a line break (Latin).中文断行测试：版本«控制»系统应保持页码索引«稳定»。查询「版本«控制»」或「«控制»」应能…
+  link: zotero://open-pdf/library/items/ATT1?page=4&annotation=
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: 1.1 分布式工作流分布式版本«控制»系统允许每位贡献者拥有完整«历史»。 Remote remotes track upstream branches.快进…
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+  p0 label=i § 前言
+  snip: 前言ZotLit PDF Full-Text Search Prototype本样本为自拟演示文稿，许可 CC0 1.0。版本«控制系统»（VCS）帮助团队协作…
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "暂存区" → 1 hit(s)
+  p1 label=1 § 1. 入门 / Getting Started
+  snip: …Creating a branch is cheap.«暂存区»（staging area）位于工作目录与仓库之间。常用操作包括克隆（clone）、合并（merge）与变…
+  link: zotero://open-pdf/library/items/ATT1?page=2&annotation=
+
+QUERY "pre-commit" → 1 hit(s)
+  p0 label=i § 前言
+  snip: …管理源代码。 Git is a distributed version control system.示例短语：«pre-commit»、git-scm.com、C++、v2.4.0。 page label: i (index 0)
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "v2.4.0" → 2 hit(s)
+  p3 label=3 § 2. 进阶主题
+  snip: …进阶主题标签（tag）标记发布点，例如 «v2.4.0»。 Hyphenation test: internationalization across a line break (Latin).中文断行测试：版本控制系统…
+  link: zotero://open-pdf/library/items/ATT1?page=4&annotation=
+  p0 label=i § 前言
+  snip: …管理源代码。 Git is a distributed version control system.示例短语：pre-commit、git-scm.com、C++、«v2.4.0»。 page label: i (index 0)
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "저장소" → 1 hit(s)
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: …branches.快进（fast-forward）合并在无分叉时发生。日本語：バージョン管理システム。한국어: «저장소» 관리 예제. page label: 2 (index 2)
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+
+QUERY "バージョン" → 1 hit(s)
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: …branches.快进（fast-forward）合并在无分叉时发生。日本語：«バージョン»管理システム。한국어: 저장소 관리 예제. page label: 2 (index 2)
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+
+Wrote ./dist/e2e-demo.json

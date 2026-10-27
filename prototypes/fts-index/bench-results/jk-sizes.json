@@ -1,0 +1,22 @@
+{
+  "ext_icu_so": 5853168,
+  "probe_jieba": 3186448,
+  "probe_icu_auto_only": 2647824,
+  "probe_icu_dict_only": 3358824,
+  "probe_jieba_icu_auto": 5569048,
+  "probe_jieba_icu_dict": 6280208,
+  "lindera_ipadic": 48161120,
+  "lindera_kodic": 86234768,
+  "lindera_both": 133767808,
+  "lindera_unidic": 199949264,
+  "ext_icu_so_MiB": 5.58,
+  "probe_jieba_MiB": 3.04,
+  "probe_icu_auto_only_MiB": 2.53,
+  "probe_icu_dict_only_MiB": 3.2,
+  "probe_jieba_icu_auto_MiB": 5.31,
+  "probe_jieba_icu_dict_MiB": 5.99,
+  "lindera_ipadic_MiB": 45.93,
+  "lindera_kodic_MiB": 82.24,
+  "lindera_both_MiB": 127.57,
+  "lindera_unidic_MiB": 190.69
+}

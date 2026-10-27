@@ -1,0 +1,59 @@
+=== ZotLit FTS e2e ===
+pdf: ./samples/sample-cjk.pdf
+variant: icu tokenize: zotlit_cjk
+ZOTLIT_PDF_WORKER: $ZOTLIT_PDF_WORKER
+extract: zotero-sdt units 25 1471ms
+index mode: ext:zotlit_cjk_icu.so:zotlit_cjk
+indexed 25 units in 2.2ms → ./dist/e2e-demo.db
+
+QUERY "版本控制" → 3 hit(s)
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: 分布式«版本控制»系统允许每位贡献者拥有完整历史。
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+  p3 label=3 § 2. 进阶主题
+  snip: 控制系统应保持页码索引稳定。 查询「«版本控制»」或「控制」应能命中本页。
+  link: zotero://open-pdf/library/items/ATT1?page=4&annotation=
+  p0 label=i § 前言
+  snip: 本样本为自拟演示文稿,许可 CC0 1.0。 «版本控制»系统(VCS)帮助团队协作管理源代码。
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "控制" → 3 hit(s)
+  p3 label=3 § 2. 进阶主题
+  snip: «控制»系统应保持页码索引«稳定»。 查询「版本«控制»」或「«控制»」应能命中本页。
+  link: zotero://open-pdf/library/items/ATT1?page=4&annotation=
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: 分布式版本«控制»系统允许每位贡献者拥有完整«历史»。
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+  p0 label=i § 前言
+  snip: 本样本为自拟演示文稿,许可 CC0 1.0。 版本«控制系统»(VCS)帮助团队协作管理源代码。
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "暂存区" → 1 hit(s)
+  p1 label=1 § 1. 入门 / Getting Started
+  snip: «暂存区»(staging area)位于工作目录与仓库之间。
+  link: zotero://open-pdf/library/items/ATT1?page=2&annotation=
+
+QUERY "pre-commit" → 1 hit(s)
+  p0 label=i § 前言
+  snip: 示例短语:«pre-commit»、git-scm.com、C++、v2.4.0。
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "v2.4.0" → 2 hit(s)
+  p3 label=3 § 2. 进阶主题
+  snip: 标签(tag)标记发布点,例如 «v2.4.0»。
+  link: zotero://open-pdf/library/items/ATT1?page=4&annotation=
+  p0 label=i § 前言
+  snip: 示例短语:pre-commit、git-scm.com、C++、«v2.4.0»。
+  link: zotero://open-pdf/library/items/ATT1?page=1&annotation=
+
+QUERY "저장소" → 1 hit(s)
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: 한국어: «저장소» 관리 예제.
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+
+QUERY "バージョン" → 1 hit(s)
+  p2 label=2 § 1. 入门 / Getting Started / 1.1 分布式工作流
+  snip: 快进(fast-forward)合并在无分叉时发生。 日本語:«バージョン»管理システム。
+  link: zotero://open-pdf/library/items/ATT1?page=3&annotation=
+
+Wrote ./dist/e2e-demo.json

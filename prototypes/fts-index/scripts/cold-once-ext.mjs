@@ -1,0 +1,13 @@
+import { DatabaseSync } from 'node:sqlite';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const t0 = performance.now();
+const db = new DatabaseSync(':memory:', { allowExtension: true });
+db.loadExtension(path.join(root, 'dist', 'zotlit_cjk.so'));
+db.exec(`CREATE VIRTUAL TABLE docs USING fts5(content, tokenize='zotlit_cjk');`);
+db.prepare('INSERT INTO docs(content) VALUES (?)').run('版本控制系统');
+const n = db.prepare(`SELECT count(*) as c FROM docs WHERE docs MATCH '控制'`).get().c;
+const ms = performance.now() - t0;
+console.log(JSON.stringify({ ms: +ms.toFixed(2), hit: n }));

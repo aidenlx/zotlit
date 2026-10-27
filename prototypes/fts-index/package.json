@@ -1,0 +1,21 @@
+{
+  "name": "zotlit-fts-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Prototype: PDF → FTS5 index for ZotLit (#1799). Option C loadable extension.",
+  "license": "MIT",
+  "scripts": {
+    "build:ext": "bash scripts/build-ext.sh",
+    "build:ext:icu": "bash scripts/build-ext.sh icu",
+    "build:ext:jieba": "bash scripts/build-ext.sh jieba",
+    "e2e": "node pipeline/run-e2e.mjs",
+    "e2e:jieba": "ZOTLIT_CJK_VARIANT=jieba node pipeline/run-e2e.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.10.38"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

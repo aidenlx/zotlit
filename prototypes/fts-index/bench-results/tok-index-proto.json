@@ -1,0 +1,1228 @@
+{
+  "summary": [
+    {
+      "index": "intl",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.7367,
+      "avgPrecision": 0.9961,
+      "handAvgRecall": 0.9856,
+      "diskMB": 1.74,
+      "ftsDataMB": 1.74,
+      "tokMB": 0.84,
+      "tokCount": 140659,
+      "buildMs": 123.5
+    },
+    {
+      "index": "intl",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.7575,
+      "avgPrecision": 0.7932,
+      "handAvgRecall": 0.9873,
+      "diskMB": 1.74,
+      "ftsDataMB": 1.74,
+      "tokMB": 0.84,
+      "tokCount": 140659,
+      "buildMs": 123.5
+    },
+    {
+      "index": "intl+bigram",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.8224,
+      "avgPrecision": 0.9961,
+      "handAvgRecall": 0.9907,
+      "diskMB": 3.94,
+      "ftsDataMB": 3.65,
+      "tokMB": 1.88,
+      "tokCount": 288539,
+      "buildMs": 172.2
+    },
+    {
+      "index": "intl+bigram",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.8432,
+      "avgPrecision": 0.7898,
+      "handAvgRecall": 0.9924,
+      "diskMB": 3.94,
+      "ftsDataMB": 3.65,
+      "tokMB": 1.88,
+      "tokCount": 288539,
+      "buildMs": 172.2
+    },
+    {
+      "index": "cut_for_search",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.7829,
+      "avgPrecision": 0.9968,
+      "handAvgRecall": 0.9222,
+      "diskMB": 2.2,
+      "ftsDataMB": 2.2,
+      "tokMB": 1.16,
+      "tokCount": 249130,
+      "buildMs": 97.8
+    },
+    {
+      "index": "cut_for_search",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.7925,
+      "avgPrecision": 0.9341,
+      "handAvgRecall": 0.9265,
+      "diskMB": 2.2,
+      "ftsDataMB": 2.2,
+      "tokMB": 1.16,
+      "tokCount": 249130,
+      "buildMs": 97.8
+    },
+    {
+      "index": "cut_all",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.8801,
+      "avgPrecision": 0.9842,
+      "handAvgRecall": 0.7222,
+      "diskMB": 3.18,
+      "ftsDataMB": 3.17,
+      "tokMB": 1.67,
+      "tokCount": 378566,
+      "buildMs": 119.7
+    },
+    {
+      "index": "cut_all",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.9937,
+      "avgPrecision": 0.9009,
+      "handAvgRecall": 0.8889,
+      "diskMB": 3.18,
+      "ftsDataMB": 3.17,
+      "tokMB": 1.67,
+      "tokCount": 378566,
+      "buildMs": 119.7
+    },
+    {
+      "index": "cut_for_index",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.8978,
+      "avgPrecision": 0.9835,
+      "handAvgRecall": 0.8371,
+      "diskMB": 1.39,
+      "ftsDataMB": 1.39,
+      "tokMB": 0.64,
+      "tokCount": 97972,
+      "buildMs": 186.3
+    },
+    {
+      "index": "cut_for_index",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.9169,
+      "avgPrecision": 0.9341,
+      "handAvgRecall": 0.975,
+      "diskMB": 1.39,
+      "ftsDataMB": 1.39,
+      "tokMB": 0.64,
+      "tokCount": 97972,
+      "buildMs": 186.3
+    },
+    {
+      "index": "cut_for_index_nohmm",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.9018,
+      "avgPrecision": 0.9838,
+      "handAvgRecall": 0.8586,
+      "diskMB": 1.34,
+      "ftsDataMB": 1.33,
+      "tokMB": 0.61,
+      "tokCount": 96220,
+      "buildMs": 179.2
+    },
+    {
+      "index": "cut_for_index_nohmm",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.9276,
+      "avgPrecision": 0.9352,
+      "handAvgRecall": 1,
+      "diskMB": 1.34,
+      "ftsDataMB": 1.33,
+      "tokMB": 0.61,
+      "tokCount": 96220,
+      "buildMs": 179.2
+    },
+    {
+      "index": "cut_for_index_domain",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.899,
+      "avgPrecision": 0.9835,
+      "handAvgRecall": 0.8586,
+      "diskMB": 1.39,
+      "ftsDataMB": 1.38,
+      "tokMB": 0.64,
+      "tokCount": 97940,
+      "buildMs": 179.7
+    },
+    {
+      "index": "cut_for_index_domain",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.9181,
+      "avgPrecision": 0.9341,
+      "handAvgRecall": 0.9965,
+      "diskMB": 1.39,
+      "ftsDataMB": 1.38,
+      "tokMB": 0.64,
+      "tokCount": 97940,
+      "buildMs": 179.7
+    },
+    {
+      "index": "cut_for_index+bigram",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.8991,
+      "avgPrecision": 0.9835,
+      "handAvgRecall": 0.8598,
+      "diskMB": 3.71,
+      "ftsDataMB": 3.41,
+      "tokMB": 1.68,
+      "tokCount": 245696,
+      "buildMs": 245.6
+    },
+    {
+      "index": "cut_for_index+bigram",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.9181,
+      "avgPrecision": 0.9341,
+      "handAvgRecall": 0.9965,
+      "diskMB": 3.71,
+      "ftsDataMB": 3.41,
+      "tokMB": 1.68,
+      "tokCount": 245696,
+      "buildMs": 245.6
+    },
+    {
+      "index": "cut_for_index_domain+bigram",
+      "mode": "phrase",
+      "n": 316,
+      "avgRecall": 0.8991,
+      "avgPrecision": 0.9835,
+      "handAvgRecall": 0.8598,
+      "diskMB": 3.71,
+      "ftsDataMB": 3.41,
+      "tokMB": 1.68,
+      "tokCount": 245693,
+      "buildMs": 230.4
+    },
+    {
+      "index": "cut_for_index_domain+bigram",
+      "mode": "and",
+      "n": 316,
+      "avgRecall": 0.9181,
+      "avgPrecision": 0.9341,
+      "handAvgRecall": 0.9965,
+      "diskMB": 3.71,
+      "ftsDataMB": 3.41,
+      "tokMB": 1.68,
+      "tokCount": 245693,
+      "buildMs": 230.4
+    }
+  ],
+  "handMissesAnd": {
+    "intl": [
+      {
+        "q": "版本",
+        "recall": 0.994,
+        "truth": 171,
+        "hits": 170,
+        "tp": 170
+      },
+      {
+        "q": "控制",
+        "recall": 0.918,
+        "truth": 61,
+        "hits": 56,
+        "tp": 56
+      },
+      {
+        "q": "分支",
+        "recall": 0.996,
+        "truth": 248,
+        "hits": 247,
+        "tp": 247
+      },
+      {
+        "q": "快进",
+        "recall": 0.895,
+        "truth": 19,
+        "hits": 17,
+        "tp": 17
+      },
+      {
+        "q": "子模块",
+        "recall": 0.969,
+        "truth": 32,
+        "hits": 31,
+        "tp": 31
+      }
+    ],
+    "intl+bigram": [
+      {
+        "q": "快进",
+        "recall": 0.895,
+        "truth": 19,
+        "hits": 17,
+        "tp": 17
+      },
+      {
+        "q": "子模块",
+        "recall": 0.969,
+        "truth": 32,
+        "hits": 31,
+        "tp": 31
+      }
+    ],
+    "cut_for_search": [
+      {
+        "q": "版本控制",
+        "recall": 0.444,
+        "truth": 36,
+        "hits": 16,
+        "tp": 16
+      },
+      {
+        "q": "暂存区",
+        "recall": 0.8,
+        "truth": 40,
+        "hits": 32,
+        "tp": 32
+      },
+      {
+        "q": "分支",
+        "recall": 0.996,
+        "truth": 248,
+        "hits": 247,
+        "tp": 247
+      },
+      {
+        "q": "变基",
+        "recall": 0.868,
+        "truth": 53,
+        "hits": 46,
+        "tp": 46
+      },
+      {
+        "q": "快进",
+        "recall": 0.632,
+        "truth": 19,
+        "hits": 12,
+        "tp": 12
+      },
+      {
+        "q": "子模块",
+        "recall": 0.938,
+        "truth": 32,
+        "hits": 30,
+        "tp": 30
+      }
+    ],
+    "cut_all": [
+      {
+        "q": "变基",
+        "recall": 0,
+        "truth": 53,
+        "hits": 0,
+        "tp": 0
+      },
+      {
+        "q": "快进",
+        "recall": 0,
+        "truth": 19,
+        "hits": 0,
+        "tp": 0
+      }
+    ],
+    "cut_for_index": [
+      {
+        "q": "变基",
+        "recall": 0.981,
+        "truth": 53,
+        "hits": 52,
+        "tp": 52
+      },
+      {
+        "q": "快进",
+        "recall": 0.632,
+        "truth": 19,
+        "hits": 12,
+        "tp": 12
+      },
+      {
+        "q": "子模块",
+        "recall": 0.938,
+        "truth": 32,
+        "hits": 30,
+        "tp": 30
+      }
+    ],
+    "cut_for_index_nohmm": [],
+    "cut_for_index_domain": [
+      {
+        "q": "子模块",
+        "recall": 0.938,
+        "truth": 32,
+        "hits": 30,
+        "tp": 30
+      }
+    ],
+    "cut_for_index+bigram": [
+      {
+        "q": "子模块",
+        "recall": 0.938,
+        "truth": 32,
+        "hits": 30,
+        "tp": 30
+      }
+    ],
+    "cut_for_index_domain+bigram": [
+      {
+        "q": "子模块",
+        "recall": 0.938,
+        "truth": 32,
+        "hits": 30,
+        "tp": 30
+      }
+    ]
+  },
+  "spots": {
+    "intl": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 0.918,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制"
+        ],
+        "indexSample": [
+          "版本",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 1,
+        "qToks": [
+          "变",
+          "基"
+        ],
+        "indexSample": [
+          "变",
+          "基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 0.895,
+        "qToks": [
+          "快",
+          "进"
+        ],
+        "indexSample": [
+          "快",
+          "进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版",
+          "本"
+        ],
+        "indexSample": [
+          "旧版",
+          "本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制",
+          "系统"
+        ],
+        "indexSample": [
+          "版本",
+          "控制",
+          "系统"
+        ]
+      }
+    },
+    "intl+bigram": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制",
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制"
+        ],
+        "indexSample": [
+          "版本",
+          "控制",
+          "版本",
+          "本控",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 1,
+        "qToks": [
+          "变",
+          "基"
+        ],
+        "indexSample": [
+          "变",
+          "基",
+          "变基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 0.895,
+        "qToks": [
+          "快",
+          "进"
+        ],
+        "indexSample": [
+          "快",
+          "进",
+          "快进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版",
+          "本"
+        ],
+        "indexSample": [
+          "旧版",
+          "本",
+          "旧版",
+          "版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存区",
+          "暂存",
+          "存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制",
+          "系统"
+        ],
+        "indexSample": [
+          "版本",
+          "控制",
+          "系统",
+          "版本",
+          "本控",
+          "控制",
+          "制系",
+          "系统"
+        ]
+      }
+    },
+    "cut_for_search": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 0.444,
+        "qToks": [
+          "版本",
+          "控制",
+          "版本控制"
+        ],
+        "indexSample": [
+          "版本",
+          "控制",
+          "版本控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 0.868,
+        "qToks": [
+          "变基"
+        ],
+        "indexSample": [
+          "变基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 0.632,
+        "qToks": [
+          "快进"
+        ],
+        "indexSample": [
+          "快进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版",
+          "版本",
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧版",
+          "版本",
+          "旧版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 0.8,
+        "qToks": [
+          "暂存",
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存",
+          "暂存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制",
+          "系统",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版本",
+          "控制",
+          "系统",
+          "控制系统"
+        ]
+      }
+    },
+    "cut_all": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控",
+          "控制",
+          "制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本控制"
+        ],
+        "indexSample": [
+          "版",
+          "版本",
+          "版本控制",
+          "本",
+          "控",
+          "控制",
+          "制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 0,
+        "qToks": [
+          "变基"
+        ],
+        "indexSample": [
+          "变",
+          "基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 0,
+        "qToks": [
+          "快进"
+        ],
+        "indexSample": [
+          "快",
+          "进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧",
+          "旧版",
+          "旧版本",
+          "版",
+          "版本",
+          "本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂",
+          "暂存",
+          "暂存区",
+          "存",
+          "区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版",
+          "版本",
+          "版本控制",
+          "本",
+          "控",
+          "控制",
+          "控制系统",
+          "制",
+          "系",
+          "系统",
+          "统"
+        ]
+      }
+    },
+    "cut_for_index": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本控制"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 0.981,
+        "qToks": [
+          "变基"
+        ],
+        "indexSample": [
+          "变基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 0.632,
+        "qToks": [
+          "快进"
+        ],
+        "indexSample": [
+          "快进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧版",
+          "旧版本",
+          "版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存",
+          "暂存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "控制系统",
+          "系统"
+        ]
+      }
+    },
+    "cut_for_index_nohmm": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本控制"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 1,
+        "qToks": [
+          "变",
+          "基"
+        ],
+        "indexSample": [
+          "变",
+          "基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 1,
+        "qToks": [
+          "快",
+          "进"
+        ],
+        "indexSample": [
+          "快",
+          "进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧版",
+          "旧版本",
+          "版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存",
+          "暂存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "控制系统",
+          "系统"
+        ]
+      }
+    },
+    "cut_for_index_domain": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本控制"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 1,
+        "qToks": [
+          "变基"
+        ],
+        "indexSample": [
+          "变基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 1,
+        "qToks": [
+          "快进"
+        ],
+        "indexSample": [
+          "快进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧版",
+          "旧版本",
+          "版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存",
+          "暂存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "控制系统",
+          "系统"
+        ]
+      }
+    },
+    "cut_for_index+bigram": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制",
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本控制"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "版本",
+          "本控",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 1,
+        "qToks": [
+          "变基"
+        ],
+        "indexSample": [
+          "变基",
+          "变基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 1,
+        "qToks": [
+          "快进"
+        ],
+        "indexSample": [
+          "快进",
+          "快进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧版",
+          "旧版本",
+          "版本",
+          "旧版",
+          "版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存",
+          "暂存区",
+          "暂存",
+          "存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "控制系统",
+          "系统",
+          "版本",
+          "本控",
+          "控制",
+          "制系",
+          "系统"
+        ]
+      }
+    },
+    "cut_for_index_domain+bigram": {
+      "控制": {
+        "truth": 61,
+        "andRecall": 1,
+        "qToks": [
+          "控制"
+        ],
+        "indexSample": [
+          "控制",
+          "控制"
+        ]
+      },
+      "版本控制": {
+        "truth": 36,
+        "andRecall": 1,
+        "qToks": [
+          "版本控制"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "版本",
+          "本控",
+          "控制"
+        ]
+      },
+      "变基": {
+        "truth": 53,
+        "andRecall": 1,
+        "qToks": [
+          "变基"
+        ],
+        "indexSample": [
+          "变基",
+          "变基"
+        ]
+      },
+      "快进": {
+        "truth": 19,
+        "andRecall": 1,
+        "qToks": [
+          "快进"
+        ],
+        "indexSample": [
+          "快进",
+          "快进"
+        ]
+      },
+      "旧版本": {
+        "truth": 6,
+        "andRecall": 1,
+        "qToks": [
+          "旧版本"
+        ],
+        "indexSample": [
+          "旧版",
+          "旧版本",
+          "版本",
+          "旧版",
+          "版本"
+        ]
+      },
+      "暂存区": {
+        "truth": 40,
+        "andRecall": 1,
+        "qToks": [
+          "暂存区"
+        ],
+        "indexSample": [
+          "暂存",
+          "暂存区",
+          "暂存",
+          "存区"
+        ]
+      },
+      "版本控制系统": {
+        "truth": 24,
+        "andRecall": 1,
+        "qToks": [
+          "版本",
+          "控制系统"
+        ],
+        "indexSample": [
+          "版本",
+          "版本控制",
+          "控制",
+          "控制系统",
+          "系统",
+          "版本",
+          "本控",
+          "控制",
+          "制系",
+          "系统"
+        ]
+      }
+    }
+  },
+  "queries": {
+    "hand": 26,
+    "auto": 300,
+    "total": 324
+  }
+}

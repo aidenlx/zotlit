@@ -1,0 +1,7 @@
+sample-cjk.pdf — CC0 1.0 (public domain dedication). Self-authored demo text.
+Fonts used only at generation time (Ma Shan Zheng / DotGothic16 / Gothic A1,
+SIL OFL) are not embedded as redistributable font packages; the PDF embeds
+subset glyphs as usual.
+
+Pro Git PDFs (download-progit.sh) — CC BY-NC-SA 3.0.
+Do not commit downloaded Pro Git corpora into this prototype tree.

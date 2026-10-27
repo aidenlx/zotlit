@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "electron": "37.6.0",
+  "node": "22.19.0",
+  "so": "dist/zotlit_cjk_icu.so",
+  "steps": [
+    {
+      "name": "open_allowExtension",
+      "ok": true,
+      "detail": {
+        "sqlite": "3.50.4"
+      }
+    },
+    {
+      "name": "loadExtension",
+      "ok": true,
+      "detail": {
+        "path": "dist/zotlit_cjk_icu.so",
+        "bytes": 2710656
+      }
+    },
+    {
+      "name": "tokenize_default",
+      "ok": true,
+      "detail": {
+        "hit_控制": 1
+      }
+    },
+    {
+      "name": "arg_icu",
+      "ok": true,
+      "detail": {
+        "ok": true
+      }
+    },
+    {
+      "name": "arg_jieba",
+      "ok": true,
+      "detail": {
+        "created": false,
+        "error": "error in tokenizer constructor"
+      }
+    }
+  ]
+}

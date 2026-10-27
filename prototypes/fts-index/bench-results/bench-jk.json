@@ -1,0 +1,1859 @@
+{
+  "so_bytes": 5853168,
+  "ja": {
+    "locale": "ja",
+    "docs": 447,
+    "summary": [
+      {
+        "variant": "ext-icu",
+        "index_ms": 172.5,
+        "index_bytes": 2285568,
+        "hand": {
+          "label": "ext-icu/hand",
+          "n_queries": 15,
+          "micro_recall": 0.9482,
+          "micro_prec": 0.9821,
+          "phrase_frac": 0.933,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 192,
+              "recall": 0.937,
+              "prec": 1,
+              "phrase_recall": 0.937
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 192,
+              "recall": 0.97,
+              "prec": 1,
+              "phrase_recall": 0.97
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 246,
+              "recall": 0.943,
+              "prec": 1,
+              "phrase_recall": 0.943
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 82,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 15,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 21,
+              "recall": 1,
+              "prec": 0.095,
+              "phrase_recall": 1
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 23,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "all": {
+          "label": "ext-icu/all",
+          "n_queries": 212,
+          "micro_recall": 0.8601,
+          "micro_prec": 0.9935,
+          "phrase_frac": 0.604,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 192,
+              "recall": 0.937,
+              "prec": 1,
+              "phrase_recall": 0.937
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 192,
+              "recall": 0.97,
+              "prec": 1,
+              "phrase_recall": 0.97
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 246,
+              "recall": 0.943,
+              "prec": 1,
+              "phrase_recall": 0.943
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 82,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 15,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 21,
+              "recall": 1,
+              "prec": 0.095,
+              "phrase_recall": 1
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 23,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "particle": null
+      },
+      {
+        "variant": "intl",
+        "index_ms": 127,
+        "index_bytes": 1773568,
+        "hand": {
+          "label": "intl/hand",
+          "n_queries": 15,
+          "micro_recall": 0.9962,
+          "micro_prec": 0.7752,
+          "phrase_frac": 0.933,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 205,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 198,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 261,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 77,
+              "recall": 0.939,
+              "prec": 1,
+              "phrase_recall": 0.939
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 20,
+              "recall": 1,
+              "prec": 0.75,
+              "phrase_recall": 1
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 3,
+              "recall": 1,
+              "prec": 0.667,
+              "phrase_recall": 1
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 27,
+              "recall": 1,
+              "prec": 0.852,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "all": {
+          "label": "intl/all",
+          "n_queries": 212,
+          "micro_recall": 0.8032,
+          "micro_prec": 0.5422,
+          "phrase_frac": 0.566,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 205,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 198,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 261,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 77,
+              "recall": 0.939,
+              "prec": 1,
+              "phrase_recall": 0.939
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 20,
+              "recall": 1,
+              "prec": 0.75,
+              "phrase_recall": 1
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 3,
+              "recall": 1,
+              "prec": 0.667,
+              "phrase_recall": 1
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 27,
+              "recall": 1,
+              "prec": 0.852,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "particle": null
+      },
+      {
+        "variant": "intl+bigram",
+        "index_ms": 181.2,
+        "index_bytes": 2711552,
+        "hand": {
+          "label": "intl+bigram/hand",
+          "n_queries": 15,
+          "micro_recall": 0.9994,
+          "micro_prec": 0.9439,
+          "phrase_frac": 0.133,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 205,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 198,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 261,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 82,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 15,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 2,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 23,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            }
+          ]
+        },
+        "all": {
+          "label": "intl+bigram/all",
+          "n_queries": 212,
+          "micro_recall": 0.8818,
+          "micro_prec": 0.8886,
+          "phrase_frac": 0.061,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 205,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 198,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 261,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 82,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 15,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 2,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 23,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            }
+          ]
+        },
+        "particle": null
+      },
+      {
+        "variant": "bigram-only",
+        "index_ms": 64.3,
+        "index_bytes": 2854912,
+        "hand": {
+          "label": "bigram-only/hand",
+          "n_queries": 15,
+          "micro_recall": 1,
+          "micro_prec": 0.9428,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 205,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 198,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 261,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 82,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 15,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 2,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 23,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "all": {
+          "label": "bigram-only/all",
+          "n_queries": 212,
+          "micro_recall": 1,
+          "micro_prec": 0.8616,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 205,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 198,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 261,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 197,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 82,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 15,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 2,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 23,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "particle": null
+      },
+      {
+        "variant": "unicode61",
+        "index_ms": 20.1,
+        "index_bytes": 1957888,
+        "hand": {
+          "label": "unicode61/hand",
+          "n_queries": 15,
+          "micro_recall": 0.0313,
+          "micro_prec": 1,
+          "phrase_frac": 0,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 12,
+              "recall": 0.059,
+              "prec": 1,
+              "phrase_recall": 0.059
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 4,
+              "recall": 0.02,
+              "prec": 1,
+              "phrase_recall": 0.02
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 11,
+              "recall": 0.042,
+              "prec": 1,
+              "phrase_recall": 0.042
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 2,
+              "recall": 0.01,
+              "prec": 1,
+              "phrase_recall": 0.01
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 0,
+              "recall": 0,
+              "prec": 0,
+              "phrase_recall": 0
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 2,
+              "recall": 0.133,
+              "prec": 1,
+              "phrase_recall": 0.133
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 0,
+              "recall": 0,
+              "prec": 0,
+              "phrase_recall": 0
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 1,
+              "recall": 0.043,
+              "prec": 1,
+              "phrase_recall": 0.043
+            }
+          ]
+        },
+        "all": {
+          "label": "unicode61/all",
+          "n_queries": 212,
+          "micro_recall": 0.111,
+          "micro_prec": 1,
+          "phrase_frac": 0.047,
+          "samples": [
+            {
+              "q": "ブランチ",
+              "gt": 205,
+              "hit": 12,
+              "recall": 0.059,
+              "prec": 1,
+              "phrase_recall": 0.059
+            },
+            {
+              "q": "リポジトリ",
+              "gt": 198,
+              "hit": 4,
+              "recall": 0.02,
+              "prec": 1,
+              "phrase_recall": 0.02
+            },
+            {
+              "q": "コミット",
+              "gt": 261,
+              "hit": 11,
+              "recall": 0.042,
+              "prec": 1,
+              "phrase_recall": 0.042
+            },
+            {
+              "q": "変更",
+              "gt": 197,
+              "hit": 2,
+              "recall": 0.01,
+              "prec": 1,
+              "phrase_recall": 0.01
+            },
+            {
+              "q": "管理",
+              "gt": 82,
+              "hit": 0,
+              "recall": 0,
+              "prec": 0,
+              "phrase_recall": 0
+            },
+            {
+              "q": "バージョン管理システム",
+              "gt": 15,
+              "hit": 2,
+              "recall": 0.133,
+              "prec": 1,
+              "phrase_recall": 0.133
+            },
+            {
+              "q": "分散型",
+              "gt": 2,
+              "hit": 0,
+              "recall": 0,
+              "prec": 0,
+              "phrase_recall": 0
+            },
+            {
+              "q": "ステージングエリア",
+              "gt": 23,
+              "hit": 1,
+              "recall": 0.043,
+              "prec": 1,
+              "phrase_recall": 0.043
+            }
+          ]
+        },
+        "particle": null
+      }
+    ]
+  },
+  "ko": {
+    "locale": "ko",
+    "docs": 441,
+    "summary": [
+      {
+        "variant": "ext-icu",
+        "index_ms": 74,
+        "index_bytes": 1490944,
+        "hand": {
+          "label": "ext-icu/hand",
+          "n_queries": 15,
+          "micro_recall": 0.9941,
+          "micro_prec": 0.684,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 210,
+              "recall": 0.986,
+              "prec": 1,
+              "phrase_recall": 0.986
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 221,
+              "recall": 0.978,
+              "prec": 1,
+              "phrase_recall": 0.978
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 51,
+              "recall": 1,
+              "prec": 0.451,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 11,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 266,
+              "recall": 1,
+              "prec": 0.06,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 221,
+              "recall": 1,
+              "prec": 0.308,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 222,
+              "recall": 1,
+              "prec": 0.153,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "all": {
+          "label": "ext-icu/all",
+          "n_queries": 185,
+          "micro_recall": 0.9797,
+          "micro_prec": 0.6615,
+          "phrase_frac": 0.951,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 210,
+              "recall": 0.986,
+              "prec": 1,
+              "phrase_recall": 0.986
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 221,
+              "recall": 0.978,
+              "prec": 1,
+              "phrase_recall": 0.978
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 51,
+              "recall": 1,
+              "prec": 0.451,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 11,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 266,
+              "recall": 1,
+              "prec": 0.06,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 221,
+              "recall": 1,
+              "prec": 0.308,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 222,
+              "recall": 1,
+              "prec": 0.153,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "particle": {
+          "label": "ext-icu/particle",
+          "n_queries": 5,
+          "micro_recall": 0.9918,
+          "micro_prec": 0.5059,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 221,
+              "recall": 0.978,
+              "prec": 1,
+              "phrase_recall": 0.978
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 266,
+              "recall": 1,
+              "prec": 0.06,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 221,
+              "recall": 1,
+              "prec": 0.308,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 222,
+              "recall": 1,
+              "prec": 0.153,
+              "phrase_recall": 1
+            }
+          ]
+        }
+      },
+      {
+        "variant": "intl",
+        "index_ms": 71.9,
+        "index_bytes": 1138688,
+        "hand": {
+          "label": "intl/hand",
+          "n_queries": 15,
+          "micro_recall": 0.4577,
+          "micro_prec": 0.9984,
+          "phrase_frac": 0.231,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 91,
+              "recall": 0.427,
+              "prec": 1,
+              "phrase_recall": 0.427
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0.341
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 140,
+              "recall": 0.526,
+              "prec": 1,
+              "phrase_recall": 0.526
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 22,
+              "recall": 0.913,
+              "prec": 0.955,
+              "phrase_recall": 0.913
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 9,
+              "recall": 0.818,
+              "prec": 1,
+              "phrase_recall": 0.818
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0.882
+            }
+          ]
+        },
+        "all": {
+          "label": "intl/all",
+          "n_queries": 185,
+          "micro_recall": 0.661,
+          "micro_prec": 0.9998,
+          "phrase_frac": 0.645,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 91,
+              "recall": 0.427,
+              "prec": 1,
+              "phrase_recall": 0.427
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0.341
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 140,
+              "recall": 0.526,
+              "prec": 1,
+              "phrase_recall": 0.526
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 22,
+              "recall": 0.913,
+              "prec": 0.955,
+              "phrase_recall": 0.913
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 9,
+              "recall": 0.818,
+              "prec": 1,
+              "phrase_recall": 0.818
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0.882
+            }
+          ]
+        },
+        "particle": {
+          "label": "intl/particle",
+          "n_queries": 5,
+          "micro_recall": 0.5426,
+          "micro_prec": 1,
+          "phrase_frac": 0.4,
+          "samples": [
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0.341
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 140,
+              "recall": 0.526,
+              "prec": 1,
+              "phrase_recall": 0.526
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0.882
+            }
+          ]
+        }
+      },
+      {
+        "variant": "intl+bigram",
+        "index_ms": 125.9,
+        "index_bytes": 2625536,
+        "hand": {
+          "label": "intl+bigram/hand",
+          "n_queries": 15,
+          "micro_recall": 0.7938,
+          "micro_prec": 0.9907,
+          "phrase_frac": 0.385,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 91,
+              "recall": 0.427,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 33,
+              "recall": 1,
+              "prec": 0.697,
+              "phrase_recall": 0
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 9,
+              "recall": 0.818,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0
+            }
+          ]
+        },
+        "all": {
+          "label": "intl+bigram/all",
+          "n_queries": 185,
+          "micro_recall": 0.9335,
+          "micro_prec": 0.9945,
+          "phrase_frac": 0.311,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 91,
+              "recall": 0.427,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 33,
+              "recall": 1,
+              "prec": 0.697,
+              "phrase_recall": 0
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 9,
+              "recall": 0.818,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0
+            }
+          ]
+        },
+        "particle": {
+          "label": "intl+bigram/particle",
+          "n_queries": 5,
+          "micro_recall": 0.7492,
+          "micro_prec": 1,
+          "phrase_frac": 0.2,
+          "samples": [
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 0
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0
+            }
+          ]
+        }
+      },
+      {
+        "variant": "bigram-only",
+        "index_ms": 59.6,
+        "index_bytes": 2334720,
+        "hand": {
+          "label": "bigram-only/hand",
+          "n_queries": 15,
+          "micro_recall": 1,
+          "micro_prec": 0.9005,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 213,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 227,
+              "recall": 1,
+              "prec": 0.996,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 33,
+              "recall": 1,
+              "prec": 0.697,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 33,
+              "recall": 1,
+              "prec": 0.333,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 66,
+              "recall": 1,
+              "prec": 0.242,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 70,
+              "recall": 1,
+              "prec": 0.971,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 98,
+              "recall": 1,
+              "prec": 0.347,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "all": {
+          "label": "bigram-only/all",
+          "n_queries": 185,
+          "micro_recall": 1,
+          "micro_prec": 0.9238,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 213,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 227,
+              "recall": 1,
+              "prec": 0.996,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 33,
+              "recall": 1,
+              "prec": 0.697,
+              "phrase_recall": 1
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 33,
+              "recall": 1,
+              "prec": 0.333,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 66,
+              "recall": 1,
+              "prec": 0.242,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 70,
+              "recall": 1,
+              "prec": 0.971,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 98,
+              "recall": 1,
+              "prec": 0.347,
+              "phrase_recall": 1
+            }
+          ]
+        },
+        "particle": {
+          "label": "bigram-only/particle",
+          "n_queries": 5,
+          "micro_recall": 1,
+          "micro_prec": 0.8391,
+          "phrase_frac": 1,
+          "samples": [
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 227,
+              "recall": 1,
+              "prec": 0.996,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 266,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 66,
+              "recall": 1,
+              "prec": 0.242,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 70,
+              "recall": 1,
+              "prec": 0.971,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 98,
+              "recall": 1,
+              "prec": 0.347,
+              "phrase_recall": 1
+            }
+          ]
+        }
+      },
+      {
+        "variant": "unicode61",
+        "index_ms": 18.7,
+        "index_bytes": 1146880,
+        "hand": {
+          "label": "unicode61/hand",
+          "n_queries": 15,
+          "micro_recall": 0.4577,
+          "micro_prec": 0.9984,
+          "phrase_frac": 0.231,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 91,
+              "recall": 0.427,
+              "prec": 1,
+              "phrase_recall": 0.427
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0.341
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 140,
+              "recall": 0.526,
+              "prec": 1,
+              "phrase_recall": 0.526
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 22,
+              "recall": 0.913,
+              "prec": 0.955,
+              "phrase_recall": 0.913
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 9,
+              "recall": 0.818,
+              "prec": 1,
+              "phrase_recall": 0.818
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0.882
+            }
+          ]
+        },
+        "all": {
+          "label": "unicode61/all",
+          "n_queries": 185,
+          "micro_recall": 0.6467,
+          "micro_prec": 0.9998,
+          "phrase_frac": 0.634,
+          "samples": [
+            {
+              "q": "브랜치",
+              "gt": 213,
+              "hit": 91,
+              "recall": 0.427,
+              "prec": 1,
+              "phrase_recall": 0.427
+            },
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0.341
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 140,
+              "recall": 0.526,
+              "prec": 1,
+              "phrase_recall": 0.526
+            },
+            {
+              "q": "버전 관리",
+              "gt": 23,
+              "hit": 22,
+              "recall": 0.913,
+              "prec": 0.955,
+              "phrase_recall": 0.913
+            },
+            {
+              "q": "버전관리",
+              "gt": 11,
+              "hit": 9,
+              "recall": 0.818,
+              "prec": 1,
+              "phrase_recall": 0.818
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0.882
+            }
+          ]
+        },
+        "particle": {
+          "label": "unicode61/particle",
+          "n_queries": 5,
+          "micro_recall": 0.5426,
+          "micro_prec": 1,
+          "phrase_frac": 0.4,
+          "samples": [
+            {
+              "q": "저장소",
+              "gt": 226,
+              "hit": 77,
+              "recall": 0.341,
+              "prec": 1,
+              "phrase_recall": 0.341
+            },
+            {
+              "q": "커밋",
+              "gt": 266,
+              "hit": 140,
+              "recall": 0.526,
+              "prec": 1,
+              "phrase_recall": 0.526
+            },
+            {
+              "q": "커밋하면",
+              "gt": 16,
+              "hit": 16,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소의",
+              "gt": 68,
+              "hit": 68,
+              "recall": 1,
+              "prec": 1,
+              "phrase_recall": 1
+            },
+            {
+              "q": "저장소에서",
+              "gt": 34,
+              "hit": 30,
+              "recall": 0.882,
+              "prec": 1,
+              "phrase_recall": 0.882
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "zh": {
+    "zh15": {
+      "label": "ext-icu/zh15",
+      "n_queries": 15,
+      "micro_recall": 1,
+      "micro_prec": 0.8892,
+      "phrase_frac": 1,
+      "samples": [
+        {
+          "q": "版本",
+          "gt": 77,
+          "hit": 77,
+          "recall": 1,
+          "prec": 1,
+          "phrase_recall": 1
+        },
+        {
+          "q": "控制",
+          "gt": 25,
+          "hit": 25,
+          "recall": 1,
+          "prec": 1,
+          "phrase_recall": 1
+        },
+        {
+          "q": "版本控制",
+          "gt": 19,
+          "hit": 78,
+          "recall": 1,
+          "prec": 0.244,
+          "phrase_recall": 1
+        },
+        {
+          "q": "版本控制系统",
+          "gt": 15,
+          "hit": 16,
+          "recall": 1,
+          "prec": 0.938,
+          "phrase_recall": 1
+        },
+        {
+          "q": "分支",
+          "gt": 106,
+          "hit": 106,
+          "recall": 1,
+          "prec": 1,
+          "phrase_recall": 1
+        },
+        {
+          "q": "提交",
+          "gt": 127,
+          "hit": 127,
+          "recall": 1,
+          "prec": 1,
+          "phrase_recall": 1
+        },
+        {
+          "q": "仓库",
+          "gt": 73,
+          "hit": 73,
+          "recall": 1,
+          "prec": 1,
+          "phrase_recall": 1
+        },
+        {
+          "q": "分布式",
+          "gt": 12,
+          "hit": 36,
+          "recall": 1,
+          "prec": 0.333,
+          "phrase_recall": 1
+        }
+      ]
+    },
+    "index_ms": 155.21846699999992,
+    "mixed": {
+      "バージョン": 1,
+      "版本": 1,
+      "控制": 1,
+      "저장소": 1,
+      "관리": 0
+    }
+  },
+  "generated_at": "2026-10-27T09:29:37.878Z"
+}
