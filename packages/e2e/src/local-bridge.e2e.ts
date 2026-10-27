@@ -114,7 +114,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return true;
         },
         { rememberLabel: run.m.modal_workbench_launch_remember() },
-        { what: "local-bridge.e2e.ts:59" },
+        {
+          what: "the Native destination radio and Remember toggle in the Customize modal",
+        },
       );
       expect(
         await clickModalButton(
@@ -132,7 +134,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         undefined,
-        { what: "local-bridge.e2e.ts:72" },
+        {
+          what: "the Template Workbench to be active with native customization stored",
+        },
       );
       expect(
         await obRun(
@@ -169,7 +173,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         undefined,
-        { what: "local-bridge.e2e.ts:87" },
+        {
+          what: "the customize destination radios to disappear with the Template Workbench active",
+        },
       );
       expect(
         await obRun(
@@ -202,7 +208,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return !app.vault.getFileByPath(defaultPath);
         },
         { defaultPath },
-        { what: "local-bridge.e2e.ts:105" },
+        {
+          what: "the default Template document file to be absent from the vault",
+        },
       );
       await obRun(
         run.vaultId,
@@ -222,7 +230,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         { modalTitleText: run.m.modal_workbench_launch_title() },
-        { what: "local-bridge.e2e.ts:118" },
+        { what: "a modal title element with the expected text to appear" },
       );
       expect(
         await clickModalButton(
@@ -236,7 +244,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return typeof page.scratch.workbenchLaunch === "string";
         },
         undefined,
-        { what: "local-bridge.e2e.ts:131" },
+        {
+          what: "the workbench launch Connection code to be stored in the page scratch record",
+        },
       );
       // Capture the browser handoff at its outer boundary. The entry action,
       // sheet, minted code, and HTTP exchange all run in the real plugin.
@@ -352,7 +362,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           documentName: run.m.settings_profile_document_name(),
           restoreButtonLabel: run.m.settings_profile_document_restore(),
         },
-        { what: "local-bridge.e2e.ts:211" },
+        {
+          what: "the saved Default document's settings row to show a restore button",
+        },
       );
       await obRun(
         run.vaultId,
@@ -420,7 +432,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           disconnectButtonText:
             run.m.settings_local_server_workbench_disconnect(),
         },
-        { what: "local-bridge.e2e.ts:246" },
+        {
+          what: "the connection settings row to show its host and a Disconnect button",
+        },
       );
       const response = await request("profile/selected");
       expect(response.status).toBe(401);
@@ -437,7 +451,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           connectionName:
             run.m.settings_local_server_workbench_connection_name(),
         },
-        { what: "local-bridge.e2e.ts:257" },
+        {
+          what: "the connection settings row to disappear after disconnecting",
+        },
       );
       await obRun(
         run.vaultId,
@@ -485,7 +501,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           { unsupported },
-          { what: "local-bridge.e2e.ts:285" },
+          {
+            what: "the default Profile's source to match the unsupported value",
+          },
         );
         await using notices = await observeNotices(run.vaultId);
         await suite.mainSettings();
@@ -514,7 +532,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           { defaultPath },
-          { what: "local-bridge.e2e.ts:309" },
+          {
+            what: "the default Profile file to open in the Template Workbench",
+          },
         );
         expect(
           await obRun(

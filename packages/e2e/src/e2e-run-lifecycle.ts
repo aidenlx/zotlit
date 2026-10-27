@@ -69,7 +69,9 @@ async function bootstrap(): Promise<void> {
       );
     },
     { serverPort },
-    { what: "lifecycle.ts:45" },
+    {
+      what: "the local server to stop and the server port setting to match serverPort",
+    },
   );
   await obRun(
     run.vaultId,
@@ -92,7 +94,9 @@ async function bootstrap(): Promise<void> {
       );
     },
     { serverPort },
-    { what: "lifecycle.ts:56" },
+    {
+      what: "the local server to start and the server port setting to match serverPort",
+    },
   );
 }
 

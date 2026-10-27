@@ -73,7 +73,7 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
     undefined,
     {
       ready: (value) => isDeepStrictEqual(value, [1600, 0, 0]),
-      what: "suite.ts:39",
+      what: "the window to reach 1600 pixels wide with both sidebars collapsed",
     },
   );
 }
@@ -252,7 +252,9 @@ async function openMatchEditor(): Promise<void> {
       booksProfileLabel: booksProfile.label,
       editButtonLabel: run.m.settings_profile_edit(),
     },
-    { what: "suite.ts:138" },
+    {
+      what: "the Edit profile button for the books profile in the settings tab",
+    },
   );
   await obRunUntil(
     run.vaultId,
@@ -269,7 +271,7 @@ async function openMatchEditor(): Promise<void> {
       );
     },
     { tabLabel: run.m.workbench_tab_match() },
-    { what: "suite.ts:145" },
+    { what: "the workbench fieldset to open after pressing the match tab" },
   );
 }
 
@@ -335,7 +337,7 @@ function clickTemplateCustomize() {
       settingName: run.m.settings_profile_document_name(),
       editButtonLabel: run.m.settings_profile_edit(),
     },
-    { what: "suite.ts:175" },
+    { what: "the enabled Edit button on the setting row in the settings tab" },
   ).then(
     () => true,
     () => false,
@@ -361,7 +363,7 @@ async function saveMatch(match: unknown): Promise<void> {
       booksProfileId: booksProfile.id,
       expectedMatchJson: JSON.stringify(match),
     },
-    { what: "suite.ts:184" },
+    { what: "the Books profile match tree to equal the expected tree" },
   );
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
 }
@@ -398,7 +400,7 @@ async function writeMatch(
       );
     },
     { profileId: profile.id, expectedMatchJson: JSON.stringify(match) },
-    { what: "suite.ts:211" },
+    { what: "the profile match tree to equal the expected tree" },
   );
 }
 
@@ -470,7 +472,7 @@ async function quickSwitchCreate(
       return !!app.commands.commands["zotlit:note-quick-switcher"];
     },
     undefined,
-    { what: "suite.ts:257" },
+    { what: "the zotlit:note-quick-switcher command to be registered" },
   );
   // The picker and its backdrop stay transparent until the first answer
   // settles, then show with rows, or with a loading row when that answer is
@@ -502,7 +504,7 @@ async function quickSwitchCreate(
       );
     },
     undefined,
-    { what: "suite.ts:273" },
+    { what: "the last modal to fade in with a prompt suggestion row" },
   );
   await selectItemSuggestion(targetVaultId, item.title, item.key);
   await pressPromptKey(targetVaultId, "Enter");

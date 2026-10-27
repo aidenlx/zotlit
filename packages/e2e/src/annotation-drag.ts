@@ -96,7 +96,9 @@ export async function verifyAnnotationDrag(
         );
       },
       undefined,
-      { what: "annotation-drag.ts:34" },
+      {
+        what: "the draggable handle for annotation FDRFQ7C2 in the Annotation View",
+      },
     );
     // The unrelated drop enters through CodeMirror's DOM input handler. The
     // tagged drop enters at Obsidian's editor-drop event, the plugin's public
@@ -238,7 +240,7 @@ export async function verifyAnnotationDrag(
         return page.scratch.__zotlitDragTrial!.prepareCalls === 1;
       },
       undefined,
-      { what: "annotation-drag.ts:95" },
+      { what: "the drag trial prepare step to run once" },
     );
     const capture = JSON.parse(
       await obRun(
@@ -327,7 +329,7 @@ export async function verifyAnnotationDrag(
         return page.scratch.__zotlitDragTrial!.finished === 1;
       },
       undefined,
-      { what: "annotation-drag.ts:142" },
+      { what: "the drag trial drop to finish once" },
     );
     expect(
       await obRun(
@@ -353,7 +355,7 @@ export async function verifyAnnotationDrag(
           .includes("![[zotlit-excerpt-");
       },
       undefined,
-      { what: "annotation-drag.ts:153" },
+      { what: "the editor to contain a zotlit-excerpt embed after the drop" },
     );
     const text = JSON.parse(
       await obRun(
@@ -395,7 +397,7 @@ export async function verifyAnnotationDrag(
         );
       },
       undefined,
-      { what: "annotation-drag.ts:177" },
+      { what: "the excerpt image to finish loading in the editor" },
     );
     await obRun(
       vaultId,

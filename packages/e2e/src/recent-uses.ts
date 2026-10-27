@@ -437,7 +437,7 @@ export async function verifyRecentUses(
       return !!zotlit.services;
     },
     undefined,
-    { what: "recent-uses.ts:140" },
+    { what: "the zotlit plugin services to be available" },
   );
   expect(await timeline()).toEqual(beforeReload);
   expect(

@@ -105,7 +105,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "literature.ts:100" },
+      {
+        what: "an active note file and exactly one Literature Note indexed for item RUGIER24",
+      },
     );
     const note = await indexedNote(freshId, annotatedItem.itemID);
     expect(note.path).not.toBeNull();
@@ -163,7 +165,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         })()?.file;
       },
       { notePath: note.path! },
-      { tries: 80, what: "literature.ts:127" },
+      {
+        tries: 80,
+        what: "the Template Workbench to open a file for the originating note",
+      },
     );
     // The Default document already exists, so the workbench shows its file
     // before Customize sets the note it came from.
@@ -193,7 +198,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           name: run.m.settings_profile_default_name(),
         }),
       },
-      { what: "literature.ts:135" },
+      {
+        what: "the Template Workbench to show the expected template text for item RUGIER24",
+      },
     );
     await changeNativeAnnotationCallout(freshId, {
       view: { originatingNote: note.path! },
@@ -227,7 +234,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-          { what: "literature.ts:147" },
+          {
+            what: "the Template Workbench help button to take focus while collapsed",
+          },
         );
         await obRun(
           freshId,
@@ -289,7 +298,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             helpSectionLabel: run.m.workbench_annotation_help_title(),
             guideText: run.m.template_workbench_update_this_note(),
           },
-          { what: "literature.ts:158" },
+          {
+            what: "the Template Workbench guide section to render with its quote callout visible",
+          },
         );
         await obRun(
           freshId,
@@ -352,7 +363,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
           },
           { notePath: note.path!, helpButtonLabel: run.m.workbench_help() },
-          { what: "literature.ts:169" },
+          {
+            what: "the help button collapsed and focused with the note source visible",
+          },
         );
       },
     });
@@ -377,7 +390,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { notePath: note.path! },
-      { what: "literature.ts:179" },
+      {
+        what: "a quote callout to render in the Preview of the editor's window",
+      },
     );
     expect(await readFile(join(freshPath, note.path!), "utf-8")).toBe(before);
     const other = await createFixtureNote(freshId, createTargetItem.itemID);
@@ -438,7 +453,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { notePath: note.path! },
-      { what: "literature.ts:200" },
+      { what: "the Template Workbench's window to become the active window" },
     );
     await obRunUntil(
       freshId,
@@ -468,7 +483,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         notePath: note.path!,
         updateButtonText: run.m.template_workbench_update_this_note(),
       },
-      { what: "literature.ts:207" },
+      {
+        what: "the Template Workbench Update button to take focus and be enabled",
+      },
     );
     // The first click after an edit writes the Managed Frontmatter with the
     // body: a managed Property removed now comes back with this one update.
@@ -531,7 +548,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         })()!.updatingNote;
       },
       { notePath: note.path! },
-      { what: "literature.ts:224" },
+      { what: "the Template Workbench to clear its updating-note flag" },
     );
     expect(
       await waitFor(async () =>
@@ -579,7 +596,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { notePath: note.path!, updated },
-      { what: "literature.ts:253" },
+      {
+        what: "an Obsidian notice with the note update confirmation text to appear",
+      },
     );
     const after = await readFile(join(freshPath, note.path!), "utf-8");
     expect(after.split("---")[1]).toMatch(/^collections:/m);
@@ -609,7 +628,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .length;
       },
       { createTargetItemKey: createTargetItem.key },
-      { ready: (value) => value === 0, what: "literature.ts:280" },
+      {
+        ready: (value) => value === 0,
+        what: "Literature Notes indexed for the create target item to reach 0",
+      },
     );
 
     const first = await createFixtureNote(run.vaultId, createTargetItem.itemID);
@@ -625,7 +647,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .length;
       },
       { createTargetItemKey: createTargetItem.key },
-      { ready: (value) => value === 1, what: "literature.ts:293" },
+      {
+        ready: (value) => value === 1,
+        what: "Literature Notes indexed for the create target item to reach 1",
+      },
     );
 
     const second = await createFixtureNote(
@@ -659,7 +684,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "literature.ts:323" },
+      { what: "the default Profile to resolve without a document" },
     );
     // Set the Item's seeded notes aside, so the default Profile writes a new
     // one; the cleanup puts them back.
@@ -811,7 +836,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return app.commands.executeCommandById("zotlit:open-citekey");
       },
       undefined,
-      { what: "literature.ts:406" },
+      { what: "the open-citekey command to run and report success" },
     );
     // Without an explicit input the picker preselects Default; the Books
     // choice below belongs to this operation alone.
@@ -925,7 +950,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
       },
       { noticeText: run.m.notice_literature_note_profile_changed() },
-      { what: "literature.ts:492" },
+      {
+        what: "a notice refusing the update over an unsaved Profile switch to appear",
+      },
     );
     expect(
       await obRun(
@@ -990,7 +1017,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return "seeded";
       },
       { booksNotePath: run.booksNotePath },
-      { ready: (value) => value === "seeded", what: "literature.ts:529" },
+      {
+        ready: (value) => value === "seeded",
+        what: "the Books note front matter to be seeded with stale fixture values",
+      },
     );
     // The batch reads each note's Profile stamp from the metadata cache, and
     // the write above sends the Books note back through the parser. Until the
@@ -1005,7 +1035,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { booksNotePath: run.booksNotePath },
-      { what: "literature.ts:539" },
+      {
+        what: "the metadata cache to hold fixture-manual as mine on the Books note",
+      },
     );
 
     await using notices = await observeNotices(run.vaultId);
@@ -1016,7 +1048,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return app.commands.executeCommandById("zotlit:update-all-notes");
       },
       undefined,
-      { tries: 20, what: "literature.ts:548" },
+      {
+        tries: 20,
+        what: "the zotlit update-all-notes command to run and report success",
+      },
     );
 
     // The Fixture's My Library carries more than one Literature Note, so
@@ -1036,7 +1071,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).some((button) => button.textContent.trim() === closeButtonText);
       },
       { closeButtonText: run.m.batch_update_close() },
-      { what: "literature.ts:565" },
+      { what: "the update-all-notes result modal to show its Close button" },
     );
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
@@ -1189,7 +1224,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { booksProfileLabel: booksProfile.label, description },
-      { what: "literature.ts:681" },
+      {
+        what: "the Books Profile row in settings to show the matched document description",
+      },
     );
     await obRun(
       run.vaultId,
@@ -1260,7 +1297,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return app.commands.executeCommandById("zotlit:open-citekey");
       },
       undefined,
-      { what: "literature.ts:723" },
+      {
+        what: "the open-citekey command to run from the document-match creation flow",
+      },
     );
     expect(
       await waitFor(async () =>
@@ -1594,7 +1633,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).some((button) => button.textContent.trim() === confirmButtonText);
       },
       { confirmButtonText: run.m.batch_update_confirm_button() },
-      { what: "literature.ts:916" },
+      { what: "the topmost modal to show the batch confirm button" },
     );
     const bookPath = `books/books-${bookItem.citationKey}.md`;
     const articlesPath = `articles/articles-${sharedItem.citationKey}.md`;
@@ -1695,7 +1734,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           label: booksProfile.label,
         }),
       },
-      { what: "literature.ts:967" },
+      {
+        what: "the unresolved Profile choice in the topmost modal to show its label",
+      },
     );
     const chosen = await obRun(
       run.vaultId,
@@ -1732,7 +1773,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).some((button) => button.textContent.trim() === closeButtonText);
       },
       { closeButtonText: run.m.batch_update_close() },
-      { what: "literature.ts:992" },
+      { what: "the close button in the topmost modal to appear" },
     );
     const summary = await obRun(
       run.vaultId,
@@ -1796,7 +1837,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { articlesProfileId: suite.articlesProfile.id },
-      { what: "literature.ts:1046" },
+      { what: "the articles Profile to be removed from the Profile list" },
     );
     await suite.writeMatch(booksProfile, suite.bookMatch);
   });
@@ -1887,7 +1928,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return !activeDocument.querySelector<HTMLElement>(".prompt");
       },
       undefined,
-      { what: "literature.ts:1115" },
+      {
+        what: "the suggestion prompt to close after the Collection path match",
+      },
     );
     expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
     await suite.writeMatch(booksProfile, suite.bookMatch);
@@ -1965,7 +2008,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         booksProfileLabel: booksProfile.label,
         moreActionsLabel: run.m.workbench_more_actions(),
       },
-      { what: "literature.ts:1152" },
+      {
+        what: "the Books Profile row's More actions button to be found and pressed",
+      },
     );
     await obRunUntil(
       run.vaultId,
@@ -1981,7 +2026,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return true;
       },
       { deleteTitleText: run.m.settings_profile_delete() },
-      { what: "literature.ts:1159" },
+      { what: "the Delete entry in the open More actions menu to be pressed" },
     );
     await obRunUntil(
       run.vaultId,
@@ -1991,7 +2036,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "literature.ts:1166" },
+      {
+        what: "a delete-target radio button to be checked in the delete Profile dialog",
+      },
     );
     const target = await obRun(
       run.vaultId,
@@ -2118,7 +2165,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return app.commands.executeCommandById("zotlit:update-note");
       },
       undefined,
-      { what: "literature.ts:1248" },
+      { what: "the zotlit update-note command to run and report success" },
     );
     let updated = "";
     expect(
@@ -2167,7 +2214,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { booksProfileId: booksProfile.id },
-      { what: "literature.ts:1294" },
+      {
+        what: "the Books Profile to drop out of the Profile list after delete",
+      },
     );
     await obRun(
       run.vaultId,
@@ -2219,7 +2268,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         undefined,
-        { what: "literature.ts:1315" },
+        { what: "the local server port to resolve through the bridge" },
       );
       const server = JSON.parse(
         await obRun(
@@ -2333,7 +2382,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         undefined,
-        { what: "literature.ts:1365" },
+        {
+          what: "the Template Workbench to be the active leaf with no destination radio",
+        },
       );
       await obRun(
         run.vaultId,

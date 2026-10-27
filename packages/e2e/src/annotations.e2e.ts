@@ -64,7 +64,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           ready: (value) =>
             isDeepStrictEqual(value, { source: "zotero-db", keys: expected }),
-          what: "annotations.ts:33",
+          what: "the Zotero DB annotation list for the attachment to match the expected keys",
         },
       );
       expect(
@@ -113,7 +113,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         {
           ready: (value) => isDeepStrictEqual(value, expected),
-          what: "annotations.ts:42",
+          what: "the Annotation View card keys to match the expected fixture keys",
         },
       ).then(
         () => true,
@@ -498,7 +498,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               rowsInsidePopup: true,
               menuChrome: true,
             }),
-          what: "annotations.ts:141",
+          what: "the tag popup to list the attachment tags as rows inside the open popup",
         },
       );
       await obRun(
@@ -589,7 +589,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           ready: (value) =>
             isDeepStrictEqual(value, { open: false, hidden: true }),
-          what: "annotations.ts:162",
+          what: "the tag popup to close and be hidden",
         },
       );
       for (const [pageIndex, annotations] of annotationKeysByPage) {
@@ -628,7 +628,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           },
           {
             ready: (value) => isDeepStrictEqual(value, pageKeys),
-            what: "annotations.ts:169",
+            what: "the PDF page marks to list the expected annotation keys",
           },
         );
       }
@@ -814,7 +814,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { groupByLabel: run.m.annot_view_group_by() },
-      { what: "annotations.ts:259" },
+      { what: "the More options menu to offer the group by colour item" },
     );
     await obRun(
       run.vaultId,
@@ -845,7 +845,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { propertyColorLabel: run.m.query_view_property_color() },
-      { what: "annotations.ts:272" },
+      { what: "the More options menu to offer the colour property item" },
     );
     await obRun(
       run.vaultId,
@@ -917,7 +917,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { filterLabel: run.m.annot_view_filter() },
-      { what: "annotations.ts:309" },
+      { what: "the More options menu to offer the colour filter item" },
     );
     await obRun(
       run.vaultId,
@@ -965,7 +965,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             sections: ["view"],
             text: false,
           }),
-        what: "annotations.ts:321",
+        what: "the annotation filter modal to show only the view section and no attachment text",
       },
     );
     // In an expression condition of the dialog, Escape closes the completion
@@ -1218,7 +1218,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .length;
       },
       undefined,
-      { ready: (value) => value === 0, what: "annotations.ts:363" },
+      {
+        ready: (value) => value === 0,
+        what: "the menus and modal containers to clear from the window",
+      },
     );
   }, 120000);
 
@@ -1362,7 +1365,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       {
         ready: (value) => isDeepStrictEqual(value, expected),
         tries: 120,
-        what: "annotations.ts:407",
+        what: "the Annotation View cards to list the expected colour filtered keys",
       },
     );
 
@@ -1398,7 +1401,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       {
         ready: (value) => isDeepStrictEqual(value, ofColor),
         tries: 80,
-        what: "annotations.ts:424",
+        what: "the Annotation View cards to list the expected colour keys",
       },
     );
 
@@ -1444,7 +1447,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { saveQueryLabel: run.m.annot_view_save_as_query_file() },
-      { what: "annotations.ts:443" },
+      { what: "the More options menu to offer the save query item" },
     );
     await obRun(
       run.vaultId,
@@ -1587,7 +1590,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           isDeepStrictEqual(value, { diagnostic: "unbound-context", cards: 0 }),
         tries: 120,
-        what: "annotations.ts:490",
+        what: "the saved Query File to report the unbound-context diagnostic with no cards",
       },
     );
     const saved = await obRun(

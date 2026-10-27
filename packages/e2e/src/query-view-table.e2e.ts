@@ -88,7 +88,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:52" },
+      {
+        what: "the expanded Item in the Query File view to list its annotation cards",
+      },
     );
     /** What the Table shows once its query settled. */
 
@@ -221,7 +223,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { expectedValue: "All annotations" },
-      { what: "query-view-table.e2e.ts:103" },
+      {
+        what: "the view name field in the Configure view page to show the expected name",
+      },
     );
     await obRun(
       run.vaultId,
@@ -259,7 +263,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             [run.m.query_view_layout_cards(), false],
             [run.m.query_view_layout_papers(), false],
           ]),
-        what: "query-view-table.e2e.ts:114",
+        what: "the view layout options in the Configure view page to select Table",
       },
     );
     await obRunUntil(
@@ -278,7 +282,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             dataset: run.m.query_view_dataset_items(),
             properties: run.m.query_view_property_parent_item(),
           }),
-        what: "query-view-table.e2e.ts:128",
+        what: "the unused properties line in the Query File view to match the expected text",
       },
     );
     await obRun(
@@ -310,7 +314,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expectedBlock:
           "  - type: table\n    name: All annotations\n    from: items\n",
       },
-      { what: "query-view-table.e2e.ts:145" },
+      {
+        what: "the saved Query File to contain the Table of Items block with its grouping",
+      },
     );
 
     // The rows are the Items ZotLit Query gives for the view, in its order.
@@ -437,7 +443,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { pdfName },
       {
         ready: (value) => value === before + 1,
-        what: "query-view-table.e2e.ts:221",
+        what: "the PDF tab for the attachment to open one more time",
       },
     );
     await obRun(
@@ -475,7 +481,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { pdfName },
       {
         ready: (value) => value === before + 2,
-        what: "query-view-table.e2e.ts:230",
+        what: "the PDF tab for the attachment to open a second time",
       },
     );
     expect(
@@ -1022,7 +1028,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:507" },
+      { what: "the vault property input in the Table to take focus" },
     );
     await typeText("to-read");
     await key("Enter");
@@ -1110,7 +1116,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         },
         undefined,
-        { what: "query-view-table.e2e.ts:531" },
+        {
+          what: "the vault property input in the Table to take focus after the first edit",
+        },
       );
       const editLine = Number(
         await obRun(
@@ -1215,7 +1223,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             ready: (value) => value === false,
             tries: 5,
-            what: "query-view-table.e2e.ts:551",
+            what: "the vault property editor in the Table to close",
           },
         ).then(
           () => true,
@@ -1234,7 +1242,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         {
           ready: (value) => value === false,
-          what: "query-view-table.e2e.ts:556",
+          what: "the vault property editor in the Table to close after the edit commits",
         },
       );
     }
@@ -1255,7 +1263,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
       {
         ready: (value) => value === "unread",
-        what: "query-view-table.e2e.ts:563",
+        what: "the vault value suggestions to list only the matching unread value",
       },
     );
     // The field's text, selected, is replaced by what is typed; it matches
@@ -1299,7 +1307,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:596" },
+      { what: "the vault property input in the Table to take focus again" },
     );
     await typeText("c");
     await key("Enter");
@@ -1315,7 +1323,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:603" },
+      { what: "the vault property chip labelled c to take focus" },
     );
     // While the pill's menu stands it holds the keys: Delete removes no
     // item, and Escape hides the menu alone, its Scope above the menu's own
@@ -1328,7 +1336,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return !!activeDocument.querySelector<HTMLElement>("body > .menu")!;
       },
       undefined,
-      { what: "query-view-table.e2e.ts:611" },
+      { what: "the vault value menu to open in the document body" },
     );
     expect(
       await obRun(
@@ -1370,7 +1378,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
       {
         ready: (value) => value === false,
-        what: "query-view-table.e2e.ts:623",
+        what: "the vault value menu to close",
       },
     );
     expect(
@@ -1398,7 +1406,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:628" },
+      { what: "the vault property input to take focus after the menu closes" },
     );
     await key("Backspace");
     await obRunUntil(
@@ -1411,7 +1419,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:632" },
+      {
+        what: "the vault property chip labelled c to take focus after the menu closes",
+      },
     );
     // A chip edits in place from its menu, as in a Bases list cell: a
     // right click opens it, Edit makes the chip's text a field, and a comma
@@ -1435,7 +1445,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ].find((entry) => entry.textContent === chipLabel);
       },
       { chipLabel: run.m.query_view_vault_chip_edit() },
-      { what: "query-view-table.e2e.ts:643" },
+      { what: "the vault value menu to offer the chip label as an item" },
     );
     expect(
       await obRun(
@@ -1457,7 +1467,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:650" },
+      { what: "the vault chip input to take focus" },
     );
     await typeText(", d");
     expect(
@@ -1477,7 +1487,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             ready: (value) => value === options.expected,
             tries: options.tries,
-            what: "query-view-table.e2e.ts:658",
+            what: "the vault chip input to hold the expected typed value",
           },
         ).then(
           () => true,
@@ -1495,7 +1505,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:666" },
+      { what: "the vault property chip labelled c, d to take focus" },
     );
     // A click on an empty spot of the view, outside the Table.
     expect(
@@ -1565,7 +1575,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "query-view-table.e2e.ts:690" },
+      {
+        what: "the vault property input in the Query Table to take keyboard focus",
+      },
     );
     await typeText("queued");
     await key("Enter");

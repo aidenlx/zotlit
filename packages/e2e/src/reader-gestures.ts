@@ -190,7 +190,9 @@ export async function openPdfWithAnnotationView(
       )?.session;
     },
     { attachmentPath },
-    { what: "reader-gestures.ts:198" },
+    {
+      what: "the PDF annotation editor binding for the attachment to open a session",
+    },
   );
   await obRun(
     vaultId,

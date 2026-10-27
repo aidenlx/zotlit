@@ -97,7 +97,9 @@ export async function verifyAnnotationInsert(
         );
       },
       undefined,
-      { what: "annotation-insert.ts:43" },
+      {
+        what: "annotation FDRFQ7C2 to appear in the insert trial view snapshot",
+      },
     );
     expect(
       await obRun(
@@ -120,7 +122,7 @@ export async function verifyAnnotationInsert(
           .isConnected;
       },
       undefined,
-      { what: "annotation-insert.ts:56" },
+      { what: "the insert trial editor to attach to the DOM" },
     );
     expect(
       await obRun(
@@ -147,7 +149,7 @@ export async function verifyAnnotationInsert(
         );
       },
       undefined,
-      { what: "annotation-insert.ts:70" },
+      { what: "the More options button on the annotation card FDRFQ7C2" },
     );
     for (const mode of [
       "success",
@@ -234,7 +236,7 @@ export async function verifyAnnotationInsert(
           return page.scratch.__zotlitInsertTrial!.started;
         },
         undefined,
-        { what: "annotation-insert.ts:113" },
+        { what: "the insert trial to start" },
       );
       await obRun(
         vaultId,
@@ -290,7 +292,7 @@ export async function verifyAnnotationInsert(
           );
         },
         { expectedFinished: mode === "supersede" ? 2 : 1 },
-        { what: "annotation-insert.ts:128" },
+        { what: "the insert trial finished flag to match the expected value" },
       );
       if (mode !== "escape" && mode !== "switch" && mode !== "close") {
         await obRunUntil(
@@ -304,7 +306,7 @@ export async function verifyAnnotationInsert(
             expectedMarker:
               mode === "disabled" ? "[Zotero](zotero://" : "zotlit-excerpt-",
           },
-          { what: "annotation-insert.ts:138" },
+          { what: "the editor to contain the expected annotation marker" },
         );
       }
       const text =
@@ -364,7 +366,9 @@ export async function verifyAnnotationInsert(
             );
           },
           undefined,
-          { what: "annotation-insert.ts:173" },
+          {
+            what: "the excerpt image to finish loading in the insert trial editor",
+          },
         );
         expect(
           text.startsWith(mode === "edit" ? "user before " : "before "),

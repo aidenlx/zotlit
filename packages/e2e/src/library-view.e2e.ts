@@ -454,7 +454,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           value ===
           JSON.stringify([{ property: "dateModified", direction: "ASC" }]),
-        what: "library-view.e2e.ts:196",
+        what: "the saved library.document sort to be date modified ascending",
       },
     );
 
@@ -472,7 +472,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
       },
       undefined,
-      { tries: 20, what: "library-view.e2e.ts:209" },
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish a disable and re-enable cycle",
+      },
     );
     const reloaded = await obRunUntil(
       run.vaultId,
@@ -610,7 +613,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ?.textContent.includes(readItemTitle);
       },
       { readItemTitle: readItem.title },
-      { what: "library-view.e2e.ts:267" },
+      {
+        what: "the quick switcher's first suggestion to include the read item's title",
+      },
     );
   });
 
@@ -1312,7 +1317,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             ready: (value) => value === options.expected,
             tries: options.tries,
-            what: "library-view.e2e.ts:479",
+            what: "the library.document setting to hold the expected Recent sort before the switch",
           },
         ).then(
           () => true,
@@ -1478,7 +1483,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             ready: (value) => value === options.expected,
             tries: options.tries,
-            what: "library-view.e2e.ts:528",
+            what: "the library.document setting after switching to a Collection",
           },
         ).then(
           () => true,
@@ -1788,7 +1793,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           {
             ready: (value) => value === options.expected,
             tries: options.tries,
-            what: "library-view.e2e.ts:558",
+            what: "the library.document setting after reselecting Recent to restore its sort",
           },
         ).then(
           () => true,
@@ -1923,7 +1928,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       {
         ready: (value) =>
           value === JSON.stringify([{ property: "title", direction: "DESC" }]),
-        what: "library-view.e2e.ts:602",
+        what: "the saved library.document sort to be title descending",
       },
     );
   });
@@ -2526,7 +2531,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
       },
       undefined,
-      { tries: 20, what: "library-view.e2e.ts:805" },
+      {
+        tries: 20,
+        what: "the zotlit plugin reload to finish before the Collection filter is checked",
+      },
     );
     const reloaded = await obRunUntil(
       run.vaultId,
@@ -2709,7 +2717,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { tries: 120, what: "library-view.e2e.ts:865" },
+      {
+        tries: 120,
+        what: "the workspace layout and zotlit settings to finish loading after reload",
+      },
     );
     await prepareRunWindow(run.vaultId);
   }

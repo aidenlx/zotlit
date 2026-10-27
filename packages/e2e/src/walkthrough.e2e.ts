@@ -187,7 +187,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         )?.frontmatter?.["zotlit-csl"];
       },
       { note },
-      { ready: (value) => value === styleId, what: "walkthrough.e2e.ts:135" },
+      {
+        ready: (value) => value === styleId,
+        what: "the zotlit-csl frontmatter of the note to match the selected CSL style",
+      },
     ).then(
       () => true,
       () => false,
@@ -342,7 +345,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       undefined,
-      { what: "walkthrough.e2e.ts:224" },
+      { what: "the active leaf to be the Library View" },
     );
     expect(
       await obRun(
@@ -388,7 +391,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return await app.workspace.activeLeaf?.id;
       },
       undefined,
-      { ready: (value) => value === welcomeId, what: "walkthrough.e2e.ts:242" },
+      {
+        ready: (value) => value === welcomeId,
+        what: "the active leaf id to match the Welcome View leaf",
+      },
     );
     expect(
       await obRun(
@@ -452,7 +458,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           .some((file) => file.path === notePath);
       },
       { notePath },
-      { what: "walkthrough.e2e.ts:274" },
+      {
+        what: "the literature note index for item DMRGRART to include the open note",
+      },
     );
     await obRun(
       vaultId,
@@ -480,7 +488,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ?.textContent.includes("Ten Simple Rules for Better Figures");
       },
       undefined,
-      { what: "walkthrough.e2e.ts:285" },
+      {
+        what: "the Welcome search results to list Ten Simple Rules for Better Figures",
+      },
     );
     await obRun(
       vaultId,
@@ -507,7 +517,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       { notePath },
-      { what: "walkthrough.e2e.ts:299" },
+      { what: "the active Markdown leaf to show the reused literature note" },
     );
     expect(
       JSON.parse(
@@ -667,7 +677,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           .view.contentEl.querySelector<HTMLElement>(".zt-citation");
       },
       undefined,
-      { what: "walkthrough.e2e.ts:385" },
+      { what: "a formatted citation element in the Citation click note" },
     );
     const result = JSON.parse(
       await obRun(
@@ -836,7 +846,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ).some((hit) => hit.item.key === "DMIANART");
       },
       undefined,
-      { what: "walkthrough.e2e.ts:464" },
+      { what: "the item lookup for researc to return item DMIANART" },
     );
     const results = JSON.parse(
       await obRun(
@@ -949,7 +959,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       undefined,
-      { what: "walkthrough.e2e.ts:519" },
+      {
+        what: "the citation suggester to be open listing Ten Simple Rules for Better Figures",
+      },
     );
     await obRun(
       vaultId,
@@ -977,7 +989,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
       {
         ready: (value) => value === "[@rougier2014]",
-        what: "walkthrough.e2e.ts:535",
+        what: "the Citation locator note text to read [@rougier2014]",
       },
     );
     const result = JSON.parse(
@@ -1200,7 +1212,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       undefined,
-      { what: "walkthrough.e2e.ts:644" },
+      { what: "the Focus update note frontmatter zotero-key to be DMRGRART" },
     );
     for (const selector of [
       ".cm-content",
@@ -1298,7 +1310,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       { notePath },
-      { what: "walkthrough.e2e.ts:703" },
+      { what: "the updated note frontmatter zotero-key to be DMRGRART" },
     );
     await obRun(
       vaultId,
@@ -1323,7 +1335,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       { notePath },
-      { what: "walkthrough.e2e.ts:715" },
+      { what: "the editor in the note to hold more than two [!note] callouts" },
     );
     const result = JSON.parse(
       await obRun(
@@ -1401,7 +1413,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ).includes("Unsaved researcher text.");
       },
       { notePath },
-      { what: "walkthrough.e2e.ts:752" },
+      { what: "the note file on disk to keep the unsaved researcher text" },
     );
   });
 
@@ -1446,7 +1458,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           );
         },
         { notePath },
-        { what: "walkthrough.e2e.ts:777" },
+        {
+          what: "the note frontmatter zotero-key to be DMRGRART before the preview check",
+        },
       );
       const result = JSON.parse(
         await obRun(
@@ -1529,7 +1543,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           );
         },
         undefined,
-        { what: "walkthrough.e2e.ts:817" },
+        {
+          what: "the note preview to show the Query Block placeholder and no draft toolbar",
+        },
       );
     },
   );
@@ -1626,7 +1642,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       {
         actionSelector: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
       },
-      { ready: (value) => value === "true", what: "walkthrough.e2e.ts:862" },
+      {
+        ready: (value) => value === "true",
+        what: "the Choose item trigger to appear once the workbench companion panes load",
+      },
     );
 
     await obRunUntil(
@@ -1651,7 +1670,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return "true";
       },
       undefined,
-      { ready: (value) => value === "true", what: "walkthrough.e2e.ts:880" },
+      {
+        ready: (value) => value === "true",
+        what: "the Choose item search input in the workbench to appear",
+      },
     );
     // The results are `aria-busy` while they answer an earlier query.
 
@@ -1686,7 +1708,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return "true";
       },
       undefined,
-      { ready: (value) => value === "true", what: "walkthrough.e2e.ts:889" },
+      {
+        ready: (value) => value === "true",
+        what: "the Ten Simple Rules result row in Choose item to settle out of aria-busy",
+      },
     );
 
     await obRunUntil(
@@ -1726,7 +1751,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       undefined,
-      { what: "walkthrough.e2e.ts:897" },
+      {
+        what: "the note preview beside the workbench to render callouts with no pending preview",
+      },
     );
     expect(
       await obRun(
@@ -2135,7 +2162,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       undefined,
-      { what: "walkthrough.e2e.ts:1064" },
+      {
+        what: "the Reopen workbench note frontmatter zotero-key to be DMRGRART",
+      },
     );
     await obRun(
       vaultId,
@@ -2156,7 +2185,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
       },
       undefined,
-      { what: "walkthrough.e2e.ts:1077" },
+      { what: "the workbench tab bar to render after Customize reopens it" },
     );
     await obRun(
       vaultId,
@@ -2201,7 +2230,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       { expectedJson: JSON.stringify(expected) },
-      { what: "walkthrough.e2e.ts:1100" },
+      {
+        what: "the workbench, preview and field explorer views to match the expected snapshot",
+      },
     );
     await obRun(
       vaultId,
@@ -2232,7 +2263,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       undefined,
-      { what: "walkthrough.e2e.ts:1115" },
+      { what: "the Template Workbench to become the active leaf" },
     );
     expect(
       JSON.parse(
@@ -2303,7 +2334,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       { createdPath: created.path },
-      { what: "walkthrough.e2e.ts:1145" },
+      { what: "the switched note frontmatter zotero-key to be DMRGRART" },
     );
     await obRun(
       vaultId,
@@ -2330,7 +2361,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ).find((el) => el.textContent.includes(target));
       },
       { target },
-      { what: "walkthrough.e2e.ts:1158" },
+      {
+        what: "the last open prompt to list the target Profile folder suggestion",
+      },
     );
     await obRun(
       vaultId,
@@ -2377,7 +2410,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         })();
       },
       undefined,
-      { what: "walkthrough.e2e.ts:1166" },
+      { what: "the Move to books/2024/ checkbox in the top modal to appear" },
     );
     await obRun(
       vaultId,
@@ -2429,7 +2462,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return true;
       },
       undefined,
-      { what: "walkthrough.e2e.ts:1173" },
+      {
+        what: "the Switch to Books button in the top modal to appear and be pressed",
+      },
     );
     await obRunUntil(
       vaultId,
@@ -2444,7 +2479,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       { target },
       {
         ready: (value) => value === `Books (${created.id})`,
-        what: "walkthrough.e2e.ts:1180",
+        what: "the switched note zotlit-profile frontmatter to read Books with its profile id",
       },
     );
     expect(
@@ -2518,7 +2553,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         );
       },
       { addProfileLabel: m.settings_profile_add() },
-      { what: "walkthrough.e2e.ts:1216" },
+      { what: "the Add profile button in the settings tab to render" },
     );
     await obRun(
       vaultId,
@@ -2553,7 +2588,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       { addProfileLabel: m.settings_profile_add() },
       {
         ready: (value) => value === m.settings_profile_name_invalid(),
-        what: "walkthrough.e2e.ts:1225",
+        what: "the Add profile modal to show the invalid profile name status",
       },
     );
     expect(
@@ -2648,7 +2683,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         ).find((el) => el.textContent === addProfileLabel)!.disabled;
       },
       { addProfileLabel: m.settings_profile_add() },
-      { ready: (value) => value === false, what: "walkthrough.e2e.ts:1242" },
+      {
+        ready: (value) => value === false,
+        what: "the Add profile modal submit button to become enabled",
+      },
     );
     await obRun(
       vaultId,
@@ -2683,7 +2721,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ?.store.getState().tab;
       },
       undefined,
-      { ready: (value) => value === "name", what: "walkthrough.e2e.ts:1252" },
+      {
+        ready: (value) => value === "name",
+        what: "the reading-group Profile workbench to open on the Name tab",
+      },
     );
     expect(
       await obRun(

@@ -189,7 +189,10 @@ export function pdfOpened(vaultId: string, path: string): Promise<boolean> {
       );
     },
     { expectedPath: path },
-    { tries: 120, what: "e2e-run-helpers.ts:111" },
+    {
+      tries: 120,
+      what: "the expected PDF to be the active leaf with pages loaded",
+    },
   ).then(
     () => true,
     () => false,

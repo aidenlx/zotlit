@@ -988,7 +988,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "zotero-local-api",
-            what: "paired-run.e2e.ts:889",
+            what: "the Annotation Source for the attachment to be the Zotero Local API",
           },
         );
       }, 120000);
@@ -1388,7 +1388,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:1113" },
+          {
+            what: "the Annotation Card for the new Annotation in the Annotation View",
+          },
         );
         await obRun(
           vaultId!,
@@ -1444,7 +1446,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:1157" },
+          {
+            what: "the PDF overlay mark for the created Annotation on the page",
+          },
         );
 
         // The Annotation Card, in the Annotation View.
@@ -1460,7 +1464,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:1166" },
+          {
+            what: "the Annotation Card for the created Annotation in the Annotation View",
+          },
         );
       }, 120000);
 
@@ -1519,7 +1525,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { createdKey },
           {
             ready: (value) => value === edited,
-            what: "paired-run.e2e.ts:1200",
+            what: "the PDF overlay mark of the edited Annotation to take the new fill",
           },
         );
         // The Annotation Card's swatch carries it.
@@ -1541,7 +1547,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return card.getAttribute("data-annot-color") === edited;
           },
           { createdKey, edited },
-          { what: "paired-run.e2e.ts:1208" },
+          { what: "the Annotation Card swatch to show the edited color" },
         );
       }, 120000);
 
@@ -1698,7 +1704,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             undefined,
             {
               ready: (value) => value === "pressed",
-              what: "paired-run.e2e.ts:1309",
+              what: "the Mark Popup to offer a Tags verb that can be pressed",
             },
           ).then(
             () => true,
@@ -1761,7 +1767,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return !!rect && rect.width > 0;
           },
           { attachmentPath, createdKey },
-          { what: "paired-run.e2e.ts:1335" },
+          {
+            what: "the created Annotation's PDF mark to be laid out on page 1",
+          },
         );
         await obRun(
           vaultId!,
@@ -1815,7 +1823,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentPath, createdKey },
           {
             ready: (value) => value === "selected",
-            what: "paired-run.e2e.ts:1346",
+            what: "the created mark to be selected by stepping the Mark Popup stack",
           },
         );
         // The tags show read-only under the comment.
@@ -2019,7 +2027,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
             },
             { attachmentPath, capturedKey },
-            { what: "paired-run.e2e.ts:1468" },
+            {
+              what: "the captured image Annotation's PDF mark to appear on the page",
+            },
           );
           await obRunUntil(
             vaultId!,
@@ -2040,7 +2050,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath, toolName: "image" },
             {
               ready: (value) => value === "false",
-              what: "paired-run.e2e.ts:1475",
+              what: "the image tool's button to report not pressed after one capture",
             },
           );
           // The card shows the Excerpt Image, decoded.
@@ -2063,7 +2073,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { capturedKey },
-            { what: "paired-run.e2e.ts:1485" },
+            {
+              what: "the Excerpt Image on the captured Annotation's card to finish decoding",
+            },
           );
         }, 120000);
 
@@ -2217,7 +2229,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { keys, attachmentPath },
-            { what: "paired-run.e2e.ts:1565" },
+            { what: "the erased ink marks to be gone from the PDF overlay" },
           );
           await disarmTool(vaultId!, { attachmentPath, tool: "ink" });
         });
@@ -2447,7 +2459,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             {
               ready: (value) =>
                 isDeepStrictEqual(value, { start: true, moved: true }),
-              what: "paired-run.e2e.ts:1653",
+              what: "the live ink stroke to start at the press and take the moves",
             },
           );
           await release(CURVE.at(-1)!);
@@ -2544,7 +2556,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   live: false,
                   armed: "true",
                 }),
-              what: "paired-run.e2e.ts:1717",
+              what: "the ink mark drawn, the live stroke cleared and the ink tool armed",
             },
           );
           // The card shows the Excerpt Image, decoded.
@@ -2567,7 +2579,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { inkKey },
-            { what: "paired-run.e2e.ts:1731" },
+            {
+              what: "the Excerpt Image on the ink Annotation's card to finish decoding",
+            },
           );
         }, 120000);
 
@@ -2606,7 +2620,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { attachmentPath, dotKey },
-            { what: "paired-run.e2e.ts:1756" },
+            {
+              what: "the tap's PDF mark to be a single-point path drawn as a dot",
+            },
           );
         }, 120000);
 
@@ -2750,7 +2766,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath, inkKey },
             {
               ready: (value) => isDeepStrictEqual(value, [String(picked), "2"]),
-              what: "paired-run.e2e.ts:1812",
+              what: "stroke widths of the new ink mark and seed 4PE492KU to match the pick",
             },
           );
         }, 120000);
@@ -2773,7 +2789,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
             },
             { attachmentPath },
-            { what: "paired-run.e2e.ts:1826" },
+            { what: "the live ink stroke to clear from the PDF page" },
           );
           await escape();
           expect(await release(CURVE[6]!)).toBe(DISCARDED);
@@ -3452,7 +3468,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
             },
             { attachmentPath, inkKey },
-            { what: "paired-run.e2e.ts:1982" },
+            { what: "the seeded ink mark to be drawn on the PDF overlay" },
           );
           expect(
             await obRun(
@@ -3505,7 +3521,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { attachmentKey: attachment.key },
               {
                 ready: (value) => value === "local-api-disabled",
-                what: "paired-run.e2e.ts:2008",
+                what: "the attachment's annotation capability to report local-api-disabled",
               },
             );
 
@@ -3548,7 +3564,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentKey: attachment.key },
             {
               ready: (value) => value === "writable",
-              what: "paired-run.e2e.ts:2021",
+              what: "the attachment's annotation capability to report writable",
             },
           );
           expect(await annotationKeys()).toEqual(before);
@@ -3585,7 +3601,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentKey: attachment.key },
             {
               ready: (value) => value === "local-api-disabled",
-              what: "paired-run.e2e.ts:2041",
+              what: "the attachment's annotation capability to report local-api-disabled",
             },
           );
 
@@ -3603,7 +3619,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "writable",
-            what: "paired-run.e2e.ts:2054",
+            what: "the attachment's annotation capability to report writable",
           },
         );
       };
@@ -3770,7 +3786,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   sheet: true,
                   armed: "false",
                 }),
-              what: "paired-run.e2e.ts:2155",
+              what: "the new note selected with its comment sheet focused and tool disarmed",
             },
           );
         }, 120000);
@@ -3799,7 +3815,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath },
             {
               ready: (value) => isDeepStrictEqual(value, ["C94NJNYG"]),
-              what: "paired-run.e2e.ts:2178",
+              what: "only the seeded note C94NJNYG to be selected in the PDF overlay",
             },
           );
           expect(await annotationKeys()).toEqual(before);
@@ -3862,7 +3878,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { erased, attachmentPath },
             {
               ready: (value) => value === false,
-              what: "paired-run.e2e.ts:2229",
+              what: "the erased marks to leave the PDF overlay before the next click",
             },
           );
         });
@@ -4112,7 +4128,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   lines: ["Two lines", "of text"],
                   draft: false,
                 }),
-              what: "paired-run.e2e.ts:2362",
+              what: "the typed free text mark to show its two lines and no draft",
             },
           );
         }, 120000);
@@ -4305,7 +4321,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   draft: false,
                   focus: true,
                 }),
-              what: "paired-run.e2e.ts:2465",
+              what: "the saved text mark selected under an open Mark Popup",
             },
           );
 
@@ -4357,7 +4373,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   draft: false,
                   focus: true,
                 }),
-              what: "paired-run.e2e.ts:2481",
+              what: "the Mark Popup to close with the saved text mark deselected",
             },
           );
         }, 120000);
@@ -4419,7 +4435,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath },
             {
               ready: (value) => isDeepStrictEqual(value, ["HRK7BG32"]),
-              what: "paired-run.e2e.ts:2516",
+              what: "only the seeded text HRK7BG32 to be selected in the PDF overlay",
             },
           );
           expect(await annotationKeys()).toEqual(before);
@@ -4503,7 +4519,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 return document.querySelectorAll<HTMLElement>(".menu").length;
               },
               undefined,
-              { ready: (value) => value === 0, what: "paired-run.e2e.ts:2555" },
+              {
+                ready: (value) => value === 0,
+                what: "the font size menu to close before the next click",
+              },
             ).then(
               () => true,
               () => false,
@@ -4707,7 +4726,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return document.querySelectorAll<HTMLElement>(".menu").length;
             },
             undefined,
-            { ready: (value) => value === 0, what: "paired-run.e2e.ts:2635" },
+            {
+              ready: (value) => value === 0,
+              what: "the color menu to close before the text is created",
+            },
           );
           const before = await annotationKeys();
 
@@ -4742,7 +4764,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath, textKey },
             {
               ready: (value) => value === "#5aa933",
-              what: "paired-run.e2e.ts:2656",
+              what: "the saved text mark's fill to darken to #5aa933",
             },
           );
         }, 120000);
@@ -5048,7 +5070,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { imageKey },
           {
             ready: (value) => value === "561.25 308.214",
-            what: "paired-run.e2e.ts:2824",
+            what: "the seeded image mark FDRFQ7C2 to show its saved width and height",
           },
         );
       }, 120000);
@@ -5091,7 +5113,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!rect && rect.width > 0;
             },
             { attachmentPath, imageKey },
-            { what: "paired-run.e2e.ts:2852" },
+            { what: "the seeded image's PDF mark to be laid out on page 2" },
           );
           await obRun(
             vaultId!,
@@ -5131,7 +5153,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ).length;
             },
             { attachmentPath },
-            { ready: (value) => value === 8, what: "paired-run.e2e.ts:2863" },
+            {
+              ready: (value) => value === 8,
+              what: "the eight Mark Handles to render on the seeded image",
+            },
           );
           // Measured in its own eval: the one that acts reads the nodes as
           // they stood before its own events re-drew them. The page jump can
@@ -5260,7 +5285,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { placeholderText: m.annot_view_card_comment_placeholder() },
-            { what: "paired-run.e2e.ts:2922" },
+            {
+              what: "the Mark Popup comment field to show its placeholder and no comment verb",
+            },
           );
           // A press collapses the page's selection before its click, and a
           // click over selected text only reads.
@@ -5285,7 +5312,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!pageHelpers.popupEditor();
             },
             undefined,
-            { what: "paired-run.e2e.ts:2935" },
+            { what: "the Mark Popup comment editor to open on a click" },
           );
           const key = await obRun(
             vaultId!,
@@ -5323,7 +5350,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               undefined,
               {
                 ready: (value) => value === false,
-                what: "paired-run.e2e.ts:2952",
+                what: "the Mark Popup comment editor to close",
               },
             ).then(
               () => true,
@@ -5501,7 +5528,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 position.rects[0]![2]! - position.rects[0]![0]!
               ).toFixed(3),
             },
-            { what: "paired-run.e2e.ts:3041" },
+            {
+              what: "the seeded image's PDF mark width to match the resized width",
+            },
           );
           await expect
             .poll(() => pixels.keys(), { timeout: 10_000 })
@@ -5573,7 +5602,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.classList.contains("is-selected");
             },
             { attachmentPath, imageKey },
-            { what: "paired-run.e2e.ts:3101" },
+            {
+              what: "the seeded image mark FDRFQ7C2 to be selected after the undo or redo",
+            },
           );
 
           expect(await redoKey()).toEqual({ handled: true });
@@ -5676,7 +5707,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { attachmentKey: attachment.key },
               {
                 ready: (value) => value === "writable",
-                what: "paired-run.e2e.ts:3157",
+                what: "the attachment's annotation capability to report writable",
               },
             );
           });
@@ -5700,7 +5731,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentKey: attachment.key },
             {
               ready: (value) => value === "local-api-disabled",
-              what: "paired-run.e2e.ts:3166",
+              what: "the attachment's annotation capability to report local-api-disabled",
             },
           );
           await obRunUntil(
@@ -5716,7 +5747,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ).length;
             },
             { attachmentPath },
-            { ready: (value) => value === 0, what: "paired-run.e2e.ts:3173" },
+            {
+              ready: (value) => value === 0,
+              what: "the Mark Handles on the seeded image to be removed",
+            },
           );
 
           // A drag from where the bottom-right handle stood is an ordinary
@@ -5842,7 +5876,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { attachmentPath, imageKey },
-            { what: "paired-run.e2e.ts:3229" },
+            {
+              what: "the image mark FDRFQ7C2 to widen to 526.25 wide in the PDF view",
+            },
           );
         }, 120000);
 
@@ -6066,7 +6102,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             );
           },
           { attachmentPath },
-          { what: "paired-run.e2e.ts:3351" },
+          { what: "the PDF text layer on page 1 to render text" },
         );
         // A drag on the page as the browser leaves it: the press, the text it
         // selected, then the release that settles it into the create popup.
@@ -6115,7 +6151,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             );
           },
           undefined,
-          { what: "paired-run.e2e.ts:3364" },
+          { what: "the highlight button in the create popup to appear" },
         );
         await obRun(
           vaultId!,
@@ -6137,7 +6173,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return !!pageHelpers.popupEditor();
           },
           undefined,
-          { what: "paired-run.e2e.ts:3375" },
+          { what: "the popup comment editor to open" },
         );
         try {
           await expectEditorKeepsSelections(vaultId!);
@@ -6163,7 +6199,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
           },
           undefined,
-          { ready: (value) => value === false, what: "paired-run.e2e.ts:3390" },
+          {
+            ready: (value) => value === false,
+            what: "the create popup to close",
+          },
         );
       });
 
@@ -6213,7 +6252,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return mark.getBoundingClientRect().width > 0;
             },
             { attachmentPath, inkKey },
-            { what: "paired-run.e2e.ts:3424" },
+            { what: "the ink mark 4PE492KU to render in the PDF view" },
           );
           await obRun(
             vaultId!,
@@ -6254,7 +6293,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ).length;
             },
             { attachmentPath },
-            { ready: (value) => value === 4, what: "paired-run.e2e.ts:3436" },
+            {
+              ready: (value) => value === 4,
+              what: "the four handles on the seeded ink mark to appear",
+            },
           );
           // Measured in its own eval, and read until it stands still: the
           // page jump can still be scrolling.
@@ -6431,7 +6473,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 .startsWith(`M ${pathStartX} `);
             },
             { attachmentPath, inkKey, pathStartX: position.paths[0]![0] },
-            { what: "paired-run.e2e.ts:3549" },
+            {
+              what: "the ink mark 4PE492KU path to start at the dragged x position",
+            },
           );
         }, 120000);
 
@@ -6459,7 +6503,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return mark.getBoundingClientRect().width > 0;
             },
             { attachmentPath, inkKey },
-            { what: "paired-run.e2e.ts:3560" },
+            { what: "the ink mark 4PE492KU to render with a non-empty box" },
           );
 
           // Halfway along the drawn stroke, mapped from page units to the
@@ -6506,7 +6550,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.classList.contains("is-selected");
             },
             { attachmentPath, inkKey },
-            { what: "paired-run.e2e.ts:3575" },
+            {
+              what: "the ink mark 4PE492KU to be selected after a stroke click",
+            },
           );
 
           // The seed is a tick: the top-left of its box, a fifth of the way
@@ -6555,7 +6601,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath, inkKey },
             {
               ready: (value) => value === false,
-              what: "paired-run.e2e.ts:3587",
+              what: "the ink mark 4PE492KU to be deselected",
             },
           );
           expect(
@@ -6620,7 +6666,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath, inkKey },
             {
               ready: (value) => value === String(position.width),
-              what: "paired-run.e2e.ts:3619",
+              what: "the ink mark 4PE492KU stroke width to match the scaled pen width",
             },
           );
         }, 120000);
@@ -6691,7 +6737,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return mark.getBoundingClientRect().width > 0;
             },
             { attachmentPath, key },
-            { what: "paired-run.e2e.ts:3678" },
+            {
+              what: "the seeded note or free text mark to render in the PDF view",
+            },
           );
           await obRun(
             vaultId!,
@@ -6755,7 +6803,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 .classList.contains("is-selected");
             },
             { attachmentPath, key },
-            { what: "paired-run.e2e.ts:3689" },
+            { what: "the seeded note or free text mark to be selected" },
           );
           await obRunUntil(
             vaultId!,
@@ -6772,7 +6820,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath },
             {
               ready: (value) => value === handles,
-              what: "paired-run.e2e.ts:3696",
+              what: "the handle count on the seeded note or free text to match the expected count",
             },
           );
           // Measured in its own eval, and read until it stands still: the
@@ -7058,7 +7106,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath, textKey },
             {
               ready: (value) => value === lines,
-              what: "paired-run.e2e.ts:3865",
+              what: "the free text HRK7BG32 mark to have the expected line count",
             },
           );
         }, 120000);
@@ -7183,7 +7231,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!rect && rect.width > 0;
             },
             { attachmentPath, highlightKey },
-            { what: "paired-run.e2e.ts:3955" },
+            {
+              what: "the highlight Q8ZR4TDH second rect to render in the PDF view",
+            },
           );
           await obRun(
             vaultId!,
@@ -7229,7 +7279,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { attachmentPath },
             {
               ready: (value) => isDeepStrictEqual(value, ["start", "end"]),
-              what: "paired-run.e2e.ts:3966",
+              what: "the highlight Q8ZR4TDH handles to be start and end grips",
             },
           );
           // Measured in its own eval, and read until it stands still and is
@@ -7328,7 +7378,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!box && box.width > 0 && box.height > 0;
             },
             { attachmentPath, wordText: word },
-            { what: "paired-run.e2e.ts:4009" },
+            {
+              what: "the word to hit on page 1 text layer to have a visible box",
+            },
           );
           const pressed = await obRun(
             vaultId!,
@@ -7517,7 +7569,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 position.rects[3]![2]! - position.rects[3]![0]!
               ).toFixed(3),
             },
-            { what: "paired-run.e2e.ts:4091" },
+            {
+              what: "the highlight Q8ZR4TDH last line mark to widen by one word",
+            },
           );
           await obRunUntil(
             vaultId!,
@@ -7540,7 +7594,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { highlightKey },
-            { what: "paired-run.e2e.ts:4098" },
+            {
+              what: "the Annotation Card for Q8ZR4TDH to show the extended quote text",
+            },
           );
         }, 120000);
 
@@ -7606,7 +7662,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { highlightKey },
-            { what: "paired-run.e2e.ts:4148" },
+            {
+              what: "the Annotation Card for Q8ZR4TDH to show the quote ending at just a few",
+            },
           );
         }, 120000);
 
@@ -7683,7 +7741,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { highlightKey },
-            { what: "paired-run.e2e.ts:4192" },
+            {
+              what: "the Annotation Card for Q8ZR4TDH to show the new range text after a Text Edit",
+            },
           );
         }, 120000);
 
@@ -7775,7 +7835,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { highlightKey },
-            { what: "paired-run.e2e.ts:4253" },
+            {
+              what: "the Annotation Card for Q8ZR4TDH to quote one more character",
+            },
           );
         }, 120000);
       });
@@ -7809,7 +7871,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { historyKey },
-            { what: "paired-run.e2e.ts:4281" },
+            {
+              what: "the Annotation History record PUPR5FG5 to go idle with no comment draft",
+            },
           );
         }
 
@@ -7823,7 +7887,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ].some((node) => node.textContent.includes(fragment));
             },
             { fragment },
-            { what: "paired-run.e2e.ts:4291" },
+            { what: "the ZotLit notice carrying the expected text to appear" },
           ).then(
             () => true,
             () => false,
@@ -7874,7 +7938,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
             {
               ready: (value) => value === value,
-              what: "paired-run.e2e.ts:4312",
+              what: "the refreshed PUPR5FG5 comment or color field to read back",
             },
           );
         }
@@ -7902,7 +7966,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!rect && rect.width > 0;
             },
             { attachmentPath, historyKey },
-            { what: "paired-run.e2e.ts:4323" },
+            { what: "the PDF mark PUPR5FG5 to render with a non-empty box" },
           );
           await obRun(
             vaultId!,
@@ -7944,7 +8008,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.classList.contains("is-selected");
             },
             { attachmentPath, historyKey },
-            { what: "paired-run.e2e.ts:4334" },
+            { what: "the PDF mark PUPR5FG5 to be selected" },
           );
         }
 
@@ -8023,7 +8087,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.classList.contains("is-selected");
             },
             { attachmentPath, historyKey },
-            { what: "paired-run.e2e.ts:4386" },
+            {
+              what: "the PDF mark PUPR5FG5 to be selected after the colour step",
+            },
           );
 
           expect(await redoKey()).toEqual({ handled: true });
@@ -8191,7 +8257,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!pageHelpers.popupEditor();
             },
             undefined,
-            { what: "paired-run.e2e.ts:4510" },
+            { what: "the popup comment editor to open for the history step" },
           );
         }
 
@@ -8230,7 +8296,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !pageHelpers.popupEditor();
             },
             undefined,
-            { what: "paired-run.e2e.ts:4530" },
+            { what: "the popup comment editor to close" },
           );
           await writeSettled();
         }
@@ -8334,7 +8400,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             undefined,
             {
               ready: (value) => value === "Typed once",
-              what: "paired-run.e2e.ts:4596",
+              what: "the popup comment editor text to read Typed once",
             },
           );
           // The Annotation History never heard the key, so Zotero's record
@@ -8483,7 +8549,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 return card.hasAttribute("data-alone");
               },
               { historyKey },
-              { what: "paired-run.e2e.ts:4658" },
+              {
+                what: "the Annotation Card for PUPR5FG5 to be marked alone after a press",
+              },
             );
             expect(await pressOnCard("2", {})).toEqual({ handled: true });
             expect(
@@ -8593,7 +8661,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { historyKey },
               {
                 ready: (value) => value === seedColor,
-                what: "paired-run.e2e.ts:4704",
+                what: "the Annotation Card for PUPR5FG5 color to match the seed color",
               },
             );
           }, 120000);
@@ -8657,7 +8725,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   );
                 },
                 { historyKey },
-                { what: "paired-run.e2e.ts:4746" },
+                {
+                  what: "the card tag input for PUPR5FG5 to open with an idle mutation and no tag draft",
+                },
               );
             }
 
@@ -8717,7 +8787,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     );
                   },
                   { historyKey },
-                  { what: "paired-run.e2e.ts:4795" },
+                  {
+                    what: "the PUPR5FG5 mutation to go idle with no tag draft left",
+                  },
                 ).then(
                   () => true,
                   () => false,
@@ -8836,7 +8908,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.querySelector<HTMLInputElement>(".zt-annot-tag-input");
                 },
                 { historyKey },
-                { what: "paired-run.e2e.ts:4844" },
+                { what: "the card tag input for PUPR5FG5 to close" },
               );
               expect(await tagsSettled()).toBe(true);
 
@@ -9032,7 +9104,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { attachmentPath },
               {
                 ready: (value) => isDeepStrictEqual(value, [noteKey]),
-                what: "paired-run.e2e.ts:4962",
+                what: "the PDF selection to match the created note key",
               },
             );
 
@@ -9068,7 +9140,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               },
               { noteKey },
-              { what: "paired-run.e2e.ts:4975" },
+              {
+                what: "the note popup editor to close and its mutation to go idle",
+              },
             );
 
             expect(await undoKey()).toEqual({ handled: true });
@@ -9112,7 +9186,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               {
                 ready: (value) =>
                   isDeepStrictEqual(value, { selected: [], mark: false }),
-                what: "paired-run.e2e.ts:4993",
+                what: "the PDF selection to be empty and the note mark to be gone",
               },
             );
           }, 120000);
@@ -9224,7 +9298,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { key },
             {
               ready: (value) => value === "clicked",
-              what: "paired-run.e2e.ts:5068",
+              what: "the Annotation Card for the selection key to accept a press",
             },
           );
         }
@@ -9253,7 +9327,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return !!rect && rect.width > 0;
             },
             { attachmentPath, markKey },
-            { what: "paired-run.e2e.ts:5081" },
+            { what: "the PDF mark PUPR5FG5 to render in the PDF view" },
           );
         });
 
@@ -9422,7 +9496,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { attachmentPath, cardKey },
-            { what: "paired-run.e2e.ts:5151" },
+            {
+              what: "the PDF mark Q8ZR4TDH to be selected and inside the visible viewer",
+            },
           );
           // With the Landing done, no Mark Popup stands over the mark.
           expect(await shown()).toEqual({
@@ -9586,7 +9662,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return pageHelpers.scratch.__zlPendingDatabaseRead!.changed;
             },
             undefined,
-            { what: "paired-run.e2e.ts:5225" },
+            { what: "the pending database read to report a change" },
           );
 
           // The tag toggle saves and closes the comment editor first.
@@ -9994,7 +10070,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               },
               { cardKey },
-              { what: "paired-run.e2e.ts:5314" },
+              {
+                what: "the Q8ZR4TDH mutation to go idle with no comment draft",
+              },
             ).then(
               () => true,
               () => false,
@@ -10064,7 +10142,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { cardKey },
             {
               ready: (value) => value === "open",
-              what: "paired-run.e2e.ts:5359",
+              what: "the comment editor on card Q8ZR4TDH to open after a press",
             },
           );
           await obRun(
@@ -10135,7 +10213,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.contains(document.activeElement);
             },
             { cardKey },
-            { what: "paired-run.e2e.ts:5367" },
+            { what: "the card editor for Q8ZR4TDH to hold keyboard focus" },
           );
 
           // The click in the PDF takes the focus out of the editor, which
@@ -10433,7 +10511,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { menuItemLabel: m.annot_view_menu_edit_text() },
               {
                 ready: (value) => value === "chosen",
-                what: "paired-run.e2e.ts:5420",
+                what: "the Edit text menu item to be offered and clicked",
               },
             );
           }
@@ -10483,7 +10561,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.contains(document.activeElement);
                 },
                 { cardKey },
-                { what: "paired-run.e2e.ts:5450" },
+                {
+                  what: "the excerpt block editor on card Q8ZR4TDH to hold the caret",
+                },
               );
               // Typed where the caret stands: at the end of the text.
               await obRun(
@@ -10537,7 +10617,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   );
                 },
                 { cardKey, corrected },
-                { what: "paired-run.e2e.ts:5477" },
+                {
+                  what: "the Q8ZR4TDH card to close its quote editor and show the correction",
+                },
               );
             } finally {
               await command("zotlit:annot-view-unpin");
@@ -10616,7 +10698,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   ?.contains(document.activeElement);
               },
               { cardKey },
-              { what: "paired-run.e2e.ts:5522" },
+              {
+                what: "the quote editor on the Q8ZR4TDH card to hold keyboard focus",
+              },
             );
             await obRun(
               vaultId!,
@@ -10634,7 +10718,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 return pageHelpers.scratch.__zotlitWriteOutcomeProbe!.reached;
               },
               undefined,
-              { what: "paired-run.e2e.ts:5533" },
+              {
+                what: "the write outcome probe to record the conflicting write",
+              },
             );
 
             // Zotero's sidebar changes the text while the save waits.
@@ -10673,7 +10759,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { cardKey },
               {
                 ready: (value) => value === "conflict",
-                what: "paired-run.e2e.ts:5558",
+                what: "the text draft for the Q8ZR4TDH quote to reach the conflict state",
               },
             );
 
@@ -10715,7 +10801,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     mine: true,
                     verbs: ["Use my text", "Keep Zotero's text"],
                   }),
-                what: "paired-run.e2e.ts:5570",
+                what: "the Q8ZR4TDH quote conflict panel to show both texts and both choices",
               },
             );
             expect((await highlight.stored()).data.annotationText).toBe(
@@ -10828,7 +10914,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               },
               { cardKey, inZotero },
-              { what: "paired-run.e2e.ts:5595" },
+              {
+                what: "the Q8ZR4TDH quote to drop its conflict and show Zotero's text",
+              },
             );
             expect((await highlight.stored()).data.annotationText).toBe(
               inZotero,
@@ -10867,7 +10955,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   ?.contains(document.activeElement);
               },
               { cardKey },
-              { what: "paired-run.e2e.ts:5621" },
+              {
+                what: "the Q8ZR4TDH quote editor to hold focus for the undo key",
+              },
             );
 
             /**
@@ -10890,7 +10980,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     );
                   },
                   { cardKey },
-                  { what: "paired-run.e2e.ts:5634" },
+                  {
+                    what: "the Q8ZR4TDH annotation to have no pending write or draft",
+                  },
                 ).then(
                   () => true,
                   () => false,
@@ -10926,7 +11018,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               },
               { cardKey },
-              { what: "paired-run.e2e.ts:5659" },
+              {
+                what: "the Q8ZR4TDH annotation to have no write in flight and no draft",
+              },
             );
 
             expect(await undoKey()).toEqual({ handled: true });
@@ -10960,7 +11054,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               },
               { cardKey, seedText },
-              { what: "paired-run.e2e.ts:5678" },
+              { what: "the Q8ZR4TDH card quote to show the seeded text" },
             );
 
             expect(await redoKey()).toEqual({ handled: true });
@@ -10989,7 +11083,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.hasAttribute("data-blocked");
                 },
                 { cardKey },
-                { what: "paired-run.e2e.ts:5700" },
+                {
+                  what: "the Q8ZR4TDH comment field to carry the blocked marker",
+                },
               );
 
               await chooseEditQuotedText();
@@ -11011,7 +11107,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   permissionText:
                     "Allow other applications on this computer to communicate with Zotero",
                 },
-                { what: "paired-run.e2e.ts:5709" },
+                {
+                  what: "the Zotero communication permission notice to appear",
+                },
               );
               // The choice opened no editor.
               expect(
@@ -11214,7 +11312,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { attachmentPath, next },
-            { what: "paired-run.e2e.ts:5765" },
+            {
+              what: "the PDF mark for the next card to be selected and scrolled into view",
+            },
           );
           expect(await shown()).toEqual({
             cards: [next],
@@ -11279,7 +11379,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             undefined,
             {
               ready: (value) => value === "focused",
-              what: "paired-run.e2e.ts:5788",
+              what: "the Search annotations field in the Annotation View to take focus",
             },
           );
           try {
@@ -11316,7 +11416,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               undefined,
               {
                 ready: (value) => value === "done",
-                what: "paired-run.e2e.ts:5801",
+                what: "the Search annotations field to finish its keyup handling",
               },
             );
             expect(await shown()).toEqual({
@@ -12395,7 +12495,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { second, platformKey },
               {
                 ready: (value) => value === "clicked",
-                what: "paired-run.e2e.ts:6036",
+                what: "the second card to take a modifier click in the Annotation View",
               },
             );
             await expect.poll(shown, poll).toMatchObject({
@@ -12444,7 +12544,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               undefined,
               {
                 ready: (value) => value === "Delete 2 annotations?",
-                what: "paired-run.e2e.ts:6059",
+                what: "the delete confirmation title to name the count of 2 annotations",
               },
             );
             expect(await madeSince(baseline)).toEqual(
@@ -12487,7 +12587,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 );
               },
               { made },
-              { what: "paired-run.e2e.ts:6085" },
+              {
+                what: "the two deleted annotations to have no write in flight",
+              },
             );
 
             // One press of the undo key restores both, each under a new key.
@@ -12647,7 +12749,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { second, platformKey },
               {
                 ready: (value) => value === "clicked",
-                what: "paired-run.e2e.ts:6173",
+                what: "the second card to take a modifier click into the Card Selection",
               },
             );
             await expect.poll(shown, poll).toMatchObject({
@@ -12690,7 +12792,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               );
             },
             { made },
-            { what: "paired-run.e2e.ts:6210" },
+            {
+              what: "the grouped annotations to have no write in flight before undo",
+            },
           );
           // The chord goes to the PDF view's own Scope, and no tab switches
           // while the undo writes are sent.
@@ -12765,7 +12869,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { annotationKey: made[1], buttonLabel: "Change color" },
                 {
                   ready: (value) => value === "picked",
-                  what: "paired-run.e2e.ts:6253",
+                  what: "the Change color menu on the grouped card to offer Green",
                 },
               );
               await expectOneUndoReturnsBoth(made);
@@ -13025,7 +13129,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             })();
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:6374" },
+          {
+            what: "the created annotation's card to open in a window apart from its PDF",
+          },
         );
         await obRunUntil(
           vaultId!,
@@ -13047,7 +13153,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return card.hasAttribute("data-alone");
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:6381" },
+          { what: "the created annotation's card to be selected alone" },
         );
         // The card selected alone offers its comment as a field, and a click
         // on it opens the editor. A press collapses the page's selection
@@ -13074,7 +13180,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return true;
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:6391" },
+          {
+            what: "the comment field on the created annotation's card to accept a click",
+          },
         );
         await obRunUntil(
           vaultId!,
@@ -13090,7 +13198,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ?.querySelector<HTMLElement>(".cm-content");
           },
           { createdKey },
-          { what: "paired-run.e2e.ts:6398" },
+          {
+            what: "the comment editor on the created annotation's card to open",
+          },
         );
 
         const shortcutComment = "Saved by pop-out card Mod+Enter";
@@ -13320,7 +13430,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ?.textContent.includes(fromZotero);
           },
           { attachmentKey: attachment.key, createdKey, fromZotero },
-          { what: "paired-run.e2e.ts:6475" },
+          {
+            what: "the created annotation's card to show the text edited in Zotero",
+          },
         );
       }, 120000);
 
@@ -13397,7 +13509,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.textContent.includes(comment);
             },
             { createdKey, comment },
-            { what: "paired-run.e2e.ts:6516" },
+            {
+              what: "the created annotation's card to show the external comment",
+            },
           ).then(
             () => true,
             () => false,
@@ -13502,7 +13616,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key, createdKey },
           {
             ready: (value) => value === committed,
-            what: "paired-run.e2e.ts:6571",
+            what: "the created annotation's stored color to read back as committed",
           },
         );
         await obRunUntil(
@@ -13535,7 +13649,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           {
             ready: (value) =>
               isDeepStrictEqual(value, { card: committed, mark: committed }),
-            what: "paired-run.e2e.ts:6578",
+            what: "the card and PDF mark colors to match the committed color",
           },
         );
         // Restart reads Zotero; it does not replay the session-only attempt.
@@ -13663,7 +13777,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   enabled: true,
                   error: null,
                 }),
-              what: "paired-run.e2e.ts:6669",
+              what: "the reload probe to record a clean disable and re-enable",
             },
           );
 
@@ -13704,7 +13818,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   draft: null,
                   mutation: { kind: "idle" },
                 }),
-              what: "paired-run.e2e.ts:6683",
+              what: "the stored annotation to match its baseline with no draft or write",
             },
           );
           // Complete the old response only after the new repository read.
@@ -13864,7 +13978,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "local-api-disabled",
-            what: "paired-run.e2e.ts:6780",
+            what: "the Annotation Source capability reason to read local-api-disabled",
           },
         );
         await obRunUntil(
@@ -13878,7 +13992,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "zotero-db",
-            what: "paired-run.e2e.ts:6787",
+            what: "the annotation list source to fall back to the Zotero database",
           },
         );
         expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
@@ -13898,7 +14012,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "writable",
-            what: "paired-run.e2e.ts:6800",
+            what: "the annotation capability to become writable again",
           },
         );
         await obRunUntil(
@@ -13912,7 +14026,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "zotero-local-api",
-            what: "paired-run.e2e.ts:6807",
+            what: "the annotation list source to return to the Zotero Local API",
           },
         );
         expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
@@ -14222,7 +14336,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ].some((node) => node.textContent === title);
             },
             { title },
-            { what: "paired-run.e2e.ts:6962" },
+            { what: "the read-only notice with its title text to appear" },
           ).then(
             () => true,
             () => false,
@@ -14281,7 +14395,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "authorization-required",
-            what: "paired-run.e2e.ts:6989",
+            what: "the annotation capability to require authorization",
           },
         );
 
@@ -14322,7 +14436,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           undefined,
           {
             ready: (value) => value === "true",
-            what: "paired-run.e2e.ts:7001",
+            what: "the Allow editing button in the Zotero editing setting to be clicked",
           },
         );
 
@@ -14450,7 +14564,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "writable",
-            what: "paired-run.e2e.ts:7042",
+            what: "the annotation capability to be writable after allowing editing",
           },
         );
         expect(
@@ -14508,7 +14622,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         { attachmentKey: attachment.key },
         {
           ready: (value) => value === "zotero-local-api",
-          what: "paired-run.e2e.ts:7077",
+          what: "the annotation list source to be the Zotero Local API",
         },
       );
 
@@ -14568,7 +14682,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ?.contentEl.querySelector<HTMLElement>("[data-query-view-menu]");
         },
         { created },
-        { tries: 120, what: "paired-run.e2e.ts:7113" },
+        {
+          tries: 120,
+          what: "the Query File tab for the new file to show its view menu",
+        },
       );
       await obRun(
         vaultId!,
@@ -14601,7 +14718,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             );
         },
         { created, key },
-        { tries: 120, what: "paired-run.e2e.ts:7126" },
+        {
+          tries: 120,
+          what: "the Query File tab to show the seeded annotation card",
+        },
       );
 
       // Select the card alone, open its comment editor, and type.
@@ -14652,7 +14772,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         },
         { created, key },
-        { ready: (value) => value === "open", what: "paired-run.e2e.ts:7136" },
+        {
+          ready: (value) => value === "open",
+          what: "the seeded card in the Query File tab to open its comment editor",
+        },
       );
       const comment = "Typed in a Query File";
       cleanup.defer(async () => {
@@ -14744,7 +14867,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         },
         { created, key },
-        { ready: (value) => value === comment, what: "paired-run.e2e.ts:7169" },
+        {
+          ready: (value) => value === comment,
+          what: "the seeded card's comment in the Query File tab to read the typed text",
+        },
       );
     }, 180000);
 
@@ -14771,7 +14897,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         { attachmentKey: attachment.key },
         {
           ready: (value) => value === "zotero-local-api",
-          what: "paired-run.e2e.ts:7190",
+          what: "the annotation list source to be the Zotero Local API before writing",
         },
       );
 
@@ -14861,7 +14987,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           )?.session;
         },
         { attachmentPath },
-        { what: "paired-run.e2e.ts:7229" },
+        {
+          what: "the PDF annotation editor to hold a session for the attachment",
+        },
       );
       await obRun(
         vaultId!,
@@ -15014,7 +15142,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         },
         { key, attachmentKey: attachment.key },
-        { what: "paired-run.e2e.ts:7275" },
+        {
+          what: "the annotation to have no write or draft and an undo step ready",
+        },
       );
 
       /** The platform's undo chord, pressed where `target` names, as the keyboard sends it. */
@@ -15172,7 +15302,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         },
         { notePath, key },
-        { what: "paired-run.e2e.ts:7310" },
+        {
+          what: "the literature note to hold a callout linking the annotation",
+        },
       );
     }, 180000);
   });
@@ -15203,7 +15335,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           { attachmentKey: attachment.key },
           {
             ready: (value) => value === "zotero-local-api",
-            what: "paired-run.e2e.ts:7332",
+            what: "the item's annotation list source to be the Zotero Local API",
           },
         );
 
@@ -15292,7 +15424,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return zotlit.services.noteIndex.getNotesByItemKey(itemKey).length;
           },
           { itemKey },
-          { ready: (value) => value === 0, what: "paired-run.e2e.ts:7371" },
+          {
+            ready: (value) => value === 0,
+            what: "the note index to hold no notes for item RUGIER24",
+          },
         );
         const result = await obRun(
           vaultId!,
@@ -16423,7 +16558,7 @@ async function setAnnotationTags(
     { attachmentKey: attachment.key, annotationKey },
     {
       ready: (value) => isDeepStrictEqual(value, spelledTags(tags)),
-      what: "paired-run.e2e.ts:8198",
+      what: "the stored tags on the annotation to match the spelled tag set",
     },
   );
 }
@@ -16468,7 +16603,7 @@ function cardTagEditor(annotationKey: string) {
         { annotationKey, selector: target },
         {
           ready: (value) => value === "pressed",
-          what: "paired-run.e2e.ts:8221",
+          what: "the control matching the selector inside the annotation card to press",
         },
       ).then(
         () => true,
@@ -16537,7 +16672,9 @@ function tagEditorIn(
           );
         },
         { root },
-        { what: "paired-run.e2e.ts:8246" },
+        {
+          what: "the editable tag input in the PDF mark popup or annotation card",
+        },
       ).then(
         () => true,
         () => false,

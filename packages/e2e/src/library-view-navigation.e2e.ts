@@ -1193,7 +1193,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             fields: ["name", "folder"],
             records: 0,
           }),
-        what: "library-view-navigation.e2e.ts:548",
+        what: "the save Query File modal to open with name and folder fields",
       },
     );
     await obRun(
@@ -1988,7 +1988,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
       },
       undefined,
-      { tries: 20, what: "library-view-navigation.e2e.ts:834" },
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish its disable and enable reload",
+      },
     );
     const reloaded = await shownWith(
       ["unread"],
@@ -2290,7 +2293,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
       },
       undefined,
-      { tries: 20, what: "library-view-navigation.e2e.ts:979" },
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish its disable and enable reload",
+      },
     );
     const reloaded = await shownWith(both);
     expect(reloaded.rows).toEqual(two.rows);
@@ -3455,7 +3461,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).some((el) => el.textContent.includes(booksProfileLabel));
       },
       { booksProfileLabel: booksProfile.label },
-      { tries: 120, what: "library-view-navigation.e2e.ts:1288" },
+      {
+        tries: 120,
+        what: "the profile picker to list the Books profile suggestion",
+      },
     );
     expect(await selectSuggestion(run.vaultId, booksProfile.label)).toContain(
       booksProfile.label,
@@ -3747,7 +3756,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return !!activeDocument.querySelector<HTMLElement>(".prompt input");
       },
       undefined,
-      { what: "library-view-navigation.e2e.ts:1352" },
+      { what: "the quick switcher prompt input to appear" },
     );
     await selectItemSuggestion(run.vaultId, filed.title, filed.key);
     await pressPromptKey(run.vaultId, "Enter", { altKey: true });
@@ -3780,7 +3789,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             node: JSON.stringify(["personal", parent.name, child.name]),
             row: filed.key,
           }),
-        what: "library-view-navigation.e2e.ts:1361",
+        what: "the Library View to select the filed paper row and its collection node",
       },
     );
   }, 180000);
@@ -3859,7 +3868,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return true;
       },
       undefined,
-      { tries: 20, what: "library-view-navigation.e2e.ts:1405" },
+      {
+        tries: 20,
+        what: "the zotlit plugin to finish its disable and enable reload",
+      },
     );
     await obRunUntil(
       run.vaultId,
@@ -3873,7 +3885,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
       {
         ready: (value) => value === 1,
-        what: "library-view-navigation.e2e.ts:1415",
+        what: "the Library View tab to open",
       },
     );
     // The release check recorded this launch in plugin data, which the next
@@ -3995,7 +4007,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ],
             companion: false,
           }),
-        what: "library-view-navigation.e2e.ts:1440",
+        what: "the Welcome banner in the Library View to show its three setup steps",
       },
     );
     // Search your library puts the cursor in the Library View's own search
@@ -4105,7 +4117,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "library-view-navigation.e2e.ts:1491" },
+      { what: "the Welcome banner in the Library View to render" },
     );
     // So does the Welcome & help view action in the tab header, with the
     // setup steps, and focus moves to the banner; the action reads as
@@ -4397,7 +4409,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             facets: false,
           }),
         tries: 120,
-        what: "library-view-navigation.e2e.ts:1550",
+        what: "the Library View to show the not-found tree message and hide the papers",
       },
     );
 
@@ -4441,7 +4453,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           isDeepStrictEqual(value, { missing: false, rows: listed.rows }),
         tries: 120,
-        what: "library-view-navigation.e2e.ts:1574",
+        what: "the Library View to list the papers it showed before the reload",
       },
     );
   });
@@ -4759,7 +4771,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             // The banner says it in place of the update notice.
             notices: 0,
           }),
-        what: "library-view-navigation.e2e.ts:1671",
+        what: "the Welcome banner to announce the ZotLit update in the Library View",
       },
     );
     expect(
@@ -4989,7 +5001,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             folded: true,
             how: [`false:${run.m.welcome_how_it_works()}`],
           }),
-        what: "library-view-navigation.e2e.ts:1727",
+        what: "the Welcome banner to fold setup and list the update headings",
       },
     );
 

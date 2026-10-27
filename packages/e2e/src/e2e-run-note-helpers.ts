@@ -143,7 +143,10 @@ function hasIndexedNotes(
       return zotlit.services.noteIndex.getNotesByItemKey(indexedKey).length;
     },
     { indexedKey },
-    { ready: (value) => value === count, what: "e2e-run-note-helpers.ts:81" },
+    {
+      ready: (value) => value === count,
+      what: "notes indexed under the item key to match the expected count",
+    },
   ).then(
     () => true,
     () => false,

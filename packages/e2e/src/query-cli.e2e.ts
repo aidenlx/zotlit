@@ -1694,7 +1694,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
         },
         { query, targetItemId: targetItem.itemID },
-        { what: "query-cli.e2e.ts:1621" },
+        {
+          what: "the target item to appear in item lookup results after the database refresh",
+        },
       ).then(
         () => true,
         () => false,
@@ -1713,7 +1715,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return pageHelpers.scratch.zotlitE2EChanged! >= 1;
       },
       undefined,
-      { what: "query-cli.e2e.ts:1635" },
+      { what: "the Freshness Signal to be counted in the page scratch" },
     );
     expect(await finds("zqxv")).toBe(true);
     expect(
@@ -1779,7 +1781,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
         },
         { lastTitleQuery, lastItemID },
-        { ready: (value) => value === false, what: "query-cli.e2e.ts:1669" },
+        {
+          ready: (value) => value === false,
+          what: "the last item to drop out of item lookup results for the title query",
+        },
       );
     });
     await signalDatabaseUpdated(run.vaultId);
@@ -1952,7 +1957,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).some((button) => button.textContent.trim() === confirmButtonLabel);
         },
         { confirmButtonLabel: run.m.batch_update_confirm_button() },
-        { what: "query-cli.e2e.ts:1746" },
+        { what: "the modal button labelled with the confirm label to appear" },
       );
       const requests = JSON.parse(
         await obRun(
@@ -2098,7 +2103,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { annotationItemTitle: annotationItem.title },
-      { what: "query-cli.e2e.ts:1801" },
+      {
+        what: "the citation suggestion list to settle on the annotation item as its first row",
+      },
     );
     await obRun(
       run.vaultId,
@@ -2137,7 +2144,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { source },
       {
         ready: (value) => value === `[@${annotationItem.citationKey}]`,
-        what: "query-cli.e2e.ts:1812",
+        what: "the source note to contain the inserted citation for the annotation item",
       },
     );
   }, 180_000);
@@ -2235,7 +2242,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         });
       },
       { searchTerm: "长江流域", firstItemID: added.firstItemID },
-      { what: "query-cli.e2e.ts:1850" },
+      {
+        what: "the first item to appear in lookup results for the Chinese search term",
+      },
     );
     // `Intl.Segmenter` keeps `长江流域` one word, so the word inside misses.
     expect(
@@ -2300,7 +2309,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         });
       },
       { searchTerm: "流域", firstItemID: added.firstItemID },
-      { what: "query-cli.e2e.ts:1870" },
+      {
+        what: "the first item to appear in lookup results for the Chinese search term after the segmenter install",
+      },
     );
 
     await obRun(
@@ -2325,7 +2336,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         });
       },
       { searchTerm: "流域", firstItemID: added.firstItemID },
-      { ready: (value) => value === false, what: "query-cli.e2e.ts:1878" },
+      {
+        ready: (value) => value === false,
+        what: "the Chinese search term to stop matching the first item in lookup results",
+      },
     );
     expect(
       await obRun(
@@ -2462,7 +2476,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .then(String);
         },
         undefined,
-        { ready: (value) => value === "true", what: "query-cli.e2e.ts:1921" },
+        {
+          ready: (value) => value === "true",
+          what: "the zotlit.log.jsonl log file to exist in the plugin folder",
+        },
       );
       // At `debug`, the worker's read snapshot and Item Index records reach the file.
       expect(

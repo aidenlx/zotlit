@@ -173,7 +173,7 @@ export async function verifyExternalAnnotationLock({
     { attachmentKey: attachment.key },
     {
       ready: (value) => value === "zotero-local-api/writable",
-      what: "lock.ts:174",
+      what: "the attachment source and capability to read zotero-local-api/writable",
     },
   );
 
@@ -199,7 +199,7 @@ export async function verifyExternalAnnotationLock({
         return card!.hasAttribute("data-alone");
       },
       { annotationKey },
-      { what: "lock.ts:191" },
+      { what: "the annotation card to be marked alone in the Annotation View" },
     );
   };
   /** Whether the node that takes a verb's press is dimmed, or `absent`. */
@@ -240,7 +240,7 @@ export async function verifyExternalAnnotationLock({
         ?.querySelector<HTMLElement>(".zt-annot-lock")!;
     },
     { annotationKey },
-    { what: "lock.ts:209" },
+    { what: "the lock icon on the annotation card in the Annotation View" },
   );
   expect(
     await obRun(
@@ -321,7 +321,10 @@ export async function verifyExternalAnnotationLock({
           .filter((node) => node.textContent.includes(reason)).length;
       },
       { reason },
-      { ready: (value) => value === 1, what: "lock.ts:249" },
+      {
+        ready: (value) => value === 1,
+        what: "the lock notice naming the Lock Reason to appear once",
+      },
     );
     expect(
       await obRun(
@@ -399,7 +402,7 @@ export async function verifyExternalAnnotationLock({
       ].find((node) => node.textContent.trim() === menuItemLabel);
     },
     { menuItemLabel: m.annot_view_menu_delete() },
-    { what: "lock.ts:279" },
+    { what: "the lock menu item to appear in the open menu" },
   );
   await obRun(
     vaultId,
@@ -424,7 +427,10 @@ export async function verifyExternalAnnotationLock({
         .filter((node) => node.textContent.includes(reason)).length;
     },
     { reason },
-    { ready: (value) => value === 1, what: "lock.ts:289" },
+    {
+      ready: (value) => value === 1,
+      what: "the second lock notice naming the Lock Reason to appear",
+    },
   );
   expect(
     await obRun(
@@ -462,7 +468,7 @@ export async function verifyExternalAnnotationLock({
       return document.querySelectorAll<HTMLElement>(".menu").length;
     },
     undefined,
-    { ready: (value) => value === 0, what: "lock.ts:305" },
+    { ready: (value) => value === 0, what: "the open menus to close" },
   );
 
   // ── The Mark Popup ────────────────────────────────────────────────────────
@@ -484,7 +490,9 @@ export async function verifyExternalAnnotationLock({
       return !!rect && rect.width > 0;
     },
     { attachmentPath, annotationKey },
-    { what: "lock.ts:320" },
+    {
+      what: "the PDF annotation mark for the locked annotation to have a width",
+    },
   );
   await obRun(
     vaultId,
@@ -517,7 +525,7 @@ export async function verifyExternalAnnotationLock({
       );
     },
     { attachmentPath, annotationKey },
-    { what: "lock.ts:332" },
+    { what: "the PDF mark popup to open with the annotation mark selected" },
   );
   expect(
     await obRun(
@@ -663,7 +671,7 @@ export async function verifyExternalAnnotationLock({
       );
     },
     { annotationKey },
-    { what: "lock.ts:397" },
+    { what: "the lock icon on the annotation card in the detached window" },
   );
   expect(
     await obRun(
@@ -719,7 +727,10 @@ export async function verifyExternalAnnotationLock({
         .filter((node) => node.textContent.includes(reason)).length;
     },
     { reason },
-    { ready: (value) => value === 1, what: "lock.ts:421" },
+    {
+      ready: (value) => value === 1,
+      what: "the lock notice naming the Lock Reason after the detached window press",
+    },
   );
   expect(
     await obRun(

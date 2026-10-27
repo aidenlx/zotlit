@@ -201,7 +201,7 @@ async function settleImport(vaultId: string): Promise<void> {
     {
       ready: (value) => value === "true",
       tries: 240,
-      what: "excerpt-acceptance.ts:248",
+      what: "the excerpt import to settle after any overwrite confirm",
     },
   ).then(
     () => true,
@@ -412,7 +412,7 @@ export async function verifyReaderBackedExcerpts(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:432",
+      what: "the PDF page to render with a sized canvas and a borrowed document",
     },
   );
   const held = await obRun(
@@ -1075,7 +1075,7 @@ export async function verifyReaderBackedExcerpts(
         {
           ready: (value) => value === options.expected,
           tries: options.tries,
-          what: "excerpt-acceptance.ts:681",
+          what: "the Annotation View color filter menu to list the expected color",
         },
       ).then(
         () => true,
@@ -1105,7 +1105,7 @@ export async function verifyReaderBackedExcerpts(
         {
           ready: (value) => value === options.expected,
           tries: options.tries,
-          what: "excerpt-acceptance.ts:708",
+          what: "the Annotation View to list the expected annotation card keys",
         },
       ).then(
         () => true,
@@ -1137,7 +1137,7 @@ export async function verifyReaderBackedExcerpts(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:715",
+      what: "the card image to finish loading as a blob URL",
     },
   );
 
@@ -1233,7 +1233,7 @@ export async function verifyReaderBackedExcerpts(
     {
       ready: (value) => value === "true",
       tries: 40,
-      what: "excerpt-acceptance.ts:761",
+      what: "the PDF tabs to close and release the borrowed PDF document",
     },
   );
   expect(
@@ -1272,7 +1272,7 @@ export async function verifyReaderBackedExcerpts(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:774",
+      what: "the excerpt renderer to start loading the document",
     },
   );
   const replacing = await obRun(
@@ -1430,7 +1430,7 @@ export async function verifyReaderBackedExcerpts(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:809",
+      what: "the card image to show the expected cropped pixels and URL",
     },
   );
   const replaced = await obRun(
@@ -1966,7 +1966,7 @@ export async function verifySavedEditDisplay(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:1156",
+      what: "the card image to finish loading as a blob URL on the later check",
     },
   );
   // The derived cache is keyed by what the pixels depend on, not by version, so
@@ -2207,7 +2207,7 @@ export async function verifySavedEditDisplay(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:1251",
+      what: "the excerpt renderer to reach the page-rendering phase",
     },
   );
   const held = await obRun(
@@ -2288,7 +2288,7 @@ export async function verifySavedEditDisplay(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:1276",
+      what: "the card image to load a new blob URL instead of the one before",
     },
   );
   const edited = await obRun(
@@ -2526,7 +2526,7 @@ export async function verifySavedEditDisplay(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:1345",
+      what: "the Annotation View to show the edited comment text",
     },
   );
   const unchanged = await obRun(
@@ -2810,7 +2810,7 @@ export async function verifySavedEditDisplay(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-acceptance.ts:1445",
+      what: "the card image to finish loading as a blob URL on the final check",
     },
   );
   const remounted = await obRun(

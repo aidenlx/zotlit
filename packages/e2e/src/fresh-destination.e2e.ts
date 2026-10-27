@@ -85,7 +85,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         );
       },
       undefined,
-      { what: "fresh-destination.e2e.ts:75" },
+      { what: "the zotlit customize note template command to run" },
     );
     await changeNativeAnnotationCallout(vaultId, {
       view: {
@@ -134,7 +134,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           return true;
         },
         { addButtonLabel: m.settings_profile_add() },
-        { what: "fresh-destination.e2e.ts:97" },
+        {
+          what: "the Add profile button in the settings tab to become enabled",
+        },
       );
       await obRunUntil(
         vaultId,
@@ -144,7 +146,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           );
         },
         { addButtonText: m.settings_profile_add() },
-        { what: "fresh-destination.e2e.ts:104" },
+        { what: "the Add profile modal to open with its title" },
       );
     };
     await openAdd();
@@ -228,7 +230,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         addButtonText: m.settings_profile_add(),
         invalidStatusText: m.settings_profile_name_invalid(),
       },
-      { what: "fresh-destination.e2e.ts:142" },
+      {
+        what: "the Add profile modal to show the invalid status and a disabled Add button",
+      },
     );
     await fill("Books", "books");
     expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
@@ -242,7 +246,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         );
       },
       undefined,
-      { what: "fresh-destination.e2e.ts:153" },
+      { what: "the Books profile to be saved in the profile list" },
     );
     const books = JSON.parse(
       await obRun(
@@ -278,7 +282,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         booksPath: books.path,
         tabTitleText: m.workbench_tab_name_and_folder(),
       },
-      { what: "fresh-destination.e2e.ts:170" },
+      {
+        what: "the Books workbench tab to be selected with the books path input",
+      },
     );
 
     await obRun(
@@ -303,7 +309,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         return activeWindow === window;
       },
       undefined,
-      { what: "fresh-destination.e2e.ts:182" },
+      { what: "the main Obsidian window to regain focus" },
     );
     await obRun(
       vaultId,
@@ -320,7 +326,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         return !!activeDocument.querySelector(".prompt input");
       },
       undefined,
-      { what: "fresh-destination.e2e.ts:191" },
+      { what: "the quick switcher prompt input to appear" },
     );
     const kahneman = ITEMS.find(({ itemID }) => itemID === 61)!;
     await selectItemSuggestion(vaultId, kahneman.title, kahneman.key);

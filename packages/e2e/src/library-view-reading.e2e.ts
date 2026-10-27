@@ -599,7 +599,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             cards: seededCards.map(({ key }) => key),
           }),
         tries: 120,
-        what: "library-view-reading.e2e.ts:186",
+        what: "the Annotation View to pin the PDF and list its seeded cards",
       },
     );
 
@@ -1378,7 +1378,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           isDeepStrictEqual(value, { missing: true, card: false }),
         tries: 120,
-        what: "library-view-reading.e2e.ts:320",
+        what: "the Library View missing-folder notice with the reading card hidden",
       },
     );
     await obRun(

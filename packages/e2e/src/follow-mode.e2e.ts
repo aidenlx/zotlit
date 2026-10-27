@@ -44,7 +44,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )?.contentEl.querySelector("button.zt-annot-header");
       },
       undefined,
-      { what: "follow-mode.e2e.ts:30" },
+      { what: "the Annotation View header menu button to render" },
     );
     await obRun(
       run.vaultId,
@@ -74,7 +74,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )?.contentEl.doc.querySelector(".menu");
       },
       undefined,
-      { what: "follow-mode.e2e.ts:39" },
+      { what: "the header menu popup to open in the Annotation View document" },
     );
 
     const report = JSON.parse(
@@ -175,7 +175,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { what: "follow-mode.e2e.ts:83" },
+      { what: "the header menu popup to close" },
     );
 
     await obRun(

@@ -502,7 +502,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           .length;
       },
       undefined,
-      { ready: (value) => value === 1, what: "excerpts.ts:347" },
+      {
+        ready: (value) => value === 1,
+        what: "the imported note for NNNNAAAA to index one note",
+      },
     );
     const importedPath = await obRun(
       id,
@@ -609,7 +612,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       undefined,
-      { ready: (value) => value === pooledSummary, what: "excerpts.ts:414" },
+      {
+        ready: (value) => value === pooledSummary,
+        what: "the Excerpt images notice to match the pooled summary",
+      },
     ).then(
       () => true,
       () => false,

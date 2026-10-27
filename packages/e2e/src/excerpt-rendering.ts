@@ -97,7 +97,7 @@ async function waitForPlugin(vaultId: string): Promise<void> {
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-rendering.ts:123",
+      what: "the excerptImage service to be registered on the plugin",
     },
   );
 }
@@ -220,7 +220,7 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-rendering.ts:150",
+      what: "the excerpt render probe to settle with no job active",
     },
   );
   const released = JSON.parse(
@@ -412,7 +412,7 @@ async function startRenderProbe(
     {
       ready: (value) => value === "true",
       tries: 80,
-      what: "excerpt-rendering.ts:201",
+      what: "the excerpt renderer to report the expected render phase",
     },
   );
   const ownership = stack.move();
@@ -494,7 +494,7 @@ async function startRenderProbe(
         {
           ready: (value) => value === "true",
           tries: 80,
-          what: "excerpt-rendering.ts:234",
+          what: "the excerpt render probe to settle again with no job active",
         },
       );
       return JSON.parse(
@@ -829,7 +829,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     {
       ready: (value) => value === "true",
       tries: 120,
-      what: "excerpt-rendering.ts:304",
+      what: "the excerpt acceptance run to settle",
     },
   );
   const result = JSON.parse(
@@ -989,7 +989,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         {
           ready: (value) => value === "web-worker",
           tries: 80,
-          what: "excerpt-rendering.ts:446",
+          what: "the excerpt renderer to run on a web worker",
         },
       ).then(
         () => true,

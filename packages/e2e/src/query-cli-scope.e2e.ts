@@ -138,7 +138,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
       },
       undefined,
-      { tries: 20, what: "query-cli-scope.e2e.ts:78" },
+      {
+        tries: 20,
+        what: "the zotlit plugin to be disabled and enabled again from Community Plugins",
+      },
     );
 
     await obRunUntil(
@@ -147,7 +150,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return "zotlit" in app.plugins.plugins;
       },
       undefined,
-      { what: "query-cli-scope.e2e.ts:85" },
+      { what: "the zotlit plugin to be loaded into the plugin registry" },
     );
 
     // Dispatched as a registered CLI command, not `eval` — the way a real
@@ -208,7 +211,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         {
           ready: (value) => value === "ready",
-          what: "query-cli-scope.e2e.ts:135",
+          what: "the zoteroReads status to read ready",
         },
       );
       await obRunUntil(
@@ -223,7 +226,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { targetItemKey: targetItem.key },
         {
           ready: (value) => value === targetItem.citationKey!,
-          what: "query-cli-scope.e2e.ts:142",
+          what: "the target item citation key to resolve from the citation lookup",
         },
       );
       // Termination emits no browser error event: liveness must detect it.
@@ -251,7 +254,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           ready: (value) => value === "failed",
           tries: 160,
-          what: "query-cli-scope.e2e.ts:156",
+          what: "the citation lookup status to become failed",
         },
       );
       await obRun(
@@ -273,7 +276,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         {
           ready: (value) => value === "ready",
-          what: "query-cli-scope.e2e.ts:167",
+          what: "the zoteroReads status to read ready again",
         },
       );
       // SearchItems hydrates its hits from SQLite in the interactive worker.
@@ -306,7 +309,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         {
           ready: (value) => value === "fresh",
-          what: "query-cli-scope.e2e.ts:189",
+          what: "the citation lookup status to become fresh",
         },
       );
       await obRunUntil(
@@ -325,7 +328,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { targetItemKey: targetItem.key },
         {
           ready: (value) => value === targetItem.citationKey!,
-          what: "query-cli-scope.e2e.ts:196",
+          what: "the target item citation key to resolve after the citation lookup settles",
         },
       );
       // Hold the lookup request so unload must cancel the pending worker read.
@@ -367,7 +370,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return record!.heldSnapshot;
         },
         undefined,
-        { what: "query-cli-scope.e2e.ts:220" },
+        { what: "the held worker snapshot to be recorded in the page scratch" },
       );
       // Unload ends the recovered worker and its pending citation read.
       await obRun(
@@ -394,7 +397,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             });
         },
         undefined,
-        { tries: 120, what: "query-cli-scope.e2e.ts:229" },
+        {
+          tries: 120,
+          what: "every zotlit-zotero-reads worker to end after the Scope Case switch",
+        },
       ).then(
         () => true,
         () => false,

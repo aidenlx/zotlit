@@ -152,7 +152,9 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           );
         },
         undefined,
-        { what: "citation-scan.e2e.ts:73" },
+        {
+          what: "the annotation card FDRFQ7C2 drag handle in the citation scan annotations view",
+        },
       );
       await obRun(
         vaultId,
@@ -200,7 +202,9 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             .includes(expectedEmbed);
         },
         { expectedEmbed: `![](${uri})` },
-        { what: "citation-scan.e2e.ts:98" },
+        {
+          what: "the citation scan editor to contain the expected annotation embed",
+        },
       );
       await obRun(
         vaultId,
@@ -282,7 +286,9 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             );
           },
           undefined,
-          { what: "citation-scan.e2e.ts:162" },
+          {
+            what: "the Ten Simple Rules reference row to show a count badge of 3",
+          },
         );
         return { references: references.entries, uses: group!.occurrences };
       };
@@ -378,7 +384,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           );
         },
         undefined,
-        { what: "citation-scan.e2e.ts:212" },
+        { what: "the citation scan to record two distinct parse sessions" },
       );
       expect(await readAnswers()).toEqual(before);
       // New offsets prove the replacement worker parsed a new edit, rather than serving held records alone.

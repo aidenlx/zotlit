@@ -4004,7 +4004,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
         {
           ready: (value) => value === `${view}:true`,
-          what: "query-view.e2e.ts:1236",
+          what: "the Query File view menu label with annotation cards rendered",
         },
       ).then(
         () => true,
@@ -4084,7 +4084,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       {
         ready: (value) =>
           isDeepStrictEqual(value, ["All annotations", "Figures"]),
-        what: "query-view.e2e.ts:1260",
+        what: "the Query File view menu rows to list All annotations and Figures",
       },
     );
     await obRun(
@@ -4116,7 +4116,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
       {
         ready: (value) => isDeepStrictEqual(value, ["Figures"]),
-        what: "query-view.e2e.ts:1266",
+        what: "the Query File view menu rows to list only Figures",
       },
     );
     await obRun(
@@ -4161,7 +4161,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )!;
       },
       undefined,
-      { what: "query-view.e2e.ts:1279" },
+      { what: "the view name input in the Query File view chooser to open" },
     );
     // Configure view offers only the layouts built for the view's dataset.
     expect(
@@ -4265,7 +4265,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
       {
         ready: (value) => isDeepStrictEqual(value, []),
-        what: "query-view.e2e.ts:1310",
+        what: "the page chips on the Query File annotation cards to clear",
       },
     );
 
@@ -4302,7 +4302,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       {
         ready: (value) =>
           isDeepStrictEqual(value, ["All annotations", "Figures", "Methods"]),
-        what: "query-view.e2e.ts:1321",
+        what: "the Query File view menu rows to list All annotations, Figures and Methods",
       },
     );
     await obRun(
@@ -4364,7 +4364,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
       },
       { path },
-      { ready: (value) => value === "true", what: "query-view.e2e.ts:1332" },
+      {
+        ready: (value) => value === "true",
+        what: "the saved Query File to order the Methods view first with showPage false",
+      },
     );
 
     // A plain open of the file shows the first view, as the file holds it.
@@ -4434,7 +4437,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       {
         ready: (value) =>
           isDeepStrictEqual(value, ["Methods", "All annotations", "Figures"]),
-        what: "query-view.e2e.ts:1348",
+        what: "the Query File view menu rows to list Methods first",
       },
     );
 
@@ -4465,7 +4468,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         )?.value;
       },
       undefined,
-      { ready: (value) => value === "Figures", what: "query-view.e2e.ts:1360" },
+      {
+        ready: (value) => value === "Figures",
+        what: "the view name input in the Query File view chooser to show Figures",
+      },
     );
     expect(await shown("Methods")).toBe(true);
     await obRun(

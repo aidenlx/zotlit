@@ -819,7 +819,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ?.querySelector<HTMLElement>("[data-chooser-page]")!;
       },
       { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
-      { what: "query-view-properties.e2e.ts:348" },
+      { what: "the property chooser page to open in the Properties popover" },
     );
     // The Formula field looks and focuses as the text input above it: the
     // same border, radius, fill and focus ring, its text at the same inset,
@@ -1159,7 +1159,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
       },
       { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
-      { what: "query-view-properties.e2e.ts:535" },
+      {
+        what: "the Properties popover to return to its property list after the Formula is added",
+      },
     );
     await obRun(
       run.vaultId,
@@ -1962,7 +1964,9 @@ views:
         );
       },
       { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
-      { what: "query-view-properties.e2e.ts:987" },
+      {
+        what: "the Properties popover rename field to take focus as a combobox",
+      },
     );
     await obRun(
       run.vaultId,
@@ -2070,7 +2074,7 @@ views:
       {
         ready: (value) =>
           isDeepStrictEqual(value, { search: "", title: true, year: true }),
-        what: "query-view-properties.e2e.ts:1051",
+        what: "the Properties popover to list the title and year Formula with an empty search",
       },
     );
     await obRun(
@@ -2141,7 +2145,9 @@ views:
         );
       },
       { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
-      { what: "query-view-properties.e2e.ts:1078" },
+      {
+        what: "the Properties popover to return to its property list after the Formula edit",
+      },
     );
     await obRun(
       run.vaultId,
