@@ -15,7 +15,14 @@ export type PageApp = App & {
     removeHotkeys(id: string): void;
     save(): Promise<void>;
   };
-  vault: App["vault"] & { _: { rename?: RenameListener[] } };
+  vault: App["vault"] & {
+    _: { rename?: RenameListener[] };
+    getConfig(key: "nativeMenus" | "settingsPopoutWindow"): boolean;
+    setConfig(
+      key: "nativeMenus" | "settingsPopoutWindow",
+      value: boolean,
+    ): void;
+  };
 };
 
 export interface EmptyView extends View {

@@ -228,8 +228,69 @@ export function createPageHelpers(app: import("obsidian").App) {
     if (end < 0) throw new Error("Default Profile has no Query Block");
     return `${source.slice(0, start)}{% managed %}\n{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n{% endmanaged %}\n${source.slice(end + 4)}`;
   }
+  function pdfView(
+    path: string,
+  ): import("./page-notes-types.ts").PagePdfView | undefined {
+    return app.workspace
+      .getLeavesOfType("pdf")
+      .map(({ view }) => view as import("./page-notes-types.ts").PagePdfView)
+      .find(
+        (view) =>
+          view.file?.path === path &&
+          view.containerEl.getBoundingClientRect().width > 0,
+      );
+  }
+  function clientOfFirstPage(
+    view: import("./page-notes-types.ts").PagePdfView,
+    x: number,
+    y: number,
+  ) {
+    const overlay = view.viewer.child
+      .getPage(1)!
+      .div.querySelector<SVGSVGElement>(".zt-pdf-annotation-overlay")!;
+    const box = overlay.getBoundingClientRect();
+    const frame = overlay.viewBox.baseVal;
+    return {
+      x: box.left + ((x - frame.x) * box.width) / frame.width,
+      y: box.top + ((frame.y + frame.height - y) * box.height) / frame.height,
+    };
+  }
+  function toolButton(
+    view: import("./page-notes-types.ts").PagePdfView,
+    tool: string,
+  ) {
+    return view.containerEl.querySelector<HTMLButtonElement>(
+      `[data-zt-tool="${  CSS.escape(tool)  }"]`,
+    );
+  }
+  function pageContainer(view: import("./page-notes-types.ts").PagePdfView) {
+    return view.viewer.child.pdfViewer.pdfViewer.container;
+  }
+  function showBehind(win: import("./page-notes-types.ts").BackgroundWindow) {
+    if (process.platform !== "darwin") {
+      win.showInactive();
+      return;
+    }
+    if (!win.isMinimized()) {
+      win.showInactive();
+      win.blur();
+      return;
+    }
+    const opacity = win.getOpacity();
+    win.setOpacity(0);
+    win.once("restore", () => {
+      win.blur();
+      setTimeout(() => win.setOpacity(opacity), 100);
+    });
+    win.showInactive();
+  }
   return {
     scratch,
+    pdfView,
+    clientOfFirstPage,
+    toolButton,
+    pageContainer,
+    showBehind,
     press,
     until,
     stands,
