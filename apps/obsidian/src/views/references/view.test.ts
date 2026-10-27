@@ -18,6 +18,7 @@ import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
   memoryOpener,
@@ -206,7 +207,9 @@ async function finishScan(
 ): Promise<void> {
   const before = renders.length;
   await act(async () => {
-    const joined = await readReferenceSources(reads!, set.citations);
+    const joined = await reads!.runtime.runPromise(
+      ZoteroReads.use((db) => readReferenceSources(db, set.citations)),
+    );
     scans.at(-1)!.resolve({
       ...set,
       ...joined,

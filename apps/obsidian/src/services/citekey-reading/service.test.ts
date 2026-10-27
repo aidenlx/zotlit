@@ -47,6 +47,7 @@ import { settingsFeed } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { PluginSettings } from "@/services/settings/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   citedWorkSeed,
   inProcessReadsService,
@@ -238,7 +239,9 @@ const makeHarness = Effect.fnUntraced(function* ({
               citations: cited,
               errors: [],
               lookup: answer(occurrences.map((o) => o.raw)),
-              ...(await readReferenceSources(reads, cited)),
+              ...(await reads.runtime.runPromise(
+                ZoteroReads.use((db) => readReferenceSources(db, cited)),
+              )),
               syntaxes: {
                 citekey: "included",
                 wikilink: "excluded",

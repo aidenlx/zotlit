@@ -19,7 +19,7 @@ import { LanguagePack } from "@/services/language-pack/service";
 export const resetCitationIndex = Effect.fn("SettingTab.resetCitationIndex")(
   function* (confirm: Effect.Effect<boolean>) {
     if (!(yield* confirm)) return "cancelled" as const;
-    yield* CitationIndex.use((index) => index.reset());
+    yield* CitationIndex.use((index) => index.reset);
     return "completed" as const;
   },
   withLogCategory("setting-tab", "advanced"),

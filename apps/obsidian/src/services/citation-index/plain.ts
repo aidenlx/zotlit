@@ -101,6 +101,8 @@ export function plainCitationIndex(
     effect: Effect.Effect<A, E>,
     signal?: AbortSignal,
   ): Promise<A> {
+    if (bridge.closed())
+      throw new AbortError("The plugin unloaded during the run.");
     const exit = await bridge.runPromiseExit(
       effect,
       signal === undefined ? undefined : { signal },
@@ -172,8 +174,7 @@ export function plainCitationIndex(
       invoke(service.getParsedNote(file), signal),
     getParsedDocument: (file: TFile, signal?: AbortSignal) =>
       invoke(service.getParsedDocument(file), signal),
-    whenIndexed: (...args: Parameters<typeof service.whenIndexed>) =>
-      invoke(service.whenIndexed(...args)),
+    whenIndexed: () => invoke(service.whenIndexed),
     getCitedBy: (...args: Parameters<typeof service.getCitedBy>) =>
       invoke(service.getCitedBy(...args)),
     documentOmittedSyntaxes: (

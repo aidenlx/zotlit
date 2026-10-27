@@ -126,7 +126,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
       this.#session = this.#deps.lookup.openSession();
       this.#documentController = new AbortController();
       this.#cited = readDocumentCitedKeys(
-        this.#deps.citationIndex,
+        this.#deps,
         context.file,
         this.#documentController.signal,
       );

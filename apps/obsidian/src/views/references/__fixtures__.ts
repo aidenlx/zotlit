@@ -1,5 +1,5 @@
 // A References test host over controlled service reads and in-memory Obsidian sources.
-import { Cause, Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import type { TFile } from "obsidian";
 
 import { testEvent } from "@/lib/__fixtures__/event-stream";
@@ -11,6 +11,7 @@ import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
+import { vaultError } from "@/lib/vault-errors";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationLookupState } from "@/services/citation-index/lookup-service";
@@ -98,7 +99,7 @@ export async function makeReferencesHost(options: ReferencesHostOptions = {}) {
                 );
                 return scan.promise;
               },
-              catch: (cause) => new Cause.UnknownError(cause),
+              catch: vaultError("cachedRead", file.path),
             })),
       }),
       Layer.mock(CitationText, {

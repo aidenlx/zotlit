@@ -1,12 +1,12 @@
 // The renderer owns persisted note scans and citation membership; the parse client owns Markdown.
 
-import { abortable } from "@std/async/abortable";
 import {
   Cause,
   Clock,
   Context,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   PubSub,
@@ -21,7 +21,6 @@ import type { TAbstractFile } from "obsidian";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
-import { isScopeClosed } from "@/lib/effect-scope";
 import { startupBarrier } from "@/lib/effect-startup";
 import { filterTag, forkEach } from "@/lib/effect-stream";
 import { ObsidianEnv } from "@/lib/obsidian-env";
@@ -30,6 +29,11 @@ import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import type { VaultEvent } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
+import type { VaultError } from "@/lib/vault-errors";
+import type {
+  ParseFailed,
+  ParseWorkerDied,
+} from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import {
@@ -42,7 +46,7 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 import { heldResolution } from "./lookup";
-import { CitationLookup, inertObservation } from "./lookup-service";
+import { CitationLookup } from "./lookup-service";
 import type { CitationLookupStatus } from "./lookup-service";
 export type { CitationLookupAnswer, CitationLookupRequest } from "./lookup";
 export type { CitationLookupObservation } from "./lookup-service";
@@ -219,24 +223,19 @@ function makeCitationIndex(
     const libraryScope = yield* LibraryScope;
     const noteIndex = yield* NoteIndex;
     const settings = yield* PluginSettings;
-    const lookup = yield* CitationLookup;
+    const lookupService = yield* CitationLookup;
     const parser = yield* CitationParse;
     const scope = yield* Scope.fork(yield* Scope.Scope);
     const bridge = yield* scopedBridge;
-    const { runSync: run, runPromise, runPromiseExit } = bridge;
-    /** The vault's Markdown files now, for the plain code below. */
-    const markdownFiles = () => run(vault.getMarkdownFiles);
-    /** The file at `path` now, `null` when the vault has none. */
-    const fileAt = (path: string) => run(vault.getFileByPath(path));
-    /** The Indexed Key of the Literature Note a wikilink target points at. */
-    const indexedKeyOf = (linkpath: string, sourcePath: string) =>
-      run(resolveLiteratureNoteIn(metadata, linkpath, sourcePath))
-        ?.indexedKey ?? null;
-    const runner = {
-      scope,
-      runFork: <A, E>(effect: Effect.Effect<A, E>) =>
-        run(Effect.forkIn(effect, scope, { startImmediately: true })),
-    };
+    const indexedKeyOf = Effect.fnUntraced(function* (
+      linkpath: string,
+      sourcePath: string,
+    ) {
+      return (
+        (yield* resolveLiteratureNoteIn(metadata, linkpath, sourcePath))
+          ?.indexedKey ?? null
+      );
+    });
     const recover = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(
         Effect.catchCause((cause) =>
@@ -257,57 +256,14 @@ function makeCitationIndex(
           : level === "warn"
             ? Effect.logWarning
             : Effect.logError;
-      run(
-        write(message).pipe(
-          Effect.annotateLogs(fields),
-          withLogCategory("citation-index"),
-        ),
+      return write(message).pipe(
+        Effect.annotateLogs(fields),
+        withLogCategory("citation-index"),
       );
-    };
-    const lookupReleased = () =>
-      new DOMException("Citation Lookup released", "AbortError");
-    const lookupAdapter = {
-      async read(
-        request: CitationLookupRequest,
-        options?: { signal?: AbortSignal },
-      ) {
-        if (isScopeClosed(scope)) throw lookupReleased();
-        const exit = await runPromiseExit(lookup.read(request), options);
-        if (Exit.isSuccess(exit)) return exit.value;
-        if (Cause.hasInterruptsOnly(exit.cause)) throw lookupReleased();
-        throw Cause.squash(exit.cause);
-      },
-      observe: (changed: () => void) =>
-        isScopeClosed(scope)
-          ? inertObservation()
-          : run(lookup.observe(changed)),
-      whenResolved: () =>
-        runPromiseExit(lookup.whenResolved).then(() => undefined),
     };
     const joinSources = (
       citations: Parameters<typeof readReferenceSources>[1],
-    ) =>
-      runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const readScope = yield* Scope.Scope;
-            return yield* Effect.promise(() =>
-              readReferenceSources(
-                {
-                  state: run(db.current).state,
-                  acquireRead: async () => ({
-                    reads: await runPromise(
-                      Scope.provide(db.snapshot, readScope),
-                    ),
-                    async [Symbol.asyncDispose]() {},
-                  }),
-                },
-                citations,
-              ),
-            );
-          }),
-        ),
-      );
+    ) => readReferenceSources(db, citations);
     const scans = new Map<string, FileScan>();
     const filesByCitekey = new Map<string, Set<string>>();
     const annotationsByKey = new Map<
@@ -322,8 +278,7 @@ function makeCitationIndex(
       {
         path: string;
         generation: number;
-        stop: AbortController;
-        promise: Promise<FileScan | null>;
+        fiber: Fiber.Fiber<FileScan | null, ParseFailed | ParseWorkerDied>;
       }
     >();
     let nextGeneration = 0;
@@ -337,11 +292,6 @@ function makeCitationIndex(
     let backfillBuild = -1;
     let backfillFailed = false;
     let stopped = false;
-    // Aborted as the layer stops, before the child scope closes.
-    const lifetimeScope = yield* Scope.fork(yield* Scope.Scope);
-    const lifetimeSignal = yield* Effect.abortSignal.pipe(
-      Scope.provide(lifetimeScope),
-    );
     const state = yield* SubscriptionRef.make<CitationIndexState>({
       backfilled,
       backfillFailed,
@@ -357,38 +307,37 @@ function makeCitationIndex(
     yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
     const events = Stream.fromPubSub(bus);
     function publishState() {
-      run(
-        SubscriptionRef.set(state, {
-          backfilled,
-          backfillFailed,
-          stopped,
-          coverage: getCoverage(),
-          syntaxes: syntaxes(),
-        }),
-      );
+      return SubscriptionRef.set(state, {
+        backfilled,
+        backfillFailed,
+        stopped,
+        coverage: getCoverage(),
+        syntaxes: syntaxes(),
+      });
     }
-    function emit(
+    // Runs per scanned file on the metadata intake and backfill hot path.
+    const emit = Effect.fnUntraced(function* (
       type: CitationIndexEvent["type"] | "backfilled",
       path?: string,
     ) {
-      if (type !== "changed") publishState();
+      if (type !== "changed") yield* publishState();
       if (type === "backfilled") return;
       PubSub.publishUnsafe(
         bus,
         type === "changed" ? { type, path: path! } : { type },
       );
-    }
+    });
     /** Wait for the file's pending parse; stale retained scans cannot validate navigation. */
-    async function getFileScan(
+    const getFileScan = Effect.fn("CitationIndex.getFileScan")(function* (
       file: TFile,
-    ): Promise<Readonly<FileScan> | null> {
-      const scan = await coverFile(file);
+    ) {
+      const scan = yield* coverFile(file);
       return scan &&
         scan.mtime === file.stat.mtime &&
         scan.size === file.stat.size
         ? scan
         : null;
-    }
+    });
 
     /**
      * The active document's shared citation membership and source order.
@@ -396,60 +345,57 @@ function makeCitationIndex(
      * A document the backfill has not reached is scanned on demand, so the
      * active document is answered without waiting for the vault-wide pass.
      */
-    async function getDocumentCitationSet(
+    const getDocumentCitationSet = Effect.fn(
+      "CitationIndex.getDocumentCitationSet",
+    )(function* (
       file: TFile,
       {
-        signal,
         include,
         parsed,
       }: {
-        signal?: AbortSignal;
         include?: CitationLookupRequest;
         parsed?: ParsedNote;
       } = {},
-    ): Promise<DocumentCitationSet> {
-      const lifetime = signal
-        ? AbortSignal.any([signal, lifetimeSignal])
-        : lifetimeSignal;
-      lifetime.throwIfAborted();
-      const scan =
-        parsed?.record ?? (await abortable(coverFile(file), lifetime));
-      return composeDocument(file, scan, {
-        lifetime,
+    ) {
+      const scan = parsed?.record ?? (yield* coverFile(file));
+      return yield* composeDocument(file, scan, {
         include,
         syntaxes: syntaxes(),
         coverage: getCoverage(),
       });
-    }
+    });
 
-    async function composeDocument(
-      file: TFile,
-      scan: CitationRecord | null,
-      {
-        lifetime,
-        include,
-        syntaxes,
-        coverage,
-      }: {
-        lifetime: AbortSignal;
-        include?: CitationLookupRequest;
-        syntaxes: CitationSyntaxes;
-        coverage: CitationCoverage;
-      },
-    ): Promise<DocumentCitationSet> {
-      const { citekeys, wikilinks, annotations, malformedAnnotations } =
-        admitted(scan, syntaxes);
-      const omittedSyntaxes = omittedDocument(scan, file.path, syntaxes);
-      const local = new Map<CitationOccurrence, ResolvedNote | null>(
-        [
+    const composeDocument = Effect.fn("CitationIndex.composeDocument")(
+      function* (
+        file: TFile,
+        scan: CitationRecord | null,
+        {
+          include,
+          syntaxes,
+          coverage,
+        }: {
+          include?: CitationLookupRequest;
+          syntaxes: CitationSyntaxes;
+          coverage: CitationCoverage;
+        },
+      ): Effect.fn.Return<
+        DocumentCitationSet,
+        Effect.Error<ReturnType<typeof lookupService.read>>
+      > {
+        const { citekeys, wikilinks, annotations, malformedAnnotations } =
+          admitted(scan, syntaxes);
+        const omittedSyntaxes = yield* omittedDocument(
+          scan,
+          file.path,
+          syntaxes,
+        );
+        const local = new Map<CitationOccurrence, ResolvedNote | null>();
+        for (const occurrence of [
           ...wikilinks.occurrences,
           ...wikilinks.malformed.map(({ occurrence }) => occurrence),
-        ].map(
-          (occurrence) => [occurrence, resolve(occurrence, file.path)] as const,
-        ),
-      );
-      const lookup = await lookupAdapter.read(
-        {
+        ])
+          local.set(occurrence, yield* resolve(occurrence, file.path));
+        const lookup = yield* lookupService.read({
           citekeys: [
             ...citekeys.map((occurrence) => occurrence.raw),
             ...(include?.citekeys ?? []),
@@ -465,89 +411,92 @@ function makeCitationIndex(
             }),
             ...(include?.indexedKeys ?? []),
           ],
-        },
-        { signal: lifetime },
-      );
-      const citations = groupCitations(
-        [...citekeys, ...wikilinks.occurrences, ...annotations].sort(
-          (a, b) => a.position.start.offset - b.position.start.offset,
-        ),
-        (occurrence) =>
-          occurrence.kind === "wikilink"
-            ? (local.get(occurrence) ?? null)
-            : resolve(occurrence, file.path, lookup),
-      );
-      const occurrences = citations
-        .flatMap((citation) => citation.occurrences)
-        .sort((a, b) => a.position.start.offset - b.position.start.offset);
-      const errors: DocumentCitationError[] = wikilinks.malformed
-        .filter(({ occurrence }) => local.get(occurrence) != null)
-        .map(({ occurrence }) => ({
-          kind: "malformed-wikilink" as const,
-          occurrence,
-        }));
-      errors.push(
-        ...malformedAnnotations.map(
-          ({ destination, position }): DocumentCitationError => ({
-            kind: "malformed-annotation",
-            occurrence: { kind: "annotation", raw: destination, position },
-          }),
-        ),
-      );
-      errors.sort((a, b) => compareOccurrences(a.occurrence, b.occurrence));
-      const candidates = [
-        ...new Set([
-          ...citekeys.map((occurrence) => occurrence.raw),
-          ...(include?.citekeys ?? []),
-        ]),
-      ].flatMap((citekey) => {
-        const resolved = lookup.resolve(citekey);
-        return resolved.kind === "ambiguous" ? [...resolved.candidates] : [];
-      });
-      const libraries = new Map(
-        (run(libraryScope.current)?.available ?? []).map((library) => [
-          library.libraryID,
-          library,
-        ]),
-      );
-      const citedKeys = new Set(citations.map(({ indexedKey }) => indexedKey));
-      const joined = await joinSources([
-        ...citations,
-        ...candidates
-          .filter(({ indexedKey }) => !citedKeys.has(indexedKey))
-          .map(({ indexedKey }) => ({ indexedKey, linkpath: null })),
-      ]);
-      for (const citation of citations) {
-        const first = citation.occurrences[0]!;
-        const resolved =
-          first.kind === "citekey" ? lookup.resolve(first.raw) : null;
-        citation.outcome = citationOutcome(citation, {
-          sources: joined.sources,
-          presentKeys: joined.presentKeys,
-          database: joined.database,
-          resolution: resolved,
-          candidates:
-            resolved?.kind === "ambiguous"
-              ? describeJoinedCandidates(
-                  resolved.candidates,
-                  joined.sources,
-                  libraries,
-                )
-              : [],
         });
-      }
-      for (const error of errors) error.outcome = { kind: "malformed" };
-      return {
-        occurrences,
-        citations,
-        errors,
-        lookup,
-        ...joined,
-        syntaxes,
-        omittedSyntaxes,
-        coverage,
-      };
-    }
+        const ordered = [
+          ...citekeys,
+          ...wikilinks.occurrences,
+          ...annotations,
+        ].sort((a, b) => a.position.start.offset - b.position.start.offset);
+        for (const occurrence of [...citekeys, ...annotations])
+          local.set(occurrence, yield* resolve(occurrence, file.path, lookup));
+        const citations = groupCitations(
+          ordered,
+          (occurrence) => local.get(occurrence) ?? null,
+        );
+        const occurrences = citations
+          .flatMap((citation) => citation.occurrences)
+          .sort((a, b) => a.position.start.offset - b.position.start.offset);
+        const errors: DocumentCitationError[] = wikilinks.malformed
+          .filter(({ occurrence }) => local.get(occurrence) != null)
+          .map(({ occurrence }) => ({
+            kind: "malformed-wikilink" as const,
+            occurrence,
+          }));
+        errors.push(
+          ...malformedAnnotations.map(
+            ({ destination, position }): DocumentCitationError => ({
+              kind: "malformed-annotation",
+              occurrence: { kind: "annotation", raw: destination, position },
+            }),
+          ),
+        );
+        errors.sort((a, b) => compareOccurrences(a.occurrence, b.occurrence));
+        const candidates = [
+          ...new Set([
+            ...citekeys.map((occurrence) => occurrence.raw),
+            ...(include?.citekeys ?? []),
+          ]),
+        ].flatMap((citekey) => {
+          const resolved = lookup.resolve(citekey);
+          return resolved.kind === "ambiguous" ? [...resolved.candidates] : [];
+        });
+        const libraries = new Map(
+          ((yield* libraryScope.current)?.available ?? []).map((library) => [
+            library.libraryID,
+            library,
+          ]),
+        );
+        const citedKeys = new Set(
+          citations.map(({ indexedKey }) => indexedKey),
+        );
+        const joined = yield* joinSources([
+          ...citations,
+          ...candidates
+            .filter(({ indexedKey }) => !citedKeys.has(indexedKey))
+            .map(({ indexedKey }) => ({ indexedKey, linkpath: null })),
+        ]);
+        for (const citation of citations) {
+          const first = citation.occurrences[0]!;
+          const resolved =
+            first.kind === "citekey" ? lookup.resolve(first.raw) : null;
+          citation.outcome = citationOutcome(citation, {
+            sources: joined.sources,
+            presentKeys: joined.presentKeys,
+            database: joined.database,
+            resolution: resolved,
+            candidates:
+              resolved?.kind === "ambiguous"
+                ? describeJoinedCandidates(
+                    resolved.candidates,
+                    joined.sources,
+                    libraries,
+                  )
+                : [],
+          });
+        }
+        for (const error of errors) error.outcome = { kind: "malformed" };
+        return {
+          occurrences,
+          citations,
+          errors,
+          lookup,
+          ...joined,
+          syntaxes,
+          omittedSyntaxes,
+          coverage,
+        };
+      },
+    );
 
     const parsedNote = (file: TFile) =>
       readParsedNote(file).pipe(
@@ -555,33 +504,28 @@ function makeCitationIndex(
         Effect.provideService(CitationParse, parser),
       );
 
-    async function getParsedDocument(file: TFile, signal = lifetimeSignal) {
-      for (;;) {
-        const generation = generations.get(file.path);
-        const { mtime, size } = file.stat;
-        const facts = await runPromise(parsedNote(file), { signal });
-        const set = await getDocumentCitationSet(file, {
-          signal,
-          parsed: facts,
-        });
-        if (
-          generation === generations.get(file.path) &&
-          mtime === file.stat.mtime &&
-          size === file.stat.size
-        )
-          return { facts, set };
-      }
-    }
+    const getParsedDocument = Effect.fn("CitationIndex.getParsedDocument")(
+      function* (file: TFile) {
+        for (;;) {
+          const generation = generations.get(file.path);
+          const { mtime, size } = file.stat;
+          const facts = yield* parsedNote(file);
+          const set = yield* getDocumentCitationSet(file, {
+            parsed: facts,
+          });
+          if (
+            generation === generations.get(file.path) &&
+            mtime === file.stat.mtime &&
+            size === file.stat.size
+          )
+            return { facts, set };
+        }
+      },
+    );
 
-    function whenIndexed(): Promise<void> {
-      return runPromise(
-        Stream.runHead(
-          changes.pipe(
-            Stream.filter((value) => value.backfilled || value.stopped),
-          ),
-        ),
-      ).then(() => {});
-    }
+    const whenIndexed = Stream.runHead(
+      changes.pipe(Stream.filter((value) => value.backfilled || value.stopped)),
+    ).pipe(Effect.asVoid, Effect.withSpan("CitationIndex.whenIndexed"));
 
     /**
      * Observe the citations in the vault that resolve to an Item, under the same
@@ -604,22 +548,20 @@ function makeCitationIndex(
         queued = true;
         queueMicrotask(() => {
           queued = false;
-          publish();
+          bridge.runAndForget(publish().pipe(recover));
         });
       };
       const held = yield* Scope.provide(
-        Effect.acquireDisposable(
-          Effect.sync(() => lookupAdapter.observe(onChange)),
-        ),
+        Effect.acquireDisposable(lookupService.observe(onChange)),
         observationScope,
       );
-      const publish = () => {
+      const publish = Effect.fnUntraced(function* () {
         if (disposed || stopped) return;
         held.set({
           citekeys: citationKeys(),
           annotationKeys: annotationCitationKeys(),
         });
-        const next = citedBy(
+        const next = yield* citedBy(
           indexedKey,
           {
             resolve: (citekey) =>
@@ -633,22 +575,26 @@ function makeCitationIndex(
           },
           {
             includeNote,
-            byPath: citationsByPath(["citekey", "wikilink", "annotation"]),
+            byPath: yield* citationsByPath([
+              "citekey",
+              "wikilink",
+              "annotation",
+            ]),
           },
         );
         if (previous && citedBySnapshotsEqual(previous, next)) return;
         previous = next;
-        try {
-          callback(next);
-        } catch (error) {
-          log("warn", "Cited-by observer failed", { error });
-        }
-      };
+        yield* Effect.try(() => callback(next)).pipe(
+          Effect.catch((error) =>
+            log("warn", "Cited-by observer failed", { error }),
+          ),
+        );
+      });
       yield* Effect.all([
         forkEach(events, onChange),
         forkEach(changes, onChange),
         forkEach(
-          lookup.changes.pipe(
+          lookupService.changes.pipe(
             Stream.map((value) => value.status),
             Stream.changes,
           ),
@@ -676,18 +622,18 @@ function makeCitationIndex(
      * whatever the index holds now, so {@link waitUntilSettled} is what a caller
      * that wants a complete answer runs first.
      */
-    async function getCitedBy(
+    const getCitedBy = Effect.fn("CitationIndex.getCitedBy")(function* (
       indexedKey: string,
       answer?: CitationLookupAnswer,
-    ): Promise<CitedBySnapshot> {
-      const occurrences = citationsByPath([
+    ) {
+      const occurrences = yield* citationsByPath([
         "citekey",
         "wikilink",
         "annotation",
       ]);
       const lookup =
         answer ??
-        (await lookupAdapter.read({
+        (yield* lookupService.read({
           annotationKeys: annotationCitationKeys(),
           citekeys: [...occurrences.values()].flatMap((citations) =>
             citations.flatMap((occurrence) =>
@@ -695,7 +641,7 @@ function makeCitationIndex(
             ),
           ),
         }));
-      return citedBy(
+      return yield* citedBy(
         indexedKey,
         {
           resolve: (citekey) => lookup.resolve(citekey),
@@ -707,7 +653,7 @@ function makeCitationIndex(
           byPath: occurrences,
         },
       );
-    }
+    });
 
     /**
      * Wait until coverage and citation-key resolution both have settled once. A
@@ -720,18 +666,12 @@ function makeCitationIndex(
     const settle = Effect.fn("CitationIndex.settle")(
       function* (timeoutMs: number) {
         if (timeoutMs <= 0) return "timeout" as const;
-        yield* Effect.all(
-          [
-            Effect.promise(() => whenIndexed()),
-            Effect.promise(() => lookupAdapter.whenResolved()),
-          ],
-          { concurrency: "unbounded" },
-        );
+        yield* Effect.all([whenIndexed, lookupService.whenResolved], {
+          concurrency: "unbounded",
+        });
         while (pendingScans.size > 0) {
-          yield* Effect.promise(() =>
-            Promise.allSettled(
-              [...pendingScans.values()].map((pending) => pending.promise),
-            ),
+          yield* Fiber.awaitAll(
+            [...pendingScans.values()].map((pending) => pending.fiber),
           );
         }
         return "settled" as const;
@@ -770,7 +710,7 @@ function makeCitationIndex(
         }
         const refreshed = yield* Effect.forEach(
           stale,
-          (file) => Effect.tryPromise(() => coverFile(file)),
+          (file) => coverFile(file),
           { concurrency: BACKFILL_CONCURRENCY },
         ).pipe(
           Effect.timeoutOption(deadline - (yield* Clock.currentTimeMillis)),
@@ -808,12 +748,7 @@ function makeCitationIndex(
       const scan = captured.scans.get(path) ?? null;
       const document =
         file?.extension === "md"
-          ? yield* Effect.tryPromise(() =>
-              composeDocument(file, scan, {
-                ...captured,
-                lifetime: lifetimeSignal,
-              }),
-            )
+          ? yield* composeDocument(file, scan, captured)
           : null;
       return { kind: "ready", document } as const;
     });
@@ -835,29 +770,26 @@ function makeCitationIndex(
             ...annotationCitations(scan),
           ].sort(compareOccurrences),
         }));
-      const local = new Map(
-        captured.flatMap(({ path, occurrences }) =>
-          occurrences
-            .filter((o) => o.kind === "wikilink")
-            .map((o) => [o, resolve(o, path)?.indexedKey ?? null] as const),
-        ),
-      );
-      const lookup = yield* Effect.tryPromise(() =>
-        lookupAdapter.read({
-          citekeys: [
-            ...captured.flatMap(({ occurrences }) =>
-              occurrences.filter((o) => o.kind === "citekey").map((o) => o.raw),
-            ),
-            ...("citekey" in selector ? [selector.citekey] : []),
-          ],
-          annotationKeys: captured.flatMap(({ occurrences }) =>
-            occurrences
-              .filter((o) => o.kind === "annotation")
-              .map((o) => o.raw),
+      const local = new Map<CitationOccurrence, string | null>();
+      for (const { path, occurrences } of captured)
+        for (const occurrence of occurrences)
+          if (occurrence.kind === "wikilink")
+            local.set(
+              occurrence,
+              (yield* resolve(occurrence, path))?.indexedKey ?? null,
+            );
+      const lookup = yield* lookupService.read({
+        citekeys: [
+          ...captured.flatMap(({ occurrences }) =>
+            occurrences.filter((o) => o.kind === "citekey").map((o) => o.raw),
           ),
-          indexedKeys: "key" in selector ? [selector.key] : [],
-        }),
-      );
+          ...("citekey" in selector ? [selector.citekey] : []),
+        ],
+        annotationKeys: captured.flatMap(({ occurrences }) =>
+          occurrences.filter((o) => o.kind === "annotation").map((o) => o.raw),
+        ),
+        indexedKeys: "key" in selector ? [selector.key] : [],
+      });
       let key: string;
       let citekey: string | null;
       if ("key" in selector) {
@@ -876,9 +808,7 @@ function makeCitationIndex(
           } as const;
         key = resolved.item.indexedKey;
       }
-      const joined = yield* Effect.promise(() =>
-        joinSources([{ indexedKey: key, linkpath: null }]),
-      );
+      const joined = yield* joinSources([{ indexedKey: key, linkpath: null }]);
       if (joined.database === "ready" && !joined.presentKeys.has(key))
         return { kind: "missing", key } as const;
       const groups: CitedByGroup[] = [];
@@ -943,45 +873,51 @@ function makeCitationIndex(
      *
      * @see referenceEntries in `cli/commands.ts`
      */
-    async function documentOmittedSyntaxes(
-      file: TFile,
-    ): Promise<CitationSyntax[]> {
-      const scan = await coverFile(file);
-      return omittedDocument(scan, file.path, syntaxes());
-    }
+    const documentOmittedSyntaxes = Effect.fn(
+      "CitationIndex.documentOmittedSyntaxes",
+    )(function* (file: TFile) {
+      const scan = yield* coverFile(file);
+      return yield* omittedDocument(scan, file.path, syntaxes());
+    });
 
-    function omittedDocument(
-      scan: Pick<
-        FileScan,
-        | "citekeys"
-        | "wikilinks"
-        | "malformedWikilinks"
-        | "annotations"
-        | "malformedAnnotationCitations"
-      > | null,
-      path: string,
-      syntaxes: CitationSyntaxes,
-    ): CitationSyntax[] {
-      const omitted: CitationSyntax[] = [];
-      if (syntaxes.citekey === "excluded" && scan?.citekeys.length)
-        omitted.push("citekey");
-      if (
-        syntaxes.wikilink === "excluded" &&
-        [
-          ...(scan?.wikilinks ?? []),
-          ...(scan?.malformedWikilinks.map(({ occurrence }) => occurrence) ??
-            []),
-        ].some((occurrence) => resolve(occurrence, path) !== null)
-      )
-        omitted.push("wikilink");
-      if (
-        syntaxes.annotation === "excluded" &&
-        (scan?.annotations.some(({ form }) => form === "citation") ||
-          scan?.malformedAnnotationCitations.length)
-      )
-        omitted.push("annotation");
-      return omitted;
-    }
+    const omittedDocument = Effect.fn("CitationIndex.omittedDocument")(
+      function* (
+        scan: Pick<
+          FileScan,
+          | "citekeys"
+          | "wikilinks"
+          | "malformedWikilinks"
+          | "annotations"
+          | "malformedAnnotationCitations"
+        > | null,
+        path: string,
+        syntaxes: CitationSyntaxes,
+      ) {
+        const omitted: CitationSyntax[] = [];
+        if (syntaxes.citekey === "excluded" && scan?.citekeys.length)
+          omitted.push("citekey");
+        if (
+          syntaxes.wikilink === "excluded" &&
+          (yield* Effect.forEach(
+            [
+              ...(scan?.wikilinks ?? []),
+              ...(scan?.malformedWikilinks.map(
+                ({ occurrence }) => occurrence,
+              ) ?? []),
+            ],
+            (occurrence) => resolve(occurrence, path),
+          )).some((note) => note !== null)
+        )
+          omitted.push("wikilink");
+        if (
+          syntaxes.annotation === "excluded" &&
+          (scan?.annotations.some(({ form }) => form === "citation") ||
+            scan?.malformedAnnotationCitations.length)
+        )
+          omitted.push("annotation");
+        return omitted;
+      },
+    );
 
     /**
      * The admitted Citation Occurrences of every covered document, by path —
@@ -997,25 +933,27 @@ function makeCitationIndex(
      * @param syntaxes the Citation Syntaxes to answer with.
      * @returns paths holding at least one admitted occurrence, in vault order.
      */
-    function citationsByPath(
-      syntaxes: readonly CitationSyntax[],
-    ): ReadonlyMap<string, readonly CitationOccurrence[]> {
-      const wantCitekeys = syntaxes.includes("citekey");
-      const wantWikilinks = syntaxes.includes("wikilink");
-      const wantAnnotations = syntaxes.includes("annotation");
-      const byPath = new Map<string, readonly CitationOccurrence[]>();
-      for (const file of markdownFiles()) {
-        const selected = admitted(covered(file));
-        const citekeys = wantCitekeys ? selected.citekeys : [];
-        const occurrences = [
-          ...citekeys,
-          ...(wantWikilinks ? selected.wikilinks.occurrences : []),
-          ...(wantAnnotations ? selected.annotations : []),
-        ];
-        if (occurrences.length > 0) byPath.set(file.path, occurrences);
-      }
-      return byPath;
-    }
+    const citationsByPath = Effect.fn("CitationIndex.citationsByPath")(
+      function* (
+        syntaxes: readonly CitationSyntax[],
+      ): Effect.fn.Return<ReadonlyMap<string, readonly CitationOccurrence[]>> {
+        const wantCitekeys = syntaxes.includes("citekey");
+        const wantWikilinks = syntaxes.includes("wikilink");
+        const wantAnnotations = syntaxes.includes("annotation");
+        const byPath = new Map<string, readonly CitationOccurrence[]>();
+        for (const file of yield* vault.getMarkdownFiles) {
+          const selected = admitted(covered(file));
+          const citekeys = wantCitekeys ? selected.citekeys : [];
+          const occurrences = [
+            ...citekeys,
+            ...(wantWikilinks ? selected.wikilinks.occurrences : []),
+            ...(wantAnnotations ? selected.annotations : []),
+          ];
+          if (occurrences.length > 0) byPath.set(file.path, occurrences);
+        }
+        return byPath;
+      },
+    );
 
     /**
      * Discards every stored scan and rebuilds from the vault — the recovery hatch
@@ -1023,100 +961,118 @@ function makeCitationIndex(
      * produce again. Returns once the store is empty; the rebuild runs on from
      * there, and {@link whenIndexed} is what waits for it.
      */
-    async function reset(): Promise<void> {
+    const reset = Effect.fn("CitationIndex.reset")(function* () {
       if (stopped) return;
       activeBuildNumber += 1;
       const covered = [...scans.keys()];
-      log("debug", "Citation index reset", { covered: covered.length });
+      yield* log("debug", "Citation index reset", { covered: covered.length });
       scans.clear();
       filesByCitekey.clear();
       annotationsByKey.clear();
-      for (const pending of pendingScans.values()) pending.stop.abort();
+      yield* Fiber.interruptAll(
+        [...pendingScans.values()].map((pending) => pending.fiber),
+      );
       pendingScans.clear();
       generations.clear();
       failedPaths.clear();
       backfilled = false;
       backfillFailed = false;
-      emit("cited-by-invalidated");
-      try {
-        await store?.clear();
-      } catch (error) {
-        log("warn", "Failed to clear citation scans", { error });
-      }
-      for (const path of covered) emit("changed", path);
-      startBackfill();
-    }
+      yield* emit("cited-by-invalidated");
+      if (store)
+        yield* Effect.tryPromise(() => store!.clear()).pipe(
+          Effect.catch((error) =>
+            log("warn", "Failed to clear citation scans", { error }),
+          ),
+        );
+      for (const path of covered) yield* emit("changed", path);
+      yield* startBackfill();
+    });
 
     /** Readiness settles even on a failed pass, so no consumer waits forever. */
-    async function runBackfill(): Promise<void> {
+    const runBackfill = Effect.fn("CitationIndex.runBackfill")(function* () {
       const activeBuild = activeBuildNumber;
       if (backfillBuild === activeBuild) return;
       backfillBuild = activeBuild;
-      log("debug", "Citation index backfill started", { build: activeBuild });
-      try {
-        await backfill(activeBuild);
-      } catch (error) {
-        log("error", "Citation index backfill failed", { error });
-        if (stale(activeBuild)) return;
-        backfillFailed = true;
-      }
-      if (stopped || activeBuild !== activeBuildNumber) return;
-      log("debug", "Citation index backfilled", { count: scans.size });
-      backfilled = true;
-      emit("backfilled");
-    }
-
-    async function backfill(build: number): Promise<void> {
-      const files = markdownFiles()[Symbol.iterator]();
-      await Promise.all(
-        Array.from({ length: BACKFILL_CONCURRENCY }, async () => {
-          for (const file of files) {
-            if (stale(build)) return;
-            try {
-              await coverFile(file, true, build);
-            } catch (error) {
-              if (stale(build)) return;
-              setFailed(file.path, true);
-              log("warn", "Citation backfill could not parse note", {
-                path: file.path,
-                error,
-              });
-            }
-          }
+      yield* log("debug", "Citation index backfill started", {
+        build: activeBuild,
+      });
+      yield* backfill(activeBuild).pipe(
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+          return Effect.gen(function* () {
+            yield* log("error", "Citation index backfill failed", {
+              error: cause,
+            });
+            if (!stale(activeBuild)) backfillFailed = true;
+          });
         }),
       );
+      if (stopped || activeBuild !== activeBuildNumber) return;
+      yield* log("debug", "Citation index backfilled", { count: scans.size });
+      backfilled = true;
+      yield* emit("backfilled");
+    });
+
+    const backfill = Effect.fn("CitationIndex.backfill")(function* (
+      build: number,
+    ) {
+      yield* Effect.forEach(
+        yield* vault.getMarkdownFiles,
+        (file) =>
+          Effect.gen(function* () {
+            if (stale(build)) return;
+            yield* coverFile(file, true, build).pipe(
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  if (stale(build)) return;
+                  yield* setFailed(file.path, true);
+                  yield* log("warn", "Citation backfill could not parse note", {
+                    path: file.path,
+                    error,
+                  });
+                }),
+              ),
+            );
+          }),
+        { concurrency: BACKFILL_CONCURRENCY, discard: true },
+      );
       if (stale(build)) return;
-      const present = new Set(markdownFiles().map((file) => file.path));
+      const present = new Set(
+        (yield* vault.getMarkdownFiles).map((file) => file.path),
+      );
       for (const path of scans.keys().toArray()) {
-        if (!present.has(path)) drop(path);
+        if (!present.has(path)) yield* drop(path);
       }
-    }
+    });
 
     /** Whether a build other than `build` has taken over. */
     function stale(build: number): boolean {
       return stopped || build !== activeBuildNumber;
     }
 
-    function scan(file: TFile, body: string): Promise<FileScan | null> {
+    // Runs per scanned file on the metadata intake and backfill hot path.
+    const scan = Effect.fnUntraced(function* (file: TFile, body: string) {
       const { path } = file;
       const { mtime, size } = file.stat;
       const generation = ++nextGeneration;
       const activeBuild = activeBuildNumber;
-      pendingScans.get(path)?.stop.abort();
+      const previous = pendingScans.get(path);
       generations.set(path, generation);
-      const stop = new AbortController();
-      const signal = AbortSignal.any([stop.signal, lifetimeSignal]);
-      const pending = {
+      if (previous) yield* Fiber.interrupt(previous.fiber);
+      const pending: {
+        path: string;
+        generation: number;
+        fiber: Fiber.Fiber<FileScan | null, ParseFailed | ParseWorkerDied>;
+      } = {
         path,
         generation,
-        stop,
-        promise: abortable(
-          runPromise(parser.parse({ path, generation, text: body }), {
-            signal,
-          }),
-          signal,
-        )
-          .then(({ record, path: replyPath, generation: replyGeneration }) => {
+        fiber: yield* Effect.forkIn(
+          Effect.gen(function* () {
+            const {
+              record,
+              path: replyPath,
+              generation: replyGeneration,
+            } = yield* parser.parse({ path, generation, text: body });
             const currentPath = pending.path;
             if (
               stale(activeBuild) ||
@@ -1143,48 +1099,64 @@ function makeCitationIndex(
               prev.size === size &&
               prev.scannerRevision === SCANNER_REVISION
             ) {
-              setFailed(currentPath, false);
+              yield* setFailed(currentPath, false);
               return prev;
             }
             setScan(currentPath, scan);
-            persist({ path: currentPath, ...scan });
-            setFailed(currentPath, false);
-            if (!same) emit("changed", currentPath);
+            yield* persist({ path: currentPath, ...scan });
+            yield* setFailed(currentPath, false);
+            if (!same) yield* emit("changed", currentPath);
             return scan;
-          })
-          .catch((error: unknown) => {
-            if (signal.aborted) return null;
-            setFailed(pending.path, true);
-            const retained = scans.get(pending.path);
-            if (retained) {
-              log("warn", "Citation parse failed; retaining saved scan", {
-                path: pending.path,
-                error,
-              });
-              return retained;
-            }
-            throw error;
-          })
-          .finally(() => {
-            if (pendingScans.get(pending.path) === pending)
-              pendingScans.delete(pending.path);
-          }),
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                yield* setFailed(pending.path, true);
+                const retained = scans.get(pending.path);
+                if (retained) {
+                  yield* log(
+                    "warn",
+                    "Citation parse failed; retaining saved scan",
+                    { path: pending.path, error },
+                  );
+                  return retained;
+                }
+                return yield* error;
+              }),
+            ),
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (pendingScans.get(pending.path) === pending)
+                  pendingScans.delete(pending.path);
+              }),
+            ),
+          ),
+          scope,
+        ),
       };
       pendingScans.set(path, pending);
-      return pending.promise;
-    }
+      return yield* Fiber.join(pending.fiber).pipe(
+        Effect.catchCauseIf(
+          (cause) => Cause.hasInterruptsOnly(cause),
+          () => Effect.succeed(null),
+        ),
+      );
+    });
 
     function getCoverage(): CitationCoverage {
       if (!backfilled) return "indexing";
       return backfillFailed || failedPaths.size > 0 ? "degraded" : "complete";
     }
 
-    function setFailed(path: string, failed: boolean): void {
+    // Runs per scanned file on the metadata intake and backfill hot path.
+    const setFailed = Effect.fnUntraced(function* (
+      path: string,
+      failed: boolean,
+    ) {
       const coverage = getCoverage();
       if (failed) failedPaths.add(path);
       else failedPaths.delete(path);
-      if (getCoverage() !== coverage) emit("cited-by-invalidated");
-    }
+      if (getCoverage() !== coverage) yield* emit("cited-by-invalidated");
+    });
 
     function covered(file: TFile): FileScan | null {
       const scan = scans.get(file.path);
@@ -1197,36 +1169,39 @@ function makeCitationIndex(
         : null;
     }
 
-    async function coverFile(
+    // Runs per scanned file on the metadata intake and backfill hot path.
+    const coverFile = Effect.fnUntraced(function* (
       file: TFile,
       fresh = false,
       build = activeBuildNumber,
-    ): Promise<FileScan | null> {
+    ): Effect.fn.Return<
+      FileScan | null,
+      VaultError | ParseFailed | ParseWorkerDied
+    > {
       while (!stale(build)) {
-        if (!fileAt(file.path)) return null;
+        if (!(yield* vault.getFileByPath(file.path))) return null;
         const known = covered(file);
         // A grammar update keeps the last scan available while its replacement runs.
         if (!fresh && known && known.scannerRevision !== SCANNER_REVISION)
           return known;
         const pending = pendingScans.get(file.path);
         if (pending) {
-          await pending.promise;
+          yield* Fiber.join(pending.fiber).pipe(
+            Effect.catchCauseIf(
+              (cause) => Cause.hasInterruptsOnly(cause),
+              () => Effect.void,
+            ),
+          );
           continue;
         }
         if (failedPaths.has(file.path)) return known;
         if (known && (!fresh || known.scannerRevision === SCANNER_REVISION))
           return known;
-        if (!fileAt(file.path)) return null;
+        if (!(yield* vault.getFileByPath(file.path))) return null;
         const path = file.path;
         const generation = generations.get(path);
         const { mtime, size } = file.stat;
-        const body = await abortable(
-          // Reject with what Obsidian threw, as the read did on the App.
-          runPromise(
-            vault.cachedRead(file).pipe(Effect.mapError(({ cause }) => cause)),
-          ),
-          lifetimeSignal,
-        );
+        const body = yield* vault.cachedRead(file);
         if (stale(build)) return null;
         if (
           file.path !== path ||
@@ -1235,26 +1210,30 @@ function makeCitationIndex(
           file.stat.size !== size
         )
           continue;
-        if (!fileAt(path)) return null;
-        await scan(file, body);
+        if (!(yield* vault.getFileByPath(path))) return null;
+        yield* scan(file, body);
       }
       return null;
-    }
+    });
 
-    function drop(path: string): void {
+    const drop = Effect.fn("CitationIndex.drop")(function* (path: string) {
       restoreInvalidated?.add(path);
-      setFailed(path, false);
+      yield* setFailed(path, false);
       generations.set(path, ++nextGeneration);
-      pendingScans.get(path)?.stop.abort();
+      const replaced = pendingScans.get(path);
+      if (replaced) yield* Fiber.interrupt(replaced.fiber);
       pendingScans.delete(path);
       const scan = scans.get(path);
       if (!scan) return;
       removeScan(path);
-      forget(path);
-      if (!scanContentEqual(undefined, scan)) emit("changed", path);
-    }
+      yield* forget(path);
+      if (!scanContentEqual(undefined, scan)) yield* emit("changed", path);
+    });
 
-    function move(oldPath: string, path: string): void {
+    const move = Effect.fn("CitationIndex.move")(function* (
+      oldPath: string,
+      path: string,
+    ) {
       if (failedPaths.delete(oldPath)) failedPaths.add(path);
       restoreInvalidated?.add(oldPath);
       restoreInvalidated?.add(path);
@@ -1262,7 +1241,8 @@ function makeCitationIndex(
       const pending = pendingScans.get(oldPath);
       if (pending) {
         pendingScans.delete(oldPath);
-        pendingScans.get(path)?.stop.abort();
+        const replaced = pendingScans.get(path);
+        if (replaced) yield* Fiber.interrupt(replaced.fiber);
         pending.path = path;
         pendingScans.set(path, pending);
         generations.set(path, pending.generation);
@@ -1271,32 +1251,40 @@ function makeCitationIndex(
       if (!scan) return;
       removeScan(oldPath);
       setScan(path, scan);
-      forget(oldPath);
-      persist({ path, ...scan });
-      if (!scanContentEqual(undefined, scan)) emit("changed", path);
-    }
+      yield* forget(oldPath);
+      yield* persist({ path, ...scan });
+      if (!scanContentEqual(undefined, scan)) yield* emit("changed", path);
+    });
 
     /**
      * Writes are per file and never awaited: the store is derived data, so a
      * failed write costs one rescan on the next launch. Every caller runs on the
      * current build, which is what keeps a superseded one out of the store.
      */
-    function persist(record: CitekeyRecord): void {
-      if (stopped) return;
-      void store?.put(record).catch((error: unknown) => {
-        log("error", "Failed to persist a citation scan", {
-          path: record.path,
-          error,
-        });
-      });
-    }
+    const persist = Effect.fnUntraced(function* (record: CitekeyRecord) {
+      if (stopped || !store) return;
+      const target = store;
+      yield* Effect.tryPromise(() => target.put(record)).pipe(
+        Effect.catch((error) =>
+          log("error", "Failed to persist a citation scan", {
+            path: record.path,
+            error,
+          }),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      );
+    });
 
-    function forget(path: string): void {
-      if (stopped) return;
-      void store?.drop(path).catch((error: unknown) => {
-        log("error", "Failed to drop a citation scan", { path, error });
-      });
-    }
+    const forget = Effect.fnUntraced(function* (path: string) {
+      if (stopped || !store) return;
+      const target = store;
+      yield* Effect.tryPromise(() => target.drop(path)).pipe(
+        Effect.catch((error) =>
+          log("error", "Failed to drop a citation scan", { path, error }),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      );
+    });
 
     function admitted(scan: CitationRecord | null, choices = syntaxes()) {
       return {
@@ -1378,7 +1366,7 @@ function makeCitationIndex(
       }
     }
 
-    function citedBy(
+    const citedBy = Effect.fn("CitationIndex.citedBy")(function* (
       indexedKey: string,
       {
         resolve,
@@ -1394,32 +1382,35 @@ function makeCitationIndex(
         includeNote: (file: TFile) => boolean;
         byPath: ReadonlyMap<string, readonly CitationOccurrence[]>;
       },
-    ): CitedBySnapshot {
+    ) {
       const groups: CitedByGroup[] = [];
-      const files = markdownFiles()
+      const files = (yield* vault.getMarkdownFiles)
         .filter(includeNote)
         .sort((a, b) => comparePaths(a.path, b.path));
       for (const file of files) {
-        const occurrences = (byPath.get(file.path) ?? [])
-          .filter((occurrence) =>
+        const occurrences: CitationOccurrence[] = [];
+        for (const occurrence of byPath.get(file.path) ?? []) {
+          const cites =
             occurrence.kind === "citekey"
               ? citekeyOccurrenceCites(resolve(occurrence.raw), indexedKey)
               : occurrence.kind === "annotation"
                 ? parentOfAnnotation(occurrence.raw) === indexedKey
-                : wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
-          )
-          .sort(compareOccurrences);
+                : (yield* indexedKeyOf(occurrence.raw, file.path)) ===
+                  indexedKey;
+          if (cites) occurrences.push(occurrence);
+        }
+        occurrences.sort(compareOccurrences);
         if (occurrences.length > 0) {
           groups.push({ path: file.path, occurrences });
         }
       }
-      const status = run(lookup.current).status;
+      const status = (yield* lookupService.current).status;
       return {
         groups,
         coverage: getCoverage(),
         resolution: status === "pending" ? null : status,
       };
-    }
+    });
 
     /**
      * The excluded Citation Syntaxes that hold an occurrence of `indexedKey`,
@@ -1433,16 +1424,15 @@ function makeCitationIndex(
      * {@link documentOmittedSyntaxes}'s references answer — never would have
      * joined this answer either.
      */
-    async function citedByOmittedSyntaxes(
-      indexedKey: string,
-      answer?: CitationLookupAnswer,
-    ): Promise<CitationSyntax[]> {
-      const files = markdownFiles();
+    const citedByOmittedSyntaxes = Effect.fn(
+      "CitationIndex.citedByOmittedSyntaxes",
+    )(function* (indexedKey: string, answer?: CitationLookupAnswer) {
+      const files = yield* vault.getMarkdownFiles;
       const omitted: CitationSyntax[] = [];
       const citekeys = files.flatMap((file) => covered(file)?.citekeys ?? []);
       const lookup =
         answer ??
-        (await lookupAdapter.read({
+        (yield* lookupService.read({
           citekeys: citekeys.map((occurrence) => occurrence.raw),
           annotationKeys: annotationCitationKeys(),
         }));
@@ -1453,11 +1443,13 @@ function makeCitationIndex(
         if (held) omitted.push("citekey");
       }
       if (!includeWikilinkCitations) {
-        const held = files.some((file) => {
-          return (covered(file)?.wikilinks ?? []).some((occurrence) =>
-            wikilinkOccurrenceCites(occurrence, file.path, indexedKey),
-          );
-        });
+        let held = false;
+        for (const file of files) {
+          for (const occurrence of covered(file)?.wikilinks ?? []) {
+            if ((yield* indexedKeyOf(occurrence.raw, file.path)) === indexedKey)
+              held = true;
+          }
+        }
         if (held) omitted.push("wikilink");
       }
       if (
@@ -1468,7 +1460,7 @@ function makeCitationIndex(
       )
         omitted.push("annotation");
       return omitted;
-    }
+    });
 
     /**
      * Whether a literal-citekey Citation Occurrence cites `indexedKey`.
@@ -1496,28 +1488,19 @@ function makeCitationIndex(
       }
     }
 
-    /** Whether a wikilink Citation Occurrence resolves to `indexedKey`. */
-    function wikilinkOccurrenceCites(
-      occurrence: CitationOccurrence,
-      sourcePath: string,
-      indexedKey: string,
-    ): boolean {
-      return indexedKeyOf(occurrence.raw, sourcePath) === indexedKey;
-    }
-
-    function resolve(
+    const resolve = Effect.fn("CitationIndex.resolve")(function* (
       occurrence: CitationOccurrence,
       sourcePath: string,
       lookup?: CitationLookupAnswer,
-    ): ResolvedNote | null {
+    ) {
       if (occurrence.kind === "wikilink") {
-        const indexedKey = indexedKeyOf(occurrence.raw, sourcePath);
+        const indexedKey = yield* indexedKeyOf(occurrence.raw, sourcePath);
         return indexedKey ? { indexedKey, linkpath: occurrence.raw } : null;
       }
       if (occurrence.kind === "annotation") {
         const parent = lookup!.parentOfAnnotation(occurrence.raw);
         if (!parent) return null;
-        const [note] = run(noteIndex.getNotesByItemKey(parent.indexedKey));
+        const [note] = yield* noteIndex.getNotesByItemKey(parent.indexedKey);
         return { indexedKey: parent.indexedKey, linkpath: note?.path ?? null };
       }
       // An Ambiguous Citation Key keeps its own identity here: it adopts no
@@ -1526,12 +1509,14 @@ function makeCitationIndex(
       const resolved = lookup!.resolve(occurrence.raw);
       const item = resolved.kind === "unique" ? resolved.item : null;
       if (!item) return null;
-      const [note] = run(noteIndex.getNotesByItemKey(item.indexedKey));
+      const [note] = yield* noteIndex.getNotesByItemKey(item.indexedKey);
       return { indexedKey: item.indexedKey, linkpath: note?.path ?? null };
-    }
+    });
 
     /** Apply citation settings without stopping the internal scan or resolution. */
-    function applySettings(settings: Readonly<Settings>): void {
+    const applySettings = Effect.fn("CitationIndex.applySettings")(function* (
+      settings: Readonly<Settings>,
+    ) {
       const nextPandoc = settings["citation.pandoc-citations"];
       const nextWikilinks = settings["citation.wikilink-citations"];
       const nextAnnotations = settings["citation.annotation-citations"];
@@ -1543,26 +1528,28 @@ function makeCitationIndex(
       includePandocCitations = nextPandoc;
       includeWikilinkCitations = nextWikilinks;
       includeAnnotationCitations = nextAnnotations;
-      log("debug", "Citation source membership changed", {
+      yield* log("debug", "Citation source membership changed", {
         pandocCitations: nextPandoc,
         wikilinkCitations: nextWikilinks,
         annotationCitations: nextAnnotations,
       });
-      emit("membership-changed");
-    }
+      yield* emit("membership-changed");
+    });
 
-    function startBackfill() {
+    const startBackfill = Effect.fnUntraced(function* () {
       if (!stopped)
-        runner.runFork(recover(Effect.tryPromise(() => runBackfill())));
-    }
+        yield* runBackfill().pipe(
+          recover,
+          Effect.forkIn(scope, { startImmediately: true }),
+        );
+    });
     // Stop before the child scope closes its store, listeners, and scan fibers.
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         stopped = true;
-      }).pipe(
-        Effect.andThen(Scope.close(lifetimeScope, Exit.void)),
-        Effect.andThen(Effect.sync(publishState)),
-      ),
+        yield* Scope.close(scope, Exit.void);
+        yield* publishState();
+      }),
     );
     const intake = yield* obsidianEvents<{
       metadata: [MetadataEvent];
@@ -1571,27 +1558,29 @@ function makeCitationIndex(
     }>().pipe(Scope.provide(scope));
     yield* intake
       .consume((event) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           switch (event.type) {
             case "metadata": {
               const [change] = event.args;
               if (change._tag === "changed") {
                 if (!isMarkdownFile(change.file)) return;
-                // Start synchronously so a following rename/delete supersedes this generation.
-                const parsed = scan(change.file, change.data);
-                runner.runFork(recover(Effect.tryPromise(() => parsed)));
-              } else if (change._tag === "deleted") drop(change.file.path);
-              emit("cited-by-invalidated");
+                yield* scan(change.file, change.data).pipe(
+                  recover,
+                  Effect.forkIn(scope, { startImmediately: true }),
+                );
+              } else if (change._tag === "deleted")
+                yield* drop(change.file.path);
+              yield* emit("cited-by-invalidated");
               break;
             }
             case "rename": {
               const [{ file, oldPath }] = event.args;
-              move(oldPath, file.path);
-              emit("cited-by-invalidated");
+              yield* move(oldPath, file.path);
+              yield* emit("cited-by-invalidated");
               break;
             }
             case "layoutReady":
-              startBackfill();
+              yield* startBackfill();
               break;
           }
         }),
@@ -1625,10 +1614,10 @@ function makeCitationIndex(
         }
       }
       for (const [path, scan] of scans)
-        if (!restoredPaths.has(path)) persist({ path, ...scan });
+        if (!restoredPaths.has(path)) yield* persist({ path, ...scan });
       for (const path of restoreInvalidated ?? [])
-        if (!scans.has(path)) forget(path);
-      log("debug", "Citation index store loaded", {
+        if (!scans.has(path)) yield* forget(path);
+      yield* log("debug", "Citation index store loaded", {
         count: loaded.length,
         restored: restoredPaths.size,
       });
@@ -1642,9 +1631,7 @@ function makeCitationIndex(
     );
     yield* startupBarrier(
       restore,
-      Effect.sync(() =>
-        log("warn", "Citation index store is still opening", {}),
-      ),
+      log("warn", "Citation index store is still opening", {}),
     ).pipe(Scope.provide(scope));
     yield* workspace.layoutReady.pipe(
       Effect.andThen(Effect.sync(() => intake.callback("layoutReady")())),
@@ -1692,69 +1679,23 @@ function makeCitationIndex(
           return yield* Effect.sync(() => getAnnotationUses(...args));
         },
       ),
-      citationsByPath: Effect.fn("CitationIndex.citationsByPath")(function* (
-        ...args: Parameters<typeof citationsByPath>
-      ) {
-        return yield* Effect.sync(() => citationsByPath(...args));
-      }),
-      getFileScan: Effect.fn("CitationIndex.getFileScan")(function* (
-        ...args: Parameters<typeof getFileScan>
-      ) {
-        return yield* Effect.tryPromise(() => getFileScan(...args));
-      }),
-      // Interruption cancels these reads; the index's lifetime still bounds them.
-      getDocumentCitationSet: Effect.fn("CitationIndex.getDocumentCitationSet")(
-        function* (
-          file: TFile,
-          options: Omit<
-            NonNullable<Parameters<typeof getDocumentCitationSet>[1]>,
-            "signal"
-          > = {},
-        ) {
-          return yield* Effect.tryPromise((signal) =>
-            getDocumentCitationSet(file, { ...options, signal }),
-          );
-        },
-      ),
-      getParsedNote: Effect.fn("CitationIndex.getParsedNote")(function* (
-        file: TFile,
-      ) {
-        return yield* parsedNote(file);
-      }),
-      getParsedDocument: Effect.fn("CitationIndex.getParsedDocument")(
-        function* (file: TFile) {
-          return yield* Effect.tryPromise((signal) =>
-            getParsedDocument(file, AbortSignal.any([signal, lifetimeSignal])),
-          );
-        },
-      ),
-      whenIndexed: Effect.fn("CitationIndex.whenIndexed")(function* (
-        ...args: Parameters<typeof whenIndexed>
-      ) {
-        return yield* Effect.tryPromise(() => whenIndexed(...args));
-      }),
-      getCitedBy: Effect.fn("CitationIndex.getCitedBy")(function* (
-        ...args: Parameters<typeof getCitedBy>
-      ) {
-        return yield* Effect.tryPromise(() => getCitedBy(...args));
-      }),
-      documentOmittedSyntaxes: Effect.fn(
-        "CitationIndex.documentOmittedSyntaxes",
-      )(function* (...args: Parameters<typeof documentOmittedSyntaxes>) {
-        return yield* Effect.tryPromise(() => documentOmittedSyntaxes(...args));
-      }),
-      citedByOmittedSyntaxes: Effect.fn("CitationIndex.citedByOmittedSyntaxes")(
-        function* (...args: Parameters<typeof citedByOmittedSyntaxes>) {
-          return yield* Effect.tryPromise(() =>
-            citedByOmittedSyntaxes(...args),
-          );
-        },
-      ),
-      reset: Effect.fn("CitationIndex.reset")(function* (
-        ...args: Parameters<typeof reset>
-      ) {
-        return yield* Effect.tryPromise(() => reset(...args));
-      }),
+      citationsByPath,
+      getFileScan,
+      getDocumentCitationSet,
+      getParsedNote: Effect.fn("CitationIndex.getParsedNote")(parsedNote),
+      getParsedDocument,
+      whenIndexed,
+      getCitedBy,
+      documentOmittedSyntaxes,
+      citedByOmittedSyntaxes,
+      // The caller can leave; the layer waits for the reset transaction to finish.
+      reset: Effect.gen(function* () {
+        const write = yield* reset().pipe(
+          Effect.uninterruptible,
+          Effect.forkIn(scope, { startImmediately: true }),
+        );
+        yield* Fiber.join(write);
+      }).pipe(Effect.withSpan("CitationIndex.reset")),
     };
   }).pipe(withLogCategory("citation-index"));
 }
