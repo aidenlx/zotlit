@@ -1,13 +1,14 @@
 import { AbortError } from "./abort-error";
 import { getLogger } from "./log";
 import { LazyNotice } from "./notice";
+import { UserCancelled } from "./user-cancel";
 
 const logger = getLogger("toast");
 
+/** A loading message that, when selected, aborts `ac` with `UserCancelled`. */
 export function cancellableLoading(
   message: string,
   ac: AbortController,
-  reason = "Cancelled",
 ): DocumentFragment {
   return createFragment((el) => {
     const div = el.createDiv();
@@ -17,7 +18,7 @@ export function cancellableLoading(
       (evt) => {
         evt.stopPropagation();
         evt.preventDefault();
-        ac.abort(new AbortError(reason));
+        ac.abort(new UserCancelled());
       },
       { once: true },
     );
@@ -105,7 +106,10 @@ async function promiseToast<T>(
     notice.setMessage(successMessage);
     await sleep(successDuration);
   } catch (error) {
-    if (!throwAborted && AbortError.test(error)) {
+    if (
+      !throwAborted &&
+      (AbortError.test(error) || error instanceof UserCancelled)
+    ) {
       return;
     }
     if (options.error === undefined) return;

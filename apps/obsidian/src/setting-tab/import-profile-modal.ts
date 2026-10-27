@@ -13,6 +13,7 @@ import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { UserCancelled } from "@/lib/user-cancel";
 import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { describeMatch } from "@/services/profile-selection";
@@ -390,7 +391,7 @@ export class ImportProfileModal extends Modal {
       this.close();
       new BaseNotice(profileImportNotice(profile));
     } catch (cause) {
-      if (AbortError.test(cause)) return;
+      if (AbortError.test(cause) || cause instanceof UserCancelled) return;
       logger.error("Failed to write imported Profile", { cause });
       error.set(
         Error.isError(cause) ? cause.message : m.notice_profile_action_failed(),

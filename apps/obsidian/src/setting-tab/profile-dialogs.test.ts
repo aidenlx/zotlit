@@ -9,10 +9,12 @@ import { expect, vi } from "vitest";
 import { until } from "@/lib/__fixtures__/eventually";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
 import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { UserCancelled } from "@/lib/user-cancel";
 import { NoteFeature } from "@/services/note-feature/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
@@ -21,7 +23,11 @@ import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { Template } from "@/services/template/service";
 
 import { ProfileDestinationModal } from "./profile-destination-modal";
-import { addProfileDestination, shareProfile } from "./profile-dialogs";
+import {
+  addProfileDestination,
+  runDialog,
+  shareProfile,
+} from "./profile-dialogs";
 import { ShareProfileModal } from "./share-profile-modal";
 
 const BOOKS: LiteratureNoteProfile = {
@@ -137,4 +143,61 @@ it.effect("keeps Share open until it closes, and an interrupt closes it", () =>
     yield* Fiber.interrupt(pending);
     expect(modal.isOpen).toBe(false);
   }),
+);
+
+/**
+ * A dialog over a plain modal whose callback starts work that never ends,
+ * with the reason that work's Promise settles with.
+ */
+function pendingWorkDialog() {
+  const answer = Promise.withResolvers<string>();
+  let closed = false;
+  let settled: Promise<unknown> | undefined;
+  const dialog = runDialog<string, never>((run) => {
+    settled = run(Effect.never).then(
+      () => "resolved",
+      (reason: unknown) => reason,
+    );
+    return { open() {}, close: () => (closed = true), result: answer.promise };
+  });
+  return {
+    dialog,
+    /** The user closes the modal: it answers its dismiss value. */
+    dismiss: () => answer.resolve("dismissed"),
+    closed: () => closed,
+    reason: () => settled!,
+  };
+}
+
+// #1824: the user's close stops the work it started with a typed reason.
+it.effect(
+  "stops a callback's work with UserCancelled when the user closes the dialog",
+  () =>
+    Effect.gen(function* () {
+      const d = pendingWorkDialog();
+      const pending = yield* Effect.forkChild(d.dialog, {
+        startImmediately: true,
+      });
+      d.dismiss();
+      expect(yield* Fiber.join(pending)).toBe("dismissed");
+      expect(yield* Effect.promise(() => d.reason())).toBeInstanceOf(
+        UserCancelled,
+      );
+    }),
+);
+
+it.effect(
+  "stops a callback's work with an AbortError when an interrupt closes the dialog",
+  () =>
+    Effect.gen(function* () {
+      const d = pendingWorkDialog();
+      const pending = yield* Effect.forkChild(d.dialog, {
+        startImmediately: true,
+      });
+      yield* Fiber.interrupt(pending);
+      expect(d.closed()).toBe(true);
+      const reason = yield* Effect.promise(() => d.reason());
+      expect(AbortError.test(reason)).toBe(true);
+      expect(reason).not.toBeInstanceOf(UserCancelled);
+    }),
 );
