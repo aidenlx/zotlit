@@ -455,16 +455,15 @@ export async function verifyReaderBackedExcerpts(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.bridge.runSync(
-            services.zoteroPrefService.current,
-          ).dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -726,16 +725,15 @@ export async function verifyReaderBackedExcerpts(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.bridge.runSync(
-            services.zoteroPrefService.current,
-          ).dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2046,16 +2044,15 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.bridge.runSync(
-            services.zoteroPrefService.current,
-          ).dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2361,16 +2358,15 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.bridge.runSync(
-            services.zoteroPrefService.current,
-          ).dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2558,16 +2554,15 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.bridge.runSync(
-            services.zoteroPrefService.current,
-          ).dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.bridge.runSync(services.zoteroPrefService.current).dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,

@@ -242,7 +242,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const customizeDeps = {
       settings: services.settings,
-      profile: services.profileService,
+      profile: services.profile,
       customize,
       bridge: services.bridge,
     };
@@ -440,8 +440,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerPandocExport(this, {
       fileSystem: services.fileSystem,
-      citationParse: services.citationParseService,
-      profile: services.profileService,
+      citationParse: services.citationParse,
       app: this.app,
       ...services.pandocExportServices,
       zoteroHttp: services.zoteroHttp,
@@ -458,7 +457,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       metadataCache: services.metadataCache,
       fileSystem: services.fileSystem,
       app: this.app,
-      zoteroPref: services.zoteroPrefService,
+      zoteroPref: services.zoteroPref,
       notifier: services.notifier,
       settings: services.settings,
       bridge: services.bridge,

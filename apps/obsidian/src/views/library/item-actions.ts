@@ -13,8 +13,6 @@ import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
-import { recover } from "@/lib/effect-cause";
-import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -28,7 +26,7 @@ import { openLiteratureNote } from "@/services/note-feature/navigation";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import { InertTemplateError } from "@/services/template/errors";
 import { UseLedger } from "@/services/use-ledger/service";
-import { ZoteroReads } from "@/services/zotero-reads/service";
+import { readActionItem } from "@/services/zotero-reads/read-item";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
 import { viewTargetOpener } from "@/views/open-target";
@@ -93,28 +91,6 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
     deps.registry.set(libraryItemCommand, { effect, result });
     return result.promise;
   };
-  const read = (
-    indexedKey: string,
-  ): Effect.Effect<Item | null, never, ZoteroReads> =>
-    Effect.gen(function* () {
-      const snapshot = yield* (yield* ZoteroReads).snapshot;
-      const items = yield* snapshot.ItemsByIndexedKeys({
-        indexedKeys: [indexedKey],
-      });
-      return items.get(indexedKey) ?? null;
-    }).pipe(
-      Effect.scoped,
-      recover(
-        (error) =>
-          Effect.logWarning("The Library View could not read an Item", {
-            indexedKey,
-            error,
-          }),
-        Effect.succeed(null),
-      ),
-      withLogCategory("library-view", "item-actions"),
-    );
-
   const resolveCitation = (item: Item) =>
     Effect.gen(function* () {
       const citationKey =
@@ -198,7 +174,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
               }),
             ),
           );
-          const item = yield* read(indexedKey);
+          const item = yield* readActionItem(indexedKey);
           if (!item) return;
           const outcome = yield* resolveCitation(item);
           if (outcome.kind === "notice") {
@@ -215,7 +191,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
     copyCitationKey: (indexedKey) =>
       run(
         Effect.gen(function* () {
-          const item = yield* read(indexedKey);
+          const item = yield* readActionItem(indexedKey);
           if (!item) return;
           const citationKey =
             "citationKey" in item.fields ? item.fields.citationKey : null;

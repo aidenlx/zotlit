@@ -1,14 +1,15 @@
 // The one Shared Partial create flow: the Workbench's entry points and the
 // Add partial settings row both run it.
 
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
-import { reportOutcome } from "@/lib/notifier";
+import { withOutcome } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { Template } from "@/services/template/service";
 
@@ -23,7 +24,7 @@ import { openTemplateWorkbench } from "./register";
  * @returns the created document and its name, or `null` when the reader
  *   dismisses the prompt. Fails with the Template's failure.
  */
-export const createSharedPartial = Effect.fn("createSharedPartial")(function* (
+export const createSharedPartial = Effect.fn("SharedPartial.create")(function* (
   app: App,
   options: Omit<CreateSharedPartialOptions, "open"> = {},
 ) {
@@ -51,7 +52,7 @@ export const createSharedPartial = Effect.fn("createSharedPartial")(function* (
 export const createSharedPartialEffect = Effect.fn(
   "TemplateWorkbench.createSharedPartial",
 )(function* (app: App, options: CreateSharedPartialOptions = {}) {
-  const exit = yield* Effect.exit(
+  return yield* withOutcome(
     Effect.gen(function* () {
       const { open = "split", ...create } = options;
       const created = yield* createSharedPartial(app, create);
@@ -69,10 +70,9 @@ export const createSharedPartialEffect = Effect.fn(
       }
       return created.name;
     }),
-  );
-  yield* reportOutcome(exit, {
-    success: () => undefined,
-    error: () => m.notice_partial_create_failed(),
-  });
-  return Exit.isSuccess(exit) ? exit.value : null;
+    {
+      success: () => undefined,
+      error: () => m.notice_partial_create_failed(),
+    },
+  ).pipe(recover(() => Effect.void, Effect.succeed(null)));
 }, withLogCategory("template-workbench"));

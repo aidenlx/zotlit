@@ -339,7 +339,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           if (!state) return;
           const services = zotlit.services;
           services.bridge.runSync(
-            services.zoteroPrefService.setDataDir(state.previous),
+            services.zoteroPref.setDataDir(state.previous),
           );
           await state.lease?.[Symbol.asyncDispose]();
           delete pageHelpers.scratch.__zotlitQuerySource;
@@ -367,12 +367,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const lease = await services.acquireZoteroRead();
         pageHelpers.scratch.__zotlitQuerySource = {
           lease,
-          previous: services.bridge.runSync(services.zoteroPrefService.current)
+          previous: services.bridge.runSync(services.zoteroPref.current)
             .dataDirOverride,
         };
-        services.bridge.runSync(
-          services.zoteroPrefService.setDataDir(otherDir),
-        );
+        services.bridge.runSync(services.zoteroPref.setDataDir(otherDir));
         await services.bridge.runPromise(services.zoteroReads.refresh);
       },
       { otherDir },

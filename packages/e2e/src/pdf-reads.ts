@@ -146,7 +146,7 @@ export async function verifyPdfReads(
       app.workspace.protocolHandler.handlers.get("zotlit/open-attachment")!({
         action: "zotlit/open-attachment",
         item: itemId,
-        "source-id": s.bridge.runSync(s.zoteroPrefService.current).sourceId!,
+        "source-id": s.bridge.runSync(s.zoteroPref.current).sourceId!,
       });
     },
     { itemId: String(attachment.itemID) },

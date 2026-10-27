@@ -109,8 +109,9 @@ import { loadedTextFileView } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
-import { Notifier, reportOutcome } from "@/lib/notifier";
+import { Notifier, withOutcome } from "@/lib/notifier";
 import type { NoticeMessage } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
@@ -480,18 +481,23 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.file === origin.template &&
         this.app.vault.getFileByPath(origin.file.path) === origin.file;
       if (!available()) return { outcome: "unavailable", name } as const;
-      /** Whether the file on disk holds what this editor shows. */
+      const vault = yield* Vault;
+      /** Whether the file on disk holds what this editor shows; `false` where it cannot be read. */
       const saved = Effect.gen({ self: this }, function* () {
         const file = this.file;
         return (
-          file !== null &&
-          (yield* portCall("read-template", () =>
-            this.app.vault.read(file),
-          )) === this.getViewData()
+          file !== null && (yield* vault.read(file)) === this.getViewData()
         );
-      });
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logError("Failed to read the saved template").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as(false),
+          ),
+        ),
+      );
       const written = yield* portCall("save-template", () => this.save()).pipe(
-        Effect.andThen(saved),
+        Effect.as(true),
         Effect.catch((error) =>
           Effect.logError("Failed to save template before note update").pipe(
             Effect.annotateLogs({ error }),
@@ -499,13 +505,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           ),
         ),
       );
-      if (!written) return { outcome: "save-failed", name } as const;
+      if (!written || !(yield* saved))
+        return { outcome: "save-failed", name } as const;
       // Settlement covers this revision. Later edits get their own update attempt.
       const revision = this.#sourceRevision;
       const settled = yield* (yield* Template).waitUntilSettled(10_000);
       if (settled !== "settled") return { outcome: "not-ready", name } as const;
-      if (!(yield* saved.pipe(Effect.orElseSucceed(() => false))))
-        return { outcome: "save-failed", name } as const;
+      if (!(yield* saved)) return { outcome: "save-failed", name } as const;
       /** What a write this editor can no longer stand behind answers. */
       const refusal = () =>
         !available()
@@ -576,8 +582,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
     this.#noteUpdate = makeWorkbenchTask(deps.registry, () =>
       Effect.gen({ self: this }, function* () {
-        const exit = yield* Effect.exit(this.#updateOriginatingNote());
-        yield* reportOutcome(exit, {
+        return yield* withOutcome(this.#updateOriginatingNote(), {
           success: (result): NoticeMessage | undefined =>
             originatingNoteUpdateNotice(this.app, result) ?? undefined,
           error: (error) =>
@@ -585,7 +590,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
               error instanceof OriginatingNoteUpdateError ? error.cause : error,
             ),
         });
-        return yield* exit;
       }),
     );
     this.store = workbenchStore(deps.registry, this.model);

@@ -551,8 +551,7 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
       return {
         hostname: settings["server.hostname"],
         port: services.bridge.runSync(services.localServer.effectivePort),
-        sourceId: services.bridge.runSync(services.zoteroPrefService.current)
-          .sourceId,
+        sourceId: services.bridge.runSync(services.zoteroPref.current).sourceId,
       };
     },
     undefined,

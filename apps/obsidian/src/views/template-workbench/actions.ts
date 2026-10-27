@@ -32,20 +32,20 @@ export interface WorkbenchOpened {
 }
 
 /** Show a notice for each thing `opened` asks the reader to know. */
-export const explainWorkbenchOpen = Effect.fn("explainWorkbenchOpen")(
-  function* (opened: WorkbenchOpened | void) {
-    if (!opened) return;
-    const notifier = yield* Notifier;
-    if (opened.nativeRequired)
-      yield* notifier.show(m.template_workbench_native_required());
-    if (opened.unavailableNote !== null)
-      yield* notifier.show(
-        m.template_workbench_update_unavailable({
-          name: opened.unavailableNote,
-        }),
-      );
-  },
-);
+export const explainWorkbenchOpen = Effect.fn(
+  "TemplateWorkbench.explainWorkbenchOpen",
+)(function* (opened: WorkbenchOpened | void) {
+  if (!opened) return;
+  const notifier = yield* Notifier;
+  if (opened.nativeRequired)
+    yield* notifier.show(m.template_workbench_native_required());
+  if (opened.unavailableNote !== null)
+    yield* notifier.show(
+      m.template_workbench_update_unavailable({
+        name: opened.unavailableNote,
+      }),
+    );
+});
 
 /** What a plain Obsidian callback needs to start a Workbench action. */
 export interface WorkbenchActionDeps {

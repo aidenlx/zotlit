@@ -80,7 +80,7 @@ export const openCitationTemplate = Effect.fn("openCitationTemplate")(
  * notice tells the user; an interrupt passes on with no notice.
  */
 export const reportCitationTemplateOpen = Effect.fn(
-  "reportCitationTemplateOpen",
+  "Template.reportCitationTemplateOpen",
 )(
   function* (app: App) {
     yield* reportOutcome(openCitationTemplate(app), {

@@ -9,9 +9,7 @@ function proofs() {
     "JSON.stringify(true)";
   void queryViewReader;
   void obRun("vault", ({ zotlit }) =>
-    zotlit.services.bridge.runSync(
-      zotlit.services.profileService.getBuiltInSource,
-    ),
+    zotlit.services.bridge.runSync(zotlit.services.profile.getBuiltInSource),
   );
   void obRun("vault", ({ zotlit }) => {
     // @ts-expect-error Removed service members must fail before a desktop run.

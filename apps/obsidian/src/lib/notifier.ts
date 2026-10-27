@@ -12,10 +12,9 @@ import {
 import type { Duration } from "effect";
 import type { Scope } from "effect";
 
-import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
-import { UserCancelled } from "@/lib/user-cancel";
+import { isUserStop } from "@/lib/user-cancel";
 
 /** What a notice shows: plain text, or a fragment from `BaseNotice.render`. */
 export type NoticeMessage = string | DocumentFragment;
@@ -156,8 +155,7 @@ const failureMessage = Effect.fnUntraced(function* (
   copy: (error: unknown) => NoticeMessage | undefined,
 ) {
   const error = Cause.squash(cause);
-  if (AbortError.test(error) || error instanceof UserCancelled)
-    return undefined;
+  if (isUserStop(error)) return undefined;
   const message = copy(error);
   yield* Effect.logError("Toast reported error").pipe(
     Effect.annotateLogs({
@@ -226,3 +224,18 @@ export const reportOutcome = Effect.fn("Notifier.reportOutcome")(function* <
   const message = yield* failureMessage(exit.cause, copy.error);
   if (message) yield* notifier.show(message, { duration: 4000 });
 });
+
+/**
+ * Run `task` and report its outcome as {@link reportOutcome} does, keeping the
+ * task's result or failure for the caller. It shows no loading message, so no
+ * notice shows while a dialog the task opens waits for the user.
+ */
+export const withOutcome = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+  copy: OutcomeCopy<A>,
+): Effect.Effect<A, E, R | Notifier> =>
+  Effect.gen(function* () {
+    const exit = yield* Effect.exit(task);
+    yield* reportOutcome(exit, copy);
+    return yield* exit;
+  });

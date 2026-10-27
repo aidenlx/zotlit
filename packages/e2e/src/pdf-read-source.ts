@@ -21,10 +21,10 @@ export async function verifyPdfReadSource(
     async ({ zotlit }) => {
       return {
         dataDir: zotlit.services.bridge.runSync(
-          zotlit.services.zoteroPrefService.current,
+          zotlit.services.zoteroPref.current,
         ).dataDir,
         override: zotlit.services.bridge.runSync(
-          zotlit.services.zoteroPrefService.current,
+          zotlit.services.zoteroPref.current,
         ).dataDirOverride,
         log: {
           "log.level": zotlit.services.bridge.runSync(
@@ -46,7 +46,7 @@ export async function verifyPdfReadSource(
       async ({ app, zotlit }, { override, log }) => {
         app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
         zotlit.services.bridge.runSync(
-          zotlit.services.zoteroPrefService.setDataDir(override),
+          zotlit.services.zoteroPref.setDataDir(override),
         );
         zotlit.services.bridge.runSync(zotlit.services.settings.update(log));
         await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
@@ -106,7 +106,7 @@ export async function verifyPdfReadSource(
         "old-source.pdf",
       );
       zotlit.services.bridge.runSync(
-        zotlit.services.zoteroPrefService.setDataDir(oldDir),
+        zotlit.services.zoteroPref.setDataDir(oldDir),
       );
     },
     { oldDir },
@@ -166,7 +166,7 @@ export async function verifyPdfReadSource(
     vaultId,
     async ({ zotlit }, { dataDir }) => {
       zotlit.services.bridge.runSync(
-        zotlit.services.zoteroPrefService.setDataDir(dataDir),
+        zotlit.services.zoteroPref.setDataDir(dataDir),
       );
       await zotlit.services.bridge.runPromise(
         zotlit.services.zoteroLocalApi.probe,

@@ -25,7 +25,7 @@ import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
-import { Notifier } from "@/lib/notifier";
+import { Notifier, withOutcome } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import {
   AttachmentResolver,
@@ -224,16 +224,17 @@ export function layerTargetOpener<R>({
        * A reader or system handler that failed, or a defect, shows a notice
        * and ends `failed`; an interrupt passes on.
        */
-      const reported = recover(
-        (cause) =>
-          Effect.logError("Target did not open").pipe(
-            Effect.annotateLogs({ cause }),
-            withLogCategory("attachment-open"),
+      const reported = <E, R>(open: Effect.Effect<OpenOutcome, E, R>) =>
+        withOutcome(open, {
+          success: () => undefined,
+          error: () => m.notice_attachment_open_failed(),
+        }).pipe(
+          recover(
+            () => Effect.void,
+            Effect.succeed<OpenOutcome>({ kind: "failed" }),
           ),
-        notifier
-          .show(m.notice_attachment_open_failed(), { duration: 4000 })
-          .pipe(Effect.as<OpenOutcome>({ kind: "failed" })),
-      );
+          Effect.provideService(Notifier, notifier),
+        );
 
       /**
        * The index's answer for `attachmentKey`, waiting a bounded time for the

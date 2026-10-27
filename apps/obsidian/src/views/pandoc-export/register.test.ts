@@ -6,7 +6,7 @@ import {
   Modal,
   settingsOf,
 } from "@mock/obsidian";
-import { Cause, Effect, Exit, ManagedRuntime } from "effect";
+import { Cause, Context, Effect, Exit, ManagedRuntime } from "effect";
 import type { FileSystem } from "effect";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,6 +22,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { CitationEngine } from "@/services/pandoc/engine";
@@ -29,8 +30,11 @@ import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { exportWithCitations, registerPandocExport } from "./register";
 import type { PandocExportDeps, PandocExportOutcome } from "./register";
@@ -159,6 +163,36 @@ function openVault({
   const runtime = ManagedRuntime.make(notifier.layer);
   runtimes.push(runtime);
   const bridge = effectBridge(runtime);
+  const context = Context.make(
+    ZoteroPref,
+    stubService<ZoteroPref["Service"]>("ZoteroPref", {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+          dataDir: DATA_DIR,
+          httpPort: 23119,
+        }),
+      ),
+      get: () => Effect.succeed(false),
+    }),
+  ).pipe(
+    Context.add(
+      ZoteroReads,
+      stubService<ZoteroReads["Service"]>("ZoteroReads", {}),
+    ),
+    Context.add(
+      CitationLookup,
+      stubService<CitationLookup["Service"]>("CitationLookup", {
+        read: () => Effect.succeed(lookupAnswer()),
+      }),
+    ),
+    Context.add(
+      Profile,
+      stubService<Profile["Service"]>("Profile", {
+        loaded: Effect.succeed(true),
+        profileOf: (file) => Effect.succeed(reader.profileOf(file)),
+      }),
+    ),
+  );
   const deps = stubService<PandocExportDeps>("PandocExportDeps", {
     fileSystem,
     app,
@@ -186,35 +220,19 @@ function openVault({
         ),
       },
     ),
-    zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
-      current: Effect.succeed(
-        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
-          dataDir: DATA_DIR,
-          httpPort: 23119,
-        }),
-      ),
-      get: () => Effect.succeed(false),
-    }),
-    db: stubService<PandocExportDeps["db"]>("ZoteroReads", {}),
     citationParse: stubService<PandocExportDeps["citationParse"]>(
       "CitationParse",
       {},
     ),
     zoteroHttp: stubService<PandocExportDeps["zoteroHttp"]>("ZoteroHttp", {}),
-    citationLookup: {
-      read: () => Effect.succeed(lookupAnswer()),
-    },
     settings: { current: Effect.succeed(resolvedSettings) },
     bridge,
-    profile: {
-      loaded: Effect.succeed(true),
-      profileOf: (file) => Effect.succeed(reader.profileOf(file)),
-    },
     notifier: Notifier.of({
       ...notifier.service,
       track: (notice) => runtime.runSync(Notifier).track(notice),
     }),
     openSettings: () => undefined,
+    context,
   });
   registerPandocExport(
     stubService<Pick<Plugin, "addCommand" | "app">>("Plugin", {
@@ -249,7 +267,9 @@ function openVault({
   };
 
   async function runExport(): Promise<PandocExportOutcome> {
-    const exit = await bridge.runPromiseExit(exportWithCitations(file, deps));
+    const exit = await bridge.runPromiseExit(
+      exportWithCitations(file, deps).pipe(Effect.provideContext(context)),
+    );
     if (Exit.isSuccess(exit)) return exit.value;
     if (Cause.hasInterruptsOnly(exit.cause)) return { kind: "stopped" };
     throw Cause.squash(exit.cause);
