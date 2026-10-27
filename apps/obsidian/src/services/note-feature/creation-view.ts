@@ -83,47 +83,81 @@ export const installedStyles = Effect.gen(function* () {
  * the one the New profile dialog made, whose answer `created` holds. An
  * import, a closed picker and a closed dialog settle to no choice. The dialog
  * runs in this fiber, so an interrupt closes it. A New profile dialog that
- * fails is logged, and a notice tells the user.
+ * fails is logged and settles to no choice with `failed` set.
+ */
+export const resolveProfilePick = Effect.fnUntraced(function* (
+  ports: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
+  pick: ProfilePick | undefined,
+  options: { indexedKey: string | undefined; useForNote: boolean },
+) {
+  if (!pick || !("action" in pick))
+    return { choice: pick, created: undefined, failed: false } as const;
+  if (pick.action === "import") {
+    yield* ports.importProfile({ indexedKey: options.indexedKey });
+    return { choice: undefined, created: undefined, failed: false } as const;
+  }
+  const created = yield* ports.createProfile(options).pipe(
+    Effect.map((created) => ({ created, failed: false })),
+    recover(
+      (cause) => Effect.logError("Failed to open Profile creation", cause),
+      Effect.succeed({ created: undefined, failed: true }),
+    ),
+  );
+  const choice: LiteratureNoteProfileChoice | undefined = created.created && {
+    id: created.created.profile.id,
+    label: created.created.profile.label,
+  };
+  return { choice, created: created.created, failed: created.failed } as const;
+});
+
+/** The notice a settled Profile pick shows: a New profile dialog that failed. */
+export function profilePickNotice(settled: {
+  failed: boolean;
+}): string | undefined {
+  return settled.failed ? m.notice_profile_action_failed() : undefined;
+}
+
+/**
+ * {@link resolveProfilePick}, and a notice when the New profile dialog
+ * failed.
  */
 export const settleProfilePick = Effect.fnUntraced(function* (
   ports: Pick<InteractiveCreationPorts, "createProfile" | "importProfile">,
   pick: ProfilePick | undefined,
   options: { indexedKey: string | undefined; useForNote: boolean },
 ) {
-  if (!pick || !("action" in pick))
-    return { choice: pick, created: undefined } as const;
-  if (pick.action === "import") {
-    yield* ports.importProfile({ indexedKey: options.indexedKey });
-    return { choice: undefined, created: undefined } as const;
-  }
-  const notifier = yield* Notifier;
-  const created = yield* ports
-    .createProfile(options)
-    .pipe(
-      recover(
-        (cause) =>
-          Effect.logError("Failed to open Profile creation", cause).pipe(
-            Effect.andThen(notifier.show(m.notice_profile_action_failed())),
-            Effect.asVoid,
-          ),
-        Effect.undefined,
-      ),
-    );
-  const choice: LiteratureNoteProfileChoice | undefined = created && {
-    id: created.profile.id,
-    label: created.profile.label,
-  };
-  return { choice, created } as const;
+  const settled = yield* resolveProfilePick(ports, pick, options);
+  const notice = profilePickNotice(settled);
+  if (notice) yield* (yield* Notifier).show(notice);
+  return settled;
 });
 
 /**
- * Create `item`'s Literature Note through the Profile selection, asking for a
- * Profile where the selection says to. Returns the created file, or `null`
- * when the user cancels or the create wrote nothing or failed: the create
- * notice told the user. A failed plan fails the Effect. An interrupt closes
- * the picker.
+ * The Profile a prepared create's notice names: the Match `reason` that chose
+ * it, or its `label`; no label names Default.
  */
-export const createNoteInteractively = Effect.fn("createNoteInteractively")(
+export interface CreatedUnder {
+  readonly label?: string;
+  readonly reason?: string;
+}
+
+/**
+ * A note the interactive creation wrote. `under` is the Profile its notice
+ * names; the bound Profile's create has none and shows the plain notice.
+ */
+export interface InteractiveCreation {
+  readonly file: TFile;
+  readonly under?: CreatedUnder;
+}
+
+/**
+ * Create `item`'s Literature Note through the Profile selection, asking for a
+ * Profile where the selection says to. Returns the created note and the
+ * Profile its notice names, or `null` when the user cancels or the create
+ * wrote nothing or failed: the create notice told the user. A failed plan
+ * fails the Effect. An interrupt closes the picker.
+ */
+export const createThroughSelection = Effect.fn("createThroughSelection")(
   function* (
     ports: InteractiveCreationPorts,
     item: Item,
@@ -135,11 +169,14 @@ export const createNoteInteractively = Effect.fn("createNoteInteractively")(
       { concurrency: "unbounded" },
     );
     const { selection, previews } = plans.get(item.indexedKey)!;
-    if (!selection.shouldAsk && selection.source === "bound")
-      return yield* createWithNotice(
+    if (!selection.shouldAsk && selection.source === "bound") {
+      const file = yield* createWithNotice(
         noteFeature.createNote(item, { profile: selection.selector }),
         { app: ports.app },
       );
+      const created: InteractiveCreation | null = file && { file };
+      return created;
+    }
 
     // The selection is fixed for this operation; a Profile that became
     // unavailable since asks for another choice instead of a different target.
@@ -223,17 +260,34 @@ export const createNoteInteractively = Effect.fn("createNoteInteractively")(
   },
 );
 
+/**
+ * {@link createThroughSelection}, answering the created file, or `null`
+ * when it created none.
+ */
+export const createNoteInteractively = Effect.fn("createNoteInteractively")(
+  function* (
+    ports: InteractiveCreationPorts,
+    item: Item,
+    options?: InteractiveCreationOptions,
+  ) {
+    const created = yield* createThroughSelection(ports, item, options);
+    return created?.file ?? null;
+  },
+);
+
 /** Write through the prepared preview and report its Profile and path. */
-function createPrepared<E, R>(
+const createPrepared = Effect.fnUntraced(function* <E, R>(
   create: Effect.Effect<CreateNoteResult, E, R>,
-  copy: { label?: string; reason?: string },
+  under: CreatedUnder,
   app: App,
 ) {
-  return createWithNotice(create, {
+  const file = yield* createWithNotice(create, {
     app,
-    created: (file) => createdNoteNotice(file, copy),
+    created: (file) => createdNoteNotice(file, under),
   });
-}
+  const created: InteractiveCreation | null = file && { file, under };
+  return created;
+});
 
 /**
  * The words for a note created through a prepared Profile: the Match that
@@ -241,7 +295,7 @@ function createPrepared<E, R>(
  */
 export function createdNoteNotice(
   file: Pick<TFile, "path">,
-  { label, reason }: { label?: string; reason?: string },
+  { label, reason }: CreatedUnder,
 ): string {
   return reason
     ? m.notice_created_note_from_match({ reason, path: file.path })

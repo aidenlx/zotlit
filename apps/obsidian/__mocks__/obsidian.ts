@@ -96,6 +96,8 @@ export function getIcon(name: IconName): SVGSVGElement | null {
   return svg;
 }
 
+export function addIcon(_iconId: string, _svgContent: string): void {}
+
 export function setIcon(el: HTMLElement, name: IconName): void {
   const icon = getIcon(name);
   el.replaceChildren(...(icon ? [icon] : []));

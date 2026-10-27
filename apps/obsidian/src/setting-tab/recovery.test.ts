@@ -17,6 +17,8 @@ import {
   clearExcerptCache,
   resetCitationIndex,
   resetLanguagePacks,
+  reportClearExcerptCache,
+  reportResetCitationIndex,
 } from "./recovery";
 
 type Mode = "cancel" | "clear" | "failure";
@@ -24,20 +26,16 @@ type Mode = "cancel" | "clear" | "failure";
 /** The user's answer to the confirmation, as `awaitConfirm` gives it. */
 const answer = (mode: Mode) => Effect.succeed(mode !== "cancel");
 
-/** What each notice said, in order. */
-const said = (notices: ReturnType<typeof testNotifier>["notices"]) =>
-  notices.map((notice) => notice.messages[0]);
-
 describe("clearExcerptCache", () => {
   it.effect.each(["cancel", "clear", "failure"] as const)(
     "releases the displays, then empties the store: %s",
     (mode) =>
       Effect.gen(function* () {
-        const notifier = testNotifier();
         const calls: string[] = [];
-        yield* clearExcerptCache(answer(mode)).pipe(
+        const exit = yield* clearExcerptCache(answer(mode)).pipe(
+          Effect.exit,
           Effect.provideContext(
-            Context.make(Notifier, notifier.service).pipe(
+            Context.make(Notifier, testNotifier().service).pipe(
               Context.add(
                 ExcerptDisplays,
                 stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
@@ -58,13 +56,11 @@ describe("clearExcerptCache", () => {
         );
 
         expect(calls).toEqual(mode === "cancel" ? [] : ["displays", "images"]);
-        expect(said(notifier.notices)).toEqual(
-          mode === "cancel"
-            ? []
-            : mode === "clear"
-              ? [m.notice_excerpt_cache_cleared()]
-              : [m.notice_excerpt_cache_clear_failed()],
-        );
+        if (mode === "failure") expect(Exit.isFailure(exit)).toBe(true);
+        else
+          expect(exit).toEqual(
+            Exit.succeed(mode === "cancel" ? "cancelled" : "completed"),
+          );
       }),
   );
 });
@@ -74,11 +70,11 @@ describe("resetCitationIndex", () => {
     "resets the index behind the confirmation: %s",
     (mode) =>
       Effect.gen(function* () {
-        const notifier = testNotifier();
         let resets = 0;
-        yield* resetCitationIndex(answer(mode)).pipe(
+        const exit = yield* resetCitationIndex(answer(mode)).pipe(
+          Effect.exit,
           Effect.provideContext(
-            Context.make(Notifier, notifier.service).pipe(
+            Context.make(Notifier, testNotifier().service).pipe(
               Context.add(
                 CitationIndex,
                 stubService<CitationIndex["Service"]>("CitationIndex", {
@@ -95,39 +91,42 @@ describe("resetCitationIndex", () => {
         );
 
         expect(resets).toBe(mode === "cancel" ? 0 : 1);
-        expect(said(notifier.notices)).toEqual(
-          mode === "cancel"
-            ? []
-            : mode === "clear"
-              ? [m.notice_citation_index_reset()]
-              : [m.notice_citation_index_reset_failed()],
-        );
+        if (mode === "failure") expect(Exit.isFailure(exit)).toBe(true);
+        else
+          expect(exit).toEqual(
+            Exit.succeed(mode === "cancel" ? "cancelled" : "completed"),
+          );
       }),
   );
 });
 
 describe("resetLanguagePacks", () => {
   const run = (reset: Effect.Effect<void, LanguagePackStorageFailed>) => {
-    const notifier = testNotifier();
+    let resets = 0;
     return resetLanguagePacks(answer("clear")).pipe(
       Effect.provideContext(
-        Context.make(Notifier, notifier.service).pipe(
+        Context.make(Notifier, testNotifier().service).pipe(
           Context.add(
             LanguagePack,
-            stubService<LanguagePack["Service"]>("LanguagePack", { reset }),
+            stubService<LanguagePack["Service"]>("LanguagePack", {
+              reset: Effect.suspend(() => {
+                resets++;
+                return reset;
+              }),
+            }),
           ),
         ),
       ),
       Effect.exit,
-      Effect.map((exit) => ({ exit, notices: said(notifier.notices) })),
+      Effect.map((exit) => ({ exit, resets })),
     );
   };
 
-  it.effect("names the restart once the packs are gone", () =>
+  it.effect("clears the packs once confirmed", () =>
     Effect.gen(function* () {
-      const { exit, notices } = yield* run(Effect.void);
+      const { exit, resets } = yield* run(Effect.void);
       expect(Exit.isSuccess(exit)).toBe(true);
-      expect(notices).toEqual([m.notice_language_pack_reset()]);
+      expect(resets).toBe(1);
     }),
   );
 
@@ -137,9 +136,62 @@ describe("resetLanguagePacks", () => {
         message: "Storage is full",
         cause: null,
       });
-      const { exit, notices } = yield* run(Effect.fail(failure));
+      const { exit } = yield* run(Effect.fail(failure));
       expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
-      expect(notices).toEqual([]);
     }),
+  );
+});
+
+describe("recovery notices", () => {
+  it.effect.each(["cancel", "clear", "failure"] as const)(
+    "reports each recovery result and stays silent on cancellation: %s",
+    (mode) =>
+      Effect.gen(function* () {
+        const notifier = testNotifier();
+        const services = Context.make(Notifier, notifier.service).pipe(
+          Context.add(
+            ExcerptDisplays,
+            stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
+              clear: () => {},
+            }),
+          ),
+          Context.add(
+            ExcerptImages,
+            stubService<ExcerptImages["Service"]>("ExcerptImages", {
+              clear: async () => {
+                if (mode === "failure") throw new Error("storage blocked");
+              },
+            }),
+          ),
+          Context.add(
+            CitationIndex,
+            stubService<CitationIndex["Service"]>("CitationIndex", {
+              reset:
+                mode === "failure"
+                  ? Effect.die(new Error("store locked"))
+                  : Effect.void,
+            }),
+          ),
+        );
+        yield* reportClearExcerptCache(answer(mode)).pipe(
+          Effect.provideContext(services),
+        );
+        yield* reportResetCitationIndex(answer(mode)).pipe(
+          Effect.provideContext(services),
+        );
+        expect(notifier.notices.map((notice) => notice.messages[0])).toEqual(
+          mode === "cancel"
+            ? []
+            : mode === "failure"
+              ? [
+                  m.notice_excerpt_cache_clear_failed(),
+                  m.notice_citation_index_reset_failed(),
+                ]
+              : [
+                  m.notice_excerpt_cache_cleared(),
+                  m.notice_citation_index_reset(),
+                ],
+        );
+      }),
   );
 });

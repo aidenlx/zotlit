@@ -4,10 +4,23 @@ import { Effect, Layer } from "effect";
 import type { Context } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Notifier } from "@/lib/notifier";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
+import { ObsidianEnv } from "@/lib/obsidian-env";
+import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { CitationIndex } from "@/services/citation-index/service";
+import { NoteIndex } from "@/services/note-index/service";
+import { ItemLookup } from "@/services/item-lookup/service";
+import { QueryService } from "@/services/item-query/service";
+import { LibraryScope } from "@/services/library-scope/service";
+import { UseLedger } from "@/services/use-ledger/service";
+import { QueryClients } from "@/services/query-client/service";
+import { Release } from "@/services/release/service";
+import { PluginSettings } from "@/services/settings/service";
 import { TemplateDataReads } from "@/services/template-workbench/data-reads";
+import { TemplateMigration } from "@/services/template/migration";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
@@ -16,6 +29,21 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
  */
 export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(CitationIndex, {}),
+  Layer.mock(CitationLookup, {}),
+  Layer.mock(ObsidianEnv, stubService<ObsidianEnv["Service"]>("ObsidianEnv", {})),
+  Layer.mock(ItemLookup, {}),
+  Layer.mock(NoteIndex, {}),
+  Layer.mock(QueryService, {}),
+  Layer.mock(LibraryScope, {}),
+  Layer.mock(UseLedger, {}),
+  Layer.mock(Notifier, {}),
+  Layer.mock(PluginSettings, {}),
+  Layer.mock(Release, { version: "" }),
+  Layer.mock(QueryClients, {
+    client: stubService<QueryClients["Service"]["client"]>("QueryClient", {}),
+  }),
+  Layer.mock(TemplateMigration, {}),
+  Layer.mock(ZoteroPref, {}),
   Layer.mock(TemplateDataReads, {}),
   Layer.mock(ZoteroReads, {
     reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReadsApi", {}),

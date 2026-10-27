@@ -10,6 +10,8 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { held } from "@/lib/view-atoms";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 
+import { NoteIndex } from "./service";
+
 /** The active file's path, and the key of the Item it is a note of. */
 export interface ActiveNote {
   readonly path: string | null;
@@ -76,4 +78,24 @@ export const activeNoteAtom: Atom.Atom<ActiveNote> = held(activeNote, NO_NOTE);
 export const activeKeyAtom: Atom.Atom<string | null> = Atom.map(
   activeNoteAtom,
   (note) => note.key,
+);
+
+/** The Item keys that have a Literature Note, now and after each index change. */
+export const notedItemKeysAtom = held<ReadonlySet<string>>(
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const index = yield* NoteIndex;
+      return Stream.concat(
+        Stream.make(null),
+        index.changes.pipe(
+          Stream.filter((change) => change.type !== "frontmatter-changed"),
+        ),
+      ).pipe(
+        Stream.mapEffect(() =>
+          Effect.map(index.getIndexedItemKeys, (keys) => new Set(keys)),
+        ),
+      );
+    }),
+  ),
+  new Set<string>(),
 );

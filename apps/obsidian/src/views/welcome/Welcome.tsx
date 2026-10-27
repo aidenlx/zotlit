@@ -1,4 +1,4 @@
-// Welcome onboarding banner: the header, the update of ZotLit, the checklist of setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the store decides, and the Help Links whatever it shows.
+// Welcome onboarding banner: the header, the update of ZotLit, the checklist of setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the model decides, and the Help Links whatever it shows.
 import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { passAborted } from "@/lib/abort-error";
 import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -28,7 +29,8 @@ import {
 } from "./links";
 import { ZotLitLockup } from "./lockup";
 import { templateMigrationNotice } from "./migration-notice";
-import { bannerBadge, bannerSections, useWelcomeStore } from "./store";
+import { useWelcomeState } from "./model";
+import { bannerBadge, bannerSections } from "./presentation";
 
 /**
  * Where a setup step stands. Its icon and its words carry it: a check and
@@ -90,7 +92,7 @@ const COLUMN =
 const HANGING = "zt:-mx-[calc(--spacing(3)+1px)] zt:border zt:px-3";
 
 function Header({ titleId }: { titleId: string }) {
-  const badge = BADGE_TEXT[useWelcomeStore(bannerBadge)]();
+  const badge = BADGE_TEXT[useWelcomeState(bannerBadge)]();
   return (
     // Stacked, the header shares its line with the dismiss button, so it
     // leaves the button's width free at the end.
@@ -255,10 +257,10 @@ function StepRow({
  * ZotLit reads Zotero's database. Only the first step that isn't done opens.
  */
 function Checklist({ connect }: { connect: boolean }) {
-  const connection = useWelcomeStore((s) => s.connection);
-  const literatureFolder = useWelcomeStore((s) => s.literatureFolder);
-  const folderDone = useWelcomeStore((s) => s.literatureFolderExists);
-  const notFound = useWelcomeStore((s) => s.notFound);
+  const connection = useWelcomeState((s) => s.connection);
+  const literatureFolder = useWelcomeState((s) => s.literatureFolder);
+  const folderDone = useWelcomeState((s) => s.literatureFolderExists);
+  const notFound = useWelcomeState((s) => s.notFound);
   const actions = useWelcomeActions();
   const connected = connection.status === "connected";
 
@@ -363,9 +365,9 @@ function Checklist({ connect }: { connect: boolean }) {
  * "Show steps" opens the checklist under it.
  */
 function FoldedChecklist({ connect }: { connect: boolean }) {
-  const connection = useWelcomeStore((s) => s.connection);
-  const literatureFolder = useWelcomeStore((s) => s.literatureFolder);
-  const open = useWelcomeStore((s) => s.stepsShown);
+  const connection = useWelcomeState((s) => s.connection);
+  const literatureFolder = useWelcomeState((s) => s.literatureFolder);
+  const open = useWelcomeState((s) => s.stepsShown);
   const { showSteps } = useWelcomeActions();
   const stepsId = useUniqueId();
   return (
@@ -525,7 +527,7 @@ function TextLink({ url, children }: { url: string; children: ReactNode }) {
  * banner shows.
  */
 function HelpLinks() {
-  const migrationPending = useWelcomeStore((s) => s.migrationPending);
+  const migrationPending = useWelcomeState((s) => s.migrationPending);
   const nameId = useUniqueId();
   return (
     <nav
@@ -652,7 +654,7 @@ function HowItWorks({ children }: { children: ReactNode }) {
 /** The update of ZotLit: its version, and the Release Note that says what changed. */
 function UpdateCallout() {
   const actions = useWelcomeActions();
-  const version = useWelcomeStore((s) => s.version);
+  const version = useWelcomeState((s) => s.version);
   return (
     <Callout
       tone="accent"
@@ -670,7 +672,7 @@ function UpdateCallout() {
 
 function ConversionOffer() {
   const actions = useWelcomeActions();
-  const templateFolder = useWelcomeStore((state) => state.templateFolder);
+  const templateFolder = useWelcomeState((state) => state.templateFolder);
   const [converting, setConverting] = useState(false);
   // The notice that names a refusal is transient; the banner keeps the same
   // sentence beside the button until the next attempt.
@@ -695,7 +697,8 @@ function ConversionOffer() {
               })
               .finally(() => {
                 setConverting(false);
-              });
+              })
+              .catch(passAborted);
           }}
         >
           {m.welcome_template_conversion_action()}
@@ -719,7 +722,7 @@ function ConversionOffer() {
 
 function ConversionResult() {
   const actions = useWelcomeActions();
-  const result = useWelcomeStore((state) => state.templateConversionResult);
+  const result = useWelcomeState((state) => state.templateConversionResult);
   const [retrying, setRetrying] = useState(false);
   if (!result) return null;
   const retained = result.pendingCleanup;
@@ -735,9 +738,12 @@ function ConversionResult() {
             disabled={retrying}
             onClick={() => {
               setRetrying(true);
-              void actions.retryTemplateCleanup().finally(() => {
-                setRetrying(false);
-              });
+              void actions
+                .retryTemplateCleanup()
+                .finally(() => {
+                  setRetrying(false);
+                })
+                .catch(passAborted);
             }}
           >
             {m.welcome_template_cleanup_retry()}
@@ -821,23 +827,23 @@ function CompanionGuidance() {
  * @see apps/obsidian/docs/adr/0077-the-library-view-is-the-first-screen.md
  */
 export function Welcome() {
-  const shown = useWelcomeStore((s) => bannerSections(s) !== null);
-  const steps = useWelcomeStore((s) => bannerSections(s)?.steps ?? false);
+  const shown = useWelcomeState((s) => bannerSections(s) !== null);
+  const steps = useWelcomeState((s) => bannerSections(s)?.steps ?? false);
 
-  const connect = useWelcomeStore((s) => bannerSections(s)?.connect ?? false);
-  const conversion = useWelcomeStore(
+  const connect = useWelcomeState((s) => bannerSections(s)?.connect ?? false);
+  const conversion = useWelcomeState(
     (s) => bannerSections(s)?.conversion ?? null,
   );
-  const migration = useWelcomeStore(
+  const migration = useWelcomeState(
     (s) => bannerSections(s)?.migration ?? false,
   );
-  const companion = useWelcomeStore(
+  const companion = useWelcomeState(
     (s) => bannerSections(s)?.companion ?? false,
   );
-  const update = useWelcomeStore((s) => bannerSections(s)?.update ?? false);
+  const update = useWelcomeState((s) => bannerSections(s)?.update ?? false);
   const titleId = useUniqueId();
   // A request for the banner moves focus to it, once it shows.
-  const requests = useWelcomeStore((s) => s.requests);
+  const requests = useWelcomeState((s) => s.requests);
   const sectionRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (requests > 0) sectionRef.current?.focus();
