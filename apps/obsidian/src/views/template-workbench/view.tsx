@@ -1,6 +1,6 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { EditorView } from "@codemirror/view";
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
   App,
@@ -100,6 +100,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { AbortError } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -118,7 +119,7 @@ import type {
 } from "@/services/note-feature/operations";
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
+import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import type { PlainProfile } from "@/services/profile/plain";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -214,10 +215,11 @@ export function originatingNoteUpdateNotice(
 
 export type TemplateWorkbenchDeps = Omit<
   ExplorerViewDeps,
-  "pluginVersion" | "registry"
+  "pluginVersion" | "registry" | "bridge"
 > &
   TemplateDataDeps & {
     runtime: SubscriptionRuntime;
+    bridge: Pick<EffectBridge, "runSync" | "runPromise">;
     zoteroReads: Pick<
       PlainZoteroReads,
       | "state"
@@ -232,6 +234,7 @@ export type TemplateWorkbenchDeps = Omit<
     >;
   } & {
     zoteroPref: Pick<PlainZoteroPref, "dataDir">;
+    fileSystem: FileSystem.FileSystem;
     noteFeature?: Pick<NoteFeatureHandle, "updateNote">;
     /**
      * ZotLit Query, which tests the Match of a Profile on a real Item and names
@@ -1872,12 +1875,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     try {
       if (this.#closed) return;
       const dataDir = this.#deps.zoteroPref.dataDir;
-      const styles = dataDir ? await listInstalledStylesOrNone(dataDir) : [];
+      const styles = dataDir
+        ? await this.#deps.bridge.runPromise(
+            listInstalledStylesOrNone(dataDir).pipe(
+              Effect.provideService(
+                FileSystem.FileSystem,
+                this.#deps.fileSystem,
+              ),
+            ),
+          )
+        : [];
       if (this.#closed) return;
       this.#citationStyles = styles;
       this.#stylesUnavailable = false;
       this.#mount();
     } catch (error) {
+      if (AbortError.test(error)) return;
       logger.warn("Failed to read Template Workbench citation styles", {
         error,
       });

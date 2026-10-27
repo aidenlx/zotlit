@@ -1,5 +1,6 @@
-import "@mock/dom-parser";
 import { it } from "@effect/vitest";
+import { FileSystem, PlatformError } from "effect";
+import "@mock/dom-parser";
 import { Effect } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -15,6 +16,7 @@ import type { ProfileReader } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
+import { runFileEffect } from "./__fixtures__/file-effects";
 import type { CslResponse } from "./csl";
 import {
   CSL_COMMAND,
@@ -41,9 +43,11 @@ const NOTE_PATH = "/vault/draft.md";
 async function cslVault({
   note,
   vaultStyle,
+  refuseWrites = false,
 }: {
   note: Record<string, unknown>;
   vaultStyle: string | null;
+  refuseWrites?: boolean;
 }) {
   await using stack = new AsyncDisposableStack();
   const root = stack.adopt(
@@ -84,7 +88,21 @@ async function cslVault({
     },
   };
   const { host, command } = fakeCliHost();
+  const fs = await runFileEffect(FileSystem.FileSystem);
   const deps: PandocResolveDeps = {
+    fileSystem: refuseWrites
+      ? FileSystem.make({
+          ...fs,
+          writeFile: () =>
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "writeFile",
+              }),
+            ),
+        })
+      : fs,
     app: stubService<App>("App", {
       vault: stubService<Vault>("Vault", {
         adapter: stubService<FileSystemAdapter>("FileSystemAdapter", {
@@ -128,6 +146,21 @@ const scopedCslVault = (options: Parameters<typeof cslVault>[0]) =>
   Effect.acquireDisposable(Effect.tryPromise(() => cslVault(options)));
 
 describe("zotlit:csl for one note", () => {
+  it.effect(
+    "reports a typed materialization failure through the CLI handler (#1793)",
+    () =>
+      Effect.gen(function* () {
+        const vault = yield* scopedCslVault({
+          note: {},
+          vaultStyle: APA,
+          refuseWrites: true,
+        });
+        expect(yield* vault.csl({ style: APA })).toMatchObject({
+          command: CSL_COMMAND,
+          errors: [{ code: "csl-write-failed", styleId: APA }],
+        });
+      }),
+  );
   it.effect(
     "answers the vault style for a note that selects none of its own",
     () =>

@@ -1,4 +1,5 @@
-import { DateTime, Effect, Stream } from "effect";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { DateTime, Effect, FileSystem, Stream } from "effect";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { subscribe } from "@/lib/effect-stream";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
@@ -641,6 +642,7 @@ function exportAdapter({
 }): PandocExportDeps {
   return {
     citationParse: inProcessParseClient,
+    fileSystem: Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
     profile: profileReader(profileSettings, harness.metadataCache),
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,

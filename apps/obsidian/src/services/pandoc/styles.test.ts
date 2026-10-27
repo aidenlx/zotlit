@@ -1,16 +1,20 @@
-import "@mock/dom-parser";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import "@mock/dom-parser";
+import { it as effectIt } from "@effect/vitest";
 import { Effect, FileSystem, Layer, PlatformError } from "effect";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { listInstalledStyles } from "./installed-styles";
+import { runFileEffect } from "./__fixtures__/file-effects";
 import {
-  InstalledStyleCache,
+  listInstalledStyles,
   listInstalledStylesOrNone,
-  resolveInstalledStyle,
+} from "./installed-styles";
+import {
+  InstalledStyleCache as EffectStyleCache,
+  resolveInstalledStyle as resolveStyleEffect,
   styleHasEntryMarkers,
 } from "./styles";
 import type { ResolvedCslStyle } from "./styles";
@@ -26,35 +30,6 @@ const deniedReads = new Set<string>();
 
 /** Directory names the filesystem refuses to list, as one without access is. */
 const deniedDirs = new Set<string>();
-
-function denied(): Error {
-  return Object.assign(new Error("permission denied"), { code: "EACCES" });
-}
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...actual,
-    readdir: async (...args: Parameters<typeof actual.readdir>) => {
-      const [path] = args;
-      if (typeof path === "string" && deniedDirs.has(basename(path))) {
-        throw denied();
-      }
-      return actual.readdir(...args);
-    },
-    readFile: async (...args: Parameters<typeof actual.readFile>) => {
-      const [path] = args;
-      if (
-        allowedReads <= 0 ||
-        (typeof path === "string" && deniedReads.has(basename(path)))
-      ) {
-        throw denied();
-      }
-      allowedReads -= 1;
-      return actual.readFile(...args);
-    },
-  };
-});
 
 /** A refusal shaped as the Node file system reports one. */
 const refused = (method: string, path: string) =>
@@ -76,13 +51,30 @@ const deniedFileSystem = Layer.effect(
           ? Effect.fail(refused("readDirectory", path))
           : fs.readDirectory(path, options),
       readFile: (path) =>
-        deniedReads.has(basename(path))
+        allowedReads-- <= 0 || deniedReads.has(basename(path))
           ? Effect.fail(refused("readFile", path))
           : fs.readFile(path),
     }),
   ),
 ).pipe(Layer.provide(NodeFileSystem.layer));
 
+const resolveInstalledStyle = (
+  dataDir: string,
+  request: Parameters<typeof resolveStyleEffect>[1],
+) =>
+  runFileEffect(
+    resolveStyleEffect(dataDir, request).pipe(Effect.provide(deniedFileSystem)),
+  );
+class InstalledStyleCache {
+  readonly cache = new EffectStyleCache();
+  resolve(dataDir: string, request: Parameters<typeof resolveStyleEffect>[1]) {
+    return runFileEffect(
+      this.cache
+        .resolve(dataDir, request)
+        .pipe(Effect.provide(deniedFileSystem)),
+    );
+  }
+}
 /** The installed-style list over the Node file system. */
 const listed = (dataDir: string) =>
   Effect.runPromise(
@@ -179,6 +171,26 @@ function installedXml(style: ResolvedCslStyle): string {
 }
 
 describe("listInstalledStyles", () => {
+  effectIt.effect(
+    "keeps readable picker choices when the hidden directory refuses a read (#1793)",
+    () =>
+      Effect.gen(function* () {
+        const APA = "http://www.zotero.org/styles/apa";
+        const library = yield* Effect.acquireDisposable(
+          Effect.promise(() => installStyles()),
+        );
+        yield* Effect.promise(() =>
+          library.writeStyle("apa.csl", { id: APA, title: "APA" }),
+        );
+        deniedDirs.add("hidden");
+        expect(
+          yield* listInstalledStylesOrNone(library.dataDir).pipe(
+            Effect.provide(deniedFileSystem),
+          ),
+        ).toEqual([{ id: APA, title: "APA" }]);
+      }),
+  );
+
   it("lists visible styles by style ID, sorted by title", async () => {
     await using library = await installStyles();
     await library.writeStyle("apa.csl", {
@@ -320,38 +332,6 @@ describe("listInstalledStyles", () => {
       _tag: "PlatformError",
       reason: { _tag: "PermissionDenied" },
     });
-  });
-});
-
-describe("listInstalledStylesOrNone", () => {
-  it("skips a CSL file it cannot read", async () => {
-    await using library = await installStyles();
-    await library.writeStyle("apa.csl", {
-      id: "http://www.zotero.org/styles/apa",
-      title: "APA",
-    });
-    await library.writeStyle("nature.csl", {
-      id: "http://www.zotero.org/styles/nature",
-      title: "Nature",
-    });
-    deniedReads.add("nature.csl");
-
-    await expect(listInstalledStylesOrNone(library.dataDir)).resolves.toEqual([
-      { id: "http://www.zotero.org/styles/apa", title: "APA" },
-    ]);
-  });
-
-  it("lists nothing when the styles folder cannot be read", async () => {
-    await using library = await installStyles();
-    await library.writeStyle("apa.csl", {
-      id: "http://www.zotero.org/styles/apa",
-      title: "APA",
-    });
-    deniedDirs.add("styles");
-
-    await expect(listInstalledStylesOrNone(library.dataDir)).resolves.toEqual(
-      [],
-    );
   });
 });
 

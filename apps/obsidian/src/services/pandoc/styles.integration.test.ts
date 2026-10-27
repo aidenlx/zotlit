@@ -1,6 +1,6 @@
-import "@mock/dom-parser";
 // The Resolved CSL Style as citeproc reads it: what an installed style actually renders.
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import "@mock/dom-parser";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -8,9 +8,10 @@ import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import { runFileEffect } from "./__fixtures__/file-effects";
 import { createCitationEngine } from "./engine";
 import { inlineText } from "./inline-content";
-import { resolveInstalledStyle } from "./styles";
+import { resolveInstalledStyle as resolveStyleEffect } from "./styles";
 import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 
 const WASM_PATH = join(
@@ -144,7 +145,7 @@ async function installStyles(): Promise<StyleLibrary> {
   const held = stack.move();
   return {
     async entryFor(request) {
-      const style = await resolveInstalledStyle(dataDir, request);
+      const style = await runFileEffect(resolveStyleEffect(dataDir, request));
       const [entry] = await engine.renderBibliography({
         items: [ITEM],
         ...requested(style),

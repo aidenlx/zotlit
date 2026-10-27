@@ -1,39 +1,56 @@
-import "@mock/dom-parser";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { it as effectIt } from "@effect/vitest";
+import { Effect, FileSystem, Layer, Option, PlatformError } from "effect";
+import { TestClock } from "effect/testing";
 import {
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
-  stat,
-  utimes,
   writeFile,
 } from "node:fs/promises";
+import "@mock/dom-parser";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { runFileEffect } from "./__fixtures__/file-effects";
 import { CONTRACT_VERSION } from "./contract";
-import { CSL_COMMAND, materializeCslStyle, resolveCslStyle } from "./csl";
+import {
+  CSL_COMMAND,
+  materializeCslStyle,
+  resolveCslStyle as resolveStyleEffect,
+} from "./csl";
 import type { CslResponse } from "./csl";
 import { resolveInstalledStyle } from "./styles";
 
 /** Filenames the filesystem refuses outright, as a file without read access is. */
 const deniedReads = new Set<string>();
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return {
-    ...actual,
-    readFile: async (...args: Parameters<typeof actual.readFile>) => {
-      const [path] = args;
-      if (typeof path === "string" && deniedReads.has(basename(path))) {
-        throw Object.assign(new Error("permission denied"), { code: "EACCES" });
-      }
-      return actual.readFile(...args);
-    },
-  };
-});
+const deniedFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.map(FileSystem.FileSystem, (fs) =>
+    FileSystem.make({
+      ...fs,
+      readFile: (path) =>
+        deniedReads.has(basename(path))
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "readFile",
+                pathOrDescriptor: path,
+              }),
+            )
+          : fs.readFile(path),
+    }),
+  ),
+).pipe(Layer.provide(NodeFileSystem.layer));
+const resolveCslStyle = (...args: Parameters<typeof resolveStyleEffect>) =>
+  runFileEffect(
+    resolveStyleEffect(...args).pipe(Effect.provide(deniedFileSystem)),
+  );
 
 const PARENT = "http://www.zotero.org/styles/journal";
 const DEPENDENT = "http://www.zotero.org/styles/journal-german";
@@ -88,19 +105,22 @@ describe("zotlit:csl", () => {
     expect(pathOf(await zotero.csl(PARENT))).not.toBe(first);
   });
 
-  it("restamps the style it hands out, so use holds off the store reaper", async () => {
-    await using zotero = await installStyles();
-
-    const path = pathOf(await zotero.csl(PARENT));
-    const stale = Temporal.Instant.from("2024-01-01T00:00:00Z");
-    const staleSeconds = stale.epochMilliseconds / 1000;
-    await utimes(path, staleSeconds, staleSeconds);
-
-    // The second resolve finds the content already materialized and writes
-    // nothing; only the restamp separates its answer from an untouched file.
-    expect(pathOf(await zotero.csl(PARENT))).toBe(path);
-    expect((await stat(path)).mtimeMs).toBeGreaterThan(stale.epochMilliseconds);
-  });
+  effectIt.effect(
+    "restamps a materialized style with TestClock time (#1793)",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const directory = yield* fs.makeTempDirectoryScoped();
+        const path = yield* materializeCslStyle("<style/>", directory);
+        yield* fs.utimes(path, 0, 0);
+        yield* TestClock.setTime(1_800_000_000_000);
+        expect(yield* materializeCslStyle("<style/>", directory)).toBe(path);
+        expect(Option.getOrThrow((yield* fs.stat(path)).mtime).getTime()).toBe(
+          1_800_000_000_000,
+        );
+        expect(yield* fs.readDirectory(directory)).toEqual([basename(path)]);
+      }).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
+  );
 
   it("never exposes a partial file to a concurrent run", async () => {
     await using zotero = await installStyles();
@@ -192,19 +212,27 @@ describe("zotlit:csl", () => {
   it("reports a materialization that fails", async () => {
     await using zotero = await installStyles();
 
-    const response = await resolveCslStyle(PARENT, {
-      resolve: (styleId) => resolveInstalledStyle(zotero.dataDir, { styleId }),
-      materialize: () => Promise.reject(new Error("no space left on device")),
-    });
-
-    expect(response).toMatchObject({
-      errors: [
-        {
-          code: "csl-write-failed",
-          styleId: PARENT,
-          message: expect.stringContaining("no space left on device"),
-        },
-      ],
+    await expect(
+      resolveCslStyle(PARENT, {
+        resolve: (styleId) =>
+          resolveInstalledStyle(zotero.dataDir, { styleId }),
+        materialize: () =>
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "Unknown",
+              module: "FileSystem",
+              method: "writeFileString",
+              description: "no space left on device",
+            }),
+          ),
+      }),
+    ).rejects.toMatchObject({
+      _tag: "CslWriteError",
+      styleId: PARENT,
+      cause: {
+        _tag: "PlatformError",
+        reason: { description: "no space left on device" },
+      },
     });
   });
 });

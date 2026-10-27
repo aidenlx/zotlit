@@ -167,7 +167,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
       runtime: testRuntime(),
       settings: fixture.settings,
-      bridge: fixture.deps.bridge,
+      bridge: { ...fixture.deps.bridge, runPromise: Effect.runPromise },
       zoteroReads: fixture.zoteroReads,
       zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
         "ZoteroPref",

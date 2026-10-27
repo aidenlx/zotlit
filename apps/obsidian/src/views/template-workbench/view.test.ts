@@ -29,6 +29,7 @@ import {
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -152,6 +153,7 @@ function setup(
   const view = new TestTemplateWorkbenchView(
     leaf,
     stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+      fileSystem: nodeFileSystem,
       settings: stubService<TemplateWorkbenchDeps["settings"]>(
         "PluginSettings",
         {
@@ -161,6 +163,7 @@ function setup(
       ),
       bridge: stubService<TemplateWorkbenchDeps["bridge"]>("EffectBridge", {
         runSync: Effect.runSync,
+        runPromise: Effect.runPromise,
       }),
       pluginVersion: "2.1.3",
       noteFeature: undefined,

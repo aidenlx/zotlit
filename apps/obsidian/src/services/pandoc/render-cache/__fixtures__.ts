@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 /** The real bibliography layer over the dependency ports used by consumer fixtures. */
 import { Context, Effect, Layer, PubSub, Stream } from "effect";
 
@@ -131,6 +132,7 @@ export async function bibliographyRenderFixture(
     Layer.provide(
       Layer.mergeAll(
         queryLayer,
+        NodeFileSystem.layer,
         Layer.succeed(
           Profile,
           stubService<Profile["Service"]>("Profile", {

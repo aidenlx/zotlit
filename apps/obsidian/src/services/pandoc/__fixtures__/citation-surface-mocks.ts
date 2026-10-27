@@ -1,3 +1,5 @@
+import type { BibliographyItemRef } from "@/services/pandoc/bibliography";
+import { Effect } from "effect";
 // The module doubles of a Citation Presentation suite, importing nothing at run
 // time so a `vi.mock` factory can reach them while its module graph still loads.
 
@@ -53,11 +55,11 @@ export interface CitedWork {
 export const citedWorks = new Map<string, CitedWork>();
 
 /** Zotero itself, answering for the works this vault cites. */
-export function fetchCitedBibliography(): Promise<{
+export function fetchCitedBibliography(_refs: readonly BibliographyItemRef[]): Effect.Effect<{
   source: "local-api";
   items: Map<string, CslItemData>;
 }> {
-  return Promise.resolve({
+  return Effect.succeed({
     source: "local-api",
     items: new Map(
       [...citedWorks].map(([indexedKey, work]) => [indexedKey, work.csl]),

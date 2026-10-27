@@ -25,7 +25,6 @@ import type {
   SnapshotSelection,
 } from "@zotlit/workbench/snapshot";
 
-import { portCall } from "@/lib/legacy-port";
 import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -251,9 +250,7 @@ export const readSelectedCitationStyle = Effect.fn(
   "LocalBridge.selectedCitationStyle",
 )(function* (request: SelectedCitationStyleRequest) {
   const { dataDir } = yield* (yield* ZoteroPref).current;
-  return yield* portCall("selected-citation-style", () =>
-    resolveInstalledStyle(dataDir, request),
-  );
+  return yield* resolveInstalledStyle(dataDir, request);
 });
 
 /** The Snapshot selection and the Item row an Indexed Key names. */
