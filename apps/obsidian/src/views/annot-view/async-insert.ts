@@ -240,16 +240,17 @@ export function captureInsertion(options: {
     workspace.on("active-leaf-change", validate),
     workspace.on("layout-change", validate),
   ];
-  const dispose = () => {
+  const dispose = (completed = false) => {
     if (settled) return;
     settled = true;
-    cancel();
+    if (!completed) cancel();
     win?.removeEventListener("keydown", onKey);
     for (const ref of workspaceRefs) workspace.offref(ref);
-    if (cm.dom.isConnected)
+    if (!completed && cm.dom.isConnected)
       cm.dispatch({ effects: compartment.reconfigure([]) });
   };
   return {
+    /** Aborted by cancellation or disposal before completion; a successful commit releases without aborting. */
     signal: controller.signal,
     valid,
     cancel,
@@ -259,7 +260,7 @@ export function captureInsertion(options: {
     /**
      * Land `text` over the held range, placed against the note as it stands
      * now, by the rule for what it is (see {@link placeInsertion}). Answers
-     * whether it landed.
+     * whether it landed. Completion releases the capture without cancelling its caller.
      */
     commit(text: string, placement: Placement = {}): boolean {
       if (!valid()) return false;
@@ -270,6 +271,8 @@ export function captureInsertion(options: {
         range,
       });
       cm.dispatch({
+        // Remove this capture before its own edit can count as an overlap.
+        effects: compartment.reconfigure([]),
         changes: { ...range, insert },
         selection: { anchor: range.from + cursor },
         annotations: [
@@ -277,7 +280,7 @@ export function captureInsertion(options: {
           isolateHistory.of("full"),
         ],
       });
-      dispose();
+      dispose(true);
       return true;
     },
     [Symbol.dispose]: dispose,

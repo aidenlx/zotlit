@@ -295,13 +295,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     if (ANNOTATION_SUGGESTER_ENABLED) {
       registerAnnotationSuggest(this, {
         app: this.app,
+        workspace: this.app.workspace,
         query: services.query,
-        annotations: services.annotationRepository,
         bridge: services.bridge,
-        noteFeature: services.noteFeature,
-        zoteroPref: services.zoteroPref,
+        annotationNotes: services.annotationNotes,
         settings: services.settings,
-        useLedger: services.useLedger,
         notify: (message) => void new BaseNotice(message),
         commentRenderer: (owner, sourcePath) =>
           createCommentRenderer({

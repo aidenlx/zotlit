@@ -25,6 +25,7 @@ import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryVault } from "@/lib/__fixtures__/obsidian-vault";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import type { FileManagerSource } from "@/lib/obsidian-file-manager";
+import { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
@@ -41,6 +42,7 @@ import { Profile, ProfileOperationError } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { Template, templateFailure } from "@/services/template/service";
+import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -51,6 +53,10 @@ import {
 
 import type { AnnotationInsertOptions } from "./insert-annotation";
 import { prepareAnnotationInsert } from "./insert-annotation";
+import {
+  AnnotationNoteActions,
+  layerAnnotationNoteActions,
+} from "./view-actions";
 
 const card: AnnotationRecord = {
   key: "FDRFQ7C2",
@@ -200,6 +206,8 @@ async function openFixture(mode: string) {
     ),
   );
   const layer = Layer.mergeAll(
+    Layer.mock(AnnotationRepository, {}),
+    Layer.mock(UseLedger, {}),
     excerpts,
     Layer.mock(ZoteroReads, {
       reads: zoteroReads.reads,
@@ -241,6 +249,24 @@ async function openFixture(mode: string) {
     pauseTemporaryWrite: fileSystem.arm,
     /** The insert under test, over this fixture's services. */
     insert: () => prepareAnnotationInsert(options).pipe(Effect.provide(layer)),
+    action: (commit: (text: string) => boolean) =>
+      Effect.gen(function* () {
+        const notes = yield* AnnotationNoteActions;
+        return yield* notes.insert({
+          annotation: options.annotation,
+          snapshot: {
+            source: options.source,
+            sourceScope: options.sourceScope,
+          },
+          notePath: options.notePath,
+          target: {
+            valid: options.valid,
+            commit,
+          },
+        });
+      }).pipe(
+        Effect.provide(layerAnnotationNoteActions.pipe(Layer.provide(layer))),
+      ),
     failProfile: (failure: ProfileOperationError) => {
       profileFailure = failure;
     },
@@ -505,5 +531,67 @@ it.effect(
       f.failProfile(failure);
       expect(yield* Effect.flip(f.insert())).toBe(failure);
       expect(f.render).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "#1835 commits the rendered annotation and returns the shared insertion outcome",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("disabled");
+      f.options.annotation = {
+        ...card,
+        type: "highlight",
+        text: "Captured text",
+      };
+      let inserted = "";
+      const outcome = yield* f.action((text) => {
+        inserted = text;
+        return true;
+      });
+      expect(outcome).toEqual({
+        kind: "inserted",
+        summary: { zotero: 0, unchecked: 0, unavailable: 0 },
+      });
+      expect(inserted).toContain("Captured text");
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "#1835 interrupted insertion commits no text and produces no outcome",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("success");
+      const started = Promise.withResolvers<void>();
+      f.pauseTemporaryWrite(
+        Effect.sync(() => started.resolve()).pipe(Effect.andThen(Effect.never)),
+      );
+      const commit = vi.fn(() => true);
+      const report = vi.fn();
+      const pending = yield* f.action(commit).pipe(
+        Effect.tap((outcome) => Effect.sync(() => report(outcome))),
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Effect.promise(() => started.promise);
+      yield* Fiber.interrupt(pending);
+      expect(commit).not.toHaveBeenCalled();
+      expect(report).not.toHaveBeenCalled();
+    }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "#1835 uses the source-link fallback when the captured source cannot render",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture("disabled");
+      f.options.sourceScope = "/previous-zotero";
+      let text = "";
+      expect(
+        yield* f.action((insert) => {
+          text = insert;
+          return true;
+        }),
+      ).toEqual({ kind: "fallback", landed: true });
+      expect(text).toContain("annotation=FDRFQ7C2");
     }).pipe(Effect.scoped),
 );

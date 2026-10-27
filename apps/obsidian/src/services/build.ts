@@ -82,6 +82,7 @@ import { bindNoteCreation } from "./note-feature/creation-handle";
 import type { NoteCreationServices } from "./note-feature/creation-handle";
 import type { InteractiveCreationPorts } from "./note-feature/creation-view";
 import { batchUpdateNotices } from "./note-feature/update-single";
+import { AnnotationNoteActions } from "./note-feature/view-actions";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
 import { createNoteImportView } from "./note-import/view";
@@ -242,6 +243,7 @@ export async function buildServices(
   return container
     .useValue({ runtime: () => runtime })
     .useValue({ bridge: () => bridge })
+    .useValue({ annotationNotes: () => runtime.runSync(AnnotationNoteActions) })
     .useValue({ workspace: () => runtime.runSync(Workspace) })
     .useValue({ metadataCache: () => runtime.runSync(MetadataCache) })
     .useValue({ notifier: () => runtime.runSync(Notifier) })
