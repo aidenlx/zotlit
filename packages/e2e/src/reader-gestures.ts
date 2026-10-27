@@ -101,13 +101,12 @@ export async function settledGesture(
 ): Promise<void> {
   await obRun(
     vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { attachmentPath }) => {
       await zotlit.services.bridge
         .runSync(zotlit.services.pdfAnnotationEditor.bindings)
-        .find((candidate) => candidate.filePath === __typedArg0)!.gestured;
-      return String(true);
+        .find((candidate) => candidate.filePath === attachmentPath)!.gestured;
     },
-    { __typedArg0: attachmentPath },
+    { attachmentPath },
   );
 }
 
@@ -159,58 +158,43 @@ export async function openPdfWithAnnotationView(
   const layout = await obRun(
     vaultId,
     async ({ app }) => {
-      return String(JSON.stringify(app.workspace.getLayout()));
+      return JSON.stringify(app.workspace.getLayout());
     },
     undefined,
   );
   cleanup.defer(async () => {
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        await app.workspace.changeLayout(JSON.parse(__typedArg0));
-        return String(true);
+      async ({ app }, { layout }) => {
+        await app.workspace.changeLayout(JSON.parse(layout));
       },
-      { __typedArg0: layout },
+      { layout },
     );
   });
   await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
-      const file = app.vault.getFileByPath(__typedArg0)!;
+    async ({ app }, { attachmentPath }) => {
+      const file = app.vault.getFileByPath(attachmentPath)!;
       await app.workspace.getLeaf("tab").openFile(file);
-      return String(true);
     },
-    { __typedArg0: attachmentPath },
+    { attachmentPath },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
-          return String(
-            String(
-              !!zotlit.services.bridge
-                .runSync(zotlit.services.pdfAnnotationEditor.bindings)
-                .find((b) => b.filePath === __typedArg0)?.session,
-            ),
-          );
-        },
-        { __typedArg0: attachmentPath },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "reader-gestures.ts:198",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true" }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }, { attachmentPath }) => {
+      return !!zotlit.services.bridge
+        .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+        .find((b) => b.filePath === attachmentPath)?.session;
+    },
+    { attachmentPath },
+    {
+      what: "the PDF annotation editor binding for the attachment to open a session",
+    },
+  );
   await obRun(
     vaultId,
     async ({ app }) => {
       app.commands.executeCommandById("zotlit:open-annot-view");
-      return String(true);
     },
     undefined,
   );
@@ -218,7 +202,6 @@ export async function openPdfWithAnnotationView(
     vaultId,
     async ({ app }) => {
       app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
-      return String(true);
     },
     undefined,
   );
@@ -435,21 +418,18 @@ export async function watchExcerptPixels(
         zotlit.services.annotationRepository.excerptPixelsChanged,
         ({ record }) => page.scratch.pixels!.push(record.key),
       );
-      return String(true);
     },
     undefined,
   );
   return {
     async keys() {
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page }) => {
-            return String(JSON.stringify(page.scratch.pixels));
-          },
-          undefined,
-        ),
-      ) as string[];
+      return (await obRun(
+        vaultId,
+        async ({ page }) => {
+          return page.scratch.pixels;
+        },
+        undefined,
+      )) as string[];
     },
     async [Symbol.asyncDispose]() {
       await obRun(
@@ -458,7 +438,6 @@ export async function watchExcerptPixels(
           page.scratch.pixelsOff?.();
           delete page.scratch.pixelsOff;
           delete page.scratch.pixels;
-          return String(true);
         },
         undefined,
       );

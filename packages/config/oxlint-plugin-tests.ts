@@ -531,6 +531,273 @@ export const noEvalCapture: Rule = {
   },
 };
 
+const pollCalls = new Set(["obRunUntil", "readQueryViewUntil"]);
+
+/** The called name of `name(…)` or `receiver.name(…)`. */
+function calledName(node: CallNode): string | undefined {
+  const { callee } = node;
+  if (callee.type === "Identifier") return callee.name;
+  if (callee.type === "MemberExpression") return staticName(callee);
+  return undefined;
+}
+
+/** Whether the node is a function taking no parameters that returns this literal. */
+function returnsLiteral(node: AnyNode | undefined, value: boolean): boolean {
+  return (
+    node?.type === "ArrowFunctionExpression" &&
+    node.params.length === 0 &&
+    node.body.type === "Literal" &&
+    node.body.value === value
+  );
+}
+
+/**
+ * The migrated suite carried `__typedArgN` placeholders through the callback
+ * and its JSON args. A role name reads at the call and in the callback alike.
+ * @see packages/e2e/AGENTS.md — Page callbacks.
+ */
+export const noTypedArgName: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Name page callback args after their role.",
+    },
+    schema: [],
+    messages: {
+      placeholder:
+        "Name '{{name}}' after its role, such as 'attachmentPath', 'itemKey' or 'expectedCount', in both the callback and its args.",
+    },
+  },
+  create(context) {
+    return {
+      Identifier(node) {
+        if (/^__typedArg\d+$/.test(node.name))
+          context.report({
+            node,
+            messageId: "placeholder",
+            data: { name: node.name },
+          });
+      },
+    };
+  },
+};
+
+/**
+ * `obRunUntil` already rejects with its `what` and the last value. Turning
+ * that rejection into `false` hides the diagnostics; assert on the value, or
+ * await the poll and let a timeout fail the test.
+ */
+export const noPollAdapter: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Await a poll directly instead of adapting it to a boolean.",
+    },
+    schema: [],
+    messages: {
+      adapter:
+        "Write 'await obRunUntil(…)': a timeout rejects with 'what' and the last value. Keep '.then(() => true, () => false)' only where the caller acts on a timeout.",
+    },
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        if (
+          callee.type === "MemberExpression" &&
+          staticName(callee) === "then" &&
+          node.arguments.length === 2 &&
+          returnsLiteral(node.arguments[0] as AnyNode, true) &&
+          returnsLiteral(node.arguments[1] as AnyNode, false)
+        )
+          context.report({ node, messageId: "adapter" });
+      },
+    };
+  },
+};
+
+/**
+ * A poll reads as `await obRunUntil(vault, callback, args, { what })`. A
+ * function invoked in place around it only forwards options.
+ */
+export const noPollWrapper: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Call a poll directly instead of through an inline wrapper.",
+    },
+    schema: [],
+    messages: {
+      wrapper:
+        "Call '{{name}}' directly with its 'ready' and 'tries' options; an inline wrapper hides the poll.",
+    },
+  },
+  create(context) {
+    /** The poll call a wrapper body returns, through `.then` and `await`. */
+    function polled(node: AnyNode | undefined): CallNode | undefined {
+      let at = node;
+      while (at) {
+        if (at.type === "AwaitExpression") at = at.argument as AnyNode;
+        else if (at.type === "CallExpression") {
+          if (pollCalls.has(calledName(at) ?? "")) return at;
+          if (at.callee.type !== "MemberExpression") return undefined;
+          at = at.callee.object as AnyNode;
+        } else return undefined;
+      }
+      return undefined;
+    }
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        if (
+          callee.type !== "ArrowFunctionExpression" &&
+          callee.type !== "FunctionExpression"
+        )
+          return;
+        const { body } = callee;
+        const poll = polled(
+          body && body.type !== "BlockStatement" ? body : undefined,
+        );
+        if (poll)
+          context.report({
+            node,
+            messageId: "wrapper",
+            data: { name: calledName(poll) },
+          });
+      },
+    };
+  },
+};
+
+/** A `file.ts:123` label points at a line that moves; say what the poll awaits. */
+export const noGeneratedPollLabel: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Describe the awaited condition in a poll's 'what'.",
+    },
+    schema: [],
+    messages: {
+      label:
+        "Describe the awaited condition, such as 'the Annotation View to list the pinned item', instead of a source location.",
+    },
+  },
+  create(context) {
+    return {
+      Property(node) {
+        const { key, value } = node;
+        if (
+          node.computed ||
+          key.type !== "Identifier" ||
+          key.name !== "what" ||
+          value.type !== "Literal" ||
+          typeof value.value !== "string" ||
+          !/\.[cm]?[jt]sx?:\d+$/.test(value.value)
+        )
+          return;
+        context.report({ node: value, messageId: "label" });
+      },
+    };
+  },
+};
+
+/** Whether the callback returns the text "true" or "false", or builds text with `String`. */
+function stringifies(node: AnyNode | undefined): boolean {
+  if (!node || typeof node !== "object") return false;
+  if (
+    node.type === "Literal" &&
+    (node.value === "true" || node.value === "false") &&
+    (node.parent?.type === "ReturnStatement" ||
+      node.parent?.type === "ArrowFunctionExpression" ||
+      node.parent?.type === "ConditionalExpression")
+  )
+    return true;
+  if (
+    node.type === "Identifier" &&
+    node.name === "String" &&
+    node.parent?.type === "CallExpression"
+  )
+    return true;
+  for (const key of Object.keys(node)) {
+    if (key === "parent") continue;
+    const child = (node as unknown as Record<string, unknown>)[key];
+    for (const part of Array.isArray(child) ? child : [child])
+      if (part && typeof part === "object" && "type" in part)
+        if (stringifies(part as AnyNode)) return true;
+  }
+  return false;
+}
+
+/**
+ * The string eval transport turned booleans into `"true"` and numbers into
+ * text. The typed transport returns the value itself, so a poll compares it
+ * as it is.
+ */
+export const noStringTransport: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Keep poll values typed instead of converting them to strings.",
+    },
+    schema: [],
+    messages: {
+      nested:
+        "Drop the outer 'String(…)': converting a value that is already a string changes nothing.",
+      boolean:
+        "Return the boolean and compare with '=== true' (the default 'ready'), not the string \"{{text}}\".",
+    },
+  },
+  create(context) {
+    const isString = (node: AnyNode | undefined): node is CallNode =>
+      node?.type === "CallExpression" &&
+      node.callee.type === "Identifier" &&
+      node.callee.name === "String" &&
+      node.arguments.length === 1;
+    return {
+      CallExpression(node) {
+        if (isString(node) && isString(node.arguments[0] as AnyNode))
+          context.report({ node, messageId: "nested" });
+        if (!pollCalls.has(calledName(node) ?? "")) return;
+        const options = node.arguments[3];
+        if (options?.type !== "ObjectExpression") return;
+        // A callback that reads a "true"/"false" DOM attribute compares text on
+        // purpose; only a callback that turns its own result into text moves
+        // the boolean through a string.
+        if (!stringifies(node.arguments[1] as AnyNode)) return;
+        for (const option of options.properties) {
+          if (
+            option.type !== "Property" ||
+            option.key.type !== "Identifier" ||
+            option.key.name !== "ready"
+          )
+            continue;
+          const seek = (at: AnyNode): void => {
+            if (
+              at.type === "Literal" &&
+              (at.value === "true" || at.value === "false") &&
+              at.parent?.type === "BinaryExpression"
+            )
+              context.report({
+                node: at,
+                messageId: "boolean",
+                data: { text: at.value },
+              });
+            for (const key of Object.keys(at)) {
+              if (key === "parent") continue;
+              const child = (at as unknown as Record<string, unknown>)[key];
+              for (const part of Array.isArray(child) ? child : [child])
+                if (part && typeof part === "object" && "type" in part)
+                  seek(part as AnyNode);
+            }
+          };
+          seek(option.value as AnyNode);
+        }
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-tests" },
   rules: {
@@ -539,5 +806,10 @@ export default {
     "no-markup-assertion": noMarkupAssertion,
     "no-source-text": noSourceText,
     "no-internal-mock": noInternalMock,
+    "no-typed-arg-name": noTypedArgName,
+    "no-poll-adapter": noPollAdapter,
+    "no-poll-wrapper": noPollWrapper,
+    "no-generated-poll-label": noGeneratedPollLabel,
+    "no-string-transport": noStringTransport,
   },
 };
