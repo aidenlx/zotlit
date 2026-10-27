@@ -1186,7 +1186,7 @@ describe("Profile", () => {
         expect(
           profile.bridge.runSync(profile.resolveProfile("default"))?.document,
         ).toBeUndefined();
-        const pending = yield* Effect.forkChild(profileService.ejectDefault(), {
+        const pending = yield* Effect.forkChild(profileService.ejectDefault, {
           startImmediately: true,
         });
         yield* TestClock.adjust(500);
@@ -1202,7 +1202,7 @@ describe("Profile", () => {
         expect(
           bridge.runSync(settings.current)?.["note.default-profile"],
         ).not.toHaveProperty("document");
-        const restore = profile.bridge.runPromise(profile.restoreDefault());
+        const restore = profile.bridge.runPromise(profile.restoreDefault);
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => restore);
         expect(vault.files.has("templates/zotlit-profile.default.md")).toBe(
@@ -1228,8 +1228,8 @@ describe("Profile", () => {
         false,
       );
       const edited = `${source}\nA custom annotation suffix.\n`;
-      const first = profile.bridge.runPromise(profile.materializeDefault());
-      const competing = profile.bridge.runPromise(profile.materializeDefault());
+      const first = profile.bridge.runPromise(profile.materializeDefault);
+      const competing = profile.bridge.runPromise(profile.materializeDefault);
       yield* TestClock.adjust(500);
       const results = yield* Effect.promise(() =>
         Promise.all([first, competing]),
@@ -1244,7 +1244,7 @@ describe("Profile", () => {
         source,
       );
       vault.contents.set("templates/zotlit-profile.default.md", edited);
-      const second = profile.bridge.runPromise(profile.materializeDefault());
+      const second = profile.bridge.runPromise(profile.materializeDefault);
       yield* TestClock.adjust(500);
       expect(yield* Effect.promise(() => second)).toMatchObject({
         created: false,
@@ -1276,7 +1276,7 @@ describe("Profile", () => {
             ],
           }),
         );
-        const pending = yield* Effect.forkChild(profileService.ejectDefault(), {
+        const pending = yield* Effect.forkChild(profileService.ejectDefault, {
           startImmediately: true,
         });
         yield* TestClock.adjust(500);
@@ -1315,7 +1315,7 @@ describe("Profile", () => {
         expect(
           profile.bridge.runSync(profile.resolveProfile("default"))?.document,
         ).toBe("zotlit-profile.custom.md");
-        const eject = yield* Effect.forkChild(profileService.ejectDefault(), {
+        const eject = yield* Effect.forkChild(profileService.ejectDefault, {
           startImmediately: true,
         });
         yield* TestClock.adjust(500);
@@ -1323,7 +1323,7 @@ describe("Profile", () => {
           "templates/zotlit-profile.custom.md",
         );
         expect(yield* fixture.profileService.diagnostics).toEqual([]);
-        const restore = profile.bridge.runPromise(profile.restoreDefault());
+        const restore = profile.bridge.runPromise(profile.restoreDefault);
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => restore);
         expect(vault.files.has("templates/zotlit-profile.custom.md")).toBe(

@@ -18,7 +18,7 @@ import type {
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
-import type { Profile, ProfileOperations } from "@/services/profile/service";
+import type { Profile, ProfileReader } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
@@ -101,7 +101,7 @@ export type DocumentPresentation =
 export function profileReaderOf(
   profile: Pick<Profile["Service"], "loaded" | "profileOf">,
   run: <A, E>(effect: Effect.Effect<A, E>) => A,
-): Pick<ProfileOperations, "loaded" | "profileOf"> {
+): Pick<ProfileReader, "loaded" | "profileOf"> {
   const read = <A>(effect: Effect.Effect<A, unknown>): A => {
     const exit = run(Effect.exit(effect));
     if (Exit.isSuccess(exit)) return exit.value;
@@ -128,7 +128,7 @@ export function profileReaderOf(
 export function documentPresentation(
   metadataCache: Pick<MetadataCache, "getFileCache">,
   file: TFile,
-  profiles?: Pick<ProfileOperations, "loaded" | "profileOf">,
+  profiles?: Pick<ProfileReader, "loaded" | "profileOf">,
 ): DocumentPresentation {
   const frontmatter = metadataCache.getFileCache(file)?.frontmatter;
   const presentation: RenderPresentation = {};

@@ -1314,7 +1314,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async ({ zotlit }) => {
           await zotlit.services.bridge.runPromise(
-            zotlit.services.profileService.restoreDefault(),
+            zotlit.services.profileService.restoreDefault,
           );
         },
         undefined,
@@ -1555,8 +1555,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               leaf.detach();
           const { bridge, profileService: profile } = zotlit.services;
           if (kind === "built-in")
-            await bridge.runPromise(profile.restoreDefault());
-          else await bridge.runPromise(profile.materializeDefault());
+            await bridge.runPromise(profile.restoreDefault);
+          else await bridge.runPromise(profile.materializeDefault);
           const file = await app.vault.create(
             notePath,
             "---\nzotero-key: DMRGRART\n---\n# Popout",
@@ -1673,7 +1673,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const app = host as WalkthroughApp;
 
         const { bridge, profileService: profile } = zotlit.services;
-        await bridge.runPromise(profile.materializeDefault());
+        await bridge.runPromise(profile.materializeDefault);
         return await app.vault.read(
           app.vault.getFileByPath(bridge.runSync(profile.defaultDocumentPath))!,
         );
@@ -1925,7 +1925,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const { press, until, waitFor } = page;
         await using cleanup = new AsyncDisposableStack();
         const { bridge, profileService: profile } = zotlit.services;
-        await bridge.runPromise(profile.materializeDefault());
+        await bridge.runPromise(profile.materializeDefault);
         const file = app.vault.getFileByPath(
           bridge.runSync(profile.defaultDocumentPath),
         )!;
