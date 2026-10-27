@@ -676,10 +676,7 @@ export default defineConfig({
     {
       // Legacy services, written before the rule. A file moves off this list
       // when its service converts to Effect (/obsidian-services).
-      files: [
-        "src/services/excerpt-image/display.ts",
-        "src/services/pdf-annotation-editor/service.ts",
-      ],
+      files: ["src/services/pdf-annotation-editor/service.ts"],
       rules: { "zotlit-services/no-legacy-service": "off" },
     },
     {

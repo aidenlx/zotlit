@@ -4,7 +4,6 @@ import { Effect } from "effect";
 
 import { withLogCategory } from "@/lib/effect-log-category";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError } from "@/lib/legacy-port";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
@@ -33,11 +32,7 @@ export const clearExcerptCache = Effect.fn("SettingTab.clearExcerptCache")(
     const images = yield* ExcerptImageService;
     // The Held Reads go first: a card that repainted from the store while
     // it emptied would hold an image the clear removed.
-    yield* Effect.try({
-      try: () => displays.clear(),
-      catch: (cause) =>
-        new LegacyPortError({ step: "clear-excerpt-displays", cause }),
-    });
+    yield* displays.clear;
     yield* images.clear;
     return "completed" as const;
   },

@@ -19,7 +19,7 @@ import { HoverVisits } from "@/services/citation-popover/visits";
 import type { HoverVisit } from "@/services/citation-popover/visits";
 import type {
   ExcerptDisplayDemand,
-  ExcerptDisplayService,
+  ExcerptDisplays,
 } from "@/services/excerpt-image/display";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
@@ -52,7 +52,7 @@ export interface AnnotationPopoverCoreDeps {
   read: (attachmentKey: string) => Promise<AnnotationList | null | undefined>;
   bridge: Pick<EffectBridge, "runSync" | "subscribe">;
   /** The live Excerpt Image display the Annotation View's cards share. */
-  excerptDisplay: Pick<ExcerptDisplayService, "open">;
+  excerptDisplay: Pick<ExcerptDisplays["Service"], "open">;
   /** The file inputs one saved Annotation's Excerpt Image resolves through. */
   excerptRequest: (input: {
     annotation: AnnotationRecord;
@@ -162,7 +162,7 @@ export class AnnotationPopoverCore implements Disposable {
           }
           if (list !== null && hasExcerptImage(annotation)) {
             if (excerpt === null) {
-              const opened = deps.excerptDisplay.open();
+              const opened = deps.bridge.runSync(deps.excerptDisplay.open);
               subscriptions.defer(() => opened.release());
               excerpt = opened;
             }

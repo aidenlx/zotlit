@@ -19,7 +19,6 @@ import { PandocEngine } from "@/services/pandoc/service";
 import { CitationParse } from "@/services/citation-parse/service";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
-import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { ItemLookup } from "@/services/item-lookup/service";
 import { QueryService } from "@/services/item-query/service";
 import { LibraryScope } from "@/services/library-scope/service";
@@ -50,7 +49,7 @@ export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(CitationText, {}),
   Layer.mock(
     ExcerptDisplays,
-    stubService<ExcerptDisplayService>("ExcerptDisplays", {}),
+    stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {}),
   ),
   Layer.mock(AnnotationNoteActions, {}),
   Layer.mock(CapabilityNotices, {}),
