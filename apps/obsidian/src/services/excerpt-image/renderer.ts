@@ -309,28 +309,32 @@ export class ExcerptRenderer {
 
   render = Effect.fn("ExcerptRenderer.render")(
     (request: ExcerptRequest) =>
-      Effect.suspend(() => {
-        if (this.#unusable)
-          return Effect.fail(
-            new ExcerptImageError({ message: "Excerpt renderer is closed" }),
-          );
-        if (this.#active)
-          return Effect.fail(
-            new ExcerptImageError({ message: "Excerpt renderer is busy" }),
-          );
-        this.#active = true;
-        this.diagnostics.job(true);
-        return this.#render(request).pipe(
-          Effect.timeout(30_000),
-          Effect.onError(() => this.#close),
-          Effect.ensuring(
-            Effect.sync(() => {
-              this.#active = false;
-              this.diagnostics.job(false);
-            }),
+      Effect.acquireUseRelease(
+        Effect.suspend(() => {
+          if (this.#unusable)
+            return Effect.fail(
+              new ExcerptImageError({ message: "Excerpt renderer is closed" }),
+            );
+          if (this.#active)
+            return Effect.fail(
+              new ExcerptImageError({ message: "Excerpt renderer is busy" }),
+            );
+          return Effect.sync(() => {
+            this.#active = true;
+            this.diagnostics.job(true);
+          });
+        }),
+        () =>
+          this.#render(request).pipe(
+            Effect.timeout(30_000),
+            Effect.onError(() => this.#close),
           ),
-        );
-      }),
+        () =>
+          Effect.sync(() => {
+            this.#active = false;
+            this.diagnostics.job(false);
+          }),
+      ),
     logged,
   );
 

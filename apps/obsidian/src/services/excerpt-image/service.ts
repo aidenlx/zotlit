@@ -530,9 +530,12 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
             );
           }).pipe(Effect.scoped);
         }).pipe(Effect.scoped);
-        advanceDemand(annotation, fingerprint, version).jobs++;
-        const fiber = yield* job.pipe(
-          Effect.ensuring(
+        const fiber = yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            advanceDemand(annotation, fingerprint, version).jobs++;
+          }),
+          () => job,
+          () =>
             Effect.sync(() => {
               if (pending.get(pendingKey)?.evidence === evidence)
                 pending.delete(pendingKey);
@@ -543,9 +546,7 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
                   demands.delete(annotation);
               }
             }),
-          ),
-          Effect.forkIn(scope, { startImmediately: true }),
-        );
+        ).pipe(Effect.forkIn(scope, { startImmediately: true }));
         const entry: Pending = { fiber, cancelled: false, users: 0, evidence };
         pending.set(pendingKey, entry);
         return entry;
@@ -565,20 +566,26 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
           snapshot.pdfPath,
           snapshot.zoteroPngPath,
         ]);
-        const entry = yield* admit(pendingKey, snapshot, {
-          key,
-          generation: currentGeneration,
-          outcomes,
-        });
-        entry.users++;
-        return yield* Fiber.join(entry.fiber).pipe(
-          Effect.tap((outcome) =>
-            Effect.sync(() => {
-              if (outcome !== STALLED)
-                outcomes?.retain(key, entry.evidence.pdf, outcome);
-            }),
-          ),
-          Effect.ensuring(
+        return yield* Effect.acquireUseRelease(
+          Effect.gen(function* () {
+            const entry = yield* admit(pendingKey, snapshot, {
+              key,
+              generation: currentGeneration,
+              outcomes,
+            });
+            entry.users++;
+            return entry;
+          }),
+          (entry) =>
+            Fiber.join(entry.fiber).pipe(
+              Effect.tap((outcome) =>
+                Effect.sync(() => {
+                  if (outcome !== STALLED)
+                    outcomes?.retain(key, entry.evidence.pdf, outcome);
+                }),
+              ),
+            ),
+          (entry) =>
             Effect.gen(function* () {
               if (--entry.users === 0) {
                 entry.cancelled = true;
@@ -587,7 +594,6 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
                 );
               }
             }),
-          ),
         );
       });
       const operation = Effect.fn("ExcerptImageService.operation")(
