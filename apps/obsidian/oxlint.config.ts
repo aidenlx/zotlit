@@ -518,6 +518,7 @@ export default defineConfig({
         "src/views/library/**",
         "src/views/query-view/**",
         "src/views/cited-by/**",
+        "src/views/references/**",
         "src/views/welcome/**",
         "src/views/template-data-explorer/**",
         "src/views/annot-view/**",
@@ -540,6 +541,7 @@ export default defineConfig({
         "src/views/query-view/**",
         "src/views/annot-view/**",
         "src/views/cited-by/**",
+        "src/views/references/**",
         "src/views/welcome/**",
       ],
       rules: {

@@ -29,6 +29,8 @@ import type { CapabilityNotices } from "@/services/annotation-repository/notices
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationText } from "@/services/citation-text/service";
+import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { ExcerptDisplays } from "@/services/excerpt-image/display";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { QueryService } from "@/services/item-query/service";
@@ -37,6 +39,8 @@ import type { LocalServer } from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature/service";
 import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { BibliographyRender } from "@/services/pandoc/render-cache";
+import type { PandocEngine } from "@/services/pandoc/service";
 import type { Profile } from "@/services/profile/service";
 import type { QueryClients } from "@/services/query-client/service";
 import type { Release } from "@/services/release/service";
@@ -54,6 +58,10 @@ import type { ZoteroReads } from "@/services/zotero-reads/service";
  * here when a view atom first reads it.
  */
 export type ViewServices =
+  | PandocEngine
+  | BibliographyRender
+  | CitekeyEditor
+  | CitationText
   | AnnotationNoteActions
   | ExcerptDisplays
   | CapabilityNotices

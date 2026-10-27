@@ -454,25 +454,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerReferencesView(this, {
-      runtime: services.runtime,
-      profile: services.profile,
       app: this.app,
-      db: services.zoteroReads,
-      citationIndex: services.citationIndex,
-      citationLookup: services.citationLookup,
-      libraryScope: services.libraryScope,
-      citationText: services.citationText,
-      citekeyEditor: {
-        // Unload interrupts a pending open. The open logs its own failures,
-        // so the Exit is a success or an interrupt.
-        openIndexedKey: async (indexedKey, pane) => {
-          await services.bridge.runPromiseExit(
-            services.citekeyEditor.openIndexedKey(indexedKey, pane),
-          );
-        },
-      },
-      pandocEngine: services.pandocEngine,
-      bibliographyRender: services.bibliographyRender,
+      registry: services.runtime.runSync(ViewRegistry),
     });
 
     registerCitedByView(this, {

@@ -69,3 +69,9 @@ export const zoteroQueryUnavailableRevisionAtom = held(
   ),
   0,
 );
+
+/** Whether the current database can answer a read. */
+export const zoteroReadyAtom = Atom.map(
+  zoteroStateAtom,
+  (state) => state.state === "ready",
+);
