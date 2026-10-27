@@ -4,6 +4,7 @@ import { Effect, Layer } from "effect";
 import type { Context } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { Notifier } from "@/lib/notifier";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
 import { ObsidianEnv } from "@/lib/obsidian-env";
@@ -35,6 +36,7 @@ export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(QueryService, {}),
   Layer.mock(LibraryScope, {}),
   Layer.mock(UseLedger, {}),
+  Layer.mock(Notifier, {}),
   Layer.mock(PluginSettings, {}),
   Layer.mock(Release, { version: "" }),
   Layer.mock(QueryClients, {

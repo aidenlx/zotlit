@@ -14,7 +14,6 @@ import type {
 import { afterEach, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import * as m from "@/lib/i18n/generated/messages";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { UseLedger } from "@/services/use-ledger/service";
@@ -140,7 +139,6 @@ async function setup(
   const fixture = workspaceFixture();
   before(fixture);
   const app = stubService<App>("App", { workspace: fixture.workspace });
-  const notify = vi.fn();
   const record = vi.fn();
   const reads = cleanup.use(
     inProcessReadsService(
@@ -198,7 +196,7 @@ async function setup(
   const actions = itemActions(
     stubService<ItemActionsDeps>("ItemActionsDeps", {
       app,
-      notify,
+      notify: () => undefined,
       registry: host.registry,
       noteFeature: stubService<ItemActionsDeps["noteFeature"]>(
         "NoteFeatureHandle",
@@ -209,7 +207,7 @@ async function setup(
       ),
     }),
   );
-  return { ...fixture, actions, notify, record };
+  return { ...fixture, actions, record };
 }
 
 it("inserts a row's citation into the note active last before the Library View, and into the one before once that closes", async () => {
@@ -268,7 +266,7 @@ it("inserts into a new tab that became active before it opened its note", async 
   expect(earlier.text()).toBe("LEFT RIGHT");
 });
 
-it("passes over a note in Reading view, which shows no editor, and says where it finds no note", async () => {
+it("passes over a note in Reading view, which shows no editor, and inserts nowhere where it finds no note", async () => {
   const env = await setup();
   const editing = env.note("Editing.md");
   const reading = env.note("Reading.md", "preview");
@@ -282,9 +280,7 @@ it("passes over a note in Reading view, which shows no editor, and says where it
   env.close(editing);
   await env.actions.insertCitation(KEY);
   expect(reading.text()).toBe("LEFT RIGHT");
-  expect(env.notify).toHaveBeenCalledExactlyOnceWith(
-    m.library_view_cite_no_note(),
-  );
+  expect(env.record).toHaveBeenCalledTimes(1);
 });
 
 it("parts a dropped or inserted citation from the word before it with a space, and adds none at a line start", async () => {

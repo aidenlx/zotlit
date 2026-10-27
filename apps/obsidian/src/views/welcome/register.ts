@@ -73,6 +73,15 @@ export function registerWelcomeView(
         void openLibraryView(plugin.app);
       });
   };
+  watchNotFound(plugin, deps, apply);
+}
+
+/** Publish the current missing-folder state and subsequent workspace changes. */
+export function watchNotFound(
+  plugin: Pick<Plugin, "app" | "register">,
+  { registry }: WelcomeRegistrationDeps,
+  apply: (signal: NotFoundSignal) => void,
+): void {
   let missing = false;
   plugin.register(
     registry.subscribe(
