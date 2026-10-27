@@ -1,9 +1,3 @@
-// "Configure view": the name, the rows and the Layout of one view of a
-// Query File, and the options of its Layout, as the view menu's page for that
-// view shows them. Each change saves to the file at once; a typed name saves
-// when its field loses focus.
-import { useStore } from "zustand";
-
 import {
   Chooser,
   useChooserPageSave,
@@ -20,6 +14,11 @@ import { DATASETS } from "./datasets";
 import { annotationsLayoutOptions, CARD_WIDTH, layoutsFor } from "./layouts";
 import type { AnnotationsLayoutOptions } from "./layouts";
 import { ListLayoutFields, listLayoutOptions } from "./list-layout";
+// "Configure view": the name, the rows and the Layout of one view of a
+// Query File, and the options of its Layout, as the view menu's page for that
+// view shows them. Each change saves to the file at once; a typed name saves
+// when its field loses focus.
+import { useQueryViewState } from "./model";
 import { QUERY_FILE_DATASETS } from "./query-file";
 import type { QueryFileDataset } from "./query-file";
 import type { QueryView } from "./view";
@@ -100,7 +99,7 @@ export function ConfigureViewFields({
   name: string;
   onRenamed: (name: string) => void;
 }) {
-  const file = useStore(view.state, (s) => s.file);
+  const file = useQueryViewState(view, (s) => s.file);
   const index = file?.views.findIndex((shown) => shown.name === name) ?? -1;
   const shown = file?.views[index];
   const [draft, setDraft, typed] = useChooserPageText(name);

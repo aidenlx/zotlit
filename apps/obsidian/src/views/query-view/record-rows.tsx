@@ -3,7 +3,6 @@
 // the text of its visible properties. The toolbar search and a collapsed
 // heading act on them as they do on the Annotations layout's cards.
 import { Fragment, useMemo } from "react";
-import { useStore } from "zustand";
 
 import { errorCell, valueText } from "@zotlit/item-query";
 
@@ -18,6 +17,7 @@ import {
   useToggleGroupCollapsed,
 } from "@/views/annot-view/store";
 
+import { useQueryViewState } from "./model";
 import { vaultName } from "./query-file";
 import { NO_RESULTS } from "./results";
 import type { LiteratureNotes, VaultHost, VaultValue } from "./table-notes";
@@ -94,8 +94,8 @@ export function useRecordGroups(view: QueryView): {
   groups: readonly RecordGroup[];
 } {
   const columns = useViewProperties(view)?.visible;
-  const records = useStore(
-    view.state,
+  const records = useQueryViewState(
+    view,
     (s) => (s.results ?? NO_RESULTS).records,
   );
   const query = useAnnotStore((s) => s.filterQuery)

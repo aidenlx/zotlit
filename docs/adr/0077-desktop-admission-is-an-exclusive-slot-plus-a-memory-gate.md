@@ -40,3 +40,16 @@ Each holder enforces its own Lease by ending its process group. When a Lease plu
 - A manual hold that forgets to release ends on its own at its Lease. A long debugging walk extends its Lease, or joins the queue again.
 - One-shot `obsidian-cli.ts` calls take no slot. A slot per call would deadlock behind the very run being debugged. The debugging skills tell the agent to wrap a walk in `pnpm desktop-slot run`.
 - The state lives in `/tmp`, so it clears on reboot, and every clone of the repository shares it.
+
+## Memory Gate update (2026-10-27)
+
+The Memory Gate admits waiting runs in arrival order as soon as the OS reports
+room. Each admitted run records its start for status reporting. The fixed 30 s
+settle window is removed: it delayed runs while pressure was normal, and newer
+runs could repeatedly win admission while an older run reached its deadline.
+Dead and expired waiters are removed so the queue can advance.
+
+Admission checks pressure before each start. Several runs can start before
+the OS reports their full memory use; the gate blocks later starts when the
+pressure reading rises. Desktop Slot limits and Leases keep their existing
+behavior.

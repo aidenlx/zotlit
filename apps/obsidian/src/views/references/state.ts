@@ -1,9 +1,4 @@
-// Per-instance store for one References Sidebar: the reference list and where the engine stands.
-
-import { createContext, useContext } from "react";
-import { useStore } from "zustand";
-import { createStore } from "zustand/vanilla";
-
+// The reference list state and its pure copy-readiness transitions.
 import type {
   Citation,
   CitationKeyResolution,
@@ -87,21 +82,6 @@ export interface ReferencesState {
   copy: ReferencesCopyState;
 }
 
-export type ReferencesStore = ReturnType<typeof createReferencesStore>;
-
-export function createReferencesStore() {
-  return createStore<ReferencesState>()(() => ({
-    entries: [],
-    listMode: { kind: "minimal" },
-    engine: { kind: "absent" },
-    formattingFailed: false,
-    documentPresentationError: null,
-    dbReady: false,
-    citekeyResolution: null,
-    copy: { kind: "blocked", reason: "no-note" },
-  }));
-}
-
 /**
  * Whether the current list is a Copied Bibliography the sidebar can hand over.
  *
@@ -145,17 +125,4 @@ export function minimalReferencesState(options: {
     listMode: { kind: "minimal" },
     formattingFailed,
   };
-}
-
-const ReferencesStoreContext = createContext<ReferencesStore | null>(null);
-export const ReferencesStoreProvider = ReferencesStoreContext.Provider;
-
-export function useReferencesStore<T>(selector: (s: ReferencesState) => T): T {
-  const store = useContext(ReferencesStoreContext);
-  if (!store) {
-    throw new Error(
-      "useReferencesStore must be used within ReferencesStoreProvider",
-    );
-  }
-  return useStore(store, selector);
 }

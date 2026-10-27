@@ -5,10 +5,8 @@
 // reads Zotero's database only, so Zotero does not need to run.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
-import { Effect } from "effect";
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
-import { createStore } from "zustand/vanilla";
 
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
@@ -16,12 +14,13 @@ import { runtime } from "@/lib/i18n/generated/runtime";
 import { composing } from "@/lib/ime";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { QueryViewValue } from "@/services/item-query/query-view";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
+import { libraryScopeStateAtom } from "@/services/library-scope/atoms";
 import type { LibraryScope } from "@/services/library-scope/scope";
+import { notedItemKeysAtom } from "@/services/note-index/atoms";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
-import type { PluginSettings } from "@/services/settings/service";
-import type { PlainUseLedger } from "@/services/use-ledger/plain";
+import { useLedgerAtom } from "@/services/use-ledger/atoms";
 import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
 import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
@@ -31,8 +30,8 @@ import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps } from "@/views/query-view/view";
 import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
-import { unavailable } from "@/views/welcome/connection";
 
+import { makeItemNodeCommand } from "./atoms";
 import { CardWidth } from "./card-width";
 import {
   LIBRARY_LAYOUTS,
@@ -64,16 +63,17 @@ import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
 import { FACET_LABELS, LibraryTree } from "./library-tree";
-import type { LibraryTreeDeps } from "./library-tree";
+import { makeLibraryModel, patchSelection } from "./model";
+import type { LibrarySelection } from "./model";
 import { ZoteroNotFound } from "./not-found";
 import { ReadingCard } from "./reading-card";
 import { recentReason, RECENT_REASON_FIELDS } from "./reason";
 import { rowMenu } from "./row-menu";
 import type { MenuItem } from "./row-menu";
 import { LibrarySearch } from "./search-box";
-import type { LibrarySearchDeps, SearchFound } from "./search-box";
+import type { SearchFound } from "./search-box";
 import { LibraryViewStorage } from "./storage";
-import { libraryOf, sameLibrary } from "./tree";
+import { scopeForLibrary } from "./tree-model";
 import "./style.css";
 
 const logger = getLogger(["library-view"]);
@@ -81,12 +81,7 @@ const logger = getLogger(["library-view"]);
 export const LIBRARY_VIEW_TYPE = "zotlit-library";
 
 export interface LibraryViewDeps extends QueryViewDeps {
-  useLedger: Pick<PlainUseLedger, "get">;
-  settings: Pick<PluginSettings["Service"], "update" | "flush" | "current">;
-  libraryScope: QueryViewDeps["libraryScope"] &
-    LibraryTreeDeps["libraryScope"] &
-    Pick<PlainLibraryScope, "effective">;
-  lookup: LibrarySearchDeps["lookup"];
+  registry: ViewRegistryHandle;
   /** What a row does with its Item. */
   items: ItemActions;
   /** The Welcome View banner above the tab, and its setup actions. ADR 0077. */
@@ -151,9 +146,34 @@ export class LibraryView extends ItemView {
    * selected row, unless the researcher closed it (the document's
    * `cardClosed`), when it too waits to be asked for.
    */
-  readonly selection = createStore<{ key: string | null; card: boolean }>(
-    () => ({ key: null, card: false }),
-  );
+  readonly model = makeLibraryModel();
+  readonly #itemNodeCommand = makeItemNodeCommand();
+  #release: (() => void) | null;
+  get selected(): LibrarySelection {
+    return this.#deps.registry.get(this.model.selection);
+  }
+  #selectRow(
+    patch:
+      | Partial<LibrarySelection>
+      | ((state: LibrarySelection) => LibrarySelection),
+  ): void {
+    this.#deps.registry.update(
+      this.model.selection,
+      typeof patch === "function" ? patch : patchSelection(patch),
+    );
+  }
+  #hold(): () => void {
+    const releases = [
+      this.#deps.registry.mount(this.model.selection),
+      this.#deps.registry.mount(this.#itemNodeCommand),
+      this.#deps.registry.mount(useLedgerAtom),
+      this.#deps.registry.mount(notedItemKeysAtom),
+      this.#deps.registry.mount(libraryScopeStateAtom),
+    ];
+    return () => {
+      for (const release of releases) release();
+    };
+  }
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
   /** The box of the tree, the list and the card, once the tab has opened. */
@@ -178,6 +198,7 @@ export class LibraryView extends ItemView {
   constructor(leaf: WorkspaceLeaf, deps: LibraryViewDeps) {
     super(leaf);
     this.#deps = deps;
+    this.#release = this.#hold();
     this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root", "zt-library-view");
     this.contentEl.dataset.libraryView = "";
@@ -188,8 +209,7 @@ export class LibraryView extends ItemView {
       this.contentEl.createDiv({ cls: "zt:shrink-0" }),
     );
     this.#storage = new LibraryViewStorage(
-      deps.settings,
-      deps.bridge,
+      deps.registry,
       () => this.query.document.text,
     );
     const drag = createItemDrag({ app: deps.app, actions: deps.items });
@@ -203,13 +223,30 @@ export class LibraryView extends ItemView {
         item,
       );
     const rows: ItemRowGestures = {
-      selection: this.selection,
+      // Query View owns this interface; its selection is projected from our atom.
+      selection: {
+        getState: () => this.selected,
+        getInitialState: () => ({ key: null }),
+        setState: (update) => {
+          const now = this.selected;
+          const next = typeof update === "function" ? update(now) : update;
+          this.#selectRow(next);
+        },
+        subscribe: (listener) => {
+          let previous = this.selected;
+          return deps.registry.subscribe(this.model.selection, (state) => {
+            const before = previous;
+            previous = state;
+            listener(state, before);
+          });
+        },
+      },
       click: (key, event) => this.#click(key, event),
       // The keyboard entering the list, or a link or button in the row,
       // selects the row, as the arrow keys do; the Reading Card stays as
       // it was.
       select: (key) =>
-        this.selection.setState((now) => ({
+        this.#selectRow((now) => ({
           key,
           card: now.key === key && now.card,
         })),
@@ -223,7 +260,7 @@ export class LibraryView extends ItemView {
       // Reading Card stays as it was.
       menu: (key, event) => {
         this.#cancelCard();
-        this.selection.setState((now) => ({
+        this.#selectRow((now) => ({
           key,
           card: now.key === key && now.card,
         }));
@@ -262,23 +299,29 @@ export class LibraryView extends ItemView {
       displayOnly: true,
       layouts: LIBRARY_LAYOUTS,
       // The selected node's sort and the row limit are the view's own.
-      defaults: () => libraryViewDefaults(this.tree.store.getState().node),
+      defaults: () => libraryViewDefaults(this.tree.state.node),
       // Has note, and the Literature Note half of Unread, the vault answers.
       rowPass: () =>
-        this.#shown && vaultPass(this.#shown.vault, deps.literatureNotes),
+        this.#shown &&
+        vaultPass(this.#shown.vault, {
+          find: (key) =>
+            deps.registry.get(notedItemKeysAtom).has(key)
+              ? { path: key, basename: key }
+              : null,
+        }),
       rows,
       fields: (view) =>
-        view.type === "papers" &&
-        this.tree.store.getState().node.kind === "recent"
+        view.type === "papers" && this.tree.state.node.kind === "recent"
           ? RECENT_REASON_FIELDS
           : [],
-      reason: (row) =>
-        this.tree.store.getState().node.kind === "recent"
-          ? recentReason(row.values, deps.useLedger.get(row.indexedKey))
-          : null,
+      reason: (row) => {
+        if (this.tree.state.node.kind !== "recent") return null;
+        const use = deps.registry.get(useLedgerAtom)[row.indexedKey];
+        return recentReason(row.values, use);
+      },
       // The empty list names the search or the facets, which the derived
       // text holds as filters the researcher never wrote.
-      empty: ({ fallback }) => this.search.empty(this.tree.store, fallback),
+      empty: ({ fallback }) => this.search.empty(this.tree.model, fallback),
       // The document took the change from the toolbar's text already.
       save: () => this.#storage.save(),
       // The way to the full Query View: a Query File of the list.
@@ -303,8 +346,7 @@ export class LibraryView extends ItemView {
           });
       },
       selectTag: (name) => {
-        if (!this.tree.store.getState().tags.includes(name))
-          this.tree.toggleTag(name);
+        if (!this.tree.state.tags.includes(name)) this.tree.toggleTag(name);
       },
       // The card shows the header of an Item it is reading from its row.
       row: (key) => this.#rowValues(key),
@@ -314,7 +356,6 @@ export class LibraryView extends ItemView {
       select: (node) => this.#select(node),
       filter: (facets) => this.#filter(facets),
       tag: (tags) => this.#tag(tags),
-      scope: () => this.#scope(),
       expand: (expanded) => this.#expand((doc) => withExpanded(doc, expanded)),
       prune: (know) => {
         const doc = this.#storage.document();
@@ -323,15 +364,13 @@ export class LibraryView extends ItemView {
       },
     });
     this.search = new LibrarySearch(deps, {
-      node: () => this.tree.store.getState().node,
+      node: () => this.tree.state.node,
       scope: () => this.#scope(),
       found: (found) => this.#show(found),
       keep: (text) => {
         this.#storage.set((doc) => withSearch(doc, text));
         this.#keep();
       },
-      // ZotLit cannot read Zotero's database: the search box asks nothing.
-      readable: () => !unavailable(deps.welcome),
     });
   }
 
@@ -412,7 +451,12 @@ export class LibraryView extends ItemView {
     return ZOTLIT_MARK_ICON;
   }
 
+  #subscribeSelection(listener: (state: LibrarySelection) => void): () => void {
+    return this.#deps.registry.subscribe(this.model.selection, listener);
+  }
+
   protected override async onOpen(): Promise<void> {
+    this.#release ??= this.#hold();
     // An Item dragged from a row lands in a note, never back in the view.
     this.registerDomEvent(this.contentEl, "dragover", refuseItemDrop);
     // The Welcome View banner sits above the tree and the list at its full
@@ -503,7 +547,10 @@ export class LibraryView extends ItemView {
     const shown = "zt:hidden zt:group-data-zotero-missing:block";
     this.#parts.push(
       new ZoteroNotFound(
-        this.#deps.welcome,
+        {
+          registry: this.#deps.registry,
+          setupActions: this.#deps.welcome.setupActions,
+        },
         {
           shell,
           tree: treeEl.createDiv({ cls: shown }),
@@ -533,14 +580,14 @@ export class LibraryView extends ItemView {
     this.search.render(searchEl);
     // On a narrow pane the tree shows over the list while it is open.
     this.tree.register(
-      this.tree.store.subscribe(({ open }) =>
+      this.tree.subscribe(({ open }) =>
         shell.toggleAttribute("data-tree-open", open),
       ),
     );
     this.#holdTreeKeys(treePane);
     // A press on the list beside it puts the tree away.
     main.addEventListener("pointerdown", (event) => {
-      if (!this.tree.store.getState().open) return;
+      if (!this.tree.state.open) return;
       const target = event.target as Node;
       if (
         target.instanceOf(HTMLElement) &&
@@ -558,7 +605,7 @@ export class LibraryView extends ItemView {
     this.card.load();
     this.card.render(cardBody);
     this.card.register(
-      this.selection.subscribe(({ key, card }) => {
+      this.#subscribeSelection(({ key, card }) => {
         this.card.show(key);
         // Asking for the card opens a card the researcher closed.
         if (card && this.#storage.document().cardClosed)
@@ -570,22 +617,28 @@ export class LibraryView extends ItemView {
     // the Reading Card never shows an Item the list does not hold.
     this.query.register(
       this.query.state.subscribe(({ phase, results }) => {
-        const { key } = this.selection.getState();
+        const { key } = this.selected;
         if (phase !== "ready" || key === null) return;
         if (!results?.rows.some((row) => row.indexedKey === key))
-          this.selection.setState({ key: null, card: false });
+          this.#selectRow({ key: null, card: false });
+      }),
+    );
+    this.query.register(
+      this.#deps.registry.subscribe(useLedgerAtom, () => {
+        if (this.#shown && this.tree.state.node.kind === "recent")
+          this.query.contextChanged();
       }),
     );
     // A Literature Note added or removed changes what the vault answers.
     this.query.register(
-      this.#deps.literatureNotes.on("changed", () => {
+      this.#deps.registry.subscribe(notedItemKeysAtom, () => {
         if (this.#shown && this.#shown.vault.length > 0) this.query.refresh();
       }),
     );
     // A tab that the workspace restores on startup can open before plugin
     // data has loaded.
 
-    this.#storage.load();
+    await this.#storage.load();
     const doc = this.#storage.document();
     this.#cardWidth?.load();
     this.#showCard();
@@ -597,7 +650,7 @@ export class LibraryView extends ItemView {
     this.tree.refresh();
     // The document keeps the selected paper, whatever selects it.
     this.card.register(
-      this.selection.subscribe(({ key }) => {
+      this.#subscribeSelection(({ key }) => {
         if (key !== this.#storage.document().selected) this.#keepSelected(key);
       }),
     );
@@ -617,7 +670,7 @@ export class LibraryView extends ItemView {
     const off = this.query.state.subscribe(({ phase, results }) => {
       if (phase !== "ready" || !results) return;
       off();
-      if (this.selection.getState().key !== null) return;
+      if (this.selected.key !== null) return;
       if (!results.rows.some((row) => row.indexedKey === selected)) {
         this.#keepSelected(null);
         return;
@@ -625,10 +678,10 @@ export class LibraryView extends ItemView {
       // As the arrow keys select a row: the card shows beside a wide list
       // and stays off a narrow one until the researcher asks for it, as it
       // does off a wide one the researcher closed it on.
-      this.selection.setState({ key: selected, card: false });
+      this.#selectRow({ key: selected, card: false });
       // The list draws its rows a frame or more after they land.
       void this.#drawn(selected).then((row) => {
-        if (this.selection.getState().key === selected)
+        if (this.#release && this.selected.key === selected)
           row?.scrollIntoView({ block: "nearest" });
       });
     });
@@ -642,6 +695,7 @@ export class LibraryView extends ItemView {
   async #drawn(key: string): Promise<HTMLElement | undefined> {
     const win = this.contentEl.win;
     for (let frame = 0; frame < 30; frame++) {
+      if (!this.#release) return undefined;
       const row = this.#rowOf(key);
       if (row) return row;
       await new Promise((resolve) => win.requestAnimationFrame(resolve));
@@ -687,7 +741,7 @@ export class LibraryView extends ItemView {
   #showCard(): void {
     const el = this.#cardEl;
     if (!el) return;
-    const { key, card } = this.selection.getState();
+    const { key, card } = this.selected;
     el.hidden = key === null || this.#storage.document().cardClosed === true;
     this.#shell?.toggleAttribute("data-card-open", card);
     this.#cardWidth?.apply();
@@ -724,16 +778,15 @@ export class LibraryView extends ItemView {
   #click(key: string, event: MouseEvent): void {
     this.#cancelCard();
     if (event.detail <= 1 && !this.#cardIsOverlay()) {
-      this.selection.setState({ key, card: true });
+      this.#selectRow({ key, card: true });
       return;
     }
-    const now = this.selection.getState();
-    this.selection.setState({ key, card: now.key === key && now.card });
+    const now = this.selected;
+    this.#selectRow({ key, card: now.key === key && now.card });
     if (event.detail > 1) return;
     this.#cardTimer = this.contentEl.win.setTimeout(() => {
       this.#cardTimer = null;
-      if (this.selection.getState().key === key)
-        this.selection.setState({ card: true });
+      if (this.selected.key === key) this.#selectRow({ card: true });
     }, DOUBLE_CLICK_MS);
   }
 
@@ -753,7 +806,7 @@ export class LibraryView extends ItemView {
   #closeCard({ keep = false }: { keep?: boolean } = {}): void {
     this.#cancelCard();
     if (keep) this.#keepClosed(true);
-    this.selection.setState({ card: false });
+    this.#selectRow({ card: false });
     // A wide pane shows the card for a selection it was not asked for, so
     // the store may not change; the closed state hides it all the same.
     this.#showCard();
@@ -786,7 +839,7 @@ export class LibraryView extends ItemView {
       });
     this.scope.register([], " ", (event) => {
       if (!this.#onList(event.target) || !this.#selectedRow()) return;
-      this.selection.setState({ card: true });
+      this.#selectRow({ card: true });
       return false;
     });
   }
@@ -804,17 +857,16 @@ export class LibraryView extends ItemView {
     scope.register([], "Escape", (event) => {
       if (composing(event)) return;
       // The tag filter, the one field in the tree, clears its text first.
-      if (inTextEntry(event.target) && this.tree.store.getState().tagFilter)
-        return;
+      if (inTextEntry(event.target) && this.tree.state.tagFilter) return;
       this.tree.setOpen(false);
       return false;
     });
     const keys = holdScopeWhileFocused(pane, scope, {
       keymap,
-      when: () => this.tree.store.getState().open,
+      when: () => this.tree.state.open,
     });
     this.tree.register(
-      this.tree.store.subscribe(({ open }) => {
+      this.tree.subscribe(({ open }) => {
         if (!open) keys.release();
       }),
     );
@@ -839,7 +891,7 @@ export class LibraryView extends ItemView {
 
   /** The row of the selected Item, while one shows. */
   #selectedRow(): HTMLElement | undefined {
-    const { key } = this.selection.getState();
+    const { key } = this.selected;
     return key === null ? undefined : this.#rowOf(key);
   }
 
@@ -860,7 +912,7 @@ export class LibraryView extends ItemView {
         ? rows[0]!
         : rows[Math.min(Math.max(at + step, 0), rows.length - 1)]!;
     this.#cancelCard();
-    this.selection.setState({
+    this.#selectRow({
       key: next.getAttribute(ITEM_ROW_ATTRIBUTE),
       card: false,
     });
@@ -881,11 +933,14 @@ export class LibraryView extends ItemView {
    * @returns `"not-listed"` where the list does not hold the Item, as past
    * its row limit: nothing is selected, and the caller says so.
    */
-  async reveal(indexedKey: string): Promise<"listed" | "not-listed"> {
+  async reveal(
+    indexedKey: string,
+  ): Promise<"listed" | "not-listed" | "closed"> {
     const node = await this.#itemNode(indexedKey);
-    if (this.tree.store.getState().facets.length > 0) this.#filter([]);
-    if (this.tree.store.getState().tags.length > 0) this.#tag([]);
-    if (this.search.store.getState().text !== "") this.search.clear();
+    if (!this.#release) return "closed";
+    if (this.tree.state.facets.length > 0) this.#filter([]);
+    if (this.tree.state.tags.length > 0) this.#tag([]);
+    if (this.search.state.text !== "") this.search.clear();
     if (node) this.#select(node);
     await this.searched;
     await this.query.settled;
@@ -893,11 +948,11 @@ export class LibraryView extends ItemView {
       .getState()
       .results?.rows.some((row) => row.indexedKey === indexedKey);
     if (!listed) {
-      this.selection.setState({ key: null, card: false });
+      this.#selectRow({ key: null, card: false });
       return "not-listed";
     }
     // Show in Library asks for the Reading Card, as a click does.
-    this.selection.setState({ key: indexedKey, card: true });
+    this.#selectRow({ key: indexedKey, card: true });
     const row = this.#rowOf(indexedKey);
     if (row) this.#focus(row);
     return "listed";
@@ -905,45 +960,9 @@ export class LibraryView extends ItemView {
 
   /** The node of the Item's first Collection, or of its Library. */
   async #itemNode(indexedKey: string): Promise<LibraryNode | null> {
-    const library = libraryOf(indexedKey);
-    if (!library) return null;
-    const { libraryID } =
-      this.#deps.libraryScope.libraries?.find(({ selector }) =>
-        sameLibrary(selector, library),
-      ) ?? {};
-    if (libraryID === undefined) return null;
-    try {
-      const outcome = await this.#deps.query.run(
-        {
-          from: "items",
-          filter: `${JSON.stringify([indexedKey])}.contains(indexedKey)`,
-          fields: ["collections"],
-          limit: 1,
-          libraries: { mode: "selected", libraries: [library] },
-        },
-        new AbortController().signal,
-      );
-      const filed =
-        outcome.kind === "result"
-          ? outcome.result.rows?.[0]?.values.collections
-          : undefined;
-      const first = Array.isArray(filed) ? filed[0] : undefined;
-      if (typeof first !== "string") return { kind: "library", library };
-      await using lease = await this.#deps.reads.acquireRead();
-      const paths = await Effect.runPromise(
-        lease.reads.CollectionPaths({ libraryIDs: [libraryID] }),
-      );
-      const path = paths.find((names) => names.join("/") === first);
-      return path
-        ? { kind: "collection", library, path }
-        : { kind: "library", library };
-    } catch (error) {
-      logger.warn("The Library View could not find an Item's Collection", {
-        indexedKey,
-        error,
-      });
-      return null;
-    }
+    const result = Promise.withResolvers<LibraryNode | null>();
+    this.#deps.registry.set(this.#itemNodeCommand, { indexedKey, result });
+    return result.promise;
   }
 
   /** The researcher picked `node` in the tree: list it, and keep it. */
@@ -960,7 +979,7 @@ export class LibraryView extends ItemView {
       });
     this.tree.showExpanded(this.#storage.document().expanded);
     // The selected row leaves the list with its node.
-    this.selection.setState({ key: null, card: false });
+    this.#selectRow({ key: null, card: false });
     this.search.narrow();
     void this.search.run();
   }
@@ -1028,12 +1047,7 @@ export class LibraryView extends ItemView {
    * saved scope itself, so the view says which Library is missing.
    */
   #scope(): LibraryScope {
-    const { current, effective } = this.#deps.libraryScope;
-    if (!current || current.available.length === 0) return effective;
-    return {
-      mode: "selected",
-      libraries: current.available.map(({ selector }) => selector),
-    };
+    return scopeForLibrary(this.#deps.registry.get(libraryScopeStateAtom));
   }
 
   /** "Save as query file": the document as it stands, once the toolbar's last change is in. */
@@ -1065,6 +1079,7 @@ export class LibraryView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    if (!this.#release) return;
     this.#cancelCard();
     this.#cardWidth?.unload();
     this.#keep.run();
@@ -1075,6 +1090,9 @@ export class LibraryView extends ItemView {
     this.card.unload();
     this.tree.unload();
     for (const part of this.#parts.splice(0)) part.unload();
+    this.#storage.close();
+    this.#release?.();
+    this.#release = null;
   }
 }
 

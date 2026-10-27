@@ -56,12 +56,7 @@ export function templateConversionReminderItem(
         button
           .setButtonText(m.settings_template_conversion_reminder_action())
           .setCta()
-          .onClick(
-            () =>
-              void openWelcomeView(ctx.app, ctx.tab.sync(PluginSettings), {
-                runSync: (effect) => ctx.tab.sync(effect),
-              }),
-          ),
+          .onClick(() => void openWelcomeView(ctx.app)),
       );
     },
   };
