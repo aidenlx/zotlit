@@ -3,9 +3,7 @@
 import { TFile, TFolder } from "obsidian";
 import type { DataWriteOptions, EventRef, TAbstractFile } from "obsidian";
 
-import { Effect } from "effect";
-import { makeVault } from "@/lib/obsidian-vault";
-import type { Vault, VaultSource } from "@/lib/obsidian-vault";
+import type { VaultSource } from "@/lib/obsidian-vault";
 
 type Callback = (...args: unknown[]) => unknown;
 
@@ -162,13 +160,4 @@ export class MemoryVault implements VaultSource {
     for (const callback of this.#listeners.get(name) ?? [])
       callback(...args);
   }
-}
-
-/**
- * The tag's service over `source`, for Promise code under test that takes the
- * service as a dep. Its event listeners are already removed: use the layer
- * (`layerVaultFrom`) where the test reads `changes`.
- */
-export function vaultOver(source: VaultSource): Vault["Service"] {
-  return Effect.runSync(Effect.scoped(makeVault(source)));
 }

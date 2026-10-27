@@ -272,8 +272,8 @@ export const layerNoteFeature = Layer.effect(
 );
 
 /**
- * The payloads of `event` on `changes`, each in the shape its
- * `NoteFeatureEvents` callback takes.
+ * The payloads of `event` on `changes`, each in its `NoteFeaturePayloads`
+ * shape.
  */
 export const eventPayloads = <K extends keyof NoteFeaturePayloads>(
   changes: Stream.Stream<NoteFeatureEvent>,
