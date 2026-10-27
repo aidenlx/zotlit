@@ -1,4 +1,13 @@
-import { Cause, Effect, Fiber, FiberSet, Layer, Schema } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Layer,
+  Result,
+  Schema,
+} from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -24,7 +33,7 @@ import {
   protocolSourceMatches,
   updateAllProtocolActionId,
 } from "@zotlit/protocol";
-import type { ProtocolAction } from "@zotlit/protocol";
+import type { ImportMode, ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
@@ -32,17 +41,13 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
-import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
-import { Notifier, reportOutcome } from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
-import {
-  parseProfileSelector,
-  unknownProfileDiagnostic,
-} from "@/lib/profile-stamp";
+import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
@@ -60,13 +65,11 @@ import {
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
 import type {
+  BatchUpdateOptions,
   BatchUpdatePorts,
   BatchUpdateServices,
 } from "@/services/note-feature/update-batch";
-import {
-  batchUpdateNotices,
-  noteOperationDiagnosticNotice,
-} from "@/services/note-feature/update-single";
+import { batchUpdateNotices } from "@/services/note-feature/update-single";
 import {
   runBatchImport,
   runBatchImportAll,
@@ -75,10 +78,6 @@ import type {
   BatchImportPorts,
   BatchImportServices,
 } from "@/services/note-import/batch-import";
-import {
-  batchImportAllToast,
-  batchImportToast,
-} from "@/services/note-import/batch-import-notices";
 import type { NoteImportView } from "@/services/note-import/view";
 import type { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -88,7 +87,8 @@ import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import { batchUpdateToast, importNotices, updateAllToast } from "./notices";
+import { showProtocolOutcome } from "./notices";
+import { ProtocolOutcome } from "./outcome";
 
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
@@ -146,13 +146,14 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
       id: string,
       handle: (
         data: ObsidianProtocolData,
-      ) => Effect.Effect<void, unknown, ProtocolServices>,
+      ) => Effect.Effect<ProtocolOutcome, unknown, ProtocolServices>,
     ) =>
       // The callback returns the handler's fiber: Obsidian ignores it, and a
-      // test joins it.
+      // test joins it for the outcome.
       plugin.registerObsidianProtocolHandler(id, (data) =>
         run(
           handle(data).pipe(
+            Effect.tap((outcome) => showProtocolOutcome(outcome, deps)),
             logAndContinue("Protocol handler failed", "protocol", {
               action: id,
             }),
@@ -256,31 +257,70 @@ export interface ProtocolRegistration {
 
 const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
   function* (event: UpdateManyRequest, deps: ProtocolDeps) {
-    const requested = yield* resolveRequestedProfile(event.profileId);
-    if (!requested.ok) return;
-    yield* reportOutcome(
-      runBatchUpdate(updatePorts(deps), event.items, {
-        scope: event.scope,
-        profile: requested.selector,
-      }),
-      batchUpdateToast,
-    );
+    const outcome = yield* updateMany(deps, event.items, event);
+    yield* showProtocolOutcome(outcome, deps);
   },
   logAndContinue("Pushed batch update failed", "protocol"),
 );
 
 const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
   function* (event: ImportNotesRequest, deps: ProtocolDeps) {
-    yield* reportOutcome(
-      runBatchImport(importPorts(deps), {
-        mode: event.mode,
-        itemIDs: event.items,
-      }),
-      importNotices(batchImportToast({ app: deps.app })),
-    );
+    const outcome = yield* importNotes(deps, event.mode, event.items);
+    yield* showProtocolOutcome(outcome, deps);
   },
   logAndContinue("Pushed batch import failed", "protocol"),
 );
+
+/** A refused link or request: the handler stops with `outcome`. */
+const refuse = (
+  outcome: ProtocolOutcome,
+): Result.Result<never, ProtocolOutcome> => Result.fail(outcome);
+
+/**
+ * The Exit of `task`, for the outcome that carries it. An interrupt (unload)
+ * passes on and leaves no outcome.
+ */
+const settle = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+): Effect.Effect<Exit.Exit<A, E>, never, R> =>
+  Effect.exit(task).pipe(
+    Effect.filterOrElse(
+      (exit) => !(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)),
+      () => Effect.interrupt,
+    ),
+  );
+
+/** Run the batch update of an `update-many` link or a pushed update. */
+const updateMany = Effect.fn("protocol.updateMany")(function* (
+  deps: ProtocolDeps,
+  items: readonly number[],
+  options: {
+    readonly scope?: BatchUpdateOptions["scope"];
+    readonly profileId?: string;
+  },
+) {
+  const requested = resolveRequestedProfile(options.profileId);
+  if (Result.isFailure(requested)) return requested.failure;
+  const exit = yield* settle(
+    runBatchUpdate(updatePorts(deps), items, {
+      scope: options.scope,
+      profile: requested.success,
+    }),
+  );
+  return ProtocolOutcome.UpdateMany({ exit });
+});
+
+/** Run the import of an `import-note(s)` link or a pushed import. */
+const importNotes = Effect.fn("protocol.importNotes")(function* (
+  deps: ProtocolDeps,
+  mode: ImportMode,
+  itemIDs: readonly number[],
+) {
+  const exit = yield* settle(
+    runBatchImport(importPorts(deps), { mode, itemIDs }),
+  );
+  return ProtocolOutcome.ImportNotes({ exit });
+});
 
 const handleProtocol = Effect.fn("protocol.handleProtocol")(function* (
   action: ProtocolAction,
@@ -291,56 +331,37 @@ const handleProtocol = Effect.fn("protocol.handleProtocol")(function* (
     action,
     parse: parseProtocolQuery,
   });
-  if (!query) return;
+  if (Result.isFailure(query)) return query.failure;
 
-  const ref = yield* resolveProtocolItem(query, action);
-  if (!ref) return;
+  const ref = yield* resolveProtocolItem(query.success, action);
+  if (Result.isFailure(ref)) return ref.failure;
 
-  const requested = yield* resolveRequestedProfile(query.profileId);
-  if (!requested.ok) return;
+  const requested = resolveRequestedProfile(query.success.profileId);
+  if (Result.isFailure(requested)) return requested.failure;
 
-  yield* openCompanionNote(deps, ref, {
+  yield* openCompanionNote(deps, ref.success, {
     action,
-    scope: query.scope,
-    profile: requested.selector,
-    paneType: query.paneType,
+    scope: query.success.scope,
+    profile: requested.success,
+    paneType: query.success.paneType,
   });
+  return ProtocolOutcome.Opened();
 });
 
 /**
- * A `profileId` param resolved into a selector. `ok: false` means the text
- * named neither `default` nor a Profile ID — the caller already surfaced the
- * unknown-Profile notice and must stop rather than fall back to the default.
+ * A `profileId` param resolved into a selector, or the UnknownProfile outcome
+ * when the text names neither `default` nor a Profile ID: the caller stops
+ * there rather than fall back to the default.
  */
-type RequestedProfile =
-  | { readonly ok: true; readonly selector: ProfileSelector | undefined }
-  | { readonly ok: false };
-
-const resolveRequestedProfile = Effect.fn("protocol.resolveRequestedProfile")(
-  function* (text: string | undefined) {
-    if (text === undefined) {
-      const requested: RequestedProfile = { ok: true, selector: undefined };
-      return requested;
-    }
-    const selector = parseProfileSelector(text);
-    if (selector === undefined) {
-      yield* notify(
-        noteOperationDiagnosticNotice(unknownProfileDiagnostic(text)),
-      );
-      const refused: RequestedProfile = { ok: false };
-      return refused;
-    }
-    const requested: RequestedProfile = { ok: true, selector };
-    return requested;
-  },
-);
-
-/** Show `message` as a notice. */
-const notify = Effect.fn("protocol.notify")(function* (
-  message: Parameters<Notifier["Service"]["show"]>[0],
-) {
-  yield* (yield* Notifier).show(message);
-});
+function resolveRequestedProfile(
+  text: string | undefined,
+): Result.Result<ProfileSelector | undefined, ProtocolOutcome> {
+  if (text === undefined) return Result.succeed(undefined);
+  const selector = parseProfileSelector(text);
+  if (selector === undefined)
+    return refuse(ProtocolOutcome.UnknownProfile({ text }));
+  return Result.succeed(selector);
+}
 
 /**
  * Handle `obsidian://zotlit/update-many`. Validates the source id at this
@@ -355,18 +376,8 @@ const handleBatchProtocol = Effect.fn("protocol.handleBatchProtocol")(
       action,
       parse: parseProtocolBatchQuery,
     });
-    if (!query) return;
-
-    const requested = yield* resolveRequestedProfile(query.profileId);
-    if (!requested.ok) return;
-
-    yield* reportOutcome(
-      runBatchUpdate(updatePorts(deps), query.items, {
-        scope: query.scope,
-        profile: requested.selector,
-      }),
-      batchUpdateToast,
-    );
+    if (Result.isFailure(query)) return query.failure;
+    return yield* updateMany(deps, query.success.items, query.success);
   },
 );
 
@@ -378,15 +389,8 @@ const handleImportProtocol = Effect.fn("protocol.handleImportProtocol")(
       action,
       parse: parseImportProtocolQuery,
     });
-    if (!query) return;
-
-    yield* reportOutcome(
-      runBatchImport(importPorts(deps), {
-        mode: query.mode,
-        itemIDs: [query.item],
-      }),
-      importNotices(batchImportToast({ app: deps.app })),
-    );
+    if (Result.isFailure(query)) return query.failure;
+    return yield* importNotes(deps, query.success.mode, [query.success.item]);
   },
 );
 
@@ -398,15 +402,8 @@ const handleImportManyProtocol = Effect.fn("protocol.handleImportManyProtocol")(
       action,
       parse: parseImportManyProtocolQuery,
     });
-    if (!query) return;
-
-    yield* reportOutcome(
-      runBatchImport(importPorts(deps), {
-        mode: query.mode,
-        itemIDs: query.items,
-      }),
-      importNotices(batchImportToast({ app: deps.app })),
-    );
+    if (Result.isFailure(query)) return query.failure;
+    return yield* importNotes(deps, query.success.mode, query.success.items);
   },
 );
 
@@ -417,21 +414,22 @@ const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
       action,
       parse: parseExploreProtocolQuery,
     });
-    if (!query) return;
+    if (Result.isFailure(query)) return query.failure;
 
-    const ref = yield* resolveProtocolItem(query, action);
-    if (!ref) return;
+    const ref = yield* resolveProtocolItem(query.success, action);
+    if (Result.isFailure(ref)) return ref.failure;
 
     yield* portCall("open-template-data-explorer", () =>
       openTemplateDataExplorer(
         deps.app,
         {
-          itemIndexedKey: ref.indexedKey,
-          anchorAnnotationKey: query.annotation,
+          itemIndexedKey: ref.success.indexedKey,
+          anchorAnnotationKey: query.success.annotation,
         },
-        { paneType: query.paneType },
+        { paneType: query.success.paneType },
       ),
     );
+    return ProtocolOutcome.Opened();
   },
 );
 
@@ -444,14 +442,16 @@ const handleOpenAttachmentProtocol = Effect.fn(
   "protocol.handleOpenAttachmentProtocol",
 )(function* (data: ObsidianProtocolData, deps: ProtocolDeps) {
   const action = "open-attachment";
-  const query = yield* parseProtocolData(data, {
+  const parsed = yield* parseProtocolData(data, {
     action,
     parse: parseOpenAttachmentProtocolQuery,
   });
-  if (!query) return;
+  if (Result.isFailure(parsed)) return parsed.failure;
+  const query = parsed.success;
 
   const zoteroReads = yield* ZoteroReads;
-  if (!(yield* databaseReady(zoteroReads, action))) return;
+  if (!(yield* databaseReady(zoteroReads, action)))
+    return ProtocolOutcome.DatabaseUnavailable();
 
   const attachments = yield* zoteroReads.reads.AttachmentsAt({
     itemID: query.item,
@@ -466,6 +466,7 @@ const handleOpenAttachmentProtocol = Effect.fn(
     reader: withPaneOverride(pdfPickerReader(deps.opener), query.paneType),
     app: deps.app,
   });
+  return ProtocolOutcome.Opened();
 });
 
 /**
@@ -486,15 +487,15 @@ const handleUpdateAllProtocol = Effect.fn("protocol.handleUpdateAllProtocol")(
       action: "update-all",
       parse: parseUpdateAllProtocolQuery,
     });
-    if (!query) return;
+    if (Result.isFailure(query)) return query.failure;
 
-    yield* reportOutcome(
+    const exit = yield* settle(
       runBatchUpdateAll(updatePorts(deps), {
-        groupID: query.groupID,
-        collectionKey: query.collectionKey,
+        groupID: query.success.groupID,
+        collectionKey: query.success.collectionKey,
       }),
-      updateAllToast,
     );
+    return ProtocolOutcome.UpdateAll({ exit });
   },
 );
 
@@ -506,20 +507,20 @@ const handleImportAllNotesProtocol = Effect.fn(
     action: "import-all-notes",
     parse: parseImportAllNotesProtocolQuery,
   });
-  if (!query) return;
+  if (Result.isFailure(query)) return query.failure;
 
-  yield* reportOutcome(
+  const exit = yield* settle(
     runBatchImportAll(importPorts(deps), {
-      groupID: query.groupID,
-      collectionKey: query.collectionKey,
+      groupID: query.success.groupID,
+      collectionKey: query.success.collectionKey,
     }),
-    importNotices(batchImportAllToast({ app: deps.app })),
   );
+  return ProtocolOutcome.ImportAllNotes({ exit });
 });
 
 /**
- * The link's query, or `null` when it does not parse (after the invalid-link
- * notice) or names another Zotero.
+ * The link's query, or the outcome that refuses it: InvalidLink when it does
+ * not parse, ForeignSource when it names another Zotero.
  */
 function parseProtocolData<Query extends { sourceId: string }>(
   data: ObsidianProtocolData,
@@ -527,19 +528,18 @@ function parseProtocolData<Query extends { sourceId: string }>(
     action: string;
     parse: (data: Record<string, unknown>) => Query;
   },
-): Effect.Effect<Query | null, never, Notifier | ZoteroPref> {
+): Effect.Effect<Result.Result<Query, ProtocolOutcome>, never, ZoteroPref> {
   const { action, parse } = options;
   return Effect.gen(function* () {
     const parsed = yield* Effect.try(() => parse(data)).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Invalid protocol query").pipe(
           Effect.annotateLogs({ action, error: error.cause }),
-          Effect.andThen(notify(m.notice_protocol_invalid())),
           Effect.as(null),
         ),
       ),
     );
-    if (!parsed) return null;
+    if (!parsed) return refuse(ProtocolOutcome.InvalidLink());
 
     const { sourceId } = yield* (yield* ZoteroPref).current;
     if (!protocolSourceMatches(parsed, sourceId)) {
@@ -550,14 +550,14 @@ function parseProtocolData<Query extends { sourceId: string }>(
           expected: sourceId,
         }),
       );
-      return null;
+      return refuse(ProtocolOutcome.ForeignSource());
     }
 
-    return parsed;
+    return Result.succeed(parsed);
   }).pipe(withLogCategory("protocol"));
 }
 
-/** Whether the database is ready; when it is not, show the notice and say so. */
+/** Whether the database is ready; when it is not, log it and say so. */
 const databaseReady = Effect.fn("protocol.databaseReady")(function* (
   zoteroReads: Pick<ZoteroReads["Service"], "current">,
   action: string,
@@ -567,14 +567,15 @@ const databaseReady = Effect.fn("protocol.databaseReady")(function* (
     Effect.annotateLogs({ action }),
     withLogCategory("protocol"),
   );
-  yield* notify(m.notice_protocol_db_unavailable());
   return false;
 });
 
+/** The Item the link names, or the outcome that refuses it. */
 const resolveProtocolItem = Effect.fn("protocol.resolveProtocolItem")(
   function* (query: { item: number }, action: string) {
     const zoteroReads = yield* ZoteroReads;
-    if (!(yield* databaseReady(zoteroReads, action))) return null;
+    if (!(yield* databaseReady(zoteroReads, action)))
+      return refuse(ProtocolOutcome.DatabaseUnavailable());
 
     const ref = yield* readDisplayRef(zoteroReads.reads, query.item);
     if (!ref) {
@@ -582,13 +583,12 @@ const resolveProtocolItem = Effect.fn("protocol.resolveProtocolItem")(
         Effect.annotateLogs({ action, itemID: query.item }),
         withLogCategory("protocol"),
       );
-      yield* notify(m.notice_protocol_item_not_found());
-      return null;
+      return refuse(ProtocolOutcome.ItemNotFound());
     }
 
     const { itemID, libraryID, key, groupID, indexedKey } = ref;
     const item: ItemRef = { itemID, libraryID, key, groupID, indexedKey };
-    return item;
+    return Result.succeed(item);
   },
 );
 
@@ -602,20 +602,20 @@ const handleProfileImportProtocol = Effect.fn(
     Effect.catch((error) =>
       Effect.logDebug("Refused clipboard Profile handoff").pipe(
         Effect.annotateLogs({ error: error.cause }),
-        Effect.andThen(notify(m.notice_protocol_invalid())),
         Effect.as(null),
       ),
     ),
   );
-  if (!query) return;
-  // A failure or a defect is reported; an interrupt (unload) passes through.
-  yield* openImportedProfile(deps, query.paneType).pipe(
+  if (!query) return ProtocolOutcome.InvalidLink();
+  // A failure or a defect ends as ProfileImportFailed; an interrupt (unload)
+  // passes through.
+  return yield* openImportedProfile(deps, query.paneType).pipe(
     Effect.catchCause((cause) =>
       Cause.hasInterruptsOnly(cause)
         ? Effect.interrupt
         : Effect.logError("Failed to open clipboard Profile handoff").pipe(
             Effect.annotateLogs({ error: Cause.squash(cause) }),
-            Effect.andThen(notify(m.notice_profile_action_failed())),
+            Effect.as(ProtocolOutcome.ProfileImportFailed()),
           ),
     ),
   );
@@ -642,7 +642,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
       yield* Effect.logDebug(
         "Clipboard Profile import ended without a document",
       );
-      return;
+      return ProtocolOutcome.ProfileImportCancelled();
     }
     const file = yield* (yield* Vault).getFileByPath(profile.path);
     if (!file) return yield* new ImportedProfileMissing({ path: profile.path });
@@ -656,5 +656,6 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(
       Effect.annotateLogs({ path: profile.path }),
     );
+    return ProtocolOutcome.ProfileOpened();
   },
 );

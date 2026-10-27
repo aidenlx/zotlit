@@ -61,6 +61,7 @@ import type {
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
+import { ProtocolOutcome } from "./outcome";
 import { layerProtocolHandlers, registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
 
@@ -324,7 +325,7 @@ const dispatch = Effect.fn("dispatch")(function* (
     protocolData(action, { "source-id": SOURCE_ID, ...query }),
   );
   if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
-  yield* Fiber.join(fiber);
+  return yield* Fiber.join(fiber);
 });
 
 beforeEach(() => {
@@ -472,7 +473,9 @@ describe("open-attachment protocol link", () => {
     Effect.gen(function* () {
       yield* registerOpener("loading");
 
-      yield* dispatch("zotlit/open-attachment", { item: "9" });
+      expect(yield* dispatch("zotlit/open-attachment", { item: "9" })).toEqual(
+        ProtocolOutcome.DatabaseUnavailable(),
+      );
 
       expect(reads.AttachmentsAt).not.toHaveBeenCalled();
       expect(openAttachments).not.toHaveBeenCalled();
@@ -601,6 +604,41 @@ describe("library-wide protocol links", () => {
     }),
   );
 
+  it.effect(
+    "ends an update-all link with the outcome its update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "empty-selection" }),
+        );
+        yield* register();
+
+        const outcome = yield* dispatch("zotlit/update-all", { library: "7" });
+
+        expect(outcome).toEqual(
+          ProtocolOutcome.UpdateAll({
+            exit: Exit.succeed({ outcome: "empty-selection" }),
+          }),
+        );
+      }),
+  );
+
+  it.effect("ends an update-all link with its update's failure", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      const outcome = yield* dispatch("zotlit/update-all", { library: "7" });
+
+      expect(
+        ProtocolOutcome.$is("UpdateAll")(outcome) &&
+          Exit.isFailure(outcome.exit),
+      ).toBe(true);
+    }),
+  );
+
   it.effect("passes the named group as an exact import target", () =>
     Effect.gen(function* () {
       yield* register();
@@ -717,8 +755,9 @@ describe("clipboard Profile protocol handoff", () => {
         deps: { importProfile: vi.fn(() => Effect.undefined) },
       });
 
-      yield* dispatch("zotlit/import-profile", { clipboard: "true" });
-
+      expect(
+        yield* dispatch("zotlit/import-profile", { clipboard: "true" }),
+      ).toEqual(ProtocolOutcome.ProfileImportCancelled());
       expect(openTemplateWorkbench).not.toHaveBeenCalled();
     }),
   );
@@ -765,10 +804,12 @@ describe("clipboard Profile protocol handoff", () => {
         const importProfile = vi.fn(() => Effect.undefined);
         yield* register({ deps: { importProfile } });
 
-        yield* dispatch(
+        const outcome = yield* dispatch(
           "zotlit/import-profile",
           clipboard === undefined ? {} : { clipboard },
         );
+
+        expect(outcome).toEqual(ProtocolOutcome.InvalidLink());
 
         expect(importProfile).not.toHaveBeenCalled();
       }),
@@ -780,7 +821,9 @@ describe("refused protocol links", () => {
     Effect.gen(function* () {
       yield* register();
 
-      yield* dispatch("zotlit/open", { item: "x" });
+      expect(yield* dispatch("zotlit/open", { item: "x" })).toEqual(
+        ProtocolOutcome.InvalidLink(),
+      );
 
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
     }),
@@ -791,7 +834,9 @@ describe("refused protocol links", () => {
       refOf(REF);
       yield* register();
 
-      yield* dispatch("zotlit/open", { item: "1", "source-id": "ffff0000" });
+      expect(
+        yield* dispatch("zotlit/open", { item: "1", "source-id": "ffff0000" }),
+      ).toEqual(ProtocolOutcome.ForeignSource());
 
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
       expect(openCompanionNote).not.toHaveBeenCalled();
@@ -802,7 +847,9 @@ describe("refused protocol links", () => {
     Effect.gen(function* () {
       yield* register({ state: "degraded" });
 
-      yield* dispatch("zotlit/open", { item: "1" });
+      expect(yield* dispatch("zotlit/open", { item: "1" })).toEqual(
+        ProtocolOutcome.DatabaseUnavailable(),
+      );
 
       expect(reads.DisplayRefs).not.toHaveBeenCalled();
     }),
@@ -812,7 +859,9 @@ describe("refused protocol links", () => {
     Effect.gen(function* () {
       yield* register();
 
-      yield* dispatch("zotlit/open", { item: "5" });
+      expect(yield* dispatch("zotlit/open", { item: "5" })).toEqual(
+        ProtocolOutcome.ItemNotFound(),
+      );
 
       expect(openCompanionNote).not.toHaveBeenCalled();
     }),
@@ -848,8 +897,9 @@ describe("refused protocol links", () => {
         },
       });
 
-      yield* dispatch("zotlit/import-profile", { clipboard: "true" });
-
+      expect(
+        yield* dispatch("zotlit/import-profile", { clipboard: "true" }),
+      ).toEqual(ProtocolOutcome.ProfileImportFailed());
       expect(openTemplateWorkbench).not.toHaveBeenCalled();
     }),
   );
@@ -869,8 +919,9 @@ describe("refused protocol links", () => {
         getFileByPath: () => Effect.die(new Error("vault read failed")),
       });
 
-      yield* dispatch("zotlit/import-profile", { clipboard: "true" });
-
+      expect(
+        yield* dispatch("zotlit/import-profile", { clipboard: "true" }),
+      ).toEqual(ProtocolOutcome.ProfileImportFailed());
       expect(openTemplateWorkbench).not.toHaveBeenCalled();
     }),
   );
@@ -895,6 +946,41 @@ describe("batch protocol links", () => {
           { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
         );
       }),
+  );
+
+  it.effect(
+    "ends an update-many link with the outcome its update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdate).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "db-unavailable" }),
+        );
+        yield* register();
+
+        const outcome = yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+        expect(outcome).toEqual(
+          ProtocolOutcome.UpdateMany({
+            exit: Exit.succeed({ outcome: "db-unavailable" }),
+          }),
+        );
+      }),
+  );
+
+  it.effect("ends an update-many link with its update's failure", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdate).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      const outcome = yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+      expect(
+        ProtocolOutcome.$is("UpdateMany")(outcome) &&
+          Exit.isFailure(outcome.exit),
+      ).toBe(true);
+    }),
   );
 
   it.effect("imports the one item an import-note link names", () =>
@@ -933,8 +1019,33 @@ describe("batch protocol links", () => {
     Effect.gen(function* () {
       yield* register({ state: "loading" });
 
-      yield* dispatch("zotlit/import-note", { item: "8", mode: "note" });
+      const outcome = yield* dispatch("zotlit/import-note", {
+        item: "8",
+        mode: "note",
+      });
 
+      expect(outcome).toEqual(
+        ProtocolOutcome.ImportNotes({
+          exit: Exit.succeed({ outcome: "db-unavailable" }),
+        }),
+      );
+      expect(openBatchModal).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("ends a link import with the failure its run ended with", () =>
+    Effect.gen(function* () {
+      yield* register({ whenIndexed: Effect.die(new Error("index failed")) });
+
+      const outcome = yield* dispatch("zotlit/import-note", {
+        item: "8",
+        mode: "note",
+      });
+
+      expect(
+        ProtocolOutcome.$is("ImportNotes")(outcome) &&
+          Exit.isFailure(outcome.exit),
+      ).toBe(true);
       expect(openBatchModal).not.toHaveBeenCalled();
     }),
   );

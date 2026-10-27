@@ -1,13 +1,56 @@
-// Outcome notices of the protocol handlers: what each early exit or failure
-// of a link-started batch update or import tells the user.
+// Outcome notices of the protocol handlers: what each refused link, early exit
+// or failure of a link-started run tells the user.
+
+import { Effect } from "effect";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { Notifier, reportOutcome } from "@/lib/notifier";
 import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
+import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
+import {
+  batchImportAllToast,
+  batchImportToast,
+} from "@/services/note-import/batch-import-notices";
+
+import { ProtocolOutcome } from "./outcome";
+
+/**
+ * Show the notice of a protocol outcome: a refusal shows its message; a run
+ * reports its result for 2 s or its failure for 4 s, as {@link reportOutcome}
+ * does. An ignored link, an open, and a cancel show none.
+ */
+export const showProtocolOutcome = Effect.fn("protocol.showProtocolOutcome")(
+  function* (outcome: ProtocolOutcome, options: { readonly app?: App }) {
+    const notifier = yield* Notifier;
+    const show = (message: NoticeMessage) =>
+      Effect.asVoid(notifier.show(message));
+    yield* ProtocolOutcome.$match(outcome, {
+      InvalidLink: () => show(m.notice_protocol_invalid()),
+      ForeignSource: () => Effect.void,
+      DatabaseUnavailable: () => show(m.notice_protocol_db_unavailable()),
+      ItemNotFound: () => show(m.notice_protocol_item_not_found()),
+      UnknownProfile: ({ text }) =>
+        show(noteOperationDiagnosticNotice(unknownProfileDiagnostic(text))),
+      Opened: () => Effect.void,
+      UpdateMany: ({ exit }) => reportOutcome(exit, batchUpdateToast),
+      UpdateAll: ({ exit }) => reportOutcome(exit, updateAllToast),
+      ImportNotes: ({ exit }) =>
+        reportOutcome(exit, importNotices(batchImportToast(options))),
+      ImportAllNotes: ({ exit }) =>
+        reportOutcome(exit, importNotices(batchImportAllToast(options))),
+      ProfileOpened: () => Effect.void,
+      ProfileImportCancelled: () => Effect.void,
+      ProfileImportFailed: () => show(m.notice_profile_action_failed()),
+    });
+  },
+);
 
 /** The outcome notice of a note import, from its toast copy. */
-export function importNotices<A>(copy: {
+function importNotices<A>(copy: {
   success: (result: A) => NoticeMessage | undefined;
   error: (message: string, error: unknown) => NoticeMessage | undefined;
 }): OutcomeCopy<A> {
@@ -18,7 +61,7 @@ export function importNotices<A>(copy: {
 }
 
 /** A batch update's notices: the early-exit outcomes; a failure shows none. */
-export const batchUpdateToast = {
+const batchUpdateToast: OutcomeCopy<BatchUpdateResult> = {
   success: batchUpdateNotice,
   error: () => undefined,
 };
@@ -53,7 +96,7 @@ function updateAllNotice(result: BatchUpdateResult): string | undefined {
 }
 
 /** An update-all link's notices: the early-exit outcomes; a failure shows none. */
-export const updateAllToast: OutcomeCopy<BatchUpdateResult> = {
+const updateAllToast: OutcomeCopy<BatchUpdateResult> = {
   success: updateAllNotice,
   error: () => undefined,
 };
