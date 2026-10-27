@@ -1,6 +1,6 @@
 import { Text } from "@codemirror/state";
 import { regex } from "arkregex";
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 import { EditorSuggest, Keymap } from "obsidian";
 import type {
   Editor,
@@ -14,6 +14,8 @@ import type { CitationVariant } from "@zotlit/db";
 import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
 import { valueOr } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
@@ -110,15 +112,21 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     if (key?.start === 0 && source.slice(key.end).trimStart().startsWith(",")) {
       const answer = valueOr(
         await this.#deps.bridge.runPromiseExit(
-          this.#deps.citationLookup
-            .read({ citekeys: [key.citationKey] })
-            .pipe(
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.interrupt
-                  : Effect.succeed(null),
-              ),
+          this.#deps.citationLookup.read({ citekeys: [key.citationKey] }).pipe(
+            recover(
+              (cause) =>
+                Effect.logDebug(
+                  "Locator lookup failed; closing citation suggestions",
+                ).pipe(
+                  Effect.annotateLogs({
+                    cause,
+                    citationKey: key.citationKey,
+                  }),
+                  withLogCategory("views", "citation-suggest"),
+                ),
+              Effect.succeed(null),
             ),
+          ),
           { signal: controller.signal },
         ),
         null,
@@ -288,10 +296,15 @@ export async function resolveCitationInsert(
       const lookup = yield* deps.citationLookup
         .read({ citekeys: [citationKey] })
         .pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.interrupt
-              : Effect.succeed(null),
+          recover(
+            (cause) =>
+              Effect.logWarning(
+                "Citation lookup failed; insertion unavailable",
+              ).pipe(
+                Effect.annotateLogs({ cause, citationKey }),
+                withLogCategory("views", "citation-suggest"),
+              ),
+            Effect.succeed(null),
           ),
         );
       if (!lookup)

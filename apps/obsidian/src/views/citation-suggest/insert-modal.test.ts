@@ -20,6 +20,7 @@ import {
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { defaults } from "@/services/settings/schema";
+import type { UseKind } from "@/services/use-ledger/service";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 import { InsertCitationModal } from "./insert-modal";
@@ -146,12 +147,7 @@ describe("InsertCitationModal ambiguity", () => {
           ],
         };
         const renderCitation = vi.fn();
-        const record = vi.fn(() =>
-          Effect.succeed({
-            instant: DateTime.makeUnsafe(0),
-            kind: "cited" as const,
-          }),
-        );
+        const record = vi.fn<(key: string, kind: UseKind) => void>();
         const replaceRange = vi.fn();
         const editor = stubService<Editor>("Editor", {
           getValue: () => "",
@@ -173,7 +169,13 @@ describe("InsertCitationModal ambiguity", () => {
                 stopped: false,
               }),
             },
-            useLedger: { record },
+            useLedger: {
+              record: (key, kind) =>
+                Effect.sync(() => {
+                  record(key, kind);
+                  return { instant: DateTime.makeUnsafe(0), kind };
+                }),
+            },
           },
           editor,
         );
@@ -195,12 +197,7 @@ describe("InsertCitationModal Uses", () => {
       Effect.promise(async () => {
         const started = Promise.withResolvers<void>();
         const renderCitation = vi.fn(() => "[@doe2024]");
-        const record = vi.fn(() =>
-          Effect.succeed({
-            instant: DateTime.makeUnsafe(0),
-            kind: "cited" as const,
-          }),
-        );
+        const record = vi.fn<(key: string, kind: UseKind) => void>();
         const draft = editor();
         const modal = makeModal(
           {
@@ -217,7 +214,13 @@ describe("InsertCitationModal Uses", () => {
                   Effect.andThen(Effect.never),
                 ),
             },
-            useLedger: { record },
+            useLedger: {
+              record: (key, kind) =>
+                Effect.sync(() => {
+                  record(key, kind);
+                  return { instant: DateTime.makeUnsafe(0), kind };
+                }),
+            },
           },
           draft.editor,
         );
@@ -259,16 +262,17 @@ describe("InsertCitationModal Uses", () => {
     () =>
       Effect.promise(async () => {
         const draft = editor();
-        const record = vi.fn(() =>
-          Effect.succeed({
-            instant: DateTime.makeUnsafe(0),
-            kind: "cited" as const,
-          }),
-        );
+        const record = vi.fn<(key: string, kind: UseKind) => void>();
         const modal = makeModal(
           {
             noteFeature: { renderCitation: () => "[@doe2024]" },
-            useLedger: { record },
+            useLedger: {
+              record: (key, kind) =>
+                Effect.sync(() => {
+                  record(key, kind);
+                  return { instant: DateTime.makeUnsafe(0), kind };
+                }),
+            },
           },
           draft.editor,
         );
@@ -285,12 +289,7 @@ describe("InsertCitationModal Uses", () => {
     () =>
       Effect.promise(async () => {
         const draft = editor();
-        const record = vi.fn(() =>
-          Effect.succeed({
-            instant: DateTime.makeUnsafe(0),
-            kind: "cited" as const,
-          }),
-        );
+        const record = vi.fn<(key: string, kind: UseKind) => void>();
         const answer = Promise.withResolvers<ReturnType<typeof lookupAnswer>>();
         const modal = makeModal(
           {
@@ -303,7 +302,13 @@ describe("InsertCitationModal Uses", () => {
               }),
               read: () => Effect.promise((_signal) => answer.promise),
             },
-            useLedger: { record },
+            useLedger: {
+              record: (key, kind) =>
+                Effect.sync(() => {
+                  record(key, kind);
+                  return { instant: DateTime.makeUnsafe(0), kind };
+                }),
+            },
           },
           draft.editor,
         );
@@ -323,16 +328,17 @@ describe("InsertCitationModal Uses", () => {
   effectIt.effect("records nothing for an empty rendered citation", () =>
     Effect.promise(async () => {
       const draft = editor();
-      const record = vi.fn(() =>
-        Effect.succeed({
-          instant: DateTime.makeUnsafe(0),
-          kind: "cited" as const,
-        }),
-      );
+      const record = vi.fn<(key: string, kind: UseKind) => void>();
       const modal = makeModal(
         {
           noteFeature: { renderCitation: () => "" },
-          useLedger: { record },
+          useLedger: {
+            record: (key, kind) =>
+              Effect.sync(() => {
+                record(key, kind);
+                return { instant: DateTime.makeUnsafe(0), kind };
+              }),
+          },
         },
         draft.editor,
       );

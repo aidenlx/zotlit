@@ -32,6 +32,7 @@ import { buildItemLookup } from "@/services/item-lookup/__fixtures__";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { defaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import type { UseKind } from "@/services/use-ledger/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
@@ -821,12 +822,7 @@ describe("Citation Suggester choices while the typed query's answer is pending",
       }
       return answer;
     };
-    const record = vi.fn(() =>
-      Effect.succeed({
-        instant: DateTime.makeUnsafe(0),
-        kind: "cited" as const,
-      }),
-    );
+    const record = vi.fn<(key: string, kind: UseKind) => void>();
     const suggest = new CitationEditorSuggest(
       stubService<CitationSuggestDeps>("CitationSuggestDeps", {
         app: stubService<App>("App", {}),
@@ -850,7 +846,11 @@ describe("Citation Suggester choices while the typed query's answer is pending",
         ),
         settings: { current: Effect.succeed(defaults) },
         useLedger: stubService<CitationSuggestDeps["useLedger"]>("UseLedger", {
-          record,
+          record: (key, kind) =>
+            Effect.sync(() => {
+              record(key, kind);
+              return { instant: DateTime.makeUnsafe(0), kind };
+            }),
         }),
         ...insertDeps((cites: { citationKey: string }[]) =>
           cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
