@@ -3,9 +3,11 @@ import { Cause, Effect, Exit, Stream } from "effect";
 import type { ManagedRuntime } from "effect";
 
 import { effectBridge } from "@/lib/effect-bridge";
+import { LiveTextRewriteFailed } from "@/lib/effect-live-text";
+import { plainTemplateError } from "@/services/template/errors";
 
 import { Profile, ProfileOperationError } from "./service";
-import type { ProfileOperations, ProfileState } from "./service";
+import type { ProfileError, ProfileOperations, ProfileState } from "./service";
 
 /** The Profile members views, legacy services and e2e still read. */
 export type PlainProfile = Omit<
@@ -33,15 +35,16 @@ export function plainProfile(
   // Unload stops a pending call, which then rejects with an `AbortError`.
   const bridge = effectBridge(runtime);
   const plainError = (error: unknown) =>
-    error instanceof ProfileOperationError ? error.cause : error;
-  const read = <A>(effect: Effect.Effect<A, ProfileOperationError>): A => {
+    error instanceof ProfileOperationError ||
+    error instanceof LiveTextRewriteFailed
+      ? error.cause
+      : plainTemplateError(error);
+  const read = <A>(effect: Effect.Effect<A, ProfileError>): A => {
     const exit = bridge.runSync(Effect.exit(effect));
     if (Exit.isSuccess(exit)) return exit.value;
     throw plainError(Cause.squash(exit.cause));
   };
-  const run = <A>(
-    effect: Effect.Effect<A, ProfileOperationError>,
-  ): Promise<A> =>
+  const run = <A>(effect: Effect.Effect<A, ProfileError>): Promise<A> =>
     bridge.runPromise(effect).catch((error: unknown) => {
       throw plainError(error);
     });
