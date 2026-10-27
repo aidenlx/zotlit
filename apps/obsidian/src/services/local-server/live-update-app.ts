@@ -35,7 +35,8 @@ function senderDirs(event: NotifyEvent): Record<string, string> {
 
 /** The slice of {@link NoteIndex} the note-status query route reads. */
 export interface NoteStatusSource {
-  whenIndexed(): Promise<void>;
+  /** Resolves `true` once the first full scan ends, `false` when the server stops first. */
+  whenIndexed(): Promise<boolean>;
   getIndexedItemKeys(): string[];
 }
 
@@ -184,10 +185,12 @@ export function createLiveUpdateApp(deps: LiveUpdateAppDeps): Hono {
     /**
      * Answers the companion's note-status query from the live Note Index's
      * Literature-Note key set. Awaits the index's first full scan so a
-     * startup-time query never reports an empty vault.
+     * startup-time query never reports an empty vault. A server that stops
+     * before the scan ends answers 404, as with Live updates off, so the
+     * Companion keeps the status it has instead of a part of the vault.
      */
     .get("/literature-notes", async (c) => {
-      await deps.noteIndex.whenIndexed();
+      if (!(await deps.noteIndex.whenIndexed())) return c.body(null, 404);
       const keys = deps.noteIndex.getIndexedItemKeys();
       logger.debug("Answered literature-notes status query", {
         keys: keys.length,
