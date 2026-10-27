@@ -7,6 +7,7 @@ import {
   settingsOf,
 } from "@mock/obsidian";
 import { Cause, Effect, Exit, ManagedRuntime } from "effect";
+import type { FileSystem } from "effect";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,22 +76,6 @@ vi.mock("@/services/pandoc/export", async (importOriginal) => ({
 vi.mock("@/services/pandoc/installed-styles", () => ({
   listInstalledStylesOrNone: () => Effect.succeed(zotero.styles),
 }));
-const writes = vi.hoisted(() => ({
-  wait: null as Promise<void> | null,
-  started: null as (() => void) | null,
-}));
-vi.mock("node:fs/promises", async (original) => {
-  const actual = await original<typeof import("node:fs/promises")>();
-  return {
-    ...actual,
-    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
-      writes.started?.();
-      if (writes.wait) await writes.wait;
-      return actual.writeFile(...args);
-    },
-  };
-});
-
 const DATA_DIR = "/zotero";
 const BASE_PATH = "/vault";
 const NOTE_STYLE = {
@@ -105,6 +90,7 @@ const MISSING_STYLE_ID = "http://www.zotero.org/styles/missing-profile-style";
 const PROFILE_ID = "Aa1Bb2Cc3Dd4" as ProfileId;
 
 interface VaultOptions {
+  fileSystem?: FileSystem.FileSystem;
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
   settings?: Partial<Settings> &
@@ -123,6 +109,7 @@ function openVault({
   settings = {},
   engineInstalled = true,
   basePath = BASE_PATH,
+  fileSystem = nodeFileSystem,
 }: VaultOptions = {}) {
   const file = markdownFile("draft.md");
   const frontmatter = note ?? {};
@@ -173,7 +160,7 @@ function openVault({
   runtimes.push(runtime);
   const bridge = effectBridge(runtime);
   const deps = stubService<PandocExportDeps>("PandocExportDeps", {
-    fileSystem: nodeFileSystem,
+    fileSystem,
     app,
     pandocEngine: stubService<ManagedBinaryApi<CitationEngine>>(
       "PandocEngine",
@@ -327,8 +314,6 @@ beforeEach(() => {
   Modal.instances.length = 0;
   zotero.styles = [NOTE_STYLE, VAULT_STYLE];
   exportRun.unload = false;
-  writes.wait = null;
-  writes.started = null;
 });
 
 describe("the Export note with citations command", () => {
@@ -357,9 +342,16 @@ describe("the Export note with citations command", () => {
         );
         const started = Promise.withResolvers<void>();
         const writing = Promise.withResolvers<void>();
-        writes.started = () => started.resolve();
-        writes.wait = writing.promise;
-        const vault = openVault({ note: {}, basePath });
+        const fileSystem: FileSystem.FileSystem = {
+          ...nodeFileSystem,
+          writeFile: (...args) =>
+            Effect.gen(function* () {
+              started.resolve();
+              yield* Effect.promise(() => writing.promise);
+              yield* nodeFileSystem.writeFile(...args);
+            }),
+        };
+        const vault = openVault({ note: {}, basePath, fileSystem });
         const dialog = yield* Effect.promise(() => vault.openDialog());
         dialog.confirm();
         yield* Effect.promise(() => started.promise);
@@ -376,6 +368,25 @@ describe("the Export note with citations command", () => {
         ).toHaveLength(0);
       }),
   );
+
+  it("reports a typed filesystem refusal as an unwritable destination", async () => {
+    await using stack = new AsyncDisposableStack();
+    const root = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({ note: {}, basePath: join(root, "missing") });
+    const dialog = await vault.openDialog();
+    dialog.confirm();
+    expect(await dialog.outcome).toEqual({
+      kind: "failed",
+      problem: {
+        kind: "destination-unwritable",
+        detail: expect.any(String),
+      },
+    });
+    expect(await readdir(root)).toEqual([]);
+  });
 
   it("is offered for the active Markdown note", () => {
     expect(openVault({ note: {} }).offered()).toBe(true);

@@ -13,6 +13,7 @@ import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { CitationParse } from "@/services/citation-parse/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
 import { createCitationEngine } from "./engine";
@@ -140,7 +141,9 @@ function ports(fixture: Fixture): ExportPorts & {
     readLookup: ({ citekeys }) =>
       Effect.gen(function* () {
         if (fixture.snapshotUnavailable)
-          return yield* Effect.fail({ _tag: "LookupUnavailable" as const });
+          return yield* new DbUnavailable({
+            message: "Citation lookup is unavailable",
+          });
         const resolve = (citekey: string): CitekeyResolution => {
           if (fixture.ambiguous?.includes(citekey)) {
             return { kind: "ambiguous", candidates: [] };

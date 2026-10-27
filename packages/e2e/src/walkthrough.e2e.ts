@@ -189,8 +189,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const format=modal.querySelector('select');format.value='html';
         format.dispatchEvent(new format.ownerDocument.defaultView.Event('change',{bubbles:true}));
         const result={word,html:row.querySelector('.setting-item-description').textContent,vault:app.vault.getName(),absolutePathShown:modal.textContent.includes(app.vault.adapter.getBasePath())};
+        const style=modal.querySelectorAll('select')[1];style.value='';
+        style.dispatchEvent(new style.ownerDocument.defaultView.Event('change',{bubbles:true}));
         [...modal.querySelectorAll('button')].find(button=>button.textContent===${JSON.stringify(m.pandoc_export_confirm())}).click();
-        await until('HTML export',()=>app.vault.adapter.exists('Export display.html'),30000);
+        await until('HTML export completion',()=>[...doc.querySelectorAll('.notice')].some(notice=>notice.textContent===${JSON.stringify(m.notice_pandoc_export_done({ file: "Export display.html", style: m.settings_citation_references_style_default() }))}),30000);
         return JSON.stringify(result);
       })()`,
       ),

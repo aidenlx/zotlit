@@ -9,7 +9,7 @@ import { Effect, Result } from "effect";
 
 import type { CslItemData } from "@zotlit/db";
 
-import type { CitationLookupAnswer } from "@/services/citation-index/lookup";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
 import type {
   ParseFailed,
@@ -55,11 +55,11 @@ export interface ExportPorts {
   /**
    * What a literal `@citation-key` names in the current Library Scope, read
    * through the same resolution snapshot every in-app surface reads, so an
-   * export cites what Live Preview shows. An unavailable read rejects.
+   * export cites what Live Preview shows. An unavailable read fails.
    */
   readLookup: (request: {
     citekeys: readonly string[];
-  }) => Effect.Effect<CitationLookupAnswer, unknown>;
+  }) => ReturnType<CitationLookup["Service"]["read"]>;
   /**
    * Zotero library addresses of the cited Indexed Keys, read under one lease.
    * A key the database cannot place is absent; `null` means no read lease.

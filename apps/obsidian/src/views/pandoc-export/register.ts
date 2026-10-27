@@ -1,5 +1,4 @@
 import { Cause, Effect, FileSystem, Schema } from "effect";
-import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
 import { basename, join } from "node:path";
@@ -10,6 +9,7 @@ import type { Library } from "@zotlit/db";
 
 import { citationStyleLabel } from "@/lib/citation-style";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, withProgress } from "@/lib/notifier";
@@ -284,7 +284,14 @@ const prepareExport = Effect.fn("prepareExport")(function* (
         // on the cause rather than the fixed fallback that recover accepts.
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
-          return Effect.logError("The Pandoc export failed", cause).pipe(
+          return Effect.logError("The Pandoc export failed").pipe(
+            Effect.annotateLogs({
+              cause,
+              source: file.path,
+              destination: choices.destination,
+              format: choices.format,
+            }),
+            withLogCategory("views", "pandoc-export"),
             Effect.as({
               error: {
                 kind: "engine" as const,
@@ -296,15 +303,17 @@ const prepareExport = Effect.fn("prepareExport")(function* (
       );
       if ("error" in conversion)
         return { kind: "failed", problem: conversion.error };
-      const written = yield* Effect.tryPromise({
-        try: () => writeFile(choices.destination, conversion.output),
-        catch: (error) => ({
-          kind: "destination-unwritable" as const,
-          detail: describeError(error),
-        }),
-      }).pipe(Effect.uninterruptible, Effect.result);
+      const written = yield* fileSystem
+        .writeFile(choices.destination, conversion.output)
+        .pipe(Effect.uninterruptible, Effect.result);
       if (written._tag === "Failure")
-        return { kind: "failed", problem: written.failure };
+        return {
+          kind: "failed",
+          problem: {
+            kind: "destination-unwritable",
+            detail: describeError(written.failure),
+          },
+        };
 
       return {
         kind: "exported",
