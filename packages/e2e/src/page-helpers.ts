@@ -94,7 +94,7 @@ export function createPageHelpers(app: import("obsidian").App) {
       );
     const leaf =
       leaves.find((l) => l === app.workspace.getMostRecentLeaf()) ?? leaves[0];
-    if (!leaf) throw new Error(`Cannot reveal: note not open: ${  path}`);
+    if (!leaf) throw new Error(`Cannot reveal: note not open: ${path}`);
     const view = leaf.view as import("obsidian").MarkdownView & {
       previewMode: {
         renderer: { sections: { el: HTMLElement; lines: number }[] };
@@ -106,7 +106,7 @@ export function createPageHelpers(app: import("obsidian").App) {
       opens.test(text) ? [index] : [],
     )[kind.index];
     if (from === undefined)
-      throw new Error(`Cannot reveal: no ${  kind.name  } in ${  path}`);
+      throw new Error(`Cannot reveal: no ${kind.name} in ${path}`);
     let to = from;
     if (kind.closes !== null) {
       const closes = new RegExp(kind.closes);
@@ -153,17 +153,9 @@ export function createPageHelpers(app: import("obsidian").App) {
       }
       if (Temporal.Now.instant().epochMilliseconds > end)
         throw new Error(
-          `Not drawn: ${ 
-            kind.name 
-            } in ${ 
-            path 
-            } (${ 
-            view.getMode() 
-            }, lines ${ 
-            from 
-            }-${ 
-            to 
-            })`,
+          `Not drawn: ${kind.name} in ${path} (${view.getMode()}, lines ${
+            from
+          }-${to})`,
         );
       if (view.getMode() === "preview")
         view.setEphemeralState({ scroll: from });
