@@ -2428,14 +2428,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               cancelable: true,
             }),
           );
-          return (
-            await until("focus follows", () => {
-              const path = document.activeElement?.getAttribute(
-                "data-reorder-handle",
-              );
-              return path && path !== (enabled ? "0" : "1") ? path : null;
-            })
-          ).toString();
+          return await until("focus follows", () => {
+            const path = document.activeElement?.getAttribute(
+              "data-reorder-handle",
+            );
+            return path && path !== (enabled ? "0" : "1") ? path : null;
+          });
         },
         { enabled: true },
       ),
@@ -2467,14 +2465,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               cancelable: true,
             }),
           );
-          return (
-            await until("focus follows", () => {
-              const path = document.activeElement?.getAttribute(
-                "data-reorder-handle",
-              );
-              return path && path !== (enabled ? "0" : "1") ? path : null;
-            })
-          ).toString();
+          return await until("focus follows", () => {
+            const path = document.activeElement?.getAttribute(
+              "data-reorder-handle",
+            );
+            return path && path !== (enabled ? "0" : "1") ? path : null;
+          });
         },
         { enabled: false },
       ),

@@ -126,7 +126,7 @@ async function importState(vaultId: string): Promise<string> {
   return obRun(
     vaultId,
     async ({ app, page: helpers }) => {
-      return await JSON.stringify({
+      return JSON.stringify({
         settled: helpers.scratch.__zotlitExcerptImport?.settled ?? null,
         error: helpers.scratch.__zotlitExcerptImport?.error ?? null,
         modals: Array.from(
@@ -272,14 +272,14 @@ export async function verifyReaderBackedExcerpts(
   const layout = await obRun(
     vaultId,
     async ({ app }) => {
-      return await JSON.stringify(app.workspace.getLayout());
+      return JSON.stringify(app.workspace.getLayout());
     },
     undefined,
   );
   const basePath = await obRun(
     vaultId,
     async ({ app }) => {
-      return await (app.vault.adapter as FileSystemAdapter).getBasePath();
+      return (app.vault.adapter as FileSystemAdapter).getBasePath();
     },
     undefined,
   );
@@ -314,7 +314,7 @@ export async function verifyReaderBackedExcerpts(
   const savedFilter = await obRun(
     vaultId,
     async ({ app }, { storageKey }) => {
-      return await JSON.stringify(app.loadLocalStorage(storageKey) ?? null);
+      return JSON.stringify(app.loadLocalStorage(storageKey) ?? null);
     },
     { storageKey: JSON.parse(filterKey) },
   );

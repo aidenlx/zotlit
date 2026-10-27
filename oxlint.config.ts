@@ -37,6 +37,8 @@ export default defineConfig({
         "zotlit-tests/no-poll-wrapper": "error",
         "zotlit-tests/no-generated-poll-label": "error",
         "zotlit-tests/no-string-transport": "error",
+        "typescript/await-thenable": "error",
+        "typescript/no-unnecessary-type-conversion": "error",
       },
     },
     {

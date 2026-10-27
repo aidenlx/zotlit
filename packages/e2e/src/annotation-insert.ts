@@ -115,7 +115,7 @@ export async function verifyAnnotationInsert(
     await obRunUntil(
       vaultId,
       async ({ page }) => {
-        return !!page.scratch.__zotlitInsertTrial!.leaf.view.editor?.cm?.dom
+        return page.scratch.__zotlitInsertTrial!.leaf.view.editor?.cm?.dom
           .isConnected;
       },
       undefined,

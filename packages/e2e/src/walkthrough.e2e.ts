@@ -295,7 +295,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.commands.executeCommandById("zotlit:open-welcome-view");
-        return await leaf.id;
+        return leaf.id;
       },
       { notePath },
     );
@@ -332,9 +332,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host }, { noteId }) => {
           const app = host as WalkthroughApp;
 
-          return await ((
-            app.workspace.getLeafById(noteId)!.view as MarkdownView
-          ).file?.path ?? "<no file>");
+          return (
+            (app.workspace.getLeafById(noteId)!.view as MarkdownView).file
+              ?.path ?? "<no file>"
+          );
         },
         { noteId },
       ),
@@ -344,7 +345,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host }) => {
         const app = host as WalkthroughApp;
 
-        return await app.workspace.activeLeaf!.id;
+        return app.workspace.activeLeaf!.id;
       },
       undefined,
     );
@@ -365,7 +366,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host }) => {
         const app = host as WalkthroughApp;
 
-        return await app.workspace.activeLeaf?.id;
+        return app.workspace.activeLeaf?.id;
       },
       undefined,
       {
@@ -404,7 +405,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           app.workspace.getLeaf("tab");
         await welcome.setViewState({ type: "zotlit-library", active: true });
         app.workspace.setActiveLeaf(welcome, { focus: true });
-        return await leaf.id;
+        return leaf.id;
       },
       { notePath },
     );
@@ -932,7 +933,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await obRunUntil(
       vaultId,
       async ({ page }) => {
-        return await page
+        return page
           .leavesOfType("markdown")
           .find((leaf) => leaf.view.file?.path === "Citation locator.md")!
           .view.editor.getValue();
@@ -2132,7 +2133,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           .find((leaf) => leaf.view.file?.path === "Reopen workbench.md");
         await app.workspace.revealLeaf(note!);
         app.workspace.setActiveLeaf(note!, { focus: true });
-        return await app.commands.executeCommandById(
+        return app.commands.executeCommandById(
           "zotlit:customize-note-template",
         );
       },
@@ -2223,7 +2224,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host }) => {
         const app = host as WalkthroughApp;
 
-        return await app.commands.executeCommandById(
+        return app.commands.executeCommandById(
           "zotlit:switch-literature-note-profile",
         );
       },

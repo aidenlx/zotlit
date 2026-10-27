@@ -690,13 +690,11 @@ function addSharedFileAttachment(
 ): Disposable {
   using database = new DatabaseSync(databasePath);
   const itemIDOf = (key: string) =>
-    Number(
-      (
-        database.prepare("select itemID from items where key = ?").get(key) as {
-          itemID: number;
-        }
-      ).itemID,
-    );
+    (
+      database.prepare("select itemID from items where key = ?").get(key) as {
+        itemID: number;
+      }
+    ).itemID;
   /** Inserts a copy of `table`'s row for `itemID`, with `set` in place. */
   const copy = (
     table: string,

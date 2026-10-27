@@ -4103,7 +4103,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 };
                 const at = clientOf(pointX, pointY);
                 const node = fire("pointerdown", at.x, at.y);
-                const saving = !!(
+                const saving = (
                   pageHelpers
                     .pdfView(attachmentPath)!
                     .containerEl.querySelector<HTMLElement>(

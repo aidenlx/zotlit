@@ -45,6 +45,12 @@ For a single long call, pass `{ timeoutMs }` as `obRun`'s fourth argument.
 For embedded Query Views, use `revealQueryView` and the typed callback form of
 `readQueryViewUntil` in `src/note-query-view.ts`.
 
+Write page callbacks as ordinary TypeScript: `await obRunUntil(…)` directly, name args by role, return booleans and numbers as they are. The `zotlit-tests/*` rules in `packages/config/oxlint-plugin-tests.ts` enforce the shapes; each message shows the readable form.
+
+- A value that is not JSON-typed (an Effect `Duration`, a layout) returns through `JSON.stringify` and compares with `value === JSON.stringify(expected)`.
+- To add page diagnostics to a timeout, catch the rejection and throw a new `Error` with the original as `cause`.
+- Apply `typescript/no-unnecessary-type-conversion` findings with `oxlint -A all -D typescript/no-unnecessary-type-conversion --fix --fix-suggestions <files>`, then run typecheck. The default rule set with `--fix-suggestions` also strips `!` assertions and breaks typecheck.
+
 The [`zotlit-tests/no-eval-capture` rule](../config/oxlint-plugin-tests.ts) checks serialized callbacks.
 
 The type and serialization proofs are in `src/ob-run.types.ts` and

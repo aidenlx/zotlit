@@ -165,7 +165,7 @@ async function resolveDigest(
             })(),
           ),
         );
-        return await JSON.stringify(
+        return JSON.stringify(
           outcome.kind === "available"
             ? {
                 kind: outcome.kind,
@@ -224,7 +224,7 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
       async ({ page: helpers }) => {
         const state = helpers.scratch.__zotlitExcerptProbe!;
         if (!state)
-          return await JSON.stringify({
+          return JSON.stringify({
             snapshot: {
               phase: "idle",
               jobActive: false,
@@ -242,7 +242,7 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
             HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
         };
         delete helpers.scratch.__zotlitExcerptProbe;
-        return await JSON.stringify(value);
+        return JSON.stringify(value);
       },
       undefined,
     ),
@@ -278,7 +278,7 @@ async function startRenderProbe(
     (await obRun(
       vaultId,
       async ({ page: helpers }) => {
-        return await String(!!helpers.scratch.__zotlitExcerptProbe);
+        return String(!!helpers.scratch.__zotlitExcerptProbe);
       },
       undefined,
     )) === "true"
@@ -431,7 +431,7 @@ async function startRenderProbe(
         await obRun(
           vaultId,
           async ({ page: helpers }) => {
-            return await JSON.stringify(
+            return JSON.stringify(
               helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
             );
           },
@@ -448,7 +448,7 @@ async function startRenderProbe(
             const outcome = await state.bridge.runPromise(
               state.service.resolve(state.request),
             );
-            return await JSON.stringify(
+            return JSON.stringify(
               outcome.kind === "available"
                 ? {
                     kind: outcome.kind,
@@ -486,7 +486,7 @@ async function startRenderProbe(
           vaultId,
           async ({ page: helpers }) => {
             const state = helpers.scratch.__zotlitExcerptProbe!;
-            return await JSON.stringify({
+            return JSON.stringify({
               outcome: state.outcome,
               before: state.before,
               after: state.after,
@@ -818,7 +818,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
         if (!acceptance) throw new Error("Excerpt acceptance missing");
         if (acceptance.error) throw new Error(acceptance.error);
-        return await JSON.stringify(acceptance.result);
+        return JSON.stringify(acceptance.result);
       },
       undefined,
     ),
@@ -960,7 +960,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         await obRunUntil(
           vaultId,
           async ({ page: helpers }) => {
-            return await helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
+            return helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
               .worker;
           },
           undefined,
@@ -1234,7 +1234,7 @@ export async function verifyZoteroExcerptParity(
             ),
           });
         }
-        return await JSON.stringify(output);
+        return JSON.stringify(output);
       },
       { keys },
     ),
