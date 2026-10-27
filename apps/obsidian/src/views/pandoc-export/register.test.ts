@@ -1,3 +1,4 @@
+import { it as effectIt } from "@effect/vitest";
 // @vitest-environment happy-dom
 import {
   ButtonComponent,
@@ -5,16 +6,20 @@ import {
   Modal,
   settingsOf,
 } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Cause, Effect, Exit, ManagedRuntime } from "effect";
+import type { FileSystem } from "effect";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TFile } from "obsidian";
 import type { App, Command, FileSystemAdapter, Plugin } from "obsidian";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
+import { Notifier } from "@/lib/notifier";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
@@ -25,6 +30,7 @@ import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 import { exportWithCitations, registerPandocExport } from "./register";
 import type { PandocExportDeps, PandocExportOutcome } from "./register";
@@ -84,6 +90,7 @@ const MISSING_STYLE_ID = "http://www.zotero.org/styles/missing-profile-style";
 const PROFILE_ID = "Aa1Bb2Cc3Dd4" as ProfileId;
 
 interface VaultOptions {
+  fileSystem?: FileSystem.FileSystem;
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
   settings?: Partial<Settings> &
@@ -102,6 +109,7 @@ function openVault({
   settings = {},
   engineInstalled = true,
   basePath = BASE_PATH,
+  fileSystem = nodeFileSystem,
 }: VaultOptions = {}) {
   const file = markdownFile("draft.md");
   const frontmatter = note ?? {};
@@ -144,11 +152,19 @@ function openVault({
     }),
   });
 
+  const reader = profileReader(resolvedSettings, {
+    getFileCache: () => ({ frontmatter }),
+  });
+  const notifier = testNotifier();
+  const runtime = ManagedRuntime.make(notifier.layer);
+  runtimes.push(runtime);
+  const bridge = effectBridge(runtime);
   const deps = stubService<PandocExportDeps>("PandocExportDeps", {
-    fileSystem: nodeFileSystem,
+    fileSystem,
     app,
-    pandocEngine: {
-      binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {
+    pandocEngine: stubService<ManagedBinaryApi<CitationEngine>>(
+      "PandocEngine",
+      {
         getStatus: Effect.succeed(
           engineInstalled
             ? {
@@ -168,14 +184,16 @@ function openVault({
             }),
           ),
         ),
-      }),
-      runSync: Effect.runSync,
-      runPromise: Effect.runPromise,
-    },
+      },
+    ),
     zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir: DATA_DIR,
-      httpPort: 23119,
-      get: () => undefined,
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+          dataDir: DATA_DIR,
+          httpPort: 23119,
+        }),
+      ),
+      get: () => Effect.succeed(false),
     }),
     db: stubService<PandocExportDeps["db"]>("ZoteroReads", {}),
     citationParse: stubService<PandocExportDeps["citationParse"]>(
@@ -184,15 +202,17 @@ function openVault({
     ),
     zoteroHttp: stubService<PandocExportDeps["zoteroHttp"]>("ZoteroHttp", {}),
     citationLookup: {
-      read: async () => lookupAnswer(),
+      read: () => Effect.succeed(lookupAnswer()),
     },
     settings: { current: Effect.succeed(resolvedSettings) },
-    bridge: {
-      runSync: Effect.runSync,
-      runPromiseExit: Effect.runPromiseExit,
+    bridge,
+    profile: {
+      loaded: Effect.succeed(true),
+      profileOf: (file) => Effect.succeed(reader.profileOf(file)),
     },
-    profile: profileReader(resolvedSettings, {
-      getFileCache: () => ({ frontmatter }),
+    notifier: Notifier.of({
+      ...notifier.service,
+      track: (notice) => runtime.runSync(Notifier).track(notice),
     }),
     openSettings: () => undefined,
   });
@@ -211,20 +231,29 @@ function openVault({
   const palette = command;
   return {
     file,
+    close: () => runtime.dispose(),
+    notices: notifier.notices,
     /** Whether the engine was ever asked to convert anything. */
     converted: () => getEngine.mock.calls.length > 0,
     /** The command palette entry, as the palette offers it. */
     offered: () => palette.checkCallback?.(true) === true,
     /** Run one export of the note, as the palette entry does. */
-    export: () => exportWithCitations(file, deps),
+    export: runExport,
     /** Run one export, and read the dialog it opens. */
-    openDialog: () => dialog(exportWithCitations(file, deps)),
+    openDialog: () => dialog(runExport()),
     /** Run the command from the palette, and read the dialog it opens. */
     openDialogFromPalette() {
       palette.checkCallback?.(false);
       return dialog(null);
     },
   };
+
+  async function runExport(): Promise<PandocExportOutcome> {
+    const exit = await bridge.runPromiseExit(exportWithCitations(file, deps));
+    if (Exit.isSuccess(exit)) return exit.value;
+    if (Cause.hasInterruptsOnly(exit.cause)) return { kind: "stopped" };
+    throw Cause.squash(exit.cause);
+  }
 
   /**
    * The dialog an export opened.
@@ -276,6 +305,11 @@ function markdownFile(path: string): TFile {
   return file;
 }
 
+const runtimes: ManagedRuntime.ManagedRuntime<Notifier, never>[] = [];
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map((runtime) => runtime.dispose()));
+});
+
 beforeEach(() => {
   Modal.instances.length = 0;
   zotero.styles = [NOTE_STYLE, VAULT_STYLE];
@@ -283,6 +317,77 @@ beforeEach(() => {
 });
 
 describe("the Export note with citations command", () => {
+  effectIt.live("closes a pending export dialog on unload (#1830)", () =>
+    Effect.gen(function* () {
+      const vault = openVault({ note: {} });
+      const dialog = yield* Effect.promise(() => vault.openDialog());
+      expect(Modal.instances.at(-1)?.isOpen).toBe(true);
+      yield* Effect.promise(() => vault.close());
+      expect(Modal.instances.at(-1)?.isOpen).toBe(false);
+      expect(yield* Effect.promise(() => dialog.outcome!)).toEqual({
+        kind: "stopped",
+      });
+      expect(vault.converted()).toBe(false);
+    }),
+  );
+
+  effectIt.live(
+    "finishes a started destination write before unload ends (#1830)",
+    () =>
+      Effect.gen(function* () {
+        const basePath = yield* Effect.acquireRelease(
+          Effect.promise(() => mkdtemp(join(tmpdir(), "zotlit-export-"))),
+          (dir) =>
+            Effect.promise(() => rm(dir, { recursive: true, force: true })),
+        );
+        const started = Promise.withResolvers<void>();
+        const writing = Promise.withResolvers<void>();
+        const fileSystem: FileSystem.FileSystem = {
+          ...nodeFileSystem,
+          writeFile: (...args) =>
+            Effect.gen(function* () {
+              started.resolve();
+              yield* Effect.promise(() => writing.promise);
+              yield* nodeFileSystem.writeFile(...args);
+            }),
+        };
+        const vault = openVault({ note: {}, basePath, fileSystem });
+        const dialog = yield* Effect.promise(() => vault.openDialog());
+        dialog.confirm();
+        yield* Effect.promise(() => started.promise);
+        let closed = false;
+        const closing = vault.close().then(() => {
+          closed = true;
+        });
+        yield* Effect.yieldNow;
+        expect(closed).toBe(false);
+        writing.resolve();
+        yield* Effect.promise(() => closing);
+        expect(
+          yield* Effect.promise(() => readFile(join(basePath, "draft.docx"))),
+        ).toHaveLength(0);
+      }),
+  );
+
+  it("reports a typed filesystem refusal as an unwritable destination", async () => {
+    await using stack = new AsyncDisposableStack();
+    const root = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({ note: {}, basePath: join(root, "missing") });
+    const dialog = await vault.openDialog();
+    dialog.confirm();
+    expect(await dialog.outcome).toEqual({
+      kind: "failed",
+      problem: {
+        kind: "destination-unwritable",
+        detail: expect.any(String),
+      },
+    });
+    expect(await readdir(root)).toEqual([]);
+  });
+
   it("is offered for the active Markdown note", () => {
     expect(openVault({ note: {} }).offered()).toBe(true);
   });
@@ -438,6 +543,14 @@ describe("the Export note with citations command", () => {
 
     await vi.waitFor(async () =>
       expect(await readdir(basePath)).toEqual(["draft.docx"]),
+    );
+    await vi.waitFor(() =>
+      expect(vault.notices.flatMap((notice) => notice.messages)).toContain(
+        m.notice_pandoc_export_done({
+          file: "draft.docx",
+          style: m.settings_citation_references_style_default(),
+        }),
+      ),
     );
   });
 
