@@ -472,6 +472,8 @@
   "annot_view_name": "Zotero 标注",
   "command_open_library_view_name": "打开 Zotero 文库",
   "library_view_name": "Zotero 文库",
+  "library_view_show_in_library": "在 Zotero 文库中显示",
+  "command_show_in_library_name": "在 Zotero 文库中显示条目",
   "library_view_help_action": "欢迎与帮助",
   "library_view_papers_view_name": "文献",
   "library_view_tree_label": "文库",

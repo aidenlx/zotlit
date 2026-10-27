@@ -67,6 +67,7 @@ import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsState } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -106,6 +107,8 @@ interface PopoverReads {
   libraryScope: {
     readonly current: ResolvedLibraryScope | null;
   };
+  /** Open the Library View on the Item `indexedKey`. */
+  showInLibrary: (indexedKey: string) => void;
   /** The candidates of one Ambiguous Citation Key; none once unload interrupts the read. */
   describeCandidates(
     candidates: readonly SnapshotItem[],
@@ -217,6 +220,7 @@ export const layerCitationPopover: Layer.Layer<
   | CitationText
   | BibliographyRender
   | Profile
+  | ShowInLibrary
 > = Layer.effect(
   CitationPopover,
   Effect.gen(function* () {
@@ -230,6 +234,7 @@ export const layerCitationPopover: Layer.Layer<
     const text = yield* CitationText;
     const render = yield* BibliographyRender;
     const profiles = yield* Profile;
+    const library = yield* ShowInLibrary;
     const bridge = yield* scopedBridge;
     const visits = new HoverVisits<CitationVisitState>(() => ({
       reading: null,
@@ -300,6 +305,8 @@ export const layerCitationPopover: Layer.Layer<
           return bridge.runSync(libraries.current);
         },
       },
+      showInLibrary: (indexedKey) =>
+        bridge.runAndForget(library.show(indexedKey)),
       describeCandidates: (candidates) =>
         held(
           describeCandidatesEffect(
@@ -476,6 +483,7 @@ async function fill(
           }
         : undefined,
     hide: () => popover.hide(),
+    showInLibrary: deps.showInLibrary,
     switchProfile: (path) => requestProfileSwitch(deps.host, path),
     log: deps.log,
   });

@@ -1,9 +1,9 @@
-// What a Citation Popover entry can do: reach its Literature Note, its Zotero Item, and its Attachments.
+// What a Citation Popover entry can do: reach its Literature Note, its Zotero Item, its row in the Library View, and its Attachments.
 
 import { Keymap } from "obsidian";
 import type { MouseEvent } from "react";
 
-import { itemSelectUri } from "@zotlit/db";
+import { formatIndexedKey, itemSelectUri } from "@zotlit/db";
 
 import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import type { MenuAnchor } from "@/lib/menu";
@@ -19,6 +19,7 @@ export interface CitationPopoverActions {
    */
   onOpenNote: (block: CitationEntryBlock, event: MouseEvent) => void;
   onOpenInZotero: (block: CitationEntryBlock) => void;
+  onShowInLibrary: (block: CitationEntryBlock) => void;
   /**
    * Open the work's Attachment in Zotero's reader: one opens straight away,
    * several offer a menu.
@@ -36,6 +37,8 @@ export interface CitationPopoverActionDeps {
   open: (block: CitationEntryBlock, pane: NavigationPane) => void;
   /** Hide the popover the entries are shown in. */
   hide: () => void;
+  /** Open the Library View on the Item `indexedKey`. */
+  showInLibrary: (indexedKey: string) => void;
   switchProfile: (path: string) => void;
   /** Refresh source-less Item availability before any action. */
   prepare?: (block: CitationEntryBlock) => Promise<CitationEntryBlock | null>;
@@ -46,6 +49,7 @@ export function createCitationPopoverActions({
   host,
   open,
   hide,
+  showInLibrary,
   switchProfile,
   prepare,
   log,
@@ -87,6 +91,14 @@ export function createCitationPopoverActions({
           itemKey: block.itemKey,
         });
         window.open(itemSelectUri(current.itemKey, current.groupID));
+      });
+    },
+    onShowInLibrary(block) {
+      act(block, (current) => {
+        log("debug", "Citation popover shows in Library", {
+          itemKey: block.itemKey,
+        });
+        showInLibrary(formatIndexedKey(current.itemKey, current.groupID));
       });
     },
     onOpenAttachment(block, event) {

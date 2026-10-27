@@ -17,6 +17,7 @@ import type {
   CitedBySnapshot,
 } from "@/services/citation-index/service";
 import { activeNoteAtom } from "@/services/note-index/atoms";
+import { showInLibraryCommand } from "@/views/library/atoms";
 
 import {
   activePreviewsAtom,
@@ -185,7 +186,9 @@ function Toolbar({
   const setLayout = useAtomSet(model.layout);
   const setNote = useAtomSet(model.note);
   const sort = useAtomValue(model.layout, (layout) => layout.sort);
-  const hasTarget = useAtomValue(activeNoteAtom, (note) => note.key !== null);
+  const target = useAtomValue(activeNoteAtom, (note) => note.key);
+  const hasTarget = target !== null;
+  const showInLibrary = useAtomSet(showInLibraryCommand);
   const collapsed = useAtomValue(model.note, (note) => note.collapsed);
   const searchVisible = useAtomValue(
     model.layout,
@@ -245,6 +248,14 @@ function Toolbar({
           {...tooltipAttrs(m.cited_by_show_search_filter())}
           onClick={() => setLayout(toggleSearch)}
         />
+        {target !== null && (
+          <IconButton
+            icon="library"
+            data-cited-by-show-in-library
+            {...tooltipAttrs(m.library_view_show_in_library())}
+            onClick={() => showInLibrary(target)}
+          />
+        )}
       </SidebarToolbar.Actions>
       {hasTarget && (
         <span

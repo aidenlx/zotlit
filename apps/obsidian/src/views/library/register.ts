@@ -1,15 +1,19 @@
 // The Library View as an Obsidian view: its tab type, the ribbon icon with
 // the ZotLit mark, and the command that opens or focuses it. A tab open at
 // quit comes back on startup, as Obsidian restores every registered view.
+import { Effect, Layer } from "effect";
 import { addIcon } from "obsidian";
 import type { App, Plugin } from "obsidian";
 
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { LIBRARY_VIEW_ROW_LIMIT } from "./document";
 import { ZOTLIT_MARK_ICON, zotlitMarkSvg } from "./icon";
 import { libraryItemCommand } from "./item-actions";
+import { ShowInLibrary } from "./show-in-library";
 import { LIBRARY_VIEW_TYPE, LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
@@ -71,7 +75,8 @@ export async function openLibraryView(
 
 /**
  * Open the Library View on the Item `indexedKey`, selected in its first
- * Collection: the quick switcher's "Show in Library".
+ * Collection: Show in Library, from the quick switcher and every surface that
+ * reads {@link ShowInLibrary}.
  */
 export async function showInLibrary(
   app: App,
@@ -83,3 +88,28 @@ export async function showInLibrary(
       m.library_view_reveal_not_listed({ limit: LIBRARY_VIEW_ROW_LIMIT }),
     );
 }
+
+/** {@link ShowInLibrary} over the vault's workspace. */
+export const layerShowInLibrary: Layer.Layer<
+  ShowInLibrary,
+  never,
+  ObsidianApp
+> = Layer.effect(
+  ShowInLibrary,
+  Effect.gen(function* () {
+    const app = yield* ObsidianApp;
+    return ShowInLibrary.of({
+      show: Effect.fn("ShowInLibrary.show")((indexedKey: string) =>
+        Effect.tryPromise(() => showInLibrary(app, indexedKey)).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Could not show the Item in the Library View", {
+              indexedKey,
+              error,
+            }),
+          ),
+          withLogCategory("library-view"),
+        ),
+      ),
+    });
+  }),
+);

@@ -344,6 +344,14 @@ function EntryActions({
           actions.onDone();
         }}
       />
+      <EntryAction
+        icon="library"
+        label={m.library_view_show_in_library()}
+        onClick={() => {
+          actions.onShowInLibrary(block);
+          actions.onDone();
+        }}
+      />
       {/* Dropped outright when the Item stores nothing to open, so no action
           in the row can ever be a dead one. */}
       {block.attachments.length > 0 && (

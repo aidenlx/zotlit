@@ -551,7 +551,7 @@ What the researcher has done with an Item: whether it was read and when, its Ann
 _Avoid_: progress, status, read status
 
 **Show in Library**:
-The quick switcher action, Alt+Enter, that opens the Library View on an Item's first Collection with its row selected.
+The action that opens the Library View on an Item's first Collection with its row selected. It is offered wherever an Item stands outside the Library View: the quick switcher (Alt+Enter), a References Sidebar row, the Cited By Sidebar toolbar for the active Literature Note, a Citation Popover entry, and the Literature Note's command and file menu.
 _Avoid_: reveal in library, locate
 
 **Recent**:

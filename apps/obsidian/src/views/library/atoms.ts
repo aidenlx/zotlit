@@ -1,5 +1,7 @@
-// Leaf-owned Library gestures that read the plugin's Effect services.
+// Leaf-owned Library gestures that read the plugin's Effect services, and
+// Show in Library for the views that open the Library View on an Item.
 import { Effect, Exit } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
@@ -9,7 +11,19 @@ import { LibraryScope } from "@/services/library-scope/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { LibraryNode } from "./document";
+import { ShowInLibrary } from "./show-in-library";
 import { libraryOf, sameLibrary } from "./tree";
+
+/** The Library View can open after the pane that asked for it closes. */
+export const showInLibraryCommand = Atom.keepAlive(
+  viewRuntime.fn(
+    (indexedKey: string) =>
+      Effect.gen(function* () {
+        yield* (yield* ShowInLibrary).show(indexedKey);
+      }),
+    { concurrent: true },
+  ),
+);
 
 export const makeItemNodeCommand = () =>
   viewRuntime.fn(
