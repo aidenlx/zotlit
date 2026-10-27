@@ -5,10 +5,9 @@ import { Context, Effect, Stream } from "effect";
 import type { SettingDefinitionItem } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier } from "@/lib/notifier";
+import { LegacyPortError } from "@/lib/legacy-port";
 import { Vault } from "@/lib/obsidian-vault";
 import * as electron from "@/lib/require";
 import { FileNotFound } from "@/lib/vault-errors";
@@ -18,7 +17,11 @@ import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 
 import { profileRowServices, testSettingTab } from "./__fixtures__";
-import { advancedPageItems, exportLogArchive, openLogFile } from "./advanced";
+import {
+  advancedPageItems,
+  openLogFileInSystem,
+  saveLogArchive,
+} from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
 function items(overrides: Partial<SettingTabContext> = {}) {
@@ -74,25 +77,18 @@ it("offers each editor choice in web-enabled builds", () => {
 
 const LOG = ".obsidian/plugins/zotlit/zotlit.log";
 
-/** `effect` over a recording Notifier and `vault`; the messages it showed. */
-const noticesOf = (
-  effect: Effect.Effect<void, unknown, Notifier | Vault>,
+/** The failure `effect` ends with over `vault`. */
+const failureOf = <E>(
+  effect: Effect.Effect<void, E, Vault>,
   vault: Partial<Vault["Service"]>,
 ) =>
-  Effect.gen(function* () {
-    const notifier = testNotifier();
-    yield* effect.pipe(
-      Effect.provideService(Notifier, notifier.service),
-      Effect.provideService(
-        Vault,
-        stubService<Vault["Service"]>("Vault", vault),
-      ),
-    );
-    return notifier.notices.map((notice) => notice.messages[0]);
-  });
+  effect.pipe(
+    Effect.provideService(Vault, stubService<Vault["Service"]>("Vault", vault)),
+    Effect.flip,
+  );
 
 describe("log file actions", () => {
-  effectIt.effect("names a log file the system cannot open", () =>
+  effectIt.effect("fails with the reason the system cannot open the log", () =>
     Effect.gen(function* () {
       const openPath = vi.fn(async () => "No app can open this file");
       yield* Effect.acquireDisposable(
@@ -107,21 +103,23 @@ describe("log file actions", () => {
             ),
         ),
       );
-      const notices = yield* noticesOf(openLogFile(LOG), {
+      const failure = yield* failureOf(openLogFileInSystem(LOG), {
         fullPath: (path) => Effect.succeed(`/vault/${path}`),
       });
       expect(openPath).toHaveBeenCalledWith(`/vault/${LOG}`);
-      expect(notices).toEqual([m.notice_open_log_file_failed()]);
+      expect(failure).toBeInstanceOf(LegacyPortError);
+      expect(failure.message).toBe("No app can open this file");
     }),
   );
 
-  effectIt.effect("names a log file it cannot read for the export", () =>
+  effectIt.effect("fails the export with the log file it cannot read", () =>
     Effect.gen(function* () {
-      const notices = yield* noticesOf(exportLogArchive(LOG), {
+      const failure = yield* failureOf(saveLogArchive(LOG), {
         readPath: (path) =>
           Effect.fail(new FileNotFound({ path, cause: null })),
       });
-      expect(notices).toEqual([m.notice_export_log_file_failed()]);
+      expect(failure).toBeInstanceOf(FileNotFound);
+      expect(failure).toMatchObject({ path: LOG });
     }),
   );
 });

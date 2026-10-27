@@ -114,7 +114,15 @@ export const connectionLoadAtom = viewRuntime.atom((get) => {
         Option.getOrElse(previous, (): ConnectionReadout => ({
           status: "checking",
         }));
-      const read = lifecycle.refreshing ? Effect.never : readConnectionStatus;
+      // This shared atom owns the Welcome query across all its leaves. Its
+      // interruption cancels the cached read as well as the caller's wait.
+      const read = lifecycle.refreshing
+        ? Effect.never
+        : readConnectionStatus.pipe(
+            Effect.onInterrupt(() =>
+              QueryClients.use((queries) => queries.invalidate(ITEM_COUNT_KEY)),
+            ),
+          );
       // With no cached answer, a slow refresh shows checking after the same grace
       // period as the former banner timer. Losing a reader interrupts the timer.
       const pending =

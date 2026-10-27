@@ -42,7 +42,11 @@ import type { ProfileReader } from "@/services/profile/service";
 import type { Held } from "@/services/query-client/service";
 import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 
-import { createReferenceActions, ReferenceActionsContext } from "./actions";
+import {
+  copyBibliographyMessage,
+  createReferenceActions,
+  ReferenceActionsContext,
+} from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
 import type { CopiedBibliographyEntry } from "./copied-bibliography";
 import { buildReferenceEntries } from "./entries";
@@ -216,7 +220,8 @@ export class ReferencesView extends ItemView {
         pandocEngine.runSync(pandocEngine.binary.decline),
       getCopySnapshot: () => this.#copySnapshot,
       writeClipboard: writeClipboardRichText,
-      notify: (message) => void new BaseNotice(message),
+      reportCopy: (outcome) =>
+        void new BaseNotice(copyBibliographyMessage(outcome)),
     });
 
     this.#root = createRoot(this.contentEl);

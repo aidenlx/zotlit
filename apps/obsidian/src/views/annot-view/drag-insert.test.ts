@@ -14,13 +14,19 @@ import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { NoteFeatureHandle } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
 import { stateEditor } from "./__fixtures__/editor";
-import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
+import {
+  createDragInsertHandler,
+  createInsertHandler,
+  insertOutcomeMessage,
+} from "./drag-insert";
+import type { AnnotationInsertOutcome } from "./drag-insert";
 
 const card: AnnotationRecord = {
   key: "PUPR5FG5",
@@ -99,7 +105,6 @@ function fixture() {
     pending.push(request);
     return request.promise;
   });
-  const notify = vi.fn();
   const insert = createInsertHandler({
     app: stubService<App>("App", { workspace }),
     noteFeature: stubService<
@@ -107,7 +112,7 @@ function fixture() {
     >("NoteFeatureHandle", {
       prepareAnnotationInsert: prepare,
     }),
-    notify,
+    notify: () => undefined,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
       sourceScope: "/zotero",
@@ -118,7 +123,6 @@ function fixture() {
     info,
     workspace,
     prepare,
-    notify,
     insert,
     pending,
     changed,
@@ -139,12 +143,14 @@ it("inserts at the note's selection after the annotation sidebar takes focus", a
   const operation = f.insert(card);
   expect(f.prepare).toHaveBeenCalledOnce();
   f.pending[0]!.resolve(result("EXCERPT"));
-  await operation;
+  expect(await operation).toEqual({
+    kind: "inserted",
+    summary: { zotero: 0, unchecked: 0, unavailable: 0 },
+  });
   expect(f.cm.state.doc.toString()).toBe("one EXCERPT ");
-  expect(f.notify).not.toHaveBeenCalled();
 });
 
-it("offers no insert into a note in Reading view, and says to open one", async () => {
+it("offers no insert into a note in Reading view", async () => {
   using f = fixture();
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
   const reading = Object.assign(new MarkdownView(leaf), f.info, {
@@ -155,10 +161,9 @@ it("offers no insert into a note in Reading view, and says to open one", async (
   f.workspace.getMostRecentLeaf = () => leaf;
 
   expect(f.insert.offer()).toBeNull();
-  await f.insert(card);
+  expect(await f.insert(card)).toEqual({ kind: "no-note" });
   expect(f.prepare).not.toHaveBeenCalled();
   expect(f.cm.state.doc.toString()).toBe("one two");
-  expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_no_note());
 });
 
 it("keeps a menu offer bound to its note if another tab becomes active", async () => {
@@ -190,17 +195,27 @@ it("keeps the established text fallback for a Profile error", async () => {
       hint: "Restore the document",
     }),
   );
-  await operation;
+  expect(await operation).toMatchObject({
+    kind: "profile-error",
+    landed: true,
+  });
   expect(f.cm.state.doc.toString()).toBe("one Original highlight ");
-  expect(f.notify).toHaveBeenCalledTimes(1);
 });
 
-it("keeps internal insertion errors out of the notice", async () => {
+it("leaves the note unchanged, and the error to the log, where the insertion fails", async () => {
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.reject(new Error("private failure detail"));
-  await operation;
-  expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_failed());
+  expect(await operation).toEqual({ kind: "failed" });
+  expect(f.cm.state.doc.toString()).toBe("one two");
+});
+
+it("stays silent and inserts nothing when unload ends the insert", async () => {
+  using f = fixture();
+  const operation = f.insert(card);
+  f.pending[0]!.reject(new AbortError("The plugin unloaded during the run."));
+  expect(await operation).toEqual({ kind: "cancelled" });
+  expect(f.cm.state.doc.toString()).toBe("one two");
 });
 
 it("supersedes the pending action and inserts once with one undo", async () => {
@@ -210,11 +225,10 @@ it("supersedes the pending action and inserts once with one undo", async () => {
   expect(f.prepare.mock.calls[0]?.[0].signal.aborted).toBe(true);
   f.cm.dispatch({ changes: { from: 0, insert: "user " } });
   f.pending[1]!.resolve(result("EXCERPT"));
-  await second;
+  expect(await second).toMatchObject({ kind: "inserted" });
   f.pending[0]!.resolve(result("STALE"));
-  await first;
+  expect(await first).toEqual({ kind: "cancelled" });
   expect(f.cm.state.doc.toString()).toBe("user one EXCERPT ");
-  expect(f.notify).not.toHaveBeenCalled();
   undo(f.cm);
   expect(f.cm.state.doc.toString()).toBe("user one two");
 });
@@ -239,32 +253,65 @@ it.each(["switch", "close", "cancel"])(
     if (mode === "close") f.cm.dom.remove();
     if (mode === "cancel") f.insert.cancel();
     f.pending[0]!.resolve(result("late"));
-    await operation;
+    expect(await operation).toEqual({ kind: "cancelled" });
     expect(f.cm.state.doc.toString()).toBe("one two");
-    expect(f.notify).not.toHaveBeenCalled();
   },
 );
-it("reports an unavailable result once after insertion", async () => {
+it("inserts an unavailable-image result", async () => {
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.resolve({
     text: "Image unavailable [Zotero](zotero://open)",
     summary: { zotero: 0, unchecked: 0, unavailable: 1 },
   });
-  await operation;
+  expect(await operation).toEqual({
+    kind: "inserted",
+    summary: { zotero: 0, unchecked: 0, unavailable: 1 },
+  });
   expect(f.cm.state.doc.toString()).toBe(
     "one Image unavailable [Zotero](zotero://open) ",
   );
-  expect(f.notify).toHaveBeenCalledTimes(1);
 });
 it("uses a source-link fallback when preparation cannot build template context", async () => {
   using f = fixture();
   const operation = f.insert(card);
   f.pending[0]!.resolve(null);
-  await operation;
+  expect(await operation).toEqual({ kind: "fallback", landed: true });
   expect(f.cm.state.doc.toString()).toContain("annotation=PUPR5FG5");
-  expect(f.notify).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+  [{ kind: "no-note" }, m.annot_view_insert_no_note()],
+  [{ kind: "source-unavailable" }, m.annot_view_drag_unavailable()],
+  [{ kind: "fallback", landed: true }, m.annot_view_drag_unavailable()],
+  [{ kind: "fallback", landed: false }, null],
+  [
+    {
+      kind: "inserted",
+      summary: { zotero: 0, unchecked: 0, unavailable: 1 },
+    },
+    m.excerpt_image_summary({
+      zotero: 0,
+      unchecked: 0,
+      unavailable: 1,
+      notRefreshed: 0,
+    }),
+  ],
+  [
+    { kind: "inserted", summary: { zotero: 0, unchecked: 0, unavailable: 0 } },
+    null,
+  ],
+  // The error's own detail stays in the log.
+  [{ kind: "failed" }, m.annot_view_insert_failed()],
+  [{ kind: "cancelled" }, null],
+] satisfies [AnnotationInsertOutcome, string | null][])(
+  "reports %o with its notice",
+  (outcome, message) => {
+    expect(insertOutcomeMessage(stubService<App>("App", {}), outcome)).toBe(
+      message,
+    );
+  },
+);
 
 function dragFixture() {
   const cm = stateEditor({ doc: "one two", extensions: [history()] });
@@ -318,7 +365,6 @@ function dragFixture() {
     pending.push(request);
     return request.promise;
   });
-  const notify = vi.fn();
   const handler = createDragInsertHandler({
     app: stubService<App>("App", { workspace }),
     noteFeature: stubService<
@@ -326,7 +372,7 @@ function dragFixture() {
     >("NoteFeatureHandle", {
       prepareAnnotationInsert: prepare,
     }),
-    notify,
+    notify: () => undefined,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
       sourceScope: "/zotero",
@@ -376,7 +422,6 @@ function dragFixture() {
         (count, callbacks) => count + callbacks.size,
         0,
       ),
-    notify,
     start,
     drop,
     emit,
@@ -421,7 +466,6 @@ it("inserts where CodeMirror's own drop would when no exact position is under th
   await vi.waitFor(() =>
     expect(f.cm.state.doc.toString()).toBe("one EXCERPT two"),
   );
-  expect(f.notify).not.toHaveBeenCalled();
 });
 
 it("leaves unrelated editor drops native while a ZotLit drag is active", () => {

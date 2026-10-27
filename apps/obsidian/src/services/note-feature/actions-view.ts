@@ -191,7 +191,10 @@ export function overwriteNoteToast(options: { app: App }): ProgressCopy<{
   };
 }
 
-function batchUpdateAllNotice(result: BatchUpdateResult): string | undefined {
+/** The notice an Update all notes outcome reports with, or none. */
+export function batchUpdateAllNotice(
+  result: BatchUpdateResult,
+): string | undefined {
   switch (result.outcome) {
     case "db-unavailable":
       return m.batch_update_db_unavailable();

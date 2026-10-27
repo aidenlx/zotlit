@@ -202,3 +202,51 @@ it.effect(
       );
     }),
 );
+
+// #1710: the shared connection read belongs to its remaining Library leaves.
+it.effect("cancels the real cached read only after its last leaf closes", () =>
+  Effect.gen(function* () {
+    const pending: Array<{
+      signal: AbortSignal;
+      result: PromiseWithResolvers<{ itemCount: number }>;
+    }> = [];
+    const host = yield* Effect.acquireDisposable(
+      Effect.promise(() =>
+        makeWelcomeHost({
+          count: (signal) => {
+            const result = Promise.withResolvers<{ itemCount: number }>();
+            pending.push({ signal, result });
+            return result.promise;
+          },
+        }),
+      ),
+    );
+    const first = host.openSession();
+    const second = host.openSession();
+    yield* Effect.promise(() => waitFor(() => expect(pending).toHaveLength(1)));
+    first[Symbol.dispose]();
+    pending[0]!.result.resolve({ itemCount: 4 });
+    yield* Effect.promise(() =>
+      waitFor(() =>
+        expect(second.state().connection).toMatchObject({ itemCount: 4 }),
+      ),
+    );
+    expect(pending[0]!.signal.aborted).toBe(false);
+    host.publish({ _tag: "changed" });
+    yield* Effect.promise(() => waitFor(() => expect(pending).toHaveLength(2)));
+    second[Symbol.dispose]();
+    yield* Effect.promise(() =>
+      waitFor(() => expect(pending[1]!.signal.aborted).toBe(true)),
+    );
+    const reopened = yield* Effect.acquireDisposable(
+      Effect.sync(() => host.openSession()),
+    );
+    yield* Effect.promise(() => waitFor(() => expect(pending).toHaveLength(3)));
+    pending[2]!.result.resolve({ itemCount: 5 });
+    yield* Effect.promise(() =>
+      waitFor(() =>
+        expect(reopened.state().connection).toMatchObject({ itemCount: 5 }),
+      ),
+    );
+  }),
+);
