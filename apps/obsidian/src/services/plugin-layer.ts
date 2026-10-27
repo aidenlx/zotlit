@@ -32,6 +32,7 @@ import type { AnnotationNoteActions } from "@/services/note-feature/view-actions
 import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
 import { layerSettingTab } from "@/setting-tab/layer";
 import { layerShowInLibrary, openLibraryView } from "@/views/library/register";
+import type { ShowInLibrary } from "@/views/library/show-in-library";
 import { layerShowInLibraryActions } from "@/views/library/show-in-library-actions";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
@@ -257,6 +258,7 @@ export function pluginLayer(
   | Workspace
   | MetadataCache
   | ObsidianEnv
+  | ShowInLibrary
   | FileSystem.FileSystem
 > {
   // The file manager decides its outcomes from the vault's cache.

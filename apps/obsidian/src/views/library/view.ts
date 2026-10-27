@@ -935,13 +935,15 @@ export class LibraryView extends ItemView {
    */
   async reveal(
     indexedKey: string,
-  ): Promise<"listed" | "not-listed" | "closed"> {
+  ): Promise<"listed" | "not-listed" | "not-found" | "closed"> {
     const node = await this.#itemNode(indexedKey);
     if (!this.#release) return "closed";
+    // An Item the Library Scope does not hold leaves the list as it was.
+    if (!node) return "not-found";
     if (this.tree.state.facets.length > 0) this.#filter([]);
     if (this.tree.state.tags.length > 0) this.#tag([]);
     if (this.search.state.text !== "") this.search.clear();
-    if (node) this.#select(node);
+    this.#select(node);
     await this.searched;
     await this.query.settled;
     const listed = this.query.state

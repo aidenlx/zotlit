@@ -234,7 +234,7 @@ export const layerCitationPopover: Layer.Layer<
     const text = yield* CitationText;
     const render = yield* BibliographyRender;
     const profiles = yield* Profile;
-    const library = yield* ShowInLibrary;
+    const showInLibrary = yield* ShowInLibrary;
     const bridge = yield* scopedBridge;
     const visits = new HoverVisits<CitationVisitState>(() => ({
       reading: null,
@@ -306,7 +306,7 @@ export const layerCitationPopover: Layer.Layer<
         },
       },
       showInLibrary: (indexedKey) =>
-        bridge.runAndForget(library.show(indexedKey)),
+        bridge.runAndForget(showInLibrary.show(indexedKey)),
       describeCandidates: (candidates) =>
         held(
           describeCandidatesEffect(

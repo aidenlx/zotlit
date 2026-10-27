@@ -83,10 +83,13 @@ export async function showInLibrary(
   indexedKey: string,
 ): Promise<void> {
   const view = await openLibraryView(app);
-  if ((await view?.reveal(indexedKey)) === "not-listed")
+  const outcome = await view?.reveal(indexedKey);
+  if (outcome === "not-listed")
     new BaseNotice(
       m.library_view_reveal_not_listed({ limit: LIBRARY_VIEW_ROW_LIMIT }),
     );
+  else if (outcome === "not-found")
+    new BaseNotice(m.library_view_reveal_not_found());
 }
 
 /** {@link ShowInLibrary} over the vault's workspace. */
@@ -102,10 +105,9 @@ export const layerShowInLibrary: Layer.Layer<
       show: Effect.fn("ShowInLibrary.show")((indexedKey: string) =>
         Effect.tryPromise(() => showInLibrary(app, indexedKey)).pipe(
           Effect.catch((error) =>
-            Effect.logWarning("Could not show the Item in the Library View", {
-              indexedKey,
-              error,
-            }),
+            Effect.logWarning(
+              "Could not show the Item in the Library View",
+            ).pipe(Effect.annotateLogs({ indexedKey, error })),
           ),
           withLogCategory("library-view"),
         ),

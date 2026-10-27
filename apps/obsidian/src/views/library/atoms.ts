@@ -47,6 +47,9 @@ export const makeItemNodeCommand = () =>
           limit: 1,
           libraries: { mode: "selected", libraries: [library] },
         });
+        // The Library holds no such Item: it was deleted, or the key is wrong.
+        if (outcome.kind === "result" && outcome.result.rows?.length === 0)
+          return null;
         const filed =
           outcome.kind === "result"
             ? outcome.result.rows?.[0]?.values.collections

@@ -21,6 +21,7 @@ import {
   annotationCardShown,
   revealAnnotationInView,
 } from "@/views/annot-view/register";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 import type { PandocExportServices } from "@/views/pandoc-export/register";
 import {
   profileCustomization,
@@ -271,6 +272,7 @@ export async function createPluginRuntime(
     metadataCache: runtime.runSync(MetadataCache),
     notifier,
     zoteroPref,
+    showInLibrary: runtime.runSync(ShowInLibrary),
     fileSystem: runtime.runSync(FileSystem.FileSystem),
     settings,
     useLedger,

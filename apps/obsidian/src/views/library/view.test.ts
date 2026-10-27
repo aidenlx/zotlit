@@ -2224,6 +2224,26 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
   }
 });
 
+it.each([
+  ["a key no Library holds", "QQQQQQQQ"],
+  ["a group outside the Library Scope", "QQQQQQQQg999"],
+])(
+  "says it cannot find %s, and keeps the search and facets",
+  async (_, indexedKey) => {
+    const { deps } = await pluginData();
+    const view = await openTab(deps);
+    await press(view, facet(view, "pdf"));
+    await type(view, "kernel");
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await view.reveal(indexedKey);
+    });
+    expect(outcome).toBe("not-found");
+    expect(searchBox(view).value).toBe("kernel");
+    expect(facet(view, "pdf").getAttribute("aria-pressed")).toBe("true");
+  },
+);
+
 it("shows an Item filed in no Collection in its Library", async () => {
   const { deps, run } = await pluginData();
   const view = await openTab(deps);

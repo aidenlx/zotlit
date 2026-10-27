@@ -25,7 +25,7 @@ export const layerShowInLibraryActions: Layer.Layer<
     const host = yield* PluginHost;
     const workspace = yield* Workspace;
     const metadata = yield* MetadataCache;
-    const library = yield* ShowInLibrary;
+    const showInLibrary = yield* ShowInLibrary;
     const bridge = yield* scopedBridge;
     const activeItemKey = Effect.gen(function* () {
       const file = yield* workspace.getActiveFile;
@@ -38,7 +38,7 @@ export const layerShowInLibraryActions: Layer.Layer<
       checkCallback: (checking) => {
         const indexedKey = bridge.runSync(activeItemKey);
         if (indexedKey === null) return false;
-        if (!checking) bridge.runAndForget(library.show(indexedKey));
+        if (!checking) bridge.runAndForget(showInLibrary.show(indexedKey));
         return true;
       },
     });

@@ -397,6 +397,7 @@
   "library_view_papers_view_name": "Papers",
   "library_view_tree_label": "Libraries",
   "library_view_recent": "Recent",
+  "library_view_reveal_not_found": "Zotero item not found in your libraries.",
   "library_view_reveal_not_listed": [
     {
       "declarations": ["input limit", "local formatted = limit: number"],
@@ -2435,7 +2436,7 @@
   "workbench_field_related_items": "Related items",
   "workbench_field_notes": "Zotero notes",
   "workbench_field_weblink": "Zotero web link",
-  "workbench_field_librarylink": "Link to show in Zotero library",
+  "workbench_field_librarylink": "Zotero library link",
   "workbench_field_indexed_key": "Cross-library Zotero key",
   "workbench_field_library_id": "Library ID",
   "workbench_field_group_id": "Group ID",

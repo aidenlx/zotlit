@@ -479,8 +479,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
             ),
         }),
         indexedKeyFileMenu(),
-        showInLibraryFileMenu(
-          (indexedKey) => void showInLibrary(this.app, indexedKey),
+        showInLibraryFileMenu((indexedKey) =>
+          services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
         ),
         explorerFileMenu(this.app),
         queryFileFileMenu(this.app),
