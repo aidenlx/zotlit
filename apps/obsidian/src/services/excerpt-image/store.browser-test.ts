@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { MaxOpsBeforeYield } from "effect/Scheduler";
 
 // Runs in a disposable Electron renderer so transactions use Chromium's IndexedDB.
@@ -358,13 +358,13 @@ export async function run(): Promise<string[]> {
         );
         return request;
       };
-      await Effect.runPromise(store.put("interrupted", entry(10)), {
-        signal: controller.signal,
-      }).then(
-        () => {
-          throw new Error("Interrupted eviction succeeded");
-        },
-        () => undefined,
+      const exit = await Effect.runPromiseExit(
+        store.put("interrupted", entry(10)),
+        { signal: controller.signal },
+      );
+      check(
+        Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+        "Interrupted eviction did not return an interrupt-only Exit",
       );
     }
     check(interrupted, "Eviction did not reach its deletion boundary");
