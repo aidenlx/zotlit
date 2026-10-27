@@ -7,7 +7,9 @@ import { Effect } from "effect";
 // live in Obsidian (see docs/excerpt-image-queue-measurements.md).
 import { check } from "./__fixtures__/check";
 import { encodeExcerptImage } from "./__fixtures__/encode";
-import { EXCERPT_JOB_LIMIT, ExcerptPdfQueue } from "./pdf-queue";
+import { queueFixture } from "./__fixtures__/queue";
+import type { QueueFixture } from "./__fixtures__/queue";
+import { EXCERPT_JOB_LIMIT } from "./pdf-queue";
 
 export interface ChromiumQueueReport {
   passed: string[];
@@ -63,7 +65,7 @@ async function crop(seed: number, signal: AbortSignal): Promise<Uint8Array> {
  * second producer past the bound has to wait for a slot rather than be refused.
  * Returns the first crop alongside the counts, as the bytes a later request
  * would find in the cache. */
-async function cold(queue: ExcerptPdfQueue): Promise<{
+async function cold(queue: QueueFixture): Promise<{
   counts: ChromiumQueueReport["cold"];
   stored: Uint8Array;
 }> {
@@ -123,7 +125,7 @@ async function cold(queue: ExcerptPdfQueue): Promise<{
 
 /** The stored crop's bytes answer a request while a render holds the slot. */
 async function cacheHitWhileBlocked(
-  queue: ExcerptPdfQueue,
+  queue: QueueFixture,
   stored: Uint8Array,
 ): Promise<ChromiumQueueReport["cacheHitWhileBlocked"]> {
   const controller = new AbortController();
@@ -159,7 +161,7 @@ async function cacheHitWhileBlocked(
 
 /** Teardown owns the slot: `idle` may not resolve before it ran. */
 async function teardown(
-  queue: ExcerptPdfQueue,
+  queue: QueueFixture,
 ): Promise<ChromiumQueueReport["teardown"]> {
   const controller = new AbortController();
   const order: string[] = [];
@@ -208,63 +210,75 @@ async function throttledTimers(): Promise<
   return { timerMs, deadlineMs };
 }
 
-export async function run(): Promise<ChromiumQueueReport> {
-  const passed: string[] = [];
-  const queue = new ExcerptPdfQueue();
-  const coldBatch = await cold(queue);
-  const counts = coldBatch.counts;
-  check(counts.renders === counts.excerpts, "a crop settled per excerpt");
-  // One PDF crop at a time, in a hidden window, with real encoding behind it.
-  check(counts.peakRenders === 1, "never two crop renders at once");
-  // The bound decides for in-app work: it is reached, and the overflow waits.
-  check(
-    counts.peakAdmitted === EXCERPT_JOB_LIMIT,
-    `the bound of ${EXCERPT_JOB_LIMIT} was reached, not crossed`,
-  );
-  check(
-    counts.awaitingAtBurst === 2,
-    "the producers past the bound waited for a slot",
-  );
-  check(counts.bytes > 0, "the crops encoded to bytes");
-  check(
-    coldBatch.stored.byteLength > 0,
-    "the first crop carried payload bytes",
-  );
-  check(!queue.busy, "the batch left nothing in flight");
-  passed.push("cold batch of canvas crops");
+export function run(): Promise<ChromiumQueueReport> {
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const queue = yield* queueFixture();
+        return yield* Effect.promise(async () => {
+          const passed: string[] = [];
+          const coldBatch = await cold(queue);
+          const counts = coldBatch.counts;
+          check(
+            counts.renders === counts.excerpts,
+            "a crop settled per excerpt",
+          );
+          // One PDF crop at a time, in a hidden window, with real encoding behind it.
+          check(counts.peakRenders === 1, "never two crop renders at once");
+          // The bound decides for in-app work: it is reached, and the overflow waits.
+          check(
+            counts.peakAdmitted === EXCERPT_JOB_LIMIT,
+            `the bound of ${EXCERPT_JOB_LIMIT} was reached, not crossed`,
+          );
+          check(
+            counts.awaitingAtBurst === 2,
+            "the producers past the bound waited for a slot",
+          );
+          check(counts.bytes > 0, "the crops encoded to bytes");
+          check(
+            coldBatch.stored.byteLength > 0,
+            "the first crop carried payload bytes",
+          );
+          check(!queue.busy, "the batch left nothing in flight");
+          passed.push("cold batch of canvas crops");
 
-  const cacheHit = await cacheHitWhileBlocked(queue, coldBatch.stored);
-  check(
-    cacheHit.answeredWhileBlocked,
-    "the cache hit answered while the render was still blocked",
-  );
-  passed.push("cache hit while a render is blocked");
+          const cacheHit = await cacheHitWhileBlocked(queue, coldBatch.stored);
+          check(
+            cacheHit.answeredWhileBlocked,
+            "the cache hit answered while the render was still blocked",
+          );
+          passed.push("cache hit while a render is blocked");
 
-  const idleOrder = await teardown(queue);
-  check(
-    idleOrder.order.join(" ") === "teardown idle",
-    `idle followed teardown: ${idleOrder.order.join(" ")}`,
-  );
-  passed.push("teardown before idle");
+          const idleOrder = await teardown(queue);
+          check(
+            idleOrder.order.join(" ") === "teardown idle",
+            `idle followed teardown: ${idleOrder.order.join(" ")}`,
+          );
+          passed.push("teardown before idle");
 
-  const throttled = await throttledTimers();
-  check(
-    Number.isFinite(throttled.timerMs) && throttled.timerMs < 10_000,
-    "a scheduled timer still fires while the window is hidden",
-  );
-  check(
-    Number.isFinite(throttled.deadlineMs) && throttled.deadlineMs < 10_000,
-    "Effect.timeout still fires while the window is hidden",
-  );
-  passed.push("timers under background throttling");
+          const throttled = await throttledTimers();
+          check(
+            Number.isFinite(throttled.timerMs) && throttled.timerMs < 10_000,
+            "a scheduled timer still fires while the window is hidden",
+          );
+          check(
+            Number.isFinite(throttled.deadlineMs) &&
+              throttled.deadlineMs < 10_000,
+            "Effect.timeout still fires while the window is hidden",
+          );
+          passed.push("timers under background throttling");
 
-  return {
-    passed,
-    userAgent: navigator.userAgent,
-    visibility: document.visibilityState,
-    cold: counts,
-    cacheHitWhileBlocked: cacheHit,
-    teardown: idleOrder,
-    throttledTimers: throttled,
-  };
+          return {
+            passed,
+            userAgent: navigator.userAgent,
+            visibility: document.visibilityState,
+            cold: counts,
+            cacheHitWhileBlocked: cacheHit,
+            teardown: idleOrder,
+            throttledTimers: throttled,
+          };
+        });
+      }),
+    ),
+  );
 }
