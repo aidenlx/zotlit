@@ -28,6 +28,11 @@ export default defineConfig({
   ],
   overrides: [
     {
+      files: ["packages/e2e/src/**/*.ts"],
+      jsPlugins: ["./packages/config/oxlint-plugin-tests.ts"],
+      rules: { "zotlit-tests/no-eval-capture": "error" },
+    },
+    {
       files: ["**/*.{test,spec}.{ts,tsx,js,jsx}"],
       plugins: ["vitest"],
       rules: {

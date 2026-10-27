@@ -3,17 +3,15 @@
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-/** An eval expression that requires the plugin's `effect` module from the workspace. */
-export const EFFECT_MODULE = `require(${JSON.stringify(
-  createRequire(
-    join(
-      import.meta.dirname,
-      "..",
-      "..",
-      "..",
-      "apps",
-      "obsidian",
-      "package.json",
-    ),
-  ).resolve("effect"),
-)})`;
+/** Resolved path for typed page callbacks that use the plugin's Effect module. */
+export const EFFECT_MODULE_PATH = createRequire(
+  join(
+    import.meta.dirname,
+    "..",
+    "..",
+    "..",
+    "apps",
+    "obsidian",
+    "package.json",
+  ),
+).resolve("effect");

@@ -4,43 +4,86 @@ import { expect } from "vitest";
 
 import type { FixtureItem } from "@zotlit/scripts/fixture";
 
-import {
-  booksProfile,
-  e2eVaultPath,
-  settingsContent,
-} from "./e2e-run-fixture.ts";
+import { booksProfile, e2eVaultPath } from "./e2e-run-fixture.ts";
 import { openProfilesSettings, unreadOf } from "./e2e-run-helpers.ts";
 import { run } from "./e2e-run-lifecycle.ts";
 import {
   pressPromptKey,
   selectItemSuggestion,
 } from "./e2e-run-note-helpers.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
 
 async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
-  const size = await obEval(
+  const size = await obRun(
     run.vaultId,
-    "JSON.stringify(require('@electron/remote').getCurrentWindow().getSize())",
+    async (_context) => {
+      return String(
+        JSON.stringify(
+          (require("@electron/remote") as typeof import("@electron/remote"))
+            .getCurrentWindow()
+            .getSize(),
+        ),
+      );
+    },
+    undefined,
   );
   cleanup.defer(async () => {
-    await obEval(
+    await obRun(
       run.vaultId,
-      `require('@electron/remote').getCurrentWindow().setSize(...${size});true`,
+      async (_context, { __typedArg0 }) => {
+        (require("@electron/remote") as typeof import("@electron/remote"))
+          .getCurrentWindow()
+          .setSize(...(__typedArg0 as [number, number]));
+        return String(true);
+      },
+      { __typedArg0: JSON.parse(size) },
     );
   });
-  await obEval(
+  await obRun(
     run.vaultId,
-    "app.workspace.leftSplit.collapse();app.workspace.rightSplit.collapse();require('@electron/remote').getCurrentWindow().setSize(1600,1000);true",
+    async ({ app }) => {
+      app.workspace.leftSplit.collapse();
+      app.workspace.rightSplit.collapse();
+      (require("@electron/remote") as typeof import("@electron/remote"))
+        .getCurrentWindow()
+        .setSize(1600, 1000);
+      return String(true);
+    },
+    undefined,
   );
   // The renderer lays out at the new width once its window has it and
   // both sidebars have finished collapsing.
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      "JSON.stringify([activeWindow.outerWidth,...[app.workspace.leftSplit,app.workspace.rightSplit].map(split=>Math.round(split.containerEl.getBoundingClientRect().width))])",
-      { expected: "[1600,0,0]" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return String(
+            JSON.stringify([
+              activeWindow.outerWidth,
+              ...[app.workspace.leftSplit, app.workspace.rightSplit].map(
+                (split) =>
+                  Math.round(
+                    (
+                      split as import("obsidian").WorkspaceSidedock & {
+                        containerEl: HTMLElement;
+                      }
+                    ).containerEl.getBoundingClientRect().width,
+                  ),
+              ),
+            ]),
+          );
+        },
+        undefined,
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:39",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "[1600,0,0]" }),
   ).toBe(true);
 }
 /**
@@ -74,8 +117,6 @@ const articlesProfile = {
   document: "zotlit-profile.articles.md",
 };
 const bookMatch = { and: ['itemType == "book"', 'library == "personal"'] };
-const activeWorkbenchContent =
-  "app.workspace.activeLeaf?.view?.getViewType()==='zotlit-template-workbench'?app.workspace.activeLeaf.view.contentEl:null";
 
 function conditionReady({
   row = 0,
@@ -88,12 +129,39 @@ function conditionReady({
   operator: string;
   value: string;
 }): Promise<boolean> {
-  // A kind change replaces the value control and its options on the next render.
-  const valueControl = `${kind === "collection" ? "input" : "button"}[aria-label=${JSON.stringify(run.m.workbench_filter_value())}]`;
-  return obEvalUntil(
+  return obRunUntil(
     run.vaultId,
-    `(function(){${PAGE}var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(valueOf(row?.querySelector('button[aria-label=${JSON.stringify(run.m.workbench_match_condition_kind())}]'))===${JSON.stringify(kind)}&&valueOf(row.querySelector('select[aria-label=${JSON.stringify(run.m.workbench_filter_operator())}]'))===${JSON.stringify(operator)}&&valueOf(row.querySelector('${valueControl}'))===${JSON.stringify(value)});})()`,
-    { expected: "true" },
+    ({ page }, { row, kind, operator, value, labels }) => {
+      const line = page
+        .workbench()
+        ?.contentEl.querySelectorAll("[data-condition-row]")[row];
+      const control = (selector: string, label: string) =>
+        line?.querySelector<
+          HTMLButtonElement | HTMLSelectElement | HTMLInputElement
+        >(`${selector}[aria-label="${CSS.escape(label)}"]`);
+      return (
+        page.valueOf(control("button", labels.kind)) === kind &&
+        page.valueOf(control("select", labels.operator)) === operator &&
+        page.valueOf(
+          control(kind === "collection" ? "input" : "button", labels.value),
+        ) === value
+      );
+    },
+    {
+      row,
+      kind,
+      operator,
+      value,
+      labels: {
+        kind: run.m.workbench_match_condition_kind(),
+        operator: run.m.workbench_filter_operator(),
+        value: run.m.workbench_filter_value(),
+      },
+    },
+    { what: "condition value" },
+  ).then(
+    () => true,
+    () => false,
   );
 }
 
@@ -103,31 +171,67 @@ async function shapeCondition(
   kind: "item-type" | "library",
   value: string,
 ): Promise<void> {
-  const control = (label: string) =>
-    `Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]'))[${row}].querySelector(':is(select,button)[aria-label=${JSON.stringify(label)}]')`;
-  // A row already of `kind` keeps its value: choosing the kind it holds
-  // changes nothing, as in a native select. A changed kind replaces the
-  // value control with an empty one.
-  expect(
-    await obEval(
-      run.vaultId,
-      `(async()=>{${PAGE}const kind=${control(run.m.workbench_match_condition_kind())};if(valueOf(kind)===${JSON.stringify(kind)})return true;await pick(kind,${JSON.stringify(kind)},'Condition type');await until('the ${kind} value control',()=>valueOf(${control(run.m.workbench_match_condition_kind())})===${JSON.stringify(kind)}&&valueOf(${control(run.m.workbench_filter_value())})==='');return true;})()`,
-    ),
-  ).toBe("true");
-  expect(
-    await obEval(
-      run.vaultId,
-      `(async()=>{${PAGE}await pick(${control(run.m.workbench_filter_value())},${JSON.stringify(value)},'Value');return true;})()`,
-    ),
-  ).toBe("true");
+  const labels = {
+    kind: run.m.workbench_match_condition_kind(),
+    value: run.m.workbench_filter_value(),
+  };
+  await obRun(
+    run.vaultId,
+    async ({ page }, { row, kind, labels }) => {
+      const control = (label: string) =>
+        page
+          .workbench()!
+          .contentEl.querySelectorAll("[data-condition-row]")
+          [row]!.querySelector<HTMLButtonElement | HTMLSelectElement>(
+            `:is(select,button)[aria-label="${CSS.escape(label)}"]`,
+          );
+      const type = control(labels.kind);
+      if (page.valueOf(type) === kind) return;
+      await page.pick(type, kind, "Condition type");
+      await page.until(
+        `the ${kind} value control`,
+        () =>
+          page.valueOf(control(labels.kind)) === kind &&
+          page.valueOf(control(labels.value)) === "",
+      );
+    },
+    { row, kind, labels },
+  );
+  await obRun(
+    run.vaultId,
+    async ({ page }, { row, value, labels }) => {
+      await page.pick(
+        page
+          .workbench()!
+          .contentEl.querySelectorAll("[data-condition-row]")
+          [row]!.querySelector<HTMLButtonElement | HTMLSelectElement>(
+            `:is(select,button)[aria-label="${CSS.escape(labels.value)}"]`,
+          ),
+        value,
+        "Value",
+      );
+    },
+    { row, value, labels },
+  );
   expect(await conditionReady({ row, kind, operator: "is", value })).toBe(true);
 }
 
 /** "Add condition" adds a placeholder row; it becomes a Library row. */
 async function addLibraryCondition(selector: string): Promise<void> {
-  await obEval(
+  await obRun(
     run.vaultId,
-    `(function(){${PAGE}var editor=${activeWorkbenchContent};press(Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');return true;})()`,
+    async ({ page }, { __typedArg0 }) => {
+      const { press } = page;
+      var editor = page.workbench()?.contentEl;
+      press(
+        Array.from(editor!.querySelectorAll("button")).find(
+          (button) => button.textContent.trim() === __typedArg0,
+        ),
+        "Add condition",
+      );
+      return String(true);
+    },
+    { __typedArg0: run.m.workbench_match_add_condition() },
   );
   await shapeCondition(1, "library", selector);
 }
@@ -135,18 +239,68 @@ async function addLibraryCondition(selector: string): Promise<void> {
 async function openMatchEditor(): Promise<void> {
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      `(function(){${PAGE}var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(run.m.settings_profile_edit())});if(!button||button.disabled)return false;press(button,'Edit profile');return true;})()`,
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+          const { press } = page;
+          var settings = app.setting.containerEl;
+          var row = Array.from(settings.querySelectorAll(".setting-item")).find(
+            (el) =>
+              el.querySelector(".setting-item-name")?.textContent ===
+              __typedArg0,
+          );
+          var button =
+            row &&
+            Array.from(row.querySelectorAll("button")).find(
+              (button) => button.getAttribute("aria-label") === __typedArg1,
+            );
+          if (!button || button.disabled) return String(false);
+          press(button, "Edit profile");
+          return String(true);
+        },
+        {
+          __typedArg0: booksProfile.label,
+          __typedArg1: run.m.settings_profile_edit(),
+        },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:138",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      `(function(){${PAGE}var editor=${activeWorkbenchContent};var tab=Array.from(editor?.querySelectorAll('[role=tab]')??[]).find(tab=>tab.textContent.trim()===${JSON.stringify(run.m.workbench_tab_match())});press(tab,'Match tab');return String(!!editor?.querySelector('[data-part=fieldset]')&&!editor?.ownerDocument.querySelector('.modal.mod-settings'));})()`,
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ page }, { __typedArg0 }) => {
+          const { press } = page;
+          var editor = page.workbench()?.contentEl;
+          var tab = Array.from(
+            editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
+          ).find((tab) => tab.textContent.trim() === __typedArg0);
+          press(tab, "Match tab");
+          return String(
+            String(
+              !!editor?.querySelector("[data-part=fieldset]") &&
+                !editor?.ownerDocument.querySelector(".modal.mod-settings"),
+            ),
+          );
+        },
+        { __typedArg0: run.m.workbench_tab_match() },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:145",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
 }
 
@@ -154,38 +308,105 @@ async function mainSettings() {
   // A researcher's click in the dialog focuses the main window, and a sheet
   // that click opens takes Obsidian's active window; a press moves no
   // emulated focus, so move it from a popout before the dialog opens.
-  await obEval(run.vaultId, "window.focus();true");
+  await obRun(
+    run.vaultId,
+    async (_context) => {
+      window.focus();
+      return String(true);
+    },
+    undefined,
+  );
   await expect
     .poll(
       () =>
-        obEval(
+        obRun(
           run.vaultId,
-          "String(activeWindow===window&&document.hasFocus())",
+          async (_context) => {
+            return String(
+              String(activeWindow === window && document.hasFocus()),
+            );
+          },
+          undefined,
         ),
       { timeout: 5000 },
     )
     .toBe("true");
-  await obEval(
+  await obRun(
     run.vaultId,
-    "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();app.setting.openTabById('zotlit');true",
+    async ({ app }) => {
+      app.vault.setConfig("settingsPopoutWindow", false);
+      app.setting.open();
+      app.setting.openTabById("zotlit");
+      return String(true);
+    },
+    undefined,
   );
 }
 
 function clickTemplateCustomize() {
-  return obEvalUntil(
-    run.vaultId,
-    `(function(){${PAGE}var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(run.m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(run.m.settings_profile_edit())});if(!button||button.disabled)return false;press(button,'Edit template');return true;})()`,
-    { expected: "true" },
-  );
+  return ((options: { expected: string; tries?: number }) =>
+    obRunUntil(
+      run.vaultId,
+      async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+        const { press } = page;
+        var settings = app.setting.containerEl;
+        var row = Array.from(settings.querySelectorAll(".setting-item")).find(
+          (el) =>
+            el.querySelector(".setting-item-name")?.textContent === __typedArg0,
+        );
+        var button =
+          row &&
+          Array.from(row.querySelectorAll("button")).find(
+            (el) => el.getAttribute("aria-label") === __typedArg1,
+          );
+        if (!button || button.disabled) return String(false);
+        press(button, "Edit template");
+        return String(true);
+      },
+      {
+        __typedArg0: run.m.settings_profile_document_name(),
+        __typedArg1: run.m.settings_profile_edit(),
+      },
+      {
+        ready: (value) => value === options.expected,
+        tries: options.tries,
+        what: "suite.ts:175",
+      },
+    ).then(
+      () => true,
+      () => false,
+    ))({ expected: "true" });
 }
 
 async function saveMatch(match: unknown): Promise<void> {
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(booksProfile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+          return String(
+            String(
+              JSON.stringify(
+                (() => {
+                  const match = zotlit.services.profile.profiles.find(
+                    (p) => p.id === __typedArg0,
+                  )?.match;
+                  return match && "tree" in match ? match.tree : undefined;
+                })(),
+              ) === __typedArg1,
+            ),
+          );
+        },
+        { __typedArg0: booksProfile.id, __typedArg1: JSON.stringify(match) },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:184",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
 }
@@ -208,11 +429,33 @@ async function writeMatch(
     `${header}\nmatch: ${JSON.stringify(match)}${source.slice(headerEnd)}`,
   );
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(profile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+          return String(
+            String(
+              JSON.stringify(
+                (() => {
+                  const match = zotlit.services.profile.profiles.find(
+                    (p) => p.id === __typedArg0,
+                  )?.match;
+                  return match && "tree" in match ? match.tree : undefined;
+                })(),
+              ) === __typedArg1,
+            ),
+          );
+        },
+        { __typedArg0: profile.id, __typedArg1: JSON.stringify(match) },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:211",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
 }
 
@@ -221,24 +464,39 @@ async function quickSwitchCreate(
   targetVaultId = run.vaultId,
 ) {
   expect(
-    await obEval(
+    await obRun(
       targetVaultId,
-      `(async()=>{
-          if(app.workspace.getLeavesOfType('zotlit-template-workbench').length){
-            using resources=new DisposableStack();
-            await new Promise((resolve,reject)=>{
-              const ref=app.workspace.on('layout-change',()=>{
-                if(!app.workspace.getLeavesOfType('zotlit-template-workbench').length&&app.workspace.activeLeaf&&app.workspace.isAttached(app.workspace.activeLeaf))resolve();
-              });
-              resources.defer(()=>app.workspace.offref(ref));
-              const timer=setTimeout(()=>reject(new Error('Workbench detachment did not complete its layout change')),5000);
-              resources.defer(()=>clearTimeout(timer));
-              app.workspace.detachLeavesOfType('zotlit-template-workbench');
+      async ({ app }) => {
+        if (app.workspace.getLeavesOfType("zotlit-template-workbench").length) {
+          using resources = new DisposableStack();
+          await new Promise<void>((resolve, reject) => {
+            const ref = app.workspace.on("layout-change", () => {
+              if (
+                !app.workspace.getLeavesOfType("zotlit-template-workbench")
+                  .length &&
+                app.workspace.activeLeaf &&
+                app.workspace.isAttached(app.workspace.activeLeaf)
+              )
+                resolve();
             });
-          }
-          window.focus();
-          return true;
-        })()`,
+            resources.defer(() => app.workspace.offref(ref));
+            const timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "Workbench detachment did not complete its layout change",
+                  ),
+                ),
+              5000,
+            );
+            resources.defer(() => clearTimeout(timer));
+            app.workspace.detachLeavesOfType("zotlit-template-workbench");
+          });
+        }
+        window.focus();
+        return String(true);
+      },
+      undefined,
     ),
   ).toBe("true");
   // Native layout completion can focus a companion leaf in the popout.
@@ -246,35 +504,86 @@ async function quickSwitchCreate(
   await expect
     .poll(
       () =>
-        obEval(
+        obRun(
           targetVaultId,
-          "String(app.workspace.getLeavesOfType('zotlit-template-workbench').length===0&&activeWindow===window&&document.hasFocus())",
+          async ({ app }) => {
+            return String(
+              String(
+                app.workspace.getLeavesOfType("zotlit-template-workbench")
+                  .length === 0 &&
+                  activeWindow === window &&
+                  document.hasFocus(),
+              ),
+            );
+          },
+          undefined,
         ),
       { timeout: 5000 },
     )
     .toBe("true");
   expect(
-    await obEvalUntil(
-      targetVaultId,
-      "String(!!app.commands.commands['zotlit:note-quick-switcher'])",
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        targetVaultId,
+        async ({ app }) => {
+          return String(
+            String(!!app.commands.commands["zotlit:note-quick-switcher"]),
+          );
+        },
+        undefined,
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:257",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
   // The picker and its backdrop stay transparent until the first answer
   // settles, then show with rows, or with a loading row when that answer is
   // slow; no visible frame holds an empty list.
   expect(
-    await obEval(
+    await obRun(
       targetVaultId,
-      "(function(){app.commands.commands['zotlit:note-quick-switcher'].callback();var modal=Array.from(activeDocument.querySelectorAll('.modal-container')).at(-1);return activeWindow.getComputedStyle(modal).opacity==='0';})()",
+      async ({ app }) => {
+        app.commands.commands["zotlit:note-quick-switcher"]!.callback!();
+        var modal = Array.from(
+          activeDocument.querySelectorAll(".modal-container"),
+        ).at(-1)!;
+        return String(activeWindow.getComputedStyle(modal).opacity === "0");
+      },
+      undefined,
     ),
   ).toBe("true");
   expect(
-    await obEvalUntil(
-      targetVaultId,
-      "(function(){var modal=Array.from(activeDocument.querySelectorAll('.modal-container')).at(-1);return String(activeWindow.getComputedStyle(modal).opacity==='1'&&!!modal.querySelector('.prompt .suggestion-item, .prompt .suggestion-empty'));})()",
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        targetVaultId,
+        async (_context) => {
+          var modal = Array.from(
+            activeDocument.querySelectorAll(".modal-container"),
+          ).at(-1)!;
+          return String(
+            String(
+              activeWindow.getComputedStyle(modal).opacity === "1" &&
+                !!modal.querySelector(
+                  ".prompt .suggestion-item, .prompt .suggestion-empty",
+                ),
+            ),
+          );
+        },
+        undefined,
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "suite.ts:273",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
   await selectItemSuggestion(targetVaultId, item.title, item.key);
   await pressPromptKey(targetVaultId, "Enter");
@@ -285,7 +594,6 @@ export {
   libraryHeader,
   articlesProfile,
   bookMatch,
-  activeWorkbenchContent,
   conditionReady,
   shapeCondition,
   addLibraryCondition,

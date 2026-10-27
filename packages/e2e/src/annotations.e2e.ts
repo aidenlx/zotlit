@@ -11,74 +11,277 @@ import {
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { readQueryViewUntil, revealQueryView } from "./note-query-view.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import type {
+  AnnotationLeaf,
+  PagePdfView,
+  CodeMirrorElement,
+} from "./page-notes-types.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
   it("shows the same Fixture Annotations in both surfaces with Zotero closed", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return String(JSON.stringify(app.workspace.getLayout()));
+      },
+      undefined,
     );
     try {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+        async ({ app }, { __typedArg0 }) => {
+          const file = app.vault.getFileByPath(__typedArg0)!;
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          app.commands.executeCommandById("zotlit:open-annot-view");
+          app.commands.executeCommandById(
+            "zotlit:annot-view-follow-active-tab",
+          );
+          return String(true);
+        },
+        { __typedArg0: annotationAttachment.path! },
       );
       const expected = [...annotationKeys].sort();
-      const readAnnotations = `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const list=await bridge.runPromise(repository.read(${JSON.stringify(annotationAttachment.key)}));return JSON.stringify({source:list?.source.kind??null,keys:(list?.annotations??[]).map(({key})=>key).sort()});})()`;
+
       expect(
-        await obEvalUntil(run.vaultId, readAnnotations, {
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ zotlit }, { __typedArg0 }) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              const list = await bridge.runPromise(
+                repository.read(__typedArg0),
+              );
+              return String(
+                JSON.stringify({
+                  source: list?.source.kind ?? null,
+                  keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
+                }),
+              );
+            },
+            { __typedArg0: annotationAttachment.key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "annotations.ts:33",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({
           expected: JSON.stringify({ source: "zotero-db", keys: expected }),
         }),
       ).toBe(true);
-      expect(JSON.parse(await obEval(run.vaultId, readAnnotations))).toEqual({
+      expect(
+        JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ zotlit }, { __typedArg0 }) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              const list = await bridge.runPromise(
+                repository.read(__typedArg0),
+              );
+              return String(
+                JSON.stringify({
+                  source: list?.source.kind ?? null,
+                  keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
+                }),
+              );
+            },
+            { __typedArg0: annotationAttachment.key },
+          ),
+        ),
+      ).toEqual({
         source: "zotero-db",
         keys: expected,
       });
-      const visibleCards = `JSON.stringify((()=>{const annotationView=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view;const cards=Array.from(annotationView?.containerEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(Boolean);return [...new Set(cards)].sort();})())`;
-      const cardsReady = await obEvalUntil(run.vaultId, visibleCards, {
+
+      const cardsReady = await ((options: {
+        expected: string;
+        tries?: number;
+      }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              JSON.stringify(
+                (() => {
+                  const annotationView = (
+                    app.workspace.getLeavesOfType(
+                      "zotero-annotation-view",
+                    ) as AnnotationLeaf[]
+                  )[0]?.view;
+                  const cards = Array.from(
+                    annotationView?.containerEl.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ) ?? [],
+                    (el) => el.getAttribute("data-zotero-annotation-key"),
+                  ).filter(Boolean);
+                  return [...new Set(cards)].sort();
+                })(),
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:42",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: JSON.stringify(expected),
       });
       if (!cardsReady) {
-        const state = await obEval(
+        const state = await obRun(
           run.vaultId,
-          `JSON.stringify((()=>{const services=app.plugins.plugins.zotlit.services;const leaves=app.workspace.getLeavesOfType('zotero-annotation-view');const active=app.workspace.getActiveFile();const full=active?app.vault.adapter.getFullPath(active.path):null;const session=active?services.pdfAnnotationEditor.bindings.find((b)=>b.filePath===active.path)?.session:null;return {count:leaves.length,snapshot:leaves[0]?.view.snapshot??null,active:active?.path??null,session:session?{filePath:session.filePath,target:session.target}:null,resolution:full?services.bridge.runSync(services.attachmentResolver.resolve(full)):null,fullPath:full,exists:full?require('fs').existsSync(full):false,profileDir:services.zoteroPref.resolvedProfileDir,dataDir:services.zoteroPref.dataDir};})())`,
+          async ({ app, zotlit }) => {
+            return String(
+              JSON.stringify(
+                (() => {
+                  const services = zotlit.services;
+                  const leaves = app.workspace.getLeavesOfType(
+                    "zotero-annotation-view",
+                  ) as AnnotationLeaf[];
+                  const active = app.workspace.getActiveFile();
+                  const full = active
+                    ? (
+                        app.vault
+                          .adapter as import("obsidian").FileSystemAdapter
+                      ).getFullPath(active.path)
+                    : null;
+                  const session = active
+                    ? services.pdfAnnotationEditor.bindings.find(
+                        (b) => b.filePath === active.path,
+                      )?.session
+                    : null;
+                  return {
+                    count: leaves.length,
+                    snapshot: leaves[0]?.view.snapshot ?? null,
+                    active: active?.path ?? null,
+                    session: session
+                      ? { filePath: active?.path, target: session.target }
+                      : null,
+                    resolution: full
+                      ? services.bridge.runSync(
+                          services.attachmentResolver.resolve(full),
+                        )
+                      : null,
+                    fullPath: full,
+                    exists: full ? require("fs").existsSync(full) : false,
+                    profileDir: services.zoteroPref.resolvedProfileDir,
+                    dataDir: services.zoteroPref.dataDir,
+                  };
+                })(),
+              ),
+            );
+          },
+          undefined,
         );
         throw new Error(`Annotation cards did not render: ${state}`);
       }
-      expect(JSON.parse(await obEval(run.vaultId, visibleCards))).toEqual(
-        expected,
-      );
+      expect(
+        JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }) => {
+              return String(
+                JSON.stringify(
+                  (() => {
+                    const annotationView = (
+                      app.workspace.getLeavesOfType(
+                        "zotero-annotation-view",
+                      ) as AnnotationLeaf[]
+                    )[0]?.view;
+                    const cards = Array.from(
+                      annotationView?.containerEl.querySelectorAll<HTMLElement>(
+                        ".zt-annot-card[data-zotero-annotation-key]",
+                      ) ?? [],
+                      (el) => el.getAttribute("data-zotero-annotation-key"),
+                    ).filter(Boolean);
+                    return [...new Set(cards)].sort();
+                  })(),
+                ),
+              );
+            },
+            undefined,
+          ),
+        ),
+      ).toEqual(expected);
       // Wait for the card's growing excerpt to settle before starting a transition.
       // A height unchanged for 300 ms counts as settled.
       // Seek each transition to its midpoint so a late timer cannot sample its end.
       // Under reduced motion neither property has an intermediate value.
-      const selectionEase = `(async()=>{${PAGE}
-        const card=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.containerEl.querySelector('.zt-annot-card:not([data-selected])');
-        const read=()=>{const s=getComputedStyle(card);return{fill:s.backgroundColor,ring:s.boxShadow};};
-        let height=-1,since=0;
-        await until('excerpt height settles',()=>{if(card.offsetHeight!==height){height=card.offsetHeight;since=Date.now();}return Date.now()-since>=300;},10000);
-        const probe=(on)=>{
-          const start=read();
-          card.toggleAttribute('data-selected',on);
-          read();
-          const transitions=card.getAnimations().filter(animation=>['background-color','box-shadow'].includes(animation.transitionProperty));
-          for(const animation of transitions){animation.pause();animation.currentTime=animation.effect.getComputedTiming().activeDuration/2;}
-          const mid=read();
-          for(const animation of transitions)animation.finish();
-          const end=read();
-          const eases=(name)=>mid[name]!==start[name]&&mid[name]!==end[name];
-          return{fill:eases('fill'),ring:eases('ring')};
-        };
-        const motion=!matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const select=probe(true);const deselect=probe(false);
-        return JSON.stringify({motion,select,deselect});
-      })()`;
+
       const { motion, ...eased } = JSON.parse(
-        await obEval(run.vaultId, selectionEase),
+        await obRun(
+          run.vaultId,
+          async ({ app, page }) => {
+            const { until } = page;
+            const card = (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]!.view.containerEl.querySelector<HTMLElement>(
+              ".zt-annot-card:not([data-selected])",
+            )!;
+            const read = () => {
+              const s = getComputedStyle(card);
+              return { fill: s.backgroundColor, ring: s.boxShadow };
+            };
+            let height = -1,
+              since = 0;
+            await until(
+              "excerpt height settles",
+              () => {
+                if (card!.offsetHeight !== height) {
+                  height = card!.offsetHeight;
+                  since = Temporal.Now.instant().epochMilliseconds;
+                }
+                return Temporal.Now.instant().epochMilliseconds - since >= 300;
+              },
+              10000,
+            );
+            const probe = (on: boolean) => {
+              const start = read();
+              card!.toggleAttribute("data-selected", on);
+              read();
+              const transitions = card!
+                .getAnimations()
+                .filter((animation): animation is CSSTransition =>
+                  ["background-color", "box-shadow"].includes(
+                    (animation as CSSTransition).transitionProperty,
+                  ),
+                );
+              for (const animation of transitions) {
+                animation.pause();
+                animation.currentTime =
+                  Number(animation.effect!.getComputedTiming().activeDuration) /
+                  2;
+              }
+              const mid = read();
+              for (const animation of transitions) animation.finish();
+              const end = read();
+              const eases = (name: "fill" | "ring") =>
+                mid[name] !== start[name] && mid[name] !== end[name];
+              return { fill: eases("fill"), ring: eases("ring") };
+            };
+            const motion = !matchMedia("(prefers-reduced-motion: reduce)")
+              .matches;
+            const select = probe(true);
+            const deselect = probe(false);
+            return String(JSON.stringify({ motion, select, deselect }));
+          },
+          undefined,
+        ),
       ) as { motion: boolean };
       expect(eased).toEqual({
         select: { fill: motion, ring: motion },
@@ -90,10 +293,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // rendered view has: the focus stops are what the DOM ended up with, and
       // a `title` anywhere in the view is the hover tooltip Obsidian would draw
       // over its own.
-      const headerChrome = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const block=root?.querySelector('.zt-annot-header')?.parentElement??null;return {focusable:block?[...block.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), a[href], input')].filter(el=>!el.closest('[data-annot-view-more-options]')).length:-1,titled:root?root.querySelectorAll('[title]').length:-1};})())`;
-      expect(await obEval(run.vaultId, headerChrome)).toBe(
-        JSON.stringify({ focusable: 1, titled: 0 }),
-      );
+
+      expect(
+        await obRun(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              JSON.stringify(
+                (() => {
+                  const root = (
+                    app.workspace.getLeavesOfType(
+                      "zotero-annotation-view",
+                    ) as AnnotationLeaf[]
+                  )[0]?.view.containerEl;
+                  const block =
+                    root?.querySelector<HTMLElement>(".zt-annot-header")
+                      ?.parentElement ?? null;
+                  return {
+                    focusable: block
+                      ? [
+                          ...block.querySelectorAll<HTMLButtonElement>(
+                            'button, [tabindex]:not([tabindex="-1"]), a[href], input',
+                          ),
+                        ].filter(
+                          (el) => !el.closest("[data-annot-view-more-options]"),
+                        ).length
+                      : -1,
+                    titled: root
+                      ? root!.querySelectorAll<HTMLElement>("[title]").length
+                      : -1,
+                  };
+                })(),
+              ),
+            );
+          },
+          undefined,
+        ),
+      ).toBe(JSON.stringify({ focusable: 1, titled: 0 }));
       // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
       // positioning — which only a running Obsidian has. A popup that collapsed
       // still holds its rows in the DOM, so what tells is whether its own box
@@ -104,10 +340,50 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // a colour, and every Fixture Annotation under this attachment carries
       // one. The popup is then the popover target of that trigger. A closed
       // popup holds no rows or search field, so neither can name it.
-      const tagPopup = `(()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const trigger=Array.from(root?.querySelectorAll('button[popovertarget]')??[]).find(b=>{const label=b.getAttribute('aria-label')??'';return label===${JSON.stringify(run.m.annot_view_filter_tag_trigger())}||label.startsWith(${JSON.stringify(run.m.annot_view_filter_tag_trigger_active({ tags: "" }))});});return trigger?root.ownerDocument.getElementById(trigger.getAttribute('popovertarget')):null;})()`;
-      await obEval(
+
+      await obRun(
         run.vaultId,
-        `(function(){${PAGE}const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=${tagPopup};if(!popup)throw new Error('No tag Chooser in the Annotation View');if(!popup.matches(':popover-open'))press(root.querySelector('[popovertarget="'+popup.id+'"]'),'tag Chooser');return true;})()`,
+        async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+          const { press } = page;
+          const root = (
+            app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            ) as AnnotationLeaf[]
+          )[0]?.view.containerEl;
+          const popup = (() => {
+            const root = (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view.containerEl;
+            const trigger = Array.from(
+              root?.querySelectorAll<HTMLButtonElement>(
+                "button[popovertarget]",
+              ) ?? [],
+            ).find((b) => {
+              const label = b.getAttribute("aria-label") ?? "";
+              return label === __typedArg0 || label.startsWith(__typedArg1);
+            });
+            return trigger
+              ? root!.ownerDocument.getElementById(
+                  trigger.getAttribute("popovertarget")!,
+                )!
+              : null;
+          })();
+          if (!popup) throw new Error("No tag Chooser in the Annotation View");
+          if (!popup!.matches(":popover-open"))
+            press(
+              root!.querySelector<HTMLElement>(
+                `[popovertarget="${popup!.id}"]`,
+              )!,
+              "tag Chooser",
+            );
+          return String(true);
+        },
+        {
+          __typedArg0: run.m.annot_view_filter_tag_trigger(),
+          __typedArg1: run.m.annot_view_filter_tag_trigger_active({ tags: "" }),
+        },
       );
       // `menuChrome` is the computed-style half of the proof. The popup wears no
       // `.menu` class, so its chrome can only come from Obsidian's `--menu-*`
@@ -135,10 +411,116 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // kept for the same reason — only a running Obsidian has the user-agent
       // rule it depends on. `rows` names the vocabulary, which is what proves
       // the popup under measurement is the tag one.
-      const tagChooserBox = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,rows:[],rowsInsidePopup:false,menuChrome:false};const box=popup.getBoundingClientRect();const rows=Array.from(popup.querySelectorAll('[role="option"]'));const probe=popup.parentElement.appendChild(document.createElement('div'));probe.style.cssText='position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)';const got=getComputedStyle(popup),want=getComputedStyle(probe);const list=popup.querySelector('[role="listbox"]');const reads=['backgroundColor','borderTopWidth','borderTopColor','borderTopLeftRadius','cornerShape'];const chrome=reads.every(name=>got[name]===want[name])&&list!==null&&getComputedStyle(list).paddingTop===want.paddingTop&&got.boxShadow.endsWith(want.boxShadow)&&want.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(want.borderTopWidth)>0&&parseFloat(want.borderTopLeftRadius)>0&&parseFloat(want.paddingTop)>0&&want.cornerShape!==''&&want.boxShadow!=='none';probe.remove();return{open:popup.matches(':popover-open'),rows:rows.map(row=>row.textContent).sort(),rowsInsidePopup:rows.length>0&&rows.every(row=>{const r=row.getBoundingClientRect();return r.height>0&&r.top>=box.top&&r.bottom<=box.bottom&&r.left>=box.left&&r.right<=box.right;}),menuChrome:chrome};})())`;
-      const tagChooserClosed = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,hidden:false};return{open:popup.matches(':popover-open'),hidden:!popup.checkVisibility()&&popup.getBoundingClientRect().height===0};})())`;
+
       expect(
-        await obEvalUntil(run.vaultId, tagChooserBox, {
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ app }, { __typedArg0, __typedArg1 }) => {
+              return String(
+                JSON.stringify(
+                  (() => {
+                    const popup = (() => {
+                      const root = (
+                        app.workspace.getLeavesOfType(
+                          "zotero-annotation-view",
+                        ) as AnnotationLeaf[]
+                      )[0]?.view.containerEl;
+                      const trigger = Array.from(
+                        root?.querySelectorAll<HTMLButtonElement>(
+                          "button[popovertarget]",
+                        ) ?? [],
+                      ).find((b) => {
+                        const label = b.getAttribute("aria-label") ?? "";
+                        return (
+                          label === __typedArg0 || label.startsWith(__typedArg1)
+                        );
+                      });
+                      return trigger
+                        ? root!.ownerDocument.getElementById(
+                            trigger.getAttribute("popovertarget")!,
+                          )!
+                        : null;
+                    })();
+                    if (!popup)
+                      return {
+                        open: false,
+                        rows: [],
+                        rowsInsidePopup: false,
+                        menuChrome: false,
+                      };
+                    const box = popup!.getBoundingClientRect();
+                    const rows = Array.from(
+                      popup!.querySelectorAll<HTMLElement>('[role="option"]'),
+                    );
+                    const probe = popup!.parentElement!.appendChild(
+                      document.createElement("div"),
+                    );
+                    probe.style.cssText =
+                      "position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)";
+                    const got = getComputedStyle(
+                        popup,
+                      ) as CSSStyleDeclaration & { cornerShape: string },
+                      want = getComputedStyle(probe) as CSSStyleDeclaration & {
+                        cornerShape: string;
+                      };
+                    const list =
+                      popup!.querySelector<HTMLElement>('[role="listbox"]')!;
+                    const reads = [
+                      "backgroundColor",
+                      "borderTopWidth",
+                      "borderTopColor",
+                      "borderTopLeftRadius",
+                      "cornerShape",
+                    ] as const;
+                    const chrome =
+                      reads.every((name) => got[name] === want[name]) &&
+                      list !== null &&
+                      getComputedStyle(list).paddingTop === want.paddingTop &&
+                      got.boxShadow.endsWith(want.boxShadow) &&
+                      want.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+                      Number.parseFloat(want.borderTopWidth) > 0 &&
+                      Number.parseFloat(want.borderTopLeftRadius) > 0 &&
+                      Number.parseFloat(want.paddingTop) > 0 &&
+                      want.cornerShape !== "" &&
+                      want.boxShadow !== "none";
+                    probe.remove();
+                    return {
+                      open: popup!.matches(":popover-open"),
+                      rows: rows.map((row) => row.textContent).sort(),
+                      rowsInsidePopup:
+                        rows.length > 0 &&
+                        rows.every((row) => {
+                          const r = row.getBoundingClientRect();
+                          return (
+                            r.height > 0 &&
+                            r.top >= box.top &&
+                            r.bottom <= box.bottom &&
+                            r.left >= box.left &&
+                            r.right <= box.right
+                          );
+                        }),
+                      menuChrome: chrome,
+                    };
+                  })(),
+                ),
+              );
+            },
+            {
+              __typedArg0: run.m.annot_view_filter_tag_trigger(),
+              __typedArg1: run.m.annot_view_filter_tag_trigger_active({
+                tags: "",
+              }),
+            },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "annotations.ts:141",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({
           expected: JSON.stringify({
             open: true,
             rows: attachmentTags,
@@ -147,9 +529,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           }),
         }),
       ).toBe(true);
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(function(){const popup=${tagPopup};popup?.hidePopover();return true;})()`,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          const popup = (() => {
+            const root = (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view.containerEl;
+            const trigger = Array.from(
+              root?.querySelectorAll<HTMLButtonElement>(
+                "button[popovertarget]",
+              ) ?? [],
+            ).find((b) => {
+              const label = b.getAttribute("aria-label") ?? "";
+              return label === __typedArg0 || label.startsWith(__typedArg1);
+            });
+            return trigger
+              ? root!.ownerDocument.getElementById(
+                  trigger.getAttribute("popovertarget")!,
+                )!
+              : null;
+          })();
+          popup?.hidePopover();
+          return String(true);
+        },
+        {
+          __typedArg0: run.m.annot_view_filter_tag_trigger(),
+          __typedArg1: run.m.annot_view_filter_tag_trigger_active({ tags: "" }),
+        },
       );
       // A closed popover is hidden by the user-agent rule
       // `[popover]:not(:popover-open) { display: none }`, which any
@@ -159,24 +568,131 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // Only a running Obsidian has that user-agent rule, so this is the one
       // place the closed state can be proven.
       expect(
-        await obEvalUntil(run.vaultId, tagChooserClosed, {
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ app }, { __typedArg0, __typedArg1 }) => {
+              return String(
+                JSON.stringify(
+                  (() => {
+                    const popup = (() => {
+                      const root = (
+                        app.workspace.getLeavesOfType(
+                          "zotero-annotation-view",
+                        ) as AnnotationLeaf[]
+                      )[0]?.view.containerEl;
+                      const trigger = Array.from(
+                        root?.querySelectorAll<HTMLButtonElement>(
+                          "button[popovertarget]",
+                        ) ?? [],
+                      ).find((b) => {
+                        const label = b.getAttribute("aria-label") ?? "";
+                        return (
+                          label === __typedArg0 || label.startsWith(__typedArg1)
+                        );
+                      });
+                      return trigger
+                        ? root!.ownerDocument.getElementById(
+                            trigger.getAttribute("popovertarget")!,
+                          )!
+                        : null;
+                    })();
+                    if (!popup) return { open: false, hidden: false };
+                    return {
+                      open: popup!.matches(":popover-open"),
+                      hidden:
+                        !popup!.checkVisibility() &&
+                        popup!.getBoundingClientRect().height === 0,
+                    };
+                  })(),
+                ),
+              );
+            },
+            {
+              __typedArg0: run.m.annot_view_filter_tag_trigger(),
+              __typedArg1: run.m.annot_view_filter_tag_trigger_active({
+                tags: "",
+              }),
+            },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "annotations.ts:162",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({
           expected: JSON.stringify({ open: false, hidden: true }),
         }),
       ).toBe(true);
       for (const [pageIndex, annotations] of annotationKeysByPage) {
         const pageKeys = annotations.map(({ key }) => key).sort();
         expect(
-          await obEvalUntil(
-            run.vaultId,
-            `(function(){const pdfView=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(annotationAttachment.path)})?.view;const page=pdfView?.containerEl.querySelector('.page[data-page-number="${pageIndex + 1}"]');page?.scrollIntoView({block:'center'});const marks=Array.from(pdfView?.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(key=>${JSON.stringify(pageKeys)}.includes(key));return JSON.stringify([...new Set(marks)].sort());})()`,
-            { expected: JSON.stringify(pageKeys) },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              run.vaultId,
+              async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+                const pdfView = (
+                  app.workspace.getLeavesOfType(
+                    "pdf",
+                  ) as (import("obsidian").WorkspaceLeaf & {
+                    view: PagePdfView;
+                  })[]
+                ).find(({ view }) => view.file?.path === __typedArg0)?.view;
+                const pdfPage = pdfView?.containerEl.querySelector<HTMLElement>(
+                  `.page[data-page-number="${JSON.stringify(__typedArg1)}"]`,
+                )!;
+                pdfPage?.scrollIntoView({ block: "center" });
+                const marks = Array.from(
+                  pdfView?.containerEl.querySelectorAll<HTMLElement>(
+                    ".zt-pdf-annotation-mark[data-zotero-annotation-key]",
+                  ) ?? [],
+                  (el) => el.getAttribute("data-zotero-annotation-key"),
+                ).filter((key) => __typedArg2.includes(key!));
+                return String(JSON.stringify([...new Set(marks)].sort()));
+              },
+              {
+                __typedArg0: annotationAttachment.path,
+                __typedArg1: pageIndex + 1,
+                __typedArg2: pageKeys,
+              },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "annotations.ts:169",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: JSON.stringify(pageKeys) }),
         ).toBe(true);
       }
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const text=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.textContent??'';const labels=['Zotero DB','Local API','database source'];return JSON.stringify({capability:bridge.runSync(repository.capabilityFor(${JSON.stringify(annotationAttachment.key)})),sourceLabels:labels.some(label=>text.toLowerCase().includes(label.toLowerCase()))});})()`,
+          async ({ app, zotlit }, { __typedArg0 }) => {
+            const { annotationRepository: repository, bridge } =
+              zotlit.services;
+            const text =
+              (
+                app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[]
+              )[0]?.view.contentEl.textContent ?? "";
+            const labels = ["Zotero DB", "Local API", "database source"];
+            return String(
+              JSON.stringify({
+                capability: bridge.runSync(
+                  repository.capabilityFor(__typedArg0),
+                ),
+                sourceLabels: labels.some((label) =>
+                  text.toLowerCase().includes(label.toLowerCase()),
+                ),
+              }),
+            );
+          },
+          { __typedArg0: annotationAttachment.key },
         ),
       ).toBe(
         JSON.stringify({
@@ -188,33 +704,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }),
       );
     } finally {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app }, { __typedArg0 }) => {
+          await app.workspace.changeLayout(JSON.parse(__typedArg0));
+          return String(true);
+        },
+        { __typedArg0: layout },
       );
     }
   }, 120000);
 
   it("groups the sidebar Annotation View by colour from More options", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return String(JSON.stringify(app.workspace.getLayout()));
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app }, { __typedArg0 }) => {
+          await app.workspace.changeLayout(JSON.parse(__typedArg0));
+          return String(true);
+        },
+        { __typedArg0: layout },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        const file = app.vault.getFileByPath(__typedArg0)!;
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:open-annot-view");
+        app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
+        return String(true);
+      },
+      { __typedArg0: annotationAttachment.path! },
     );
-    const sidebar =
-      "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
+
     /** The sidebar's cards in screen order, each under the group heading above it. */
-    const readSidebar = `(async()=>{const view=${sidebar};if(!view)return 'null';await view.read;const grid=view.contentEl.querySelector('[role="grid"]');let group=null;const cards=[];for(const node of grid?.querySelectorAll('[data-query-group], .zt-annot-card[data-zotero-annotation-key]')??[]){if(node.hasAttribute('data-query-group')){group=node.getAttribute('data-query-group');continue;}cards.push({key:node.getAttribute('data-zotero-annotation-key'),color:node.getAttribute('data-annot-color'),group});}return JSON.stringify({cards,query:view.getState().query??null});})()`;
+
     interface Sidebar {
       cards: { key: string; color: string; group: string | null }[];
       query: string | null;
@@ -226,7 +761,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await expect
         .poll(
           async () => {
-            const text = await obEval(run.vaultId, readSidebar);
+            const text = await obRun(
+              run.vaultId,
+              async ({ app }) => {
+                const view = (
+                  app.workspace.getLeavesOfType(
+                    "zotero-annotation-view",
+                  ) as AnnotationLeaf[]
+                )[0]?.view;
+                if (!view) return String("null");
+                await view.read;
+                const grid =
+                  view.contentEl.querySelector<HTMLElement>('[role="grid"]')!;
+                let group = null;
+                const cards = [];
+                for (const node of grid?.querySelectorAll<HTMLElement>(
+                  "[data-query-group], .zt-annot-card[data-zotero-annotation-key]",
+                ) ?? []) {
+                  if (node.hasAttribute("data-query-group")) {
+                    group = node.getAttribute("data-query-group");
+                    continue;
+                  }
+                  cards.push({
+                    key: node.getAttribute("data-zotero-annotation-key"),
+                    color: node.getAttribute("data-annot-color"),
+                    group,
+                  });
+                }
+                return String(
+                  JSON.stringify({
+                    cards,
+                    query: view.getState().query ?? null,
+                  }),
+                );
+              },
+              undefined,
+            );
             state = text === "null" ? null : (JSON.parse(text) as Sidebar);
             return state !== null && ready(state);
           },
@@ -249,35 +819,117 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // More options → Group by → Color, through Obsidian's own menu. A side
     // dock hides the view header, so the reader presses the header row's own
     // "More options".
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){${PAGE}press(${sidebar}.contentEl.querySelector('[data-annot-view-more-options]'),'More options');return true;})()`,
+      async ({ app, page }) => {
+        const { press } = page;
+        press(
+          (
+            app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            ) as AnnotationLeaf[]
+          )[0]?.view.contentEl.querySelector<HTMLElement>(
+            "[data-annot-view-more-options]",
+          )!,
+          "More options",
+        );
+        return String(true);
+      },
+      undefined,
     );
-    const menuItem = (title: string) =>
-      `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(title)})`;
+
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!!${menuItem(run.m.annot_view_group_by())})`,
-        {
-          expected: "true",
-        },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                !!Array.from(
+                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ).find(
+                  (item) =>
+                    item!.querySelector<HTMLElement>(".menu-item-title")
+                      ?.textContent === __typedArg0,
+                ),
+              ),
+            );
+          },
+          { __typedArg0: run.m.annot_view_group_by() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:259",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
+        expected: "true",
+      }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){${PAGE}const item=${menuItem(run.m.annot_view_group_by())};item.dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));press(item,'Group by');return true;})()`,
+      async ({ page }, { __typedArg0 }) => {
+        const { press } = page;
+        const item = Array.from(
+          document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+        ).find(
+          (item) =>
+            item!.querySelector<HTMLElement>(".menu-item-title")
+              ?.textContent === __typedArg0,
+        );
+        item!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+        press(item, "Group by");
+        return String(true);
+      },
+      { __typedArg0: run.m.annot_view_group_by() },
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!!${menuItem(run.m.query_view_property_color())})`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                !!Array.from(
+                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ).find(
+                  (item) =>
+                    item!.querySelector<HTMLElement>(".menu-item-title")
+                      ?.textContent === __typedArg0,
+                ),
+              ),
+            );
+          },
+          { __typedArg0: run.m.query_view_property_color() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:272",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){${PAGE}press(${menuItem(run.m.query_view_property_color())},'Color');return true;})()`,
+      async ({ page }, { __typedArg0 }) => {
+        const { press } = page;
+        press(
+          Array.from(
+            document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+          ).find(
+            (item) =>
+              item!.querySelector<HTMLElement>(".menu-item-title")
+                ?.textContent === __typedArg0,
+          ),
+          "Color",
+        );
+        return String(true);
+      },
+      { __typedArg0: run.m.query_view_property_color() },
     );
 
     const grouped = await sidebarWhen(({ cards }) =>
@@ -300,25 +952,109 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // filter that names the followed Attachment. A side dock hides the view
     // header, so the reader presses the header row's own "More options".
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(function(){${PAGE}press(${sidebar}.contentEl.querySelector('[data-annot-view-more-options]'),'More options');return 'true';})()`,
+        async ({ app, page }) => {
+          const { press } = page;
+          press(
+            (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view.contentEl.querySelector<HTMLElement>(
+              "[data-annot-view-more-options]",
+            )!,
+            "More options",
+          );
+          return String("true");
+        },
+        undefined,
       ),
     ).toBe("true");
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!!${menuItem(run.m.annot_view_filter())})`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                !!Array.from(
+                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ).find(
+                  (item) =>
+                    item!.querySelector<HTMLElement>(".menu-item-title")
+                      ?.textContent === __typedArg0,
+                ),
+              ),
+            );
+          },
+          { __typedArg0: run.m.annot_view_filter() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:309",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){${PAGE}press(${menuItem(run.m.annot_view_filter())},'Filter');return true;})()`,
+      async ({ page }, { __typedArg0 }) => {
+        const { press } = page;
+        press(
+          Array.from(
+            document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+          ).find(
+            (item) =>
+              item!.querySelector<HTMLElement>(".menu-item-title")
+                ?.textContent === __typedArg0,
+          ),
+          "Filter",
+        );
+        return String(true);
+      },
+      { __typedArg0: run.m.annot_view_filter() },
     );
-    const filterModal = `(function(){const modal=document.querySelector('.modal.zt-annot-filter-modal');return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,sections:Array.from(modal.querySelectorAll('[data-filter-section]'),el=>el.getAttribute('data-filter-section')),text:modal.textContent.includes('this.attachment')}:null);})()`;
+
     expect(
-      await obEvalUntil(run.vaultId, filterModal, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            const modal = document.querySelector<HTMLElement>(
+              ".modal.zt-annot-filter-modal",
+            )!;
+            return String(
+              JSON.stringify(
+                modal
+                  ? {
+                      title:
+                        modal!.querySelector<HTMLElement>(".modal-title")
+                          ?.textContent ?? null,
+                      sections: Array.from(
+                        modal!.querySelectorAll<HTMLElement>(
+                          "[data-filter-section]",
+                        ),
+                        (el) => el.getAttribute("data-filter-section"),
+                      ),
+                      text: modal!.textContent.includes("this.attachment"),
+                    }
+                  : null,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:321",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: JSON.stringify({
           title: run.m.annot_view_filter_title(),
           sections: ["view"],
@@ -335,9 +1071,205 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // field, which keeps focus (#1651). The condition goes again before the
     // eval answers.
     const escapes = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}await using cleanup=new AsyncDisposableStack();const contents=require('@electron/remote').getCurrentWebContents();const key=async(keyCode)=>{const up=new Promise(r=>window.addEventListener('keyup',r,{once:true,capture:true}));contents.sendInputEvent({type:'keyDown',keyCode});if(keyCode.length===1)contents.sendInputEvent({type:'char',keyCode});contents.sendInputEvent({type:'keyUp',keyCode});await up;};const modal=()=>document.querySelector('.modal.zt-annot-filter-modal');const section=modal().querySelector('[data-filter-section="view"]');const before=section.querySelectorAll('[data-condition-row]').length;press([...section.querySelectorAll('button')].find(button=>button.textContent.trim()===${JSON.stringify(run.m.workbench_match_add_condition())}),'Add condition');const row=await until('new row',()=>section.querySelectorAll('[data-condition-row]')[before]);cleanup.defer(()=>{const remove=modal()?.querySelectorAll('[data-filter-section="view"] [data-condition-row]')[before]?.querySelector('button[aria-label="${run.m.workbench_match_remove_condition()}"]');if(remove)press(remove,'Remove condition');});press(row.querySelector('button[aria-label="${run.m.workbench_match_edit_as_expression()}"]'),'Edit as expression');const content=await until('expression field',()=>section.querySelectorAll('[data-condition-row]')[before]?.querySelector('.cm-content'));const editor=content.cmTile.root.view;window.focus();editor.focus();await until('focus in the field',()=>document.activeElement===content&&document.hasFocus(),5000);const type=(text)=>{editor.dispatch({selection:{anchor:0,head:editor.state.doc.length}});document.execCommand('insertText',false,text);};type('te');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete'));await key('Escape');await until('Escape closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const list={dialog:!!modal()};if(!modal())return JSON.stringify({list});type('text.slice(1, ');await until('Signature Hint',()=>document.querySelector('.zt-signature-hint'));await new Promise(r=>setTimeout(r,200));if(document.querySelector('.cm-tooltip-autocomplete')){await key('Escape');await until('Escape closes the list over the hint',()=>!document.querySelector('.cm-tooltip-autocomplete'));}await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));const hint={dialog:!!modal()};type('text.sli');await until('list opens',()=>document.querySelector('.cm-tooltip-autocomplete li[aria-selected]'));await new Promise(r=>setTimeout(r,200));await key('Tab');await until('Tab closes the list',()=>!document.querySelector('.cm-tooltip-autocomplete'));const tab={doc:editor.state.doc.toString(),dialog:!!modal(),focus:document.activeElement===content};await until('Signature Hint of the method',()=>document.querySelector('.zt-signature-hint'));await key('Escape');await until('Escape closes the hint',()=>!document.querySelector('.zt-signature-hint'));tab.hintClosed=!!modal();const saved=()=>app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.getState().query??'';const settled=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r)));const typed={};for(const [name,keyCode] of [['enter','Enter'],['tab','Tab']]){type('te');await until(name+' list opens',()=>document.querySelector('.cm-tooltip-autocomplete li[aria-selected]'));await new Promise(r=>setTimeout(r,200));await key(keyCode);await key('.');await until(name+' saves the typed text',()=>saved().split(String.fromCharCode(10)).some(line=>/text[.]["']?$/.test(line.trimEnd())));await settled();typed[name]={doc:editor.state.doc.toString(),focus:document.activeElement===content,dialog:!!modal()};for(let left=5;document.querySelector('.cm-tooltip-autocomplete, .zt-signature-hint');left--){if(left===0)throw new Error('Escape leaves a popup open after '+name);await key('Escape');}}return JSON.stringify({list,hint,tab,typed});})()`,
+        async ({ app, page }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+          const { press, until } = page;
+          await using cleanup = new AsyncDisposableStack();
+          const contents = (
+            require("@electron/remote") as typeof import("@electron/remote")
+          ).getCurrentWebContents();
+          const key = async (keyCode: string) => {
+            const up = new Promise<Event>((r) =>
+              window.addEventListener("keyup", r, {
+                once: true,
+                capture: true,
+              }),
+            );
+            contents.sendInputEvent({ type: "keyDown", keyCode });
+            if (keyCode.length === 1)
+              contents.sendInputEvent({ type: "char", keyCode });
+            contents.sendInputEvent({ type: "keyUp", keyCode });
+            await up;
+          };
+          const modal = () =>
+            document.querySelector<HTMLElement>(
+              ".modal.zt-annot-filter-modal",
+            )!;
+          const section = modal()!.querySelector<HTMLElement>(
+            '[data-filter-section="view"]',
+          )!;
+          const before = section!.querySelectorAll<HTMLElement>(
+            "[data-condition-row]",
+          ).length;
+          press(
+            [...section!.querySelectorAll<HTMLButtonElement>("button")].find(
+              (button) => button.textContent.trim() === __typedArg0,
+            ),
+            "Add condition",
+          );
+          const row = await until(
+            "new row",
+            () =>
+              section!.querySelectorAll<HTMLElement>("[data-condition-row]")[
+                before
+              ],
+          );
+          cleanup.defer(() => {
+            const remove = modal()
+              ?.querySelectorAll<HTMLElement>(
+                '[data-filter-section="view"] [data-condition-row]',
+              )
+              [before]?.querySelector<HTMLElement>(
+                `button[aria-label=${JSON.stringify(__typedArg1)}]`,
+              )!;
+            if (remove) press(remove, "Remove condition");
+          });
+          press(
+            row.querySelector<HTMLElement>(
+              `button[aria-label=${JSON.stringify(__typedArg2)}]`,
+            )!,
+            "Edit as expression",
+          );
+          const content = await until("expression field", () =>
+            section!
+              .querySelectorAll<HTMLElement>("[data-condition-row]")
+              [before]?.querySelector<CodeMirrorElement>(".cm-content")!,
+          );
+          const editor = content.cmTile!.root!.view;
+          window.focus();
+          editor.focus();
+          await until(
+            "focus in the field",
+            () => document.activeElement === content && document.hasFocus(),
+            5000,
+          );
+          const type = (text: string) => {
+            editor.dispatch({
+              selection: { anchor: 0, head: editor.state.doc.length },
+            });
+            document.execCommand("insertText", false, text);
+          };
+          type("te");
+          await until("list opens", () =>
+            document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+          );
+          await key("Escape");
+          await until(
+            "Escape closes the list",
+            () =>
+              !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+          );
+          const list = { dialog: !!modal() };
+          if (!modal()) return String(JSON.stringify({ list }));
+          type("text.slice(1, ");
+          await until("Signature Hint", () =>
+            document.querySelector<HTMLElement>(".zt-signature-hint")!,
+          );
+          await new Promise((r) => setTimeout(r, 200));
+          if (
+            document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!
+          ) {
+            await key("Escape");
+            await until(
+              "Escape closes the list over the hint",
+              () =>
+                !document.querySelector<HTMLElement>(
+                  ".cm-tooltip-autocomplete",
+                )!,
+            );
+          }
+          await key("Escape");
+          await until(
+            "Escape closes the hint",
+            () => !document.querySelector<HTMLElement>(".zt-signature-hint")!,
+          );
+          const hint = { dialog: !!modal() };
+          type("text.sli");
+          await until("list opens", () =>
+            document.querySelector<HTMLElement>(
+              ".cm-tooltip-autocomplete li[aria-selected]",
+            )!,
+          );
+          await new Promise((r) => setTimeout(r, 200));
+          await key("Tab");
+          await until(
+            "Tab closes the list",
+            () =>
+              !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
+          );
+          const tab = {
+            hintClosed: false,
+            doc: editor.state.doc.toString(),
+            dialog: !!modal(),
+            focus: document.activeElement === content,
+          };
+          await until("Signature Hint of the method", () =>
+            document.querySelector<HTMLElement>(".zt-signature-hint")!,
+          );
+          await key("Escape");
+          await until(
+            "Escape closes the hint",
+            () => !document.querySelector<HTMLElement>(".zt-signature-hint")!,
+          );
+          tab.hintClosed = !!modal();
+          const saved = () =>
+            ((
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view.getState().query as string) ?? "";
+          const settled = () =>
+            new Promise<void>((r) =>
+              requestAnimationFrame(() => setTimeout(r)),
+            );
+          const typed: Record<
+            string,
+            { doc: string; focus: boolean; dialog: boolean }
+          > = {};
+          for (const [name, keyCode] of [
+            ["enter", "Enter"],
+            ["tab", "Tab"],
+          ] as const) {
+            type("te");
+            await until(`${name} list opens`, () =>
+              document.querySelector<HTMLElement>(
+                ".cm-tooltip-autocomplete li[aria-selected]",
+              )!,
+            );
+            await new Promise((r) => setTimeout(r, 200));
+            await key(keyCode);
+            await key(".");
+            await until(`${name} saves the typed text`, () =>
+              saved()
+                .split(String.fromCharCode(10))
+                .some((line) => /text[.]["']?$/.test(line.trimEnd())),
+            );
+            await settled();
+            typed[name] = {
+              doc: editor.state.doc.toString(),
+              focus: document.activeElement === content,
+              dialog: !!modal(),
+            };
+            for (
+              let left = 5;
+              document.querySelector<HTMLElement>(
+                ".cm-tooltip-autocomplete, .zt-signature-hint",
+              )!;
+              left--
+            ) {
+              if (left === 0)
+                throw new Error(`Escape leaves a popup open after ${name}`);
+              await key("Escape");
+            }
+          }
+          return String(JSON.stringify({ list, hint, tab, typed }));
+        },
+        {
+          __typedArg0: run.m.workbench_match_add_condition(),
+          __typedArg1: run.m.workbench_match_remove_condition(),
+          __typedArg2: run.m.workbench_match_edit_as_expression(),
+        },
       ),
     );
     expect(escapes).toEqual({
@@ -354,57 +1286,213 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tab: { doc: "text.", focus: true, dialog: true },
       },
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      "(function(){const target=document.activeElement??document.body;target.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));return true;})()",
+      async (_context) => {
+        const target = document.activeElement ?? document.body;
+        target.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            code: "Escape",
+            bubbles: true,
+          }),
+        );
+        return String(true);
+      },
+      undefined,
     );
     // No menu or dialog stays over the window for the cases after this one.
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        "String(document.querySelectorAll('.menu, .modal-container').length)",
-        { expected: "0" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                document.querySelectorAll<HTMLElement>(
+                  ".menu, .modal-container",
+                ).length,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:363",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "0" }),
     ).toBe(true);
   }, 120000);
 
   it("saves the sidebar filtered by one colour as a Query File, and a Literature Note that embeds it shows its Annotations of that colour", async () => {
     const savedPath = "query-files/Saved colour.zotquery";
     const notePath = `literatures/${annotationItem.literatureNoteName ?? annotationItem.key}.md`;
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return String(JSON.stringify(app.workspace.getLayout()));
+      },
+      undefined,
     );
-    const noteText = await obEval(
+    const noteText = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+      async ({ app }, { __typedArg0 }) => {
+        return String(
+          await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
+        );
+      },
+      { __typedArg0: notePath },
     );
-    const sidebar =
-      "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
+
     /**
      * Opens the colour Chooser, ticks the row of `color` (or "Clear selected
      * colors" for `null`), and closes the Chooser.
      */
     const pickColor = (color: string | null) =>
-      `(async()=>{${PAGE}const el=${sidebar}?.containerEl;const trigger=Array.from(el?.querySelectorAll('button[aria-label]')??[]).find(b=>b.getAttribute('aria-label')===${JSON.stringify(run.m.annot_view_filter_color_trigger())}||b.getAttribute('aria-label').startsWith(${JSON.stringify(run.m.annot_view_filter_color_trigger_active({ colors: "" }))}));if(!trigger)return 'no chooser';press(trigger,'colour Chooser');const list=await until('colour list opens',()=>{const list=Array.from(document.querySelectorAll('[role="listbox"]')).find(list=>document.getElementById(list.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(run.m.annot_view_filter_color_list())});return list?.checkVisibility()?list:null;});const row=Array.from(list?.querySelectorAll('[role="option"]')??[]).find(option=>${color === null ? `option.textContent===${JSON.stringify(run.m.annot_view_filter_color_clear())}` : `option.querySelector('[style*="--zt-swatch-color"]')?.style.getPropertyValue('--zt-swatch-color').trim().toLowerCase()===${JSON.stringify(color.toLowerCase())}`});if(row){press(row,'colour row');await until('colour filter applies',()=>${color === null ? `trigger.getAttribute('aria-label')===${JSON.stringify(run.m.annot_view_filter_color_trigger())}` : `row.getAttribute('aria-selected')==='true'`});}(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return row?'picked':'no row';})()`;
+      obRun(
+        run.vaultId,
+        async ({ app, page }, { color, labels }) => {
+          const el = (
+            app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            ) as AnnotationLeaf[]
+          )[0]?.view.containerEl;
+          const trigger = Array.from(
+            el?.querySelectorAll<HTMLButtonElement>("button[aria-label]") ?? [],
+          ).find(
+            (button) =>
+              button.getAttribute("aria-label") === labels.trigger ||
+              button.getAttribute("aria-label")!.startsWith(labels.active),
+          );
+          if (!trigger) return "no chooser";
+          page.press(trigger, "colour Chooser");
+          const list = await page.until("colour list opens", () => {
+            const list = Array.from(
+              document.querySelectorAll<HTMLElement>('[role="listbox"]'),
+            ).find(
+              (list) =>
+                document.getElementById(list.getAttribute("aria-labelledby")!)
+                  ?.textContent === labels.list,
+            );
+            return list?.checkVisibility() ? list : null;
+          });
+          const row = Array.from(
+            list.querySelectorAll<HTMLElement>('[role="option"]'),
+          ).find((option) =>
+            color === null
+              ? option.textContent === labels.clear
+              : option
+                  .querySelector<HTMLElement>('[style*="--zt-swatch-color"]')
+                  ?.style.getPropertyValue("--zt-swatch-color")
+                  .trim()
+                  .toLowerCase() === color.toLowerCase(),
+          );
+          if (row) {
+            page.press(row, "colour row");
+            await page.until("colour filter applies", () =>
+              color === null
+                ? trigger.getAttribute("aria-label") === labels.trigger
+                : row.getAttribute("aria-selected") === "true",
+            );
+          }
+          (document.activeElement ?? document.body).dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+          );
+          return row ? "picked" : "no row";
+        },
+        {
+          color,
+          labels: {
+            trigger: run.m.annot_view_filter_color_trigger(),
+            active: run.m.annot_view_filter_color_trigger_active({
+              colors: "",
+            }),
+            list: run.m.annot_view_filter_color_list(),
+            clear: run.m.annot_view_filter_color_clear(),
+          },
+        },
+      );
     let picked = false;
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       // The colour filter is saved for the Item; clearing it takes it back.
-      if (picked) await obEval(run.vaultId, pickColor(null));
-      await obEval(
+      if (picked) await pickColor(null);
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(noteText)});const saved=app.vault.getFileByPath(${JSON.stringify(savedPath)});if(saved)await app.vault.delete(saved);return true;})()`,
+        async (
+          { app },
+          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+        ) => {
+          await app.workspace.changeLayout(JSON.parse(__typedArg0));
+          await app.vault.modify(
+            app.vault.getFileByPath(__typedArg1)!,
+            __typedArg2,
+          );
+          const saved = app.vault.getFileByPath(__typedArg3)!;
+          if (saved) await app.vault.delete(saved);
+          return String(true);
+        },
+        {
+          __typedArg0: layout,
+          __typedArg1: notePath,
+          __typedArg2: noteText,
+          __typedArg3: savedPath,
+        },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        const file = app.vault.getFileByPath(__typedArg0)!;
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        app.commands.executeCommandById("zotlit:open-annot-view");
+        app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
+        return String(true);
+      },
+      { __typedArg0: annotationAttachment.path! },
     );
-    const readCards = `(async()=>{const view=${sidebar};if(!view)return 'null';await view.read;return JSON.stringify([...view.contentEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort());})()`;
+
     const expected = [...annotationKeys].sort();
     expect(
-      await obEvalUntil(run.vaultId, readCards, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            const view = (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view;
+            if (!view) return String("null");
+            await view.read;
+            return String(
+              JSON.stringify(
+                [
+                  ...view.contentEl.querySelectorAll<HTMLElement>(
+                    ".zt-annot-card[data-zotero-annotation-key]",
+                  ),
+                ]
+                  .map((n) => n.getAttribute("data-zotero-annotation-key"))
+                  .sort(),
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:407",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: JSON.stringify(expected),
         tries: 120,
       }),
@@ -418,10 +1506,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       .sort();
     expect(ofColor.length).toBeGreaterThan(0);
     expect(ofColor.length).toBeLessThan(expected.length);
-    expect(await obEval(run.vaultId, pickColor(color))).toBe("picked");
+    expect(await pickColor(color)).toBe("picked");
     picked = true;
     expect(
-      await obEvalUntil(run.vaultId, readCards, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            const view = (
+              app.workspace.getLeavesOfType(
+                "zotero-annotation-view",
+              ) as AnnotationLeaf[]
+            )[0]?.view;
+            if (!view) return String("null");
+            await view.read;
+            return String(
+              JSON.stringify(
+                [
+                  ...view.contentEl.querySelectorAll<HTMLElement>(
+                    ".zt-annot-card[data-zotero-annotation-key]",
+                  ),
+                ]
+                  .map((n) => n.getAttribute("data-zotero-annotation-key"))
+                  .sort(),
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:424",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: JSON.stringify(ofColor),
         tries: 80,
       }),
@@ -432,29 +1552,116 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // row's own "More options".
     expect(
       JSON.parse(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(function(){${PAGE}const button=press(${sidebar}.contentEl.querySelector('[data-annot-view-more-options]'),'More options');return JSON.stringify({label:button.getAttribute('aria-label')});})()`,
+          async ({ app, page }) => {
+            const { press } = page;
+            const button = press(
+              (
+                app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[]
+              )[0]?.view.contentEl.querySelector<HTMLElement>(
+                "[data-annot-view-more-options]",
+              )!,
+              "More options",
+            );
+            return String(
+              JSON.stringify({
+                label: button.getAttribute("aria-label"),
+              }),
+            );
+          },
+          undefined,
         ),
       ),
     ).toEqual({ label: run.m.annot_view_more_tooltip() });
-    const menuItem = `Array.from(document.querySelectorAll('.menu .menu-item')).find(item=>item.querySelector('.menu-item-title')?.textContent===${JSON.stringify(run.m.annot_view_save_as_query_file())})`;
+
     expect(
-      await obEvalUntil(run.vaultId, `String(!!${menuItem})`, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                !!Array.from(
+                  document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ).find(
+                  (item) =>
+                    item!.querySelector<HTMLElement>(".menu-item-title")
+                      ?.textContent === __typedArg0,
+                ),
+              ),
+            );
+          },
+          { __typedArg0: run.m.annot_view_save_as_query_file() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:443",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: "true",
       }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){${PAGE}press(${menuItem},'Save as query file');return true;})()`,
+      async ({ page }, { __typedArg0 }) => {
+        const { press } = page;
+        press(
+          Array.from(
+            document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+          ).find(
+            (item) =>
+              item!.querySelector<HTMLElement>(".menu-item-title")
+                ?.textContent === __typedArg0,
+          ),
+          "Save as query file",
+        );
+        return String(true);
+      },
+      { __typedArg0: run.m.annot_view_save_as_query_file() },
     );
 
     // The dialog asks the name, the folder, and which records the file shows.
-    const modal = "document.querySelector('.modal.zt-save-query-file-modal')";
+
     const dialog = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(function(){const modal=${modal};return JSON.stringify(modal?{title:modal.querySelector('.modal-title')?.textContent??null,fields:[...modal.querySelectorAll('[data-save-field]')].map(n=>n.getAttribute('data-save-field')),records:[...modal.querySelectorAll('[data-save-records]')].map(n=>({value:n.getAttribute('data-save-records'),label:n.closest('label').textContent,checked:n.checked}))}:null);})()`,
+        async (_context) => {
+          const modal = document.querySelector<HTMLElement>(
+            ".modal.zt-save-query-file-modal",
+          )!;
+          return String(
+            JSON.stringify(
+              modal
+                ? {
+                    title:
+                      modal!.querySelector<HTMLElement>(".modal-title")
+                        ?.textContent ?? null,
+                    fields: [
+                      ...modal!.querySelectorAll<HTMLElement>(
+                        "[data-save-field]",
+                      ),
+                    ].map((n) => n.getAttribute("data-save-field")),
+                    records: [
+                      ...modal!.querySelectorAll<HTMLInputElement>(
+                        "[data-save-records]",
+                      ),
+                    ].map((n) => ({
+                      value: n.getAttribute("data-save-records"),
+                      label: n.closest("label")!.textContent,
+                      checked: n.checked,
+                    })),
+                  }
+                : null,
+            ),
+          );
+        },
+        undefined,
       ),
     ) as {
       title: string;
@@ -479,40 +1686,140 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
       ],
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){${PAGE}const modal=${modal};const set=(field,value)=>{const input=modal.querySelector('[data-save-field="'+field+'"]');input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};set('name','Saved colour');set('folder','query-files');press(modal.querySelector('[data-save-records="note-item"]').closest('label'),'note-item records');press(modal.querySelector('.modal-button-container button.mod-cta'),'Save');return true;})()`,
+      async ({ page }) => {
+        const { press } = page;
+        const modal = document.querySelector<HTMLElement>(
+          ".modal.zt-save-query-file-modal",
+        )!;
+        const set = (field: string, value: string) => {
+          const input = modal!.querySelector<HTMLInputElement>(
+            `[data-save-field="${field}"]`,
+          )!;
+          input!.value = value;
+          input!.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        set("name", "Saved colour");
+        set("folder", "query-files");
+        press(
+          modal!
+            .querySelector<HTMLInputElement>('[data-save-records="note-item"]')!
+            .closest("label")!,
+          "note-item records",
+        );
+        press(
+          modal!.querySelector<HTMLElement>(
+            ".modal-button-container button.mod-cta",
+          )!,
+          "Save",
+        );
+        return String(true);
+      },
+      undefined,
     );
 
     // The file opens in a tab, where `this` has no value.
-    const readTab = `(async()=>{const view=app.workspace.getMostRecentLeaf()?.view;if(view?.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(savedPath)})return 'null';await view.query.settled;return JSON.stringify({diagnostic:view.contentEl.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null,cards:view.contentEl.querySelectorAll('.zt-annot-card').length});})()`;
+
     expect(
-      await obEvalUntil(run.vaultId, readTab, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0 }) => {
+            const view = app.workspace.getMostRecentLeaf()?.view as
+              | import("../../../apps/obsidian/src/views/query-view/file-view.ts").QueryFileView
+              | undefined;
+            if (
+              view?.getViewType() !== "zotlit-query-file" ||
+              view.file?.path !== __typedArg0
+            )
+              return String("null");
+            await view.query.settled;
+            return String(
+              JSON.stringify({
+                diagnostic:
+                  view.contentEl
+                    .querySelector<HTMLElement>("[data-query-diagnostic]")
+                    ?.getAttribute("data-query-diagnostic") ?? null,
+                cards:
+                  view.contentEl.querySelectorAll<HTMLElement>(".zt-annot-card")
+                    .length,
+              }),
+            );
+          },
+          { __typedArg0: savedPath },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "annotations.ts:490",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: JSON.stringify({ diagnostic: "unbound-context", cards: 0 }),
         tries: 120,
       }),
     ).toBe(true);
-    const saved = await obEval(
+    const saved = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(savedPath)}))`,
+      async ({ app }, { __typedArg0 }) => {
+        return String(
+          await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
+        );
+      },
+      { __typedArg0: savedPath },
     );
     expect(saved).toMatch(/^filters: item == this\.item$/m);
     expect(saved).toMatch(/^ {4}filters: color/m);
 
     // Embedded in the Item's Literature Note, it shows that note's
     // Annotations of the colour.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(notePath)});await app.vault.modify(file,${JSON.stringify(noteText.replace(/^(---\n[\s\S]*?\n---\n)/, "$1\n![[Saved colour.zotquery]]\n\n"))});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file,{state:{mode:'preview'}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      async ({ app }, { __typedArg0, __typedArg1 }) => {
+        const file = app.vault.getFileByPath(__typedArg0)!;
+        await app.vault.modify(file, __typedArg1);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file, { state: { mode: "preview" } });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        return String(true);
+      },
+      {
+        __typedArg0: notePath,
+        __typedArg1: noteText.replace(
+          /^(---\n[\s\S]*?\n---\n)/,
+          "$1\n![[Saved colour.zotquery]]\n\n",
+        ),
+      },
     );
     const savedEmbed = await revealQueryView(run.vaultId, notePath, {
       embed: "Saved colour.zotquery",
     });
-    const readEmbed = `(async()=>{const el=${savedEmbed.el};return JSON.stringify({cards:[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key')).sort(),diagnostic:el.querySelector('[data-query-diagnostic]')?.getAttribute('data-query-diagnostic')??null});})()`;
-    await readQueryViewUntil<{ cards: string[] }>(run.vaultId, readEmbed, {
-      ready: ({ cards }) => JSON.stringify(cards) === JSON.stringify(ofColor),
-      what: "Query File embed",
-      tries: 120,
-    });
+    await readQueryViewUntil(
+      run.vaultId,
+      async ({ page }, { savedEmbed }) => {
+        const el = await page.revealQueryView(savedEmbed);
+        return {
+          cards: [
+            ...el.querySelectorAll(
+              ".zt-annot-card[data-zotero-annotation-key]",
+            ),
+          ]
+            .map((node) => node.getAttribute("data-zotero-annotation-key"))
+            .sort(),
+          diagnostic:
+            el
+              .querySelector("[data-query-diagnostic]")
+              ?.getAttribute("data-query-diagnostic") ?? null,
+        };
+      },
+      { savedEmbed },
+      {
+        ready: ({ cards }) => JSON.stringify(cards) === JSON.stringify(ofColor),
+        what: "Query File embed",
+        tries: 120,
+      },
+    );
   }, 180000);
 });

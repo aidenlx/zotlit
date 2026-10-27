@@ -9,6 +9,9 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { createObsidianCall } from "@zotlit/scripts/obsidian-cli";
 
+import type { ObsidianContext, JsonCompatible } from "./page-context.ts";
+import { createPageHelpers } from "./page-helpers.ts";
+
 const CLI_TIMEOUT_MS = 15_000;
 
 const boundedCall = createObsidianCall({ timeoutMs: CLI_TIMEOUT_MS });
@@ -39,7 +42,7 @@ const THROWN = "__zotlitEvalError__";
  * `Error: <message>`, so an error raised inside Obsidian's code would read as
  * if the test's code raised it.
  */
-export function wrapEvalCode(code: string): string {
+function wrapEvalCode(code: string): string {
   return `(async()=>{try{return await (0,eval)(${JSON.stringify(code)});}catch(error){return ${JSON.stringify(THROWN)}+JSON.stringify({message:error instanceof Error?error.message:String(error),stack:error instanceof Error?error.stack:undefined});}})()`;
 }
 
@@ -63,7 +66,7 @@ function thrownError(json: string): Error {
  * necessarily the first character of the output. A reply of code wrapped by
  * {@link wrapEvalCode} that threw becomes that error.
  */
-export function parseEvalReply(text: string): string {
+function parseEvalReply(text: string): string {
   const marker = "\n=> ";
   const lastIndex = text.lastIndexOf(marker);
   let reply: string;
@@ -83,7 +86,7 @@ export function parseEvalReply(text: string): string {
  * a batch the app answers when it has done the work — where the default
  * deadline would report a loaded machine as a failed measurement.
  */
-export async function obEval(
+async function obEval(
   vaultId: string,
   code: string,
   timeoutMs?: number,
@@ -96,27 +99,15 @@ export async function obEval(
   return parseEvalReply(text);
 }
 
-/** {@link obEval}, with its reply parsed as JSON. */
-export async function obJson<T>(vaultId: string, code: string): Promise<T> {
-  return JSON.parse(await obEval(vaultId, code)) as T;
-}
-
-/**
- * The document of every window of the vault, the main window first, as an
- * eval expression: a notice goes to the window Obsidian counts as active.
- */
-export const WINDOW_DOCUMENTS =
-  "(()=>{const docs=new Set([document]);app.workspace.iterateAllLeaves((leaf)=>docs.add(leaf.view.containerEl.doc));return [...docs];})()";
-
 /**
  * Takes every notice off screen in every window, so the next one is the
  * caller's own.
  */
 export async function clearNotices(vaultId: string): Promise<void> {
-  await obEval(
-    vaultId,
-    `(function(){for(const doc of ${WINDOW_DOCUMENTS})for(const node of doc.querySelectorAll('.notice'))node.remove();return true;})()`,
-  );
+  await obRun(vaultId, ({ page }) => {
+    for (const doc of page.windowDocuments())
+      for (const node of doc.querySelectorAll(".notice")) node.remove();
+  });
 }
 
 /**
@@ -180,42 +171,65 @@ export async function readUntil<T>(
   return value!;
 }
 
-/** {@link readUntil} over the JSON that `code` answers in the vault's window. */
-export function obReadUntil<T>(
+/**
+ * The JSON callback boundary; all imports used by its code must be type-only.
+ * Service reads follow the current plugin when a callback restarts it.
+ */
+// oxlint-disable-next-line max-params -- The approved callback API keeps options fourth (#1848).
+export async function obRun<A = undefined, R = void>(
   vaultId: string,
-  code: string,
-  {
-    ready,
-    ...options
-  }: { ready: (value: T) => boolean; what: string; tries?: number },
-): Promise<T> {
-  return readUntil(
-    async () => JSON.parse(await obEval(vaultId, code)) as T | null,
-    ready,
-    options,
-  );
+  callback: (
+    context: ObsidianContext,
+    args: A,
+  ) => (R & JsonCompatible<R>) | Promise<R & JsonCompatible<R>>,
+  args?: A & JsonCompatible<A>,
+  options: { timeoutMs?: number } = {},
+): Promise<Awaited<R>> {
+  const code = `(async()=>{const page=globalThis.__zotlitPageHelpers;if(!page)return '__zotlitHelpersMissing__';const result=await (${callback.toString()})({app,zotlit:{get services(){return app.plugins.plugins.zotlit.services;}},page},${JSON.stringify(args) ?? "undefined"});return JSON.stringify({value:result});})()`;
+  let reply = await obEval(vaultId, code, options.timeoutMs);
+  if (reply === "__zotlitHelpersMissing__") {
+    await obEval(
+      vaultId,
+      `globalThis.__zotlitPageHelpers=(${createPageHelpers.toString()})(app);true`,
+      options.timeoutMs,
+    );
+    reply = await obEval(vaultId, code, options.timeoutMs);
+  }
+  return (JSON.parse(reply) as { value: Awaited<R> }).value;
 }
 
 /**
- * `obEval`, retried until its reply equals `expected`. A window that just
- * opened or reloaded can answer a stray console line ahead of its `=> `
- * reply (or none at all, mid-reload) before its command registry settles —
- * mirrors the `.catch(() => "")` around the "loaded" check in
- * obsidian-vault.ts's own `create()` — so a failed parse here means "not
- * ready yet", not "give up".
- *
- * An unanswered call counts as "not ready yet" too. The stall is per call,
- * not per window: a traced run showed one `navigateToSearchResult` never
- * answer while the identical call on the same vault answered in 12 ms right
- * afterwards. So the deadline ends the call, and the next try goes on.
+ * Poll a typed page callback; reloads and missing replies count as not ready.
+ * A new or reloaded window can answer a stray console line before its command
+ * registry settles, so a failed parse is retried too. An unanswered call is a
+ * per-call stall: a traced navigateToSearchResult never answered while the next
+ * identical call answered in 12 ms. Its deadline ends that call; polling goes on.
  */
-export async function obEvalUntil(
+// oxlint-disable-next-line max-params -- The approved callback API keeps options fourth (#1848).
+export async function obRunUntil<A = undefined, R = boolean>(
   vaultId: string,
-  code: string,
-  options: { expected: string; tries?: number },
-): Promise<boolean> {
-  return waitFor(async () => {
-    const answer = await obEval(vaultId, code).catch(() => "");
-    return answer === options.expected;
-  }, options.tries);
+  callback: (
+    context: ObsidianContext,
+    args: A,
+  ) => (R & JsonCompatible<R>) | Promise<R & JsonCompatible<R>>,
+  args: (A & JsonCompatible<A>) | undefined,
+  {
+    ready = (value) => value === true,
+    what,
+    tries = 40,
+  }: { ready?: (value: Awaited<R>) => boolean; what: string; tries?: number },
+): Promise<Awaited<R>> {
+  let last: unknown;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      // oxlint-disable-next-line zotlit-tests/no-eval-capture -- Forward the caller-checked callback through the transport.
+      const value = await obRun(vaultId, callback, args);
+      last = value;
+      if (ready(value)) return value;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    await delay(250);
+  }
+  throw new Error(`${what}: ${JSON.stringify(last)}`);
 }
