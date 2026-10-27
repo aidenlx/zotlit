@@ -5,6 +5,7 @@ import { describe, expect } from "vitest";
 
 import { testNotifier } from "./__fixtures__/notifier";
 import { AbortError } from "./abort-error";
+import { LegacyPortError } from "./legacy-port";
 import { Notifier, reportOutcome, withProgress } from "./notifier";
 
 describe("Notifier test layer", () => {
@@ -111,6 +112,21 @@ describe("reportOutcome", () => {
       yield* reportOutcome(Effect.die(new AbortError("Cancelled")), copy).pipe(
         Effect.provide(notifier.layer),
       );
+      expect(notifier.notices).toEqual([]);
+    }),
+  );
+
+  // #1831: a Promise port that a closed view command rejects reaches Effect as
+  // a typed failure around the abort.
+  it.effect("shows nothing when a typed failure wraps an abort", () =>
+    Effect.gen(function* () {
+      const notifier = testNotifier();
+      yield* reportOutcome(
+        Effect.fail(
+          new LegacyPortError({ step: "open", cause: new AbortError() }),
+        ),
+        copy,
+      ).pipe(Effect.provide(notifier.layer));
       expect(notifier.notices).toEqual([]);
     }),
   );

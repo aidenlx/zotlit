@@ -1839,7 +1839,6 @@
   "settings_failed_partial_create": "无法创建片段",
   "settings_failed_partial_open": "无法打开片段",
   "settings_failed_partial_delete": "无法删除片段",
-  "settings_failed_citation_text_open": "无法打开引文文本",
   "settings_failed_citation_text_reset": "无法重置引文文本",
   "settings_failed_js_templates": "无法更改 JavaScript 模板",
   "notice_partials_unpacked": "已将 {names} 解包到您的模板文件夹。",

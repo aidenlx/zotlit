@@ -227,13 +227,6 @@ export default defineConfig({
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
     },
     {
-      // Tests written before the rule that mock @/lib/notice. A file leaves
-      // this list once it asserts its module's outcomes without a mock of
-      // @/lib/notice or @/lib/toast.
-      files: ["src/views/template-workbench/register.test.ts"],
-      rules: { "zotlit-effect-tests/no-notice-mock": "off" },
-    },
-    {
       files: ["src/**"],
       excludeFiles: ["**/*.test.{ts,tsx}"],
       rules: {

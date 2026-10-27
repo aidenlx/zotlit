@@ -9,16 +9,15 @@ import type {
 } from "obsidian";
 
 import { awaitConfirm } from "@/lib/confirm";
-import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
 import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
-import { openCitationTemplate } from "@/services/template/actions";
+import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
-import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
+import { createSharedPartial } from "@/views/template-workbench/partial-command";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { appendCompileError } from "./compile-error";
@@ -217,21 +216,15 @@ export function partialItems(
 }
 
 /**
- * Add partial: the name prompt opens over settings, and settings closes only
- * once the document exists, the way `duplicateProfileToWorkbench` does. A
- * dismissed prompt leaves the reader on the page they started from.
+ * Add partial: the shared create flow's name prompt opens over settings, and
+ * settings closes only once the document exists, the way
+ * `duplicateProfileToWorkbench` does. A dismissed prompt leaves the reader on
+ * the page they started from.
  */
 function addPartial(ctx: SettingTabContext) {
   return Effect.gen(function* () {
-    const template = yield* Template;
-    const taken = yield* template.getPartialNames;
-    const name = yield* awaitModal<string | null>((settle) =>
-      openNewPartialPrompt(ctx.app, taken, settle),
-    );
-    if (name === null) return;
-    yield* template.createPartial(name);
-    const document = yield* template.getPartialDocument(name);
-    if (document) yield* openPartial(ctx, document.path);
+    const created = yield* createSharedPartial(ctx.app);
+    if (created) yield* openPartial(ctx, created.file.path);
   }).pipe(Effect.ensuring(rebuild));
 }
 
@@ -335,8 +328,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
         void ctx.tab.run(
-          openCitationText(ctx),
-          m.settings_failed_citation_text_open(),
+          reportCitationTemplateOpen(ctx.app).pipe(Effect.ensuring(rebuild)),
         );
       }),
   );
@@ -355,16 +347,6 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         );
       }),
   );
-}
-
-/**
- * Open the Citation Template in the Template Workbench View, creating its
- * document from the built-in citation text when the vault holds none.
- */
-function openCitationText(ctx: SettingTabContext) {
-  return Effect.gen(function* () {
-    yield* openCitationTemplate(ctx.app, yield* Template);
-  }).pipe(Effect.ensuring(rebuild));
 }
 
 function resetCitationText(ctx: SettingTabContext, path: string) {
