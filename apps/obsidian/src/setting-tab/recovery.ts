@@ -20,7 +20,7 @@ export const resetCitationIndex = Effect.fn("SettingTab.resetCitationIndex")(
   function* (confirm: Effect.Effect<boolean>) {
     if (!(yield* confirm)) return;
     yield* reportOutcome(
-      CitationIndex.use((index) => index.reset()),
+      CitationIndex.use((index) => index.reset),
       {
         success: () => m.notice_citation_index_reset(),
         error: () => m.notice_citation_index_reset_failed(),

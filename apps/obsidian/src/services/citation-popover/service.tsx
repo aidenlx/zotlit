@@ -65,13 +65,8 @@ import type {
 } from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
 import type { ProfileReader } from "@/services/profile/service";
-import { acquireReadLease } from "@/services/zotero-reads/lease";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsApi,
-  ZoteroReadsState,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -90,11 +85,10 @@ interface PopoverReads {
   fileAt(path: string): TFile | null;
   /** The metadata cache reads the hovered note's Citation Presentation takes. */
   metadataCache: Pick<ObsidianMetadataCache, "getFileCache">;
-  db: {
-    readonly state: ZoteroReadsState["state"];
-    readonly reads: ZoteroReadsApi;
-    acquireRead(): Promise<ZoteroReadLease>;
-  };
+  databaseState(): ZoteroReadsState["state"];
+  readSources(
+    citations: Parameters<typeof readReferenceSources>[1],
+  ): Promise<Effect.Success<ReturnType<typeof readReferenceSources>>>;
   lookupStatus(): CitationLookupStatus;
   readLookup(
     request: CitationLookupRequest,
@@ -268,15 +262,9 @@ export const layerCitationPopover: Layer.Layer<
       metadataCache: {
         getFileCache: (file) => bridge.runSync(metadata.fileCache(file)),
       },
-      db: {
-        get state() {
-          return bridge.runSync(reads.current).state;
-        },
-        get reads() {
-          return reads.reads;
-        },
-        acquireRead: () => acquireReadLease(reads, bridge),
-      },
+      databaseState: () => bridge.runSync(reads.current).state,
+      readSources: (citations) =>
+        bridge.runPromise(readReferenceSources(reads, citations)),
       lookupStatus: () => bridge.runSync(lookup.current).status,
       async readLookup(request, { signal }) {
         if (bridge.closed()) throw lookupReleased();
@@ -313,7 +301,16 @@ export const layerCitationPopover: Layer.Layer<
         },
       },
       describeCandidates: (candidates) =>
-        held(describeCandidatesEffect(deps, candidates), []),
+        held(
+          describeCandidatesEffect(
+            {
+              db: reads,
+              libraryScope: { current: bridge.runSync(libraries.current) },
+            },
+            candidates,
+          ),
+          [],
+        ),
       async readText(path, { signal }) {
         if (bridge.closed()) return null;
         return held(
@@ -453,7 +450,7 @@ async function fill(
     prepare:
       "work" in request && read.indexedKey
         ? async (block) => {
-            const { sources, database } = await readReferenceSources(deps.db, [
+            const { sources, database } = await deps.readSources([
               { indexedKey: read.indexedKey!, linkpath: null },
             ]);
             // The popover moved on to another visit while the read ran: this
@@ -513,7 +510,7 @@ async function readWork(
     profileFailure: undefined,
     pending: false,
   };
-  if (deps.db.state === "degraded")
+  if (deps.databaseState() === "degraded")
     return { ...empty, unavailable: "database" };
   if (work.kind === "citekey" && deps.lookupStatus() === "pending") {
     return {
@@ -553,7 +550,7 @@ async function readWork(
   } else {
     indexedKey = work.indexedKey;
   }
-  const { sources, database } = await readReferenceSources(deps.db, [
+  const { sources, database } = await deps.readSources([
     { indexedKey, linkpath: null },
   ]);
   if (database === "unreadable") return { ...empty, unavailable: "database" };

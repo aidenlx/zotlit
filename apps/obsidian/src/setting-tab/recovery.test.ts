@@ -82,13 +82,12 @@ describe("resetCitationIndex", () => {
               Context.add(
                 CitationIndex,
                 stubService<CitationIndex["Service"]>("CitationIndex", {
-                  reset: () =>
-                    Effect.suspend(() => {
-                      resets++;
-                      return mode === "failure"
-                        ? Effect.die(new Error("store locked"))
-                        : Effect.void;
-                    }),
+                  reset: Effect.suspend(() => {
+                    resets++;
+                    return mode === "failure"
+                      ? Effect.die(new Error("store locked"))
+                      : Effect.void;
+                  }),
                 }),
               ),
             ),

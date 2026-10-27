@@ -1,21 +1,16 @@
 // The source-join of a document's Citations: each cited Item read from the Zotero database, in the identities and summary a reference list reports.
 
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 
 import { isChildItemFields, itemToCsl } from "@zotlit/db";
 import type { Attachment, CslItemData, Item } from "@zotlit/db";
 import { parseAttachmentPath } from "@zotlit/db/path";
 
+import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
-import { getLogger } from "@/lib/log";
-import type {
-  ZoteroReadLease,
-  ZoteroReadsState,
-} from "@/services/zotero-reads/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { Citation } from "./query";
-
-const logger = getLogger(["citation-index", "sources"]);
 
 /** One Attachment the Item offers to open in Zotero's reader. */
 export interface ZoteroOpenableAttachment {
@@ -122,112 +117,127 @@ function filename(path: string): string {
  * @returns the readable sources by Indexed Key, beside the `database` state a
  *   caller reports rather than the Items it names as missing.
  */
-export async function readReferenceSources(
-  db: Pick<ZoteroReadsState, "state"> & {
-    acquireRead(): Promise<ZoteroReadLease>;
-  },
-  citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
-): Promise<ReferenceSourceJoin> {
-  const sources = new Map<string, ReferenceSource>();
-  const presentKeys = new Set<string>();
-  if (db.state === "degraded")
-    return { sources, presentKeys, database: "unreadable" };
-  if (citations.length === 0)
-    return { sources, presentKeys, database: "ready" };
+export const readReferenceSources = Effect.fn("readReferenceSources")(
+  function* (
+    db: Pick<ZoteroReads["Service"], "current" | "snapshot">,
+    citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
+  ): Effect.fn.Return<ReferenceSourceJoin> {
+    const sources = new Map<string, ReferenceSource>();
+    const presentKeys = new Set<string>();
+    if ((yield* db.current).state === "degraded")
+      return { sources, presentKeys, database: "unreadable" };
+    if (citations.length === 0)
+      return { sources, presentKeys, database: "ready" };
 
-  try {
-    // One Snapshot: the Attachment read names Items by the itemIDs the Item
-    // read answered with, so both must see one database.
-    await using lease = await db.acquireRead();
-    const { reads } = lease;
-    const indexedKeys = [
-      ...new Set(
-        citations.flatMap(({ indexedKey }) =>
-          indexedKey === null ? [] : [indexedKey],
-        ),
-      ),
-    ];
-    const [user, items] = await Effect.runPromise(
-      Effect.all(
-        [reads.DatabaseIdentity({}), reads.ItemsByIndexedKeys({ indexedKeys })],
-        { concurrency: "unbounded" },
-      ),
-    );
-    for (const key of items.keys()) presentKeys.add(key);
-    const otherItems = await Effect.runPromise(
-      Effect.forEach(
-        indexedKeys.filter((key) => !items.has(key)),
-        (indexedKey) =>
-          Effect.map(reads.ItemType({ indexedKey }), (item) =>
-            item ? indexedKey : null,
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        // One Snapshot: the Attachment read names Items by the itemIDs the Item
+        // read answered with, so both must see one database.
+        const reads = yield* db.snapshot;
+        const indexedKeys = [
+          ...new Set(
+            citations.flatMap(({ indexedKey }) =>
+              indexedKey === null ? [] : [indexedKey],
+            ),
           ),
-        { concurrency: "unbounded" },
+        ];
+        const [user, items] = yield* Effect.all(
+          [
+            reads.DatabaseIdentity({}),
+            reads.ItemsByIndexedKeys({ indexedKeys }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        for (const key of items.keys()) presentKeys.add(key);
+        const otherItems = yield* Effect.forEach(
+          indexedKeys.filter((key) => !items.has(key)),
+          (indexedKey) =>
+            Effect.map(reads.ItemType({ indexedKey }), (item) =>
+              item ? indexedKey : null,
+            ),
+          { concurrency: "unbounded" },
+        );
+        for (const key of otherItems) if (key !== null) presentKeys.add(key);
+        const cited: {
+          indexedKey: string;
+          linkpath: string | null;
+          item: Item;
+          summary: string;
+          citationSummary: string;
+          citekey: string | null;
+        }[] = [];
+        for (const { indexedKey, linkpath } of citations) {
+          if (indexedKey === null) continue;
+          const item = items.get(indexedKey);
+          if (!item) continue;
+          const { fields } = item;
+          if (isChildItemFields(fields)) continue;
+          const summary = itemSummary(item, fields);
+          cited.push({
+            indexedKey,
+            linkpath,
+            item,
+            summary: summary.formatted,
+            citationSummary: summary.subtitle || summary.title,
+            citekey: fields.citationKey ?? null,
+          });
+        }
+
+        const attachments = new Map<number, ZoteroOpenableAttachment[]>();
+        const rows = yield* reads
+          .AttachmentsOf({ itemIDs: cited.map(({ item }) => item.itemID) })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.interrupt
+                : Effect.logWarning(
+                    "Cannot read the attachments of the cited items",
+                    cause,
+                  ).pipe(Effect.as([])),
+            ),
+          );
+        for (const [itemID, group] of Map.groupBy(
+          rows,
+          (row) => row.parentItemID,
+        )) {
+          attachments.set(itemID, toZoteroOpenableAttachments(group));
+        }
+
+        for (const {
+          indexedKey,
+          linkpath,
+          item,
+          summary,
+          citationSummary,
+          citekey,
+        } of cited) {
+          sources.set(indexedKey, {
+            csl: itemToCsl(item, user),
+            summary,
+            citationSummary,
+            itemKey: item.key,
+            itemID: item.itemID,
+            groupID: item.groupID,
+            citekey,
+            linkpath,
+            attachments: attachments.get(item.itemID) ?? [],
+          });
+        }
+        return { sources, presentKeys, database: "ready" as const };
+      }),
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning("Cannot read the cited items", cause).pipe(
+              Effect.as({
+                sources,
+                presentKeys,
+                database: "unreadable" as const,
+              }),
+            ),
       ),
+      withLogCategory("citation-index"),
     );
-    for (const key of otherItems) if (key !== null) presentKeys.add(key);
-    const cited: {
-      indexedKey: string;
-      linkpath: string | null;
-      item: Item;
-      summary: string;
-      citationSummary: string;
-      citekey: string | null;
-    }[] = [];
-    for (const { indexedKey, linkpath } of citations) {
-      if (indexedKey === null) continue;
-      const item = items.get(indexedKey);
-      if (!item) continue;
-      const { fields } = item;
-      if (isChildItemFields(fields)) continue;
-      const summary = itemSummary(item, fields);
-      cited.push({
-        indexedKey,
-        linkpath,
-        item,
-        summary: summary.formatted,
-        citationSummary: summary.subtitle || summary.title,
-        citekey: fields.citationKey ?? null,
-      });
-    }
-
-    const attachments = new Map<number, ZoteroOpenableAttachment[]>();
-    try {
-      const rows = await Effect.runPromise(
-        reads.AttachmentsOf({ itemIDs: cited.map(({ item }) => item.itemID) }),
-      );
-      for (const [itemID, group] of Map.groupBy(
-        rows,
-        (row) => row.parentItemID,
-      )) {
-        attachments.set(itemID, toZoteroOpenableAttachments(group));
-      }
-    } catch (error) {
-      logger.warn("Cannot read the attachments of the cited items", { error });
-    }
-
-    for (const {
-      indexedKey,
-      linkpath,
-      item,
-      summary,
-      citationSummary,
-      citekey,
-    } of cited) {
-      sources.set(indexedKey, {
-        csl: itemToCsl(item, user),
-        summary,
-        citationSummary,
-        itemKey: item.key,
-        itemID: item.itemID,
-        groupID: item.groupID,
-        citekey,
-        linkpath,
-        attachments: attachments.get(item.itemID) ?? [],
-      });
-    }
-  } catch (error) {
-    logger.warn("Cannot read the cited items", { error });
-    return { sources, presentKeys, database: "unreadable" };
-  }
-  return { sources, presentKeys, database: "ready" };
-}
+  },
+);

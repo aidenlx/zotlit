@@ -374,7 +374,7 @@ it.effect(
       // Unload stops the waiting caller; the reset itself runs on.
       const reset = expect(
         effectBridge(h.runtime).runPromise(
-          h.runtime.runSync(CitationIndex).reset(),
+          h.runtime.runSync(CitationIndex).reset,
         ),
       ).rejects.toMatchObject({ name: "AbortError" });
       await clearing.promise;

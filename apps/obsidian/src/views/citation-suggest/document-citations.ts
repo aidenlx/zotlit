@@ -1,15 +1,20 @@
 // Bound the document citation read shared by both citation pickers.
-import { abortable } from "@std/async/abortable";
+import { Cause, Effect } from "effect";
 import type { TFile } from "obsidian";
 
-import { getLogger } from "@/lib/log";
+import type { EffectBridge } from "@/lib/effect-bridge";
+import { withLogCategory } from "@/lib/effect-log";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import type {} from "@/services/citation-index/service";
 
-const logger = getLogger(["views", "citation-suggest"]);
-
 export async function readDocumentCitedKeys(
-  index: Pick<PlainCitationIndex, "getDocumentCitationSet">,
+  {
+    citationIndex: index,
+    bridge,
+  }: {
+    citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
+    bridge: Pick<EffectBridge, "runPromise">;
+  },
   file: TFile | null,
   signal: AbortSignal,
 ): Promise<readonly string[]> {
@@ -22,9 +27,11 @@ export async function readDocumentCitedKeys(
   stack.defer(() => win.clearTimeout(timer));
   const lifetime = AbortSignal.any([signal, timeout.signal]);
   try {
-    const set = await abortable(
-      index.getDocumentCitationSet(file, { signal: lifetime }),
-      lifetime,
+    const set = await bridge.runPromise(
+      Effect.tryPromise(() =>
+        index.getDocumentCitationSet(file, { signal: lifetime }),
+      ),
+      { signal: lifetime },
     );
     return set.citations.flatMap(({ indexedKey }) =>
       indexedKey === null ? [] : [indexedKey],
@@ -35,12 +42,18 @@ export async function readDocumentCitedKeys(
       : timeout.signal.aborted
         ? "timeout"
         : "failed";
-    logger.debug(
-      "Document citations unavailable; searching without cited Items",
-      {
-        reason,
-        ...(reason === "failed" ? { error } : {}),
-      },
+    await bridge.runPromise(
+      Effect.logDebug(
+        "Document citations unavailable; searching without cited Items",
+      ).pipe(
+        Effect.annotateLogs({
+          reason,
+          ...(reason === "failed"
+            ? { error: Cause.isUnknownError(error) ? error.cause : error }
+            : {}),
+        }),
+        withLogCategory("views", "citation-suggest"),
+      ),
     );
     return [];
   }

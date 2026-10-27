@@ -55,7 +55,7 @@ it("discards schema v1 once, then restores current records without a read (#1691
       await restored.index.whenIndexed();
       expect(restored.vault.reads).toEqual([]);
       await restored.runtime.runPromise(
-        CitationIndex.use((index) => index.reset()),
+        CitationIndex.use((index) => index.reset),
       );
       await restored.index.whenIndexed();
       expect(restored.vault.reads).toEqual(["draft.md"]);
