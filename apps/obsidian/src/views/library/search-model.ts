@@ -23,7 +23,7 @@ import { searchTerms } from "./search";
 import type { SearchFound } from "./search-box";
 import { sameLibrary } from "./tree";
 
-export const LIBRARY_SEARCH_LIMIT = 500;
+const LIBRARY_SEARCH_LIMIT = 500;
 export interface SearchSession {
   readonly text: string;
   readonly everywhere: boolean;

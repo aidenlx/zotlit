@@ -37,7 +37,6 @@ import { TextAction } from "./text-action";
 import { TreeModelProvider, useTreeState } from "./tree-model";
 import type { TreeModel } from "./tree-model";
 
-export { LIBRARY_SEARCH_LIMIT } from "./search-model";
 export interface LibrarySearchDeps {
   registry: ViewRegistryHandle;
 }

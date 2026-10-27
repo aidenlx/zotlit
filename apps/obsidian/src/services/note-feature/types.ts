@@ -265,18 +265,13 @@ export interface NoteFeaturePayloads {
   "frontmatter-eval-failed": { itemKey: string; fields: string[] };
 }
 
-/** Events the bound note feature emits; a UI subscriber owns any rendering. */
-export type NoteFeatureEvents = {
-  [K in keyof NoteFeaturePayloads]: (payload: NoteFeaturePayloads[K]) => void;
-};
-
-/** One `event` occurrence, with the payload its callback takes. */
+/** One `event` occurrence, with its payload. */
 export interface NoteFeatureEventOf<K extends keyof NoteFeaturePayloads> {
   readonly _tag: K;
   readonly payload: NoteFeaturePayloads[K];
 }
 
-/** One {@link NoteFeatureEvents} occurrence, tagged with its event name. */
+/** One Note Feature event, tagged with its event name. */
 export type NoteFeatureEvent = {
   [K in keyof NoteFeaturePayloads]: NoteFeatureEventOf<K>;
 }[keyof NoteFeaturePayloads];
