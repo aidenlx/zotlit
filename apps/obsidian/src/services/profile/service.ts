@@ -1626,14 +1626,6 @@ export class ProfileOperationError extends Schema.TaggedError<
   cause: Schema.Defect(),
 }) {}
 
-export type ProfileError =
-  | ProfileOperationError
-  | ProfileImportChanged
-  | VaultError
-  | FileExists
-  | VaultFolderBlockedError
-  | LiveTextRewriteFailed
-  | TemplateFailure;
 export interface ProfileState {
   readonly loaded: boolean;
   readonly profiles: readonly LiteratureNoteProfile[];

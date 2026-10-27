@@ -44,7 +44,3 @@ export function refreshFailed(
 export function refreshing(source: EventsSource): StreamType.Stream<boolean> {
   return byTag(source, "refreshing").pipe(Stream.map((event) => event.active));
 }
-
-export function dbFileMissing(source: EventsSource): StreamType.Stream<void> {
-  return byTag(source, "db-file-missing").pipe(Stream.map(() => undefined));
-}
