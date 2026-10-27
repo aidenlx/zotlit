@@ -9,14 +9,6 @@ import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import type { BackgroundWindow } from "./page-notes-types.ts";
 
 /**
- * The Obsidian PDF view showing `attachmentPath` in a laid-out leaf, as an
- * eval expression.
- */
-export function pdfViewOf(attachmentPath: string): string {
-  return `app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(attachmentPath)}&&view.containerEl.getBoundingClientRect().width>0)`;
-}
-
-/**
  * Brings page one on screen in a window that lays it out, and arms `tool`
  * from the Creation Toolbar. With `at`, the PDF point `at` on page one is
  * first brought to the middle of the window.
@@ -231,22 +223,6 @@ export async function openPdfWithAnnotationView(
     undefined,
   );
 }
-
-/**
- * Declares `fire(type, x, y, target?, extra?)` in an eval: one pointer event,
- * or the click that follows a release, dispatched as the browser would at a
- * client point — to the node under it unless a target is named — answering
- * that node. `extra` overrides the event's own fields, such as a second
- * pointer's `pointerId`.
- */
-export const FIRE = `const fire=(type,x,y,target,extra)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window,...extra};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
-
-/**
- * Declares `tap(x, y)` in an eval, after {@link FIRE}: a press, its release,
- * and the click that follows, all at one client point — a mark click as the
- * browser delivers it.
- */
-export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return node;};`;
 
 /**
  * Shows the vault's window if it is hidden or minimized, behind other apps'
