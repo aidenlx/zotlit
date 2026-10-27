@@ -10,8 +10,6 @@ import type { PaneType } from "obsidian";
 import { disposable } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
-import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
 import type { PluginSettings } from "@/services/settings/service";
 
@@ -103,12 +101,6 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
               Effect.annotateLogs({ url: String(url), target }),
               withLogCategory("attachment-open"),
               Effect.andThen(followed),
-              Effect.tap((outcome) =>
-                Effect.sync(() => {
-                  if (outcome.kind === "file-missing")
-                    new BaseNotice(m.notice_pdf_file_missing());
-                }),
-              ),
             ),
           );
           return null;

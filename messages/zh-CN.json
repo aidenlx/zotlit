@@ -1598,7 +1598,7 @@
   "command_open_pdf_name": "打开 PDF",
   "notice_no_pdf_attachment": "此条目没有 PDF 附件。",
   "notice_pdf_file_missing": "PDF 文件缺失。",
-  "notice_pdf_open_failed": "无法打开 PDF。",
+  "notice_attachment_open_failed": "无法打开附件。",
   "notice_literature_note_profile_kept": "已保留“{label}”。",
   "notice_literature_note_key_changed": "此文献笔记的 Zotero 标识符在更新期间发生了变化。请再次更新该笔记。",
   "notice_literature_note_profile_changed": "此文献笔记的配置方案在更新期间发生了变化。请再次更新该笔记。",
