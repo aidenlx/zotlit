@@ -7,8 +7,7 @@
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import type { Scope } from "effect";
 import { Cause, Effect, Exit } from "effect";
-import { MarkdownView } from "obsidian";
-import type { Editor, MarkdownFileInfo, PaneType, TFile } from "obsidian";
+import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
@@ -29,9 +28,9 @@ import type {
   OpenOutcome,
 } from "@/services/attachment-open/open-target";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
+import { openLiteratureNote } from "@/services/note-feature/navigation";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
-import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import { NoteIndex } from "@/services/note-index/service";
 import { InertTemplateError } from "@/services/template/errors";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -95,10 +94,8 @@ export function libraryTargetOpener(
 
 export type ItemActionsDeps = Pick<AttachmentOpenDeps, "app" | "opener"> & {
   registry: ViewRegistryHandle;
-  noteFeature: Pick<
-    NoteFeatureHandle,
-    "createNoteInteractively" | "renderCitation"
-  >;
+  noteFeature: Pick<NoteFeatureHandle, "renderCitation">;
+  creation: InteractiveCreationPorts;
   /**
    * Hands a `zotero://` link to the system.
    * @default window.open
@@ -193,48 +190,15 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         ? { kind: "insert" as const, text: rendered }
         : rendered;
     });
-  const openNote = async (
-    file: TFile,
-    pane: PaneType | boolean,
-  ): Promise<void> => {
-    const { workspace } = deps.app;
-    if (!pane) {
-      const existing = workspace
-        .getLeavesOfType("markdown")
-        .find(
-          (leaf) =>
-            leaf.view instanceof MarkdownView && leaf.view.file === file,
-        );
-      if (existing) {
-        await workspace.revealLeaf(existing);
-        workspace.setActiveLeaf(existing, { focus: true });
-        return;
-      }
-    }
-    await workspace.openLinkText(file.path, "", pane, { active: true });
-  };
-
   return {
     openNote: (indexedKey, pane) =>
       run(
-        Effect.gen(function* () {
-          const index = yield* NoteIndex;
-          yield* index.whenIndexed;
-          const existing = resolveLiteratureNoteWithWarning(
-            yield* index.getNotesByItemKey(indexedKey),
-          );
-          if (existing) {
-            yield* Effect.tryPromise(() => openNote(existing, pane));
-            return;
-          }
-          const item = yield* read(indexedKey);
-          if (item) {
-            const file = yield* Effect.tryPromise(() =>
-              deps.noteFeature.createNoteInteractively(item),
-            );
-            if (file) yield* Effect.tryPromise(() => openNote(file, pane));
-          }
-        }),
+        Effect.asVoid(
+          openLiteratureNote(deps.creation, indexedKey, {
+            source: "interactive",
+            paneType: pane,
+          }),
+        ),
       ),
     openPdf: (indexedKey, pane) =>
       run(

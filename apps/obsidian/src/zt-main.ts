@@ -315,8 +315,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
-      noteIndex: services.noteIndex,
-      noteFeature: services.noteFeature,
+      registry: services.runtime.runSync(ViewRegistry),
+      creation: {
+        app: this.app,
+        createProfile: (options) => createProfileDialog(this.app, options),
+        importProfile: (options) => importProfileDialog(this.app, options),
+      },
       settings: services.settings,
       bridge: services.bridge,
       opener: services.targetOpener,
@@ -368,6 +372,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         }),
       },
       items: itemActions({
+        creation: {
+          app: this.app,
+          createProfile: (options) => createProfileDialog(this.app, options),
+          importProfile: (options) => importProfileDialog(this.app, options),
+        },
         registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
         noteFeature: services.noteFeature,
