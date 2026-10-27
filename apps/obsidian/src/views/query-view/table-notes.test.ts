@@ -624,6 +624,36 @@ describe("literatureNotes vault property writes", () => {
     expect(notes.managed("ITEMDDDD", "status", null)).toBe(false);
   });
 
+  it("updates managed cells when a renamed note's delayed Profile read finishes", async () => {
+    const { host, notes, replacedKeys } = await vault(
+      { "A.md": "---\nzotero-key: ITEMAAAA\n---\n" },
+      { replaced: { "A.md": ["status"] } },
+    );
+    const shown = vi.fn(() => notes.managed("ITEMAAAA", "status", null));
+    const off = notes.on("frontmatter-changed", shown);
+    owned.defer(off);
+    notes.managed("ITEMAAAA", "status", null);
+    await vi.waitFor(() => expect(shown).toHaveReturnedWith(true));
+
+    const started = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<Set<string>>();
+    replacedKeys.mockImplementation(async (file) => {
+      expect(file.path).toBe("Renamed.md");
+      started.resolve();
+      return completed.promise;
+    });
+    const file = host.file("A.md");
+    host.vault.renameFile("A.md", "Renamed.md");
+    expect(host.file("Renamed.md")).toBe(file);
+    // As the table does, read again on the rename and await the Profile.
+    expect(notes.managed("ITEMAAAA", "status", null)).toBe(false);
+    await started.promise;
+    shown.mockClear();
+    completed.resolve(new Set(["status"]));
+    await vi.waitFor(() => expect(shown).toHaveReturnedWith(true));
+    expect(shown).toHaveBeenCalledTimes(1);
+  });
+
   it("reads a note's Profile once, and again when that note's frontmatter changes", async () => {
     const { host, notes, replaced, replacedKeys } = await vault(
       {
