@@ -16,38 +16,6 @@ export function pdfViewOf(attachmentPath: string): string {
 }
 
 /**
- * Declares `clientOf(x, y)` in an eval: a PDF point on page one of the view
- * `pdfView` as a client point, through the overlay the page draws — its box on
- * screen over its own `viewBox`, which is the frame a gesture on the page is
- * measured in.
- *
- * @param pdfView the PDF view as an eval expression, as {@link pdfViewOf} gives it.
- */
-export function clientOfFirstPage(pdfView: string): string {
-  return `const clientOf=(x,y)=>{const overlay=${pdfView}.viewer.child.getPage(1).div.querySelector('.zt-pdf-annotation-overlay');const box=overlay.getBoundingClientRect();const view=overlay.viewBox.baseVal;return {x:box.left+(x-view.x)*box.width/view.width,y:box.top+(view.y+view.height-y)*box.height/view.height};};`;
-}
-
-/**
- * The Creation Toolbar button of `tool` in the view `pdfView`, as an eval
- * expression.
- *
- * @param pdfView the PDF view as an eval expression, as {@link pdfViewOf} gives it.
- * @param tool the button's `data-zt-tool`.
- */
-export function toolButtonOf(pdfView: string, tool: string): string {
-  return `${pdfView}.containerEl.querySelector('[data-zt-tool=${JSON.stringify(tool)}]')`;
-}
-
-/**
- * The reader's page container, which scrolls the pages, as an eval expression.
- *
- * @param pdfView the PDF view as an eval expression, as {@link pdfViewOf} gives it.
- */
-export function pageContainerOf(pdfView: string): string {
-  return `${pdfView}.viewer.child.pdfViewer.pdfViewer.container`;
-}
-
-/**
  * Brings page one on screen in a window that lays it out, and arms `tool`
  * from the Creation Toolbar. With `at`, the PDF point `at` on page one is
  * first brought to the middle of the window.
@@ -127,17 +95,6 @@ export async function disarmTool(
     },
     { attachmentPath, tool },
   );
-}
-
-/**
- * One field of the Editing Capability on the Attachment `attachmentKey`, read
- * after a fresh Capability Probe, as an eval expression.
- */
-export function capabilityOf(
-  attachmentKey: string,
-  field: "kind" | "reason",
-): string {
-  return `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachmentKey)})).${field});})()`;
 }
 
 /**
@@ -314,9 +271,6 @@ export async function raiseWindow(vaultId: string): Promise<void> {
     { what: "visible vault window", ready: (state) => state === "visible" },
   );
 }
-
-/** The Mark Popup's comment editor, as an eval expression. */
-export const POPUP_EDITOR = `document.querySelector('.zt-pdf-mark-popup .cm-content')`;
 
 /**
  * Selects text in the open comment editor of the Mark Popup three ways — a
