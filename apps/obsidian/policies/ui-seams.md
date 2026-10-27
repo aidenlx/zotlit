@@ -1,9 +1,10 @@
 # UI seams
 
-Functional core, imperative shell — logic modules return data and emit
-events; a UI module at the seam owns rendering. Use `BaseNotice` from
-`@/lib/notice` and `toast.promise` from `@/lib/toast`, never raw
-`new Notice(...)`.
+Functional core, imperative shell — logic returns data and publishes events;
+the seam owns rendering. Effect code shows notices through the `Notifier`
+service (`lib/notifier.ts`: `show`, `reportOutcome`, `reportProgress`).
+A Promise edge with no Notifier uses `BaseNotice` (`@/lib/notice`) or
+`toast.promise` (`@/lib/toast`). Unload silence follows `unload.md`.
 
 Conditional flows decide when to show UI; a dedicated function at the seam
 owns what to render and stays callable independently of the trigger. This also
@@ -11,12 +12,15 @@ lets `/obsidian-debug` inspect the UI without falsifying trigger state.
 
 Reach for the lowest rung that fits:
 
-1. Pure function returns the message/outcome; the caller renders it
+1. A function returns the outcome; the caller renders it
    (`services/note-import/batch-import-notices.ts`).
-2. Service emits an event; a UI subscriber owns the notice.
-3. Narrow decision port, only when the UI's answer feeds back mid-flow —
-   returns data, named for the decision (`services/note-import/view.ts`).
+2. A service publishes on its `changes` Stream; a notices layer shows each
+   event (`services/note-feature/notices.ts`).
+3. A decision tag, only when the user's answer feeds back mid-flow: it
+   answers a typed value, a dismissal included (`awaitConfirm`,
+   `lib/confirm.ts`).
 
-Tests observe the core: assert returns, events, and port calls. Needing to
-`vi.mock` `@/lib/notice`/`@/lib/toast` — or to assert a notice fired — means
-the module needs reshaping, not the test.
+Tests observe the core: returns, events, and Notifier calls through
+`testNotifier()` / `layerSignalling` (`lib/__fixtures__/notifier.ts`). A test
+that would mock `@/lib/notice` or `@/lib/toast` marks a module to move behind
+the Notifier. Lint rule `zotlit-effect-tests/no-notice-mock` enforces this.

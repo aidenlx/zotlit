@@ -193,6 +193,7 @@ export default defineConfig({
       files: ["src/**/*.test.{ts,tsx}"],
       rules: {
         "zotlit-effect-tests/no-effect-run-in-test": "error",
+        "zotlit-effect-tests/no-notice-mock": "error",
         "zotlit-effect-tests/no-real-timer-in-effect-test": "error",
       },
     },
@@ -212,6 +213,16 @@ export default defineConfig({
       // These tests exercise the run entry points themselves.
       files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
+    },
+    {
+      // Tests written before the rule that mock @/lib/notice. A file moves off
+      // this list when its module moves behind the Notifier.
+      files: [
+        "src/services/pdf-annotation-editor/selection.test.ts",
+        "src/views/pandoc-export/register.test.ts",
+        "src/views/template-workbench/register.test.ts",
+      ],
+      rules: { "zotlit-effect-tests/no-notice-mock": "off" },
     },
     {
       files: ["src/**"],
