@@ -24,7 +24,7 @@ import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { ExcerptDisplays } from "@/services/excerpt-image/display";
-import type { ExcerptImages } from "@/services/excerpt-image/layer";
+import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { LanguagePack } from "@/services/language-pack/service";
 import type { LibraryScope } from "@/services/library-scope/service";
 import type { Customize } from "@/services/local-bridge/customize";
@@ -63,7 +63,7 @@ export type SettingTabEnv =
   | LocalBridge
   | Customize
   | LanguagePack
-  | ExcerptImages
+  | ExcerptImageService
   | ExcerptDisplays
   | NoteFeature
   | NoteIndex

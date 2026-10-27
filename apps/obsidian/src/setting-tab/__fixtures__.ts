@@ -24,7 +24,7 @@ import { AttachmentImport } from "@/services/attachment-import/service";
 import { ChineseSegmenter } from "@/services/chinese-segmenter/service";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import { LanguagePack } from "@/services/language-pack/service";
 import { LibraryScope } from "@/services/library-scope/service";
 import { Customize } from "@/services/local-bridge/customize";
@@ -77,8 +77,8 @@ export const unimplementedTabServices = Layer.mergeAll(
     stubService<LanguagePack["Service"]>("LanguagePack", {}),
   ),
   Layer.succeed(
-    ExcerptImages,
-    stubService<ExcerptImages["Service"]>("ExcerptImages", {}),
+    ExcerptImageService,
+    stubService<ExcerptImageService["Service"]>("ExcerptImages", {}),
   ),
   Layer.succeed(
     ExcerptDisplays,

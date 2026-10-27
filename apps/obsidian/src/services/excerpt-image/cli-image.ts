@@ -1,5 +1,5 @@
 // The renderer-side answer of the local Annotation image command.
-import { Data, Effect, Result, Schema } from "effect";
+import { Cause, Data, Effect, Result, Schema } from "effect";
 import type { PlatformError } from "effect";
 import type { CliData } from "obsidian";
 
@@ -38,10 +38,7 @@ export interface AnnotationImagePorts {
   read(
     key: string,
   ): Effect.Effect<ExcerptRequest | null, ExcerptSourceUnavailable>;
-  resolve(
-    request: ExcerptRequest,
-    signal?: AbortSignal,
-  ): Promise<ExcerptOutcome>;
+  resolve(request: ExcerptRequest): Effect.Effect<ExcerptOutcome, unknown>;
   /** The path the PNG store publishes `bytes` at. */
   publish(
     fingerprint: string,
@@ -104,7 +101,7 @@ export const answerAnnotationImage = Effect.fn("AnnotationImageCli.answer")(
     return yield* imageAnswer({ key, request, ports }).pipe(
       Effect.catchTag("ImageAnswerError", ({ cause }) =>
         Effect.succeed(
-          cause instanceof Error && cause.name === "TimeoutError"
+          Cause.isTimeoutError(cause)
             ? imageFailure(
                 "render-timeout",
                 "The Excerpt Image exceeded the 35 second rendering deadline.",
@@ -132,7 +129,9 @@ const imageAnswer = Effect.fn("AnnotationImageCli.image")(function* ({
   request: ExcerptRequest;
   ports: AnnotationImagePorts;
 }) {
-  const outcome = yield* attempt((signal) => ports.resolve(request, signal));
+  const outcome = yield* ports
+    .resolve(request)
+    .pipe(Effect.mapError((cause) => new ImageAnswerError({ cause })));
   if (outcome.kind === "available") {
     const path =
       outcome.provenance === "zotero"

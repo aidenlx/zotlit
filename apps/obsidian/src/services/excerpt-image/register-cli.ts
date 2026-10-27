@@ -6,21 +6,25 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { ANNOTATION_IMAGE_COMMAND, answerAnnotationImage } from "./cli-image";
-import { ExcerptImages } from "./layer";
 import { ExcerptSourceUnavailable, excerptRequestForKey } from "./request";
+import { ExcerptImageService } from "./service";
 import { publishExcerptPng } from "./temp-store";
 
 /** The `zotlit:annotation-image` command. */
 export const layerAnnotationImageCli: Layer.Layer<
   never,
   never,
-  PluginHost | ZoteroReads | ZoteroPref | ExcerptImages | FileSystem.FileSystem
+  | PluginHost
+  | ZoteroReads
+  | ZoteroPref
+  | ExcerptImageService
+  | FileSystem.FileSystem
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
     const reads = yield* ZoteroReads;
     const pref = yield* ZoteroPref;
-    const excerptImage = yield* ExcerptImages;
+    const excerptImage = yield* ExcerptImageService;
     const fs = yield* FileSystem.FileSystem;
     /**
      * The excerpt request of the Annotation `key` names, read from one
@@ -53,7 +57,7 @@ export const layerAnnotationImageCli: Layer.Layer<
       handler: (params) =>
         answerAnnotationImage(params, {
           read,
-          resolve: (request, signal) => excerptImage.resolve(request, signal),
+          resolve: (request) => excerptImage.resolve(request),
           publish: (fingerprint, bytes) =>
             publishExcerptPng(fingerprint, bytes).pipe(
               Effect.provideService(FileSystem.FileSystem, fs),

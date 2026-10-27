@@ -7,7 +7,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import {
   LanguagePack,
   LanguagePackStorageFailed,
@@ -43,12 +43,12 @@ describe("clearExcerptCache", () => {
                 }),
               ),
               Context.add(
-                ExcerptImages,
-                stubService<ExcerptImages["Service"]>("ExcerptImages", {
-                  clear: async () => {
+                ExcerptImageService,
+                stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+                  clear: Effect.tryPromise(async () => {
                     calls.push("images");
                     if (mode === "failure") throw new Error("storage blocked");
-                  },
+                  }),
                 }),
               ),
             ),
@@ -156,11 +156,14 @@ describe("recovery notices", () => {
             }),
           ),
           Context.add(
-            ExcerptImages,
-            stubService<ExcerptImages["Service"]>("ExcerptImages", {
-              clear: async () => {
-                if (mode === "failure") throw new Error("storage blocked");
-              },
+            ExcerptImageService,
+            stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+              clear:
+                mode === "failure"
+                  ? Effect.fail(
+                      new Cause.UnknownError(new Error("storage blocked")),
+                    )
+                  : Effect.void,
             }),
           ),
           Context.add(

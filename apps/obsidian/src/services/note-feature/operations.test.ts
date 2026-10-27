@@ -72,6 +72,7 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import {
   redPng,
@@ -86,7 +87,6 @@ import {
 } from "@/services/excerpt-image/materialize";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
-import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
   ExcerptOutcome,
   ExcerptRequest,

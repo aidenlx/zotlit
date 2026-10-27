@@ -1,3 +1,5 @@
+import { effectImageResolver } from "@/services/excerpt-image/__fixtures__/service";
+import type { ExcerptImageFixture } from "@/services/excerpt-image/__fixtures__/service";
 // The real note importer layer over a test's Profile, Note Index, Template,
 // Zotero paths, Obsidian host and excerpt preparation.
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
@@ -12,7 +14,7 @@ import type { VaultSource } from "@/lib/obsidian-vault";
 import type { WorkspaceSource } from "@/lib/obsidian-workspace";
 import { layerAttachmentImportOver } from "@/services/attachment-import/__fixtures__";
 import { AttachmentImport } from "@/services/attachment-import/service";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import {
   ExcerptPreparation,
   layerExcerptPreparation,
@@ -49,7 +51,7 @@ export interface RealAttachmentImport {
  * this resolver, the file manager's links and the metadata cache.
  */
 export interface RealExcerptPreparation {
-  readonly resolver: Pick<ExcerptImages["Service"], "operation" | "resolve">;
+  readonly resolver: Pick<ExcerptImageFixture, "operation" | "resolve">;
   readonly fileManager: FileManagerSource;
   readonly metadataCache?: MetadataCacheSource;
 }
@@ -172,11 +174,9 @@ function layerExcerptPreparationOver(
         NodeFileSystem.layer,
         Layer.mock(ZoteroPref, { current }),
         Layer.succeed(
-          ExcerptImages,
-          stubService<ExcerptImages["Service"]>("ExcerptImages", {
-            operation: (options) => excerpts.resolver.operation(options),
-            resolve: (request, signal) =>
-              excerpts.resolver.resolve(request, signal),
+          ExcerptImageService,
+          stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+            ...effectImageResolver(excerpts.resolver),
           }),
         ),
       ),

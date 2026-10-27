@@ -20,6 +20,7 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import {
   EXCERPT_DISPLAY,
@@ -27,7 +28,6 @@ import {
   ExcerptDisplayService,
 } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
-import { ExcerptImageService } from "@/services/excerpt-image/service";
 import { taggedQueryClients } from "@/services/query-client/__fixtures__";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
