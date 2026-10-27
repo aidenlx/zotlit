@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
@@ -14,14 +14,12 @@ import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 
 import { chooseBatchProfile } from "./batch-profile-choice";
 
-/** The batch choice's services: no Zotero data folder, notices recorded. */
+/** The batch choice's services: no Zotero data folder. */
 function services() {
-  const notifier = testNotifier();
   return {
-    notifier,
     layer: Layer.mergeAll(
       unimplementedProfileDialogServices,
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(ZoteroPref, {
         current: Effect.succeed(
           stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
@@ -87,6 +85,6 @@ it.effect.each(["new", "import"] as const)(
       yield* Deferred.await(dialogOpened);
       yield* Fiber.interrupt(choice);
       expect(close).toHaveBeenCalledOnce();
-      expect(harness.notifier.notices).toEqual([]);
+      expect(Exit.hasInterrupts(yield* Fiber.await(choice))).toBe(true);
     }),
 );

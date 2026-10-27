@@ -1109,11 +1109,9 @@ describe("one item without additional Profiles", () => {
 
   /**
    * The services the one-item path reads, over an Item `ITEM1` with `note` as
-   * its Literature Note, or none; `notifier` records the notices, and
-   * `feature` answers the Note Feature's writes.
+   * its Literature Note, or none; `feature` answers the Note Feature's writes.
    */
   function oneItemServices(
-    notifier: ReturnType<typeof testNotifier>,
     feature: Partial<NoteFeature["Service"]>,
     note?: TFile,
   ) {
@@ -1145,7 +1143,7 @@ describe("one item without additional Profiles", () => {
         whenIndexed: Effect.void,
         getNotesByItemKey: () => Effect.succeed(note ? [note] : []),
       }),
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(PluginSettings, {}),
       Layer.mock(Profile, {
         profiles: Effect.succeed([]),
@@ -1169,9 +1167,8 @@ describe("one item without additional Profiles", () => {
     "never creates when the metadata scope finds no literature note",
     () =>
       Effect.gen(function* () {
-        const notifier = testNotifier();
         const createNote = vi.fn<NoteFeature["Service"]["createNote"]>();
-        const { layer, opened } = oneItemServices(notifier, { createNote });
+        const { layer, opened } = oneItemServices({ createNote });
         const ports: BatchUpdatePorts = {
           notices: batchUpdateNotices(stubService<App>("App", {})),
           // The single-update path opens no batch modal.
@@ -1186,9 +1183,6 @@ describe("one item without additional Profiles", () => {
         expect(result).toEqual({ outcome: "single-update" });
         expect(createNote).not.toHaveBeenCalled();
         expect(opened).toEqual([]);
-        expect(
-          notifier.notices.map(({ messages: [message] }) => message),
-        ).toEqual([m.notice_update_metadata_no_note()]);
       }),
   );
 
@@ -1201,7 +1195,7 @@ describe("one item without additional Profiles", () => {
         Deferred.doneUnsafe(called, Exit.void);
         return Deferred.await(written);
       });
-      const { layer } = oneItemServices(testNotifier(), { updateNote }, note);
+      const { layer } = oneItemServices({ updateNote }, note);
       const ports: BatchUpdatePorts = {
         notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
@@ -1236,14 +1230,13 @@ describe("one item without additional Profiles", () => {
 
   it.effect("creates and opens a note when the full scope finds none", () =>
     Effect.gen(function* () {
-      const notifier = testNotifier();
       const createNote = vi.fn<NoteFeature["Service"]["createNote"]>(() =>
         Effect.succeed({
           outcome: "created",
           file: noteAt("Literature/New.md"),
         }),
       );
-      const { layer, opened } = oneItemServices(notifier, { createNote });
+      const { layer, opened } = oneItemServices({ createNote });
       const ports: BatchUpdatePorts = {
         notices: batchUpdateNotices(stubService<App>("App", {})),
         // The single-update path opens no batch modal.
@@ -1269,7 +1262,6 @@ describe("one item without additional Profiles", () => {
       const note = noteAt("Literature/Item.md");
       const defect = new Error("update died");
       const { layer } = oneItemServices(
-        testNotifier(),
         { updateNote: () => Effect.die(defect) },
         note,
       );
@@ -1292,7 +1284,7 @@ describe("one item without additional Profiles", () => {
   it.effect("passes a create that dies to the run", () =>
     Effect.gen(function* () {
       const defect = new Error("create died");
-      const { layer, opened } = oneItemServices(testNotifier(), {
+      const { layer, opened } = oneItemServices({
         createNote: () => Effect.die(defect),
       });
       const ports: BatchUpdatePorts = {

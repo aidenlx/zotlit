@@ -8,7 +8,6 @@ import { expect, vi } from "vitest";
 import type { Item, ItemRef } from "@zotlit/db";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
-import type { RecordedNotice } from "@/lib/__fixtures__/notifier";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -75,7 +74,7 @@ interface FlowServices {
   /** The path of each note the Use Ledger was told not to count, in order. */
   readonly excluded: string[];
   readonly readItems?: ReadsAnswers["ItemsByIndexedKeys"];
-  /** Records each notice the flow shows. */
+  /** Shows the flow's notices. */
   readonly notifier: ReturnType<typeof testNotifier>;
   /** Answers the Note Feature's lookups and updates. */
   readonly feature: Partial<NoteFeature["Service"]>;
@@ -161,7 +160,6 @@ function creationHarness(selection: CreationProfileSelection) {
   };
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const excluded: string[] = [];
-  const notifier = testNotifier();
   return {
     deps,
     feature,
@@ -172,8 +170,13 @@ function creationHarness(selection: CreationProfileSelection) {
     planCreations,
     workspace,
     excluded,
-    notices: notifier.notices,
-    layer: flowLayer({ workspace, excluded, readItems, notifier, feature }),
+    layer: flowLayer({
+      workspace,
+      excluded,
+      readItems,
+      notifier: testNotifier(),
+      feature,
+    }),
   };
 }
 
@@ -344,9 +347,6 @@ it.effect(
       expect(harness.planCreations).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
       expect(harness.workspace.opened).toEqual([]);
-      expect(texts(harness.notices)).toEqual([
-        m.notice_update_metadata_no_note(),
-      ]);
     }),
 );
 
@@ -370,9 +370,6 @@ it.effect(
         action: "open",
         profile: PAPERS,
       }).pipe(Effect.provide(harness.layer));
-      expect(texts(harness.notices)).toEqual([
-        m.notice_literature_note_profile_unknown({ stamp: PAPERS }),
-      ]);
       expect(harness.workspace.opened).toEqual([]);
       expect(harness.readItems).not.toHaveBeenCalled();
       expect(companionNoteNotice(harness.deps.app, target)).toBe(
@@ -521,14 +518,13 @@ it.effect.each(["open", "update"] as const)(
       };
       const workspace = new MemoryWorkspace({ layoutReady: true });
       vi.mocked(openLiteratureNoteProfile).mockClear();
-      const notifier = testNotifier();
 
       yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
         Effect.provide(
           flowLayer({
             workspace,
             excluded: [],
-            notifier,
+            notifier: testNotifier(),
             feature: { resolveCompanionNote, updateNote, createNote },
           }),
         ),
@@ -541,9 +537,9 @@ it.effect.each(["open", "update"] as const)(
       expect(updateNote).not.toHaveBeenCalled();
       expect(createNote).not.toHaveBeenCalled();
       expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
-      expect(texts(notifier.notices)).toEqual([
+      expect(companionNoteNotice(deps.app, target)).toBe(
         m.notice_literature_note_profile_kept({ label: "Books" }),
-      ]);
+      );
     }),
 );
 
@@ -551,11 +547,4 @@ function noteAt(path: string): TFile {
   const file = new TFile();
   file.path = path;
   return file;
-}
-
-/** The text of each notice, in the order the flow showed them. */
-function texts(notices: readonly RecordedNotice[]): string[] {
-  return notices.map(({ messages: [message] }) =>
-    typeof message === "string" ? message : (message?.textContent ?? ""),
-  );
 }

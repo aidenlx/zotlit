@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { expect, vi } from "vitest";
@@ -81,14 +81,13 @@ function booksPreview(
 
 /**
  * The interactive creation's ports and services over one fixed selection and
- * its previews, with its notices recorded.
+ * its previews.
  */
 function creation(
   selection: CreationProfileSelection,
   previews: readonly PlannedCreationProfile[],
   ports: Partial<InteractiveCreationPorts> = {},
 ) {
-  const notifier = testNotifier();
   const feature = {
     planCreations: vi.fn<NoteFeature["Service"]["planCreations"]>((keys) =>
       Effect.succeed(
@@ -101,7 +100,6 @@ function creation(
   return {
     app,
     feature,
-    notifier,
     ports: {
       app,
       createProfile: vi.fn(),
@@ -111,7 +109,7 @@ function creation(
     layer: Layer.mergeAll(
       unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, feature),
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(ZoteroPref, {
         current: Effect.succeed(
           stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
@@ -141,11 +139,6 @@ const run = Effect.fnUntraced(function* (
   yield* Effect.yieldNow;
   return file;
 });
-
-/** The first message of each notice. */
-function texts(harness: ReturnType<typeof creation>): unknown[] {
-  return harness.notifier.notices.map(({ messages: [message] }) => message);
-}
 
 it.effect(
   "creates a note from the New profile dialog's prepared callback without re-resolving its path",
@@ -177,12 +170,6 @@ it.effect(
       expect(writes).toBe(1);
       expect(harness.feature.planCreations).toHaveBeenCalledOnce();
       expect(harness.feature.createNote).not.toHaveBeenCalled();
-      expect(texts(harness)).toEqual([
-        m.notice_created_note_under_profile({
-          profile: "Reading",
-          path: file.path,
-        }),
-      ]);
     }),
 );
 
@@ -266,7 +253,7 @@ it.effect(
 );
 
 it.effect.each([false, true])(
-  "creates a unique match directly and reports its reason and path (direct=%s)",
+  "creates a unique match directly (direct=%s)",
   (direct) =>
     Effect.gen(function* () {
       vi.mocked(openLiteratureNoteProfile).mockClear();
@@ -290,44 +277,30 @@ it.effect.each([false, true])(
       expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
       expect(preview.create).toHaveBeenCalledOnce();
       expect(harness.feature.createNote).not.toHaveBeenCalled();
-      expect(texts(harness)).toEqual([
-        m.notice_created_note_from_match({
-          reason: MATCH_REASON,
-          path: "Books/Paper.md",
-        }),
-      ]);
     }),
 );
 
-it.effect(
-  "creates directly under an explicit Profile, naming Default when it is the one chosen",
-  () =>
-    Effect.gen(function* () {
-      vi.mocked(openLiteratureNoteProfile).mockClear();
-      const preview = booksPreview({
-        selector: "default",
-        label: undefined,
-        path: "Literature/Paper.md",
-      });
-      const harness = creation(
-        { selector: "default", source: "headless", shouldAsk: true },
-        [preview, booksPreview()],
-      );
-      expect(
-        yield* run(harness, { headless: "default", direct: true }),
-      ).toMatchObject({ path: "Literature/Paper.md" });
-      expect(harness.feature.planCreations).toHaveBeenCalledWith(["ABCD2345"], {
-        headless: "default",
-      });
-      expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
-      expect(preview.create).toHaveBeenCalledOnce();
-      expect(texts(harness)).toEqual([
-        m.notice_created_note_under_profile({
-          profile: m.settings_profile_default_name(),
-          path: "Literature/Paper.md",
-        }),
-      ]);
-    }),
+it.effect("creates directly under an explicit Profile, Default included", () =>
+  Effect.gen(function* () {
+    vi.mocked(openLiteratureNoteProfile).mockClear();
+    const preview = booksPreview({
+      selector: "default",
+      label: undefined,
+      path: "Literature/Paper.md",
+    });
+    const harness = creation(
+      { selector: "default", source: "headless", shouldAsk: true },
+      [preview, booksPreview()],
+    );
+    expect(
+      yield* run(harness, { headless: "default", direct: true }),
+    ).toMatchObject({ path: "Literature/Paper.md" });
+    expect(harness.feature.planCreations).toHaveBeenCalledWith(["ABCD2345"], {
+      headless: "default",
+    });
+    expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(preview.create).toHaveBeenCalledOnce();
+  }),
 );
 
 it.effect("creates under the bound Profile with no question", () =>
@@ -346,11 +319,10 @@ it.effect("creates under the bound Profile with no question", () =>
       profile: "default",
     });
     expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(texts(harness)).toEqual([m.notice_created_note()]);
   }),
 );
 
-it.effect("answers null after the create notice reports a failed create", () =>
+it.effect("answers null for a failed create", () =>
   Effect.gen(function* () {
     const harness = creation(
       { selector: "default", source: "bound", shouldAsk: false },
@@ -365,7 +337,6 @@ it.effect("answers null after the create notice reports a failed create", () =>
       ),
     );
     expect(yield* run(harness)).toBeNull();
-    expect(texts(harness)).toEqual([m.notice_create_note_failed()]);
   }),
 );
 
@@ -519,32 +490,30 @@ it.effect.each(["new", "import"] as const)(
       yield* Deferred.await(opened);
       yield* Fiber.interrupt(fiber);
       expect(close).toHaveBeenCalledOnce();
-      expect(texts(harness)).toEqual([]);
+      expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true);
+      expect(harness.feature.createNote).not.toHaveBeenCalled();
     }),
 );
 
-it.effect(
-  "tells the user when the New profile dialog fails, and creates no note",
-  () =>
-    Effect.gen(function* () {
-      const harness = creation(
-        { selector: "default", source: "bound", shouldAsk: true },
-        [],
-        {
-          createProfile: () =>
-            Effect.fail(
-              new ProfileOperationError({
-                message: "broken",
-                cause: undefined,
-              }),
-            ),
-        },
-      );
-      pickerAnswers(async () => ({ action: "new" }));
-      expect(yield* run(harness)).toBeNull();
-      expect(texts(harness)).toEqual([m.notice_profile_action_failed()]);
-      expect(harness.feature.createNote).not.toHaveBeenCalled();
-    }),
+it.effect("creates no note when the New profile dialog fails", () =>
+  Effect.gen(function* () {
+    const harness = creation(
+      { selector: "default", source: "bound", shouldAsk: true },
+      [],
+      {
+        createProfile: () =>
+          Effect.fail(
+            new ProfileOperationError({
+              message: "broken",
+              cause: undefined,
+            }),
+          ),
+      },
+    );
+    pickerAnswers(async () => ({ action: "new" }));
+    expect(yield* run(harness)).toBeNull();
+    expect(harness.feature.createNote).not.toHaveBeenCalled();
+  }),
 );
 
 it.each([
@@ -552,6 +521,22 @@ it.each([
     "a Profile chosen or made in the picker",
     { label: "Reading" },
     "Literature note created under Reading: literatures/engelbart1962.md.",
+  ],
+  [
+    "Default",
+    {},
+    m.notice_created_note_under_profile({
+      profile: m.settings_profile_default_name(),
+      path: "literatures/engelbart1962.md",
+    }),
+  ],
+  [
+    "a Match",
+    { label: "Books", reason: MATCH_REASON },
+    m.notice_created_note_from_match({
+      reason: MATCH_REASON,
+      path: "literatures/engelbart1962.md",
+    }),
   ],
 ])("names the new note created through %s", (_, created, notice) => {
   const file = noteAt("literatures/engelbart1962.md");

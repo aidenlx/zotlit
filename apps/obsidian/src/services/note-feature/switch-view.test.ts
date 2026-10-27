@@ -185,14 +185,12 @@ const PROFILES = [
 ];
 const SWITCHED: UpdateResult = { bodyUpdated: false, duplicateRegionCount: 0 };
 
-/** The switch's services over a note that holds `imported`, with its notices recorded. */
+/** The switch's services over a note that holds `imported`. */
 function switching(
   imported: TFile,
   switchNoteProfile: NoteFeature["Service"]["switchNoteProfile"],
 ) {
-  const notifier = testNotifier();
   return {
-    notifier,
     layer: Layer.mergeAll(
       unimplementedProfileDialogServices,
       Layer.mock(NoteFeature, {
@@ -205,7 +203,7 @@ function switching(
           }),
         switchNoteProfile,
       }),
-      notifier.layer,
+      testNotifier().layer,
       Layer.mock(ZoteroPref, {
         current: Effect.succeed(
           stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
@@ -336,9 +334,10 @@ it.effect.each(["new", "import"] as const)(
         Deferred.doneUnsafe(opened, Effect.void);
         return { close };
       });
-      const harness = switching(noteAt("Imported/Child.md"), () =>
-        Effect.succeed(SWITCHED),
-      );
+      const switchNoteProfile = vi.fn<
+        NoteFeature["Service"]["switchNoteProfile"]
+      >(() => Effect.succeed(SWITCHED));
+      const harness = switching(noteAt("Imported/Child.md"), switchNoteProfile);
       vi.mocked(openLiteratureNoteProfile).mockImplementation(
         (_app, _options, resolve) => {
           resolve({ action });
@@ -355,7 +354,8 @@ it.effect.each(["new", "import"] as const)(
       yield* Deferred.await(opened);
       yield* Fiber.interrupt(task);
       expect(close).toHaveBeenCalledOnce();
-      expect(harness.notifier.notices).toEqual([]);
+      expect(Exit.hasInterrupts(yield* Fiber.await(task))).toBe(true);
+      expect(switchNoteProfile).not.toHaveBeenCalled();
     }),
 );
 
