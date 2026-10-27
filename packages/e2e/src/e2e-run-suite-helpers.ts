@@ -13,6 +13,7 @@ import {
   selectItemSuggestion,
 } from "./e2e-run-note-helpers.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 
 async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
   const size = await obRun(
@@ -246,22 +247,25 @@ async function openMatchEditor(): Promise<void> {
       what: "the Edit profile button for the books profile in the settings tab",
     },
   );
-  await obRunUntil(
+  await withWorkbenchSurfaces(
     run.vaultId,
-    async ({ page }, { tabLabel }) => {
-      const { press } = page;
-      var editor = page.workbench()?.contentEl;
-      var tab = Array.from(
-        editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
-      ).find((tab) => tab.textContent.trim() === tabLabel);
-      press(tab, "Match tab");
-      return (
-        !!editor?.querySelector("[data-part=fieldset]") &&
-        !editor?.ownerDocument.querySelector(".modal.mod-settings")
-      );
-    },
-    { tabLabel: run.m.workbench_tab_match() },
-    { what: "the workbench fieldset to open after pressing the match tab" },
+    obRunUntil(
+      run.vaultId,
+      async ({ page }, { tabLabel }) => {
+        const { press } = page;
+        var editor = page.workbench()?.contentEl;
+        var tab = Array.from(
+          editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
+        ).find((tab) => tab.textContent.trim() === tabLabel);
+        press(tab, "Match tab");
+        return (
+          !!editor?.querySelector("[data-part=fieldset]") &&
+          !editor?.ownerDocument.querySelector(".modal.mod-settings")
+        );
+      },
+      { tabLabel: run.m.workbench_tab_match() },
+      { what: "the workbench fieldset to open after pressing the match tab" },
+    ),
   );
 }
 
