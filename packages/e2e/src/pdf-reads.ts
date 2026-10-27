@@ -38,7 +38,7 @@ export async function verifyPdfReads(
   cleanup.defer(async () => {
     const restored = await obEval(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();for(let i=0;i<200&&!oldServices.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));if(!oldServices.bridge.closed())throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
@@ -56,7 +56,7 @@ export async function verifyPdfReads(
   );
   const opened = () =>
     run(
-      `await until('PDF and resolved Attachment',()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.path==='${path}');return (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0&&leaf.view.viewer.child.getPage(1)?.pdfPage&&s.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${path}')?.session?.target?.attachmentKey==='${attachmentKey}';},20000);return true;`,
+      `await until('PDF and resolved Attachment',()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(l=>l.view.file?.path==='${path}');return (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount??0)>0&&leaf.view.viewer.child.getPage(1)?.pdfPage&&s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath==='${path}')?.session?.target?.attachmentKey==='${attachmentKey}';},20000);return true;`,
     );
   const open = () =>
     run(`await app.workspace.openLinkText('${path}','',true);return true;`);
@@ -127,7 +127,7 @@ export async function verifyPdfReads(
   expect(
     await obJson(
       vaultId,
-      `JSON.stringify(${services}.pdfAnnotationEditor.bindings.find((b)=>b.filePath==='${path}')?.session.target)`,
+      `JSON.stringify(${services}.bridge.runSync(${services}.pdfAnnotationEditor.bindings).find((b)=>b.filePath==='${path}')?.session.target)`,
     ),
   ).toMatchObject({ attachmentKey, itemKey: null });
   await run(

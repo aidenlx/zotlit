@@ -350,7 +350,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       bridge: services.bridge,
-      pdfReaders: services.pdfAnnotationEditor,
       itemLookup: services.itemLookup,
       settings: services.settings,
       registry: services.runtime.runSync(ViewRegistry),
@@ -395,7 +394,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         if (view instanceof QueryFileView) return view.query;
         return (
           (view && queryCardFocus.surfaceIn(view.containerEl)) ??
-          services.pdfAnnotationEditor.bindingFor(view)
+          services.bridge.runSync(services.pdfAnnotationEditor.bindingFor(view))
         );
       },
     });
@@ -482,7 +481,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
           annotations: services.annotationRepository,
           bridge: services.bridge,
           surfaceFor: (leaf) =>
-            services.pdfAnnotationEditor.bindingFor(leaf.view),
+            services.bridge.runSync(
+              services.pdfAnnotationEditor.bindingFor(leaf.view),
+            ),
         }),
         indexedKeyFileMenu(),
         explorerFileMenu(this.app),

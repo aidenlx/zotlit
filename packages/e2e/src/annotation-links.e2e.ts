@@ -188,9 +188,8 @@ const RESTORE_LEDGER = `
     app.workspace.requestActiveLeafEvents.run();
     const old=app.plugins.plugins.zotlit.services;
     await app.plugins.disablePlugin('zotlit');
-    await old.pdfAnnotationEditor[Symbol.asyncDispose]();
-    for(let i=0;i<200&&!old.bridge.closed();i++)await new Promise(r=>setTimeout(r,25));
-    if(!old.bridge.closed())throw new Error('The ZotLit services did not close');
+    for(let i=0;i<200&&(!old.bridge.closed()||old.bridge.runSync(old.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));
+    if((!old.bridge.closed()||old.bridge.runSync(old.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');
     app.saveLocalStorage('zotlit-use-ledger',JSON.parse(savedLedger));
     await app.plugins.enablePlugin('zotlit');
     const fresh=app.plugins.plugins.zotlit.services;
@@ -510,7 +509,7 @@ async function follow({
         cleanup.defer(s.bridge.subscribe(s.useLedger.changes,()=>{
           if(!replayed){replayed=true;return;}
           const [newest]=Object.entries(s.useLedger.uses).sort(([,a],[,b])=>b-a)[0]??[];
-          if(s.useLedger.get(newest)?.kind==='read')reads.push(s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
+          if(s.useLedger.get(newest)?.kind==='read')reads.push(s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
         }));
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
@@ -522,7 +521,7 @@ async function follow({
           // The reader's binding decides the Landing as it draws the read it
           // starts once it names the Attachment; a later read replaces the
           // promise, so the wait runs until the one awaited is the last.
-          const binding=await until(()=>s.pdfAnnotationEditor.bindings.find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'&&b.attachment.attachmentKey===${JSON.stringify(bound)}),()=>'No reader named the Attachment '+${JSON.stringify(bound)}+': '+JSON.stringify(s.pdfAnnotationEditor.bindings.map((b)=>b.attachment)));
+          const binding=await until(()=>s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'&&b.attachment.attachmentKey===${JSON.stringify(bound)}),()=>'No reader named the Attachment '+${JSON.stringify(bound)}+': '+JSON.stringify(s.bridge.runSync(s.pdfAnnotationEditor.bindings).map((b)=>b.attachment)));
           for(let read=binding.refreshed,end=deadline();;read=binding.refreshed){
             await within(read,end,'The reader never drew its last read');
             if(read===binding.refreshed)break;
@@ -676,7 +675,7 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
       ${WAITS}
       const services=()=>app.plugins.plugins.zotlit.services;
       const file=app.vault.getFileByPath(${JSON.stringify(PDF_PATH)});
-      const attachmentOf=(leaf)=>services().pdfAnnotationEditor.sessionFor(leaf.view)?.target?.attachmentKey??null;
+      const attachmentOf=(leaf)=>services().bridge.runSync(services().pdfAnnotationEditor.sessionFor(leaf.view))?.target?.attachmentKey??null;
       const boundTo=(leaf,key,what)=>until(()=>attachmentOf(leaf)===key,()=>what+' never named '+key+': '+attachmentOf(leaf));
       let outcome;
       {
@@ -702,7 +701,7 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
         cleanup.defer(services().bridge.subscribe(ledger.changes,()=>{
           if(!replayed){replayed=true;return;}
           const [newest]=Object.entries(ledger.uses).sort(([,a],[,b])=>b-a)[0]??[];
-          if(ledger.get(newest)?.kind==='read')reads.push(services().pdfAnnotationEditor.bindingFor(restored.view)?.attachment.attachmentKey??null);
+          if(ledger.get(newest)?.kind==='read')reads.push(services().bridge.runSync(services().pdfAnnotationEditor.bindingFor(restored.view))?.attachment.attachmentKey??null);
         }));
         app.workspace.setActiveLeaf(restored,{focus:true});
         const opened=await services().targetOpener.open({kind:'annotation',attachmentKey:${JSON.stringify(SHARED.attachmentKey)},annotationKey:${JSON.stringify(SHARED.annotationKey)},pageIndex:0,pageLabel:${JSON.stringify(FIRST_PAGE.pageLabel)}},false);
