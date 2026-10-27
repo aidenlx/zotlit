@@ -134,14 +134,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+          "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.zoteroReads.current).state)",
           { expected: "ready" },
         ),
       ).toBe(true);
       expect(
         await obEvalUntil(
           run.vaultId,
-          `app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
+          `app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]})).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));})`,
           { expected: targetItem.citationKey! },
         ),
       ).toBe(true);
@@ -155,18 +155,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.citationLookup.status)",
+          "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.citationLookup.current).status)",
           { expected: "failed", tries: 160 },
         ),
       ).toBe(true);
       await obEval(
         run.vaultId,
-        "app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;})",
+        "app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroReads.refresh).then(function(){return true;})",
       );
       expect(
         await obEvalUntil(
           run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.zoteroReads.state)",
+          "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.zoteroReads.current).state)",
           { expected: "ready" },
         ),
       ).toBe(true);
@@ -188,14 +188,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.citationLookup.status)",
+          "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.citationLookup.current).status)",
           { expected: "fresh" },
         ),
       ).toBe(true);
       expect(
         await obEvalUntil(
           run.vaultId,
-          `app.plugins.plugins.zotlit.services.citationLookup.whenResolved().then(function(){return app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]}).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));});})`,
+          `app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.citationLookup.whenResolved).then(function(){return app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.citationLookup.read({indexedKeys:[${JSON.stringify(targetItem.key)}]})).then(function(answer){return String(answer.citekeyOf(${JSON.stringify(targetItem.key)}));});})`,
           { expected: targetItem.citationKey! },
         ),
       ).toBe(true);
@@ -213,7 +213,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }
             return post.apply(this,args);
           };
-          return app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(function(){return true;});
+          return app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroReads.refresh).then(function(){return true;});
         })()`),
       );
       expect(

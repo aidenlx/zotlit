@@ -38,7 +38,6 @@ import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { zoteroDataDirAtom } from "@/services/zotero-pref/atoms";
-import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActionDeps, AnnotActions } from "./actions";
@@ -128,8 +127,6 @@ export interface AnnotationsLayoutDeps {
    */
   opener: Pick<TargetOpener, "open">;
   registry: ViewRegistryHandle;
-  /** The Query View still reads its filter choices through this legacy input. */
-  reads: { acquireRead(): Promise<ZoteroReadLease> };
 }
 
 /**

@@ -6,18 +6,16 @@ import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { ParseClient } from "@/services/citation-parse/client";
 import { CitationParse } from "@/services/citation-parse/service";
-import type { PlainLibraryScope } from "@/services/library-scope/plain";
 import {
   layerLibraryScope,
   LibraryScope,
 } from "@/services/library-scope/service";
 import type { LibraryScopeState } from "@/services/library-scope/service";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { NoteIndex } from "@/services/note-index/service";
-import type { PlainQueryClients } from "@/services/query-client/plain";
 import {
   layerQueryClients,
   QueryClients,
@@ -27,43 +25,21 @@ import {
   PluginSettings,
 } from "@/services/settings/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { layerZoteroReads, ZoteroReads } from "@/services/zotero-reads/service";
-import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 
 import { CitationLookup, layerCitationLookup } from "./lookup-service";
-import { plainCitationIndex, plainCitationLookup } from "./plain";
 import { CitationIndex, layerCitationIndex } from "./service";
 import type { CitekeyStore } from "./store";
-
-/** A database state with nothing wrong; a stub overrides `state` alone. */
-const READS_IDLE: ZoteroReadsState = {
-  state: "ready",
-  error: null,
-  moved: false,
-  dbFileMissing: false,
-  activeReadMode: null,
-};
+import type { LibraryScopeStub } from "./test-harness";
 
 export async function citationLookupFixture(
   deps: {
-    reads: Pick<
-      PlainZoteroReads,
-      | "reads"
-      | "state"
-      | "changed"
-      | "degraded"
-      | "refresh-failed"
-      | "refreshing"
-      | "db-file-missing"
-      | "refresh-requested"
-    >;
+    reads: Pick<ZoteroReads["Service"], "reads" | "current" | "events">;
     libraryScope: Pick<
-      PlainLibraryScope,
+      LibraryScopeStub,
       "effective" | "current" | "libraries" | "changed" | "libraries-changed"
     >;
-    queryClient: Pick<PlainQueryClients, "client" | "invalidate">;
+    queryClient: Pick<QueryClients["Service"], "client" | "invalidate">;
   },
   context = Context.empty(),
 ) {
@@ -88,8 +64,7 @@ export async function citationLookupFixture(
             QueryClients,
             stubService<QueryClients["Service"]>("QueryClients", {
               client: deps.queryClient.client,
-              invalidate: (key) =>
-                Effect.sync(() => deps.queryClient.invalidate(key)),
+              invalidate: (key) => deps.queryClient.invalidate(key),
             }),
           ),
           Layer.succeed(
@@ -128,18 +103,8 @@ export async function citationLookupFixture(
             ZoteroReads,
             stubService<ZoteroReads["Service"]>("ZoteroReads", {
               reads: deps.reads.reads,
-              current: Effect.sync(() => ({
-                ...READS_IDLE,
-                state: deps.reads.state,
-              })),
-              events: Stream.merge(
-                deps.reads.changed.pipe(
-                  Stream.map(() => ({ _tag: "changed" as const })),
-                ),
-                deps.reads.degraded.pipe(
-                  Stream.map((error) => ({ _tag: "degraded" as const, error })),
-                ),
-              ),
+              current: deps.reads.current,
+              events: deps.reads.events,
             }),
           ),
         ),
@@ -149,9 +114,12 @@ export async function citationLookupFixture(
     stack,
   );
   await runtime.context();
-  const plain = plainCitationLookup(runtime);
+  const service = Object.assign(runtime.runSync(CitationLookup), {
+    runtime,
+    bridge: effectBridge(runtime),
+  });
   const owned = stack.move();
-  return Object.assign(plain, {
+  return Object.assign(service, {
     runtime,
     [Symbol.asyncDispose]: () => owned.disposeAsync(),
   });
@@ -195,19 +163,21 @@ async function openLookup(
     stack,
   );
   await runtime.context();
-  const service = runtime.runSync(CitationLookup);
-  const plain = plainCitationLookup(runtime);
+  const service = Object.assign(runtime.runSync(CitationLookup), {
+    runtime,
+    bridge: effectBridge(runtime),
+  });
   const owned = stack.move();
-  return { runtime, service, plain, close: () => owned.disposeAsync() };
+  return { runtime, service, close: () => owned.disposeAsync() };
 }
 
 /** Citation Index layer over the existing host/process test boundaries. */
 export function citationIndexFixture(
   deps: {
     host: HostSources;
-    db: Pick<PlainZoteroReads, "state" | "acquireRead">;
-    libraryScope: Pick<PlainLibraryScope, "current">;
-    noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey">;
+    db: Pick<ZoteroReads["Service"], "current" | "snapshot">;
+    libraryScope: Pick<LibraryScopeStub, "current">;
+    noteIndex: Pick<NoteIndex["Service"], "getNotesByItemKey">;
     settings: {
       readonly current: PluginSettings["Service"]["current"];
       readonly changes: PluginSettings["Service"]["changes"];
@@ -228,21 +198,8 @@ export function citationIndexFixture(
           Layer.succeed(
             ZoteroReads,
             stubService<ZoteroReads["Service"]>("ZoteroReads", {
-              current: Effect.sync(() => ({
-                ...READS_IDLE,
-                state: deps.db.state,
-              })),
-              snapshot: Effect.map(
-                Effect.acquireDisposable(
-                  Effect.tryPromise(() => deps.db.acquireRead()),
-                ).pipe(
-                  Effect.mapError(
-                    (error) =>
-                      new DbUnavailable({ message: String(error.cause) }),
-                  ),
-                ),
-                (lease) => lease.reads,
-              ),
+              current: deps.db.current,
+              snapshot: deps.db.snapshot,
             }),
           ),
           Layer.succeed(
@@ -254,8 +211,7 @@ export function citationIndexFixture(
           Layer.succeed(
             NoteIndex,
             stubService<NoteIndex["Service"]>("NoteIndex", {
-              getNotesByItemKey: (key) =>
-                Effect.sync(() => deps.noteIndex.getNotesByItemKey(key)),
+              getNotesByItemKey: (key) => deps.noteIndex.getNotesByItemKey(key),
             }),
           ),
           Layer.succeed(
@@ -278,8 +234,11 @@ export function citationIndexFixture(
     ),
     stack,
   );
-  const ready = runtime
-    .context()
-    .then(() => Object.assign(plainCitationIndex(runtime), { runtime }));
+  const ready = runtime.context().then(() =>
+    Object.assign(runtime.runSync(CitationIndex), {
+      runtime,
+      bridge: effectBridge(runtime),
+    }),
+  );
   return { runtime, ready, service: () => runtime.runSync(CitationIndex) };
 }

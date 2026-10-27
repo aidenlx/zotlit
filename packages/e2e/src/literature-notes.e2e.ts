@@ -136,7 +136,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         freshId,
-        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+        "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).length)",
       ),
     ).toBe("0");
     // A default Profile that lists the Annotations in the note puts one
@@ -147,7 +147,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         freshId,
-        "String(!!app.workspace.getActiveFile()&&app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('RUGIER24').length===1)",
+        "String(!!app.workspace.getActiveFile()&&app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('RUGIER24')).length===1)",
         { expected: "true" },
       ),
     ).toBe(true);
@@ -327,7 +327,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const removedFromIndex = await obEvalUntil(
       run.vaultId,
-      `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)}).length)`,
+      `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)})).length)`,
       { expected: "0" },
     );
     expect(removedFromIndex).toBe(true);
@@ -340,7 +340,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const indexed = await obEvalUntil(
       run.vaultId,
-      `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)}).length)`,
+      `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)})).length)`,
       { expected: "1" },
     );
     expect(indexed).toBe(true);
@@ -370,7 +370,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         run.vaultId,
-        `String(${services}.profile.resolveProfile('default')?.document===undefined)`,
+        `String(${services}.bridge.runSync(${services}.profileService.resolveProfile('default'))?.document===undefined)`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -380,7 +380,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const seeded = JSON.parse(
       await obEval(
         run.vaultId,
-        `(async()=>{await ${services}.noteIndex.whenIndexed();const notes=[];for(const note of ${services}.noteIndex.getNotesByItemKey(${JSON.stringify(item.key)})){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
+        `(async()=>{await ${services}.bridge.runPromise(${services}.noteIndex.whenIndexed);const notes=[];for(const note of ${services}.bridge.runSync(${services}.noteIndex.getNotesByItemKey(${JSON.stringify(item.key)}))){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
       ),
     ) as { path: string; text: string }[];
     let created = "";
@@ -397,7 +397,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const importedNotes = () =>
       obEval(
         run.vaultId,
-        `String(${services}.noteIndex.getImportedNoteByNoteKey(${JSON.stringify(childNoteKey)}).length)`,
+        `String(${services}.bridge.runSync(${services}.noteIndex.getImportedNoteByNoteKey(${JSON.stringify(childNoteKey)})).length)`,
       );
     const importedBefore = await importedNotes();
 
@@ -940,7 +940,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const server = JSON.parse(
       await obEval(
         run.vaultId,
-        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId});})()",
+        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.bridge.runSync(services.zoteroPrefService.current).sourceId});})()",
       ),
     ) as { hostname: string; port: number; sourceId: string };
     const pushed = await fetch(
@@ -1093,7 +1093,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         run.vaultId,
-        `String(!app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(suite.articlesProfile.id)}))`,
+        `String(!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).some(p=>p.id===${JSON.stringify(suite.articlesProfile.id)}))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -1341,7 +1341,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         run.vaultId,
-        `String(!app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(booksProfile.id)}))`,
+        `String(!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).some(p=>p.id===${JSON.stringify(booksProfile.id)}))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -1369,7 +1369,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const server = JSON.parse(
         await obEval(
           run.vaultId,
-          "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId,workbench:settings['server.workbench']});})()",
+          "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.bridge.runSync(services.zoteroPrefService.current).sourceId,workbench:settings['server.workbench']});})()",
         ),
       ) as { port: number; sourceId: string; workbench: boolean };
       expect(server.workbench).toBe(true);

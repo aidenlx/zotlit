@@ -35,7 +35,7 @@ function noteText(properties: Record<string, unknown>, body: string): string {
   return `---\n${stringifyYaml(properties)}---\n${body}`;
 }
 
-describe("PlainProfile", () => {
+describe("Profile", () => {
   it.effect(
     "prepares Default sharing with one fresh identity and frozen effective bindings, without writing",
     () =>
@@ -218,9 +218,13 @@ describe("PlainProfile", () => {
           }),
         );
         expect(
-          profile.profiles.map(({ id, document }) => ({ id, document })),
+          profile.bridge
+            .runSync(profile.profiles)
+            .map(({ id, document }) => ({ id, document })),
         ).toEqual([{ id: BOOKS, document: "zotlit-profile.books.md" }]);
-        expect(profile.resolveProfile(BOOKS)).toMatchObject({
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS)),
+        ).toMatchObject({
           stamp: "Books (Bk3Qn7XvT2Lp)",
           bindings: {
             "note.literature-folder": "Books",
@@ -229,7 +233,9 @@ describe("PlainProfile", () => {
           },
         });
         expect(
-          profile.resolveProfile("Missing12345" as ProfileId),
+          profile.bridge.runSync(
+            profile.resolveProfile("Missing12345" as ProfileId),
+          ),
         ).toBeUndefined();
       }),
   );
@@ -258,12 +264,14 @@ describe("PlainProfile", () => {
           "templates/zotlit-profile.reading.md",
         );
         yield* TestClock.adjust(500);
-        expect(profile.resolveProfile(BOOKS)?.document).toBe(
-          "zotlit-profile.reading.md",
-        );
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS))?.document,
+        ).toBe("zotlit-profile.reading.md");
         vault.createFile("templates/zotlit-profile.copy.md", document());
         yield* TestClock.adjust(500);
-        expect(profile.resolveProfile(BOOKS)).toBeUndefined();
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS)),
+        ).toBeUndefined();
         expect(update).not.toHaveBeenCalled();
         expect(yield* fixture.profileService.diagnostics).toEqual([
           expect.objectContaining({
@@ -281,13 +289,15 @@ describe("PlainProfile", () => {
         ]);
         vault.deleteFile("templates/zotlit-profile.copy.md");
         yield* TestClock.adjust(500);
-        expect(profile.resolveProfile(BOOKS)?.label).toBe("Books");
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS))?.label,
+        ).toBe("Books");
         vault.renameFile(
           "templates/zotlit-profile.reading.md",
           "templates/reading.md",
         );
         yield* TestClock.adjust(500);
-        expect(profile.profiles).toEqual([]);
+        expect(profile.bridge.runSync(profile.profiles)).toEqual([]);
       }),
   );
 
@@ -508,8 +518,10 @@ describe("PlainProfile", () => {
         // The reader kept their authors, so the Profile calls their file — and
         // summary, unpacked to a file of its own, still answers.
         expect(
-          f.template
-            .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+          f.template.bridge
+            .runSync(
+              f.template.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+            )!
             .renderForCreate({ title: "First" }),
         ).toContain("Their summary Mine");
       }),
@@ -610,7 +622,7 @@ describe("PlainProfile", () => {
         expect(
           (yield* Effect.flip(f.profileService.prepareImport(source))).message,
         ).toContain(m.profile_import_excluded());
-        expect(f.profile.profiles).toEqual([]);
+        expect(f.profile.bridge.runSync(f.profile.profiles)).toEqual([]);
       }),
   );
 
@@ -675,11 +687,13 @@ describe("PlainProfile", () => {
           f.vault.createFolder("templates/zotlit-profile.default.md"),
         );
         const source = yield* Effect.promise(() =>
-          f.profile.getSource("default"),
+          f.profile.bridge.runPromise(f.profile.getSource("default")),
         );
-        const saving = f.profile.saveSource("default", source, {
-          state: "absent",
-        });
+        const saving = f.profile.bridge.runPromise(
+          f.profile.saveSource("default", source, {
+            state: "absent",
+          }),
+        );
         yield* TestClock.adjust(500);
         expect(yield* Effect.promise(() => saving)).toEqual({
           state: "refused",
@@ -718,28 +732,36 @@ describe("PlainProfile", () => {
           Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { profile, vault } = fixture;
-        const created = profile.create({
-          label: "Reading group",
-          bindings: { folder: "Reading" },
-        });
+        const created = profile.bridge.runPromise(
+          profile.create({
+            label: "Reading group",
+            bindings: { folder: "Reading" },
+          }),
+        );
         yield* TestClock.adjust(500);
         const entry = yield* Effect.promise(() => created);
         expect(entry.id).toMatch(/^[A-Za-z0-9]{12}$/);
         expect(entry.document).toBe("zotlit-profile.reading-group.md");
         expect(vault.contents.get(entry.path)).toContain(`id: ${entry.id}`);
         expect(
-          profile.resolveProfile(entry.id)?.bindings["note.literature-folder"],
+          profile.bridge.runSync(profile.resolveProfile(entry.id))?.bindings[
+            "note.literature-folder"
+          ],
         ).toBe("Reading");
         yield* Effect.promise(() =>
           expect(
-            profile.create({
-              label: "Reading group",
-              bindings: { folder: "Reading" },
-            }),
+            profile.bridge.runPromise(
+              profile.create({
+                label: "Reading group",
+                bindings: { folder: "Reading" },
+              }),
+            ),
           ).rejects.toThrow(),
         );
         yield* Effect.promise(() =>
-          expect(profile.create({ label: "Default" })).rejects.toThrow(),
+          expect(
+            profile.bridge.runPromise(profile.create({ label: "Default" })),
+          ).rejects.toThrow(),
         );
       }),
   );
@@ -761,15 +783,17 @@ describe("PlainProfile", () => {
           ),
         );
         const { profile, vault } = fixture;
-        expect(profile.resolveProfile(BOOKS)?.document).toBe(
-          `zotlit-profile.${name}.md`,
-        );
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS))?.document,
+        ).toBe(`zotlit-profile.${name}.md`);
         vault.deleteFile(`templates/zotlit-profile.${name}.md`);
         yield* TestClock.adjust(500);
-        const pending = profile.create({
-          label: name,
-          bindings: { folder: "Reading" },
-        });
+        const pending = profile.bridge.runPromise(
+          profile.create({
+            label: name,
+            bindings: { folder: "Reading" },
+          }),
+        );
         yield* TestClock.adjust(500);
         expect((yield* Effect.promise(() => pending)).document).toBe(
           `zotlit-profile.${name}.md`,
@@ -795,13 +819,19 @@ describe("PlainProfile", () => {
         );
         const unknown = "Qw8Er5Ty2Ui9" as ProfileId;
         yield* Effect.promise(() =>
-          expect(fixture.profile.getSource(unknown)).rejects.toThrow(
+          expect(
+            fixture.profile.bridge.runPromise(
+              fixture.profile.getSource(unknown),
+            ),
+          ).rejects.toThrow(
             m.settings_profile_source_unavailable({ profile: unknown }),
           ),
         );
         fixture.vault.deleteFile("templates/zotlit-profile.books.md");
         yield* Effect.promise(() =>
-          expect(fixture.profile.getSource(BOOKS)).rejects.toThrow(
+          expect(
+            fixture.profile.bridge.runPromise(fixture.profile.getSource(BOOKS)),
+          ).rejects.toThrow(
             m.settings_profile_source_missing({
               document: "zotlit-profile.books.md",
             }),
@@ -850,10 +880,9 @@ describe("PlainProfile", () => {
           label: "Reading",
           bindings: {
             folder: "Reading",
-            citationStyle:
-              profile.resolveProfile("default")!.bindings[
-                "citation.references-style"
-              ],
+            citationStyle: profile.bridge.runSync(
+              profile.resolveProfile("default"),
+            )!.bindings["citation.references-style"],
           },
         });
         expect(draft.source).toContain("# Default {{");
@@ -950,7 +979,11 @@ describe("PlainProfile", () => {
         Effect.tryPromise(() => harness(undefined, undefined, context)),
       );
       const document = parseLiteratureNoteTemplate(
-        yield* Effect.promise(() => fixture.profile.getSource("default")),
+        yield* Effect.promise(() =>
+          fixture.profile.bridge.runPromise(
+            fixture.profile.getSource("default"),
+          ),
+        ),
       );
       const { body } = document;
 
@@ -969,7 +1002,9 @@ describe("PlainProfile", () => {
           Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const source = yield* Effect.promise(() =>
-          fixture.profile.getSource("default"),
+          fixture.profile.bridge.runPromise(
+            fixture.profile.getSource("default"),
+          ),
         );
         const pending = yield* Effect.forkChild(
           fixture.profileService.duplicate("default"),
@@ -998,17 +1033,21 @@ describe("PlainProfile", () => {
           Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { profile, vault } = fixture;
-        const pending = profile.create({
-          label: "New Profile",
-          source: document(
-            BOOKS,
-            "folder: Sender\ncitationStyle: apa\nimportFolder: Sender notes\nimportColoredHighlights: true\nimportAnnotationsAsTemplate: true",
-          ),
-          bindings: { citationStyle: null },
-        });
+        const pending = profile.bridge.runPromise(
+          profile.create({
+            label: "New Profile",
+            source: document(
+              BOOKS,
+              "folder: Sender\ncitationStyle: apa\nimportFolder: Sender notes\nimportColoredHighlights: true\nimportAnnotationsAsTemplate: true",
+            ),
+            bindings: { citationStyle: null },
+          }),
+        );
         yield* TestClock.adjust(500);
         const created = yield* Effect.promise(() => pending);
-        expect(profile.resolveProfile(created.id)?.bindings).toEqual({
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(created.id))?.bindings,
+        ).toEqual({
           "note.literature-folder": "literatures",
           "citation.references-style": null,
           "note.import-folder": "zotero_notes",
@@ -1073,10 +1112,9 @@ describe("PlainProfile", () => {
           ),
         );
         const { profile } = fixture;
-        expect(profile.profiles.map(({ id }) => id)).toEqual([
-          BOOKS,
-          "Rz9Wm4YfH6Kd",
-        ]);
+        expect(
+          profile.bridge.runSync(profile.profiles).map(({ id }) => id),
+        ).toEqual([BOOKS, "Rz9Wm4YfH6Kd"]);
         expect(yield* fixture.profileService.diagnostics).toEqual([
           expect.objectContaining({
             code: "invalid-profile-document",
@@ -1118,7 +1156,9 @@ describe("PlainProfile", () => {
         const copy = yield* Fiber.join(pending);
         expect(copy.id).not.toBe(BOOKS);
         expect(copy.document).toBe(`zotlit-profile.books-copy-${copy.id}.md`);
-        expect(profile.resolveProfile(copy.id)).toMatchObject({
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(copy.id)),
+        ).toMatchObject({
           label: "Books copy",
           bindings: {
             "note.literature-folder": "Library",
@@ -1143,7 +1183,9 @@ describe("PlainProfile", () => {
           Effect.tryPromise(() => harness(undefined, undefined, context)),
         );
         const { bridge, profile, profileService, vault, settings } = fixture;
-        expect(profile.resolveProfile("default")?.document).toBeUndefined();
+        expect(
+          profile.bridge.runSync(profile.resolveProfile("default"))?.document,
+        ).toBeUndefined();
         const pending = yield* Effect.forkChild(profileService.ejectDefault(), {
           startImmediately: true,
         });
@@ -1151,22 +1193,24 @@ describe("PlainProfile", () => {
         expect((yield* Fiber.join(pending)).path).toBe(
           "templates/zotlit-profile.default.md",
         );
-        expect(profile.resolveProfile("default")?.document).toBe(
-          "zotlit-profile.default.md",
-        );
+        expect(
+          profile.bridge.runSync(profile.resolveProfile("default"))?.document,
+        ).toBe("zotlit-profile.default.md");
         expect(
           vault.contents.get("templates/zotlit-profile.default.md"),
         ).toContain("id: default");
         expect(
           bridge.runSync(settings.current)?.["note.default-profile"],
         ).not.toHaveProperty("document");
-        const restore = profile.restoreDefault();
+        const restore = profile.bridge.runPromise(profile.restoreDefault());
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => restore);
         expect(vault.files.has("templates/zotlit-profile.default.md")).toBe(
           false,
         );
-        expect(profile.resolveProfile("default")?.document).toBeUndefined();
+        expect(
+          profile.bridge.runSync(profile.resolveProfile("default"))?.document,
+        ).toBeUndefined();
       }),
   );
 
@@ -1177,13 +1221,15 @@ describe("PlainProfile", () => {
         Effect.tryPromise(() => harness(undefined, undefined, context)),
       );
       const { profile, vault } = fixture;
-      const source = yield* Effect.promise(() => profile.getSource("default"));
+      const source = yield* Effect.promise(() =>
+        profile.bridge.runPromise(profile.getSource("default")),
+      );
       expect(vault.files.has("templates/zotlit-profile.default.md")).toBe(
         false,
       );
       const edited = `${source}\nA custom annotation suffix.\n`;
-      const first = profile.materializeDefault();
-      const competing = profile.materializeDefault();
+      const first = profile.bridge.runPromise(profile.materializeDefault());
+      const competing = profile.bridge.runPromise(profile.materializeDefault());
       yield* TestClock.adjust(500);
       const results = yield* Effect.promise(() =>
         Promise.all([first, competing]),
@@ -1198,7 +1244,7 @@ describe("PlainProfile", () => {
         source,
       );
       vault.contents.set("templates/zotlit-profile.default.md", edited);
-      const second = profile.materializeDefault();
+      const second = profile.bridge.runPromise(profile.materializeDefault());
       yield* TestClock.adjust(500);
       expect(yield* Effect.promise(() => second)).toMatchObject({
         created: false,
@@ -1266,9 +1312,9 @@ describe("PlainProfile", () => {
           "templates/zotlit-profile.custom.md",
         );
         yield* TestClock.adjust(500);
-        expect(profile.resolveProfile("default")?.document).toBe(
-          "zotlit-profile.custom.md",
-        );
+        expect(
+          profile.bridge.runSync(profile.resolveProfile("default"))?.document,
+        ).toBe("zotlit-profile.custom.md");
         const eject = yield* Effect.forkChild(profileService.ejectDefault(), {
           startImmediately: true,
         });
@@ -1277,13 +1323,15 @@ describe("PlainProfile", () => {
           "templates/zotlit-profile.custom.md",
         );
         expect(yield* fixture.profileService.diagnostics).toEqual([]);
-        const restore = profile.restoreDefault();
+        const restore = profile.bridge.runPromise(profile.restoreDefault());
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => restore);
         expect(vault.files.has("templates/zotlit-profile.custom.md")).toBe(
           false,
         );
-        expect(profile.resolveProfile("default")?.document).toBeUndefined();
+        expect(
+          profile.bridge.runSync(profile.resolveProfile("default"))?.document,
+        ).toBeUndefined();
       }),
   );
 
@@ -1304,10 +1352,14 @@ describe("PlainProfile", () => {
           ),
         ),
       );
-      expect(fixture.profile.resolveProfile("default")).toBeUndefined();
-      expect(fixture.profile.defaultDocumentPath).toBe(
-        "templates/zotlit-profile.custom.md",
-      );
+      expect(
+        fixture.profile.bridge.runSync(
+          fixture.profile.resolveProfile("default"),
+        ),
+      ).toBeUndefined();
+      expect(
+        fixture.profile.bridge.runSync(fixture.profile.defaultDocumentPath),
+      ).toBe("templates/zotlit-profile.custom.md");
       expect(yield* fixture.profileService.diagnostics).toEqual([
         expect.objectContaining({
           code: "invalid-profile-document",
@@ -1333,7 +1385,9 @@ describe("PlainProfile", () => {
         ),
       );
       const { profile } = fixture;
-      expect(profile.resolveProfile("default")).toBeUndefined();
+      expect(
+        profile.bridge.runSync(profile.resolveProfile("default")),
+      ).toBeUndefined();
       expect(
         (yield* fixture.profileService.diagnostics).map(({ code }) => code),
       ).toEqual(["duplicate-profile-id", "duplicate-profile-id"]);
@@ -1369,7 +1423,9 @@ describe("PlainProfile", () => {
           ),
         );
         const { profile, vault } = fixture;
-        const pending = profile.delete(BOOKS, "default");
+        const pending = profile.bridge.runPromise(
+          profile.delete(BOOKS, "default"),
+        );
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => pending);
         expect(vault.contents.get("Books/Paper.md")).toBe(
@@ -1414,9 +1470,9 @@ describe("PlainProfile", () => {
         ),
       );
       yield* Effect.promise(() =>
-        expect(profile.delete(BOOKS, "default")).rejects.toThrow(
-          "Read-only note",
-        ),
+        expect(
+          profile.bridge.runPromise(profile.delete(BOOKS, "default")),
+        ).rejects.toThrow("Read-only note"),
       );
       expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(true);
     }),
@@ -1488,7 +1544,9 @@ describe("PlainProfile", () => {
           "Papers/2024/My title.md",
           "Imported/Papers/2024/Child.md",
         ]);
-        const pending = profile.delete(BOOKS, papers, { move: true });
+        const pending = profile.bridge.runPromise(
+          profile.delete(BOOKS, papers, { move: true }),
+        );
         yield* TestClock.adjust(500);
         yield* Effect.promise(() =>
           expect(pending).resolves.toEqual({
@@ -1522,7 +1580,9 @@ describe("PlainProfile", () => {
         expect(vault.contents.get("templates/shared.liquid.md")).toBe(
           "Shared partial",
         );
-        expect(profile.resolveProfile(BOOKS)).toBeUndefined();
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS)),
+        ).toBeUndefined();
       }),
   );
 
@@ -1545,7 +1605,9 @@ describe("PlainProfile", () => {
         const { profile, vault } = fixture;
         vault.deleteFile("templates/zotlit-profile.books.md");
         yield* TestClock.adjust(500);
-        expect(profile.resolveProfile(BOOKS)).toBeUndefined();
+        expect(
+          profile.bridge.runSync(profile.resolveProfile(BOOKS)),
+        ).toBeUndefined();
       }),
   );
 
@@ -1572,7 +1634,9 @@ describe("PlainProfile", () => {
       app.fileManager.renameFile = async () => {
         throw new Error("Destination occupied");
       };
-      const pending = profile.delete(BOOKS, "default", { move: true });
+      const pending = profile.bridge.runPromise(
+        profile.delete(BOOKS, "default", { move: true }),
+      );
       const refused = expect(pending).rejects.toThrow("Destination occupied");
       yield* TestClock.adjust(500);
       yield* Effect.promise(() => refused);
@@ -1602,7 +1666,9 @@ describe("Profile Match document writes", () => {
             harness({ [path]: source }, undefined, context),
           ),
         );
-        const save = f.profile.setMatch(BOOKS, { or: [] });
+        const save = f.profile.bridge.runPromise(
+          f.profile.setMatch(BOOKS, { or: [] }),
+        );
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => save);
         expect(f.vault.contents.get(path)).toBe(
@@ -1611,12 +1677,18 @@ describe("Profile Match document writes", () => {
             `match:${eol}  {"or":[]}`,
           ),
         );
-        expect(f.profile.profiles[0]!.match).toMatchObject({
+        expect(
+          f.profile.bridge.runSync(f.profile.profiles)[0]!.match,
+        ).toMatchObject({
           state: "evaluable",
           tree: { or: [] },
         });
-        expect(f.profile.profiles[0]!.match.summary).toBe("false");
-        const remove = f.profile.setMatch(BOOKS, undefined);
+        expect(
+          f.profile.bridge.runSync(f.profile.profiles)[0]!.match.summary,
+        ).toBe("false");
+        const remove = f.profile.bridge.runPromise(
+          f.profile.setMatch(BOOKS, undefined),
+        );
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => remove);
         expect(f.vault.contents.get(path)).toBe(
@@ -1627,7 +1699,9 @@ describe("Profile Match document writes", () => {
             "",
           ),
         );
-        expect(f.profile.profiles[0]!.match).toMatchObject({
+        expect(
+          f.profile.bridge.runSync(f.profile.profiles)[0]!.match,
+        ).toMatchObject({
           state: "absent",
           summary: m.profile_match_absent(),
         });
@@ -1651,27 +1725,35 @@ describe("Profile Match document writes", () => {
             ),
           ),
         );
-        expect(f.profile.profiles[0]!.match.state).toBe("unevaluable");
+        expect(
+          f.profile.bridge.runSync(f.profile.profiles)[0]!.match.state,
+        ).toBe("unevaluable");
         const edited = document(
           BOOKS,
           "match: 'title == \"Current\"'\n# A hand edit",
           "Current books",
         );
         f.vault.modifyFile(path, edited);
-        const save = f.profile.setMatch(BOOKS, { and: [] });
+        const save = f.profile.bridge.runPromise(
+          f.profile.setMatch(BOOKS, { and: [] }),
+        );
         yield* TestClock.adjust(1000);
         yield* Effect.promise(() => save);
         expect(f.vault.contents.get(path)).toBe(
           edited.replace("match: 'title == \"Current\"'", 'match: {"and":[]}'),
         );
-        expect(f.profile.profiles[0]).toMatchObject({
+        expect(f.profile.bridge.runSync(f.profile.profiles)[0]).toMatchObject({
           label: "Current books",
           match: { state: "all", summary: m.profile_match_all() },
         });
-        const remove = f.profile.setMatch(BOOKS, undefined);
+        const remove = f.profile.bridge.runPromise(
+          f.profile.setMatch(BOOKS, undefined),
+        );
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => remove);
-        expect(f.profile.profiles[0]!.match.state).toBe("absent");
+        expect(
+          f.profile.bridge.runSync(f.profile.profiles)[0]!.match.state,
+        ).toBe("absent");
       }),
   );
 
@@ -1689,7 +1771,7 @@ describe("Profile Match document writes", () => {
         const replacement = document("Other1234567");
         f.vault.modifyFile(path, replacement);
         const rejected = expect(
-          f.profile.setMatch(BOOKS, { and: [] }),
+          f.profile.bridge.runPromise(f.profile.setMatch(BOOKS, { and: [] })),
         ).rejects.toThrow();
         yield* TestClock.adjust(500);
         yield* Effect.promise(() => rejected);

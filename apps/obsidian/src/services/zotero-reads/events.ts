@@ -1,4 +1,4 @@
-// The ZoteroReads event Streams shared by the service and its plain adapter.
+// Named ZoteroReads event Streams for consumers of the native service.
 import { Stream } from "effect";
 import type { Stream as StreamType } from "effect";
 

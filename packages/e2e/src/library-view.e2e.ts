@@ -229,7 +229,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .run(saved.lastRead, attachment.itemID);
       await obEval(
         run.vaultId,
-        "(async()=>{activeDocument.querySelector('.prompt input')?.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await app.plugins.plugins.zotlit.services.zoteroReads.refresh();return true;})()",
+        "(async()=>{activeDocument.querySelector('.prompt input')?.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroReads.refresh);return true;})()",
       );
     });
     const recent =
@@ -306,7 +306,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
     const uses = await obJson<Record<string, number>>(
       run.vaultId,
-      `JSON.stringify(${services}.useLedger.uses)`,
+      `JSON.stringify(${services}.bridge.runSync(${services}.useLedger.uses))`,
     );
     const activity = new Map(
       ITEMS.map((item) => [

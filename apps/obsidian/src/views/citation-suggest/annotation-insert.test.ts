@@ -142,7 +142,7 @@ describe("insertAnnotation", () => {
 
         expect(h.prepare).toHaveBeenCalledOnce();
         expect(h.text()).toBe("As shown typed here");
-        expect(h.useLedger.current).toEqual({});
+        expect(h.useLedger.runtime.runSync(h.useLedger.current)).toEqual({});
       }),
   );
 
@@ -159,7 +159,7 @@ describe("insertAnnotation", () => {
 
         expect(h.text()).toBe("[>message]");
         expect(h.prepare).not.toHaveBeenCalled();
-        expect(h.useLedger.current).toEqual({});
+        expect(h.useLedger.runtime.runSync(h.useLedger.current)).toEqual({});
       }),
   );
 });
@@ -173,6 +173,8 @@ it.effect("#1835 records a Use only after the selected annotation lands", () =>
       summary: { zotero: 0, unchecked: 0, unavailable: 0 },
     });
     expect(h.text()).toBe("quote ");
-    expect(h.useLedger.current[hit.itemKey]?.kind).toBe("cited");
+    expect(
+      h.useLedger.runtime.runSync(h.useLedger.current)[hit.itemKey]?.kind,
+    ).toBe("cited");
   }),
 );

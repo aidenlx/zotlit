@@ -11,11 +11,7 @@ import type {
   AnnotationSource,
 } from "@/services/annotation-repository/service";
 import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
-import {
-  queryClientsFixture,
-  taggedQueryClients,
-} from "@/services/query-client/__fixtures__";
-import type { PlainQueryClients } from "@/services/query-client/plain";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 
 import { ExcerptDisplayFixture } from "./__fixtures__/display";
 import { settledDisplay } from "./__fixtures__/display-state";
@@ -100,7 +96,7 @@ function image(byte: number): ExcerptImage {
 
 /** What one live display harness hands a test. */
 interface Live extends AsyncDisposable {
-  readonly queries: PlainQueryClients;
+  readonly queries: ReturnType<typeof queryClientsFixture>;
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayFixture;
   readonly renders: GatedRender[];
@@ -157,7 +153,7 @@ function harness(): Live {
   const storedReads: Promise<void>[] = [];
   const display = stack.use(
     new ExcerptDisplayFixture({
-      queries: taggedQueryClients(queries),
+      queries: queries,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored: (storedRequest) => {
@@ -327,7 +323,7 @@ function resident(): Resident {
   const queries = stack.use(queryClientsFixture());
   const display = stack.use(
     new ExcerptDisplayFixture({
-      queries: taggedQueryClients(queries),
+      queries: queries,
       resolve: (request, signal) => service.resolve(request, signal),
       stored: (storedRequest) => service.stored(storedRequest),
     }),
@@ -622,7 +618,9 @@ describe("Excerpt Image live display", () => {
     two.release();
     await live.cancelled(1);
     expect(live.renders[1]!.aborted).toBe(true);
-    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(
+      live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+    ).toEqual([]);
   });
 
   it("stops painting the cleared image on the cards mounted at clear time", async () => {
@@ -649,7 +647,9 @@ describe("Excerpt Image live display", () => {
     // it release the image they were painted from rather than going on painting
     // a display the clear released.
     live.display.clear();
-    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(
+      live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+    ).toEqual([]);
     expect(one.snapshot()).toEqual({
       image: null,
       current: false,
@@ -724,7 +724,9 @@ describe("Excerpt Image live display", () => {
     // The card goes and the display forgets the Held Read it held: what the
     // next card paints first is the device-local image, not the query cache.
     shown.release();
-    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(
+      live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+    ).toEqual([]);
 
     const returned = live.card();
     const saved = request("#00ff00");
@@ -749,7 +751,7 @@ describe("Excerpt Image live display", () => {
     await using queries = queryClientsFixture();
     const stored = vi.fn(async () => null);
     await using display = new ExcerptDisplayFixture({
-      queries: taggedQueryClients(queries),
+      queries: queries,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored,
@@ -796,7 +798,9 @@ describe("Excerpt Image live display", () => {
       const first = await settledDisplay(card, painted);
 
       await vi.advanceTimersByTimeAsync(30);
-      expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+      expect(
+        live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+      ).toEqual([]);
       // The card is still mounted and still demands the pixels it was painted
       // from; the Held Read behind it is what the client dropped.
       expect(card.snapshot().image).toBeNull();

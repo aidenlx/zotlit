@@ -6,6 +6,7 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { layerHost, layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { loadedTextFileView } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
@@ -15,7 +16,6 @@ import {
   PluginSettings,
 } from "@/services/settings/service";
 
-import { plainTemplate } from "./plain";
 import { layerTemplate, Template } from "./service";
 
 export function createTemplateHost(files: Record<string, string> = {}) {
@@ -81,7 +81,8 @@ export async function buildTemplate(
     stack,
   );
   await runtime.context();
-  const service = Object.assign(plainTemplate(runtime), {
+  const service = Object.assign(runtime.runSync(Template), {
+    bridge: effectBridge(runtime),
     runtime,
     templateService: runtime.runSync(Template),
   });

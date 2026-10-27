@@ -72,18 +72,20 @@ it("#1704 refreshes an Annotation Citation's parent in References after a databa
   try {
     document.body.append(view.contentEl);
     await act(() => view.open());
-    expect((await index.getDocumentCitationSet(draft)).citations).toMatchObject(
-      [{ indexedKey: KEY_A }],
-    );
+    expect(
+      (await index.bridge.runPromise(index.getDocumentCitationSet(draft)))
+        .citations,
+    ).toMatchObject([{ indexedKey: KEY_A }]);
     await expect.poll(() => view.contentEl.textContent).toContain("doe2024");
     await act(() =>
       db.replaceRows(
         `${annotationRows}\nupdate itemAnnotations set parentItemID = 20 where itemID = 11;`,
       ),
     );
-    expect((await index.getDocumentCitationSet(draft)).citations).toMatchObject(
-      [{ indexedKey: "NCKEY234" }],
-    );
+    expect(
+      (await index.bridge.runPromise(index.getDocumentCitationSet(draft)))
+        .citations,
+    ).toMatchObject([{ indexedKey: "NCKEY234" }]);
     await expect
       .poll(() => view.contentEl.textContent)
       .toContain("Study without a citation key");

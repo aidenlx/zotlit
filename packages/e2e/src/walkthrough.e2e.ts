@@ -288,7 +288,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('DMRGRART').some(file=>file.path===${JSON.stringify(notePath)}))`,
+        `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('DMRGRART')).some(file=>file.path===${JSON.stringify(notePath)}))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -344,7 +344,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       });
       await leaf.openFile(file);
       leaf.view.editor.setCursor({line:2,ch:3});
-      const first=await services.citationText.read(file.path);
+      const first=await services.bridge.runPromise(services.citationText.read(file.path));
       if(!first?.formatted.size)throw new Error('Initial citations were not formatted');
       const engine=await services.pandocEngine.runPromise(services.pandocEngine.binary.getEngine);
       const original=engine.renderCitations;
@@ -354,19 +354,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         reads++;
         return fail?Promise.reject(new Error('Simulated render failure')):original.apply(this,args);
       };
-      services.queryClient.invalidate(['citation-render']);
-      services.queryClient.invalidate(['citation-text',file.path]);
-      const failed=await services.citationText.read(file.path);
-      const failedStatus=services.citationText.peek(file.path)?.status;
+      services.bridge.runSync(services.queryClient.invalidate(['citation-render']));
+      services.bridge.runSync(services.queryClient.invalidate(['citation-text',file.path]));
+      const failed=await services.bridge.runPromise(services.citationText.read(file.path));
+      const failedStatus=services.bridge.runSync(services.citationText.peek(file.path))?.status;
       fail=false;
-      await services.citationText.read(file.path);
+      await services.bridge.runPromise(services.citationText.read(file.path));
       const duringCooldown=reads;
       const now=Date.now;
       const afterCooldown=now()+6000;
       Date.now=()=>afterCooldown;
       cleanup.defer(()=>{Date.now=now;});
-      const recovered=await services.citationText.read(file.path);
-      const status=services.citationText.peek(file.path)?.status;
+      const recovered=await services.bridge.runPromise(services.citationText.read(file.path));
+      const status=services.bridge.runSync(services.citationText.peek(file.path))?.status;
       await new Promise(resolve=>leaf.view.editor.cm.requestMeasure({read:()=>null,write:resolve}));
       return JSON.stringify({failedStatus,keptText:failed===first,duringCooldown,reads,recovered:recovered===first,status,widget:!!leaf.view.contentEl.querySelector('.zt-citation')});
     })()`,
@@ -715,7 +715,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        "(async()=>{await app.plugins.plugins.zotlit.services.profile.restoreDefault();return true;})()",
+        "(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.profileService.restoreDefault());return true;})()",
       );
     });
     await useListingProfile(vaultId, { restore: true });
@@ -839,8 +839,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `(async()=>{
           for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])
             for(const leaf of app.workspace.getLeavesOfType(type))leaf.detach();
-          const profile=app.plugins.plugins.zotlit.services.profile;
-          ${kind === "built-in" ? "await profile.restoreDefault();" : "await profile.materializeDefault();"}
+          const profile=app.plugins.plugins.zotlit.services.profileService;
+          ${kind === "built-in" ? "await app.plugins.plugins.zotlit.services.bridge.runPromise(profile.restoreDefault());" : "await app.plugins.plugins.zotlit.services.bridge.runPromise(profile.materializeDefault());"}
           const file=await app.vault.create(${JSON.stringify(notePath)},'---\\nzotero-key: DMRGRART\\n---\\n# Popout');
           const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);
           app.workspace.setActiveLeaf(leaf,{focus:true});return true;
@@ -875,7 +875,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               await waitFor(ready,true,'Template Workbench and companion views');
               sample();
               return JSON.stringify({accepted,ready:ready(),mainSamples,
-                customized:!!app.vault.getFileByPath(app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)});
+                customized:!!app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.defaultDocumentPath))});
           })()`,
         ),
       );
@@ -904,31 +904,31 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     // document that lists them puts one callout per Annotation in the note.
     const original = await obEval(
       vaultId,
-      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await profile.materializeDefault();return app.vault.read(app.vault.getFileByPath(profile.defaultDocumentPath));})()`,
+      `(async()=>{const profile=app.plugins.plugins.zotlit.services.profileService;await app.plugins.plugins.zotlit.services.bridge.runPromise(profile.materializeDefault());return app.vault.read(app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(profile.defaultDocumentPath)));})()`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         vaultId,
-        `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;await app.vault.modify(app.vault.getFileByPath(profile.defaultDocumentPath),${JSON.stringify(original)});return true;})()`,
+        `(async()=>{const profile=app.plugins.plugins.zotlit.services.profileService;await app.vault.modify(app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(profile.defaultDocumentPath)),${JSON.stringify(original)});return true;})()`,
       );
     });
     await obEval(
       vaultId,
       `(async()=>{
-      const profile=app.plugins.plugins.zotlit.services.profile;
-      const file=app.vault.getFileByPath(profile.defaultDocumentPath);
+      const profile=app.plugins.plugins.zotlit.services.profileService;
+      const file=app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(profile.defaultDocumentPath));
       const source=await app.vault.read(file);
       const listed=(${LIST_ANNOTATIONS_JS})(source);
       await app.vault.modify(file,listed);
       const leaf=app.workspace.getLeaf('tab');
-      await leaf.openFile(app.vault.getFileByPath(profile.defaultDocumentPath));
+      await leaf.openFile(app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(profile.defaultDocumentPath)));
       app.workspace.setActiveLeaf(leaf,{focus:true});
       app.commands.executeCommandById('zotlit:customize-profile');return true;
     })()`,
     );
     const editor =
-      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
+      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.defaultDocumentPath))?.view";
     // Opening the layout can move and reload the editor. Use the button only
     // after its companion panes arrive in the same popout document.
     expect(
@@ -990,9 +990,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         `(async()=>{
           ${browserWaits}
           await using cleanup=new AsyncDisposableStack();
-          const profile=app.plugins.plugins.zotlit.services.profile;
-          await profile.materializeDefault();
-          const file=app.vault.getFileByPath(profile.defaultDocumentPath);
+          const profile=app.plugins.plugins.zotlit.services.profileService;
+          await app.plugins.plugins.zotlit.services.bridge.runPromise(profile.materializeDefault());
+          const file=app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(profile.defaultDocumentPath));
           const original=await app.vault.read(file);
           cleanup.defer(async()=>{
             for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])
@@ -1069,10 +1069,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             hits=await services.itemLookup.search('ioannidis',{limit:20});
             return hits.find(candidate=>candidate.item.key==='DMIANART');
           },10000).catch(()=>{throw new Error('Paper not found: '+JSON.stringify(hits.map(candidate=>candidate.item.key)));});
-          const profile=await services.profile.create({label:'Path preview',bindings:{folder:'path-notes'}});
+          const profile=await services.bridge.runPromise(services.profileService.create({label:'Path preview',bindings:{folder:'path-notes'}}));
           cleanup.defer(async()=>{
             detach();
-            await services.profile.delete(profile.id,'default');
+            await services.bridge.runPromise(services.profileService.delete(profile.id,'default'));
           });
           const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
           await leaf.openFile(app.vault.getFileByPath(profile.path));
@@ -1105,7 +1105,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           await waitFor(preview,previewed,'Preview under the overridden folder');
           await view().save();
           // The Profile takes the saved document once the template recompiles.
-          await waitFor(()=>services.profile.resolveProfile(profile.id)?.bindings['note.literature-folder'],'Reading list','Saved folder');
+          await waitFor(()=>services.bridge.runSync(services.profileService.resolveProfile(profile.id))?.bindings['note.literature-folder'],'Reading list','Saved folder');
           const created=await services.noteFeature.createNote(hit.item,{profile:profile.id});
           if(created.outcome!=='created')throw new Error('Note refused: '+created.diagnostic?.code);
           const path=created.file.path;
@@ -1201,9 +1201,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await obEval(
         vaultId,
         `(async()=>{
-          const {profile}=app.plugins.plugins.zotlit.services;
-          const books=await profile.create({label:'Books',bindings:{folder:'books'}});
-          const folder=profile.resolveProfile('default').bindings['note.literature-folder'].replace(/^\\/+|\\/+$/g,'');
+          const {profileService:profile}=app.plugins.plugins.zotlit.services;
+          const books=await app.plugins.plugins.zotlit.services.bridge.runPromise(profile.create({label:'Books',bindings:{folder:'books'}}));
+          const folder=app.plugins.plugins.zotlit.services.bridge.runSync(profile.resolveProfile('default')).bindings['note.literature-folder'].replace(/^\\/+|\\/+$/g,'');
           const dir=(folder?folder+'/':'')+'2024';
           if(!app.vault.getAbstractFileByPath(dir))await app.vault.createFolder(dir);
           const file=await app.vault.create(dir+'/Subfolder move.md','---\\nzotero-key: DMRGRART\\n---\\nMy reading notes\\n');
@@ -1264,8 +1264,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const body=await app.vault.read(moved);
           const left=!!app.vault.getAbstractFileByPath(${JSON.stringify(created.path)});
           await app.vault.delete(moved);
-          const {profile}=app.plugins.plugins.zotlit.services;
-          await app.vault.delete(app.vault.getFileByPath(profile.profiles.find(p=>p.id===${JSON.stringify(created.id)}).path));
+          const {profileService:profile}=app.plugins.plugins.zotlit.services;
+          await app.vault.delete(app.vault.getFileByPath(app.plugins.plugins.zotlit.services.bridge.runSync(profile.profiles).find(p=>p.id===${JSON.stringify(created.id)}).path));
           app.workspace.detachLeavesOfType('empty');
           return String(!left&&body.includes('My reading notes'));
         })()`,

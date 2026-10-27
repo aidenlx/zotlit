@@ -12,6 +12,7 @@ import {
 } from "@/services/citation-index/__fixtures__/annotations";
 import type { CitationIndexHarnessOptions } from "@/services/citation-index/test-harness";
 import { createCitationIndexHarness } from "@/services/citation-index/test-harness";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 
 import { registerCitationsCli } from "./register";
@@ -36,7 +37,7 @@ const setup = Effect.fn("CitationsCliTest.setup")(function* (
     ),
   );
   h.workspace.layoutReady();
-  yield* Effect.promise(() => h.index.whenIndexed());
+  yield* Effect.promise(() => h.index.bridge.runPromise(h.index.whenIndexed));
 
   const cli = fakeCliHost();
   registerCitationsCli(cli.host, {
@@ -257,7 +258,7 @@ it.effect(
         { kind: "malformed" },
       ]);
       const set = yield* Effect.promise(() =>
-        h.index.getDocumentCitationSet(h.draft),
+        h.index.bridge.runPromise(h.index.getDocumentCitationSet(h.draft)),
       );
       expect(set.citations.map((c) => c.outcome)).toMatchObject([
         { kind: "unresolved-key" },
@@ -272,8 +273,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const h = yield* setup();
-      h.db.acquireRead = () =>
-        Promise.reject(new Error("test database unreadable"));
+      h.db.snapshotError = new DbUnavailable({
+        message: "test database unreadable",
+      });
       const result = JSON.parse(
         yield* h.command("zotlit:references").handler({ file: "draft.md" }),
       );
@@ -338,7 +340,7 @@ it.effect(
         ]),
       });
       const set = yield* Effect.promise(() =>
-        h.index.getDocumentCitationSet(h.draft),
+        h.index.bridge.runPromise(h.index.getDocumentCitationSet(h.draft)),
       );
       expect(set.citations[0]?.outcome).toMatchObject({
         kind: "ambiguous-key",
@@ -380,7 +382,7 @@ it.effect(
         settings: { "citation.wikilink-citations": true },
       });
       const set = yield* Effect.promise(() =>
-        h.index.getDocumentCitationSet(h.draft),
+        h.index.bridge.runPromise(h.index.getDocumentCitationSet(h.draft)),
       );
       expect(set.citations[0]?.outcome).toEqual({
         kind: "missing-item",
@@ -409,7 +411,9 @@ it.effect.each(["PDF23456", "NTEE2345"])(
         settings: { "citation.wikilink-citations": true },
       });
       h.metadataCache.setFrontmatter(
-        h.noteIndex.getNotesByItemKey("ABCD2345")[0]!,
+        h.noteIndex.bridge.runSync(
+          h.noteIndex.getNotesByItemKey("ABCD2345"),
+        )[0]!,
         {
           "zotero-key": key,
         },
@@ -422,7 +426,7 @@ it.effect.each(["PDF23456", "NTEE2345"])(
         item: { key, citekey: null, summary: null },
       });
       const set = yield* Effect.promise(() =>
-        h.index.getDocumentCitationSet(h.draft),
+        h.index.bridge.runPromise(h.index.getDocumentCitationSet(h.draft)),
       );
       expect(set.citations[0]?.outcome).toEqual({
         kind: "ineligible-item",

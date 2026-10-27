@@ -331,9 +331,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
-      query: services.query,
       literatureNotes: literatureNotes({
         registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
@@ -347,8 +344,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     };
     registerAnnotView(this, {
       ...queryViewDeps,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
       bridge: services.bridge,
       itemLookup: services.itemLookup,
       settings: services.settings,
@@ -358,8 +353,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
       ...queryViewDeps,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
       welcome: {
         registry: services.runtime.runSync(ViewRegistry),
         setupActions: createSetupActions({
@@ -501,7 +494,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // lane as the filesystem watchers.
     stack.defer(
       services.bridge.subscribe(services.localServer.dbUpdated, () => {
-        services.zoteroReads.notifyExternalChange();
+        services.bridge.runAndForget(services.zoteroReads.notifyExternalChange);
       }),
     );
 

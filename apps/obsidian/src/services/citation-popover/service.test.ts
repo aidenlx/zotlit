@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 // @vitest-environment happy-dom
 import { Logger, References, Stream } from "effect";
 import type { Layer } from "effect";
@@ -25,7 +26,6 @@ import { createCitationIndexHarness } from "@/services/citation-index/test-harne
 import type { DocumentCitations } from "@/services/citation-text/service";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
-import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import {
   CLEAR_WORKS_SQL,
   inProcessReadsService,
@@ -84,7 +84,17 @@ function reads(works: readonly SeededWork[] = []) {
   client.$client.exec(seedWorksSql(works));
   const service = inProcessReadsService(sharedClientOpener(client));
   const stub = {
-    state: "ready" as TestReads["state"],
+    state:
+      "ready" as import("@/services/zotero-reads/service").ZoteroReadsState["state"],
+    current: Effect.sync(
+      (): import("@/services/zotero-reads/service").ZoteroReadsState => ({
+        state: stub.state,
+        error: null,
+        moved: false,
+        dbFileMissing: false,
+        activeReadMode: null,
+      }),
+    ),
     get ready() {
       return service.ready;
     },
@@ -842,8 +852,7 @@ it.each([false, true])(
     await using popover = citationPopoverFixture({
       host: h.host,
       db: h.db,
-      citationIndex: h.index,
-      citationLookup: h.lookup,
+      services: { citationIndex: h.index, citationLookup: h.lookup },
       libraryScope: h.libraryScope,
       citationText: { read: () => Promise.resolve(null) },
       profile: profileReader(),

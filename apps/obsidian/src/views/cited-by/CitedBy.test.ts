@@ -29,8 +29,8 @@ import {
 } from "@/services/citation-index/__fixtures__/annotations";
 import { activeCitedByAtom } from "@/services/citation-index/atoms";
 import { ParsedNote } from "@/services/citation-index/parsed-note";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { scanNote } from "@/services/citation-index/scan-note";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type {
   CitedByGroup,
   CitedBySnapshot,
@@ -257,7 +257,7 @@ function addFile(
 
 async function render(options: {
   previewsPending?: boolean;
-  citationIndex?: Pick<PlainCitationIndex, "getParsedNote">;
+  citationIndex?: Pick<CitationIndex["Service"], "getParsedNote">;
   indexedKey?: string | null;
   snapshot?: CitedBySnapshot;
   read?: (file: TFile) => Promise<string>;
@@ -281,19 +281,18 @@ async function render(options: {
   const cancelled: string[] = [];
   const current = (host = await makeCitedByHost({
     getParsedNote: (file) =>
-      Effect.tryPromise({
-        // Taking the signal makes the read interruptible, as the real parse is.
-        try: async (signal) => {
-          signal.addEventListener("abort", () => cancelled.push(file.path));
-          if (options.citationIndex) {
-            return options.citationIndex.getParsedNote(file);
-          }
-          const source = await read(file);
-          file.stat.size = source.length;
-          return new ParsedNote(source, scanNote(source));
-        },
-        catch: vaultError("cachedRead", file.path),
-      }),
+      options.citationIndex
+        ? options.citationIndex.getParsedNote(file)
+        : Effect.tryPromise({
+            // Taking the signal makes the read interruptible, as the real parse is.
+            try: async (signal) => {
+              signal.addEventListener("abort", () => cancelled.push(file.path));
+              const source = await read(file);
+              file.stat.size = source.length;
+              return new ParsedNote(source, scanNote(source));
+            },
+            catch: vaultError("cachedRead", file.path),
+          }),
   }));
   const { registry, vault, metadataCache, workspace } = current;
   const files = new Map(
@@ -918,8 +917,12 @@ describe("CitedBy", () => {
         settings: { "citation.annotation-citations": true },
       },
     );
-    await harness.index.getDocumentCitationSet(harness.draft);
-    const cited = await harness.index.getCitedBy(KEY_A);
+    await harness.index.bridge.runPromise(
+      harness.index.getDocumentCitationSet(harness.draft),
+    );
+    const cited = await harness.index.bridge.runPromise(
+      harness.index.getCitedBy(KEY_A),
+    );
     const occurrence = cited.groups[0]!.occurrences[0]!;
     const { container, openLinkText, setEphemeralState } = await render({
       snapshot: cited,
@@ -965,8 +968,12 @@ describe("CitedBy", () => {
         },
       },
     );
-    await harness.index.getDocumentCitationSet(harness.draft);
-    const cited = await harness.index.getCitedBy(KEY_A);
+    await harness.index.bridge.runPromise(
+      harness.index.getDocumentCitationSet(harness.draft),
+    );
+    const cited = await harness.index.bridge.runPromise(
+      harness.index.getCitedBy(KEY_A),
+    );
     editing = true;
     const edited = `${source} More context.`;
     harness.metadataCache.change(harness.draft, edited);
@@ -979,7 +986,9 @@ describe("CitedBy", () => {
     });
     await act(async () => {
       gate.resolve();
-      await harness.index.getDocumentCitationSet(harness.draft);
+      await harness.index.bridge.runPromise(
+        harness.index.getDocumentCitationSet(harness.draft),
+      );
     });
     await expect
       .poll(async () => {

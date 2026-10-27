@@ -78,7 +78,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       ),
     ).toBe(true);
     const defaultView =
-      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
+      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.defaultDocumentPath))?.view";
     await changeNativeAnnotationCallout(vaultId, {
       view: defaultView,
       vaultPath,
@@ -112,7 +112,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(
       await obEval(
         vaultId,
-        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+        "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).length)",
       ),
     ).toBe("0");
     expect(
@@ -151,14 +151,14 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        "String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.label==='Books'))",
+        "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).some(p=>p.label==='Books'))",
         { expected: "true" },
       ),
     ).toBe(true);
     const books = JSON.parse(
       await obEval(
         vaultId,
-        "JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.label==='Books'))",
+        "JSON.stringify(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).find(p=>p.label==='Books'))",
       ),
     ) as { id: string; path: string };
     const saved = await readFile(join(vaultPath, books.path), "utf-8");

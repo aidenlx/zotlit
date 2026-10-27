@@ -15,6 +15,7 @@ import {
 
 import { libraryScopeFixture } from "./__fixtures__";
 import type { LibraryScope as SavedScope, ResolvedLibraryScope } from "./scope";
+import { scopeChanges } from "./service";
 import { LIBRARY_SCOPE_KEY } from "./service";
 
 // Group-id order differs from local library-id order.
@@ -53,7 +54,7 @@ describe("LibraryScope", () => {
   it.effect("resolves the saved scope before acquisition finishes", () =>
     Effect.gen(function* () {
       const f = yield* makeService();
-      expect(f.plain.current).toMatchObject({
+      expect(f.bridge.runSync(f.service.current)).toMatchObject({
         mode: "all",
         invalid: false,
         available: [
@@ -68,9 +69,9 @@ describe("LibraryScope", () => {
   it.effect("emits nothing for an equivalent refresh", () =>
     Effect.gen(function* () {
       const f = yield* makeService();
-      const before = f.plain.current;
+      const before = f.bridge.runSync(f.service.current);
       yield* f.refresh([MY_LIBRARY, GROUP_200, GROUP_100]);
-      expect(f.plain.current).toBe(before);
+      expect(f.bridge.runSync(f.service.current)).toBe(before);
       expect(f.changed).not.toHaveBeenCalled();
     }),
   );
@@ -87,7 +88,9 @@ describe("LibraryScope", () => {
         f,
         (scope) => scope?.available[1]?.name === "Renamed",
       );
-      expect(f.plain.current?.available[1]?.name).toBe("Renamed");
+      expect(f.bridge.runSync(f.service.current)?.available[1]?.name).toBe(
+        "Renamed",
+      );
       yield* Effect.promise(() =>
         expect.poll(() => f.changed.mock.calls.length).toBe(1),
       );
@@ -101,21 +104,32 @@ describe("LibraryScope", () => {
         const f = yield* makeService({
           scope: { mode: "selected", libraries: [{ type: "personal" }] },
         });
-        const before = f.plain.current;
+        const before = f.bridge.runSync(f.service.current);
         const changed = vi.fn();
-        subscribe(f.runtime, f.plain["libraries-changed"], changed);
+        subscribe(
+          f.runtime,
+          f.service.changes.pipe(
+            Stream.map((state) => state.all),
+            Stream.changes,
+            Stream.drop(1),
+            Stream.map(() => undefined),
+          ),
+          changed,
+        );
         yield* f.refresh([
           MY_LIBRARY,
           GROUP_200,
           { ...GROUP_100, name: "Renamed" },
         ]);
         yield* Effect.promise(() =>
-          expect.poll(() => f.plain.libraries[1]?.name).toBe("Renamed"),
+          expect
+            .poll(() => f.bridge.runSync(f.service.libraries)[1]?.name)
+            .toBe("Renamed"),
         );
         yield* Effect.promise(() =>
           expect.poll(() => changed.mock.calls.length).toBe(1),
         );
-        expect(f.plain.current).toBe(before);
+        expect(f.bridge.runSync(f.service.current)).toBe(before);
         expect(f.changed).not.toHaveBeenCalled();
       }),
   );
@@ -129,20 +143,22 @@ describe("LibraryScope", () => {
           libraries: [{ type: "personal" }, { type: "group", groupID: 100 }],
         },
       });
-      expect(f.plain.current?.unavailable).toEqual([
+      expect(f.bridge.runSync(f.service.current)?.unavailable).toEqual([
         { type: "group", groupID: 100 },
       ]);
       yield* f.refresh([MY_LIBRARY, { ...GROUP_100, libraryID: 11 }]);
       yield* changedScope(f, (scope) => scope?.unavailable.length === 0);
-      expect(f.plain.current?.available[1]?.libraryID).toBe(11);
+      expect(f.bridge.runSync(f.service.current)?.available[1]?.libraryID).toBe(
+        11,
+      );
     }),
   );
 
   it.effect("replays an unreadable database to a late subscriber", () =>
     Effect.gen(function* () {
       const f = yield* makeService({ libraries: null });
-      expect(f.plain.current).toBeNull();
-      expect(f.plain.libraries).toEqual([]);
+      expect(f.bridge.runSync(f.service.current)).toBeNull();
+      expect(f.bridge.runSync(f.service.libraries)).toEqual([]);
       expect(yield* Stream.runHead(f.service.changes)).toMatchObject({
         value: { current: null, libraryRows: null },
       });
@@ -152,11 +168,11 @@ describe("LibraryScope", () => {
   it.effect("holds the previous scope while a replacement read runs", () =>
     Effect.gen(function* () {
       const f = yield* makeService();
-      const before = f.plain.current;
+      const before = f.bridge.runSync(f.service.current);
       const gate = yield* f.gateLibraries();
       yield* f.refreshSource([MY_LIBRARY]);
       yield* Deferred.await(gate.waiting);
-      expect(f.plain.current).toBe(before);
+      expect(f.bridge.runSync(f.service.current)).toBe(before);
       yield* Deferred.succeed(gate.release, undefined);
       yield* changedScope(f, (scope) => scope?.available.length === 1);
     }),
@@ -167,16 +183,16 @@ describe("LibraryScope", () => {
     () =>
       Effect.gen(function* () {
         const f = yield* makeService();
-        const before = f.plain.current;
+        const before = f.bridge.runSync(f.service.current);
         f.failLibraries(true);
         yield* f.refreshSource([MY_LIBRARY]);
         yield* Effect.promise(() =>
           expect.poll(() => f.librariesFailed).toBeGreaterThan(0),
         );
-        expect(f.plain.current).toBe(before);
+        expect(f.bridge.runSync(f.service.current)).toBe(before);
         f.failLibraries(false);
         yield* TestClock.adjust("10 seconds");
-        expect(f.plain.current).toBe(before);
+        expect(f.bridge.runSync(f.service.current)).toBe(before);
         yield* changedScope(f, (scope) => scope?.available.length === 1);
       }),
   );
@@ -184,9 +200,9 @@ describe("LibraryScope", () => {
   it.effect("holds the previous scope when a database refresh fails", () =>
     Effect.gen(function* () {
       const f = yield* makeService();
-      const before = f.plain.current;
+      const before = f.bridge.runSync(f.service.current);
       yield* f.refreshSource(null);
-      expect(f.plain.current).toBe(before);
+      expect(f.bridge.runSync(f.service.current)).toBe(before);
       expect(f.changed).not.toHaveBeenCalled();
     }),
   );
@@ -194,7 +210,7 @@ describe("LibraryScope", () => {
   it.effect("separates an unreadable database from zero Libraries", () =>
     Effect.gen(function* () {
       const f = yield* makeService({ libraries: [] });
-      expect(f.plain.current).toEqual({
+      expect(f.bridge.runSync(f.service.current)).toEqual({
         mode: "all",
         invalid: false,
         available: [],
@@ -207,7 +223,7 @@ describe("LibraryScope", () => {
     Effect.gen(function* () {
       const f = yield* makeService({ broken: true });
       expect(yield* f.service.invalid).toBe(true);
-      expect(f.plain.current).toMatchObject({
+      expect(f.bridge.runSync(f.service.current)).toMatchObject({
         mode: "selected",
         invalid: true,
         available: [{ selector: { type: "personal" }, libraryID: 1 }],
@@ -236,7 +252,7 @@ describe("LibraryScope", () => {
       );
       yield* changedScope(f, (scope) => scope?.invalid === false);
       expect(yield* f.service.invalid).toBe(false);
-      expect(f.plain.current?.mode).toBe("all");
+      expect(f.bridge.runSync(f.service.current)?.mode).toBe("all");
       yield* Effect.promise(() =>
         expect.poll(() => f.changed.mock.calls.length).toBe(1),
       );
@@ -255,7 +271,7 @@ describe("LibraryScope", () => {
         }),
       );
       yield* changedScope(f, (scope) => scope?.mode === "selected");
-      expect(f.plain.current?.available).toEqual([
+      expect(f.bridge.runSync(f.service.current)?.available).toEqual([
         {
           selector: { type: "group", groupID: 200 },
           libraryID: 3,
@@ -273,8 +289,9 @@ describe("LibraryScope", () => {
         yield* f.refresh([MY_LIBRARY]);
         yield* changedScope(f, (scope) => scope?.available.length === 1);
         expect(
-          f.plain.resolveLibraries([MY_LIBRARY, GROUP_200, GROUP_100])
-            .available,
+          f.bridge.runSync(
+            f.service.resolveLibraries([MY_LIBRARY, GROUP_200, GROUP_100]),
+          ).available,
         ).toHaveLength(3);
       }),
   );
@@ -338,15 +355,23 @@ const makeService = Effect.fnUntraced(function* (
       : (options.scope ?? { mode: "all" }),
   });
   yield* Effect.promise(() =>
-    expect.poll(() => f.reads.state).not.toBe("loading"),
+    expect
+      .poll(() => f.bridge.runSync(f.reads.current).state)
+      .not.toBe("loading"),
   );
   const changed = vi.fn<(scope: ResolvedLibraryScope | null) => void>();
-  subscribe(f.runtime, f.plain["changed"], changed);
+  subscribe(
+    f.runtime,
+    scopeChanges(f.service.changes).pipe(Stream.map((state) => state.current)),
+    changed,
+  );
   const refreshSource = Effect.fnUntraced(function* (
     libraries: readonly Library[] | null,
   ) {
     opens.push(libraries);
-    yield* Effect.promise(() => f.reads.refresh().catch(() => {}));
+    yield* Effect.promise(() =>
+      f.bridge.runPromise(f.reads.refresh).catch(() => {}),
+    );
   });
   return {
     ...f,

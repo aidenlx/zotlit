@@ -344,10 +344,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const state=window.__zotlitQuerySource;
         if(!state)return true;
         const services=app.plugins.plugins.zotlit.services;
-        services.zoteroPref.setDataDir(state.previous);
+        services.bridge.runSync(services.zoteroPrefService.setDataDir(state.previous));
         await state.lease?.[Symbol.asyncDispose]();
         delete window.__zotlitQuerySource;
-        await services.zoteroReads.refresh();
+        await services.bridge.runPromise(services.zoteroReads.refresh);
         return true;
       })()`,
       );
@@ -368,10 +368,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       `(async()=>{
       const services=app.plugins.plugins.zotlit.services;
-      const lease=await services.zoteroReads.acquireRead();
-      window.__zotlitQuerySource={lease,previous:services.zoteroPref.dataDirOverride};
-      services.zoteroPref.setDataDir(${JSON.stringify(otherDir)});
-      await services.zoteroReads.refresh();
+      const lease=await services.acquireZoteroRead();
+      window.__zotlitQuerySource={lease,previous:services.bridge.runSync(services.zoteroPrefService.current).dataDirOverride};
+      services.bridge.runSync(services.zoteroPrefService.setDataDir(${JSON.stringify(otherDir)}));
+      await services.bridge.runPromise(services.zoteroReads.refresh);
       return true;
     })()`,
     );
@@ -1564,7 +1564,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     await obEval(
       run.vaultId,
-      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.bridge.subscribe(${services}.zoteroReads.changed,function(){window.zotlitE2EChanged++;});true`,
+      `window.zotlitE2EChanged=0;window.zotlitE2EOffChanged=${services}.bridge.subscribe(${services}.zoteroReads.events,function(event){if(event._tag==='changed')window.zotlitE2EChanged++;});true`,
     );
     cleanup.defer(async () => {
       await obEval(
@@ -1891,7 +1891,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const logPath =
       "app.plugins.plugins.zotlit.manifest.dir+'/zotlit.log.jsonl'";
     /** Note where the log file ends, then refresh the database. */
-    const refresh = `(async function(){window.zotlitE2ELogStart=(await app.vault.adapter.read(${logPath})).length;await ${services}.zoteroReads.refresh();return true;})()`;
+    const refresh = `(async function(){window.zotlitE2ELogStart=(await app.vault.adapter.read(${logPath})).length;await ${services}.bridge.runPromise(${services}.zoteroReads.refresh);return true;})()`;
     /**
      * Once the refresh's `Opened Zotero database` record is in the file, the
      * count of `DEBUG` records the refresh added under categories only the

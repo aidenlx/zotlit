@@ -240,15 +240,15 @@ function inlineOf(annotation: {
  */
 const INLINE_PROFILE = `
   const services=app.plugins.plugins.zotlit.services;
-  const profilePath=services.profile.defaultDocumentPath;
+  const profilePath=services.bridge.runSync(services.profileService.defaultDocumentPath);
   const existing=app.vault.getFileByPath(profilePath);
-  const original=existing?await app.vault.read(existing):services.profile.getBuiltInSource();
+  const original=existing?await app.vault.read(existing):services.bridge.runSync(services.profileService.getBuiltInSource());
   const header=${JSON.stringify("--- zotlit:annotation ---")};
   if(!original.includes(header))throw new Error('The default profile has no annotation section');
   if(!original.includes('{%'))throw new Error('The default profile does not render through Liquid');
   const inline=original.slice(0,original.indexOf(header)+header.length)+${JSON.stringify(`\n${INLINE_ANNOTATION}\n`)};
   if(existing){
-    cleanup.defer(async()=>{await app.vault.modify(existing,original);await services.template.refresh();});
+    cleanup.defer(async()=>{await app.vault.modify(existing,original);await services.bridge.runPromise(services.template.refresh);});
     await app.vault.modify(existing,inline);
   }else{
     const folder=profilePath.slice(0,profilePath.lastIndexOf('/'));
@@ -256,11 +256,11 @@ const INLINE_PROFILE = `
       cleanup.defer(async()=>{const made=app.vault.getFolderByPath(folder);if(made&&made.children.length===0)await app.vault.delete(made);});
       await app.vault.createFolder(folder);
     }
-    cleanup.defer(async()=>{const made=app.vault.getFileByPath(profilePath);if(made)await app.vault.delete(made);await services.template.refresh();});
+    cleanup.defer(async()=>{const made=app.vault.getFileByPath(profilePath);if(made)await app.vault.delete(made);await services.bridge.runPromise(services.template.refresh);});
     await app.vault.create(profilePath,inline);
   }
-  await services.template.refresh();
-  await until(()=>services.template.getLoadedDocumentSource(profilePath)?.includes(${JSON.stringify(INLINE_ANNOTATION)}),()=>'The inline annotation template did not load');`;
+  await services.bridge.runPromise(services.template.refresh);
+  await until(()=>services.bridge.runSync(services.template.getLoadedDocumentSource(profilePath))?.includes(${JSON.stringify(INLINE_ANNOTATION)}),()=>'The inline annotation template did not load');`;
 
 /**
  * Where an insert lands and what follows it: the draft's last line reads
@@ -363,8 +363,8 @@ async function searchAndInsert(
         ${inline ? INLINE_PROFILE : ""}
         ${draft(line)}
         cleanup.defer(()=>annotations.close());
-        const ledger=()=>app.plugins.plugins.zotlit.services.useLedger.get(${JSON.stringify(annotationItem.key)});
-        const before=ledger()?.instant.toString()??null;
+        const ledger=()=>app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.useLedger.get(${JSON.stringify(annotationItem.key)}));
+        const before=ledger()?.instant.epochMilliseconds??null;
         app.workspace.setActiveLeaf(leaf,{focus:true});
         const editor=leaf.view.editor;
         editor.setCursor({line:editor.lastLine(),ch:${ch}});
@@ -384,7 +384,7 @@ async function searchAndInsert(
         // The Use lands with the text, so a Use the insert made is newer than
         // the one held before the search.
         const after=ledger();
-        const use=after&&after.instant.toString()!==before?after.kind:null;
+        const use=after&&after.instant.epochMilliseconds!==before?after.kind:null;
         outcome={text,rows:shown,sup,citationOpen,use};
       }
       return JSON.stringify(outcome);
@@ -508,8 +508,8 @@ async function follow({
         let replayed=false;
         cleanup.defer(s.bridge.subscribe(s.useLedger.changes,()=>{
           if(!replayed){replayed=true;return;}
-          const [newest]=Object.entries(s.useLedger.uses).sort(([,a],[,b])=>b-a)[0]??[];
-          if(s.useLedger.get(newest)?.kind==='read')reads.push(s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
+          const [newest]=Object.entries(s.bridge.runSync(s.useLedger.uses)).sort(([,a],[,b])=>b-a)[0]??[];
+          if(s.bridge.runSync(s.useLedger.get(newest))?.kind==='read')reads.push(s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
         }));
         ${follow}
         const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
@@ -632,7 +632,7 @@ async function reindexed(kind: "resolved" | "unresolved"): Promise<string> {
     `(async()=>{
       ${WAITS}
       const s=app.plugins.plugins.zotlit.services;
-      await s.zoteroReads.refresh();
+      await s.bridge.runPromise(s.zoteroReads.refresh);
       await until(()=>s.bridge.runSync(s.attachmentResolver.lookup(${JSON.stringify(SHARED.attachmentKey)})).kind===${JSON.stringify(kind)},()=>'The Attachment index never answered ${kind} for ${SHARED.attachmentKey}');
       return JSON.stringify(s.bridge.runSync(s.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)}))).attachmentKey??null);
     })()`,
@@ -700,8 +700,8 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
         let replayed=false;
         cleanup.defer(services().bridge.subscribe(ledger.changes,()=>{
           if(!replayed){replayed=true;return;}
-          const [newest]=Object.entries(ledger.uses).sort(([,a],[,b])=>b-a)[0]??[];
-          if(ledger.get(newest)?.kind==='read')reads.push(services().bridge.runSync(services().pdfAnnotationEditor.bindingFor(restored.view))?.attachment.attachmentKey??null);
+          const [newest]=Object.entries(services().bridge.runSync(ledger.uses)).sort(([,a],[,b])=>b-a)[0]??[];
+          if(services().bridge.runSync(ledger.get(newest))?.kind==='read')reads.push(services().bridge.runSync(services().pdfAnnotationEditor.bindingFor(restored.view))?.attachment.attachmentKey??null);
         }));
         app.workspace.setActiveLeaf(restored,{focus:true});
         const opened=await services().targetOpener.open({kind:'annotation',attachmentKey:${JSON.stringify(SHARED.attachmentKey)},annotationKey:${JSON.stringify(SHARED.annotationKey)},pageIndex:0,pageLabel:${JSON.stringify(FIRST_PAGE.pageLabel)}},false);
@@ -768,7 +768,7 @@ async function reread(annotationKey: string, text: string): Promise<void> {
     `(async()=>{
       ${WAITS}
       const s=app.plugins.plugins.zotlit.services;
-      await s.zoteroReads.refresh();
+      await s.bridge.runPromise(s.zoteroReads.refresh);
       const holds=async()=>(await s.bridge.runPromise(s.annotationRepository.read(${JSON.stringify(annotationAttachment.key)})))?.annotations.find(({key})=>key===${JSON.stringify(annotationKey)})?.text===${JSON.stringify(text)};
       for(const end=deadline();!(await holds());await sleep(100))if(past(end))throw new Error('The repository never read the new text of ${annotationKey}');
       return true;

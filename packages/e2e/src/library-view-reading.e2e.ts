@@ -26,14 +26,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const services = "app.plugins.plugins.zotlit.services";
     const snapshot = await obEval(
       run.vaultId,
-      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,dataDir:${services}.zoteroPref.dataDirOverride})`,
+      `JSON.stringify({layout:app.workspace.getLayout(),document:${services}.bridge.runSync(${services}.settings.current)['library.document']??null,dataDir:${services}.bridge.runSync(${services}.zoteroPrefService.current).dataDirOverride})`,
     );
     const notePath = "Reading Card citations.md";
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document}));await bridge.runPromise(settings.flush);const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(saved.dataDir));const {settings,bridge}=${services};bridge.runSync(settings.update({'library.document':saved.document}));await bridge.runPromise(settings.flush);const file=app.vault.getFileByPath(${JSON.stringify(notePath)});if(file)await app.vault.delete(file);await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
 
@@ -341,7 +341,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(() => rm(emptyDir, { recursive: true, force: true }));
     await obEval(
       run.vaultId,
-      `${services}.zoteroPref.setDataDir(${JSON.stringify(emptyDir)});true`,
+      `${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(emptyDir)}));true`,
     );
     expect(
       await obEvalUntil(
@@ -355,7 +355,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       run.vaultId,
-      `${services}.zoteroPref.setDataDir(${JSON.stringify(JSON.parse(snapshot).dataDir)});true`,
+      `${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(JSON.parse(snapshot).dataDir)}));true`,
     );
 
     // Picking another node in the tree leaves no row selected, and the card

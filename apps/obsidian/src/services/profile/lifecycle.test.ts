@@ -106,9 +106,11 @@ it.effect(
         ),
       );
       const { profile } = yield* profileRuntimeOf(host);
-      expect(profile.loaded).toBe(false);
+      expect(yield* profile.loaded).toBe(false);
       yield* Effect.promise(() =>
-        expect(profile.restoreDefault()).rejects.toThrow(),
+        expect(
+          profile.bridge.runPromise(profile.restoreDefault()),
+        ).rejects.toThrow(),
       );
       expect(host.vault.contents.get(path)).toBe(source);
     }),
@@ -128,7 +130,9 @@ it.effect(
       );
       const { profile, profileService } = yield* profileRuntimeOf(host);
       yield* Effect.promise(() =>
-        expect(profile.materializeDefault()).rejects.toThrow(),
+        expect(
+          profile.bridge.runPromise(profile.materializeDefault()),
+        ).rejects.toThrow(),
       );
       expect(yield* Effect.flip(profileService.ejectDefault())).toBeInstanceOf(
         TemplateOperationError,
@@ -149,27 +153,40 @@ it.effect(
         received.push(state),
       );
       expect(received).toHaveLength(1);
-      const source = yield* Effect.promise(() => profile.getSource("default"));
-      const retained = profile.profiles;
+      const source = yield* Effect.promise(() =>
+        profile.bridge.runPromise(profile.getSource("default")),
+      );
+      const retained = profile.bridge.runSync(profile.profiles);
       yield* Effect.promise(() => runtime.dispose());
       bridge.runSync(settings.update({ "template.folder": "Released" }));
       host.vault.addFile("templates/zotlit-profile.late.md", source);
       yield* TestClock.adjust(500);
       expect(received).toHaveLength(1);
-      expect(profile.profiles).toBe(retained);
-      expect(profile.loaded).toBe(true);
-      expect(profile.resolveProfile("default")).toBeDefined();
+      expect(profile.bridge.runSync(profile.profiles)).toBe(retained);
+      expect(profile.bridge.runSync(profile.loaded)).toBe(true);
+      expect(
+        profile.bridge.runSync(profile.resolveProfile("default")),
+      ).toBeDefined();
       yield* Effect.promise(() =>
-        expect(profile.getSource("default")).rejects.toMatchObject({
+        expect(
+          profile.bridge.runPromise(profile.getSource("default")),
+        ).rejects.toMatchObject({
           name: "AbortError",
         }),
       );
       subscribe(profile.runtime, profile.changes, () => {
         throw new Error("late listener");
       })();
-      subscribe(profile.runtime, profile["changed"], () => {
-        throw new Error("late event");
-      })();
+      subscribe(
+        profile.runtime,
+        profile.changes.pipe(
+          Stream.drop(1),
+          Stream.map(() => undefined),
+        ),
+        () => {
+          throw new Error("late event");
+        },
+      )();
       unsubscribe();
     }),
 );
@@ -190,7 +207,7 @@ it.effect(
       };
       // Unload stops the waiting caller; the write itself finishes.
       const writing = expect(
-        profile.materializeDefault(),
+        profile.bridge.runPromise(profile.materializeDefault()),
       ).rejects.toMatchObject({ name: "AbortError" });
       yield* Effect.promise(() => started.promise);
       let closed = false;
@@ -216,7 +233,7 @@ it.effect.each(["read", "create", "duplicate", "save"] as const)(
       const host = createTemplateHost();
       const { runtime, profile, profileService } =
         yield* profileRuntimeOf(host);
-      const creating = profile.materializeDefault();
+      const creating = profile.bridge.runPromise(profile.materializeDefault());
       yield* TestClock.adjust(500);
       yield* Effect.promise(() => creating);
       const started = Promise.withResolvers<void>();
@@ -231,15 +248,21 @@ it.effect.each(["read", "create", "duplicate", "save"] as const)(
       };
       const reading: Effect.Effect<unknown> =
         operation === "read"
-          ? settled(profile.getSource("default"))
+          ? settled(profile.bridge.runPromise(profile.getSource("default")))
           : operation === "save"
             ? settled(
-                profile.saveSource("default", "Unwritten replacement", {
-                  state: "absent",
-                }),
+                profile.bridge.runPromise(
+                  profile.saveSource("default", "Unwritten replacement", {
+                    state: "absent",
+                  }),
+                ),
               )
             : operation === "create"
-              ? settled(profile.create({ label: "Late creation" }))
+              ? settled(
+                  profile.bridge.runPromise(
+                    profile.create({ label: "Late creation" }),
+                  ),
+                )
               : Fiber.join(
                   yield* Effect.forkChild(
                     Effect.exit(profileService.duplicate("default")),
@@ -249,7 +272,7 @@ it.effect.each(["read", "create", "duplicate", "save"] as const)(
       yield* Effect.promise(() => started.promise);
       yield* Effect.promise(() => runtime.dispose());
       expect(String(yield* reading)).not.toContain("ManagedRuntime disposed");
-      release.resolve(profile.getBuiltInSource());
+      release.resolve(profile.bridge.runSync(profile.getBuiltInSource()));
       yield* TestClock.adjust(500);
       expect([...host.vault.contents.keys()]).toEqual([
         "templates/zotlit-profile.default.md",
@@ -278,8 +301,8 @@ Annotation`,
         layouts.push(callback);
       };
       const { runtime, profile } = yield* profileRuntimeOf(host);
-      const deleting = profile
-        .delete("Bk3Qn7XvT2Lp" as ProfileId, "default")
+      const deleting = profile.bridge
+        .runPromise(profile.delete("Bk3Qn7XvT2Lp" as ProfileId, "default"))
         .catch((error: unknown) => error);
       const closing = runtime.dispose();
       const outcome = yield* Effect.promise(() => closing).pipe(

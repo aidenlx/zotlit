@@ -17,6 +17,7 @@ import type { QueryViewOutcome } from "@/services/item-query/query-view";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
 import { makeAnnotHost } from "@/views/annot-view/__fixtures__/host";
+import type { QueryHostDeps } from "@/views/query-view/__fixtures__/host";
 import { makeQueryHost } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
@@ -112,12 +113,12 @@ async function openLibrary() {
   const saveData = vi.spyOn(plugin, "saveData");
   const runtime = testRuntime();
   const cardsHost = cleanup.use(makeAnnotHost());
-  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+  const deps = stubService<QueryViewDeps & QueryHostDeps>("QueryViewDeps", {
     registry: cardsHost.registry,
     runtime,
     app,
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", {}),
-    reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
+    reads: stubService<QueryHostDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
       degraded: Stream.empty,
       "refresh-failed": Stream.empty,
@@ -125,7 +126,7 @@ async function openLibrary() {
       "db-file-missing": Stream.empty,
       "refresh-requested": Stream.empty,
     }),
-    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
       current: null,

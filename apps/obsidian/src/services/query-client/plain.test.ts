@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { expect } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
@@ -25,8 +25,12 @@ it.effect(
           },
         );
         const reads = Promise.all([
-          queries.read(["first"], () => Promise.resolve("new first")),
-          queries.read(["second"], () => Promise.resolve("new second")),
+          queries.bridge.runPromise(
+            queries.read(["first"], () => Promise.resolve("new first")),
+          ),
+          queries.bridge.runPromise(
+            queries.read(["second"], () => Promise.resolve("new second")),
+          ),
         ]);
         await reads;
         await delivered.promise;
@@ -39,7 +43,7 @@ it.effect(
     }),
 );
 
-it.effect("settles pending plain reads when the runtime closes", () =>
+it.effect("interrupts pending native reads when the runtime closes", () =>
   Effect.gen(function* () {
     const queries = yield* Effect.acquireDisposable(
       Effect.tryPromise(async () => queryClientsFixture()),
@@ -51,16 +55,19 @@ it.effect("settles pending plain reads when the runtime closes", () =>
         started.resolve();
         return gate.promise;
       };
-      const asking = expect(queries.ask(["pending"], read)).resolves.toBeNull();
-      const reading = expect(
+      const asking = queries.bridge.runPromiseExit(
+        queries.ask(["pending"], read),
+      );
+      const reading = queries.bridge.runPromiseExit(
         queries.read(["pending"], read),
-      ).resolves.toBeNull();
-      const composing = expect(
+      );
+      const composing = queries.bridge.runPromiseExit(
         queries.readFresh(["pending"], read),
-      ).rejects.toMatchObject({ name: "AbortError" });
+      );
       await started.promise;
       await queries[Symbol.asyncDispose]();
-      await Promise.all([asking, reading, composing]);
+      for (const exit of await Promise.all([asking, reading, composing]))
+        expect(Exit.hasInterrupts(exit)).toBe(true);
       gate.resolve("late");
       expect(queries.client.getQueryData(["pending"])).toBeUndefined();
     });
@@ -75,21 +82,29 @@ it.effect(
         Effect.tryPromise(async () => queryClientsFixture()),
       );
       yield* Effect.promise(async () => {
-        await queries.read(["held"], () => Promise.resolve("old"));
+        await queries.bridge.runPromise(
+          queries.read(["held"], () => Promise.resolve("old")),
+        );
         await queries[Symbol.asyncDispose]();
         const read = () => {
           throw new Error("A released read must not run");
         };
-        await expect(queries.ask(["held"], read)).resolves.toBeNull();
-        await expect(queries.read(["held"], read)).resolves.toBeNull();
-        expect(queries.peek(["held"])).toBeNull();
-        await expect(queries.readFresh(["held"], read)).rejects.toMatchObject({
+        await expect(
+          queries.bridge.runPromise(queries.ask(["held"], read)),
+        ).resolves.toBeNull();
+        await expect(
+          queries.bridge.runPromise(queries.read(["held"], read)),
+        ).resolves.toBeNull();
+        expect(queries.bridge.runSync(queries.peek(["held"]))).toBeNull();
+        await expect(
+          queries.bridge.runPromise(queries.readFresh(["held"], read)),
+        ).rejects.toMatchObject({
           name: "AbortError",
         });
-        queries.invalidate(["held"]);
-        queries.update(["held"], read);
-        expect(queries.keysUnder([])).toEqual([]);
-        queries.watch([], { settled: read })();
+        queries.bridge.runSync(queries.invalidate(["held"]));
+        queries.bridge.runSync(queries.update(["held"], read));
+        expect(queries.bridge.runSync(queries.keysUnder([]))).toEqual([]);
+        queries.bridge.runSync(queries.watch([], { settled: read }))();
         subscribe(queries.runtime, queries.changes, read)();
       });
     }),
@@ -101,7 +116,9 @@ it.effect(
     Effect.gen(function* () {
       const queries = yield* queryClientsOf();
       yield* Effect.promise(async () => {
-        await queries.read(["held"], () => Promise.resolve("old"));
+        await queries.bridge.runPromise(
+          queries.read(["held"], () => Promise.resolve("old")),
+        );
         const seen: HeldReadChange[] = [];
         const delivered = Promise.withResolvers<void>();
         const unsubscribe = subscribe(
@@ -113,19 +130,23 @@ it.effect(
           },
         );
         const inline: unknown[] = [];
-        const stopWatch = queries.watch(["held"], {
-          settled: (_key, held) => inline.push(held?.value),
-        });
-        queries.update<string>(["held"], () => "new");
+        const stopWatch = queries.bridge.runSync(
+          queries.watch(["held"], {
+            settled: (_key, held) => inline.push(held?.value),
+          }),
+        );
+        queries.bridge.runSync(queries.update<string>(["held"], () => "new"));
         expect(inline).toEqual(["new"]);
         stopWatch();
         await delivered.promise;
         unsubscribe();
-        queries.update<string>(["held"], () => "last");
+        queries.bridge.runSync(queries.update<string>(["held"], () => "last"));
         expect(seen.map((change) => change.held?.value)).toEqual(["new"]);
         const error = new Error("unreadable");
         await expect(
-          queries.readFresh(["failure"], () => Promise.reject(error)),
+          queries.bridge.runPromise(
+            queries.readFresh(["failure"], () => Promise.reject(error)),
+          ),
         ).rejects.toBe(error);
       });
     }),

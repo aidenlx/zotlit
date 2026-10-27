@@ -34,6 +34,7 @@ import { activeNoteAtom } from "@/services/note-index/atoms";
 import { annotationReads } from "@/services/pdf-annotation-editor/__fixtures__";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
+import type { QueryHostDeps } from "@/views/query-view/__fixtures__/host";
 import { makeQueryHost } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import { requested } from "@/views/query-view/__fixtures__/query-run";
@@ -77,7 +78,7 @@ it("settles a pending attachment load without restarting a closed view", async (
       return pending.promise;
     }),
   );
-  const deps = stubService<AnnotViewDeps>("AnnotViewDeps", {
+  const deps = stubService<AnnotViewDeps & QueryHostDeps>("AnnotViewDeps", {
     runtime,
     bridge: effectBridge(runtime),
     app: stubService<App>("App", {
@@ -87,13 +88,13 @@ it("settles a pending attachment load without restarting a closed view", async (
         getActiveFile: () => null,
       }),
     }),
-    reads: stubService<AnnotViewDeps["reads"]>("ZoteroReads", {
+    reads: stubService<QueryHostDeps["reads"]>("ZoteroReads", {
       ...reads,
       changed: Stream.empty,
       degraded: Stream.empty,
       "db-file-missing": Stream.empty,
     }),
-    libraryScope: stubService<AnnotViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       current: null,
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
@@ -357,20 +358,20 @@ async function openSidebar(
       })),
     },
   };
-  const deps = stubService<AnnotViewDeps>("AnnotViewDeps", {
+  const deps = stubService<AnnotViewDeps & QueryHostDeps>("AnnotViewDeps", {
     runtime,
     bridge,
     app,
     opener: stubService<AnnotViewDeps["opener"]>("TargetOpener", {}),
-    reads: stubService<AnnotViewDeps["reads"]>("ZoteroReads", {
+    reads: stubService<QueryHostDeps["reads"]>("ZoteroReads", {
       ...reads.streams,
     }),
-    libraryScope: stubService<AnnotViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
       current: null,
     }),
-    query: stubService<AnnotViewDeps["query"]>("Query", {
+    query: stubService<QueryHostDeps["query"]>("Query", {
       run,
       on: () => () => {},
       customFieldNames: async () => [],

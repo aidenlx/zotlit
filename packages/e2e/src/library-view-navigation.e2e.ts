@@ -322,6 +322,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       frames: Frame[];
       /** The view after each batch of mutations of it. */
       mutations: Frame[];
+      delayedReads: number;
     }
     const sidebar =
       "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view";
@@ -334,7 +335,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{${PAGE}const view=${sidebar};${prepare}await until('cards',()=>view.contentEl.querySelector('.zt-annot-card'),10000);await view.read;const frame=()=>new Promise(r=>requestAnimationFrame(r));await frame();await frame();const el=view.contentEl;const cards=()=>[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key'));const sample=()=>({title:el.querySelector('[data-annot-header-title]')?.textContent??null,cards:cards(),loading:!!el.querySelector('[data-annot-view-loading]')});const mutations=[];let start=performance.now();const observer=new MutationObserver(()=>mutations.push({...sample(),at:Math.round(performance.now()-start)}));observer.observe(el,{childList:true,subtree:true});const frames=[sample()];const service=${"app.plugins.plugins.zotlit.services"}.query;const run=service.run;if(${delay}>0)service.run=function(...args){return new Promise(r=>setTimeout(r,${delay})).then(()=>run.apply(this,args));};try{start=performance.now();${trigger}const first=frames[0].cards.join();const moved=()=>{const now=frames.at(-1);return now.cards.length>0&&now.cards.join()!==first;};while(performance.now()-start<${delay}+600||(!moved()&&performance.now()-start<5000)){await frame();frames.push({...sample(),at:Math.round(performance.now()-start)});}await view.read;await frame();frames.push({...sample(),at:Math.round(performance.now()-start)});}finally{service.run=run;observer.disconnect();}return JSON.stringify({frames,mutations});})()`,
+          `(async()=>{${PAGE}const view=${sidebar};${prepare}await until('cards',()=>view.contentEl.querySelector('.zt-annot-card'),10000);await view.read;const frame=()=>new Promise(r=>requestAnimationFrame(r));await frame();await frame();const el=view.contentEl;const cards=()=>[...el.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map(n=>n.getAttribute('data-zotero-annotation-key'));const sample=()=>({title:el.querySelector('[data-annot-header-title]')?.textContent??null,cards:cards(),loading:!!el.querySelector('[data-annot-view-loading]')});const mutations=[];let start=performance.now();const observer=new MutationObserver(()=>mutations.push({...sample(),at:Math.round(performance.now()-start)}));observer.observe(el,{childList:true,subtree:true});const frames=[sample()];const post=Worker.prototype.postMessage;const pending=new Map();let delayedReads=0;if(${delay}>0)Worker.prototype.postMessage=function(...args){const request=args[0]?.[1];if(request?.tag!=='ItemQuery'||request.payload.job.view.from!=='annotations')return post.apply(this,args);delayedReads++;const worker=this;const send=()=>post.apply(worker,args);const timer=setTimeout(()=>{pending.delete(timer);send();},${delay});pending.set(timer,send);};try{start=performance.now();${trigger}const first=frames[0].cards.join();const moved=()=>{const now=frames.at(-1);return now.cards.length>0&&now.cards.join()!==first;};while(performance.now()-start<${delay}+600||(!moved()&&performance.now()-start<5000)){await frame();frames.push({...sample(),at:Math.round(performance.now()-start)});}await view.read;await frame();frames.push({...sample(),at:Math.round(performance.now()-start)});}finally{Worker.prototype.postMessage=post;for(const [timer,send] of pending){clearTimeout(timer);send();}observer.disconnect();}return JSON.stringify({frames,mutations,delayedReads});})()`,
         ),
       ) as Step;
 
@@ -346,9 +347,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      */
     const oneStep = (
       what: string,
-      { frames, mutations }: Step,
+      { frames, mutations, delayedReads }: Step,
       { named, slow }: { named: boolean; slow: boolean },
     ) => {
+      expect(
+        delayedReads > 0,
+        `${what}: the query crosses the delayed worker boundary`,
+      ).toBe(slow);
       const before = frames[0]!;
       const after = frames.at(-1)!;
       // A read held past 150 ms shows the next Item over its cards loading.
@@ -734,7 +739,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )!;
     const notePath = await obEval(
       run.vaultId,
-      `${services}.noteIndex.getNotesByItemKey(${JSON.stringify(reader.key)})[0]?.path??''`,
+      `${services}.bridge.runSync(${services}.noteIndex.getNotesByItemKey(${JSON.stringify(reader.key)}))[0]?.path??''`,
     );
     expect(notePath).not.toBe("");
     const moveNote = (from: string, to: string) =>
@@ -749,7 +754,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(readPaper.key).toBe("IANNP5A2");
     const readNotePath = await obEval(
       run.vaultId,
-      `${services}.noteIndex.getNotesByItemKey(${JSON.stringify(readPaper.key)})[0]?.path??''`,
+      `${services}.bridge.runSync(${services}.noteIndex.getNotesByItemKey(${JSON.stringify(readPaper.key)}))[0]?.path??''`,
     );
     expect(readNotePath).not.toBe("");
     await moveNote(readNotePath, `${readNotePath}.away`);
@@ -782,7 +787,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{const s=${services};const libraries=${everywhere ? "s.libraryScope.current.available" : "s.libraryScope.libraries.filter(l=>l.selector.type==='personal')"};return JSON.stringify((await s.itemLookup.search(${JSON.stringify(query)},{limit:500,libraries})).map(h=>h.item.indexedKey));})()`,
+          `(async()=>{const s=${services};const libraries=${everywhere ? "s.bridge.runSync(s.libraryScope.current).available" : "s.bridge.runSync(s.libraryScope.libraries).filter(l=>l.selector.type==='personal')"};return JSON.stringify((await s.itemLookup.search(${JSON.stringify(query)},{limit:500,libraries})).map(h=>h.item.indexedKey));})()`,
         ),
       ) as string[];
     /**
@@ -1080,7 +1085,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obEval(
           run.vaultId,
-          `(async()=>{const s=${services};const libraries=${everywhere ? "s.libraryScope.current.available" : "s.libraryScope.libraries.filter(l=>l.selector.type==='personal')"};return JSON.stringify((await s.itemLookup.search(${JSON.stringify(query)},{limit:500,libraries})).map(h=>h.item.indexedKey));})()`,
+          `(async()=>{const s=${services};const libraries=${everywhere ? "s.bridge.runSync(s.libraryScope.current).available" : "s.bridge.runSync(s.libraryScope.libraries).filter(l=>l.selector.type==='personal')"};return JSON.stringify((await s.itemLookup.search(${JSON.stringify(query)},{limit:500,libraries})).map(h=>h.item.indexedKey));})()`,
         ),
       ) as string[];
 
@@ -1235,7 +1240,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{${PAGE}const key=${JSON.stringify(unwrittenKey)};const written=()=>[...new Set([...${services}.noteIndex.getNotesByItemKey(key),...app.vault.getMarkdownFiles().filter(file=>app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']===key)])];for(const file of written())await app.vault.delete(file);await until('no Literature Note of '+key+' left',()=>written().length===0,10000);return true;})()`,
+        `(async()=>{${PAGE}const key=${JSON.stringify(unwrittenKey)};const written=()=>[...new Set([...${services}.bridge.runSync(${services}.noteIndex.getNotesByItemKey(key)),...app.vault.getMarkdownFiles().filter(file=>app.metadataCache.getFileCache(file)?.frontmatter?.['zotero-key']===key)])];for(const file of written())await app.vault.delete(file);await until('no Literature Note of '+key+' left',()=>written().length===0,10000);return true;})()`,
       );
     });
     const child = COLLECTIONS.find(({ key }) => key === "PERSCHLD")!;
@@ -1418,13 +1423,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "app.plugins.disablePlugin('zotlit').then(function () { return app.plugins.enablePlugin('zotlit'); }).then(function () { return true; })";
     const snapshot = await obEval(
       run.vaultId,
-      `(async()=>JSON.stringify({layout:app.workspace.getLayout(),data:await app.vault.adapter.read(${dataPath}),dataDir:${services}.zoteroPref.dataDirOverride}))()`,
+      `(async()=>JSON.stringify({layout:app.workspace.getLayout(),data:await app.vault.adapter.read(${dataPath}),dataDir:${services}.bridge.runSync(${services}.zoteroPrefService.current).dataDirOverride}))()`,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obEval(
         run.vaultId,
-        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.zoteroPref.setDataDir(saved.dataDir);await ${services}.bridge.runPromise(${services}.settings.flush);await app.plugins.disablePlugin('zotlit');await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
+        `(async()=>{const saved=JSON.parse(${JSON.stringify(snapshot)});${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(saved.dataDir));await ${services}.bridge.runPromise(${services}.settings.flush);await app.plugins.disablePlugin('zotlit');await app.vault.adapter.write(${dataPath},saved.data);await app.plugins.enablePlugin('zotlit');await app.workspace.changeLayout(saved.layout);return true;})()`,
       );
     });
     const libraryLeaves = () =>
@@ -1587,7 +1592,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(() => rm(emptyDir, { recursive: true, force: true }));
     await obEval(
       run.vaultId,
-      `${services}.zoteroPref.setDataDir(${JSON.stringify(emptyDir)});true`,
+      `${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(emptyDir)}));true`,
     );
     const readNotFound = `(()=>{const el=app.workspace.getLeavesOfType('zotlit-library')[0].view.contentEl;const shown=(n)=>!!n&&n.checkVisibility();const part=(name)=>el.querySelector('[data-library-not-found="'+name+'"]');const pane=el.querySelector('[data-library-tree]');return JSON.stringify({tree:shown(part('tree'))||getComputedStyle(pane).display==='none'?part('tree').textContent:null,list:shown(part('list'))?[...part('list').querySelectorAll('button')].map(b=>b.textContent):null,papers:[...el.querySelectorAll('[data-query-table], [data-query-layout]')].some(shown),search:shown(el.querySelector('[data-library-search]')),nodes:[...el.querySelectorAll('[data-library-node]')].some(shown),facets:[...el.querySelectorAll('[data-library-facet]')].some(shown)});})()`;
     expect(
@@ -1611,7 +1616,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // case sets the same folder, since no reader can press a native dialog.
     await obEval(
       run.vaultId,
-      `${services}.zoteroPref.setDataDir(${JSON.stringify(JSON.parse(snapshot).dataDir)});true`,
+      `${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(JSON.parse(snapshot).dataDir)}));true`,
     );
     // The papers the Library View listed before come back.
     expect(

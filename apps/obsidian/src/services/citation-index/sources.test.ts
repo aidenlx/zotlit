@@ -48,18 +48,12 @@ async function readsOver(sql: string): Promise<TestReads> {
 }
 
 function readSources(
-  db: Pick<TestReads, "state" | "snapshot">,
+  db: Pick<TestReads, "current" | "snapshot">,
   citations: Parameters<typeof readReferenceSources>[1],
 ) {
   return readReferenceSources(
     {
-      current: Effect.sync(() => ({
-        state: db.state,
-        error: null,
-        moved: false,
-        dbFileMissing: false,
-        activeReadMode: null,
-      })),
+      current: db.current,
       snapshot: db.snapshot,
     },
     citations,
@@ -254,7 +248,13 @@ describe("readReferenceSources", () => {
         yield* Effect.promise(() => readsOver(seedWorksSql([CITED])));
 
         const { sources, database } = yield* readSources(
-          { state: "degraded", snapshot: ready.snapshot },
+          {
+            current: Effect.map(ready.current, (current) => ({
+              ...current,
+              state: "degraded" as const,
+            })),
+            snapshot: ready.snapshot,
+          },
           [citation(KEY, null)],
         );
 

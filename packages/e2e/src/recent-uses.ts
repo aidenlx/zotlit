@@ -39,7 +39,7 @@ export async function verifyRecentUses(
   cleanup.defer(async () => {
     const restored = await obEval(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(Object.fromEntries(Object.entries(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])));})()`,
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
@@ -101,7 +101,7 @@ export async function verifyRecentUses(
   /** Open an empty Citation Suggester and assert its first paper. */
   const emptyCitationFirst = (cited = false) =>
     run(
-      `const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(sourcePath)});await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const editor=leaf.view.editor;editor.setValue(${JSON.stringify(cited ? `[@${targetCitekey}]\n\n` : "")});await leaf.view.save();${cited ? `await until('document citations',async()=>(await s.citationIndex.getDocumentCitationSet(leaf.view.file)).citations.some(c=>c.indexedKey==='${target}'));` : ""}editor.setCursor(editor.offsetToPos(editor.getValue().length));editor.focus();const cm=editor.cm;cm.dispatch(cm.state.replaceSelection('[@'),{userEvent:'input.type'});const popup=await until('Citation Suggester',()=>[...activeDocument.querySelectorAll('.suggestion-container')].at(-1));const row=await until('first citation',()=>popup.querySelector('.suggestion-item'));if(!row.textContent.includes(${JSON.stringify(targetTitle)}))throw Error('Empty Citation Suggester did not put Alpha first: '+row.textContent);${cited ? `if(![...row.querySelectorAll('.zt-suggestion-flair-inline,.zt-suggestion-flair-text')].some(el=>el.checkVisibility()&&el.textContent===${JSON.stringify(m.citation_suggester_cited_in_note())}))throw Error('Cited paper has no visible label');` : ""}activeWindow.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await until('Citation Suggester closes',()=>!popup.isConnected);return true;`,
+      `const leaf=app.workspace.getLeavesOfType('markdown').find(l=>l.view.file?.path===${JSON.stringify(sourcePath)});await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});const editor=leaf.view.editor;editor.setValue(${JSON.stringify(cited ? `[@${targetCitekey}]\n\n` : "")});await leaf.view.save();${cited ? `await until('document citations',async()=>(await s.bridge.runPromise(s.citationIndex.getDocumentCitationSet(leaf.view.file))).citations.some(c=>c.indexedKey==='${target}'));` : ""}editor.setCursor(editor.offsetToPos(editor.getValue().length));editor.focus();const cm=editor.cm;cm.dispatch(cm.state.replaceSelection('[@'),{userEvent:'input.type'});const popup=await until('Citation Suggester',()=>[...activeDocument.querySelectorAll('.suggestion-container')].at(-1));const row=await until('first citation',()=>popup.querySelector('.suggestion-item'));if(!row.textContent.includes(${JSON.stringify(targetTitle)}))throw Error('Empty Citation Suggester did not put Alpha first: '+row.textContent);${cited ? `if(![...row.querySelectorAll('.zt-suggestion-flair-inline,.zt-suggestion-flair-text')].some(el=>el.checkVisibility()&&el.textContent===${JSON.stringify(m.citation_suggester_cited_in_note())}))throw Error('Cited paper has no visible label');` : ""}activeWindow.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));await until('Citation Suggester closes',()=>!popup.isConnected);return true;`,
     );
 
   for (const route of [
@@ -145,7 +145,7 @@ export async function verifyRecentUses(
   const beforeReload = await timeline();
   const ledger = await obEval(
     vaultId,
-    `JSON.stringify(${services}.useLedger.current)`,
+    `JSON.stringify(Object.fromEntries(Object.entries(${services}.bridge.runSync(${services}.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])))`,
   );
   const local = await obEval(
     vaultId,
@@ -165,12 +165,18 @@ export async function verifyRecentUses(
   ).toBe(true);
   expect(await timeline()).toEqual(beforeReload);
   expect(
-    await obEval(vaultId, `JSON.stringify(${services}.useLedger.current)`),
+    await obEval(
+      vaultId,
+      `JSON.stringify(Object.fromEntries(Object.entries(${services}.bridge.runSync(${services}.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])))`,
+    ),
   ).toBe(ledger);
   await reloadWindow();
   expect(await timeline()).toEqual(beforeReload);
   expect(
-    await obEval(vaultId, `JSON.stringify(${services}.useLedger.current)`),
+    await obEval(
+      vaultId,
+      `JSON.stringify(Object.fromEntries(Object.entries(${services}.bridge.runSync(${services}.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])))`,
+    ),
   ).toBe(ledger);
   await run(
     "const leaf=app.workspace.getLeavesOfType('zotlit-library')[0];await app.workspace.revealLeaf(leaf);app.workspace.setActiveLeaf(leaf,{focus:true});return true;",
@@ -231,12 +237,12 @@ export async function verifyRecentUses(
   await source();
   const beforeUpdate = await timeline();
   await run(
-    `const file=app.vault.getFileByPath('${targetPath}');const modified=file.stat.mtime;app.workspace.protocolHandler.handlers.get('zotlit/update')({action:'zotlit/update',item:'1','source-id':s.zoteroPref.sourceId,scope:'metadata'});await until('Companion update',()=>file.stat.mtime!==modified,10000);return true;`,
+    `const file=app.vault.getFileByPath('${targetPath}');const modified=file.stat.mtime;app.workspace.protocolHandler.handlers.get('zotlit/update')({action:'zotlit/update',item:'1','source-id':s.bridge.runSync(s.zoteroPrefService.current).sourceId,scope:'metadata'});await until('Companion update',()=>file.stat.mtime!==modified,10000);return true;`,
   );
   expect(await timeline()).toEqual(beforeUpdate);
   await source();
   await run(
-    `app.workspace.protocolHandler.handlers.get('zotlit/open')({action:'zotlit/open',item:'1','source-id':s.zoteroPref.sourceId});await until('Companion open',()=>app.workspace.getActiveFile()?.path==='${targetPath}');app.workspace.requestActiveLeafEvents.run();return true;`,
+    `app.workspace.protocolHandler.handlers.get('zotlit/open')({action:'zotlit/open',item:'1','source-id':s.bridge.runSync(s.zoteroPrefService.current).sourceId});await until('Companion open',()=>app.workspace.getActiveFile()?.path==='${targetPath}');app.workspace.requestActiveLeafEvents.run();return true;`,
   );
   const afterOpen = await timeline();
   expect(afterOpen[0]?.indexedKey).toBe(target);

@@ -66,7 +66,7 @@ async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
     await cp(path, fixture.databasePath);
     await obEval(
       vaultId,
-      `app.plugins.plugins.zotlit.services.zoteroReads.refresh().then(()=>true)`,
+      `app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroReads.refresh).then(()=>true)`,
       120_000,
     );
     expect(
@@ -121,7 +121,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.citationLookup.read({});return true;})()",
+      "(async()=>{const s=app.plugins.plugins.zotlit.services;await s.itemLookup.search('',{limit:1});await s.bridge.runPromise(s.citationLookup.read({}));return true;})()",
       120_000,
     );
   }, 600_000);
@@ -141,12 +141,13 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           const settled=Promise.withResolvers();
           let active=false,publications=0;
           using cleanup=new DisposableStack();
-          cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>publications++));
-          cleanup.defer(s.bridge.subscribe(s.zoteroReads.refreshing,value=>{
-            if(value)active=true;else if(active)settled.resolve();
+          cleanup.defer(s.bridge.subscribe(s.zoteroReads.events,event=>{if(event._tag==='changed')publications++;}));
+          cleanup.defer(s.bridge.subscribe(s.zoteroReads.events,event=>{
+            if(event._tag!=='refreshing')return;
+            if(event.active)active=true;else if(active)settled.resolve();
           }));
           cleanup.adopt(setTimeout(()=>settled.reject(Error('Push did not settle')),10000),clearTimeout);
-          s.zoteroReads.notifyExternalChange();
+          await s.bridge.runPromise(s.zoteroReads.notifyExternalChange);
           await settled.promise;
           const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
           return JSON.stringify({publications,itemID:hits[0]?.item.itemID});
@@ -170,24 +171,24 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               const gaps=[],readMs=[],citationReadMs=[];
               const key=${JSON.stringify(item.key)},expected=${JSON.stringify(item.citationKey)};
               const request={citekeys:[expected],indexedKeys:[key]};
-              const held=await lookup.read(request);
+              const held=await s.bridge.runPromise(lookup.read(request));
               const first=Promise.withResolvers();
               let projection;
-              projection=lookup.observe(()=>{if(projection?.current)first.resolve();});
+              projection=s.bridge.runSync(lookup.observe(()=>{if(projection?.current)first.resolve();}));
               using disposeProjection=projection;
               projection.set(request);
               await first.promise;
               let previous=performance.now(),heldThroughout=true;
               using cleanup=new DisposableStack();
               const changed=Promise.withResolvers();
-              cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>changed.resolve()));
+              cleanup.defer(s.bridge.subscribe(s.zoteroReads.events,event=>{if(event._tag==='changed')changed.resolve();}));
               const sample=()=>{const now=performance.now();gaps.push(now-previous);previous=now;heldThroughout&&=projection.current?.value.citekeyOf(key)===expected;};
               cleanup.adopt(setInterval(sample,4),clearInterval);
               let refreshing=true,readsDuringRefresh=0,readsCorrect=true;
               const refresh=(async()=>{
-                await s.zoteroReads.refresh();
+                await s.bridge.runPromise(s.zoteroReads.refresh);
                 await changed.promise;
-                return await lookup.read(request);
+                return await s.bridge.runPromise(lookup.read(request));
               })().finally(()=>{refreshing=false;});
               // Every search crosses the interactive worker and hydrates its hit from SQLite.
               const reads=(async()=>{
@@ -202,7 +203,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
               const citationReads=(async()=>{
                 do {
                   const started=performance.now();
-                  await lookup.read(request);
+                  await s.bridge.runPromise(lookup.read(request));
                   citationReadMs.push(performance.now()-started);
                   // A held answer can resolve immediately; yield so refresh and search can progress.
                   await new Promise(resolve=>setTimeout(resolve,0));
@@ -312,11 +313,11 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
             const s=app.plugins.plugins.zotlit.services;
             using cleanup=new DisposableStack();
             const changed=Promise.withResolvers();
-            cleanup.defer(s.bridge.subscribe(s.zoteroReads.changed,()=>changed.resolve()));
+            cleanup.defer(s.bridge.subscribe(s.zoteroReads.events,event=>{if(event._tag==='changed')changed.resolve();}));
             cleanup.adopt(setTimeout(()=>changed.reject(Error('Changed push did not publish')),60000),clearTimeout);
             let refreshed=false,maximum=0,samples=0,correct=true,fresh=false;
             const settled=changed.promise.then(()=>{refreshed=true;});
-            s.zoteroReads.notifyExternalChange();
+            await s.bridge.runPromise(s.zoteroReads.notifyExternalChange);
             const deadline=performance.now()+60000;
             do{
               const start=performance.now();
@@ -374,7 +375,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
         `(async()=>{
       const s=app.plugins.plugins.zotlit.services;
       let rejected=false;
-      try{await s.zoteroReads.refresh();}catch{rejected=true;}
+      try{await s.bridge.runPromise(s.zoteroReads.refresh);}catch{rejected=true;}
       const hits=await s.itemLookup.search(${JSON.stringify(item.key)},{limit:1});
       return JSON.stringify({rejected,itemID:hits[0]?.item.itemID});
     })()`,

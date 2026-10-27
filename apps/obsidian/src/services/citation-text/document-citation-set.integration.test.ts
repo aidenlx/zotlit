@@ -36,6 +36,7 @@ import type {
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText, noteContent } from "@/services/pandoc/inline-content";
+import { renderFailure } from "@/services/pandoc/render-cache/__fixtures__";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
@@ -198,12 +199,12 @@ async function readText(
   service: CitationText,
   file: TFile,
 ): Promise<DocumentCitations> {
-  let held = service.peek(file.path);
+  let held = service.bridge.runSync(service.peek(file.path));
   if (held === null) {
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribe(
         service.runtime,
-        service.settled,
+        service.events.pipe(Stream.filter((event) => event.type === "settled")),
         ({ path }) => {
           if (path !== file.path) return;
           unsubscribe();
@@ -211,11 +212,11 @@ async function readText(
         },
       );
     });
-    held = service.peek(file.path);
+    held = service.bridge.runSync(service.peek(file.path));
   }
   if (held === null) throw new Error("citation text missing");
   await held.settled;
-  return service.peek(file.path)?.value ?? held.value;
+  return service.bridge.runSync(service.peek(file.path))?.value ?? held.value;
 }
 
 /**
@@ -233,7 +234,7 @@ async function addKeylessNote(
   harness.metadataCache.setFrontmatter(note, {
     [FIELD_ZOTERO_KEY]: indexedKey,
   });
-  await harness.noteIndex.whenSettled();
+  await harness.noteIndex.bridge.runPromise(harness.noteIndex.whenSettled);
   return note;
 }
 
@@ -252,7 +253,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
 
-        const set = await harness.index.getDocumentCitationSet(harness.draft);
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         const rendered = await readText(text, harness.draft);
         expect(
           set.citations.map(({ indexedKey, refNumber }) => [
@@ -301,7 +304,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         );
         await using engine = await openEngine();
         await using text = openText(harness, engine, IBID_STYLE);
-        await harness.index.getDocumentCitationSet(harness.draft);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
 
         const rendered = await readText(text, harness.draft);
         const second = rendered.formatted.get("[@doe2024, p. 42]")?.[0];
@@ -321,7 +326,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
 
-        const set = await harness.index.getDocumentCitationSet(harness.draft);
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         const rendered = await readText(text, harness.draft);
         expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
         expect(markers(await sidebarEntries(engine, set.citations))).toEqual([
@@ -341,7 +348,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         );
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
-        await harness.index.getDocumentCitationSet(harness.draft);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         const rendered = await readText(text, harness.draft);
         expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
         expect(
@@ -374,7 +383,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
 
-        const includedSet = await index.getDocumentCitationSet(draft);
+        const includedSet = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
         const includedText = await readText(text, draft);
         const includedEntries = await sidebarEntries(
           engine,
@@ -408,7 +419,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         settings.bridge!.runSync(
           settings.update({ "citation.wikilink-citations": false }),
         );
-        const excludedSet = await index.getDocumentCitationSet(draft);
+        const excludedSet = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
         const excludedText = await readText(text, draft);
         const excludedEntries = await sidebarEntries(
           engine,
@@ -450,7 +463,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         await using engine = await openEngine();
         await using text = openText(harness, engine, NOTE_STYLE);
 
-        const set = await index.getDocumentCitationSet(draft);
+        const set = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
         const rendered = await readText(text, draft);
         const entries = await sidebarEntries(engine, set.citations, NOTE_STYLE);
 
@@ -499,7 +514,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
           xml: AUTHOR_STYLE,
           observeInput: (citations) => inputs.push(...citations),
         });
-        await harness.index.getDocumentCitationSet(harness.draft);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         const rendered = await readText(text, harness.draft);
         const output = firstText(rendered.formatted.get(body));
         expect(output).toContain("Zeta");
@@ -521,7 +538,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         });
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
-        await harness.index.getDocumentCitationSet(harness.draft);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         const rendered = await readText(text, harness.draft);
         expect(rendered.formatted.has("@doe2024 [p. 3; @ghost]")).toBe(false);
         expect(firstText(rendered.formatted.get("@roe2025"))).toBe("[2]");
@@ -540,7 +559,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
         await using engine = await openEngine();
         await using text = openText(harness, engine, NUMERIC_STYLE);
 
-        const set = await index.getDocumentCitationSet(draft);
+        const set = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
         const rendered = await readText(text, draft);
         const entries = await sidebarEntries(engine, set.citations);
 
@@ -658,7 +679,9 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
         // The first scan of a document announces itself, which drops a citation
         // text read that raced it; the surfaces answer that by asking again.
-        const set = await harness.index.getDocumentCitationSet(harness.draft);
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         const { formatted } = await readText(text, harness.draft);
 
         expect(set.citations).toMatchObject([
@@ -698,19 +721,35 @@ function openText(
     citationLookup: lookup,
     noteIndex,
     bibliographyRender: {
-      vaultPresentation: { styleId: null, locale: null },
-      readCitations: (citations, items) => {
-        observeInput?.(citations);
-        return engine.renderCitations({ citations, items, styleXml });
-      },
-      readBibliography: async (items) => {
-        const entries = await engine.renderBibliography({ items, styleXml });
-        return {
-          entries,
-          hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
-        };
-      },
-      invalidated: Stream.empty,
+      state: Effect.succeed({
+        vaultPresentation: { styleId: null, locale: null },
+        missingStyle: null,
+      }),
+      readCitations: (citations, items) =>
+        Effect.tryPromise({
+          try: async () => {
+            observeInput?.(citations);
+            return engine.renderCitations({ citations, items, styleXml });
+          },
+          catch: renderFailure,
+        }),
+      readBibliography: (items) =>
+        Effect.tryPromise({
+          try: async () => {
+            const entries = await engine.renderBibliography({
+              items,
+              styleXml,
+            });
+            return {
+              entries,
+              hasEntryMarkers: entries.some(
+                ({ marker }) => marker !== undefined,
+              ),
+            };
+          },
+          catch: renderFailure,
+        }),
+      events: Stream.empty,
     },
     queryClient,
   });

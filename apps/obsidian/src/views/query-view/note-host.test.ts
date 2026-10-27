@@ -24,6 +24,7 @@ import type {
   QueryViewRequest,
 } from "@/services/item-query/query-view";
 import { testAnnotHost } from "@/views/annot-view/__fixtures__/host";
+import type { QueryHostDeps } from "@/views/query-view/__fixtures__/host";
 import { fakeQuery } from "@/views/query-view/__fixtures__/query-run";
 
 // @vitest-environment happy-dom
@@ -108,11 +109,11 @@ async function setup(kind: HostKind) {
     Promise.resolve(EMPTY),
   );
   const runtime = testRuntime();
-  const deps = stubService<QueryViewDeps>("QueryViewDeps", {
+  const deps = stubService<QueryViewDeps & QueryHostDeps>("QueryViewDeps", {
     runtime,
     registry: testAnnotHost().registry,
     app,
-    reads: stubService<QueryViewDeps["reads"]>("ZoteroReads", {
+    reads: stubService<QueryHostDeps["reads"]>("ZoteroReads", {
       changed: Stream.empty,
       degraded: Stream.empty,
       "refresh-failed": Stream.empty,
@@ -120,7 +121,7 @@ async function setup(kind: HostKind) {
       "db-file-missing": Stream.empty,
       "refresh-requested": Stream.empty,
     }),
-    libraryScope: stubService<QueryViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.empty,
       "libraries-changed": Stream.empty,
       current: null,

@@ -47,7 +47,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     it("launches from the Template document row and exchanges its Connection code", async () => {
       defaultPath = await obEval(
         run.vaultId,
-        "app.plugins.plugins.zotlit.services.profile.defaultDocumentPath",
+        "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.defaultDocumentPath)",
       );
       await obEval(
         run.vaultId,
@@ -99,7 +99,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // The web save cases start from the built-in Default again.
       await obEval(
         run.vaultId,
-        "(async function(){await app.plugins.plugins.zotlit.services.profile.restoreDefault();return true;})()",
+        "(async function(){await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.profileService.restoreDefault());return true;})()",
       );
       expect(
         await obEvalUntil(
@@ -284,7 +284,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(
           await obEvalUntil(
             run.vaultId,
-            `(async function(){return String((await app.plugins.plugins.zotlit.services.profile.getSource('default'))===${JSON.stringify(unsupported)});})()`,
+            `(async function(){return String((await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.profileService.getSource('default')))===${JSON.stringify(unsupported)});})()`,
             { expected: "true" },
           ),
         ).toBe(true);

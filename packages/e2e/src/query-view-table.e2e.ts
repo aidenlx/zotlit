@@ -422,7 +422,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await waitFor(async () => {
         indexed = await obEval(
           run.vaultId,
-          `JSON.stringify([${JSON.stringify(tieFirst)},${JSON.stringify(tieSecond)}].map(key=>[key,${noteIndex}.getNotesByItemKey(key).map(file=>file.path),app.metadataCache.getCache('literatures/'+key+'.md')?.frontmatter?.['zt-rank']??null]))`,
+          `JSON.stringify([${JSON.stringify(tieFirst)},${JSON.stringify(tieSecond)}].map(key=>[key,app.plugins.plugins.zotlit.services.bridge.runSync(${noteIndex}.getNotesByItemKey(key)).map(file=>file.path),app.metadataCache.getCache('literatures/'+key+'.md')?.frontmatter?.['zt-rank']??null]))`,
         );
         return (JSON.parse(indexed) as [string, string[], unknown][]).every(
           ([key, paths, rank]) =>
@@ -698,7 +698,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await waitFor(async () => {
         const found = await obEval(
           run.vaultId,
-          `(()=>{const note=${noteIndex}.getNotesByItemKey(${JSON.stringify(fresh)})[0];if(note)return note.path;const prompt=activeDocument.querySelector('.prompt input');if(prompt)prompt.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return 'none';})()`,
+          `(()=>{const note=app.plugins.plugins.zotlit.services.bridge.runSync(${noteIndex}.getNotesByItemKey(${JSON.stringify(fresh)}))[0];if(note)return note.path;const prompt=activeDocument.querySelector('.prompt input');if(prompt)prompt.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return 'none';})()`,
         );
         if (found !== "none") createdPath = found;
         return found !== "none";

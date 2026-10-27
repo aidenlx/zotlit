@@ -132,6 +132,7 @@ export default defineConfig({
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
+    "zotlit-services/no-plain-service-adapters": "error",
     "zotlit-services/cli-command-registration": "error",
     "zotlit-effect-style/no-tacit": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.

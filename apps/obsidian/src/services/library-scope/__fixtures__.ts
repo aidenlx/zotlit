@@ -1,5 +1,5 @@
 /** Library Scope's real dependency graph over a test's RPC client and saved settings. */
-import { Context, Effect, Layer, Stream } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -11,11 +11,8 @@ import {
   PluginSettings,
 } from "@/services/settings/service";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
-import { plainZoteroReads } from "@/services/zotero-reads/plain";
 import { layerZoteroReads, ZoteroReads } from "@/services/zotero-reads/service";
 
-import { plainLibraryScope } from "./plain";
 import { layerLibraryScope, LibraryScope } from "./service";
 
 export const libraryScopeFixture = Effect.fnUntraced(function* (
@@ -53,15 +50,16 @@ export async function openLibraryScope(
   );
   await runtime.context();
   const service = runtime.runSync(LibraryScope);
-  const plain = plainLibraryScope(runtime);
   const settings = runtime.runSync(PluginSettings);
   const bridge = effectBridge(runtime);
-  const reads = plainZoteroReads(runtime);
+  const reads = Object.assign(runtime.runSync(ZoteroReads), {
+    bridge: effectBridge(runtime),
+    runtime,
+  });
   const owned = stack.move();
   return {
     runtime,
     service,
-    plain,
     settings,
     bridge,
     reads,
@@ -72,16 +70,7 @@ export async function openLibraryScope(
 /** Existing consumer fixtures already own these dependencies' runtimes. */
 export async function buildLibraryScope(
   deps: {
-    reads: Pick<
-      PlainZoteroReads,
-      | "reads"
-      | "changed"
-      | "degraded"
-      | "refresh-failed"
-      | "refreshing"
-      | "db-file-missing"
-      | "refresh-requested"
-    >;
+    reads: Pick<ZoteroReads["Service"], "reads" | "events">;
     settings: PluginSettings["Service"];
   },
   stack: AsyncDisposableStack,
@@ -103,15 +92,7 @@ export async function buildLibraryScope(
           Layer.succeed(
             ZoteroReads,
             stubService<ZoteroReads["Service"]>("ZoteroReads", {
-              reads: deps.reads.reads,
-              events: Stream.merge(
-                deps.reads.changed.pipe(
-                  Stream.map(() => ({ _tag: "changed" as const })),
-                ),
-                deps.reads.degraded.pipe(
-                  Stream.map((error) => ({ _tag: "degraded" as const, error })),
-                ),
-              ),
+              ...deps.reads,
             }),
           ),
         ),
@@ -120,5 +101,8 @@ export async function buildLibraryScope(
     stack,
   );
   await runtime.context();
-  return plainLibraryScope(runtime);
+  return Object.assign(runtime.runSync(LibraryScope), {
+    bridge: effectBridge(runtime),
+    runtime,
+  });
 }

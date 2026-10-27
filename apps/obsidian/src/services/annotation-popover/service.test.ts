@@ -27,10 +27,10 @@ import {
   EXCERPT_DISPLAY,
   ExcerptDisplays,
 } from "@/services/excerpt-image/display";
-import { savedExcerptRequest } from "@/services/excerpt-image/request";
-import { taggedQueryClients } from "@/services/query-client/__fixtures__";
+import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { AnnotationPopoverCore } from "./popover";
@@ -493,7 +493,7 @@ describe("AnnotationPopover with an Excerpt Image", () => {
     );
     const display = stack.use(
       new ExcerptDisplayFixture({
-        queries: taggedQueryClients(queryClient),
+        queries: queryClient,
         resolve: (request, signal) => images.resolve(request, signal),
         stored: (request) => images.stored(request),
       }),
@@ -504,15 +504,32 @@ describe("AnnotationPopover with an Excerpt Image", () => {
         read: (key) => bridge.runPromise(annotations.read(key)),
         bridge,
         excerptDisplay: display.service,
-        excerptRequest: ({ annotation, source }) =>
-          savedExcerptRequest({
-            annotation,
-            source,
-            sourceScope: DATA_DIR,
-            zoteroReads: db,
-            paths: { dataDir: DATA_DIR, baseAttachmentPath: null },
-            bridge,
+        excerptRequest: savedExcerptRequestOver({
+          reads: stubService<ZoteroReads["Service"]>("ZoteroReads", {
+            snapshot: Effect.map(
+              Effect.acquireDisposable(
+                Effect.tryPromise(() => db.acquireRead()),
+              ).pipe(
+                Effect.mapError(
+                  (error) =>
+                    new DbUnavailable({ message: String(error.cause) }),
+                ),
+              ),
+              (lease) => lease.reads,
+            ),
           }),
+          pref: stubService<ZoteroPref["Service"]>("ZoteroPref", {
+            current: Effect.succeed(
+              stubService<
+                import("@/services/zotero-pref/service").ZoteroPrefSnapshot
+              >("ZoteroPrefSnapshot", {
+                dataDir: DATA_DIR,
+                baseAttachmentPath: null,
+              }),
+            ),
+          }),
+          bridge,
+        }),
         commentRenderer: () => () => () => {},
       }),
     );

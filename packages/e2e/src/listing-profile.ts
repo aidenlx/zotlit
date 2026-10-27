@@ -22,11 +22,11 @@ export async function useListingProfile(
 ): Promise<void> {
   await obEval(
     vaultId,
-    `(async()=>{const profile=app.plugins.plugins.zotlit.services.profile;${restore ? "await profile.restoreDefault();" : ""}const listed=(${LIST_ANNOTATIONS_JS})(profile.getBuiltInSource());const path=profile.defaultDocumentPath;const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
+    `(async()=>{const profile=app.plugins.plugins.zotlit.services.profileService;${restore ? "await app.plugins.plugins.zotlit.services.bridge.runPromise(profile.restoreDefault());" : ""}const listed=(${LIST_ANNOTATIONS_JS})(app.plugins.plugins.zotlit.services.bridge.runSync(profile.getBuiltInSource()));const path=app.plugins.plugins.zotlit.services.bridge.runSync(profile.defaultDocumentPath);const folder=path.slice(0,path.lastIndexOf('/'));if(folder&&!app.vault.getFolderByPath(folder))await app.vault.createFolder(folder);await app.vault.create(path,listed);return true;})()`,
   );
   const ready = await obEvalUntil(
     vaultId,
-    "String(!!app.plugins.plugins.zotlit.services.profile.resolveProfile('default')?.document)",
+    "String(!!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.resolveProfile('default'))?.document)",
     { expected: "true" },
   );
   if (!ready) throw new Error("The default Profile did not read its document");

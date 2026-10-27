@@ -3,7 +3,7 @@
 // services over legacy classes, tag ids, Scope-owned resources and runners,
 // CLI registration, workers on effect/rpc, Effect-native events and state, and
 // failure boundaries. Rule tests: src/lint/services.test.ts.
-import { sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 
 import { importsEffect, isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, ModuleProgram, Rule } from "./oxlint-ast.ts";
@@ -1024,6 +1024,42 @@ export const temporalInEffect: Rule = {
   },
 };
 
+/** Service consumers use the native tag; adapters cannot return through fixtures. */
+export const noPlainServiceAdapters: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Read native service contracts instead of plain adapters.",
+    },
+    messages: {
+      adapter:
+        "Read the Effect service tag. Plain service adapters have been retired (#1863).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node: unknown) => {
+      const source = node as { readonly source?: { readonly value?: unknown } };
+      const value = source.source?.value;
+      if (typeof value !== "string") return;
+      const path = value.startsWith(".")
+        ? resolve(dirname(context.filename), value).split(sep).join("/")
+        : value;
+      if (
+        (path.startsWith("@/services/") || path.includes("/src/services/")) &&
+        ["plain", "plain.ts", "plain.js"].includes(path.split("/").at(-1)!)
+      )
+        context.report({ node: node as never, messageId: "adapter" });
+    };
+    return {
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+      ImportExpression: check,
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
@@ -1035,6 +1071,7 @@ export default {
     "no-default-runtime": noDefaultRuntime,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
+    "no-plain-service-adapters": noPlainServiceAdapters,
     "obsidian-capabilities": obsidianCapabilities,
     "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,

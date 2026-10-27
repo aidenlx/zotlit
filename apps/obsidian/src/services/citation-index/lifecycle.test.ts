@@ -110,7 +110,7 @@ it.effect(
       });
       h.vault.fail("draft.md");
       h.workspace.layoutReady();
-      await h.index.whenIndexed();
+      await h.index.bridge.runPromise(h.index.whenIndexed);
       const delivered = Promise.withResolvers<CitationIndexState>();
       const off = subscribe(h.index.runtime, h.index.changes, (state) =>
         delivered.resolve(state),
@@ -132,7 +132,7 @@ it.effect(
         { "draft.md": "@doe2024" },
         { store, notes: false },
       );
-      await seed.index.getFileScan(seed.draft);
+      await seed.index.bridge.runPromise(seed.index.getFileScan(seed.draft));
       const entered = Promise.withResolvers<void>();
       const release = Promise.withResolvers<void>();
       await using h = await createCitationIndexHarness(
@@ -159,13 +159,15 @@ it.effect(
       expect(acquired).toBe(false);
       release.resolve();
       await ready;
-      expect(h.index.citationKeys()).toEqual(["doe2024"]);
-      expect(h.index.syntaxes()).toEqual({
+      expect(h.index.bridge.runSync(h.index.citationKeys())).toEqual([
+        "doe2024",
+      ]);
+      expect(h.index.bridge.runSync(h.index.syntaxes())).toEqual({
         citekey: "excluded",
         wikilink: "excluded",
         annotation: "excluded",
       });
-      expect(h.index.current.backfilled).toBe(false);
+      expect(h.index.bridge.runSync(h.index.current).backfilled).toBe(false);
       expect(h.vault.reads).toEqual([]);
     }),
 );
@@ -190,9 +192,17 @@ it.effect(
       });
       const offEvent = subscribe(
         h.index.runtime,
-        h.index["membership-changed"],
+        h.index.events.pipe(
+          Stream.filter(
+            (
+              event,
+            ): event is Extract<typeof event, { type: "membership-changed" }> =>
+              event.type === "membership-changed",
+          ),
+          Stream.map(() => undefined),
+        ),
         () => {
-          memberships.push(h.index.syntaxes().citekey);
+          memberships.push(h.index.bridge.runSync(h.index.syntaxes()).citekey);
           throw new Error("event listener failed");
         },
       );
@@ -209,7 +219,9 @@ it.effect(
       h.settingsBridge.runSync(
         h.settings.update({ "citation.pandoc-citations": false }),
       );
-      expect(h.index.syntaxes().citekey).toBe("excluded");
+      expect(h.index.bridge.runSync(h.index.syntaxes()).citekey).toBe(
+        "excluded",
+      );
       expect(states).toHaveLength(2);
       expect(memberships).toHaveLength(2);
     }),
@@ -231,13 +243,21 @@ it.effect("continues host event intake after a failed handler (#1705)", () =>
       },
     });
     const published = Promise.withResolvers<string>();
-    const off = subscribe(h.index.runtime, h.index["changed"], (path) =>
-      published.resolve(path),
+    const off = subscribe(
+      h.index.runtime,
+      h.index.events.pipe(
+        Stream.filter(
+          (event): event is Extract<typeof event, { type: "changed" }> =>
+            event.type === "changed",
+        ),
+        Stream.map((event) => event.path),
+      ),
+      (path) => published.resolve(path),
     );
     h.metadataCache.change(h.draft, "@discarded");
     h.metadataCache.change(h.draft, "@roe2025");
     expect(await published.promise).toBe("draft.md");
-    expect(h.index.citationKeys()).toEqual(["roe2025"]);
+    expect(h.index.bridge.runSync(h.index.citationKeys())).toEqual(["roe2025"]);
     off();
   }),
 );
@@ -251,25 +271,34 @@ it.effect(
       });
       const service = h.runtime.runSync(CitationIndex);
       const aborted = { name: "AbortError" };
-      const waiting = expect(h.index.whenIndexed()).rejects.toMatchObject(
-        aborted,
-      );
+      const waiting = expect(
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      ).rejects.toMatchObject(aborted);
       const release = h.vault.hold("draft.md");
-      const scan = expect(h.index.getFileScan(h.draft)).rejects.toMatchObject(
-        aborted,
-      );
+      const scan = expect(
+        h.index.bridge.runPromise(h.index.getFileScan(h.draft)),
+      ).rejects.toMatchObject(aborted);
       await h.runtime.dispose();
       release();
       await waiting;
       await scan;
-      await expect(h.index.whenIndexed()).rejects.toMatchObject(aborted);
+      // A later whenIndexed finds the index stopped and settles at once.
+      expect(h.index.bridge.runSync(h.index.whenIndexed)).toBeUndefined();
       await expect(
-        h.index.getDocumentCitationSet(h.draft),
+        h.index.bridge.runPromise(h.index.getDocumentCitationSet(h.draft)),
       ).rejects.toMatchObject(aborted);
-      expect(h.index.current.stopped).toBe(true);
+      expect(h.index.bridge.runSync(h.index.current).stopped).toBe(true);
       const delivered: string[] = [];
-      subscribe(h.index.runtime, h.index["changed"], (path) =>
-        delivered.push(path),
+      subscribe(
+        h.index.runtime,
+        h.index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        (path) => delivered.push(path),
       );
       h.metadataCache.change(h.draft, "@roe2025");
       expect(delivered).toEqual([]);
@@ -293,9 +322,10 @@ it.effect(
       });
       const held = h.db.holdLookup();
       const controller = new AbortController();
-      const pending = h.index.getDocumentCitationSet(h.draft, {
-        signal: controller.signal,
-      });
+      const pending = h.index.bridge.runPromise(
+        h.index.getDocumentCitationSet(h.draft),
+        { signal: controller.signal },
+      );
       const rejected = expect(pending).rejects.toMatchObject({
         name: "AbortError",
       });
@@ -312,9 +342,11 @@ it.effect("preserves the base AbortError after lookup disposal (#1705)", () =>
       "draft.md": "@doe2024",
     });
     h.workspace.layoutReady();
-    await h.index.whenIndexed();
+    await h.index.bridge.runPromise(h.index.whenIndexed);
     await h.lookup.runtime.dispose();
-    await expect(h.index.getCitedBy(KEY_A)).rejects.toMatchObject({
+    await expect(
+      h.index.bridge.runPromise(h.index.getCitedBy(KEY_A)),
+    ).rejects.toMatchObject({
       name: "AbortError",
     });
   }),
@@ -356,7 +388,7 @@ it.effect(
         },
       );
       h.workspace.layoutReady();
-      await h.index.whenIndexed();
+      await h.index.bridge.runPromise(h.index.whenIndexed);
       h.vault.reads.length = 0;
       parsed = Promise.withResolvers<void>();
       h.runtime.runFork(
@@ -403,8 +435,10 @@ it.effect(
           store,
           notes: false,
         });
-        await seed.index.getFileScan(seed.draft);
-        await seed.index.getFileScan(seed.metadataCache.files.get("gone.md")!);
+        await seed.index.bridge.runPromise(seed.index.getFileScan(seed.draft));
+        await seed.index.bridge.runPromise(
+          seed.index.getFileScan(seed.metadataCache.files.get("gone.md")!),
+        );
       });
       const release = Promise.withResolvers<void>();
       const written = Promise.withResolvers<void>();
@@ -431,7 +465,9 @@ it.effect(
       );
       yield* TestClock.adjust("5 seconds");
       yield* Effect.promise(() => h.ready);
-      yield* Effect.promise(() => h.index.getFileScan(h.draft));
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.getFileScan(h.draft)),
+      );
       h.vault.deleteFile(h.metadataCache.files.get("gone.md")!);
       release.resolve();
       yield* Effect.promise(() => written.promise);
@@ -439,6 +475,8 @@ it.effect(
         "smith2021",
       );
       expect(store.records.has("gone.md")).toBe(false);
-      expect(h.index.citationKeys()).toEqual(["smith2021"]);
+      expect(h.index.bridge.runSync(h.index.citationKeys())).toEqual([
+        "smith2021",
+      ]);
     }),
 );

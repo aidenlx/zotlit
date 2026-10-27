@@ -1,7 +1,7 @@
 // Creation preparation and registry behavior over Profile documents and relational Item rows.
 
 import { it } from "@effect/vitest";
-import { Effect, Exit, Fiber } from "effect";
+import { Effect, Exit, Fiber, Stream } from "effect";
 import { TFolder } from "obsidian";
 import type { TFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, vi } from "vitest";
@@ -16,7 +16,6 @@ import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import { testEvents } from "@/lib/__fixtures__/event-stream";
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
@@ -26,7 +25,7 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { buildQueryService } from "@/services/item-query/__fixtures__";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { Template } from "@/services/template/service";
-import type { TestReads } from "@/services/zotero-reads/__fixtures__";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { listCollectionChoices } from "@/services/zotero-reads/membership";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
@@ -218,17 +217,23 @@ async function harness(
   const zoteroEvents = testEvents<ZoteroReadsEvents>(["changed", "degraded"]);
   // Library Scope reads the Libraries through ZoteroReads, over the same client.
   const readsEvents = {
-    runtime: testRuntime(),
-    reads: {
+    reads: readsAnswering({
       Libraries: () =>
         Effect.suspend(() =>
           readable
             ? Effect.succeed(getLibraries(client))
             : Effect.fail(new DbUnavailable({ message: "Unavailable" })),
         ),
-    },
-    ...zoteroEvents.streams,
-  } as unknown as TestReads;
+    }),
+    events: Stream.merge(
+      zoteroEvents.streams.changed.pipe(
+        Stream.map(() => ({ _tag: "changed" as const })),
+      ),
+      zoteroEvents.streams.degraded.pipe(
+        Stream.map((error) => ({ _tag: "degraded" as const, error })),
+      ),
+    ),
+  };
   let readable = true;
   const fixture = stack.use(
     await profileServiceFixture(
@@ -294,7 +299,7 @@ async function harness(
         dataDir: "/zotero",
         baseAttachmentPath: "/zotero/linked",
       },
-      effective: () => fixture.libraryScope.effective,
+      effective: () => fixture.bridge.runSync(fixture.libraryScope.effective),
       vaultName: "Membership tests",
       basePath: "/vault",
     },
@@ -308,7 +313,14 @@ async function harness(
   const deps: NoteFeatureSources = {
     app,
     zoteroReads,
-    profile,
+    profile: {
+      get profiles() {
+        return fixture.bridge.runSync(profile.profiles);
+      },
+      resolveProfile: (selector) =>
+        fixture.bridge.runSync(profile.resolveProfile(selector)),
+      profileOf: (file) => fixture.bridge.runSync(profile.profileOf(file)),
+    },
     template,
     settings,
     noteIndex,
@@ -376,7 +388,11 @@ async function harness(
         profileDocument(id, match),
       );
       await vi.advanceTimersByTimeAsync(500);
-      expect(await fixture.template.waitUntilSettled(5000)).toBe("settled");
+      expect(
+        await fixture.bridge.runPromise(
+          fixture.template.waitUntilSettled(5000),
+        ),
+      ).toBe("settled");
     },
     async deleteProfile(id: ProfileId) {
       vault.deleteFile(`templates/zotlit-profile.${id}.md`);
@@ -632,11 +648,9 @@ describe("Profile document matches at creation preparation", () => {
           }),
         );
         expect(
-          f.profile.profiles.map(({ id, match }) => [
-            id,
-            match.state,
-            match.summary,
-          ]),
+          f.profile.bridge
+            .runSync(f.profile.profiles)
+            .map(({ id, match }) => [id, match.state, match.summary]),
         ).toEqual([
           [books, "absent", m.profile_match_absent()],
           [manual, "evaluable", "false"],
@@ -648,7 +662,9 @@ describe("Profile document matches at creation preparation", () => {
         });
         yield* Effect.promise(() => f.editMatch(papers, "true"));
         expect(
-          f.profile.profiles.find(({ id }) => id === papers)?.match.state,
+          f.profile.bridge
+            .runSync(f.profile.profiles)
+            .find(({ id }) => id === papers)?.match.state,
         ).toBe("all");
         yield* Effect.promise(() => f.editMatch(papers, undefined));
         expect(yield* f.select(article)).toEqual({
@@ -672,7 +688,9 @@ describe("Profile document matches at creation preparation", () => {
             [papers]: 'library == "group:118"',
           }),
         );
-        const entry = f.profile.profiles.find(({ id }) => id === books)!;
+        const entry = f.profile.bridge
+          .runSync(f.profile.profiles)
+          .find(({ id }) => id === books)!;
         expect(entry.match.state).toBe("unevaluable");
         const problem =
           entry.match.state === "unevaluable" ? entry.match.problem : "";
@@ -702,7 +720,9 @@ describe("Profile document matches at creation preparation", () => {
   ])("reads %s as a Match that holds for no Item", (match) =>
     Effect.gen(function* () {
       const f = yield* acquire(() => harness({ [books]: match }));
-      expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
+      expect(f.profile.bridge.runSync(f.profile.profiles)[0]?.match.state).toBe(
+        "evaluable",
+      );
       for (const item of [personalBook, groupBook, article])
         expect(yield* f.select(item)).toMatchObject({
           selector: "default",
@@ -771,8 +791,10 @@ describe("Profile document matches at creation preparation", () => {
             },
           ),
         );
-        expect(f.profile.profiles).toEqual([]);
-        expect(f.profile.resolveProfile("default")).toBeUndefined();
+        expect(f.profile.bridge.runSync(f.profile.profiles)).toEqual([]);
+        expect(
+          f.profile.bridge.runSync(f.profile.resolveProfile("default")),
+        ).toBeUndefined();
         expect(yield* f.profileService.diagnostics).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
@@ -833,7 +855,9 @@ describe("Profile document matches at creation preparation", () => {
         const f = yield* acquire(() =>
           harness({ [books]: 'collections.within("Gone")' }),
         );
-        expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
+        expect(
+          f.profile.bridge.runSync(f.profile.profiles)[0]?.match.state,
+        ).toBe("evaluable");
         expect(yield* f.select(personalBook)).toMatchObject({
           source: "bound",
         });
@@ -847,9 +871,10 @@ describe("Profile document matches at creation preparation", () => {
           source: "bound",
         });
         expect(
-          listCollectionChoices(f.client, f.libraryScope.libraries).map(
-            ({ path }) => path.join("/"),
-          ),
+          listCollectionChoices(
+            f.client,
+            f.bridge.runSync(f.libraryScope.libraries),
+          ).map(({ path }) => path.join("/")),
         ).toContain("Project/Manuscripts");
         yield* Effect.promise(() =>
           f.editMatch(books, 'collections.within("Project")'),
@@ -960,7 +985,8 @@ describe("Profile document matches at creation preparation", () => {
           selector: papers,
         });
         expect(
-          created.outcome === "created" && f.profile.profileOf(created.file),
+          created.outcome === "created" &&
+            f.profile.bridge.runSync(f.profile.profileOf(created.file)),
         ).toMatchObject({ ok: true, profile: { selector: books } });
         expect(
           yield* f.feature.createNote(personalBook, { profile: papers }),

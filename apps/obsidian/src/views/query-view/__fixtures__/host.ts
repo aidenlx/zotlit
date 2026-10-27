@@ -1,5 +1,8 @@
 // A Query View test registry over in-memory host services and controlled query reads.
 import { Effect, Layer, Queue, Stream } from "effect";
+import type { QueryHandle } from "@/services/item-query/handle";
+import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
+import type { ZoteroReadsEvents, ZoteroReadLease } from "@/services/zotero-reads/service";
 
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -18,8 +21,32 @@ import { layerAnnotServices } from "@/views/annot-view/__fixtures__/host";
 import type { AnnotHostOptions } from "@/views/annot-view/__fixtures__/host";
 import type { QueryViewDeps } from "@/views/query-view/view";
 
+export interface QueryHostDeps extends Pick<QueryViewDeps, "app"> {
+  query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
+  reads: { acquireRead(): Promise<ZoteroReadLease> } &
+    Pick<
+      {
+        readonly [K in keyof ZoteroReadsEvents]: Stream.Stream<
+          Parameters<ZoteroReadsEvents[K]> extends [infer A] ? A : void
+        >;
+      } & { acquireRead: { acquireRead(): Promise<ZoteroReadLease> }["acquireRead"] },
+      | "changed"
+      | "degraded"
+      | "refresh-failed"
+      | "refreshing"
+      | "db-file-missing"
+      | "refresh-requested"
+      | "acquireRead"
+    >;
+  libraryScope: {
+    readonly changed: Stream.Stream<ResolvedLibraryScope | null>;
+    readonly "libraries-changed": Stream.Stream<void>;
+    readonly current: ResolvedLibraryScope | null;
+  };
+}
+
 export async function makeQueryHost<R = never>(
-  deps: Pick<QueryViewDeps, "query" | "reads" | "libraryScope" | "app">,
+  deps: QueryHostDeps,
   options: AnnotHostOptions<R> = {},
 ) {
   const stack = new AsyncDisposableStack();

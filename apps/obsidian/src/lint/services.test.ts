@@ -9,6 +9,7 @@ import {
   noDefaultRuntime,
   noLegacyService,
   noNanoevents,
+  noPlainServiceAdapters,
   layerStreamConsumer,
   obsidianCapabilities,
   plainAdapterStreams,
@@ -539,6 +540,47 @@ tester.run("temporal-in-effect", temporalInEffect, {
       code: 'import { instantClock } from "@/lib/effect-clock";\nconst spy = vi.spyOn(Temporal.Now, "instant");',
       filename: library,
       errors: [temporal],
+    },
+  ],
+});
+
+// #1863: every consumer, including fixtures, reads the retained service contract.
+tester.run("no-plain-service-adapters", noPlainServiceAdapters, {
+  valid: [
+    {
+      code: 'import { Template } from "@/services/template/service";',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+    },
+    {
+      code: 'import { plain } from "./plain";',
+      filename: "/repo/apps/obsidian/src/lib/text.ts",
+    },
+  ],
+  invalid: [
+    {
+      code: 'import type { PlainTemplate } from "@/services/template/plain";',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'import { plain } from "./plain";',
+      filename: "/repo/apps/obsidian/src/services/template/__fixtures__.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'export type { Plain } from "../template/plain.ts";',
+      filename: "/repo/apps/obsidian/src/services/profile/service.test.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'export * from "@/services/pandoc/render-cache/plain";',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+      errors: [{ messageId: "adapter" }],
+    },
+    {
+      code: 'const adapter = import("@/services/template/plain");',
+      filename: "/repo/apps/obsidian/src/lib/render.ts",
+      errors: [{ messageId: "adapter" }],
     },
   ],
 });

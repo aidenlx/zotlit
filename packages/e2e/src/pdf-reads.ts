@@ -22,7 +22,7 @@ export async function verifyPdfReads(
   const ledger = () =>
     obJson<Record<string, { kind: string; instant: string }>>(
       vaultId,
-      `JSON.stringify(${services}.useLedger.current)`,
+      `JSON.stringify(Object.fromEntries(Object.entries(${services}.bridge.runSync(${services}.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])))`,
     );
   const saved = await obEval(
     vaultId,
@@ -38,7 +38,7 @@ export async function verifyPdfReads(
   cleanup.defer(async () => {
     const restored = await obEval(
       vaultId,
-      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(app.plugins.plugins.zotlit.services.useLedger.current);})()`,
+      `(async()=>{app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return JSON.stringify(Object.fromEntries(Object.entries(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])));})()`,
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
@@ -48,7 +48,7 @@ export async function verifyPdfReads(
       attachment.itemID,
     );
     await run(
-      `app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());const saved=JSON.parse(${JSON.stringify(saved)});s.bridge.runSync(s.settings.update({'library.document':saved.settings['library.document']??null}));await s.bridge.runPromise(s.settings.flush);await app.workspace.changeLayout(saved.layout);await s.zoteroReads.refresh();return true;`,
+      `app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());const saved=JSON.parse(${JSON.stringify(saved)});s.bridge.runSync(s.settings.update({'library.document':saved.settings['library.document']??null}));await s.bridge.runPromise(s.settings.flush);await app.workspace.changeLayout(saved.layout);await s.bridge.runPromise(s.zoteroReads.refresh);return true;`,
     );
   });
   await run(
@@ -65,7 +65,7 @@ export async function verifyPdfReads(
       "app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());app.workspace.requestActiveLeafEvents.run();return true;",
     );
   await run(
-    `app.workspace.protocolHandler.handlers.get('zotlit/open-attachment')({action:'zotlit/open-attachment',item:'${attachment.itemID}','source-id':s.zoteroPref.sourceId});return true;`,
+    `app.workspace.protocolHandler.handlers.get('zotlit/open-attachment')({action:'zotlit/open-attachment',item:'${attachment.itemID}','source-id':s.bridge.runSync(s.zoteroPrefService.current).sourceId});return true;`,
   );
   await opened();
   expect((await ledger())[itemKey]?.kind).toBe("read");
@@ -103,7 +103,7 @@ export async function verifyPdfReads(
   // The restored reader may turn pages later. A fresh plugin has no page
   // throttle history, so this real transition proves the subscription records.
   await run(
-    `const reader=app.workspace.getLeavesOfType('pdf')[0].view.viewer.child;reader.applySubpath(reader.pdfViewer.pdfViewer.currentPageNumber===1?'#page=2':'#page=1');await until('page read',()=>s.useLedger.get('${itemKey}')?.instant.toString()!==${JSON.stringify(firstRead.instant)});return true;`,
+    `const reader=app.workspace.getLeavesOfType('pdf')[0].view.viewer.child;reader.applySubpath(reader.pdfViewer.pdfViewer.currentPageNumber===1?'#page=2':'#page=1');await until('page read',()=>s.bridge.runSync(s.useLedger.get('${itemKey}'))?.instant.epochMilliseconds!==Temporal.Instant.from(${JSON.stringify(firstRead.instant)}).epochMilliseconds);return true;`,
   );
   const pageRead = (await ledger())[itemKey]!;
   await close();

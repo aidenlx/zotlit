@@ -3006,7 +3006,7 @@ describe("Template Workbench Item choice", () => {
         }),
       },
     );
-    const { reads } = await zoteroReads.ready;
+    const { reads } = zoteroReads;
     const items = await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [FIRST] }),
     );
@@ -3014,7 +3014,7 @@ describe("Template Workbench Item choice", () => {
     gated = true;
     const { view, app } = setup({
       runtime: testRuntime(),
-      zoteroReads,
+      services: { zoteroReads },
       itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
         "ItemLookup",
         {

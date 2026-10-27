@@ -67,7 +67,9 @@ it.effect.each(["annotation-uses", "cited-by"])(
         ),
       );
       h.workspace.layoutReady();
-      yield* Effect.promise(() => h.index.whenIndexed());
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      );
       const cli = commands(h);
       held = true;
       h.metadataCache.change(
@@ -105,7 +107,9 @@ it.effect(
         ),
       );
       h.workspace.layoutReady();
-      yield* Effect.promise(() => h.index.whenIndexed());
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      );
       const cli = commands(h);
       const held = h.db.holdLookup();
       const fiber = yield* cli("zotlit:cited-by")
@@ -116,7 +120,9 @@ it.effect(
         h.draft,
         `[](${annotationUri}) [](zotero://open/library/items/PDFNCKEY?annotation=ANNNCKEY)`,
       );
-      yield* Effect.promise(() => h.index.getFileScan(h.draft));
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.getFileScan(h.draft)),
+      );
       held.release();
       const answer = JSON.parse(yield* Fiber.join(fiber));
       expect(answer.ok).toBe(true);
@@ -144,7 +150,9 @@ it.effect(
         ),
       );
       h.workspace.layoutReady();
-      yield* Effect.promise(() => h.index.whenIndexed());
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      );
       const cli = commands(h);
       const held = h.db.holdLookup();
       const fiber = yield* cli("zotlit:references")
@@ -199,7 +207,9 @@ it.effect(
         ),
       );
       h.workspace.layoutReady();
-      yield* Effect.promise(() => h.index.whenIndexed());
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      );
       held = true;
       h.metadataCache.change(h.draft, "@doe2024 @roe2025");
       yield* Effect.promise(() => entered.promise);
@@ -233,7 +243,9 @@ it.effect.each(["references", "cited-by", "annotation-uses"])(
         ),
       );
       h.workspace.layoutReady();
-      yield* Effect.promise(() => h.index.whenIndexed());
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      );
       h.vault.write(h.draft, "[@roe2025]");
       const answer = JSON.parse(
         yield* commands(h)(`zotlit:${command}`).handler(
@@ -268,7 +280,9 @@ it.effect.each(["references", "cited-by", "annotation-uses"])(
         ),
       );
       h.workspace.layoutReady();
-      yield* Effect.promise(() => h.index.whenIndexed());
+      yield* Effect.promise(() =>
+        h.index.bridge.runPromise(h.index.whenIndexed),
+      );
       h.vault.write(h.draft, "[@roe2025]");
       const release = h.vault.hold(h.draft.path);
       yield* Effect.addFinalizer(() => Effect.sync(release));

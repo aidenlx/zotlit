@@ -183,7 +183,7 @@ async function saveMatch(match: unknown): Promise<void> {
   expect(
     await obEvalUntil(
       run.vaultId,
-      `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(booksProfile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
+      `String(JSON.stringify(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).find(p=>p.id===${JSON.stringify(booksProfile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
       { expected: "true" },
     ),
   ).toBe(true);
@@ -210,7 +210,7 @@ async function writeMatch(
   expect(
     await obEvalUntil(
       run.vaultId,
-      `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(profile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
+      `String(JSON.stringify(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.profiles).find(p=>p.id===${JSON.stringify(profile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
       { expected: "true" },
     ),
   ).toBe(true);

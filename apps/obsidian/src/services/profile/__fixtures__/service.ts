@@ -4,16 +4,17 @@ import { buildRuntime } from "@/lib/effect-layer";
 import { buildLibraryScope } from "@/services/library-scope/__fixtures__";
 import { PluginSettings } from "@/services/settings/service";
 import { createTemplateHost } from "@/services/template/__fixtures__";
-import { plainTemplate } from "@/services/template/plain";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { Template } from "@/services/template/service";
+import { stubService } from "@/lib/__fixtures__/service-stub";
+import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { profileOver } from "@/services/profile/__fixtures__";
-import { plainProfile } from "@/services/profile/plain";
 import { Profile } from "@/services/profile/service";
 
 export async function profileServiceFixture(
   files: Record<string, string> = {},
-  reads?: Pick<PlainZoteroReads, "reads" | "changed" | "degraded" | "refresh-failed" | "refreshing" | "db-file-missing" | "refresh-requested">,
+  reads?: Pick<ZoteroReads["Service"], "reads" | "events">,
   context = Context.empty(),
 ) {
   await using stack = new AsyncDisposableStack();
@@ -22,14 +23,14 @@ export async function profileServiceFixture(
   await runtime.context();
   const settings = runtime.runSync(PluginSettings);
   const bridge = effectBridge(runtime);
-  const template = plainTemplate(runtime);
-  const profile = plainProfile(runtime);
+  const template = Object.assign(runtime.runSync(Template), { runtime, bridge });
+  const profile = Object.assign(runtime.runSync(Profile), { runtime, bridge });
   const profileService = runtime.runSync(Profile);
   const libraryScope = await buildLibraryScope({ settings,
-    reads: reads ?? ({
-      reads: { Libraries: () => Effect.succeed([{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }]) },
-      changed: Stream.empty, degraded: Stream.empty, "refresh-failed": Stream.empty, refreshing: Stream.empty, "db-file-missing": Stream.empty, "refresh-requested": Stream.empty,
-    } as unknown as PlainZoteroReads),
+    reads: reads ?? stubService<ZoteroReads["Service"]>("ZoteroReads", {
+      reads: readsAnswering( { Libraries: () => Effect.succeed([{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }]) }),
+      events: Stream.empty,
+    }),
   }, stack);
   const cleanup = stack.move();
   return {

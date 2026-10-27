@@ -1,9 +1,19 @@
 import { it } from "@effect/vitest";
-import { Context, Deferred, Effect, Fiber, Layer, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
+import * as lookupEvents from "@/services/citation-index/lookup-service";
 import { layerLibraryScope } from "@/services/library-scope/service";
 import { layerQueryClients } from "@/services/query-client/service";
 import { layerPluginSettings } from "@/services/settings/service";
@@ -84,13 +94,15 @@ it.effect(
           ),
         ),
       );
-      yield* Effect.promise(() => f.plain.whenResolved());
-      const view = f.plain.observe(() => {});
+      yield* Effect.promise(() =>
+        f.service.bridge.runPromise(f.service.whenResolved),
+      );
+      const view = f.service.bridge.runSync(f.service.observe(() => {}));
       view.set({ citekeys: ["first"] });
       yield* Effect.promise(async () => {
         await expect.poll(() => view.current?.status).toBe("fresh");
       });
-      const status = f.plain.status;
+      const status = f.service.bridge.runSync(f.service.current).status;
       yield* Effect.promise(() => f.close());
       expect(view.current).toBeNull();
       view.set({ citekeys: ["second"] });
@@ -99,20 +111,29 @@ it.effect(
       expect(late).toEqual([
         { status, revision: expect.any(String), stopped: true },
       ]);
-      expect(f.plain.status).toBe(status);
+      expect(f.service.bridge.runSync(f.service.current).status).toBe(status);
       yield* Effect.promise(() =>
-        expect(f.plain.read({})).rejects.toMatchObject({ name: "AbortError" }),
+        expect(
+          f.service.bridge.runPromise(f.service.read({})),
+        ).rejects.toMatchObject({ name: "AbortError" }),
       );
-      yield* Effect.promise(() => f.plain.whenResolved());
-      const inert = f.plain.observe(() => {
-        throw new Error("released observer");
-      });
+      const resolved = yield* Effect.promise(() =>
+        f.service.bridge.runPromiseExit(f.service.whenResolved),
+      );
+      expect(
+        Exit.isFailure(resolved) && Cause.hasInterruptsOnly(resolved.cause),
+      ).toBe(true);
+      const inert = f.service.bridge.runSync(
+        f.service.observe(() => {
+          throw new Error("released observer");
+        }),
+      );
       inert.set({ citekeys: ["first"] });
       expect(inert.current).toBeNull();
-      subscribe(f.runtime, f.plain.changes, () => {
+      subscribe(f.runtime, f.service.changes, () => {
         throw new Error("released subscriber");
       })();
-      subscribe(f.runtime, f.plain["changed"], () => {
+      subscribe(f.runtime, lookupEvents.lookupChanged(f.service), () => {
         throw new Error("released event");
       })();
       inert[Symbol.dispose]();
@@ -198,19 +219,24 @@ it.effect(
         ),
       );
       yield* Deferred.await(initial);
-      const reading = f.plain.read({ citekeys: ["first"] });
+      const reading = f.service.bridge.runPromise(
+        f.service.read({ citekeys: ["first"] }),
+      );
       const rejected = expect(reading).rejects.toMatchObject({
         name: "AbortError",
       });
       yield* Deferred.await(started);
-      const waiting = f.plain.whenResolved();
+      const waiting = f.service.bridge.runPromiseExit(f.service.whenResolved);
       const events = yield* Stream.runDrain(f.service.invalidated).pipe(
         Effect.forkChild,
       );
       yield* Effect.promise(() => f.close());
       yield* Deferred.await(interrupted);
       yield* Effect.promise(() => rejected);
-      yield* Effect.promise(() => waiting);
+      const settled = yield* Effect.promise(() => waiting);
+      expect(
+        Exit.isFailure(settled) && Cause.hasInterruptsOnly(settled.cause),
+      ).toBe(true);
       yield* Fiber.join(events);
     }),
 );

@@ -68,7 +68,7 @@ async function setup(
     { enabledAtRuntime: scanned },
   );
   const noteIndex = buildNoteIndex(host, owned);
-  if (scanned) await noteIndex.whenIndexed();
+  if (scanned) await noteIndex.bridge.runPromise(noteIndex.whenIndexed);
   const typesChanged = new Set<(name: string) => void>();
   const getCache = vi.fn((path: string) => host.metadataCache.getCache(path));
   const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
@@ -116,7 +116,7 @@ async function setup(
   const write = async (path: string, properties: Record<string, unknown>) => {
     const file = host.vault.files.get(path) ?? host.vault.addFile(path);
     host.metadataCache.change(file, cache({ properties }));
-    await noteIndex.whenSettled();
+    await noteIndex.bridge.runPromise(noteIndex.whenSettled);
   };
   const notesHost = owned.use(await makeNotesHost(deps));
   return { notes: notesHost.notes, host, getCache, setType, write };
@@ -357,7 +357,7 @@ describe("literatureNotes vault property writes", () => {
   ) {
     const host = createObsidianHost(files);
     const noteIndex = buildNoteIndex(host.app as unknown as App, owned);
-    await noteIndex.whenIndexed();
+    await noteIndex.bridge.runPromise(noteIndex.whenIndexed);
     const replacedKeys = vi.fn(
       async (file: TFile) => new Set(replaced[file.path] ?? []),
     );

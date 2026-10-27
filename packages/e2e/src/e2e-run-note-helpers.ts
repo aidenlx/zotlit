@@ -80,7 +80,7 @@ function hasIndexedNotes(
 ): Promise<boolean> {
   return obEvalUntil(
     vaultId,
-    `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(indexedKey)}).length)`,
+    `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(indexedKey)})).length)`,
     { expected: String(count) },
   );
 }
@@ -92,7 +92,7 @@ async function indexedNote(
 ): Promise<{ indexedKey: string; path: string | null }> {
   const response = await obEval(
     vaultId,
-    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var notes=services.noteIndex.getNotesByItemKey(hit.item.indexedKey);return JSON.stringify({indexedKey:hit.item.indexedKey,path:notes[0]?notes[0].path:null});})()`,
+    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var notes=services.bridge.runSync(services.noteIndex.getNotesByItemKey(hit.item.indexedKey));return JSON.stringify({indexedKey:hit.item.indexedKey,path:notes[0]?notes[0].path:null});})()`,
   );
   return JSON.parse(response) as { indexedKey: string; path: string | null };
 }
@@ -432,7 +432,7 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
   const server = JSON.parse(
     await obEval(
       vaultId,
-      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId});})()",
+      "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.bridge.runSync(services.zoteroPrefService.current).sourceId});})()",
     ),
   ) as { hostname: string; port: number; sourceId: string };
   const response = await fetch(

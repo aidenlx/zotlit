@@ -93,7 +93,7 @@ const requester = `
   const requestFor=key=>{
     const annotation=list.annotations.find(candidate=>candidate.key===key);
     if(!annotation)throw new Error('The Fixture holds no Annotation '+key);
-    return {annotation,source:list.source,sourceScope:services.zoteroPref.dataDir,attachmentKey:annotation.parentKey,libraryID:${attachment.libraryID},pdfPath:app.vault.adapter.getFullPath(${JSON.stringify(vaultPath)}),zoteroPngPath:require('path').join(services.zoteroPref.dataDir,'cache','library',key+'.png')};
+    return {annotation,source:list.source,sourceScope:services.bridge.runSync(services.zoteroPrefService.current).dataDir,attachmentKey:annotation.parentKey,libraryID:${attachment.libraryID},pdfPath:app.vault.adapter.getFullPath(${JSON.stringify(vaultPath)}),zoteroPngPath:require('path').join(services.bridge.runSync(services.zoteroPrefService.current).dataDir,'cache','library',key+'.png')};
   };`;
 
 /**
@@ -507,8 +507,8 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     `(async()=>{
       const services=app.plugins.plugins.zotlit.services;
-      await services.noteIndex.whenIndexed();
-      const file=services.noteIndex.getImportedNoteByNoteKey(${JSON.stringify(noteItem.key)})[0];
+      await services.bridge.runPromise(services.noteIndex.whenIndexed);
+      const file=services.bridge.runSync(services.noteIndex.getImportedNoteByNoteKey(${JSON.stringify(noteItem.key)}))[0];
       if(!file)throw new Error('The Fixture Vault holds no Imported Note for ${noteItem.key}');
       return JSON.stringify({path:file.path,source:await app.vault.read(file)});
     })()`,
@@ -609,7 +609,7 @@ export async function verifyReaderBackedExcerpts(
         const memory=()=>{try{const value=process.memoryUsage();return {rss:value.rss,heapUsed:value.heapUsed,heapTotal:value.heapTotal};}catch(error){return String(error);}};
         services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true}));
         const state=app.__zotlitExcerptImport={settled:false,startedAt:performance.now(),settledAt:null,before:${diagnostics},memoryBefore:memory(),memoryAfter:null,after:null,result:null,error:null};
-        await services.noteIndex.whenIndexed();
+        await services.bridge.runPromise(services.noteIndex.whenIndexed);
         void services.batchImport.runBatchImport('note',[${noteItem.itemID}]).then((result)=>{state.after=${diagnostics};state.result=result;},(error)=>{state.after=${diagnostics};state.error=error?.stack??String(error);}).finally(()=>{state.memoryAfter=memory();state.settledAt=performance.now();state.settled=true;});
         return true;
       })()`,
@@ -1010,7 +1010,7 @@ export async function verifyMultiPdfExcerptBatch(
     vaultId,
     `(async()=>{
       const services=app.plugins.plugins.zotlit.services;
-      await services.noteIndex.whenIndexed();
+      await services.bridge.runPromise(services.noteIndex.whenIndexed);
       await services.bridge.runPromise(services.excerptImage.clear);
       return true;
     })()`,

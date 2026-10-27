@@ -43,15 +43,10 @@ import { createTargetOpener } from "./attachment-open/open-target";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
 import { CitationLookup } from "./citation-index/lookup-service";
-import {
-  plainCitationIndex,
-  plainCitationLookup,
-} from "./citation-index/plain";
 import { CitationIndex } from "./citation-index/service";
-import { plainCitationParse } from "./citation-parse/plain";
 import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
-import { plainCitationText } from "./citation-text/plain";
+import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
@@ -63,7 +58,7 @@ import { ItemLookup } from "./item-lookup/service";
 import { bindQuery } from "./item-query/handle";
 import { QueryService } from "./item-query/service";
 import type { LanguagePackStartup } from "./language-pack/service";
-import { plainLibraryScope } from "./library-scope/plain";
+import { LibraryScope } from "./library-scope/service";
 import { bindCustomize, Customize } from "./local-bridge/customize";
 import { bindLocalBridge } from "./local-bridge/handle";
 import { createLaunchSheet } from "./local-bridge/launch-sheet";
@@ -84,28 +79,24 @@ import { AnnotationNoteActions } from "./note-feature/view-actions";
 import type { BatchImportServices } from "./note-import/batch-import";
 import { bindBatchImport } from "./note-import/batch-import-handle";
 import { createNoteImportView } from "./note-import/view";
-import { plainNoteIndex } from "./note-index/plain";
-import { plainBibliographyRender } from "./pandoc/render-cache/plain";
+import { NoteIndex } from "./note-index/service";
 import { PandocEngine } from "./pandoc/service";
 import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { pluginLayer } from "./plugin-layer";
-import { plainProfile } from "./profile/plain";
 import { Profile } from "./profile/service";
 import type { ProtocolDeps } from "./protocol/register";
-import { plainQueryClients } from "./query-client/plain";
+import { QueryClients } from "./query-client/service";
 import { Release } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
 import type { TemplateDataServices } from "./template-workbench/data";
 import { bindTemplateData } from "./template-workbench/data-handle";
 import type { TemplateMigrationOptions } from "./template/migration";
-import { plainTemplate, plainTemplateMigration } from "./template/plain";
-import { plainUseLedger } from "./use-ledger/plain";
+import { Template } from "./template/service";
 import { UseLedger } from "./use-ledger/service";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
-import { plainZoteroPref } from "./zotero-pref/plain";
 import { ZoteroPref } from "./zotero-pref/service";
-import { plainZoteroReads } from "./zotero-reads/plain";
+import { acquireReadLease } from "./zotero-reads/lease";
 import { ZoteroReads } from "./zotero-reads/service";
 
 /** What the protocol handlers open: the note import's modals and the Attachment opener. */
@@ -232,6 +223,7 @@ export async function buildServices(
     stack,
   );
   await runtime.context();
+  bindMigration({ openPrompt: () => openWelcomeView(plugin.app) });
   const bridge = effectBridge(runtime);
   const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
   const container = new ServiceContainer(stack, (key, error) => {
@@ -251,7 +243,7 @@ export async function buildServices(
       settings: () => runtime.runSync(PluginSettings),
     })
     .useValue({
-      useLedger: () => plainUseLedger(runtime),
+      useLedger: () => runtime.runSync(UseLedger),
     })
     .useValue({
       // Above every container service on the stack, so unload interrupts a
@@ -260,17 +252,14 @@ export async function buildServices(
         cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
     })
     .useValue({
-      queryClient: () => plainQueryClients(runtime),
+      queryClient: () => runtime.runSync(QueryClients),
     })
     .useValue({ release: () => runtime.runSync(Release) })
     .useValue({
-      template: () => plainTemplate(runtime),
+      template: () => runtime.runSync(Template),
     })
     .useValue({
-      noteIndex: () => plainNoteIndex(runtime),
-    })
-    .useValue({
-      zoteroPref: () => plainZoteroPref(runtime),
+      noteIndex: () => runtime.runSync(NoteIndex),
     })
     .useValue({ localServer: () => runtime.runSync(LocalServer) })
     .useValue({ zoteroHttp: () => runtime.runSync(ZoteroHttp) })
@@ -279,7 +268,13 @@ export async function buildServices(
         bindManagedBinary(bridge, runtime.runSync(ChineseSegmenter)),
     })
     .useValue({
-      zoteroReads: () => plainZoteroReads(runtime),
+      zoteroReads: () => runtime.runSync(ZoteroReads),
+    })
+    .useValue({
+      acquireZoteroRead:
+        ({ zoteroReads }) =>
+        () =>
+          acquireReadLease(zoteroReads, bridge),
     })
     .useValue({
       libraryTagNames: () => libraryTagNamesOf(runtime),
@@ -323,11 +318,10 @@ export async function buildServices(
     .useValue({
       pdfAnnotationEditor: () => runtime.runSync(PdfAnnotationEditor),
     })
-    .useValue({ libraryScope: () => plainLibraryScope(runtime) })
+    .useValue({ libraryScope: () => runtime.runSync(LibraryScope) })
     .useValue({
       query: () => bindQuery(bridge, runtime.runSync(QueryService)),
     })
-    .useValue({ profile: () => plainProfile(runtime) })
     .useValue({ profileService: () => runtime.runSync(Profile) })
     .useValue({
       localBridge: () => bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
@@ -341,14 +335,6 @@ export async function buildServices(
           bridge,
           runtime.runSync(Effect.context<TemplateDataServices>()),
         ),
-    })
-    .useValue({
-      templateMigration: () => {
-        bindMigration({
-          openPrompt: () => openWelcomeView(plugin.app),
-        });
-        return plainTemplateMigration(runtime);
-      },
     })
     .useValue({
       itemLookup: () => bindItemLookup(bridge, runtime.runSync(ItemLookup)),
@@ -407,13 +393,10 @@ export async function buildServices(
         ),
     })
     .useValue({
-      citationLookup: () => plainCitationLookup(runtime),
-    })
-    .useValue({
-      citationParse: () => plainCitationParse(runtime),
+      citationLookup: () => runtime.runSync(CitationLookup),
     })
     .useValue({ citationParseService: () => runtime.runSync(CitationParse) })
-    .useValue({ citationIndex: () => plainCitationIndex(runtime) })
+    .useValue({ citationIndex: () => runtime.runSync(CitationIndex) })
     .useValue({
       citationSuggestServices: () => ({
         citationLookup: runtime.runSync(CitationLookup),
@@ -434,10 +417,7 @@ export async function buildServices(
       pandocEngine: () =>
         bindManagedBinary(bridge, runtime.runSync(PandocEngine)),
     })
-    .useValue({
-      bibliographyRender: () => plainBibliographyRender(runtime),
-    })
-    .useValue({ citationText: () => plainCitationText(runtime) })
+    .useValue({ citationText: () => runtime.runSync(CitationText) })
     .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
     .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
     .useValue({ citekeyEditor: () => runtime.runSync(CitekeyEditor) })

@@ -22,14 +22,14 @@ export async function verifyPdfReadSource(
     log: Record<string, unknown>;
   }>(
     vaultId,
-    `JSON.stringify({dataDir:${services}.zoteroPref.dataDir,override:${services}.zoteroPref.dataDirOverride,log:{'log.level':${services}.bridge.runSync(${services}.settings.current)['log.level'],'log.to-file':${services}.bridge.runSync(${services}.settings.current)['log.to-file']}})`,
+    `JSON.stringify({dataDir:${services}.bridge.runSync(${services}.zoteroPrefService.current).dataDir,override:${services}.bridge.runSync(${services}.zoteroPrefService.current).dataDirOverride,log:{'log.level':${services}.bridge.runSync(${services}.settings.current)['log.level'],'log.to-file':${services}.bridge.runSync(${services}.settings.current)['log.to-file']}})`,
   );
   const oldDir = await mkdtemp(join(vaultPath, "../read-source-"));
   const oldPdf = "old-source.pdf";
   cleanup.defer(async () => {
     await obEval(
       vaultId,
-      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await ${services}.zoteroPref.setDataDir(${JSON.stringify(saved.override)});${services}.bridge.runSync(${services}.settings.update(${JSON.stringify(saved.log)}));await ${services}.bridge.runPromise(${services}.settings.flush);const file=app.vault.getFileByPath('${oldPdf}');if(file)await app.vault.delete(file);return true;})()`,
+      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await ${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(saved.override)}));${services}.bridge.runSync(${services}.settings.update(${JSON.stringify(saved.log)}));await ${services}.bridge.runPromise(${services}.settings.flush);const file=app.vault.getFileByPath('${oldPdf}');if(file)await app.vault.delete(file);return true;})()`,
     );
     await rm(oldDir, { recursive: true, force: true });
   });
@@ -58,7 +58,7 @@ export async function verifyPdfReadSource(
   }
   await obEval(
     vaultId,
-    `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());${services}.bridge.runSync(${services}.settings.update({'log.level':'trace','log.to-file':true}));await ${services}.bridge.runPromise(${services}.settings.flush);const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');await app.plugins.enablePlugin('zotlit');await app.vault.copy(app.vault.getFileByPath('attachments/rougier-2014.pdf'),'${oldPdf}');await ${services}.zoteroPref.setDataDir(${JSON.stringify(oldDir)});return true;})()`,
+    `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());${services}.bridge.runSync(${services}.settings.update({'log.level':'trace','log.to-file':true}));await ${services}.bridge.runPromise(${services}.settings.flush);const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');await app.plugins.enablePlugin('zotlit');await app.vault.copy(app.vault.getFileByPath('attachments/rougier-2014.pdf'),'${oldPdf}');await ${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(oldDir)}));return true;})()`,
   );
   const read = async () => {
     const reply = await zoteroFetch(api, "users/0/items/RGRPDF24");
@@ -93,7 +93,7 @@ export async function verifyPdfReadSource(
   ).toBe(true);
   await obEval(
     vaultId,
-    `(async()=>{await ${services}.zoteroPref.setDataDir(${JSON.stringify(saved.dataDir)});await ${services}.bridge.runPromise(${services}.zoteroLocalApi.probe);return true;})()`,
+    `(async()=>{await ${services}.bridge.runSync(${services}.zoteroPrefService.setDataDir(${JSON.stringify(saved.dataDir)}));await ${services}.bridge.runPromise(${services}.zoteroLocalApi.probe);return true;})()`,
   );
   expect(
     await waitFor(

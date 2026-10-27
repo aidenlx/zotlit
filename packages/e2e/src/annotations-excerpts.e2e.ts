@@ -352,13 +352,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         id,
-        "String(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA').length)",
+        "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')).length)",
         { expected: "1" },
       ),
     ).toBe(true);
     const importedPath = await obEval(
       id,
-      "app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0].path",
+      "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA'))[0].path",
     );
     const frozenMarkdown = await readFile(join(path, importedPath), "utf8");
     expect(frozenMarkdown).toContain("Saved snapshot");

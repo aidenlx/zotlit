@@ -30,14 +30,14 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         const keys=['citation.pandoc-citations','citation.wikilink-citations','citation.annotation-citations','attachment.import'];
         cleanup.defer(()=>services.bridge.runSync(services.settings.update(Object.fromEntries(keys.map(key=>[key,settings[key]])))));
         services.bridge.runSync(services.settings.update(Object.fromEntries(keys.map(key=>[key,key!=='attachment.import']))));
-        const profilePath=services.profile.defaultDocumentPath;
+        const profilePath=services.bridge.runSync(services.profileService.defaultDocumentPath);
         const existing=app.vault.getFileByPath(profilePath);
-        const original=existing?await app.vault.read(existing):services.profile.getBuiltInSource();
+        const original=existing?await app.vault.read(existing):services.bridge.runSync(services.profileService.getBuiltInSource());
         const header='--- zotlit:annotation ---';
         if(!original.includes(header))throw Error('Default profile has no annotation section');
         const source=original.slice(0,original.indexOf(header)+header.length)+${JSON.stringify("\n![]({{ zt.backlink }})\n")};
         if(existing){
-          cleanup.defer(async()=>{await app.vault.modify(existing,original);await services.template.refresh();});
+          cleanup.defer(async()=>{await app.vault.modify(existing,original);await services.bridge.runPromise(services.template.refresh);});
           await app.vault.modify(existing,source);
         }else{
           const folder=profilePath.slice(0,profilePath.lastIndexOf('/'));
@@ -46,9 +46,9 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             cleanup.defer(async()=>{const made=app.vault.getFolderByPath(folder);if(made&&made.children.length===0)await app.vault.delete(made);});
           }
           const created=await app.vault.create(profilePath,source);
-          cleanup.defer(async()=>{await app.vault.delete(created);await services.template.refresh();});
+          cleanup.defer(async()=>{await app.vault.delete(created);await services.bridge.runPromise(services.template.refresh);});
         }
-        await services.template.refresh();
+        await services.bridge.runPromise(services.template.refresh);
         // Pin before any tab cites the Item: a pin that follows an active-tab load
         // of the same Item stays "Loading…" (#1701).
         s.annotations=app.workspace.getRightLeaf(false);

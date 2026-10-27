@@ -22,7 +22,9 @@ it("#1693 numbers Annotation Citations with other sources and lists their notes 
     },
   );
   const { index, draft, workspace } = harness;
-  const set = await index.getDocumentCitationSet(draft);
+  const set = await index.bridge.runPromise(
+    index.getDocumentCitationSet(draft),
+  );
   expect(set.citations).toMatchObject([
     { indexedKey: KEY_A, refNumber: 1, linkpath: "Doe 2024.md" },
     { indexedKey: KEY_B, refNumber: 2 },
@@ -42,8 +44,10 @@ it("#1693 numbers Annotation Citations with other sources and lists their notes 
     },
   });
   workspace.layoutReady();
-  await index.whenIndexed();
-  expect((await index.getCitedBy(KEY_A)).groups).toMatchObject([
+  await index.bridge.runPromise(index.whenIndexed);
+  expect(
+    (await index.bridge.runPromise(index.getCitedBy(KEY_A))).groups,
+  ).toMatchObject([
     {
       path: "draft.md",
       occurrences: [
@@ -53,8 +57,8 @@ it("#1693 numbers Annotation Citations with other sources and lists their notes 
     },
   ]);
   const snapshots: CitedBySnapshot[] = [];
-  const stop = index.observeCitedBy(KEY_A, (snapshot) =>
-    snapshots.push(snapshot),
+  const stop = index.bridge.runSync(
+    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
   );
   try {
     await expect
@@ -78,7 +82,9 @@ it("#1693 keeps a deleted Annotation as an unresolved reference distinct from a 
       settings: { "citation.annotation-citations": true },
     },
   );
-  const set = await harness.index.getDocumentCitationSet(harness.draft);
+  const set = await harness.index.bridge.runPromise(
+    harness.index.getDocumentCitationSet(harness.draft),
+  );
   expect(set.citations).toMatchObject([
     {
       indexedKey: null,
@@ -126,7 +132,9 @@ it.each([
         settings: { "citation.annotation-citations": true },
       },
     );
-    const set = await harness.index.getDocumentCitationSet(harness.draft);
+    const set = await harness.index.bridge.runPromise(
+      harness.index.getDocumentCitationSet(harness.draft),
+    );
     expect(set.citations).toMatchObject([{ indexedKey: key, refNumber: 1 }]);
     expect(buildReferenceEntries(set.citations)).toMatchObject([
       { kind: "summary", source: { citekey } },
@@ -143,7 +151,9 @@ it("#1693 reports an attachment-only empty link as a Reference Error", async () 
     { settings: { "citation.annotation-citations": true } },
   );
   const { index, draft, settings, settingsBridge } = harness;
-  const set = await index.getDocumentCitationSet(draft);
+  const set = await index.bridge.runPromise(
+    index.getDocumentCitationSet(draft),
+  );
   expect(set.citations).toEqual([]);
   expect(set.errors).toMatchObject([
     {
@@ -161,8 +171,12 @@ it("#1693 reports an attachment-only empty link as a Reference Error", async () 
   settingsBridge.runSync(
     settings.update({ "citation.annotation-citations": false }),
   );
-  expect((await index.getDocumentCitationSet(draft)).errors).toEqual([]);
-  expect(await index.documentOmittedSyntaxes(draft)).toEqual(["annotation"]);
+  expect(
+    (await index.bridge.runPromise(index.getDocumentCitationSet(draft))).errors,
+  ).toEqual([]);
+  expect(
+    await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+  ).toEqual(["annotation"]);
 });
 
 it("#1693 omits and restores Annotation Citations without another parse", async () => {
@@ -186,34 +200,51 @@ it("#1693 omits and restores Annotation Citations without another parse", async 
   );
   const { index, draft, workspace, settings, settingsBridge } = harness;
   workspace.layoutReady();
-  await index.whenIndexed();
-  expect((await index.getDocumentCitationSet(draft)).citations).toHaveLength(1);
+  await index.bridge.runPromise(index.whenIndexed);
+  expect(
+    (await index.bridge.runPromise(index.getDocumentCitationSet(draft)))
+      .citations,
+  ).toHaveLength(1);
   const snapshots: CitedBySnapshot[] = [];
-  const stop = index.observeCitedBy(KEY_A, (snapshot) =>
-    snapshots.push(snapshot),
+  const stop = index.bridge.runSync(
+    index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
   );
   try {
     await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
     settingsBridge.runSync(
       settings.update({ "citation.annotation-citations": false }),
     );
-    expect((await index.getDocumentCitationSet(draft)).citations).toEqual([]);
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual(["annotation"]);
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["annotation"]);
     expect(
-      await index.documentOmittedSyntaxes(
-        harness.vault.getFileByPath("labels.md")!,
+      (await index.bridge.runPromise(index.getDocumentCitationSet(draft)))
+        .citations,
+    ).toEqual([]);
+    expect(
+      await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+    ).toEqual(["annotation"]);
+    expect(
+      await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+    ).toEqual(["annotation"]);
+    expect(
+      await index.bridge.runPromise(
+        index.documentOmittedSyntaxes(
+          harness.vault.getFileByPath("labels.md")!,
+        ),
       ),
     ).toEqual([]);
     await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
     settingsBridge.runSync(
       settings.update({ "citation.annotation-citations": true }),
     );
-    expect((await index.getDocumentCitationSet(draft)).citations).toMatchObject(
-      [{ indexedKey: KEY_A }],
-    );
-    expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
-    expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+    expect(
+      (await index.bridge.runPromise(index.getDocumentCitationSet(draft)))
+        .citations,
+    ).toMatchObject([{ indexedKey: KEY_A }]);
+    expect(
+      await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+    ).toEqual([]);
+    expect(
+      await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+    ).toEqual([]);
     await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
     expect(parses).toBe(2);
   } finally {
