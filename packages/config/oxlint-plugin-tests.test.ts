@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import { RuleTester } from "oxlint/plugins-dev";
 
 import {
+  noEvalCapture,
   noClassAssertion,
   noMarkupAssertion,
   noSourceText,
@@ -169,4 +170,58 @@ tester.run("no-internal-mock", noInternalMock, {
     'vi.mock(import("./module"))',
     'vi["doMock"](`@/module`)',
   ].map((code) => ({ code, errors: [{ messageId: "internalMock" }] })),
+});
+
+// Serialized page callbacks can use page globals and types, but no host bindings.
+tester.run("no-eval-capture", noEvalCapture, {
+  valid: [
+    "readQueryViewUntil(id, ({page}, args) => page.revealQueryView(args.handle), {handle}, {ready: value => value !== null})",
+    "obRun(id, ({app}, args) => app.vault.getFileByPath(args.path), {path})",
+    "obRunUntil(id, () => document.readyState === 'complete', undefined, {what:'ready'})",
+    "type Result = {value: string}; obRun(id, (): Result => ({value:'ok'}))",
+    "import type { App } from 'obsidian'; obRun(id, ({app}) => { const typed: App = app; return typed.vault.getName(); })",
+    "obRun(id, () => { const inner = () => 1; return inner(); })",
+    "const cb = () => document.title; obRun(id, cb)",
+    "obRun(id, () => { const listener = function () { return this.value; }; return listener.call({value: 1}); })",
+    "obRun(id, () => { class Counter { #value = 1; read() { return this.#value; } } return new Counter().read(); })",
+    "obRun(id, function recur(_, n) { return n > 0 ? recur(_, n - 1) : n; }, 2)",
+  ],
+  invalid: [
+    {
+      code: "readQueryViewUntil(id, 'JSON.stringify(1)', {ready: Boolean})",
+      errors: [{ messageId: "callback" }],
+    },
+    {
+      code: "const handle = {}; readQueryViewUntil(id, ({page}) => page.revealQueryView(handle), undefined, {ready: Boolean})",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "const path = 'note'; obRun(id, ({app}) => app.vault.getFileByPath(path))",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "import {helper} from './helper'; obRun(id, () => helper())",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "const x = 1; const cb = () => x; obRun(id, cb)",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "const x = 1; obRun(id, () => {const inner = () => x; return inner()})",
+      errors: [{ messageId: "capture" }],
+    },
+    {
+      code: "obRun(id, function () { return this.value })",
+      errors: [{ messageId: "thisValue" }],
+    },
+    {
+      code: "obRun(id, () => (() => this.value)())",
+      errors: [{ messageId: "thisValue" }],
+    },
+    {
+      code: "obRun(id, { callback() {return 1} }.callback)",
+      errors: [{ messageId: "callback" }],
+    },
+  ],
 });

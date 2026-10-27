@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ATTACHMENTS, ITEMS, LIBRARIES, NOTES } from "@zotlit/scripts/fixture";
 
-import {
-  annotationOpenKeys,
-  annotationOpenSubpath,
-} from "./annotation-open-subpath.ts";
+import { annotationOpenKeys } from "./annotation-open-subpath.ts";
 import { reachable } from "./e2e-run-fixture.ts";
 import {
   annotationAttachment,
@@ -16,21 +13,30 @@ import {
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { pressPromptKey, selectSuggestion } from "./e2e-run-note-helpers.ts";
 import type { ItemQueryReport } from "./e2e-run-query-types.ts";
-import { cliCommand, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
-import { MENU_READY, PAGE } from "./page-gestures.ts";
+import { obRun } from "./obsidian-cli.ts";
+import { obRunUntil } from "./obsidian-cli.ts";
+import { cliCommand, waitFor } from "./obsidian-cli.ts";
 import { raiseWindow } from "./reader-gestures.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
   it("switches a Fixture Query File view to Items and the Table, expands an Item into its Attachments, Annotations and Child Notes, and creates a Literature Note from its column", async () => {
     const path = "query-files/Reading annotations.zotquery";
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return String(JSON.stringify(app.workspace.getLayout()));
+      },
+      undefined,
     );
-    const original = await obEval(
+    const original = await obRun(
       run.vaultId,
-      `app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}))`,
+      async ({ app }, { __typedArg0 }) => {
+        return String(
+          await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
+        );
+      },
+      { __typedArg0: path },
     );
     const created: string[] = [];
     await using cleanup = new AsyncDisposableStack();
@@ -38,25 +44,80 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // tab writes over it.
     cleanup.defer(async () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const popup of activeDocument.querySelectorAll('[popover]:popover-open'))popup.hidePopover();for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(original)});for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async (
+          { app },
+          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+        ) => {
+          for (const popup of activeDocument.querySelectorAll<HTMLElement>(
+            "[popover]:popover-open",
+          ))
+            popup.hidePopover();
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          await app.vault.modify(
+            app.vault.getFileByPath(__typedArg0)!,
+            __typedArg1,
+          );
+          for (const path of __typedArg2) {
+            const file = app.vault.getFileByPath(path)!;
+            if (file) await app.vault.delete(file);
+          }
+          await app.workspace.changeLayout(JSON.parse(__typedArg3));
+          return String(true);
+        },
+        {
+          __typedArg0: path,
+          __typedArg1: original,
+          __typedArg2: created,
+          __typedArg3: layout,
+        },
       );
     });
-    const tab = "app.workspace.getMostRecentLeaf().view";
-    await obEval(
+
+    await obRun(
       run.vaultId,
-      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(__typedArg0)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        return String(true);
+      },
+      { __typedArg0: path },
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file')return 'none';await view.query.settled;return String(view.contentEl.querySelectorAll('.zt-annot-card').length>0);})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            const view = app.workspace.getMostRecentLeaf()!.view;
+            if (view.getViewType() !== "zotlit-query-file")
+              return String("none");
+            await (view as import("@/views/query-view/file-view").QueryFileView)
+              .query.settled;
+            return String(
+              String(
+                (
+                  view as import("obsidian").ItemView
+                ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-card")
+                  .length > 0,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:52",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     /** What the Table shows once its query settled. */
-    const readTable = `(async()=>{const view=${tab};if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;const keys=kind=>[...el.querySelectorAll('[data-query-table-row="'+kind+'"]')].map(n=>n.getAttribute('data-query-key'));return JSON.stringify({header:[...el.querySelectorAll('[data-query-table] thead th')].map(n=>n.textContent),rows:[...el.querySelectorAll('[data-query-table-row]')].map(n=>[n.getAttribute('data-query-table-row'),n.getAttribute('data-query-key')]),items:keys('item'),attachments:keys('attachment'),annotations:keys('annotation'),childNotes:[...el.querySelectorAll('[data-query-table-row="note"]')].map(n=>[n.getAttribute('data-query-key'),n.textContent]),notes:Object.fromEntries([...el.querySelectorAll('[data-query-note]')].map(n=>[n.closest('tr').getAttribute('data-query-key'),n.getAttribute('data-query-note')])),create:[...el.querySelectorAll('[data-query-create-note]')].map(n=>n.getAttribute('data-query-create-note'))});})()`;
+
     interface Table {
       header: string[];
       /** Every row of the Table in screen order, as its kind and key. */
@@ -72,7 +133,71 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       let table: Table | null = null;
       const settled = await waitFor(async () => {
         table = JSON.parse(
-          await obEval(run.vaultId, readTable),
+          await obRun(
+            run.vaultId,
+            async ({ app }, { __typedArg0 }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (
+                view.getViewType() !== "zotlit-query-file" ||
+                (view as import("obsidian").FileView).file?.path !== __typedArg0
+              )
+                return String("null");
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              const keys = (kind: string) =>
+                [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    `[data-query-table-row="${kind}"]`,
+                  ),
+                ].map((n) => n.getAttribute("data-query-key"));
+              return String(
+                JSON.stringify({
+                  header: [
+                    ...el.querySelectorAll<HTMLTableCellElement>(
+                      "[data-query-table] thead th",
+                    ),
+                  ].map((n) => n.textContent),
+                  rows: [
+                    ...el.querySelectorAll<HTMLTableRowElement>(
+                      "[data-query-table-row]",
+                    ),
+                  ].map((n) => [
+                    n.getAttribute("data-query-table-row"),
+                    n.getAttribute("data-query-key"),
+                  ]),
+                  items: keys("item"),
+                  attachments: keys("attachment"),
+                  annotations: keys("annotation"),
+                  childNotes: [
+                    ...el.querySelectorAll<HTMLTableRowElement>(
+                      '[data-query-table-row="note"]',
+                    ),
+                  ].map((n) => [
+                    n.getAttribute("data-query-key"),
+                    n.textContent,
+                  ]),
+                  notes: Object.fromEntries(
+                    [
+                      ...el.querySelectorAll<HTMLElement>("[data-query-note]"),
+                    ].map((n) => [
+                      n
+                        .closest<HTMLTableRowElement>("tr")!
+                        .getAttribute("data-query-key"),
+                      n.getAttribute("data-query-note"),
+                    ]),
+                  ),
+                  create: [
+                    ...el.querySelectorAll<HTMLElement>(
+                      "[data-query-create-note]",
+                    ),
+                  ].map((n) => n.getAttribute("data-query-create-note")),
+                }),
+              );
+            },
+            { __typedArg0: path },
+          ),
         ) as Table | null;
         return table !== null && ready(table);
       }, 120);
@@ -92,61 +217,177 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // then offers the layouts of Items, with the Table chosen. The grouping
     // by Item, which Items lack, stays in the file, and the view says it does
     // not use it.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${tab}.contentEl.querySelector('[data-query-view-menu]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));return true;})()`,
+      async ({ app }) => {
+        (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl
+          .querySelector<HTMLElement>("[data-query-view-menu]")!
+          .dispatchEvent(
+            new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+          );
+        return String(true);
+      },
+      undefined,
     );
     // The Configure view page this view's menu opened.
-    const configurePage =
-      "activeDocument.querySelector('[data-query-view-list]:popover-open [data-chooser-page]')";
+
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(${configurePage}?.querySelector('[data-query-view-name]')?.value===${JSON.stringify("All annotations")})`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                activeDocument
+                  .querySelector<HTMLElement>(
+                    "[data-query-view-list]:popover-open [data-chooser-page]",
+                  )
+                  ?.querySelector<HTMLInputElement>("[data-query-view-name]")
+                  ?.value === __typedArg0,
+              ),
+            );
+          },
+          { __typedArg0: "All annotations" },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:103",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{const select=${configurePage}.querySelector('[data-query-view-dataset]');select.value='items';select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      async (_context) => {
+        const select = activeDocument
+          .querySelector<HTMLElement>(
+            "[data-query-view-list]:popover-open [data-chooser-page]",
+          )!
+          .querySelector<HTMLSelectElement>("[data-query-view-dataset]")!;
+        select!.value = "items";
+        select!.dispatchEvent(new Event("change", { bubbles: true }));
+        return String(true);
+      },
+      undefined,
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `JSON.stringify([...${configurePage}.querySelectorAll('[data-query-view-layout] option')].map(n=>[n.textContent,n.selected]))`,
-        {
-          expected: JSON.stringify([
-            [run.m.query_view_layout_table(), true],
-            [run.m.query_view_layout_list(), false],
-            [run.m.query_view_layout_cards(), false],
-            [run.m.query_view_layout_papers(), false],
-          ]),
-        },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              JSON.stringify(
+                [
+                  ...activeDocument
+                    .querySelector<HTMLElement>(
+                      "[data-query-view-list]:popover-open [data-chooser-page]",
+                    )!
+                    .querySelectorAll<HTMLOptionElement>(
+                      "[data-query-view-layout] option",
+                    ),
+                ].map((n) => [n.textContent, n.selected]),
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:114",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
+        expected: JSON.stringify([
+          [run.m.query_view_layout_table(), true],
+          [run.m.query_view_layout_list(), false],
+          [run.m.query_view_layout_cards(), false],
+          [run.m.query_view_layout_papers(), false],
+        ]),
+      }),
     ).toBe(true);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(${tab}.contentEl.querySelector('[data-query-unused]')?.textContent)`,
-        {
-          expected: run.m.query_view_unused({
-            dataset: run.m.query_view_dataset_items(),
-            properties: run.m.query_view_property_parent_item(),
-          }),
-        },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              String(
+                (
+                  app.workspace.getMostRecentLeaf()!
+                    .view as import("obsidian").ItemView
+                ).contentEl.querySelector<HTMLElement>("[data-query-unused]")
+                  ?.textContent,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:128",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
+        expected: run.m.query_view_unused({
+          dataset: run.m.query_view_dataset_items(),
+          properties: run.m.query_view_property_parent_item(),
+        }),
+      }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(${configurePage}.querySelector('[data-chooser-page-close]'),'Close');return true;})()`,
+      async ({ page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        press(
+          activeDocument
+            .querySelector<HTMLElement>(
+              "[data-query-view-list]:popover-open [data-chooser-page]",
+            )!
+            .querySelector<HTMLElement>("[data-chooser-page-close]")!,
+          "Close",
+        );
+        return String(true);
+      },
+      undefined,
     );
     // The view saves as a Table of Items, and keeps its grouping.
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `(async()=>{const text=await app.vault.read(app.vault.getFileByPath(${JSON.stringify(path)}));const first=text.split('name: Figures')[0];return String(first.includes(${JSON.stringify("  - type: table\n    name: All annotations\n    from: items\n")})&&first.includes('groupBy'));})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const text = await app.vault.read(
+              app.vault.getFileByPath(__typedArg0)!,
+            );
+            const first = text.split("name: Figures")[0];
+            return String(
+              String(
+                first!.includes(__typedArg1) && first!.includes("groupBy"),
+              ),
+            );
+          },
+          {
+            __typedArg0: path,
+            __typedArg1:
+              "  - type: table\n    name: All annotations\n    from: items\n",
+          },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:145",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
 
     // The rows are the Items ZotLit Query gives for the view, in its order.
@@ -179,9 +420,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     expect(annotations.length).toBeGreaterThan(0);
     const click = (selector: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(()=>{${PAGE}press(${tab}.contentEl.querySelector(${JSON.stringify(selector)}),${JSON.stringify(selector)});return true;})()`,
+        async ({ app, page: pageHelpers }, { __typedArg0, __typedArg1 }) => {
+          const { press } = pageHelpers;
+          press(
+            (
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(__typedArg0)!,
+            __typedArg1,
+          );
+          return String(true);
+        },
+        { __typedArg0: selector, __typedArg1: selector },
       );
     await click(`[data-query-expand="item:${item}"]`);
     await tableWhen((table) => table.attachments.length === attachments.length);
@@ -201,40 +453,145 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // the Table stays open in its own.
     // A new tab takes the focus from the Table, so the links are read off
     // the Query File's own leaf.
-    const queryLeaf = "app.workspace.getLeavesOfType('zotlit-query-file')[0]";
-    const link = (kind: string, key: string) =>
-      `${queryLeaf}.view.contentEl.querySelector('[data-query-table-row="${kind}"][data-query-key="${key}"] [data-query-open="${kind}"]')`;
+
     /** A click on `el` with the buttons and keys `init` names, as an eval statement. */
-    const pointer = (el: string, type: string, init: string) =>
-      `{const el=${el};el.dispatchEvent(new el.ownerDocument.defaultView.MouseEvent('${type}',{bubbles:true,cancelable:true,...${init}}));}`;
-    const MOD_CLICK =
-      "{button:0,metaKey:process.platform==='darwin',ctrlKey:process.platform!=='darwin'}";
-    const MIDDLE_CLICK = "{button:1}";
+
     const pdfName = annotationAttachment.path!.split("/").pop()!;
-    const pdfTabs = `app.workspace.getLeavesOfType('pdf').filter(l=>l.view.file?.name===${JSON.stringify(pdfName)}).length`;
-    const before = Number(await obEval(run.vaultId, `String(${pdfTabs})`));
-    await obEval(
+
+    const before = Number(
+      await obRun(
+        run.vaultId,
+        async ({ app }, { __typedArg0 }) => {
+          return String(
+            String(
+              app.workspace
+                .getLeavesOfType("pdf")
+                .filter(
+                  (l) =>
+                    (l.view as import("obsidian").FileView).file?.name ===
+                    __typedArg0,
+                ).length,
+            ),
+          );
+        },
+        { __typedArg0: pdfName },
+      ),
+    );
+    await obRun(
       run.vaultId,
-      `(()=>{${pointer(link("attachment", annotationAttachment.key), "click", MOD_CLICK)}return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        {
+          const el = (
+            app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLTableRowElement>(
+            `[data-query-table-row="attachment"][data-query-key="${__typedArg0}"] [data-query-open="attachment"]`,
+          )!;
+          el!.dispatchEvent(
+            new el!.ownerDocument.defaultView!.MouseEvent("click", {
+              bubbles: true,
+              cancelable: true,
+              button: 0,
+              metaKey: process.platform === "darwin",
+              ctrlKey: process.platform !== "darwin",
+            }),
+          );
+        }
+        return String(true);
+      },
+      { __typedArg0: annotationAttachment.key },
     );
     expect(
-      await obEvalUntil(run.vaultId, `String(${pdfTabs})`, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              String(
+                app.workspace
+                  .getLeavesOfType("pdf")
+                  .filter(
+                    (l) =>
+                      (l.view as import("obsidian").FileView).file?.name ===
+                      __typedArg0,
+                  ).length,
+              ),
+            );
+          },
+          { __typedArg0: pdfName },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:221",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: String(before + 1),
       }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${pointer(link("attachment", annotationAttachment.key), "auxclick", MIDDLE_CLICK)}return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        {
+          const el = (
+            app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+              .view as import("obsidian").ItemView
+          ).contentEl.querySelector<HTMLTableRowElement>(
+            `[data-query-table-row="attachment"][data-query-key="${__typedArg0}"] [data-query-open="attachment"]`,
+          )!;
+          el!.dispatchEvent(
+            new el!.ownerDocument.defaultView!.MouseEvent("auxclick", {
+              bubbles: true,
+              cancelable: true,
+              button: 1,
+            }),
+          );
+        }
+        return String(true);
+      },
+      { __typedArg0: annotationAttachment.key },
     );
     expect(
-      await obEvalUntil(run.vaultId, `String(${pdfTabs})`, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              String(
+                app.workspace
+                  .getLeavesOfType("pdf")
+                  .filter(
+                    (l) =>
+                      (l.view as import("obsidian").FileView).file?.name ===
+                      __typedArg0,
+                  ).length,
+              ),
+            );
+          },
+          { __typedArg0: pdfName },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:230",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: String(before + 2),
       }),
     ).toBe(true);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `String(app.workspace.getLeavesOfType('zotlit-query-file').length)`,
+        async ({ app }) => {
+          return String(
+            String(app.workspace.getLeavesOfType("zotlit-query-file").length),
+          );
+        },
+        undefined,
       ),
     ).toBe("1");
 
@@ -246,9 +603,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(anchored, "an Annotation has a PDF page").toBeDefined();
     expect(
       JSON.parse(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(async()=>{${PAGE}${annotationOpenSubpath(pointer(link("annotation", anchored.indexedKey), "auxclick", MIDDLE_CLICK))}})()`,
+          async ({ app, page }, { key }) =>
+            JSON.stringify(
+              await page.annotationOpenSubpath(() => {
+                const el = (
+                  app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                    .view as import("obsidian").ItemView
+                ).contentEl.querySelector<HTMLElement>(
+                  `[data-query-table-row="annotation"][data-query-key="${key}"] [data-query-open="annotation"]`,
+                )!;
+                el.dispatchEvent(
+                  new (
+                    el.ownerDocument.defaultView as Window & typeof globalThis
+                  ).MouseEvent("auxclick", {
+                    bubbles: true,
+                    cancelable: true,
+                    button: 1,
+                  }),
+                );
+              }),
+            ),
+          { key: anchored.indexedKey },
         ),
       ),
     ).toEqual(
@@ -259,9 +636,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
     );
 
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{app.workspace.setActiveLeaf(${queryLeaf},{focus:true});return true;})()`,
+      async ({ app }) => {
+        app.workspace.setActiveLeaf(
+          app.workspace.getLeavesOfType("zotlit-query-file")[0]!,
+          { focus: true },
+        );
+        return String(true);
+      },
+      undefined,
     );
 
     // An Attachment Obsidian's reader cannot host, such as a web snapshot,
@@ -271,9 +655,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await click(`[data-query-expand="item:${positionDocumentItem.key}"]`);
     await tableWhen((table) => table.attachments.includes(snapshot.key));
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}const native=window.open;let opened=null;window.open=url=>{opened=String(url);return null;};try{press(${link("attachment", snapshot.key)},'snapshot link');return await until('Zotero opens the snapshot',()=>opened,10000);}finally{window.open=native;}})()`,
+        async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+          const { press, until } = pageHelpers;
+          const native = window.open;
+          let opened: string | null = null;
+          window.open = (url) => {
+            opened = String(url);
+            return null;
+          };
+          try {
+            press(
+              (
+                app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                  .view as import("obsidian").ItemView
+              ).contentEl.querySelector<HTMLTableRowElement>(
+                `[data-query-table-row="attachment"][data-query-key="${__typedArg0}"] [data-query-open="attachment"]`,
+              )!,
+              "snapshot link",
+            );
+            return String(
+              await until("Zotero opens the snapshot", () => opened, 10000),
+            );
+          } finally {
+            window.open = native;
+          }
+        },
+        { __typedArg0: snapshot.key },
       ),
     ).toBe(`zotero://open/library/items/${snapshot.key}`);
 
@@ -350,9 +759,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(linked.create).not.toContain(book);
     expect(linked.notes[book]).toMatch(/^books\//);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(linked.notes[book])}))?.frontmatter?.['zotero-key'])`,
+        async ({ app }, { __typedArg0 }) => {
+          return String(
+            String(
+              app.metadataCache.getFileCache(
+                app.vault.getFileByPath(__typedArg0!)!,
+              )?.frontmatter?.["zotero-key"],
+            ),
+          );
+        },
+        { __typedArg0: linked.notes[book] },
       ),
     ).toBe(book);
   }, 180000);
@@ -393,36 +811,116 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ]
         .filter((line) => line !== "")
         .join("\n")}\n`;
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return String(JSON.stringify(app.workspace.getLayout()));
+      },
+      undefined,
     );
     const seeded = [notePath(tieFirst), notePath(tieSecond)];
     const originals = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>JSON.stringify(await Promise.all(${JSON.stringify(seeded)}.map(path=>app.vault.read(app.vault.getFileByPath(path))))))()`,
+        async ({ app }, { __typedArg0 }) => {
+          return String(
+            JSON.stringify(
+              await Promise.all(
+                __typedArg0.map((path) =>
+                  app.vault.read(app.vault.getFileByPath(path)!),
+                ),
+              ),
+            ),
+          );
+        },
+        { __typedArg0: seeded },
       ),
     ) as string[];
     const created: string[] = [path];
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();for(const path of ${JSON.stringify(created)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}const originals=${JSON.stringify(originals)};for(const [at,path] of ${JSON.stringify(seeded)}.entries())await app.vault.modify(app.vault.getFileByPath(path),originals[at]);await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async (
+          { app },
+          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+        ) => {
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          for (const path of __typedArg0) {
+            const file = app.vault.getFileByPath(path)!;
+            if (file) await app.vault.delete(file);
+          }
+          const originals = __typedArg1;
+          for (const [at, path] of __typedArg2.entries())
+            await app.vault.modify(
+              app.vault.getFileByPath(path)!,
+              originals[at]!,
+            );
+          await app.workspace.changeLayout(JSON.parse(__typedArg3));
+          return String(true);
+        },
+        {
+          __typedArg0: created,
+          __typedArg1: originals,
+          __typedArg2: seeded,
+          __typedArg3: layout,
+        },
       );
     });
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const set=(path,props)=>app.fileManager.processFrontMatter(app.vault.getFileByPath(path),fm=>Object.assign(fm,props));await set(${JSON.stringify(notePath(tieFirst))},{'zt-status':'unread','zt-done':false,'zt-projects':['a'],'zt-rank':1,'zt-due':'2024-05-01'});await set(${JSON.stringify(notePath(tieSecond))},{'zt-done':true,'zt-rank':2});await app.vault.create(${JSON.stringify(path)},${JSON.stringify(viewText(""))});return true;})()`,
+      async (
+        { app },
+        { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+      ) => {
+        const set = (
+          path: string,
+          props: Record<string, string | number | boolean | string[]>,
+        ) =>
+          app.fileManager.processFrontMatter(
+            app.vault.getFileByPath(path)!,
+            (fm) => Object.assign(fm, props),
+          );
+        await set(__typedArg0, {
+          "zt-status": "unread",
+          "zt-done": false,
+          "zt-projects": ["a"],
+          "zt-rank": 1,
+          "zt-due": "2024-05-01",
+        });
+        await set(__typedArg1, { "zt-done": true, "zt-rank": 2 });
+        await app.vault.create(__typedArg2, __typedArg3);
+        return String(true);
+      },
+      {
+        __typedArg0: notePath(tieFirst),
+        __typedArg1: notePath(tieSecond),
+        __typedArg2: path,
+        __typedArg3: viewText(""),
+      },
     );
-    const noteIndex = "app.plugins.plugins.zotlit.services.noteIndex";
+
     let indexed = "";
     expect(
       await waitFor(async () => {
-        indexed = await obEval(
+        indexed = await obRun(
           run.vaultId,
-          `JSON.stringify([${JSON.stringify(tieFirst)},${JSON.stringify(tieSecond)}].map(key=>[key,${noteIndex}.getNotesByItemKey(key).map(file=>file.path),app.metadataCache.getCache('literatures/'+key+'.md')?.frontmatter?.['zt-rank']??null]))`,
+          async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
+            return String(
+              JSON.stringify(
+                [__typedArg0, __typedArg1].map((key) => [
+                  key,
+                  zotlit.services.noteIndex
+                    .getNotesByItemKey(key)
+                    .map((file) => file.path),
+                  app.metadataCache.getCache(`literatures/${key}.md`)
+                    ?.frontmatter?.["zt-rank"] ?? null,
+                ]),
+              ),
+            );
+          },
+          { __typedArg0: tieFirst, __typedArg1: tieSecond },
         );
         return (JSON.parse(indexed) as [string, string[], unknown][]).every(
           ([key, paths, rank]) =>
@@ -431,14 +929,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       }),
       indexed,
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(path)}));app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(app.vault.getFileByPath(__typedArg0)!);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        return String(true);
+      },
+      { __typedArg0: path },
     );
     await raiseWindow(run.vaultId);
-    const tab = "app.workspace.getLeavesOfType('zotlit-query-file')[0].view";
+
     /** The rows of the Table, and the state and text of each vault cell. */
-    const readTable = `(async()=>{const view=${tab};if(!view)return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({rows:[...el.querySelectorAll('[data-query-table-row="item"]')].map(n=>n.getAttribute('data-query-key')),editing:!!el.querySelector('[data-query-vault-input]'),cells:Object.fromEntries([...el.querySelectorAll('[data-query-vault-cell]')].map(n=>[n.closest('tr').getAttribute('data-query-key')+'/'+n.getAttribute('data-query-vault-name'),n.textContent]))});})()`;
+
     interface Table {
       rows: string[];
       editing: boolean;
@@ -448,7 +952,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       let table: Table | null = null;
       const settled = await waitFor(async () => {
         table = JSON.parse(
-          await obEval(run.vaultId, readTable),
+          await obRun(
+            run.vaultId,
+            async ({ app }) => {
+              const view =
+                app.workspace.getLeavesOfType("zotlit-query-file")[0]!.view;
+              if (!view) return String("null");
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              return String(
+                JSON.stringify({
+                  rows: [
+                    ...el.querySelectorAll<HTMLTableRowElement>(
+                      '[data-query-table-row="item"]',
+                    ),
+                  ].map((n) => n.getAttribute("data-query-key")),
+                  editing: !!el.querySelector<HTMLInputElement>(
+                    "[data-query-vault-input]",
+                  )!,
+                  cells: Object.fromEntries(
+                    [
+                      ...el.querySelectorAll<HTMLElement>(
+                        "[data-query-vault-cell]",
+                      ),
+                    ].map((n) => [
+                      `${n.closest<HTMLTableRowElement>("tr")!.getAttribute("data-query-key")}/${n.getAttribute("data-query-vault-name")}`,
+                      n.textContent,
+                    ]),
+                  ),
+                }),
+              );
+            },
+            undefined,
+          ),
         ) as Table | null;
         return table !== null && ready(table);
       }, 80);
@@ -458,9 +996,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await tableWhen((table) => table.rows.length === 3);
     const frontmatter = async (path: string) =>
       JSON.parse(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `JSON.stringify(app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(path)}))?.frontmatter??null)`,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              JSON.stringify(
+                app.metadataCache.getFileCache(
+                  app.vault.getFileByPath(__typedArg0)!,
+                )?.frontmatter ?? null,
+              ),
+            );
+          },
+          { __typedArg0: path },
         ),
       ) as Record<string, unknown> | null;
     const frontmatterWhen = async (
@@ -476,35 +1023,144 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         throw new Error(`${path} frontmatter: ${JSON.stringify(properties)}`);
       return properties!;
     };
-    const cell = (key: string, name: string) =>
-      `${tab}.contentEl.querySelector('[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${name}"]')`;
+
     /** A trusted click, of the `button` given, at the centre of the element `target` evaluates to. */
-    const click = async (target: string, button: "left" | "right" = "left") =>
+    const click = async (
+      target: {
+        key?: string;
+        name?: string;
+        part?: string;
+        menuLabel?: string;
+      },
+      button: "left" | "right" = "left",
+    ) =>
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(function(){const target=${target};if(!target)return 'missing';target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});const rect=target.getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseMove',x,y});contents.sendInputEvent({type:'mouseDown',x,y,button:${JSON.stringify(button)},clickCount:1});contents.sendInputEvent({type:'mouseUp',x,y,button:${JSON.stringify(button)},clickCount:1});return 'clicked';})()`,
+          ({ app }, { target: { key, name, part, menuLabel }, button }) => {
+            const cell = (
+              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(
+              `[data-query-key="${key}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
+            )!;
+            const target = menuLabel
+              ? [
+                  ...activeDocument.querySelectorAll<HTMLElement>(
+                    "body > .menu .menu-item",
+                  ),
+                ].find((entry) => entry.textContent === menuLabel)
+              : part === "td"
+                ? cell?.closest<HTMLElement>("td")!
+                : part
+                  ? cell?.querySelector<HTMLElement>(part)!
+                  : cell;
+            if (!target) return "missing";
+            target.scrollIntoView({
+              block: "center",
+              inline: "nearest",
+              behavior: "instant",
+            });
+            const rect = target.getBoundingClientRect();
+            const zoom = (
+              require("electron") as { webFrame: { getZoomFactor(): number } }
+            ).webFrame.getZoomFactor();
+            const x = Math.round((rect.left + rect.width / 2) * zoom),
+              y = Math.round((rect.top + rect.height / 2) * zoom);
+            const contents = (
+              require("@electron/remote") as {
+                getCurrentWebContents(): {
+                  sendInputEvent(event: object): void;
+                };
+              }
+            ).getCurrentWebContents();
+            contents.sendInputEvent({ type: "mouseMove", x, y });
+            contents.sendInputEvent({
+              type: "mouseDown",
+              x,
+              y,
+              button,
+              clickCount: 1,
+            });
+            contents.sendInputEvent({
+              type: "mouseUp",
+              x,
+              y,
+              button,
+              clickCount: 1,
+            });
+            return "clicked";
+          },
+          { target, button },
         ),
       ).toBe("clicked");
     /** A trusted key press, with the modifiers held. */
     const key = async (keyCode: string, modifiers: string[] = []) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:${JSON.stringify(keyCode)},modifiers:${JSON.stringify(modifiers)}});contents.sendInputEvent({type:'keyUp',keyCode:${JSON.stringify(keyCode)},modifiers:${JSON.stringify(modifiers)}});return true;})()`,
+        async (
+          _context,
+          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+        ) => {
+          const contents = require("@electron/remote").getCurrentWebContents();
+          contents.sendInputEvent({
+            type: "keyDown",
+            keyCode: __typedArg0,
+            modifiers: __typedArg1,
+          });
+          contents.sendInputEvent({
+            type: "keyUp",
+            keyCode: __typedArg2,
+            modifiers: __typedArg3,
+          });
+          return String(true);
+        },
+        {
+          __typedArg0: keyCode,
+          __typedArg1: modifiers,
+          __typedArg2: keyCode,
+          __typedArg3: modifiers,
+        },
       );
     /** Text typed into the focused field, as the keyboard types it. */
     const typeText = async (text: string) =>
-      obEval(
+      obRun(
         run.vaultId,
-        `(function(){require('@electron/remote').getCurrentWebContents().insertText(${JSON.stringify(text)});return true;})()`,
+        async (_context, { __typedArg0 }) => {
+          require("@electron/remote")
+            .getCurrentWebContents()
+            .insertText(__typedArg0);
+          return String(true);
+        },
+        { __typedArg0: text },
       );
-    const focusedInput = `String(activeDocument.activeElement?.matches('[data-query-vault-input]')??false)`;
 
     // An empty cell is a click target across the whole cell, so the first
     // value of a property goes in with one click (bug A).
-    await click(`${cell(tieSecond, "zt-status")}.closest('td')`);
+    await click({ key: tieSecond, name: "zt-status", part: "td" });
     expect(
-      await obEvalUntil(run.vaultId, focusedInput, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  "[data-query-vault-input]",
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:507",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await typeText("to-read");
     await key("Enter");
@@ -520,17 +1176,152 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * its first item for a list, of the field's content box for a field
      * (and a date at rest, a native field too), else of its first text.
      */
-    const firstLine = (name: string) =>
-      `(function(){const el=${cell(tieFirst, name)};const row=el.closest('tr').getBoundingClientRect().top;const editor=el.querySelector('[data-query-vault-editor]');const chip=(editor??el).querySelector('[data-query-vault-chip]');if(chip)return String(chip.getBoundingClientRect().top-row);const field=editor?editor.querySelector('textarea,input'):el.querySelector('[data-query-vault-date]');if(field){const style=getComputedStyle(field);return String(field.getBoundingClientRect().top+parseFloat(style.borderTopWidth)+parseFloat(style.paddingTop)-row);}const walker=activeDocument.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()?1:3});const text=walker.nextNode();const range=activeDocument.createRange();range.selectNodeContents(text);const rect=range.getClientRects()[0];return String(rect.top-(parseFloat(getComputedStyle(text.parentElement).lineHeight)-rect.height)/2-row);})()`;
-    const editing = `String(!!activeDocument.querySelector('[data-query-vault-editor]'))`;
+
     /** Open the edit of the cell `name`, and compare its first line with the cell's at rest. */
     const sameLine = async (name: string) => {
-      const restLine = Number(await obEval(run.vaultId, firstLine(name)));
-      await click(cell(tieFirst, name));
+      const restLine = Number(
+        await obRun(
+          run.vaultId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const el = (
+              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(
+              `[data-query-key="${__typedArg0}"] [data-query-vault-cell][data-query-vault-name="${__typedArg1}"]`,
+            )!;
+            const row = el!
+              .closest<HTMLTableRowElement>("tr")!
+              .getBoundingClientRect().top;
+            const editor = el!.querySelector<HTMLElement>(
+              "[data-query-vault-editor]",
+            )!;
+            const chip = (editor ?? el)!.querySelector<HTMLElement>(
+              "[data-query-vault-chip]",
+            )!;
+            if (chip)
+              return String(String(chip.getBoundingClientRect().top - row));
+            const field = editor
+              ? editor.querySelector<HTMLInputElement>("textarea,input")!
+              : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
+            if (field) {
+              const style = getComputedStyle(field);
+              return String(
+                String(
+                  field.getBoundingClientRect().top +
+                    Number.parseFloat(style.borderTopWidth) +
+                    Number.parseFloat(style.paddingTop) -
+                    row,
+                ),
+              );
+            }
+            const walker = activeDocument.createTreeWalker(
+              el!,
+              NodeFilter.SHOW_TEXT,
+              { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
+            );
+            const text = walker.nextNode();
+            const range = activeDocument.createRange();
+            range.selectNodeContents(text!);
+            const rect = range.getClientRects()[0];
+            return String(
+              String(
+                rect!.top -
+                  (Number.parseFloat(
+                    getComputedStyle(text!.parentElement!).lineHeight,
+                  ) -
+                    rect!.height) /
+                    2 -
+                  row,
+              ),
+            );
+          },
+          { __typedArg0: tieFirst, __typedArg1: name },
+        ),
+      );
+      await click({ key: tieFirst, name });
       expect(
-        await obEvalUntil(run.vaultId, focusedInput, { expected: "true" }),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async (_context) => {
+              return String(
+                String(
+                  activeDocument.activeElement?.matches(
+                    "[data-query-vault-input]",
+                  ) ?? false,
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "query-view-table.e2e.ts:531",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
-      const editLine = Number(await obEval(run.vaultId, firstLine(name)));
+      const editLine = Number(
+        await obRun(
+          run.vaultId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const el = (
+              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(
+              `[data-query-key="${__typedArg0}"] [data-query-vault-cell][data-query-vault-name="${__typedArg1}"]`,
+            )!;
+            const row = el!
+              .closest<HTMLTableRowElement>("tr")!
+              .getBoundingClientRect().top;
+            const editor = el!.querySelector<HTMLElement>(
+              "[data-query-vault-editor]",
+            )!;
+            const chip = (editor ?? el)!.querySelector<HTMLElement>(
+              "[data-query-vault-chip]",
+            )!;
+            if (chip)
+              return String(String(chip.getBoundingClientRect().top - row));
+            const field = editor
+              ? editor.querySelector<HTMLInputElement>("textarea,input")!
+              : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
+            if (field) {
+              const style = getComputedStyle(field);
+              return String(
+                String(
+                  field.getBoundingClientRect().top +
+                    Number.parseFloat(style.borderTopWidth) +
+                    Number.parseFloat(style.paddingTop) -
+                    row,
+                ),
+              );
+            }
+            const walker = activeDocument.createTreeWalker(
+              el!,
+              NodeFilter.SHOW_TEXT,
+              { acceptNode: (n) => (n.textContent!.trim() ? 1 : 3) },
+            );
+            const text = walker.nextNode();
+            const range = activeDocument.createRange();
+            range.selectNodeContents(text!);
+            const rect = range.getClientRects()[0];
+            return String(
+              String(
+                rect!.top -
+                  (Number.parseFloat(
+                    getComputedStyle(text!.parentElement!).lineHeight,
+                  ) -
+                    rect!.height) /
+                    2 -
+                  row,
+              ),
+            );
+          },
+          { __typedArg0: tieFirst, __typedArg1: name },
+        ),
+      );
       expect(
         Math.abs(editLine - restLine),
         `${name}: first line ${restLine} at rest, ${editLine} editing`,
@@ -539,38 +1330,122 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A number, a date and a list, each left unchanged: Escape closes the
     // suggestions of a list first, then ends the edit, writing nothing.
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `${JSON.stringify(["zt-rank", "zt-due", "zt-projects"])}.map(name=>${tab}.contentEl.querySelector('[data-query-key="${tieFirst}"] [data-query-vault-name="'+name+'"]')?.getAttribute('data-query-vault-type')).join()`,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          return String(
+            __typedArg0
+              .map((name) =>
+                (
+                  app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                    .view as import("obsidian").ItemView
+                ).contentEl
+                  .querySelector<HTMLElement>(
+                    `[data-query-key="${__typedArg1}"] [data-query-vault-name="${name}"]`,
+                  )
+                  ?.getAttribute("data-query-vault-type"),
+              )
+              .join(),
+          );
+        },
+        {
+          __typedArg0: ["zt-rank", "zt-due", "zt-projects"],
+          __typedArg1: tieFirst,
+        },
       ),
     ).toBe("number,date,multitext");
     for (const name of ["zt-rank", "zt-due", "zt-projects"]) {
       await sameLine(name);
       await key("Escape");
       if (
-        await obEvalUntil(run.vaultId, editing, { expected: "false", tries: 5 })
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async (_context) => {
+              return String(
+                String(
+                  !!activeDocument.querySelector<HTMLElement>(
+                    "[data-query-vault-editor]",
+                  )!,
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "query-view-table.e2e.ts:551",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "false", tries: 5 })
       )
         continue;
       await key("Escape");
       expect(
-        await obEvalUntil(run.vaultId, editing, { expected: "false" }),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async (_context) => {
+              return String(
+                String(
+                  !!activeDocument.querySelector<HTMLElement>(
+                    "[data-query-vault-editor]",
+                  )!,
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "query-view-table.e2e.ts:556",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "false" }),
       ).toBe(true);
     }
     await sameLine("zt-status");
     // The vault's values for the property show as the edit starts, before
     // a key is typed, as in a Bases cell (#1531): those that match the text.
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `[...activeDocument.querySelectorAll('.suggestion-container .suggestion-item')].map(item=>item.textContent).join('|')`,
-        { expected: "unread" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              [
+                ...activeDocument.querySelectorAll<HTMLElement>(
+                  ".suggestion-container .suggestion-item",
+                ),
+              ]
+                .map((item) => item.textContent)
+                .join("|"),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:563",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "unread" }),
     ).toBe(true);
     // The field's text, selected, is replaced by what is typed; it matches
     // vault values, and Shift+Enter keeps the text over the highlighted one.
-    await obEval(
+    await obRun(
       run.vaultId,
-      "(()=>{activeDocument.activeElement.select();return true;})()",
+      async (_context) => {
+        (activeDocument.activeElement as HTMLInputElement).select();
+        return String(true);
+      },
+      undefined,
     );
     await typeText("read");
     await key("Enter", ["shift"]);
@@ -580,9 +1455,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // A checkbox toggles with one click on it.
-    await click(
-      `${cell(tieFirst, "zt-done")}.querySelector('[data-query-vault-checkbox]')`,
-    );
+    await click({
+      key: tieFirst,
+      name: "zt-done",
+      part: "[data-query-vault-checkbox]",
+    });
     await frontmatterWhen(
       notePath(tieFirst),
       (properties) => properties["zt-done"] === true,
@@ -591,89 +1468,376 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // A list commits when focus leaves the editor from an item, as a click
     // outside the Table takes it (bug B). Backspace in the empty field
     // selects the last item, as in a Bases list cell.
-    await click(cell(tieFirst, "zt-projects"));
+    await click({ key: tieFirst, name: "zt-projects" });
     expect(
-      await obEvalUntil(run.vaultId, focusedInput, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  "[data-query-vault-input]",
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:596",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await typeText("c");
     await key("Enter");
     await key("Backspace");
-    const pillFocused = `String(activeDocument.activeElement?.matches('[data-query-vault-chip="c"]')??false)`;
+
     expect(
-      await obEvalUntil(run.vaultId, pillFocused, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  '[data-query-vault-chip="c"]',
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:603",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // While the pill's menu stands it holds the keys: Delete removes no
     // item, and Escape hides the menu alone, its Scope above the menu's own
     // (#1668). The next Escape is the pill's, which gives focus to the field.
     await key("F10", ["shift"]);
-    const menuShown = `String(!!activeDocument.querySelector('body > .menu'))`;
+
     expect(
-      await obEvalUntil(run.vaultId, menuShown, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:611",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    expect(await obEval(run.vaultId, MENU_READY)).toBe("ready");
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }) => {
+          return String(await pageHelpers.menuReady());
+        },
+        undefined,
+      ),
+    ).toBe("ready");
     await key("Delete");
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `String(!!${cell(tieFirst, "zt-projects")}.querySelector('[data-query-vault-chip="c"]')&&!!activeDocument.querySelector('body > .menu'))`,
+        async ({ app }, { __typedArg0 }) => {
+          return String(
+            String(
+              !!(
+                app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                  .view as import("obsidian").ItemView
+              ).contentEl
+                .querySelector<HTMLElement>(
+                  `[data-query-key="${__typedArg0}"] [data-query-vault-cell][data-query-vault-name="zt-projects"]`,
+                )!
+                .querySelector<HTMLElement>('[data-query-vault-chip="c"]')! &&
+                !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
+            ),
+          );
+        },
+        { __typedArg0: tieFirst },
       ),
     ).toBe("true");
     await key("Escape");
     expect(
-      await obEvalUntil(run.vaultId, menuShown, { expected: "false" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:623",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "false" }),
     ).toBe(true);
-    expect(await obEval(run.vaultId, pillFocused)).toBe("true");
+    expect(
+      await obRun(
+        run.vaultId,
+        async (_context) => {
+          return String(
+            String(
+              activeDocument.activeElement?.matches(
+                '[data-query-vault-chip="c"]',
+              ) ?? false,
+            ),
+          );
+        },
+        undefined,
+      ),
+    ).toBe("true");
     await key("Escape");
     expect(
-      await obEvalUntil(run.vaultId, focusedInput, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  "[data-query-vault-input]",
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:628",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await key("Backspace");
     expect(
-      await obEvalUntil(run.vaultId, pillFocused, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  '[data-query-vault-chip="c"]',
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:632",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // A chip edits in place from its menu, as in a Bases list cell: a
     // right click opens it, Edit makes the chip's text a field, and a comma
     // stays inside the item.
     await click(
-      `${cell(tieFirst, "zt-projects")}.querySelector('[data-query-vault-chip="c"]')`,
+      {
+        key: tieFirst,
+        name: "zt-projects",
+        part: '[data-query-vault-chip="c"]',
+      },
       "right",
     );
-    const editEntry = `[...activeDocument.querySelectorAll('body > .menu .menu-item')].find(entry=>entry.textContent===${JSON.stringify(run.m.query_view_vault_chip_edit())})`;
+
     expect(
-      await obEvalUntil(run.vaultId, `String(!!${editEntry})`, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                !![
+                  ...activeDocument.querySelectorAll<HTMLElement>(
+                    "body > .menu .menu-item",
+                  ),
+                ].find((entry) => entry.textContent === __typedArg0),
+              ),
+            );
+          },
+          { __typedArg0: run.m.query_view_vault_chip_edit() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:643",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: "true",
       }),
     ).toBe(true);
-    expect(await obEval(run.vaultId, MENU_READY)).toBe("ready");
-    await click(editEntry);
     expect(
-      await obEvalUntil(
+      await obRun(
         run.vaultId,
-        `String(activeDocument.activeElement?.matches('[data-query-vault-chip-input]')??false)`,
-        { expected: "true" },
+        async ({ page: pageHelpers }) => {
+          return String(await pageHelpers.menuReady());
+        },
+        undefined,
       ),
+    ).toBe("ready");
+    await click({ menuLabel: run.m.query_view_vault_chip_edit() });
+    expect(
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  "[data-query-vault-chip-input]",
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:650",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await typeText(", d");
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(activeDocument.activeElement?.matches('[data-query-vault-chip-input]')&&activeDocument.activeElement.value)`,
-        { expected: "c, d" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  "[data-query-vault-chip-input]",
+                ) && (activeDocument.activeElement as HTMLInputElement).value,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:658",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "c, d" }),
     ).toBe(true);
     await key("Enter");
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(activeDocument.activeElement?.matches('[data-query-vault-chip="c, d"]')??false)`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  '[data-query-vault-chip="c, d"]',
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:666",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // A click on an empty spot of the view, outside the Table.
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(function(){const el=${tab}.contentEl;const table=el.querySelector('[data-query-table]');const box=el.getBoundingClientRect();let x=0,y=0,found=false;for(let dy=8;dy<box.height&&!found;dy+=8)for(let dx=8;dx<box.width&&!found;dx+=16){x=box.left+dx;y=box.bottom-dy;const hit=activeDocument.elementFromPoint(x,y);found=!!hit&&el.contains(hit)&&!table.contains(hit)&&!hit.closest('button,input,select,a,[role],[tabindex],[popover]');}if(!found)return 'no empty space';const zoom=require('electron').webFrame.getZoomFactor();const point={x:Math.round(x*zoom),y:Math.round(y*zoom)};const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseMove',...point});contents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});contents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});return 'clicked';})()`,
+        async ({ app }) => {
+          const el = (
+            app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+              .view as import("obsidian").ItemView
+          ).contentEl;
+          const table = el.querySelector<HTMLElement>("[data-query-table]")!;
+          const box = el.getBoundingClientRect();
+          let x = 0,
+            y = 0,
+            found = false;
+          for (let dy = 8; dy < box.height && !found; dy += 8)
+            for (let dx = 8; dx < box.width && !found; dx += 16) {
+              x = box.left + dx;
+              y = box.bottom - dy;
+              const hit = activeDocument.elementFromPoint(x, y);
+              found =
+                !!hit &&
+                el.contains(hit) &&
+                !table!.contains(hit) &&
+                !hit.closest<HTMLInputElement>(
+                  "button,input,select,a,[role],[tabindex],[popover]",
+                )!;
+            }
+          if (!found) return String("no empty space");
+          const zoom = require("electron").webFrame.getZoomFactor();
+          const point = { x: Math.round(x * zoom), y: Math.round(y * zoom) };
+          const contents = require("@electron/remote").getCurrentWebContents();
+          contents.sendInputEvent({ type: "mouseMove", ...point });
+          contents.sendInputEvent({
+            type: "mouseDown",
+            button: "left",
+            clickCount: 1,
+            ...point,
+          });
+          contents.sendInputEvent({
+            type: "mouseUp",
+            button: "left",
+            clickCount: 1,
+            ...point,
+          });
+          return String("clicked");
+        },
+        undefined,
       ),
     ).toBe("clicked");
     await frontmatterWhen(notePath(tieFirst), (properties) =>
@@ -685,9 +1849,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The first edit of a row with no note creates the note, then writes
     // the value to it.
-    await click(`${cell(fresh, "zt-status")}.closest('td')`);
+    await click({ key: fresh, name: "zt-status", part: "td" });
     expect(
-      await obEvalUntil(run.vaultId, focusedInput, { expected: "true" }),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(
+                activeDocument.activeElement?.matches(
+                  "[data-query-vault-input]",
+                ) ?? false,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "query-view-table.e2e.ts:690",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await typeText("queued");
     await key("Enter");
@@ -696,9 +1881,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     let createdPath: string | null = null;
     expect(
       await waitFor(async () => {
-        const found = await obEval(
+        const found = await obRun(
           run.vaultId,
-          `(()=>{const note=${noteIndex}.getNotesByItemKey(${JSON.stringify(fresh)})[0];if(note)return note.path;const prompt=activeDocument.querySelector('.prompt input');if(prompt)prompt.dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return 'none';})()`,
+          async ({ zotlit }, { __typedArg0 }) => {
+            const note =
+              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0)[0];
+            if (note) return String(note.path);
+            const prompt =
+              activeDocument.querySelector<HTMLInputElement>(".prompt input")!;
+            if (prompt)
+              prompt.dispatchEvent(
+                new (activeWindow as Window & typeof globalThis).KeyboardEvent(
+                  "keydown",
+                  {
+                    key: "Enter",
+                    code: "Enter",
+                    keyCode: 13,
+                    which: 13,
+                    bubbles: true,
+                  },
+                ),
+              );
+            return String("none");
+          },
+          { __typedArg0: fresh },
         );
         if (found !== "none") createdPath = found;
         return found !== "none";
@@ -712,9 +1918,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A vault filter keeps the Items whose note passes it, and a vault sort
     // breaks the tie of their dates: the higher rank first.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(path)}),${JSON.stringify(viewText(["        - 'vault[\"zt-done\"] == true'", "    sort:", "      - property: date", "        direction: ASC", "      - property: vault.zt-rank", "        direction: DESC"].join("\n")))});return true;})()`,
+      async ({ app }, { __typedArg0, __typedArg1 }) => {
+        await app.vault.modify(
+          app.vault.getFileByPath(__typedArg0)!,
+          __typedArg1,
+        );
+        return String(true);
+      },
+      {
+        __typedArg0: path,
+        __typedArg1: viewText(
+          [
+            "        - 'vault[\"zt-done\"] == true'",
+            "    sort:",
+            "      - property: date",
+            "        direction: ASC",
+            "      - property: vault.zt-rank",
+            "        direction: DESC",
+          ].join("\n"),
+        ),
+      },
     );
     const sorted = await tableWhen(
       (table) =>
@@ -727,16 +1952,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   // A List or Cards view of Items gathers its rows by a grouping whose
   // fields it does not show, as the Table does (#1495).
   it("groups a List and Cards view of Items by item type, Collection and tag, as the Table does", async () => {
-    const layout = await obEval(
+    const layout = await obRun(
       run.vaultId,
-      "JSON.stringify(app.workspace.getLayout())",
+      async ({ app }) => {
+        return String(JSON.stringify(app.workspace.getLayout()));
+      },
+      undefined,
     );
     const paths: string[] = [];
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))leaf.detach();for(const path of ${JSON.stringify(paths)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
+            leaf.detach();
+          for (const path of __typedArg0) {
+            const file = app.vault.getFileByPath(path)!;
+            if (file) await app.vault.delete(file);
+          }
+          await app.workspace.changeLayout(JSON.parse(__typedArg1));
+          return String(true);
+        },
+        { __typedArg0: paths, __typedArg1: layout },
       );
     });
     const itemTypes = [
@@ -814,7 +2052,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         headings: itemTypes,
       },
     ];
-    for (const { name, type, group, order, headings, unused } of cases) {
+    for (const { name, type, group, order, unused, headings } of cases) {
       const path = `query-files/${name}.zotquery`;
       paths.push(path);
       const text = [
@@ -829,18 +2067,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         "    limit: 100",
         "",
       ].join("\n");
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const file=await app.vault.create(${JSON.stringify(path)},${JSON.stringify(text)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          const file = await app.vault.create(__typedArg0, __typedArg1);
+          const leaf = app.workspace.getLeaf("tab");
+          await leaf.openFile(file);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          return String(true);
+        },
+        { __typedArg0: path, __typedArg1: text },
       );
-      const read = `(async()=>{const view=app.workspace.getMostRecentLeaf().view;if(view.getViewType()!=='zotlit-query-file'||view.file?.path!==${JSON.stringify(path)})return 'null';await view.query.settled;const el=view.contentEl;return JSON.stringify({rows:el.querySelectorAll('[data-query-row], [data-query-table-row="item"]').length,headings:[...el.querySelectorAll('[data-query-group]')].map(n=>n.textContent),unused:el.querySelector('[data-query-unused]')?.textContent??null});})()`;
+
       let shown: {
         rows: number;
         headings: string[];
         unused: string | null;
       } | null = null;
       const settled = await waitFor(async () => {
-        shown = JSON.parse(await obEval(run.vaultId, read)) as typeof shown;
+        shown = JSON.parse(
+          await obRun(
+            run.vaultId,
+            async ({ app }, { __typedArg0 }) => {
+              const view = app.workspace.getMostRecentLeaf()!.view;
+              if (
+                view.getViewType() !== "zotlit-query-file" ||
+                (view as import("obsidian").FileView).file?.path !== __typedArg0
+              )
+                return String("null");
+              await (
+                view as import("@/views/query-view/file-view").QueryFileView
+              ).query.settled;
+              const el = (view as import("obsidian").ItemView).contentEl;
+              return String(
+                JSON.stringify({
+                  rows: el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-row], [data-query-table-row="item"]',
+                  ).length,
+                  headings: [
+                    ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
+                  ].map((n) => n.textContent),
+                  unused:
+                    el.querySelector<HTMLElement>("[data-query-unused]")
+                      ?.textContent ?? null,
+                }),
+              );
+            },
+            { __typedArg0: path },
+          ),
+        ) as typeof shown;
         return shown !== null && shown.rows > 0;
       }, 120);
       if (!settled) throw new Error(`${name}: ${JSON.stringify(shown)}`);

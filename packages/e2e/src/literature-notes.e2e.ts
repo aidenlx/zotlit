@@ -26,7 +26,6 @@ import {
   defaultProfileTargetItem,
   e2eVaultPath,
   runVaultScript,
-  settingsContent,
   targetItem,
   workspaceRoot,
 } from "./e2e-run-fixture.ts";
@@ -51,59 +50,84 @@ import {
 import type { ManagedFrontmatterReport } from "./e2e-run-note-types.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
 import { useListingProfile } from "./listing-profile.ts";
-import {
-  WINDOW_DOCUMENTS,
-  clearNotices,
-  cli,
-  obEval,
-  obEvalUntil,
-  waitFor,
-} from "./obsidian-cli.ts";
-import { PAGE, TRUSTED } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { clearNotices, cli, waitFor } from "./obsidian-cli.ts";
+import type { CodeMirrorElement } from "./page-notes-types.ts";
 import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
   it("sets Citation Presentation and dismisses pending changes on cancel and unload (#1858)", async () => {
-    const result = JSON.parse(
-      await obEval(
-        run.vaultId,
-        `(async()=>{
-      ${PAGE}
-      await using cleanup=new AsyncDisposableStack();
-      const file=app.vault.getFileByPath('citation-only-test.md');
-      const original=await app.vault.read(file);
-      cleanup.defer(()=>app.vault.modify(file,original));
-      const leaf=cleanup.adopt(app.workspace.getLeaf('tab'),leaf=>leaf.detach());
-      await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});
-      const doc=leaf.view.containerEl.ownerDocument;
-      const dialog=()=>[...doc.querySelectorAll('.modal')].find(el=>el.querySelector('.modal-title')?.textContent===${JSON.stringify(run.m.citation_presentation_title())});
-      cleanup.defer(()=>dialog()?.parentElement.querySelector('.modal-bg')?.click());
-      const open=async()=>{app.commands.executeCommandById('zotlit:set-citation-presentation');return await until('Citation Presentation dialog',dialog);};
-      const language=modal=>modal.querySelector('input[type=text]');
-      const button=(modal,label)=>[...modal.querySelectorAll('button')].find(el=>el.textContent===label);
-      const setLanguage=(modal,value)=>{const input=language(modal);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};
-      let modal=await open();
-      setLanguage(modal,'de-DE');
-      press(button(modal,${JSON.stringify(run.m.citation_presentation_confirm())}),'Confirm');
-      await until('language written',()=>app.metadataCache.getFileCache(file)?.frontmatter?.lang==='de-DE');
-      const confirmed=leaf.view.getViewData();
-      modal=await open();
-      const reopened=language(modal).value;
-      setLanguage(modal,'fr-FR');
-      press(button(modal,${JSON.stringify(run.m.modal_cancel())}),'Cancel');
-      const cancelled=leaf.view.getViewData()===confirmed;
-      modal=await open();
-      setLanguage(modal,'fr-FR');
-      cleanup.defer(()=>app.plugins.enablePlugin('zotlit'));
-      await app.plugins.disablePlugin('zotlit');
-      await until('dialog closes after unload',()=>!dialog(),10000);
-      const closed=!dialog();
-      const unchanged=leaf.view.getViewData()===confirmed;
-      return JSON.stringify({reopened,cancelled,closed,unchanged});
-    })()`,
-      ),
+    const result = await obRun(
+      run.vaultId,
+      async ({ app, page }, { title, confirmLabel, cancelLabel }) => {
+        const { until, press } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const file = app.vault.getFileByPath("citation-only-test.md")!;
+        const original = await app.vault.read(file);
+        cleanup.defer(() => app.vault.modify(file, original));
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const view = leaf.view as import("obsidian").MarkdownView;
+        const doc = view.containerEl.ownerDocument;
+        const dialog = () =>
+          [...doc.querySelectorAll<HTMLElement>(".modal")].find(
+            (el) =>
+              el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+              title,
+          );
+        cleanup.defer(() =>
+          dialog()
+            ?.parentElement?.querySelector<HTMLElement>(".modal-bg")
+            ?.click(),
+        );
+        const open = async () => {
+          app.commands.executeCommandById("zotlit:set-citation-presentation");
+          return await until("Citation Presentation dialog", dialog);
+        };
+        const language = (modal: HTMLElement) =>
+          modal.querySelector<HTMLInputElement>("input[type=text]")!;
+        const button = (modal: HTMLElement, label: string) =>
+          [...modal.querySelectorAll<HTMLButtonElement>("button")].find(
+            (el) => el.textContent === label,
+          );
+        const setLanguage = (modal: HTMLElement, value: string) => {
+          const input = language(modal);
+          input.value = value;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        let modal = await open();
+        setLanguage(modal, "de-DE");
+        press(button(modal, confirmLabel), "Confirm");
+        await until(
+          "language written",
+          () =>
+            app.metadataCache.getFileCache(file)?.frontmatter?.lang === "de-DE",
+        );
+        const confirmed = view.getViewData();
+        modal = await open();
+        const reopened = language(modal).value;
+        setLanguage(modal, "fr-FR");
+        press(button(modal, cancelLabel), "Cancel");
+        const cancelled = view.getViewData() === confirmed;
+        modal = await open();
+        setLanguage(modal, "fr-FR");
+        cleanup.defer(() => app.plugins.enablePlugin("zotlit"));
+        await app.plugins.disablePlugin("zotlit");
+        await until("dialog closes after unload", () => !dialog(), 10000);
+        const closed = !dialog();
+        const unchanged = view.getViewData() === confirmed;
+        return { reopened, cancelled, closed, unchanged };
+      },
+      {
+        title: run.m.citation_presentation_title(),
+        confirmLabel: run.m.citation_presentation_confirm(),
+        cancelLabel: run.m.modal_cancel(),
+      },
     );
     expect(result).toEqual({
       reopened: "de-DE",
@@ -129,14 +153,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ]);
     const freshId = created.stdout.trim().split("\n")[0]!.trim();
     await prepareRunWindow(freshId);
-    await obEval(
+    await obRun(
       freshId,
-      "app.saveLocalStorage('zotlit-profile-customization','native');true",
+      async ({ app }) => {
+        app.saveLocalStorage("zotlit-profile-customization", "native");
+        return String(true);
+      },
+      undefined,
     );
     expect(
-      await obEval(
+      await obRun(
         freshId,
-        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+        async ({ zotlit }) => {
+          return String(String(zotlit.services.profile.profiles.length));
+        },
+        undefined,
       ),
     ).toBe("0");
     // A default Profile that lists the Annotations in the note puts one
@@ -145,11 +176,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await useListingProfile(freshId);
     await suite.quickSwitchCreate(annotatedItem, freshId);
     expect(
-      await obEvalUntil(
-        freshId,
-        "String(!!app.workspace.getActiveFile()&&app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('RUGIER24').length===1)",
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app, zotlit }) => {
+            return String(
+              String(
+                !!app.workspace.getActiveFile() &&
+                  zotlit.services.noteIndex.getNotesByItemKey("RUGIER24")
+                    .length === 1,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:100",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     const note = await indexedNote(freshId, annotatedItem.itemID);
     expect(note.path).not.toBeNull();
@@ -158,21 +206,70 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Obsidian drops a note's cache when a write lands and restores it once
     // the worker has parsed the new content, so the command waits for that
     // `changed` event rather than racing the parse.
-    await obEval(
+    await obRun(
       freshId,
-      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});const indexed=new Promise(resolve=>{const ref=app.metadataCache.on('changed',(changed,data)=>{if(changed!==file||!data.includes(${JSON.stringify(personal)}))return;app.metadataCache.offref(ref);resolve();});});await app.vault.append(file,${JSON.stringify(personal)});await indexed;await app.workspace.getLeaf(false).openFile(file);return true;})()`,
+      async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+        const file = app.vault.getFileByPath(__typedArg0)!;
+        const indexed = new Promise<void>((resolve) => {
+          const ref = app.metadataCache.on("changed", (changed, data) => {
+            if (changed !== file || !data.includes(__typedArg1)) return;
+            app.metadataCache.offref(ref);
+            resolve();
+          });
+        });
+        await app.vault.append(file, __typedArg2);
+        await indexed;
+        await app.workspace.getLeaf(false).openFile(file);
+        return String(true);
+      },
+      { __typedArg0: note.path!, __typedArg1: personal, __typedArg2: personal },
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
     expect(before.split("[!note]").length - 1).toBe(annotationKeys.length);
     expect(
-      await obEval(
+      await obRun(
         freshId,
-        "app.commands.executeCommandById('zotlit:customize-note-template')",
+        async ({ app }) => {
+          return String(
+            app.commands.executeCommandById("zotlit:customize-note-template"),
+          );
+        },
+        undefined,
       ),
     ).toBe("true");
-    const editor = `(function(){var leaves=app.workspace.getLeavesOfType('zotlit-template-workbench');return (leaves.find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})??leaves[0])?.view;})()`;
+
     expect(
-      await obEvalUntil(freshId, `String(!!(${editor})?.file)`, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              String(
+                !!(function () {
+                  var leaves = app.workspace.getLeavesOfType(
+                    "zotlit-template-workbench",
+                  ) as (import("obsidian").WorkspaceLeaf & {
+                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+                  })[];
+                  return (
+                    leaves.find(
+                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                    ) ?? leaves[0]
+                  )?.view;
+                })()?.file,
+              ),
+            );
+          },
+          { __typedArg0: note.path! },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:127",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: "true",
         tries: 80,
       }),
@@ -180,55 +277,282 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Default document already exists, so the workbench shows its file
     // before Customize sets the note it came from.
     expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(run.m.template_workbench_shared_template({ name: run.m.settings_profile_default_name() }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            return String(
+              String(
+                view.contentEl.textContent.includes(__typedArg1) &&
+                  view.store.getState().item?.id === "RUGIER24",
+              ),
+            );
+          },
+          {
+            __typedArg0: note.path!,
+            __typedArg1: run.m.template_workbench_shared_template({
+              name: run.m.settings_profile_default_name(),
+            }),
+          },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:135",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await changeNativeAnnotationCallout(freshId, {
-      view: editor,
+      view: { originatingNote: note.path! },
       vaultPath: freshPath,
       tabLabel: run.m.workbench_tab_annotation(),
       beforeEdit: async () => {
         expect(
-          await obEvalUntil(
-            freshId,
-            `(function(){const view=${editor};const help=view.contentEl.querySelector('button[aria-label=${JSON.stringify(run.m.workbench_help())}]');if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              freshId,
+              async ({ app }, { __typedArg0, __typedArg1 }) => {
+                const view = (function () {
+                  var leaves = app.workspace.getLeavesOfType(
+                    "zotlit-template-workbench",
+                  ) as (import("obsidian").WorkspaceLeaf & {
+                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+                  })[];
+                  return (
+                    leaves.find(
+                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                    ) ?? leaves[0]
+                  )?.view;
+                })()!;
+                const help = view.contentEl.querySelector<HTMLElement>(
+                  `button[aria-label=${JSON.stringify(__typedArg1)}]`,
+                );
+                if (!help) return String(false);
+                view.leaf.getContainer().focus();
+                help!.focus();
+                return String(
+                  String(
+                    help === view.contentEl.ownerDocument.activeElement &&
+                      help!.getAttribute("aria-expanded") === "false",
+                  ),
+                );
+              },
+              { __typedArg0: note.path!, __typedArg1: run.m.workbench_help() },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "literature.ts:147",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
-        await obEval(
+        await obRun(
           freshId,
-          `(function(){${PAGE}const view=${editor};press(view.contentEl.querySelector('button[aria-label=${JSON.stringify(run.m.workbench_help())}]'),'Help');return true;})()`,
+          async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+            const { press } = page;
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            press(
+              view.contentEl.querySelector<HTMLElement>(
+                `button[aria-label=${JSON.stringify(__typedArg1)}]`,
+              ),
+              "Help",
+            );
+            return String(true);
+          },
+          { __typedArg0: note.path!, __typedArg1: run.m.workbench_help() },
         );
         expect(
-          await obEvalUntil(
-            freshId,
-            `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(run.m.workbench_annotation_help_title())}]');const source=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));return String(!!guide&&guide.textContent.includes('[!quote]')&&guide.textContent.includes(${JSON.stringify(run.m.template_workbench_update_this_note())})&&guide.getBoundingClientRect().height>0&&source.getBoundingClientRect().height>0);})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              freshId,
+              async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+                const view = (function () {
+                  var leaves = app.workspace.getLeavesOfType(
+                    "zotlit-template-workbench",
+                  ) as (import("obsidian").WorkspaceLeaf & {
+                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+                  })[];
+                  return (
+                    leaves.find(
+                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                    ) ?? leaves[0]
+                  )?.view;
+                })()!;
+                const guide = view.contentEl.querySelector<HTMLElement>(
+                  `section[aria-label=${JSON.stringify(__typedArg1)}]`,
+                );
+                const source = Array.from(
+                  view.contentEl.querySelectorAll<CodeMirrorElement>(
+                    ".cm-content",
+                  ),
+                ).find((element) => element.textContent.includes("[!note]"));
+                return String(
+                  String(
+                    !!guide &&
+                      guide.textContent.includes("[!quote]") &&
+                      guide.textContent.includes(__typedArg2) &&
+                      guide!.getBoundingClientRect().height > 0 &&
+                      source!.getBoundingClientRect().height > 0,
+                  ),
+                );
+              },
+              {
+                __typedArg0: note.path!,
+                __typedArg1: run.m.workbench_annotation_help_title(),
+                __typedArg2: run.m.template_workbench_update_this_note(),
+              },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "literature.ts:158",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
-        await obEval(
+        await obRun(
           freshId,
-          `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(run.m.workbench_annotation_help_title())}]');guide.focus();guide.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            const guide = view.contentEl.querySelector<HTMLElement>(
+              `section[aria-label=${JSON.stringify(__typedArg1)}]`,
+            );
+            guide!.focus();
+            guide!.dispatchEvent(
+              new view.contentEl.ownerDocument.defaultView!.KeyboardEvent(
+                "keydown",
+                { key: "Escape", bubbles: true },
+              ),
+            );
+            return String(true);
+          },
+          {
+            __typedArg0: note.path!,
+            __typedArg1: run.m.workbench_annotation_help_title(),
+          },
         );
         expect(
-          await obEvalUntil(
-            freshId,
-            `(function(){const view=${editor};const help=view.contentEl.querySelector('button[aria-label=${JSON.stringify(run.m.workbench_help())}]');return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              freshId,
+              async ({ app }, { __typedArg0, __typedArg1 }) => {
+                const view = (function () {
+                  var leaves = app.workspace.getLeavesOfType(
+                    "zotlit-template-workbench",
+                  ) as (import("obsidian").WorkspaceLeaf & {
+                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+                  })[];
+                  return (
+                    leaves.find(
+                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                    ) ?? leaves[0]
+                  )?.view;
+                })()!;
+                const help = view.contentEl.querySelector<HTMLElement>(
+                  `button[aria-label=${JSON.stringify(__typedArg1)}]`,
+                );
+                return String(
+                  String(
+                    help!.getAttribute("aria-expanded") === "false" &&
+                      help === view.contentEl.ownerDocument.activeElement &&
+                      Array.from(
+                        view.contentEl.querySelectorAll<CodeMirrorElement>(
+                          ".cm-content",
+                        ),
+                      ).some((element) =>
+                        element.textContent.includes("[!note]"),
+                      ),
+                  ),
+                );
+              },
+              { __typedArg0: note.path!, __typedArg1: run.m.workbench_help() },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "literature.ts:169",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
       },
     });
     // The linked Preview belongs to the editor's native window, which can differ from the CLI window.
     expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};return String(!!view.contentEl.ownerDocument.querySelector('.callout[data-callout="quote"]'));})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0 }) => {
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            return String(
+              String(
+                !!view.contentEl.ownerDocument.querySelector<HTMLElement>(
+                  '.callout[data-callout="quote"]',
+                ),
+              ),
+            );
+          },
+          { __typedArg0: note.path! },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:179",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     expect(await readFile(join(freshPath, note.path!), "utf-8")).toBe(before);
     const other = await createFixtureNote(freshId, createTargetItem.itemID);
@@ -236,40 +560,192 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     if (other.outcome !== "created")
       throw new Error("Second note was not created");
     const otherBefore = await readFile(join(freshPath, other.path), "utf-8");
-    await obEval(
+    await obRun(
       freshId,
-      `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(other.path)}));app.workspace.rootSplit.focus();return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        await app.workspace
+          .getLeaf("tab")
+          .openFile(app.vault.getFileByPath(__typedArg0)!);
+        app.workspace.rootSplit.focus();
+        return String(true);
+      },
+      { __typedArg0: other.path },
     );
-    await obEval(
+    await obRun(
       freshId,
-      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.contentEl.ownerDocument.defaultView.focus();app.workspace.setActiveLeaf(view.leaf,{focus:true});return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        const view = (function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+            ) ?? leaves[0]
+          )?.view;
+        })()!;
+        await app.workspace.revealLeaf(view.leaf);
+        view.contentEl.ownerDocument.defaultView!.focus();
+        app.workspace.setActiveLeaf(view.leaf, { focus: true });
+        return String(true);
+      },
+      { __typedArg0: note.path! },
     );
     expect(
-      await obEvalUntil(
-        freshId,
-        `String(activeWindow===(${editor}).contentEl.ownerDocument.defaultView)`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              String(
+                activeWindow ===
+                  (function () {
+                    var leaves = app.workspace.getLeavesOfType(
+                      "zotlit-template-workbench",
+                    ) as (import("obsidian").WorkspaceLeaf & {
+                      view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+                    })[];
+                    return (
+                      leaves.find(
+                        (leaf) =>
+                          leaf.view.originatingNote?.path === __typedArg0,
+                      ) ?? leaves[0]
+                    )?.view;
+                  })()!.contentEl.ownerDocument.defaultView,
+              ),
+            );
+          },
+          { __typedArg0: note.path! },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:200",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.innerText.trim()===${JSON.stringify(run.m.template_workbench_update_this_note())});button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            const button = Array.from(
+              view.contentEl.querySelectorAll<HTMLButtonElement>("button"),
+            ).find((button) => button.innerText.trim() === __typedArg1);
+            button!.focus();
+            return String(
+              String(
+                view.contentEl.ownerDocument.activeElement === button &&
+                  !button.disabled,
+              ),
+            );
+          },
+          {
+            __typedArg0: note.path!,
+            __typedArg1: run.m.template_workbench_update_this_note(),
+          },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:207",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // The first click after an edit writes the Managed Frontmatter with the
     // body: a managed Property removed now comes back with this one update.
-    await obEval(
+    await obRun(
       freshId,
-      `(async()=>{await app.fileManager.processFrontMatter(app.vault.getFileByPath(${JSON.stringify(note.path)}),fm=>{delete fm.collections});return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        await app.fileManager.processFrontMatter(
+          app.vault.getFileByPath(__typedArg0)!,
+          (fm) => {
+            delete fm.collections;
+          },
+        );
+        return String(true);
+      },
+      { __typedArg0: note.path! },
     );
-    await obEval(
+    await obRun(
       freshId,
-      `(function(){${PAGE}const view=${editor};press(Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.innerText.trim()===${JSON.stringify(run.m.template_workbench_update_this_note())}),'Update this note');return true;})()`,
+      async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+        const { press } = page;
+        const view = (function () {
+          var leaves = app.workspace.getLeavesOfType(
+            "zotlit-template-workbench",
+          ) as (import("obsidian").WorkspaceLeaf & {
+            view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          })[];
+          return (
+            leaves.find(
+              (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+            ) ?? leaves[0]
+          )?.view;
+        })()!;
+        press(
+          Array.from(
+            view.contentEl.querySelectorAll<HTMLButtonElement>("button"),
+          ).find((button) => button.innerText.trim() === __typedArg1),
+          "Update this note",
+        );
+        return String(true);
+      },
+      {
+        __typedArg0: note.path!,
+        __typedArg1: run.m.template_workbench_update_this_note(),
+      },
     );
     expect(
-      await obEvalUntil(freshId, `String(!(${editor}).updatingNote)`, {
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              String(
+                !(function () {
+                  var leaves = app.workspace.getLeavesOfType(
+                    "zotlit-template-workbench",
+                  ) as (import("obsidian").WorkspaceLeaf & {
+                    view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+                  })[];
+                  return (
+                    leaves.find(
+                      (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                    ) ?? leaves[0]
+                  )?.view;
+                })()!.updatingNote,
+              ),
+            );
+          },
+          { __typedArg0: note.path! },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:224",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
         expected: "true",
       }),
     ).toBe(true);
@@ -298,11 +774,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       name: basename(note.path!, ".md"),
     });
     expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};return String([view.contentEl.ownerDocument,document].some(doc=>Array.from(doc.querySelectorAll('.notice')).some(notice=>notice.textContent.includes(${JSON.stringify(updated)}))));})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          freshId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const view = (function () {
+              var leaves = app.workspace.getLeavesOfType(
+                "zotlit-template-workbench",
+              ) as (import("obsidian").WorkspaceLeaf & {
+                view: import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+              })[];
+              return (
+                leaves.find(
+                  (leaf) => leaf.view.originatingNote?.path === __typedArg0,
+                ) ?? leaves[0]
+              )?.view;
+            })()!;
+            return String(
+              String(
+                [view.contentEl.ownerDocument, document].some((doc) =>
+                  Array.from(doc.querySelectorAll<HTMLElement>(".notice")).some(
+                    (notice) => notice.textContent.includes(__typedArg1),
+                  ),
+                ),
+              ),
+            );
+          },
+          { __typedArg0: note.path!, __typedArg1: updated },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:253",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     const after = await readFile(join(freshPath, note.path!), "utf-8");
     expect(after.split("---")[1]).toMatch(/^collections:/m);
@@ -325,11 +832,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const notePath = `${folder}/${noteName}.md`;
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
 
-    const removedFromIndex = await obEvalUntil(
-      run.vaultId,
-      `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)}).length)`,
-      { expected: "0" },
-    );
+    const removedFromIndex = await ((options: {
+      expected: string;
+      tries?: number;
+    }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0 }) => {
+          return String(
+            String(
+              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
+            ),
+          );
+        },
+        { __typedArg0: createTargetItem.key },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "literature.ts:280",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "0" });
     expect(removedFromIndex).toBe(true);
 
     const first = await createFixtureNote(run.vaultId, createTargetItem.itemID);
@@ -338,11 +863,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       throw new Error("The first create did not create a Literature Note");
     }
 
-    const indexed = await obEvalUntil(
-      run.vaultId,
-      `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)}).length)`,
-      { expected: "1" },
-    );
+    const indexed = await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0 }) => {
+          return String(
+            String(
+              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length,
+            ),
+          );
+        },
+        { __typedArg0: createTargetItem.key },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "literature.ts:293",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "1" });
     expect(indexed).toBe(true);
 
     const second = await createFixtureNote(
@@ -366,38 +906,87 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("creates a default note whose body renders once and imports no Child Note", async () => {
     const item = ITEMS.find(({ itemID }) => itemID === 1)!;
     const childNoteKey = "NNNNAAAA";
-    const services = "app.plugins.plugins.zotlit.services";
+
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(${services}.profile.resolveProfile('default')?.document===undefined)`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ zotlit }) => {
+            return String(
+              String(
+                zotlit.services.profile.resolveProfile("default")?.document ===
+                  undefined,
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:323",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // Set the Item's seeded notes aside, so the default Profile writes a new
     // one; the cleanup puts them back.
     await using cleanup = new AsyncDisposableStack();
     const seeded = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await ${services}.noteIndex.whenIndexed();const notes=[];for(const note of ${services}.noteIndex.getNotesByItemKey(${JSON.stringify(item.key)})){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
+        async ({ app, zotlit }, { __typedArg0 }) => {
+          await zotlit.services.noteIndex.whenIndexed();
+          const notes = [];
+          for (const note of zotlit.services.noteIndex.getNotesByItemKey(
+            __typedArg0,
+          )) {
+            const file = app.vault.getFileByPath(note.path)!;
+            notes.push({ path: note.path, text: await app.vault.read(file) });
+            await app.vault.delete(file);
+          }
+          return String(JSON.stringify(notes));
+        },
+        { __typedArg0: item.key },
       ),
     ) as { path: string; text: string }[];
     let created = "";
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const created=app.vault.getFileByPath(${JSON.stringify(created)});if(created)await app.vault.delete(created);for(const {path,text} of ${JSON.stringify(seeded)})await app.vault.create(path,text);return true;})()`,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          const created = app.vault.getFileByPath(__typedArg0)!;
+          if (created) await app.vault.delete(created);
+          for (const { path, text } of __typedArg1)
+            await app.vault.create(path, text);
+          return String(true);
+        },
+        { __typedArg0: created, __typedArg1: seeded },
       );
     });
     expect(await hasIndexedNotes(run.vaultId, item.key, 0)).toBe(true);
     const markdownFiles = () =>
-      obEval(run.vaultId, "String(app.vault.getMarkdownFiles().length)");
+      obRun(
+        run.vaultId,
+        async ({ app }) => {
+          return String(String(app.vault.getMarkdownFiles().length));
+        },
+        undefined,
+      );
     const filesBefore = await markdownFiles();
     const importedNotes = () =>
-      obEval(
+      obRun(
         run.vaultId,
-        `String(${services}.noteIndex.getImportedNoteByNoteKey(${JSON.stringify(childNoteKey)}).length)`,
+        async ({ zotlit }, { __typedArg0 }) => {
+          return String(
+            String(
+              zotlit.services.noteIndex.getImportedNoteByNoteKey(__typedArg0)
+                .length,
+            ),
+          );
+        },
+        { __typedArg0: childNoteKey },
       );
     const importedBefore = await importedNotes();
 
@@ -417,15 +1006,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A full Update refreshes the Properties and leaves the body as written.
     const personal = "\nMy own reading of this paper.\n";
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{await app.vault.append(app.vault.getFileByPath(${JSON.stringify(created)}),${JSON.stringify(personal)});return true;})()`,
+      async ({ app }, { __typedArg0, __typedArg1 }) => {
+        await app.vault.append(
+          app.vault.getFileByPath(__typedArg0)!,
+          __typedArg1,
+        );
+        return String(true);
+      },
+      { __typedArg0: created, __typedArg1: personal },
     );
     const before = await readFile(join(e2eVaultPath, created), "utf-8");
     const update = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{const result=await ${services}.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(item.key)},scope:'full'});return JSON.stringify({bodyUpdated:result.bodyUpdated,diagnostic:result.diagnostic??null});})()`,
+        async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
+          const result = await zotlit.services.noteFeature.updateNote(
+            app.vault.getFileByPath(__typedArg0)!,
+            { indexedKey: __typedArg1, scope: "full" },
+          );
+          return String(
+            JSON.stringify({
+              bodyUpdated: result.bodyUpdated,
+              diagnostic: result.diagnostic ?? null,
+            }),
+          );
+        },
+        { __typedArg0: created, __typedArg1: item.key },
       ),
     ) as { bodyUpdated: boolean; diagnostic: unknown };
     expect(update).toEqual({ bodyUpdated: false, diagnostic: null });
@@ -446,16 +1054,48 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       throw new Error("The Default scenario did not create a Literature Note");
     }
     run.booksNotePath = `books/books-${booksProfileTargetItem.citationKey}.md`;
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.bridge.runSync(plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true}));var file=await app.vault.create('Profile flow source.md',${JSON.stringify(`[@${booksProfileTargetItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+      async ({ app, zotlit }, { __typedArg0 }) => {
+        zotlit.services.bridge.runSync(
+          zotlit.services.settings.update({
+            "citation.pandoc-citations": true,
+            "citation.open-as-links": true,
+          }),
+        );
+        var file = await app.vault.create(
+          "Profile flow source.md",
+          __typedArg0,
+        );
+        var leaf = app.workspace.getLeaf(false);
+        await leaf.openFile(file, { state: { mode: "source", source: true } });
+        (leaf.view as import("obsidian").MarkdownView).editor.setCursor({
+          line: 0,
+          ch: 5,
+        });
+        return String(true);
+      },
+      { __typedArg0: `[@${booksProfileTargetItem.citationKey}]\n` },
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        "app.commands.executeCommandById('zotlit:open-citekey')",
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              app.commands.executeCommandById("zotlit:open-citekey"),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:406",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // Without an explicit input the picker preselects Default; the Books
     // choice below belongs to this operation alone.
@@ -466,9 +1106,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(preselected).toContain(run.m.settings_profile_default_name());
     expect(preselected).toContain(run.m.modal_profile_preselected());
     expect(preselected).not.toContain(booksProfile.label);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      async (_context, { __typedArg0 }) => {
+        var input =
+          activeDocument.querySelector<HTMLInputElement>(".prompt input");
+        input!.value = __typedArg0;
+        input!.dispatchEvent(new Event("input", { bubbles: true }));
+        return String(true);
+      },
+      { __typedArg0: booksProfile.label },
     );
     const selected = await selectSuggestion(run.vaultId, run.booksNotePath);
     expect(selected).toContain(booksProfile.label);
@@ -514,9 +1161,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await hasOneIndexedNote(run.vaultId, defaultResult.indexedKey)).toBe(
       true,
     );
-    const booksIndexedKey = await obEval(
+    const booksIndexedKey = await obRun(
       run.vaultId,
-      `app.metadataCache.getFileCache(app.vault.getAbstractFileByPath(${JSON.stringify(run.booksNotePath)})).frontmatter['zotero-key']`,
+      async ({ app }, { __typedArg0 }) => {
+        return String(
+          await app.metadataCache.getFileCache(
+            app.vault.getFileByPath(__typedArg0)!,
+          )!.frontmatter!["zotero-key"],
+        );
+      },
+      { __typedArg0: run.booksNotePath },
     );
     expect(await hasOneIndexedNote(run.vaultId, booksIndexedKey)).toBe(true);
   });
@@ -532,27 +1186,75 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await clearNotices(run.vaultId);
     // The stamp leaves the editor's text only; the metadata cache still names
     // Books when the update chooses its Profile, a moment later.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(run.booksNotePath)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setValue(${JSON.stringify(edited)});return app.commands.executeCommandById('zotlit:update-note');})()`,
+      async ({ app }, { __typedArg0, __typedArg1 }) => {
+        var file = app.vault.getFileByPath(__typedArg0)!;
+        var leaf = app.workspace.getLeaf(false);
+        await leaf.openFile(file, { state: { mode: "source", source: true } });
+        (leaf.view as import("obsidian").MarkdownView).editor.setValue(
+          __typedArg1,
+        );
+        return String(app.commands.executeCommandById("zotlit:update-note"));
+      },
+      { __typedArg0: run.booksNotePath, __typedArg1: edited },
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(${WINDOW_DOCUMENTS}.some(doc=>Array.from(doc.querySelectorAll('.notice')).some(notice=>notice.textContent.includes(${JSON.stringify(run.m.notice_literature_note_profile_changed())}))))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ page }, { __typedArg0 }) => {
+            return String(
+              String(
+                page
+                  .windowDocuments()
+                  .some((doc) =>
+                    Array.from(
+                      doc.querySelectorAll<HTMLElement>(".notice"),
+                    ).some((notice) =>
+                      notice.textContent.includes(__typedArg0),
+                    ),
+                  ),
+              ),
+            );
+          },
+          { __typedArg0: run.m.notice_literature_note_profile_changed() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:492",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `String(app.workspace.getActiveFileView()?.getViewData()===${JSON.stringify(edited)})`,
+        async ({ app }, { __typedArg0 }) => {
+          return String(
+            String(
+              (
+                app.workspace.getActiveFileView() as import("obsidian").MarkdownView
+              )?.getViewData() === __typedArg0,
+            ),
+          );
+        },
+        { __typedArg0: edited },
       ),
     ).toBe("true");
     // Put the stamp back, so the scenarios below find the note as it was.
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){var view=app.workspace.getActiveFileView();view.editor.setValue(${JSON.stringify(original)});await view.save();return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        var view =
+          app.workspace.getActiveFileView() as import("obsidian").MarkdownView;
+        view.editor.setValue(__typedArg0);
+        await view.save();
+        return String(true);
+      },
+      { __typedArg0: original },
     );
     expect(
       await waitFor(
@@ -574,30 +1276,87 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       throw new Error("The Books Profile note was not created");
     }
 
-    const staleFieldSeeded = await obEvalUntil(
-      run.vaultId,
-      `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(run.booksNotePath)});if(!file||file.extension!=='md'){return 'missing';}await app.fileManager.processFrontMatter(file,function(frontmatter){frontmatter['fixture-obsolete']='stale';frontmatter['fixture-spread-title']='stale';frontmatter['fixture-spread-kind']='stale';frontmatter['fixture-manual']='mine';});return 'seeded';})()`,
-      { expected: "seeded" },
-    );
+    const staleFieldSeeded = await ((options: {
+      expected: string;
+      tries?: number;
+    }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app }, { __typedArg0 }) => {
+          var file = app.vault.getFileByPath(__typedArg0)!;
+          if (!file || file.extension !== "md") {
+            return String("missing");
+          }
+          await app.fileManager.processFrontMatter(
+            file,
+            function (frontmatter) {
+              frontmatter["fixture-obsolete"] = "stale";
+              frontmatter["fixture-spread-title"] = "stale";
+              frontmatter["fixture-spread-kind"] = "stale";
+              frontmatter["fixture-manual"] = "mine";
+            },
+          );
+          return String("seeded");
+        },
+        { __typedArg0: run.booksNotePath },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "literature.ts:529",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "seeded" });
     expect(staleFieldSeeded).toBe(true);
     // The batch reads each note's Profile stamp from the metadata cache, and
     // the write above sends the Books note back through the parser. Until the
     // cache holds the rewritten frontmatter, the note reads as unstamped.
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(app.metadataCache.getFileCache(app.vault.getAbstractFileByPath(${JSON.stringify(run.booksNotePath)}))?.frontmatter?.['fixture-manual']==='mine')`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0 }) => {
+            return String(
+              String(
+                app.metadataCache.getFileCache(
+                  app.vault.getFileByPath(__typedArg0)!,
+                )?.frontmatter?.["fixture-manual"] === "mine",
+              ),
+            );
+          },
+          { __typedArg0: run.booksNotePath },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:539",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
 
     await using notices = await observeNotices(run.vaultId);
     await using frames = await recordFrames(run.vaultId);
-    const triggered = await obEvalUntil(
-      run.vaultId,
-      "app.commands.executeCommandById('zotlit:update-all-notes')",
-      { expected: "true", tries: 20 },
-    );
+    const triggered = await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          return String(
+            app.commands.executeCommandById("zotlit:update-all-notes"),
+          );
+        },
+        undefined,
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "literature.ts:548",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true", tries: 20 });
     expect(triggered).toBe(true);
 
     // The Fixture's My Library carries more than one Literature Note, so
@@ -610,11 +1369,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await clickModalButton(run.vaultId, run.m.batch_update_confirm_button()),
     ).toBe(true);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(Array.from(activeDocument.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(run.m.batch_update_close())}))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                Array.from(
+                  activeDocument.querySelectorAll<HTMLElement>(".modal button"),
+                ).some((button) => button.textContent.trim() === __typedArg0),
+              ),
+            );
+          },
+          { __typedArg0: run.m.batch_update_close() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:565",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
@@ -625,9 +1401,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const defaultCount =
       ITEMS.filter((item) => item.libraryID === 1 && !DEMO_ITEMS.includes(item))
         .length + 1;
-    const summary = await obEval(
+    const summary = await obRun(
       run.vaultId,
-      "activeDocument.querySelector('.modal').textContent",
+      async (_context) => {
+        return String(
+          activeDocument.querySelector<HTMLElement>(".modal")!.textContent,
+        );
+      },
+      undefined,
     );
     for (const [label, count] of [
       [run.m.settings_profile_default_name(), defaultCount],
@@ -681,9 +1462,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     let managedFrontmatter: ManagedFrontmatterReport | undefined;
     const managedFrontmatterApplied = await waitFor(async () => {
-      const response = await obEval(
+      const response = await obRun(
         run.vaultId,
-        `(function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(run.booksNotePath)});var frontmatter=file&&app.metadataCache.getFileCache(file)?.frontmatter;return JSON.stringify({title:frontmatter?.['fixture-title'],kind:frontmatter?.['fixture-kind'],spreadTitle:frontmatter?.['fixture-spread-title'],spreadKind:frontmatter?.['fixture-spread-kind'],manual:frontmatter?.['fixture-manual'],obsolete:frontmatter?Object.prototype.hasOwnProperty.call(frontmatter,'fixture-obsolete'):false});})()`,
+        async ({ app }, { __typedArg0 }) => {
+          var file = app.vault.getFileByPath(__typedArg0)!;
+          var frontmatter =
+            file && app.metadataCache.getFileCache(file)?.frontmatter;
+          return String(
+            JSON.stringify({
+              title: frontmatter?.["fixture-title"],
+              kind: frontmatter?.["fixture-kind"],
+              spreadTitle: frontmatter?.["fixture-spread-title"],
+              spreadKind: frontmatter?.["fixture-spread-kind"],
+              manual: frontmatter?.["fixture-manual"],
+              obsolete: frontmatter
+                ? Object.prototype.hasOwnProperty.call(
+                    frontmatter,
+                    "fixture-obsolete",
+                  )
+                : false,
+            }),
+          );
+        },
+        { __typedArg0: run.booksNotePath },
       ).catch(() => "");
       if (response === "") return false;
       managedFrontmatter = JSON.parse(response) as ManagedFrontmatterReport;
@@ -726,13 +1527,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       state: "evaluable",
     });
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(Array.from((${settingsContent}).querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(description)})))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            return String(
+              String(
+                Array.from(
+                  app.setting.containerEl.querySelectorAll<HTMLElement>(
+                    ".setting-item",
+                  ),
+                ).some(
+                  (el) =>
+                    el.querySelector<HTMLElement>(".setting-item-name")
+                      ?.textContent === __typedArg0 &&
+                    el
+                      .querySelector<HTMLElement>(".setting-item-description")
+                      ?.textContent?.includes(__typedArg1),
+                ),
+              ),
+            );
+          },
+          { __typedArg0: booksProfile.label, __typedArg1: description },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:681",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    await obEval(run.vaultId, "app.setting.close();true");
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        app.setting.close();
+        return String(true);
+      },
+      undefined,
+    );
     await using notices = await observeNotices(run.vaultId);
     await suite.quickSwitchCreate(bookItem);
     expect(
@@ -743,9 +1577,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        "String(!!activeDocument.querySelector('.prompt'))",
+        async (_context) => {
+          return String(
+            String(!!activeDocument.querySelector<HTMLElement>(".prompt")),
+          );
+        },
+        undefined,
       ),
     ).toBe("false");
     await expect
@@ -763,16 +1602,45 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
     expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.bridge.runSync(plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true}));var file=await app.vault.create('Match flow source.md',${JSON.stringify(`[@${bookItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+      async ({ app, zotlit }, { __typedArg0 }) => {
+        zotlit.services.bridge.runSync(
+          zotlit.services.settings.update({
+            "citation.pandoc-citations": true,
+            "citation.open-as-links": true,
+          }),
+        );
+        var file = await app.vault.create("Match flow source.md", __typedArg0);
+        var leaf = app.workspace.getLeaf(false);
+        await leaf.openFile(file, { state: { mode: "source", source: true } });
+        (leaf.view as import("obsidian").MarkdownView).editor.setCursor({
+          line: 0,
+          ch: 5,
+        });
+        return String(true);
+      },
+      { __typedArg0: `[@${bookItem.citationKey}]\n` },
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        "app.commands.executeCommandById('zotlit:open-citekey')",
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              app.commands.executeCommandById("zotlit:open-citekey"),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:723",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     expect(
       await waitFor(async () =>
@@ -782,9 +1650,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        "String(!!activeDocument.querySelector('.prompt'))",
+        async (_context) => {
+          return String(
+            String(!!activeDocument.querySelector<HTMLElement>(".prompt")),
+          );
+        },
+        undefined,
       ),
     ).toBe("false");
     await expect
@@ -807,9 +1680,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const original = await readFile(documentPath, "utf-8");
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         run.vaultId,
-        "for(const type of ['zotlit-template-workbench','zotlit-template-data-explorer','zotlit-note-preview'])app.workspace.detachLeavesOfType(type);true",
+        async ({ app }) => {
+          for (const type of [
+            "zotlit-template-workbench",
+            "zotlit-template-data-explorer",
+            "zotlit-note-preview",
+          ])
+            app.workspace.detachLeavesOfType(type);
+          return String(true);
+        },
+        undefined,
       );
       await writeFile(documentPath, original);
     });
@@ -819,9 +1701,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const resultFor = async (key: string) => {
       let text = "";
       await waitFor(async () => {
-        text = await obEval(
+        text = await obRun(
           run.vaultId,
-          `(async()=>{const view=app.workspace.activeLeaf.view;if(view.getState().itemIndexedKey!==${JSON.stringify(key)})await view.setState({...view.getState(),itemIndexedKey:${JSON.stringify(key)}},{history:false});const result=view.contentEl.querySelector('[data-part="result"]');return result?.getAttribute('data-state')==='loading'?'loading':(result?.textContent??'loading');})()`,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            const view = app.workspace.activeLeaf!
+              .view as import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+            if (view.getState().itemIndexedKey !== __typedArg0)
+              await view.setState(
+                { ...view.getState(), itemIndexedKey: __typedArg1 },
+                { history: false },
+              );
+            const result = view.contentEl.querySelector<HTMLElement>(
+              '[data-part="result"]',
+            );
+            return String(
+              result?.getAttribute("data-state") === "loading"
+                ? "loading"
+                : (result?.textContent ?? "loading"),
+            );
+          },
+          { __typedArg0: key, __typedArg1: key },
         );
         return text !== "loading";
       });
@@ -843,9 +1742,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await waitFor(async () => {
         rows = JSON.parse(
-          await obEval(
+          await obRun(
             run.vaultId,
-            `(function(){return JSON.stringify(Array.from((${suite.activeWorkbenchContent})?.querySelectorAll('[data-condition-row]')??[]).map(row=>row.querySelector('[role=alert]')?.textContent??null));})()`,
+            async ({ page }) => {
+              return String(
+                JSON.stringify(
+                  Array.from(
+                    page
+                      .workbench()
+                      ?.contentEl?.querySelectorAll<HTMLElement>(
+                        "[data-condition-row]",
+                      ) ?? [],
+                  ).map(
+                    (row) =>
+                      row.querySelector<HTMLElement>("[role=alert]")
+                        ?.textContent ?? null,
+                  ),
+                ),
+              );
+            },
+            undefined,
           ),
         ) as (string | null)[];
         return rows.length === 2 && rows[1] !== null;
@@ -862,9 +1778,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       let marks: string[][] = [];
       await waitFor(async () => {
         marks = JSON.parse(
-          await obEval(
+          await obRun(
             run.vaultId,
-            `(function(){return JSON.stringify(Array.from((${suite.activeWorkbenchContent})?.querySelectorAll('[data-condition-row]')??[]).map(row=>Array.from(row.querySelectorAll('.cm-lintRange-error')).map(n=>n.textContent)));})()`,
+            async ({ page }) => {
+              return String(
+                JSON.stringify(
+                  Array.from(
+                    page
+                      .workbench()
+                      ?.contentEl?.querySelectorAll<HTMLElement>(
+                        "[data-condition-row]",
+                      ) ?? [],
+                  ).map((row) =>
+                    Array.from(
+                      row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
+                    ).map((n) => n.textContent),
+                  ),
+                ),
+              );
+            },
+            undefined,
           ),
         ) as string[][];
         return marks[1]?.join() === expected;
@@ -882,9 +1815,69 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // follows the text it undoes; in a select's search field it undoes the
     // typed text and leaves the Match alone (#1667).
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{${PAGE}${TRUSTED}const view=app.workspace.activeLeaf.view;const el=view.contentEl;const input=trusted(el.win);const contents=el.win.electronWindow.webContents;const mod=process.platform==='darwin'?'meta':'control';const rows=el.querySelectorAll('[data-condition-row]');const content=rows[1]?.querySelector('.cm-content');if(!content)throw new Error('Missing: expression field');const editor=content.cmTile.root.view;await input.click(content);editor.dispatch({selection:{anchor:editor.state.doc.length}});await contents.insertText(' x');await until('the typing reaches the Match',()=>view.controller.source.includes('title == x'));await input.key('z',[mod]);await until('undo takes the typing out of the field and the Match',()=>editor.state.doc.toString()==='title =='&&!view.controller.source.includes('title == x'));const select=rows[0].querySelector('[role=combobox]');press(select,'the first select');const popup=await until('the select opens',()=>select.popoverTargetElement?.matches(':popover-open')&&select.popoverTargetElement);const search=await until('focus in its search',()=>el.doc.activeElement===popup.querySelector('input')&&el.doc.activeElement);await contents.insertText('ab');await until('the search is typed',()=>search.value==='ab');const before=view.controller.source;await input.key('z',[mod]);contents.undo();await until('the search undoes its own text',()=>search.value!=='ab');const kept=view.controller.source===before;await input.key('Escape');return String(kept);})()`,
+        async ({ app, page }) => {
+          const { press, until } = page;
+          const { trusted } = page;
+          const view = app.workspace.activeLeaf!
+            .view as import("../../../apps/obsidian/src/views/template-workbench/view.tsx").TemplateWorkbenchView;
+          const el = view.contentEl;
+          const input = trusted(el.win);
+          const contents = (
+            el.win as Window & {
+              electronWindow: { webContents: import("electron").WebContents };
+            }
+          ).electronWindow.webContents;
+          const mod = process.platform === "darwin" ? "meta" : "control";
+          const rows = el.querySelectorAll<HTMLElement>("[data-condition-row]");
+          const content =
+            rows[1]?.querySelector<CodeMirrorElement>(".cm-content");
+          if (!content) throw new Error("Missing: expression field");
+          const editor = content.cmTile!.root.view;
+          await input.click(content);
+          editor.dispatch({ selection: { anchor: editor.state.doc.length } });
+          await contents.insertText(" x");
+          await until("the typing reaches the Match", () =>
+            view.controller.source.includes("title == x"),
+          );
+          await input.key("z", [mod]);
+          await until(
+            "undo takes the typing out of the field and the Match",
+            () =>
+              editor.state.doc.toString() === "title ==" &&
+              !view.controller.source.includes("title == x"),
+          );
+          const select =
+            rows[0]!.querySelector<HTMLButtonElement>("[role=combobox]");
+          press(select, "the first select");
+          const popup = await until(
+            "the select opens",
+            () =>
+              select!.popoverTargetElement?.matches(":popover-open") &&
+              select!.popoverTargetElement,
+          );
+          const search = await until(
+            "focus in its search",
+            () =>
+              el.doc.activeElement ===
+                popup.querySelector<HTMLInputElement>("input") &&
+              (el.doc.activeElement as HTMLInputElement),
+          );
+          await contents.insertText("ab");
+          await until("the search is typed", () => search.value === "ab");
+          const before = view.controller.source;
+          await input.key("z", [mod]);
+          contents.undo();
+          await until(
+            "the search undoes its own text",
+            () => search.value !== "ab",
+          );
+          const kept = view.controller.source === before;
+          await input.key("Escape");
+          return String(String(kept));
+        },
+        undefined,
       ),
     ).toBe("true");
   });
@@ -907,7 +1900,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     for (const item of creating) {
       const note = await indexedNote(run.vaultId, item.itemID);
       if (note.path)
-        await cli([`vault=${run.vaultId}`, "delete", `path=${note.path}`]);
+        await cli([`vault=${run.vaultId}`, "delete", `path=${note.path!}`]);
       expect(await hasIndexedNotes(run.vaultId, note.indexedKey, 0)).toBe(true);
     }
     const articlesSource = (
@@ -938,9 +1931,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ],
     });
     const server = JSON.parse(
-      await obEval(
+      await obRun(
         run.vaultId,
-        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({hostname:settings['server.hostname'],port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId});})()",
+        async ({ zotlit }) => {
+          var services = zotlit.services;
+          var settings = services.bridge.runSync(services.settings.current);
+          return String(
+            JSON.stringify({
+              hostname: settings["server.hostname"],
+              port: services.bridge.runSync(services.localServer.effectivePort),
+              sourceId: services.zoteroPref.sourceId,
+            }),
+          );
+        },
+        undefined,
       ),
     ) as { hostname: string; port: number; sourceId: string };
     const pushed = await fetch(
@@ -961,19 +1965,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(pushed.status).toBe(204);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(Array.from(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(run.m.batch_update_confirm_button())}))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                Array.from(
+                  Array.from(
+                    activeDocument.querySelectorAll<HTMLElement>(".modal"),
+                  )
+                    .at(-1)
+                    ?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+                ).some((button) => button.textContent.trim() === __typedArg0),
+              ),
+            );
+          },
+          { __typedArg0: run.m.batch_update_confirm_button() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:916",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     const bookPath = `books/books-${bookItem.citationKey}.md`;
     const articlesPath = `articles/articles-${sharedItem.citationKey}.md`;
     const preprintPath = `books/books-${preprintItem.citationKey}.md`;
     const labPath = `books/books-${labItem.citationKey}.md`;
-    const confirmation = await obEval(
+    const confirmation = await obRun(
       run.vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+      async (_context) => {
+        return String(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
+            -1,
+          )!.textContent,
+        );
+      },
+      undefined,
     );
     for (const text of [
       bookPath,
@@ -988,15 +2020,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(confirmation).toContain(text);
     for (const scope of ["unresolved", "all-new"])
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `String(Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-profile-choice-scope=${scope}]').length)`,
+          (_context, { scope }) =>
+            String(
+              Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+                .at(-1)!
+                .querySelectorAll<HTMLElement>(
+                  `[data-profile-choice-scope=${scope}]`,
+                ).length,
+            ),
+          { scope },
         ),
       ).toBe("1");
     expect(confirmation).not.toContain(run.m.batch_profile_recovery_help());
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(()=>{${PAGE}press(Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]'),'unresolved Profile choice');return true;})()`,
+      async ({ page }) => {
+        const { press } = page;
+        press(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+            .at(-1)!
+            .querySelector<HTMLElement>(
+              "[data-profile-choice-scope=unresolved] [data-profile-choice]",
+            ),
+          "unresolved Profile choice",
+        );
+        return String(true);
+      },
+      undefined,
     );
     const candidate = await selectSuggestion(
       run.vaultId,
@@ -1005,22 +2057,66 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(candidate).toContain(run.m.modal_profile_match_batch_candidate());
     expect(candidate).not.toContain(run.m.modal_profile_match_candidate());
     expect(candidate).toContain(suite.articlesProfile.label);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(function(){var input=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      async (_context, { __typedArg0 }) => {
+        var input = Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".prompt"),
+        )
+          .at(-1)!
+          .querySelector<HTMLInputElement>("input");
+        input!.value = __typedArg0;
+        input!.dispatchEvent(new Event("input", { bubbles: true }));
+        return String(true);
+      },
+      { __typedArg0: booksProfile.label },
     );
     await selectSuggestion(run.vaultId, preprintPath);
     await pressPromptKey(run.vaultId, "Enter");
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]')?.getAttribute('aria-label')===${JSON.stringify(run.m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))})`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                Array.from(
+                  activeDocument.querySelectorAll<HTMLElement>(".modal"),
+                )
+                  .at(-1)
+                  ?.querySelector<HTMLElement>(
+                    "[data-profile-choice-scope=unresolved] [data-profile-choice]",
+                  )
+                  ?.getAttribute("aria-label") === __typedArg0,
+              ),
+            );
+          },
+          {
+            __typedArg0: run.m.batch_profile_unresolved_destination({
+              count: 2,
+              label: booksProfile.label,
+            }),
+          },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:967",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    const chosen = await obEval(
+    const chosen = await obRun(
       run.vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+      async (_context) => {
+        return String(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
+            -1,
+          )!.textContent,
+        );
+      },
+      undefined,
     );
     for (const text of [
       bookPath,
@@ -1037,15 +2133,43 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await clickModalButton(run.vaultId, run.m.batch_update_confirm_button()),
     ).toBe(true);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(Array.from(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(run.m.batch_update_close())}))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context, { __typedArg0 }) => {
+            return String(
+              String(
+                Array.from(
+                  Array.from(
+                    activeDocument.querySelectorAll<HTMLElement>(".modal"),
+                  )
+                    .at(-1)
+                    ?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+                ).some((button) => button.textContent.trim() === __typedArg0),
+              ),
+            );
+          },
+          { __typedArg0: run.m.batch_update_close() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:992",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    const summary = await obEval(
+    const summary = await obRun(
       run.vaultId,
-      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
+      async (_context) => {
+        return String(
+          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
+            -1,
+          )!.textContent,
+        );
+      },
+      undefined,
     );
     for (const text of [
       run.m.batch_profile_created({ count: 3, label: booksProfile.label }),
@@ -1091,11 +2215,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `path=templates/${suite.articlesProfile.document}`,
     ]);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(suite.articlesProfile.id)}))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ zotlit }, { __typedArg0 }) => {
+            return String(
+              String(
+                !zotlit.services.profile.profiles.some(
+                  (p) => p.id === __typedArg0,
+                ),
+              ),
+            );
+          },
+          { __typedArg0: suite.articlesProfile.id },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1046",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     await suite.writeMatch(booksProfile, suite.bookMatch);
   });
@@ -1136,9 +2277,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         value: parent.name,
       }),
     ).toBe(true);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}var editor=${suite.activeWorkbenchContent};await pick(editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(run.m.workbench_filter_operator())}]'),'contains','Operator');return true;})()`,
+      async ({ page }, { __typedArg0 }) => {
+        const { pick } = page;
+        var editor = page.workbench()!.contentEl;
+        await pick(
+          editor.querySelector<HTMLSelectElement>(
+            `[data-condition-row] select[aria-label=${JSON.stringify(
+              __typedArg0,
+            )}]`,
+          ),
+          "contains",
+          "Operator",
+        );
+        return String(true);
+      },
+      { __typedArg0: run.m.workbench_filter_operator() },
     );
     expect(
       await suite.conditionReady({
@@ -1150,7 +2305,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await suite.saveMatch({
       and: [`collections.contains(${JSON.stringify(parent.name)})`],
     });
-    await obEval(run.vaultId, "app.setting.close();true");
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        app.setting.close();
+        return String(true);
+      },
+      undefined,
+    );
     await suite.quickSwitchCreate(childItem);
     const fallback = await selectSuggestion(
       run.vaultId,
@@ -1160,13 +2322,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(fallback).toContain(`literatures/${childItem.citationKey}.md`);
     await pressPromptKey(run.vaultId, "Escape");
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        "String(!activeDocument.querySelector('.prompt'))",
-        {
-          expected: "true",
-        },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async (_context) => {
+            return String(
+              String(!activeDocument.querySelector<HTMLElement>(".prompt")),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1115",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({
+        expected: "true",
+      }),
     ).toBe(true);
     expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
     await suite.writeMatch(booksProfile, suite.bookMatch);
@@ -1179,15 +2354,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "utf-8",
     );
     const exterior = "My discussion stays outside the managed region.";
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){app.workspace.detachLeavesOfType('zotlit-template-workbench');app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(run.booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
+      async ({ app }, { __typedArg0, __typedArg1 }) => {
+        app.workspace.detachLeavesOfType("zotlit-template-workbench");
+        app.vault.setConfig("trashOption", "local");
+        var file = app.vault.getFileByPath(__typedArg0)!;
+        await app.vault.append(file, __typedArg1);
+        return String(true);
+      },
+      { __typedArg0: run.booksNotePath, __typedArg1: `\n${exterior}\n` },
     );
     await openProfilesSettings(run.vaultId, "settings_page_profiles");
     const profileNoteCount = Number(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `String(app.vault.getMarkdownFiles().filter(file=>String(app.metadataCache.getFileCache(file)?.frontmatter?.['zotlit-profile']??'').startsWith(${JSON.stringify(`${booksProfile.label} (`)})).length)`,
+        async ({ app }, { __typedArg0 }) => {
+          return String(
+            String(
+              app.vault
+                .getMarkdownFiles()
+                .filter((file) =>
+                  String(
+                    app.metadataCache.getFileCache(file)?.frontmatter?.[
+                      "zotlit-profile"
+                    ] ?? "",
+                  ).startsWith(__typedArg0),
+                ).length,
+            ),
+          );
+        },
+        { __typedArg0: `${booksProfile.label} (` },
       ),
     );
     expect(profileNoteCount).toBeGreaterThan(0);
@@ -1197,42 +2394,146 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     // Profile management lives in the row's More actions menu.
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `(function(){${PAGE}var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&(Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(run.m.workbench_more_actions())})??row.querySelector('.extra-setting-button'));if(!button)return false;press(button,'More actions');return true;})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+            const { press } = page;
+            var settings = app.setting.containerEl;
+            var row = Array.from(
+              settings.querySelectorAll<HTMLElement>(".setting-item"),
+            ).find(
+              (row) =>
+                row.querySelector<HTMLElement>(".setting-item-name")
+                  ?.textContent === __typedArg0,
+            );
+            var button =
+              row &&
+              (Array.from(
+                row.querySelectorAll<HTMLButtonElement>("button"),
+              ).find(
+                (button) => button!.getAttribute("aria-label") === __typedArg1,
+              ) ??
+                row.querySelector<HTMLElement>(".extra-setting-button"));
+            if (!button) return String(false);
+            press(button, "More actions");
+            return String(true);
+          },
+          {
+            __typedArg0: booksProfile.label,
+            __typedArg1: run.m.workbench_more_actions(),
+          },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1152",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `(function(){${PAGE}var doc=(${settingsContent}).ownerDocument;var title=Array.from(doc.querySelectorAll('.menu-item-title')).find(title=>title.textContent.trim()===${JSON.stringify(run.m.settings_profile_delete())});var item=title?.closest('.menu-item');if(!item)return false;press(item,'Delete');return true;})()`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app, page }, { __typedArg0 }) => {
+            const { press } = page;
+            var doc = app.setting.containerEl.ownerDocument;
+            var title = Array.from(
+              doc.querySelectorAll<HTMLElement>(".menu-item-title"),
+            ).find((title) => title.textContent.trim() === __typedArg0);
+            var item = title?.closest<HTMLElement>(".menu-item");
+            if (!item) return String(false);
+            press(item, "Delete");
+            return String(true);
+          },
+          { __typedArg0: run.m.settings_profile_delete() },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1159",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!!(${settingsContent}).ownerDocument.querySelector('input[name="zotlit-delete-profile-target"]:checked'))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              String(
+                !!app.setting.containerEl.ownerDocument.querySelector<HTMLInputElement>(
+                  'input[name="zotlit-delete-profile-target"]:checked',
+                ),
+              ),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1166",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    const target = await obEval(
+    const target = await obRun(
       run.vaultId,
-      `(${settingsContent}).ownerDocument.querySelector('input[name="zotlit-delete-profile-target"]:checked').closest('label').textContent`,
+      async ({ app }) => {
+        return String(
+          app.setting.containerEl.ownerDocument
+            .querySelector<HTMLInputElement>(
+              'input[name="zotlit-delete-profile-target"]:checked',
+            )!
+            .closest("label")!.textContent,
+        );
+      },
+      undefined,
     );
     const movedPath = `literatures/${run.booksNotePath.slice(run.booksNotePath.lastIndexOf("/") + 1)}`;
     expect(target).toContain(run.m.settings_profile_default_name());
     expect(target).toContain(movedPath);
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(function(){${PAGE}var doc=(${settingsContent}).ownerDocument;var label=Array.from(doc.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(run.m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;press(label,'Move files');return checkbox.checked;})()`,
+        async ({ app, page }, { __typedArg0 }) => {
+          const { press } = page;
+          var doc = app.setting.containerEl.ownerDocument;
+          var label = Array.from(
+            doc.querySelectorAll<HTMLElement>(".modal label"),
+          ).find((label) => label.textContent === __typedArg0);
+          var checkbox = label?.querySelector<HTMLInputElement>(
+            "input[type=checkbox]",
+          );
+          if (!checkbox || checkbox.checked) return String(false);
+          press(label!, "Move files");
+          return String(checkbox.checked);
+        },
+        {
+          __typedArg0: run.m.settings_profile_delete_move_files({
+            folder: "literatures/",
+          }),
+        },
       ),
     ).toBe("true");
-    const deletionDialog = await obEval(
+    const deletionDialog = await obRun(
       run.vaultId,
-      `Array.from((${settingsContent}).ownerDocument.querySelectorAll('.modal')).at(-1).textContent`,
+      async ({ app }) => {
+        return String(
+          Array.from(
+            app.setting.containerEl.ownerDocument.querySelectorAll<HTMLElement>(
+              ".modal",
+            ),
+          ).at(-1)!.textContent,
+        );
+      },
+      undefined,
     );
     expect(deletionDialog).toContain(
       run.m.settings_profile_delete_literature_count({
@@ -1249,7 +2550,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await clickModalButton(
         run.vaultId,
         run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
-        `(${settingsContent}).ownerDocument`,
+        "settings",
       ),
       deletionDialog,
     ).toBe(true);
@@ -1288,16 +2589,38 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         .map((path) => readFile(join(e2eVaultPath, ".trash", path), "utf-8")),
     );
     expect(trashed).toContain(profileSource);
-    await obEval(
+    await obRun(
       run.vaultId,
-      `(async function(){app.setting.close();var file=app.vault.getAbstractFileByPath(${JSON.stringify(movedPath)});await app.fileManager.processFrontMatter(file,frontmatter=>{frontmatter.title='Not the Zotero title';});await app.workspace.getLeaf(false).openFile(file);return true;})()`,
+      async ({ app }, { __typedArg0 }) => {
+        app.setting.close();
+        var file = app.vault.getFileByPath(__typedArg0)!;
+        await app.fileManager.processFrontMatter(file, (frontmatter) => {
+          frontmatter.title = "Not the Zotero title";
+        });
+        await app.workspace.getLeaf(false).openFile(file);
+        return String(true);
+      },
+      { __typedArg0: movedPath },
     );
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        "app.commands.executeCommandById('zotlit:update-note')",
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ app }) => {
+            return String(
+              app.commands.executeCommandById("zotlit:update-note"),
+            );
+          },
+          undefined,
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1248",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
     let updated = "";
     expect(
@@ -1339,13 +2662,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(updated).toContain(exterior);
 
     expect(
-      await obEvalUntil(
-        run.vaultId,
-        `String(!app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(booksProfile.id)}))`,
-        { expected: "true" },
-      ),
+      await ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          run.vaultId,
+          async ({ zotlit }, { __typedArg0 }) => {
+            return String(
+              String(
+                !zotlit.services.profile.profiles.some(
+                  (p) => p.id === __typedArg0,
+                ),
+              ),
+            );
+          },
+          { __typedArg0: booksProfile.id },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "literature.ts:1294",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     ).toBe(true);
-    await obEval(run.vaultId, "app.setting.close();true");
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        app.setting.close();
+        return String(true);
+      },
+      undefined,
+    );
   });
 
   it.skipIf(webWorkbenchEnabled)(
@@ -1353,23 +2700,72 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     async () => {
       await using cleanup = new AsyncDisposableStack();
       cleanup.defer(async () => {
-        await obEval(run.vaultId, "app.setting.close();true");
+        await obRun(
+          run.vaultId,
+          async ({ app }) => {
+            app.setting.close();
+            return String(true);
+          },
+          undefined,
+        );
       });
-      await obEval(
+      await obRun(
         run.vaultId,
-        "app.saveLocalStorage('zotlit-workbench-launch-approved','1');app.saveLocalStorage('zotlit-profile-customization','web');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true,'server.live-update':true,'server.workbench':true}));true",
+        async ({ app, zotlit }) => {
+          app.saveLocalStorage("zotlit-workbench-launch-approved", "1");
+          app.saveLocalStorage("zotlit-profile-customization", "web");
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({
+              "server.enabled": true,
+              "server.live-update": true,
+              "server.workbench": true,
+            }),
+          );
+          return String(true);
+        },
+        undefined,
       );
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.effectivePort)!==null)",
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ zotlit }) => {
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.localServer.effectivePort,
+                  ) !== null,
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "literature.ts:1315",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       const server = JSON.parse(
-        await obEval(
+        await obRun(
           run.vaultId,
-          "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.bridge.runSync(services.settings.current);return JSON.stringify({port:services.bridge.runSync(services.localServer.effectivePort),sourceId:services.zoteroPref.sourceId,workbench:settings['server.workbench']});})()",
+          async ({ zotlit }) => {
+            var services = zotlit.services;
+            var settings = services.bridge.runSync(services.settings.current);
+            return String(
+              JSON.stringify({
+                port: services.bridge.runSync(
+                  services.localServer.effectivePort,
+                ),
+                sourceId: services.zoteroPref.sourceId,
+                workbench: settings["server.workbench"],
+              }),
+            );
+          },
+          undefined,
         ),
       ) as { port: number; sourceId: string; workbench: boolean };
       expect(server.workbench).toBe(true);
@@ -1391,9 +2787,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
       await openProfilesSettings(run.vaultId, "settings_page_advanced");
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(run.m.settings_local_server_enabled_name())})&&!names.includes(${JSON.stringify(run.m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(run.m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+          async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+            var names = Array.from(
+              app.setting.containerEl.querySelectorAll<HTMLElement>(
+                ".setting-item-name",
+              ),
+              (el) => el.textContent,
+            );
+            return String(
+              String(
+                names.includes(__typedArg0) &&
+                  !names.includes(__typedArg1) &&
+                  !names.includes(__typedArg2) &&
+                  !app.commands.commands["zotlit:open-profile-web-workbench"],
+              ),
+            );
+          },
+          {
+            __typedArg0: run.m.settings_local_server_enabled_name(),
+            __typedArg1: run.m.settings_local_server_workbench_name(),
+            __typedArg2: run.m.template_workbench_preference_name(),
+          },
         ),
       ).toBe("true");
 
@@ -1401,24 +2817,67 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // page beside it rather than with the server that carries them.
       await openProfilesSettings(run.vaultId, "settings_page_zotero");
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(run.m.settings_live_updates_enabled_name())})&&names.includes(${JSON.stringify(run.m.settings_advanced_local_server_heading())}));})()`,
+          async ({ app }, { __typedArg0, __typedArg1 }) => {
+            var names = Array.from(
+              app.setting.containerEl.querySelectorAll<HTMLElement>(
+                ".setting-item-name",
+              ),
+              (el) => el.textContent,
+            );
+            return String(
+              String(
+                names.includes(__typedArg0) && names.includes(__typedArg1),
+              ),
+            );
+          },
+          {
+            __typedArg0: run.m.settings_live_updates_enabled_name(),
+            __typedArg1: run.m.settings_advanced_local_server_heading(),
+          },
         ),
       ).toBe("true");
 
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench'&&!document.querySelector('input[name=\"zotlit-customize-destination\"]'))",
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ app }) => {
+              return String(
+                String(
+                  app.workspace.activeLeaf?.view.getViewType() ===
+                    "zotlit-template-workbench" &&
+                    !document.querySelector<HTMLInputElement>(
+                      'input[name="zotlit-customize-destination"]',
+                    ),
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "literature.ts:1365",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
-      await obEval(
+      await obRun(
         run.vaultId,
-        "app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.workbench':false}));true",
+        async ({ app, zotlit }) => {
+          app.saveLocalStorage("zotlit-workbench-launch-approved", null);
+          app.saveLocalStorage("zotlit-profile-customization", "ask");
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({ "server.workbench": false }),
+          );
+          return String(true);
+        },
+        undefined,
       );
     },
   );

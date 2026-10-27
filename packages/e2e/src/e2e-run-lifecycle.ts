@@ -10,8 +10,7 @@ import {
   workspaceRoot,
 } from "./e2e-run-fixture.ts";
 import { availableLoopbackPort } from "./e2e-run-helpers.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
-import { MENU_READY, PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
 import { clearVault } from "./vault-script.ts";
 
 /** Shared End-to-end Run vault state for every area file. */
@@ -34,30 +33,92 @@ async function bootstrap(): Promise<void> {
   await cp(pluginBundleDir, e2ePluginDir, { recursive: true });
   const created = await runVaultScript(["open", e2eVaultPath]);
   run.vaultId = created.stdout.trim().split("\n")[0]!.trim();
-  await obEval(run.vaultId, "app.vault.setConfig('nativeMenus',false);true");
+  await obRun(
+    run.vaultId,
+    async ({ app }) => {
+      app.vault.setConfig("nativeMenus", false);
+      return String(true);
+    },
+    undefined,
+  );
   await prepareRunWindow(run.vaultId);
   const serverPort = await availableLoopbackPort();
-  await obEval(
+  await obRun(
     run.vaultId,
-    `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.port':${serverPort}}));true`,
+    async ({ zotlit }, { __typedArg0 }) => {
+      zotlit.services.bridge.runSync(
+        zotlit.services.settings.update({
+          "server.enabled": false,
+          "server.port": __typedArg0,
+        }),
+      );
+      return String(true);
+    },
+    { __typedArg0: serverPort },
   );
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      `String(!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.available)&&app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.port']===${serverPort})`,
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0 }) => {
+          return String(
+            String(
+              !zotlit.services.bridge.runSync(
+                zotlit.services.localServer.available,
+              ) &&
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["server.port"] === __typedArg0,
+            ),
+          );
+        },
+        { __typedArg0: serverPort },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "lifecycle.ts:45",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
-  await obEval(
+  await obRun(
     run.vaultId,
-    "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true}));true",
+    async ({ zotlit }) => {
+      zotlit.services.bridge.runSync(
+        zotlit.services.settings.update({ "server.enabled": true }),
+      );
+      return String(true);
+    },
+    undefined,
   );
   expect(
-    await obEvalUntil(
-      run.vaultId,
-      `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.available)&&app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.port']===${serverPort})`,
-      { expected: "true" },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ zotlit }, { __typedArg0 }) => {
+          return String(
+            String(
+              zotlit.services.bridge.runSync(
+                zotlit.services.localServer.available,
+              ) &&
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["server.port"] === __typedArg0,
+            ),
+          );
+        },
+        { __typedArg0: serverPort },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "lifecycle.ts:56",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: "true" }),
   ).toBe(true);
 }
 
@@ -91,9 +152,57 @@ export function registerEndToEndRunHooks(): void {
   // it: a notice stays 4 s at the top right, over the toolbar the next case
   // presses ("PDF Saved" after an export).
   afterEach(async () => {
-    const left = await obEval(
+    const left = await obRun(
       run.vaultId,
-      `(async()=>{${PAGE}const docs=()=>[document,...app.workspace.floatingSplit.children.map(split=>split.win.document)];const notices=()=>docs().flatMap(doc=>[...doc.querySelectorAll('.notice')]);for(const notice of notices())notice.click();await until('notices hide',()=>notices().length===0,2000);const open=()=>docs().flatMap(doc=>[...doc.querySelectorAll('.menu, .modal-container, :popover-open')]);const left=open().map(el=>(el.matches(':popover-open')?'popover':el.classList.contains('menu')?'menu':'dialog')+': '+el.textContent.trim().slice(0,60));for(const el of open())if(el.matches(':popover-open'))el.hidePopover();await until('menus and dialogs close',async()=>{if(open().length===0)return true;await ${MENU_READY};activeDocument.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return false;},5000);return JSON.stringify(left);})()`,
+      async ({ app, page }) => {
+        const { until } = page;
+        const docs = () => [
+          document,
+          ...(
+            app.workspace as import("obsidian").Workspace & {
+              floatingSplit: { children: { win: Window }[] };
+            }
+          ).floatingSplit.children.map((split) => split.win.document),
+        ];
+        const notices = () =>
+          docs().flatMap((doc) => [
+            ...doc.querySelectorAll<HTMLElement>(".notice"),
+          ]);
+        for (const notice of notices()) notice.click();
+        await until("notices hide", () => notices().length === 0, 2000);
+        const open = () =>
+          docs().flatMap((doc) => [
+            ...doc.querySelectorAll<HTMLElement>(
+              ".menu, .modal-container, :popover-open",
+            ),
+          ]);
+        const left = open().map(
+          (el) =>
+            `${
+              el.matches(":popover-open")
+                ? "popover"
+                : el.classList.contains("menu")
+                  ? "menu"
+                  : "dialog"
+            }: ${el.textContent.trim().slice(0, 60)}`,
+        );
+        for (const el of open())
+          if (el.matches(":popover-open")) el.hidePopover();
+        await until(
+          "menus and dialogs close",
+          async () => {
+            if (open().length === 0) return true;
+            await page.menuReady();
+            activeDocument.body.dispatchEvent(
+              new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+            );
+            return false;
+          },
+          5000,
+        );
+        return String(JSON.stringify(left));
+      },
+      undefined,
     );
     expect(
       JSON.parse(left),
