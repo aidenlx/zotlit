@@ -214,7 +214,10 @@ function noteBody(source: string): string {
   return source.slice(end + 4);
 }
 
-/** Selects a row in the last prompt of the focused window. */
+/**
+ * The chooser selects on hover, and the physical cursor can reselect a row after
+ * a rerender. Repeat mousemove until the desired row stays selected.
+ */
 async function hoverSuggestion(
   vaultId: string,
   match: { text: string } | { key: string },
