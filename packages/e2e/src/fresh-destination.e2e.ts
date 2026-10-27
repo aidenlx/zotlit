@@ -49,7 +49,6 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({ "server.live-update": false }),
         );
-        return String(true);
       },
       undefined,
     );
@@ -69,34 +68,23 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(original).toContain("```zotquery");
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { firstPath }) => {
         await app.workspace
           .getLeaf(false)
-          .openFile(app.vault.getFileByPath(__typedArg0)!);
-        return String(true);
+          .openFile(app.vault.getFileByPath(firstPath)!);
       },
-      { __typedArg0: first.path },
+      { firstPath: first.path },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ app }) => {
-            return String(
-              app.commands.executeCommandById("zotlit:customize-note-template"),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:75",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ app }) => {
+        return app.commands.executeCommandById(
+          "zotlit:customize-note-template",
+        );
+      },
+      undefined,
+      { what: "the zotlit customize note template command to run" },
+    );
     await changeNativeAnnotationCallout(vaultId, {
       view: {
         path: await obRun(vaultId, ({ zotlit }) =>
@@ -113,97 +101,65 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     const openAdd = async () => {
       await obRun(
         vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { firstPath }) => {
           var leaf = app.workspace
             .getLeavesOfType("markdown")
             .find(
               (leaf) =>
                 (leaf.view as import("obsidian").FileView).file?.path ===
-                __typedArg0,
+                firstPath,
             );
           await app.workspace.revealLeaf(leaf!);
           leaf!.getContainer().focus();
-          return String(true);
         },
-        { __typedArg0: first.path },
+        { firstPath: first.path },
       );
       await openProfilesSettings(vaultId, "settings_page_profiles");
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ app, page }, { __typedArg0, __typedArg1 }) => {
-              const { press } = page;
-              var settings = app.setting.containerEl;
-              var button = Array.from(
-                settings.querySelectorAll<HTMLButtonElement>(
-                  "[aria-label],button",
-                ),
-              ).find(
-                (el) =>
-                  el.getAttribute("aria-label") === __typedArg0 ||
-                  el.textContent.trim() === __typedArg1,
-              );
-              if (!button || button.disabled) return String(false);
-              press(button, "Add profile");
-              return String(true);
-            },
-            {
-              __typedArg0: m.settings_profile_add(),
-              __typedArg1: m.settings_profile_add(),
-            },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "fresh-destination.e2e.ts:97",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async (_context, { __typedArg0 }) => {
-              return String(
-                String(
-                  Array.from(document.querySelectorAll(".modal-title")).some(
-                    (el) => el.textContent === __typedArg0,
-                  ),
-                ),
-              );
-            },
-            { __typedArg0: m.settings_profile_add() },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "fresh-destination.e2e.ts:104",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ app, page }, { addButtonLabel }) => {
+          const { press } = page;
+          var settings = app.setting.containerEl;
+          var button = Array.from(
+            settings.querySelectorAll<HTMLButtonElement>("[aria-label],button"),
+          ).find(
+            (el) =>
+              el.getAttribute("aria-label") === addButtonLabel ||
+              el.textContent.trim() === addButtonLabel,
+          );
+          if (!button || button.disabled) return false;
+          press(button, "Add profile");
+          return true;
+        },
+        { addButtonLabel: m.settings_profile_add() },
+        {
+          what: "the Add profile button in the settings tab to become enabled",
+        },
+      );
+      await obRunUntil(
+        vaultId,
+        async (_context, { addButtonText }) => {
+          return Array.from(document.querySelectorAll(".modal-title")).some(
+            (el) => el.textContent === addButtonText,
+          );
+        },
+        { addButtonText: m.settings_profile_add() },
+        { what: "the Add profile modal to open with its title" },
+      );
     };
     await openAdd();
-    expect(await clickModalButton(vaultId, m.modal_cancel())).toBe(true);
+    await clickModalButton(vaultId, m.modal_cancel());
     expect(
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          return String(
-            String(
-              zotlit.services.bridge.runSync(
-                zotlit.services.profileService.profiles,
-              ).length,
-            ),
-          );
+          return zotlit.services.bridge.runSync(
+            zotlit.services.profileService.profiles,
+          ).length;
         },
         undefined,
       ),
-    ).toBe("0");
+    ).toBe(0);
     expect(
       (await readdir(vaultPath, { recursive: true }))
         .filter(
@@ -216,223 +172,150 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(
       await obRun(
         vaultId,
-        async (_context, { __typedArg0, __typedArg1 }) => {
+        async (_context, { nameLabel, folderLabel }) => {
           var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
           var labels = Array.from(modal.querySelectorAll("label"));
           var name = labels
-            .find((el) => el.textContent === __typedArg0)
+            .find((el) => el.textContent === nameLabel)
             ?.querySelector("input");
           var folder = labels
-            .find((el) => el.textContent === __typedArg1)
+            .find((el) => el.textContent === folderLabel)
             ?.querySelector("input");
-          return String(
-            String(
-              !!name &&
-                !!folder &&
-                name.tabIndex === 0 &&
-                folder.tabIndex === 0 &&
-                name === name.ownerDocument.activeElement,
-            ),
+          return (
+            !!name &&
+            !!folder &&
+            name.tabIndex === 0 &&
+            folder.tabIndex === 0 &&
+            name === name.ownerDocument.activeElement
           );
         },
         {
-          __typedArg0: m.settings_profile_name_name(),
-          __typedArg1: m.settings_profile_folder_name(),
+          nameLabel: m.settings_profile_name_name(),
+          folderLabel: m.settings_profile_folder_name(),
         },
       ),
-    ).toBe("true");
+    ).toBe(true);
     const fill = async (name: string, folder: string) => {
       await obRun(
         vaultId,
-        async (_context, { __typedArg0 }) => {
+        async (_context, { values }) => {
           var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
-          var values = __typedArg0;
           Array.from(modal.querySelectorAll("input")).forEach((input, i) => {
             input.value = values[i]!;
             input.dispatchEvent(new Event("input", { bubbles: true }));
           });
-          return String(true);
         },
-        { __typedArg0: [name, folder] },
+        { values: [name, folder] },
       );
     };
     await fill("Default", "books");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context, { __typedArg0, __typedArg1 }) => {
-            var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
-            var status = modal?.querySelector("[role=status]");
-            var button = Array.from(
-              modal?.querySelectorAll("button") ?? [],
-            ).find((el) => el.textContent === __typedArg0);
-            return String(
-              String(
-                status?.textContent === __typedArg1 &&
-                  status.getBoundingClientRect().height > 0 &&
-                  button?.disabled,
-              ),
-            );
-          },
-          {
-            __typedArg0: m.settings_profile_add(),
-            __typedArg1: m.settings_profile_name_invalid(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:142",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    await fill("Books", "books");
-    expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
-      true,
+    await obRunUntil(
+      vaultId,
+      async (_context, { addButtonText, invalidStatusText }) => {
+        var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
+        var status = modal?.querySelector("[role=status]");
+        var button = Array.from(modal?.querySelectorAll("button") ?? []).find(
+          (el) => el.textContent === addButtonText,
+        );
+        return (
+          status?.textContent === invalidStatusText &&
+          status.getBoundingClientRect().height > 0 &&
+          button?.disabled
+        );
+      },
+      {
+        addButtonText: m.settings_profile_add(),
+        invalidStatusText: m.settings_profile_name_invalid(),
+      },
+      {
+        what: "the Add profile modal to show the invalid status and a disabled Add button",
+      },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ zotlit }) => {
-            return String(
-              String(
-                zotlit.services.bridge
-                  .runSync(zotlit.services.profileService.profiles)
-                  .some((p) => p.label === "Books"),
-              ),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:153",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
-    const books = JSON.parse(
-      await obRun(
-        vaultId,
-        async ({ zotlit }) => {
-          return String(
-            JSON.stringify(
-              zotlit.services.bridge
-                .runSync(zotlit.services.profileService.profiles)
-                .find((p) => p.label === "Books"),
-            ),
-          );
-        },
-        undefined,
-      ),
-    ) as { id: string; path: string };
+    await fill("Books", "books");
+    await clickModalButton(vaultId, m.settings_profile_add());
+    await obRunUntil(
+      vaultId,
+      async ({ zotlit }) => {
+        return zotlit.services.bridge
+          .runSync(zotlit.services.profileService.profiles)
+          .some((p) => p.label === "Books");
+      },
+      undefined,
+      { what: "the Books profile to be saved in the profile list" },
+    );
+    const books = (await obRun(
+      vaultId,
+      async ({ zotlit }) => {
+        return zotlit.services.bridge
+          .runSync(zotlit.services.profileService.profiles)
+          .find((p) => p.label === "Books");
+      },
+      undefined,
+    )) as { id: string; path: string };
     const saved = await readFile(join(vaultPath, books.path), "utf-8");
     expect(saved).toContain("[!quote]");
     expect(saved).toContain("folder: books");
 
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async ({ page }, { __typedArg0, __typedArg1 }) => {
-            var view = page.workbench({ path: __typedArg0 });
-            return String(
-              String(
-                view?.contentEl
-                  .querySelector("[role=tab][aria-selected=true]")
-                  ?.textContent.trim() === __typedArg1 &&
-                  Array.from(view!.contentEl.querySelectorAll("input")).some(
-                    (el) => el.value === "books",
-                  ),
-              ),
-            );
-          },
-          {
-            __typedArg0: books.path,
-            __typedArg1: m.workbench_tab_name_and_folder(),
-          },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:170",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async ({ page }, { booksPath, tabTitleText }) => {
+        var view = page.workbench({ path: booksPath });
+        return (
+          view?.contentEl
+            .querySelector("[role=tab][aria-selected=true]")
+            ?.textContent.trim() === tabTitleText &&
+          Array.from(view!.contentEl.querySelectorAll("input")).some(
+            (el) => el.value === "books",
+          )
+        );
+      },
+      {
+        booksPath: books.path,
+        tabTitleText: m.workbench_tab_name_and_folder(),
+      },
+      {
+        what: "the Books workbench tab to be selected with the books path input",
+      },
+    );
 
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { firstPath }) => {
         var leaf = app.workspace
           .getLeavesOfType("markdown")
           .find(
             (leaf) =>
               (leaf.view as import("obsidian").FileView).file?.path ===
-              __typedArg0,
+              firstPath,
           );
         await app.workspace.revealLeaf(leaf!);
         leaf!.getContainer().focus();
-        return String(true);
       },
-      { __typedArg0: first.path },
+      { firstPath: first.path },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context) => {
-            return String(String(activeWindow === window));
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:182",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return activeWindow === window;
+      },
+      undefined,
+      { what: "the main Obsidian window to regain focus" },
+    );
     await obRun(
       vaultId,
       async ({ app }) => {
-        return String(
-          app.commands.executeCommandById("zotlit:note-quick-switcher"),
-        );
+        return app.commands.executeCommandById("zotlit:note-quick-switcher");
       },
       undefined,
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          vaultId,
-          async (_context) => {
-            return String(
-              String(!!activeDocument.querySelector(".prompt input")),
-            );
-          },
-          undefined,
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "fresh-destination.e2e.ts:191",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      vaultId,
+      async (_context) => {
+        return !!activeDocument.querySelector(".prompt input");
+      },
+      undefined,
+      { what: "the quick switcher prompt input to appear" },
+    );
     const kahneman = ITEMS.find(({ itemID }) => itemID === 61)!;
     await selectItemSuggestion(vaultId, kahneman.title, kahneman.key);
     await pressPromptKey(vaultId, "Enter");

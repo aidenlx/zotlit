@@ -88,24 +88,17 @@ function identity(result: PixelResult): Omit<PixelResult, "released"> {
 }
 
 async function waitForPlugin(vaultId: string): Promise<void> {
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ zotlit }) => {
-          return String(await String(!!zotlit.services.excerptImage));
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:123",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 80 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ zotlit }) => {
+      return !!zotlit.services.excerptImage;
+    },
+    undefined,
+    {
+      tries: 80,
+      what: "the excerptImage service to be registered on the plugin",
+    },
+  );
 }
 
 async function resolveDigest(
@@ -115,12 +108,10 @@ async function resolveDigest(
   return JSON.parse(
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+      async ({ app, zotlit }, { entry, relative, caseIndex }) => {
         const outcome = await zotlit.services.bridge.runPromise(
           zotlit.services.excerptImage.resolve(
             (() => {
-              const entry = __typedArg0;
-              const relative = __typedArg1;
               const file = app.vault.getAbstractFileByPath(relative);
               if (!file)
                 throw new Error(
@@ -168,32 +159,30 @@ async function resolveDigest(
                 zoteroPngPath: null,
               }))(
                 entry,
-                __typedArg2,
+                caseIndex,
                 (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
               );
             })(),
           ),
         );
-        return String(
-          await JSON.stringify(
-            outcome.kind === "available"
-              ? {
-                  kind: outcome.kind,
-                  provenance: outcome.provenance,
-                  bytes: outcome.bytes.length,
-                  sha256: require("crypto")
-                    .createHash("sha256")
-                    .update(outcome.bytes)
-                    .digest("hex"),
-                }
-              : { kind: outcome.kind },
-          ),
+        return JSON.stringify(
+          outcome.kind === "available"
+            ? {
+                kind: outcome.kind,
+                provenance: outcome.provenance,
+                bytes: outcome.bytes.length,
+                sha256: require("crypto")
+                  .createHash("sha256")
+                  .update(outcome.bytes)
+                  .digest("hex"),
+              }
+            : { kind: outcome.kind },
         );
       },
       {
-        __typedArg0: EXCERPT_RENDERING_CASES[index]!,
-        __typedArg1: relativePdf,
-        __typedArg2: index,
+        entry: EXCERPT_RENDERING_CASES[index]!,
+        relative: relativePdf,
+        caseIndex: index,
       },
     ),
   ) as PixelResult;
@@ -204,60 +193,48 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
     vaultId,
     async ({ page: helpers }) => {
       const state = helpers.scratch.__zotlitExcerptProbe!;
-      if (!state) return String("absent");
+      if (!state) return "absent";
       state.controller.abort();
       state.diagnostics.release();
       void state.completion!.catch(() => {
         state.settled = true;
       });
-      return String("active");
+      return "active";
     },
     undefined,
   );
   if (state === "absent") return;
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page: helpers }) => {
-          return String(
-            await String(
-              helpers.scratch.__zotlitExcerptProbe?.settled &&
-                !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                  .jobActive,
-            ),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:150",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 80 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }) => {
+      return (
+        helpers.scratch.__zotlitExcerptProbe?.settled &&
+        !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().jobActive
+      );
+    },
+    undefined,
+    {
+      tries: 80,
+      what: "the excerpt render probe to settle with no job active",
+    },
+  );
   const released = JSON.parse(
     await obRun(
       vaultId,
       async ({ page: helpers }) => {
         const state = helpers.scratch.__zotlitExcerptProbe!;
         if (!state)
-          return String(
-            await JSON.stringify({
-              snapshot: {
-                phase: "idle",
-                jobActive: false,
-                fileOpen: false,
-                renderTaskActive: false,
-                canvas: null,
-                lastCanvas: null,
-              },
-              toBlobRestored: true,
-            }),
-          );
+          return JSON.stringify({
+            snapshot: {
+              phase: "idle",
+              jobActive: false,
+              fileOpen: false,
+              renderTaskActive: false,
+              canvas: null,
+              lastCanvas: null,
+            },
+            toBlobRestored: true,
+          });
         const snapshot = state.diagnostics.snapshot();
         const value = {
           snapshot,
@@ -265,7 +242,7 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
             HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
         };
         delete helpers.scratch.__zotlitExcerptProbe;
-        return String(await JSON.stringify(value));
+        return JSON.stringify(value);
       },
       undefined,
     ),
@@ -301,7 +278,7 @@ async function startRenderProbe(
     (await obRun(
       vaultId,
       async ({ page: helpers }) => {
-        return String(await String(!!helpers.scratch.__zotlitExcerptProbe));
+        return String(!!helpers.scratch.__zotlitExcerptProbe);
       },
       undefined,
     )) === "true"
@@ -316,7 +293,7 @@ async function startRenderProbe(
     vaultId,
     async (
       { app, zotlit, page: helpers },
-      { __typedArg0, __typedArg1, __typedArg2, __typedArg3, __typedArg4 },
+      { phase, entry, relative, caseIndex },
     ) => {
       if (helpers.scratch.__zotlitExcerptProbe)
         throw new Error("Excerpt probe already active");
@@ -324,10 +301,8 @@ async function startRenderProbe(
       const diagnostics = service.rendererDiagnostics;
       if (!diagnostics)
         throw new Error("Excerpt renderer diagnostics unavailable");
-      diagnostics.hold(__typedArg0);
+      diagnostics.hold(phase);
       const request = (() => {
-        const entry = __typedArg1;
-        const relative = __typedArg2;
         const file = app.vault.getAbstractFileByPath(relative);
         if (!file)
           throw new Error("Excerpt acceptance PDF missing from Fixture Vault");
@@ -370,11 +345,11 @@ async function startRenderProbe(
           zoteroPngPath: null,
         }))(
           entry,
-          __typedArg3,
+          caseIndex,
           (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
         );
       })();
-      request.sourceScope += `:probe:${__typedArg4}:${performance.now()}`;
+      request.sourceScope += `:probe:${phase}:${performance.now()}`;
       const state: ExcerptProbeState = {
         settled: false,
         outcome: null,
@@ -409,39 +384,28 @@ async function startRenderProbe(
           state.settled = true;
         });
       void state.completion;
-      return String(true);
     },
     {
-      __typedArg0: phase,
-      __typedArg1: EXCERPT_RENDERING_CASES[index]!,
-      __typedArg2: relativePdf,
-      __typedArg3: index,
-      __typedArg4: phase,
+      phase,
+      entry: EXCERPT_RENDERING_CASES[index]!,
+      relative: relativePdf,
+      caseIndex: index,
     },
   );
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page: helpers }, { __typedArg0 }) => {
-          return String(
-            await String(
-              helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                .phase === __typedArg0,
-            ),
-          );
-        },
-        { __typedArg0: phase },
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:201",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 80 }),
-  ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }, { renderPhase }) => {
+      return (
+        helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().phase ===
+        renderPhase
+      );
+    },
+    { renderPhase: phase },
+    {
+      tries: 80,
+      what: "the excerpt renderer to report the expected render phase",
+    },
+  );
   const ownership = stack.move();
   return {
     abort: async () => {
@@ -449,7 +413,6 @@ async function startRenderProbe(
         vaultId,
         async ({ page: helpers }) => {
           helpers.scratch.__zotlitExcerptProbe!.controller.abort();
-          return String(true);
         },
         undefined,
       );
@@ -459,7 +422,6 @@ async function startRenderProbe(
         vaultId,
         async ({ page: helpers }) => {
           helpers.scratch.__zotlitExcerptProbe!.diagnostics.release();
-          return String(true);
         },
         undefined,
       );
@@ -469,10 +431,8 @@ async function startRenderProbe(
         await obRun(
           vaultId,
           async ({ page: helpers }) => {
-            return String(
-              await JSON.stringify(
-                helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
-              ),
+            return JSON.stringify(
+              helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
             );
           },
           undefined,
@@ -488,65 +448,52 @@ async function startRenderProbe(
             const outcome = await state.bridge.runPromise(
               state.service.resolve(state.request),
             );
-            return String(
-              await JSON.stringify(
-                outcome.kind === "available"
-                  ? {
-                      kind: outcome.kind,
-                      provenance: outcome.provenance,
-                      bytes: outcome.bytes.length,
-                      sha256: require("crypto")
-                        .createHash("sha256")
-                        .update(outcome.bytes)
-                        .digest("hex"),
-                    }
-                  : { kind: outcome.kind },
-              ),
+            return JSON.stringify(
+              outcome.kind === "available"
+                ? {
+                    kind: outcome.kind,
+                    provenance: outcome.provenance,
+                    bytes: outcome.bytes.length,
+                    sha256: require("crypto")
+                      .createHash("sha256")
+                      .update(outcome.bytes)
+                      .digest("hex"),
+                  }
+                : { kind: outcome.kind },
             );
           },
           undefined,
         ),
       ),
     result: async () => {
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page: helpers }) => {
-              return String(
-                await String(
-                  helpers.scratch.__zotlitExcerptProbe?.settled &&
-                    !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                      .jobActive,
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "excerpt-rendering.ts:234",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true", tries: 80 }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page: helpers }) => {
+          return (
+            helpers.scratch.__zotlitExcerptProbe?.settled &&
+            !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
+              .jobActive
+          );
+        },
+        undefined,
+        {
+          tries: 80,
+          what: "the excerpt render probe to settle again with no job active",
+        },
+      );
       return JSON.parse(
         await obRun(
           vaultId,
           async ({ page: helpers }) => {
             const state = helpers.scratch.__zotlitExcerptProbe!;
-            return String(
-              await JSON.stringify({
-                outcome: state.outcome,
-                before: state.before,
-                after: state.after,
-                snapshot: state.diagnostics.snapshot(),
-                toBlobRestored:
-                  HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
-              }),
-            );
+            return JSON.stringify({
+              outcome: state.outcome,
+              before: state.before,
+              after: state.after,
+              snapshot: state.diagnostics.snapshot(),
+              toBlobRestored:
+                HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+            });
           },
           undefined,
         ),
@@ -562,10 +509,9 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
   cleanup.defer(async () => {
     await obRun(
       vaultId,
-      async ({ page: helpers }, { __typedArg0 }) => {
+      async ({ page: helpers }, { expectedOwner }) => {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
-        if (!acceptance || acceptance.owner !== __typedArg0)
-          return String(true);
+        if (!acceptance || acceptance.owner !== expectedOwner) return;
         acceptance.controller.abort();
         if (acceptance.timer !== null) {
           clearTimeout(acceptance.timer);
@@ -580,38 +526,37 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
           delete helpers.scratch.__zotlitExcerptAcceptance;
         if (!settled)
           throw new Error("Excerpt acceptance did not settle after abort");
-        return String(true);
       },
-      { __typedArg0: owner },
+      { expectedOwner: owner },
     );
   });
   expect(
     await obRun(
       vaultId,
-      async ({ page: helpers }, { __typedArg0, __typedArg1 }) => {
+      async ({ page: helpers }, { ownerName, EXCERPT_RENDERING_CASES }) => {
         if (helpers.scratch.__zotlitExcerptAcceptance)
           throw new Error("Excerpt acceptance already active");
         helpers.scratch.__zotlitExcerptAcceptance = {
-          owner: __typedArg0,
+          owner: ownerName,
           started: false,
           settled: false,
           timer: null,
           controller: new AbortController(),
           result: null,
           error: null,
-          cases: __typedArg1,
+          cases: EXCERPT_RENDERING_CASES,
         };
-        return String(true);
+        return true;
       },
-      { __typedArg0: owner, __typedArg1: EXCERPT_RENDERING_CASES },
+      { ownerName: owner, EXCERPT_RENDERING_CASES },
     ),
-  ).toBe("true");
+  ).toBe(true);
   expect(
     await obRun(
       vaultId,
       async (
         { app, zotlit, page: helpers },
-        { __typedArg0, __typedArg1, __typedArg2 },
+        { failuresToCheck, relative, EXCERPT_RENDERING_VAULT_DIR },
       ) => {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
         if (!acceptance || acceptance.settled)
@@ -645,8 +590,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
             };
             const pdfLeavesBefore = app.workspace.getLeavesOfType("pdf").length;
             const cases = acceptance.cases;
-            const failuresToCheck = __typedArg0;
-            const relative = __typedArg1;
             const file = app.vault.getAbstractFileByPath(relative);
             if (!file)
               throw new Error(
@@ -768,7 +711,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
             const failures = [];
             for (const name of failuresToCheck) {
               const path = (app.vault.adapter as FileSystemAdapter).getFullPath(
-                `${__typedArg2}/${name}`,
+                `${EXCERPT_RENDERING_VAULT_DIR}/${name}`,
               );
               const input: ExcerptRequest = {
                 ...request(cases[0]!, 90 + failures.length),
@@ -846,37 +789,28 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
               acceptance.settled = true;
             });
         }, 0);
-        return String(true);
+        return true;
       },
       {
-        __typedArg0: EXCERPT_RENDERING_PDFS.filter(
+        failuresToCheck: EXCERPT_RENDERING_PDFS.filter(
           ({ outcome }) => outcome !== "renderable",
         ).map(({ asset }) => asset.split("/").at(-1)!),
-        __typedArg1: relativePdf,
-        __typedArg2: EXCERPT_RENDERING_VAULT_DIR,
+        relative: relativePdf,
+        EXCERPT_RENDERING_VAULT_DIR,
       },
     ),
-  ).toBe("true");
-  expect(
-    await ((options: { expected: string; tries?: number }) =>
-      obRunUntil(
-        vaultId,
-        async ({ page: helpers }) => {
-          return String(
-            await String(!!helpers.scratch.__zotlitExcerptAcceptance?.settled),
-          );
-        },
-        undefined,
-        {
-          ready: (value) => value === options.expected,
-          tries: options.tries,
-          what: "excerpt-rendering.ts:304",
-        },
-      ).then(
-        () => true,
-        () => false,
-      ))({ expected: "true", tries: 120 }),
   ).toBe(true);
+  await obRunUntil(
+    vaultId,
+    async ({ page: helpers }) => {
+      return !!helpers.scratch.__zotlitExcerptAcceptance?.settled;
+    },
+    undefined,
+    {
+      tries: 120,
+      what: "the excerpt acceptance run to settle",
+    },
+  );
   const result = JSON.parse(
     await obRun(
       vaultId,
@@ -884,7 +818,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
         if (!acceptance) throw new Error("Excerpt acceptance missing");
         if (acceptance.error) throw new Error(acceptance.error);
-        return String(await JSON.stringify(acceptance.result));
+        return JSON.stringify(acceptance.result);
       },
       undefined,
     ),
@@ -980,9 +914,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       await obRun(
         vaultId,
         async () => {
-          return String(
-            await process.getProcessMemoryInfo().then(JSON.stringify),
-          );
+          return await process.getProcessMemoryInfo().then(JSON.stringify);
         },
         undefined,
       ),
@@ -1022,30 +954,29 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
 
   for (const phase of ["document-loading", "page-rendering"] as const) {
     await using probe = await startRenderProbe(vaultId, 0, phase);
-    const workerReady =
-      phase !== "document-loading" ||
-      (await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
+    let workerTimeout: unknown;
+    if (phase === "document-loading") {
+      try {
+        await obRunUntil(
           vaultId,
           async ({ page: helpers }) => {
-            return String(
-              await helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
-                .worker,
-            );
+            return helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot()
+              .worker;
           },
           undefined,
           {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "excerpt-rendering.ts:446",
+            ready: (value) => value === "web-worker",
+            tries: 80,
+            what: "the excerpt renderer to run on a web worker",
           },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "web-worker", tries: 80 }));
+        );
+      } catch (error) {
+        workerTimeout = error;
+      }
+    }
     const active = await probe.snapshot();
     expect(active.jobActive).toBe(true);
-    expect(workerReady, JSON.stringify(active)).toBe(true);
+    expect(workerTimeout, JSON.stringify(active)).toBeUndefined();
     if (phase === "document-loading") expect(active.worker).toBe("web-worker");
     if (phase === "page-rendering") {
       expect(active.renderTaskActive).toBe(true);
@@ -1081,7 +1012,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       vaultId,
       async ({ app }) => {
         await app.plugins.disablePlugin("zotlit");
-        return String(true);
       },
       undefined,
     );
@@ -1102,7 +1032,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       vaultId,
       async ({ app }) => {
         await app.plugins.enablePlugin("zotlit");
-        return String(true);
       },
       undefined,
     );
@@ -1122,7 +1051,7 @@ export async function verifyZoteroExcerptParity(
   const result = JSON.parse(
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { keys }) => {
         const services = zotlit.services;
         await services.bridge.runPromise(services.zoteroReads.refresh);
         const list = await services.bridge.runPromise(
@@ -1264,7 +1193,7 @@ export async function verifyZoteroExcerptParity(
         };
         await services.bridge.runPromise(services.excerptImage.clear);
         const output = [];
-        for (const key of __typedArg0) {
+        for (const key of keys) {
           const annotation = list.annotations.find(
             (value) => value.key === key,
           );
@@ -1307,9 +1236,9 @@ export async function verifyZoteroExcerptParity(
             ),
           });
         }
-        return String(await JSON.stringify(output));
+        return JSON.stringify(output);
       },
-      { __typedArg0: keys },
+      { keys },
     ),
   ) as {
     key: string;
