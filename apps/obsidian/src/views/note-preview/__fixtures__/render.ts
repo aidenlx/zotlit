@@ -15,7 +15,6 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { findExistingLitNote } from "@/services/template/inert-resolver-host";
-import type { ProfileOperations } from "@/services/profile/service";
 import type { ParseClient } from "@/services/citation-parse/client";
 import type { CitationLookupRequest, CitationLookupAnswer } from "@/services/citation-index/lookup";
 import type { EffectivePresentation } from "@/services/pandoc/document-presentation";
@@ -34,7 +33,7 @@ interface PreviewHostDeps extends TemplateDataDeps {
   bridge: Pick<EffectBridge, "runSync">;
   zoteroReads: Pick<ReturnType<typeof inProcessReadsService>, "acquireRead" | "events">;
   templates: Pick<Template["Service"], "render" | "renderCitation" | "renderCitationSource" | "renderPartialSource" | "prepareLiteratureNoteTemplateSource" | "frontmatterFields" | "javascriptTemplatesEnabled" | "compileEvents">;
-  profile: Pick<ProfileOperations, "resolveProfile" | "getBuiltInSource" | "profiles">;
+  profile: Pick<Profile["Service"], "resolveProfile" | "getBuiltInSource" | "profiles">;
   citationParse: Pick<ParseClient, "parse">;
   citationLookup: { read(request: CitationLookupRequest): Promise<CitationLookupAnswer> };
   bibliographyRender: Pick<PromiseMethods<BibliographyRender["Service"]>, "renderCitations" | "readCitations" | "readBibliography"> & {
@@ -227,7 +226,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   const deps = { runtime: settings.runtime, bridge: settings.bridge,
     citationParse: inProcessParseClient,
     app, settings, templates, templateData,
-    profile: { resolveProfile: (_selector: Parameters<ProfileOperations["resolveProfile"]>[0]): ReturnType<ProfileOperations["resolveProfile"]> => undefined, getBuiltInSource: () => DEFAULT_PROFILE_SOURCE, profiles: [] as ProfileOperations["profiles"] },
+    profile: stubService<PreviewHostDeps["profile"]>("Profile", { resolveProfile: () => Effect.succeed(undefined), getBuiltInSource: () => Effect.succeed(DEFAULT_PROFILE_SOURCE), profiles: Effect.succeed([]) }),
     zoteroReads,
     noteIndex: { getNotesByItemKey: notesOf },
     citationLookup: {
@@ -258,7 +257,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
       prepareLiteratureNoteTemplateSource: (source) => Effect.suspend(() => deps.templates.prepareLiteratureNoteTemplateSource(source)),
       compileEvents: Stream.unwrap(Effect.sync(() => deps.templates.compileEvents)),
     }),
-    Layer.mock(Profile, { resolveProfile: (selector) => Effect.sync(() => deps.profile.resolveProfile(selector)), getBuiltInSource: () => Effect.sync(() => deps.profile.getBuiltInSource()), changes: Stream.suspend(() => Stream.make({ loaded: true, profiles: deps.profile.profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.bridge.runSync(templates.status) })) }),
+    Layer.mock(Profile, { resolveProfile: (selector) => Effect.suspend(() => deps.profile.resolveProfile(selector)), getBuiltInSource: () => Effect.suspend(() => deps.profile.getBuiltInSource()), changes: Stream.unwrap(Effect.suspend(() => Effect.map(deps.profile.profiles, (profiles) => Stream.make({ loaded: true, profiles, diagnostics: [], defaultDocumentPath: "", templateStatus: templates.bridge.runSync(templates.status) })))) }),
     Layer.mock(CitationParse, { parse: (request) => Effect.suspend(() => deps.citationParse.parse(request)) }),
     Layer.mock(CitationLookup, { read: (request) => Effect.tryPromise(() => deps.citationLookup.read(request)).pipe(Effect.orDie) }),
     Layer.mock(BibliographyRender, {

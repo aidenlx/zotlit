@@ -248,12 +248,14 @@ export interface ProfileDeletionResult {
   movedFiles: number;
 }
 
-export type ProfileReader = Pick<
-  ProfileOperations,
-  "loaded" | "profiles" | "resolveProfile" | "profileOf"
-> & {
+/** The Profile registry read synchronously, as a plain caller holds it. */
+export interface ProfileReader {
+  readonly loaded: boolean;
+  readonly profiles: readonly LiteratureNoteProfile[];
+  resolveProfile(selector: ProfileSelector): ResolvedProfile | undefined;
+  profileOf(file?: TFile): NoteProfile;
   readonly changed: Stream.Stream<void>;
-};
+}
 const makeProfileEngine = Effect.fnUntraced(function* (
   changed: () => Effect.Effect<void>,
 ) {
@@ -1560,52 +1562,6 @@ function updateProfilePackMetadata(
   }
 }
 
-/** The Profile values and Promise surface for callers outside Effect. */
-export interface ProfileOperations {
-  readonly loaded: boolean;
-  readonly profiles: readonly LiteratureNoteProfile[];
-  readonly diagnostics: readonly ProfileDiagnostic[];
-  readonly defaultDocumentPath: string;
-  resolveProfile(selector: ProfileSelector): ResolvedProfile | undefined;
-  profileOf(file?: TFile): NoteProfile;
-  prepareCreate(
-    options: ProfileCreateOptions,
-  ): Promise<PreparedProfileCreation>;
-  create(options: ProfileCreateOptions): Promise<LiteratureNoteProfile>;
-  getSource(selector: ProfileSelector): Promise<string>;
-  saveSource(
-    selector: ProfileSelector,
-    source: string,
-    expected: ProfileDocumentExpectation,
-  ): Promise<ProfileDocumentWrite>;
-  setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void>;
-  getBuiltInSource(): string;
-  duplicate(
-    selector: ProfileSelector,
-    options?: {
-      label?: string;
-    },
-  ): Promise<LiteratureNoteProfile>;
-  prepareShare(selector: ProfileSelector): Promise<PreparedProfileShare>;
-  prepareImport(
-    source: string,
-    options?: ProfileImportOptions,
-  ): Promise<PreparedProfileImport>;
-  ejectDefault(): Promise<TFile>;
-  materializeDefault(): Promise<{
-    file: TFile;
-    created: boolean;
-  }>;
-  restoreDefault(): Promise<void>;
-  prepareDelete(id: ProfileId): Promise<ProfileDeletionPlan>;
-  delete(
-    id: ProfileId,
-    target: ProfileSelector,
-    options?: {
-      move?: boolean;
-    },
-  ): Promise<ProfileDeletionResult>;
-}
 /**
  * The import target changed after the plan was made: another file took its
  * path. `message` is the notice text; `cause` holds the vault's refusal.
@@ -1680,18 +1636,6 @@ type ProfileOperationErrors = {
     | LiveTextRewriteFailed
     | TemplateFailure;
 };
-type EffectOperations = {
-  [K in keyof ProfileOperations]: ProfileOperations[K] extends (
-    ...args: infer P
-  ) => infer A
-    ? (
-        ...args: P
-      ) => Effect.Effect<
-        Awaited<A>,
-        ProfileOperationErrors[K & keyof ProfileOperationErrors]
-      >
-    : Effect.Effect<ProfileOperations[K]>;
-};
 export type ProfileCreation = Omit<PreparedProfileCreation, "create"> & {
   create(): Effect.Effect<
     LiteratureNoteProfile,
@@ -1728,9 +1672,74 @@ export type ProfileShare = Omit<PreparedProfileShare, "render"> & {
 };
 export class Profile extends Context.Service<
   Profile,
-  Omit<EffectOperations, "prepareCreate" | "prepareImport" | "prepareShare"> & {
+  {
     readonly state: Effect.Effect<ProfileState>;
     readonly changes: Stream.Stream<ProfileState>;
+    readonly loaded: Effect.Effect<boolean>;
+    readonly profiles: Effect.Effect<readonly LiteratureNoteProfile[]>;
+    readonly diagnostics: Effect.Effect<readonly ProfileDiagnostic[]>;
+    readonly defaultDocumentPath: Effect.Effect<string>;
+    resolveProfile(
+      selector: ProfileSelector,
+    ): Effect.Effect<
+      ResolvedProfile | undefined,
+      ProfileOperationErrors["resolveProfile"]
+    >;
+    profileOf(
+      file?: TFile,
+    ): Effect.Effect<NoteProfile, ProfileOperationErrors["profileOf"]>;
+    getBuiltInSource(): Effect.Effect<
+      string,
+      ProfileOperationErrors["getBuiltInSource"]
+    >;
+    create(
+      options: ProfileCreateOptions,
+    ): Effect.Effect<LiteratureNoteProfile, ProfileOperationErrors["create"]>;
+    getSource(
+      selector: ProfileSelector,
+    ): Effect.Effect<string, ProfileOperationErrors["getSource"]>;
+    saveSource(
+      selector: ProfileSelector,
+      source: string,
+      expected: ProfileDocumentExpectation,
+    ): Effect.Effect<
+      ProfileDocumentWrite,
+      ProfileOperationErrors["saveSource"]
+    >;
+    setMatch(
+      id: ProfileId,
+      match: MatchTree | undefined,
+    ): Effect.Effect<void, ProfileOperationErrors["setMatch"]>;
+    duplicate(
+      selector: ProfileSelector,
+      options?: { label?: string },
+    ): Effect.Effect<
+      LiteratureNoteProfile,
+      ProfileOperationErrors["duplicate"]
+    >;
+    ejectDefault(): Effect.Effect<
+      TFile,
+      ProfileOperationErrors["ejectDefault"]
+    >;
+    materializeDefault(): Effect.Effect<
+      { file: TFile; created: boolean },
+      ProfileOperationErrors["materializeDefault"]
+    >;
+    restoreDefault(): Effect.Effect<
+      void,
+      ProfileOperationErrors["restoreDefault"]
+    >;
+    prepareDelete(
+      id: ProfileId,
+    ): Effect.Effect<
+      ProfileDeletionPlan,
+      ProfileOperationErrors["prepareDelete"]
+    >;
+    delete(
+      id: ProfileId,
+      target: ProfileSelector,
+      options?: { move?: boolean },
+    ): Effect.Effect<ProfileDeletionResult, ProfileOperationErrors["delete"]>;
     prepareCreate(
       options: ProfileCreateOptions,
     ): Effect.Effect<
@@ -1833,23 +1842,23 @@ export const layerProfile = Layer.effect(
       profileOf: engine.profileOf,
       getBuiltInSource: engine.getBuiltInSource,
       create: Effect.fn("Profile.create")(
-        (...args: Parameters<ProfileOperations["create"]>) =>
+        (...args: Parameters<Profile["Service"]["create"]>) =>
           owned(engine.create(...args)),
       ),
       getSource: Effect.fn("Profile.getSource")(
-        (...args: Parameters<ProfileOperations["getSource"]>) =>
+        (...args: Parameters<Profile["Service"]["getSource"]>) =>
           owned(engine.getSource(...args)),
       ),
       saveSource: Effect.fn("Profile.saveSource")(
-        (...args: Parameters<ProfileOperations["saveSource"]>) =>
+        (...args: Parameters<Profile["Service"]["saveSource"]>) =>
           owned(engine.saveSource(...args)),
       ),
       setMatch: Effect.fn("Profile.setMatch")(
-        (...args: Parameters<ProfileOperations["setMatch"]>) =>
+        (...args: Parameters<Profile["Service"]["setMatch"]>) =>
           owned(engine.setMatch(...args)),
       ),
       duplicate: Effect.fn("Profile.duplicate")(
-        (...args: Parameters<ProfileOperations["duplicate"]>) =>
+        (...args: Parameters<Profile["Service"]["duplicate"]>) =>
           owned(engine.duplicate(...args)),
       ),
       ejectDefault: Effect.fn("Profile.ejectDefault")(() =>
@@ -1862,11 +1871,11 @@ export const layerProfile = Layer.effect(
         owned(engine.restoreDefault()),
       ),
       prepareDelete: Effect.fn("Profile.prepareDelete")(
-        (...args: Parameters<ProfileOperations["prepareDelete"]>) =>
+        (...args: Parameters<Profile["Service"]["prepareDelete"]>) =>
           owned(engine.prepareDelete(...args)),
       ),
       delete: Effect.fn("Profile.delete")(
-        (...args: Parameters<ProfileOperations["delete"]>) =>
+        (...args: Parameters<Profile["Service"]["delete"]>) =>
           owned(engine.delete(...args)),
       ),
       prepareCreate: Effect.fn("Profile.prepareCreate")(function* (options) {

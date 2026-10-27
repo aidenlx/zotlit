@@ -11,7 +11,7 @@ import { Vault } from "@/lib/obsidian-vault";
 import { QueryService } from "@/services/item-query/service";
 import type { TFile } from "obsidian";
 import { NoteIndex } from "@/services/note-index/service";
-import type { ProfileOperations } from "@/services/profile/service";
+import type { ProfileReader } from "@/services/profile/service";
 import { Profile } from "@/services/profile/service";
 import { Template, templateFailure } from "@/services/template/service";
 import type { TemplateOperations } from "@/services/template/service";
@@ -21,7 +21,7 @@ import type { CreationPlanningServices } from "@/services/note-feature/creation-
 
 /** The plain deps the planning services read, as a Note Feature test holds them. */
 export interface PlanningSources {
-  profile: Pick<ProfileOperations, "profiles" | "resolveProfile" | "profileOf">;
+  profile: Pick<ProfileReader, "profiles" | "resolveProfile" | "profileOf">;
   noteIndex: {
     whenIndexed(): Promise<void>;
     getNotesByItemKey(key: string): TFile[];

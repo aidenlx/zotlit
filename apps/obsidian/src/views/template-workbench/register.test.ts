@@ -10,7 +10,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type { ProfileOperations } from "@/services/profile/service";
+import type { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import {
   findWorkbenchLayout,
@@ -23,11 +23,11 @@ import type { WorkbenchHostDeps } from "./__fixtures__";
 type RegistrationHostDeps = WorkbenchHostDeps & {
   webWorkbenchEnabled: boolean;
   customize: CustomizeAction;
-  profile: ProfileOperations;
+  profile: Profile["Service"];
 };
-const registryForProfile = (profile: Partial<ProfileOperations>) =>
+const registryForProfile = (profile: Partial<Profile["Service"]>) =>
   makeWorkbenchHost({
-    profile: stubService<ProfileOperations>("Profile", profile),
+    profile: stubService<Profile["Service"]>("Profile", profile),
   }).registry;
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
@@ -159,8 +159,10 @@ function setup() {
       runSync: Effect.runSync,
     }),
     profile: stubService<RegistrationHostDeps["profile"]>("Profile", {
-      profiles: [],
-      defaultDocumentPath: "templates/zotlit-profile.default.md",
+      profiles: Effect.succeed([]),
+      defaultDocumentPath: Effect.succeed(
+        "templates/zotlit-profile.default.md",
+      ),
     }),
   });
   return {
@@ -206,8 +208,10 @@ describe("Template Workbench entry points", () => {
         target === "file"
           ? file
           : registryForProfile({
-              defaultDocumentPath: "templates/zotlit-profile.default.md",
-              getSource: async () => "Built-in source",
+              defaultDocumentPath: Effect.succeed(
+                "templates/zotlit-profile.default.md",
+              ),
+              getSource: () => Effect.succeed("Built-in source"),
             }),
         { customize: true },
       );
@@ -306,7 +310,7 @@ Annotation`);
     await openNativeProfile(
       app,
       registryForProfile({
-        defaultDocumentPath: file.path,
+        defaultDocumentPath: Effect.succeed(file.path),
         getSource: vi.fn(),
       }),
       { customize: true, itemIndexedKey: "MAIN2345" },
@@ -339,8 +343,10 @@ Annotation`);
     await openNativeProfile(
       app,
       registryForProfile({
-        defaultDocumentPath: "templates/zotlit-profile.default.md",
-        getSource: async () => "Built-in source",
+        defaultDocumentPath: Effect.succeed(
+          "templates/zotlit-profile.default.md",
+        ),
+        getSource: () => Effect.succeed("Built-in source"),
       }),
       { customize: true, itemIndexedKey: "0:ABCDEFGH" },
     );
@@ -375,8 +381,10 @@ Annotation`);
         target === "file"
           ? file
           : registryForProfile({
-              defaultDocumentPath: "templates/zotlit-profile.default.md",
-              getSource: async () => "Configured built-in document",
+              defaultDocumentPath: Effect.succeed(
+                "templates/zotlit-profile.default.md",
+              ),
+              getSource: () => Effect.succeed("Configured built-in document"),
             }),
       );
       await vi.waitFor(() => expect(revealLeaf).toHaveBeenCalledWith(leaf));
@@ -457,7 +465,10 @@ Annotation`);
       setMockPlatform({ isDesktopApp: true });
       const { app, file, deps, plugin, commands } = setup();
       const read = vi.spyOn(app.vault, "cachedRead");
-      deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
+      deps.profile = {
+        ...deps.profile,
+        defaultDocumentPath: Effect.succeed(file.path),
+      };
       deps.customize = vi.fn(async () => {});
       register(plugin, deps);
       expect(
@@ -529,7 +540,10 @@ Annotation`);
   it("routes Open template workbench through the shared flow", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { file, deps, plugin, fileMenu } = setup();
-    deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
+    deps.profile = {
+      ...deps.profile,
+      defaultDocumentPath: Effect.succeed(file.path),
+    };
     deps.customize = vi.fn(async () => {});
     register(plugin, deps);
 
@@ -552,7 +566,7 @@ Annotation`);
     app.workspace.activeLeaf = leaf;
     deps.profile = {
       ...deps.profile,
-      profiles: [{ id: "paper", path: file.path }],
+      profiles: Effect.succeed([{ id: "paper", path: file.path }]),
     } as unknown as typeof deps.profile;
     deps.customize = vi.fn(async () => {});
     register(plugin, deps);
@@ -580,7 +594,7 @@ Annotation`);
     app.workspace.activeLeaf = leaf;
     deps.profile = {
       ...deps.profile,
-      profiles: [{ id: "paper", path: file.path }],
+      profiles: Effect.succeed([{ id: "paper", path: file.path }]),
     } as unknown as typeof deps.profile;
     deps.customize = vi.fn(async () => {});
     register(plugin, deps);
@@ -613,13 +627,13 @@ Annotation`);
     vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
       frontmatter: { "zotero-key": "PAPER234" },
     });
-    deps.profile.profileOf = vi.fn(
-      () =>
-        ({ ok: true, profile: { selector: "default" } }) as ReturnType<
-          typeof deps.profile.profileOf
-        >,
+    deps.profile.profileOf = vi.fn(() =>
+      Effect.succeed({
+        ok: true,
+        profile: { selector: "default" },
+      } as Effect.Success<ReturnType<typeof deps.profile.profileOf>>),
     );
-    deps.profile.getSource = vi.fn(async () => "Configured Default");
+    deps.profile.getSource = vi.fn(() => Effect.succeed("Configured Default"));
     register(plugin, deps);
     const command = commands.find(
       (entry) => entry.id === "open-template-workbench-view",
@@ -678,8 +692,10 @@ Annotation`);
         kind === "file"
           ? file
           : registryForProfile({
-              defaultDocumentPath: "templates/zotlit-profile.default.md",
-              getSource: async () => "Configured built-in document",
+              defaultDocumentPath: Effect.succeed(
+                "templates/zotlit-profile.default.md",
+              ),
+              getSource: () => Effect.succeed("Configured built-in document"),
             }),
       );
       expect(setViewState).toHaveBeenCalledWith({
@@ -695,11 +711,15 @@ Annotation`);
 
   it("opens built-in Default from the effective source without ejecting it", async () => {
     const { app, setViewState } = setup();
-    const getSource = vi.fn(async () => "Configured built-in document");
+    const getSource = vi.fn(() =>
+      Effect.succeed("Configured built-in document"),
+    );
     await openNativeProfile(
       app,
       registryForProfile({
-        defaultDocumentPath: "templates/zotlit-profile.default.md",
+        defaultDocumentPath: Effect.succeed(
+          "templates/zotlit-profile.default.md",
+        ),
         getSource,
       }),
     );

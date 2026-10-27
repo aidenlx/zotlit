@@ -131,9 +131,9 @@ afterEach(() => {
 const NO_PROFILES: Awaited<
   ReturnType<typeof createRenderFixture>
 >["deps"]["profile"] = {
-  getBuiltInSource: () => DEFAULT_PROFILE_SOURCE,
-  profiles: [],
-  resolveProfile: () => undefined,
+  getBuiltInSource: () => Effect.succeed(DEFAULT_PROFILE_SOURCE),
+  profiles: Effect.succeed([]),
+  resolveProfile: () => Effect.succeed(undefined),
 };
 
 function leafWithApp(app: App): WorkspaceLeaf {
@@ -782,11 +782,9 @@ Annotation`,
       await source.bridge.runPromise(source.profile.getSource("default")),
     ).toContain("Custom Default body.");
     await using test = await setup({
-      resolveProfile: (selector) =>
-        source.bridge.runSync(source.profile.resolveProfile(selector)),
-      getBuiltInSource: () =>
-        source.bridge.runSync(source.profile.getBuiltInSource()),
-      profiles: source.bridge.runSync(source.profile.profiles),
+      resolveProfile: source.profile.resolveProfile,
+      getBuiltInSource: source.profile.getBuiltInSource,
+      profiles: source.profile.profiles,
     });
     vi.useFakeTimers();
     vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
@@ -2512,9 +2510,9 @@ language: liquid
   it("offers a Profile choice where the vault holds the default and one more", async () => {
     await using test = await setup({
       ...NO_PROFILES,
-      profiles: [
+      profiles: Effect.succeed([
         { id: "reading12345", label: "Reading" },
-      ] as unknown as typeof NO_PROFILES.profiles,
+      ]) as unknown as typeof NO_PROFILES.profiles,
     });
     vi.useFakeTimers();
     const preview = await openPartialPreview(test);
