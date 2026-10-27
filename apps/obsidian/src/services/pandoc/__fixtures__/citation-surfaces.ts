@@ -1,3 +1,6 @@
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { Notifier } from "@/lib/notifier";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { delay } from "@std/async";
 import { DateTime, Effect, FileSystem, Layer, Stream } from "effect";
@@ -574,6 +577,7 @@ export async function openCitationVault({
     harness,
     settings,
     profileSettings,
+    notifier: await buildRuntime(testNotifier().layer, stack).runPromise(Notifier),
   });
 
   /** Wait until References acknowledges the change by withdrawing copy. */
@@ -732,7 +736,9 @@ function exportAdapter({
   harness,
   settings,
   profileSettings,
+  notifier,
 }: {
+  notifier: Notifier["Service"];
   dataDir: string;
   engine: Awaited<ReturnType<typeof createCitationEngine>>;
   harness: CitationIndexHarness;
@@ -742,7 +748,8 @@ function exportAdapter({
   return {
     citationParse: inProcessParseClient,
     fileSystem: Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
-    profile: profileReader(profileSettings, harness.metadataCache),
+    profile: { loaded: Effect.succeed(true), profileOf: (file) => Effect.sync(() => profileReader(profileSettings, harness.metadataCache).profileOf(file)) },
+    notifier,
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,
       vault: stubService<Vault>("Vault", {
@@ -753,13 +760,11 @@ function exportAdapter({
       }),
     }),
     db: harness.db,
-    citationLookup: harness.lookup,
-    pandocEngine: pandocEngineHandle(engine),
+    citationLookup: harness.lookup.runtime.runSync(CitationLookup),
+    pandocEngine: pandocEngineHandle(engine).binary,
     zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir,
-      // Zotero's default port; the fetch below answers in its place.
-      httpPort: 23119,
-      get: () => true,
+      current: Effect.succeed(stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir, httpPort: 23119 })),
+      get: () => Effect.succeed(true),
     }),
     // The bibliography fetch is mocked, so nothing reaches Zotero.
     zoteroHttp: fakeFetchClient(() => {

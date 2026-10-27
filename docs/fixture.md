@@ -53,6 +53,8 @@ Use the `all` Scope Case and follow the action and expected-outcome table.
 
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
 
+`pandoc-export.md` checks **Export note with citations**. Rebuild with `pnpm fixture`, open the page in the Fixture Vault, and follow **Check the export**. Install the Pandoc engine first if the command asks for it. Export as HTML with the default citation style: the progress notice ends with the file and style, and the file preserves bold text and the callout body while removing the Obsidian callout marker. Run the command again and dismiss its dialog: no new output is written. The focused desktop check is `pnpm e2e --project=desktop src/walkthrough.e2e.ts -t 'exports a draft as HTML'`; it stages this committed page in the demo vault and reads the HTML after the completion notice.
+
 ### Excerpt-rendering acceptance inputs
 
 Each build copies three generated inputs to
