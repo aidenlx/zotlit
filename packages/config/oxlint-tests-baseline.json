@@ -223,10 +223,6 @@
   "apps/obsidian/src/services/protocol/register.test.ts": [
     "zotlit-tests/no-internal-mock"
   ],
-  "apps/obsidian/src/services/service-base.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
-  ],
   "apps/obsidian/src/services/template-workbench/check.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"

@@ -3,7 +3,7 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 
 import type { LocalBridge } from "./service";
 
-/** The edge handle `build.ts` binds; see {@link bindLocalBridge}. */
+/** The edge handle `plugin-runtime.ts` binds; see {@link bindLocalBridge}. */
 export interface LocalBridgeHandle {
   /**
    * Follow each connected Save that wrote a Profile's document in this vault

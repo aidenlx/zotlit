@@ -121,7 +121,7 @@ export function workbenchIdentity(identity: {
 }
 
 /**
- * A Template data handle, as `build.ts` binds it, for a view or dialog test:
+ * A Template data handle, as `plugin-runtime.ts` binds it, for a view or dialog test:
  * over `services`, and the Vault and FileManager tags over `app`'s members.
  * The tags close with `stack`.
  */

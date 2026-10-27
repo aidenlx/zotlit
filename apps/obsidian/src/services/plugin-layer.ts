@@ -159,9 +159,8 @@ import type { ZoteroReads } from "./zotero-reads/service";
 import { workerClient } from "./zotero-reads/worker-client";
 
 /**
- * The graph `buildServices` builds before the container over `plugin`:
- * converted services, and the legacy services bridged into it with
- * `serviceLayer`. Settings and logging build first, so every other service
+ * The graph `createPluginRuntime` builds over `plugin`: every plugin
+ * service. Settings and logging build first, so every other service
  * logs from its first line and closes before them. Every service reads time
  * from the Effect Clock, which a test replaces. Each layer starts under its
  * service's name, so a defect during acquisition names what failed.
@@ -351,7 +350,7 @@ export function pluginLayer(
         layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
-    // The legacy note writers create and move through the tags (`build.ts`).
+    // The legacy note writers create and move through the tags (`plugin-runtime.ts`).
     // The protocol handlers also open notes through the
     // Workspace and read the vault folder from the environment. The Customize
     // flow reads the active note's paper from the metadata cache.

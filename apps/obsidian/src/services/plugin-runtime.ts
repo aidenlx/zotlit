@@ -87,7 +87,6 @@ import { Profile } from "./profile/service";
 import type { ProtocolDeps } from "./protocol/register";
 import { QueryClients } from "./query-client/service";
 import { Release } from "./release/service";
-import { ServiceContainer } from "./service-base";
 import { PluginSettings } from "./settings/service";
 import type { TemplateDataServices } from "./template-workbench/data";
 import { bindTemplateData } from "./template-workbench/data-handle";
@@ -103,24 +102,22 @@ import { ZoteroReads } from "./zotero-reads/service";
 type ProtocolViews = Pick<ProtocolDeps, "noteImportView" | "opener">;
 
 /**
- * Construct and wire all Obsidian plugin services.
+ * Compose the plugin's runtime over {@link pluginLayer} and bind the values
+ * the plugin shell and the debug surface read.
  *
  * This function does not own lifecycle. `zt-main.ts` creates the stack, passes
  * it here, and moves the stack only after all plugin startup wiring succeeds.
+ * Two entries go on `stack`: the runtime's disposal, before acquisition
+ * starts, and then the CLI runner's abort. Everything the shell registers
+ * after this sits above both, so unload runs the shell's cleanup first, then
+ * interrupts a running command, and closes the graph last.
  *
- * The runtime over {@link pluginLayer} finishes acquisition first, including
- * each layer's asynchronous first load. The container then
- * injects its services with `useValue`: a graph service as the tag's service
- * (`() => runtime.runSync(Tag)`), which legacy consumers run through the
- * container's `bridge`, a bridged one as it is. The runtime's disposal sits under every
- * container registration on `stack`, so the whole graph closes after the last
- * container service has disposed: a container service never outlives a layer
- * it uses. A service leaves the container for the graph as it converts or is
- * bridged.
- *
- * Within the container, registration order matters: services dispose in LIFO.
+ * The runtime finishes acquisition first, including each layer's
+ * asynchronous first load, so every value read here has finished acquiring.
+ * A throw anywhere in here leaves the graph on `stack` for the caller's
+ * rollback.
  */
-export async function buildServices(
+export async function createPluginRuntime(
   plugin: ZotLitPlugin,
   stack: AsyncDisposableStack,
   languagePack: LanguagePackStartup,
@@ -141,7 +138,7 @@ export async function buildServices(
     importProfile: (options) => importProfileDialog(plugin.app, options),
   };
   // The protocol handlers open the note import's modals and the Attachment
-  // opener, which the container builds after the graph.
+  // opener, which are built after the graph.
   let bindProtocolViews!: (views: ProtocolViews) => void;
   const protocolViews = new Promise<ProtocolViews>((resolve) => {
     bindProtocolViews = resolve;
@@ -225,201 +222,144 @@ export async function buildServices(
   await runtime.context();
   bindMigration({ openPrompt: () => openWelcomeView(plugin.app) });
   const bridge = effectBridge(runtime);
-  const zoteroLocalApiService = runtime.runSync(ZoteroLocalApi);
-  const container = new ServiceContainer(stack, (key, error) => {
-    console.error(`Service "${key}" failed to initialize`, error);
-  });
+  // Above the runtime on the stack, so unload interrupts a command still
+  // running before the services it reads dispose.
+  const runCli = cliRunner(
+    runtime,
+    stack.use(new DisposableAbortController()).signal,
+  );
 
-  return container
-    .useValue({ runtime: () => runtime })
-    .useValue({ bridge: () => bridge })
-    .useValue({ annotationNotes: () => runtime.runSync(AnnotationNoteActions) })
-    .useValue({ workspace: () => runtime.runSync(Workspace) })
-    .useValue({ metadataCache: () => runtime.runSync(MetadataCache) })
-    .useValue({ notifier: () => runtime.runSync(Notifier) })
-    .useValue({ zoteroPrefService: () => runtime.runSync(ZoteroPref) })
-    .useValue({ fileSystem: () => runtime.runSync(FileSystem.FileSystem) })
-    .useValue({
-      settings: () => runtime.runSync(PluginSettings),
-    })
-    .useValue({
-      useLedger: () => runtime.runSync(UseLedger),
-    })
-    .useValue({
-      // Above every container service on the stack, so unload interrupts a
-      // command still running before the services it reads dispose.
-      runCli: () =>
-        cliRunner(runtime, stack.use(new DisposableAbortController()).signal),
-    })
-    .useValue({
-      queryClient: () => runtime.runSync(QueryClients),
-    })
-    .useValue({ release: () => runtime.runSync(Release) })
-    .useValue({
-      template: () => runtime.runSync(Template),
-    })
-    .useValue({
-      noteIndex: () => runtime.runSync(NoteIndex),
-    })
-    .useValue({ localServer: () => runtime.runSync(LocalServer) })
-    .useValue({ zoteroHttp: () => runtime.runSync(ZoteroHttp) })
-    .useValue({
-      chineseSegmenter: () =>
-        bindManagedBinary(bridge, runtime.runSync(ChineseSegmenter)),
-    })
-    .useValue({
-      zoteroReads: () => runtime.runSync(ZoteroReads),
-    })
-    .useValue({
-      acquireZoteroRead:
-        ({ zoteroReads }) =>
-        () =>
-          acquireReadLease(zoteroReads, bridge),
-    })
-    .useValue({
-      libraryTagNames: () => libraryTagNamesOf(runtime),
-    })
-    .useValue({ excerptImage: () => runtime.runSync(ExcerptImageService) })
-    .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
-    .useValue({
-      attachmentResolver: () => runtime.runSync(AttachmentResolver),
-    })
-    .useValue({
-      // Every ZotLit gesture that opens an Attachment, and File Link Capture
-      // for a link Obsidian rendered, decides through this one opener.
-      targetOpener: ({ attachmentResolver, settings }) =>
-        createTargetOpener({
-          attachments: attachmentResolver,
-          reader: createPdfReader({ app: plugin.app, settings, bridge }),
-          native: openWithSystem,
-          settings,
-          bridge,
-          // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
-          vaultBasePath: (
-            plugin.app.vault.adapter as FileSystemAdapter
-          ).getBasePath(),
-        }),
-    })
-    .useValue({
-      literatureNoteAttachments: () =>
-        bindLiteratureNoteAttachments(
-          bridge,
-          runtime.runSync(Effect.context<LiteratureNoteServices>()),
-        ),
-    })
-    .useValue({ zoteroLocalApi: () => zoteroLocalApiService })
-    .useValue({
-      annotationRepository: () => runtime.runSync(AnnotationRepository),
-    })
-    .useValue({
-      capabilityNotices: () =>
-        bindCapabilityNotices(bridge, runtime.runSync(CapabilityNotices)),
-    })
-    .useValue({
-      pdfAnnotationEditor: () => runtime.runSync(PdfAnnotationEditor),
-    })
-    .useValue({ libraryScope: () => runtime.runSync(LibraryScope) })
-    .useValue({
-      query: () => bindQuery(bridge, runtime.runSync(QueryService)),
-    })
-    .useValue({ profileService: () => runtime.runSync(Profile) })
-    .useValue({
-      localBridge: () => bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
-    })
-    .useValue({
-      customize: () => bindCustomize(bridge, runtime.runSync(Customize)),
-    })
-    .useValue({
-      templateData: () =>
-        bindTemplateData(
-          bridge,
-          runtime.runSync(Effect.context<TemplateDataServices>()),
-        ),
-    })
-    .useValue({
-      itemLookup: () => bindItemLookup(bridge, runtime.runSync(ItemLookup)),
-    })
-    .useValue({
-      noteFeature: (): NoteFeatureHandle =>
-        bindNoteFeature(bridge, runtime.runSync(NoteFeature), {
-          ...bindNoteCitations(
-            bridge,
-            runtime.runSync(Effect.context<NoteCitationServices>()),
-          ),
-          ...bindNoteCreation(
-            bridge,
-            runtime.runSync(Effect.context<NoteCreationServices>()),
-            creation,
-          ),
-        }),
-    })
-    .useValue({
-      // The Import profile command. Unload closes an open dialog, and the
-      // caller sees it dismissed.
-      importProfile: (): ImportProfile => {
-        const runExit = exitOver(
-          bridge,
-          runtime.runSync(Effect.context<ProfileDialogServices>()),
-        );
-        return async (options) =>
-          valueOr(await runExit(creation.importProfile(options)), undefined);
+  const settings = runtime.runSync(PluginSettings);
+  const zoteroReads = runtime.runSync(ZoteroReads);
+  const attachmentResolver = runtime.runSync(AttachmentResolver);
+  const citationLookup = runtime.runSync(CitationLookup);
+  const citationIndex = runtime.runSync(CitationIndex);
+  const useLedger = runtime.runSync(UseLedger);
+  const zoteroPrefService = runtime.runSync(ZoteroPref);
+  const notifier = runtime.runSync(Notifier);
+  const pandocEngine = runtime.runSync(PandocEngine);
+  // Every ZotLit gesture that opens an Attachment, and File Link Capture for
+  // a link Obsidian rendered, decides through this one opener.
+  const targetOpener = createTargetOpener({
+    attachments: attachmentResolver,
+    reader: createPdfReader({ app: plugin.app, settings, bridge }),
+    native: openWithSystem,
+    settings,
+    bridge,
+    // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
+    vaultBasePath: (
+      plugin.app.vault.adapter as FileSystemAdapter
+    ).getBasePath(),
+  });
+  const noteFeature: NoteFeatureHandle = bindNoteFeature(
+    bridge,
+    runtime.runSync(NoteFeature),
+    {
+      ...bindNoteCitations(
+        bridge,
+        runtime.runSync(Effect.context<NoteCitationServices>()),
+      ),
+      ...bindNoteCreation(
+        bridge,
+        runtime.runSync(Effect.context<NoteCreationServices>()),
+        creation,
+      ),
+    },
+  );
+  // The Import profile command. Unload closes an open dialog, and the caller
+  // sees it dismissed.
+  const runProfileDialog = exitOver(
+    bridge,
+    runtime.runSync(Effect.context<ProfileDialogServices>()),
+  );
+  const importProfile: ImportProfile = async (options) =>
+    valueOr(await runProfileDialog(creation.importProfile(options)), undefined);
+  const noteImportView = createNoteImportView(plugin.app, creation);
+  bindProtocolViews({ noteImportView, opener: targetOpener });
+
+  return {
+    runtime,
+    bridge,
+    annotationNotes: runtime.runSync(AnnotationNoteActions),
+    workspace: runtime.runSync(Workspace),
+    metadataCache: runtime.runSync(MetadataCache),
+    notifier,
+    zoteroPrefService,
+    fileSystem: runtime.runSync(FileSystem.FileSystem),
+    settings,
+    useLedger,
+    runCli,
+    queryClient: runtime.runSync(QueryClients),
+    release: runtime.runSync(Release),
+    template: runtime.runSync(Template),
+    noteIndex: runtime.runSync(NoteIndex),
+    localServer: runtime.runSync(LocalServer),
+    zoteroHttp: runtime.runSync(ZoteroHttp),
+    chineseSegmenter: bindManagedBinary(
+      bridge,
+      runtime.runSync(ChineseSegmenter),
+    ),
+    zoteroReads,
+    acquireZoteroRead: () => acquireReadLease(zoteroReads, bridge),
+    libraryTagNames: libraryTagNamesOf(runtime),
+    excerptImage: runtime.runSync(ExcerptImageService),
+    excerptDisplay: runtime.runSync(ExcerptDisplays),
+    attachmentResolver,
+    targetOpener,
+    literatureNoteAttachments: bindLiteratureNoteAttachments(
+      bridge,
+      runtime.runSync(Effect.context<LiteratureNoteServices>()),
+    ),
+    zoteroLocalApi: runtime.runSync(ZoteroLocalApi),
+    annotationRepository: runtime.runSync(AnnotationRepository),
+    capabilityNotices: bindCapabilityNotices(
+      bridge,
+      runtime.runSync(CapabilityNotices),
+    ),
+    pdfAnnotationEditor: runtime.runSync(PdfAnnotationEditor),
+    libraryScope: runtime.runSync(LibraryScope),
+    query: bindQuery(bridge, runtime.runSync(QueryService)),
+    profileService: runtime.runSync(Profile),
+    localBridge: bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
+    customize: bindCustomize(bridge, runtime.runSync(Customize)),
+    templateData: bindTemplateData(
+      bridge,
+      runtime.runSync(Effect.context<TemplateDataServices>()),
+    ),
+    itemLookup: bindItemLookup(bridge, runtime.runSync(ItemLookup)),
+    noteFeature,
+    importProfile,
+    noteImportView,
+    batchImport: bindBatchImport(
+      bridge,
+      runtime.runSync(Effect.context<BatchImportServices>()),
+      { view: noteImportView },
+    ),
+    noteActions: bindNoteActions(
+      bridge,
+      runtime.runSync(Effect.context<NoteActionServices>()),
+      {
+        creation,
+        view: noteImportView,
+        notices: batchUpdateNotices(plugin.app),
       },
-    })
-    .useValue({
-      noteImportView: ({ targetOpener }) => {
-        const noteImportView = createNoteImportView(plugin.app, creation);
-        bindProtocolViews({ noteImportView, opener: targetOpener });
-        return noteImportView;
-      },
-    })
-    .useValue({
-      batchImport: ({ noteImportView }) =>
-        bindBatchImport(
-          bridge,
-          runtime.runSync(Effect.context<BatchImportServices>()),
-          { view: noteImportView },
-        ),
-    })
-    .useValue({
-      noteActions: ({ noteImportView }) =>
-        bindNoteActions(
-          bridge,
-          runtime.runSync(Effect.context<NoteActionServices>()),
-          {
-            creation,
-            view: noteImportView,
-            notices: batchUpdateNotices(plugin.app),
-          },
-        ),
-    })
-    .useValue({
-      citationLookup: () => runtime.runSync(CitationLookup),
-    })
-    .useValue({ citationParseService: () => runtime.runSync(CitationParse) })
-    .useValue({ citationIndex: () => runtime.runSync(CitationIndex) })
-    .useValue({
-      citationSuggestServices: () => ({
-        citationLookup: runtime.runSync(CitationLookup),
-        citationIndex: runtime.runSync(CitationIndex),
-        useLedger: runtime.runSync(UseLedger),
-      }),
-    })
-    .useValue({
-      pandocExportServices: () => ({
-        db: runtime.runSync(ZoteroReads),
-        citationLookup: runtime.runSync(CitationLookup),
-        zoteroPref: runtime.runSync(ZoteroPref),
-        pandocEngine: runtime.runSync(PandocEngine),
-        notifier: runtime.runSync(Notifier),
-      }),
-    })
-    .useValue({
-      pandocEngine: () =>
-        bindManagedBinary(bridge, runtime.runSync(PandocEngine)),
-    })
-    .useValue({ citationText: () => runtime.runSync(CitationText) })
-    .useValue({ citationPopover: () => runtime.runSync(CitationPopover) })
-    .useValue({ annotationPopover: () => runtime.runSync(AnnotationPopover) })
-    .useValue({ citekeyEditor: () => runtime.runSync(CitekeyEditor) })
-    .useValue({ graphCitations: () => runtime.runSync(GraphCitations) });
+    ),
+    citationLookup,
+    citationParseService: runtime.runSync(CitationParse),
+    citationIndex,
+    citationSuggestServices: { citationLookup, citationIndex, useLedger },
+    pandocExportServices: {
+      db: zoteroReads,
+      citationLookup,
+      zoteroPref: zoteroPrefService,
+      pandocEngine,
+      notifier,
+    },
+    pandocEngine: bindManagedBinary(bridge, pandocEngine),
+    citationText: runtime.runSync(CitationText),
+    citationPopover: runtime.runSync(CitationPopover),
+    annotationPopover: runtime.runSync(AnnotationPopover),
+    citekeyEditor: runtime.runSync(CitekeyEditor),
+    graphCitations: runtime.runSync(GraphCitations),
+  };
 }

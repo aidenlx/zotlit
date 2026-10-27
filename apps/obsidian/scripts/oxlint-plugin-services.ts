@@ -110,9 +110,8 @@ export const effectNativeResources: Rule = {
 };
 
 /**
- * New services are Effect services (policies/services.md → Conversion scope).
- * A legacy service keeps its class until the change made for its conversion;
- * oxlint.config.ts lists those files as the backlog.
+ * Every plugin service is an Effect service (policies/services.md →
+ * Conversion scope), so a class that extends `Service` is reported.
  */
 export const noLegacyService: Rule = {
   meta: {
@@ -627,7 +626,7 @@ interface ImportNode extends AstNode {
  * `Effect.runSync`, `runPromise`, `runFork`, `runPromiseExit`, `runSyncExit`
  * and `runCallback` run an Effect with an empty context: its logs skip the
  * plugin logger and log level, and it gets none of the plugin's services.
- * Plugin code runs an Effect through the container bridge, a layer's own
+ * Plugin code runs an Effect through the runtime bridge, a layer's own
  * context runner (`Effect.runSyncWith(yield* Effect.context())`), or a
  * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` is
  * checked, so those calls stay valid. Files that create a
@@ -691,7 +690,7 @@ const CAPTURED_RUNNERS = new Set(["runPromiseWith", "runPromiseExitWith"]);
  * pending runs going, and a run after unload answers from the released
  * services. A service that keeps a runner for later callbacks builds it on a
  * Scope instead — `scopedBridge`, `forkedBridge` for a write runner, the
- * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in the container —
+ * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in `plugin-runtime.ts` —
  * so unload stops what is pending (`policies/unload.md`). oxlint.config.ts
  * turns the rule on for `src/services/**`, which leaves out the helpers that
  * build those runners (`lib/effect-bridge.ts`, `lib/effect-scope.ts`).
@@ -977,8 +976,8 @@ export const temporalInEffect: Rule = {
  * Rejects an import or re-export of a `<service>/plain` module under
  * `src/services/`, in source, tests and fixtures alike. A caller reads the
  * service's Effect tag: Effect code `yield*`s it, and code outside Effect holds
- * the service that `build.ts` reads once and runs each call through the
- * container's `bridge`. Every run then lives in a Scope, so unload stops it and
+ * the service that `plugin-runtime.ts` reads once and runs each call through
+ * the runtime's `bridge`. Every run then lives in a Scope, so unload stops it and
  * the caller gets its released answer from one helper, where each per-service
  * adapter re-implemented that answer on its own runtime
  * (policies/services.md → Bridge, policies/unload.md).
@@ -992,7 +991,7 @@ export const noPlainServiceAdapters: Rule = {
     },
     messages: {
       adapter:
-        "Read the Effect service tag, and from outside Effect run its calls through the container's `bridge` (policies/services.md → Bridge).",
+        "Read the Effect service tag, and from outside Effect run its calls through the runtime's `bridge` (policies/services.md → Bridge).",
     },
     schema: [],
   },

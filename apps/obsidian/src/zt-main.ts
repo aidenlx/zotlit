@@ -20,7 +20,6 @@ import { annotationHistoryFileMenu } from "./services/annotation-repository/menu
 import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
-import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
@@ -35,6 +34,7 @@ import {
   addNoteFeatureActions,
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
+import { createPluginRuntime } from "./services/plugin-runtime";
 import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import {
@@ -161,10 +161,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
   #stack?: AsyncDisposableStack;
 
   // Debug/escape-hatch access only. Services should depend on each other via DI.
-  #services?: Awaited<ReturnType<typeof buildServices>>["services"];
+  #services?: Awaited<ReturnType<typeof createPluginRuntime>>;
 
   /**
-   * The service container, for `obsidian eval` callers outside the bundle —
+   * The plugin runtime's values, for `obsidian eval` callers outside the bundle —
    * `packages/e2e` and `packages/scripts` reach it through a string, so they
    * keep working while TypeScript sees nothing to navigate.
    *
@@ -233,7 +233,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
-    const { services } = await buildServices(this, stack, languagePack).catch(
+    const services = await createPluginRuntime(this, stack, languagePack).catch(
       reportStartupFailure,
     );
 

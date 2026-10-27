@@ -4,8 +4,6 @@ import { Scheduler } from "effect/Scheduler";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 
-import { ServiceContainer } from "@/services/service-base";
-
 import { browserScheduler } from "./browser-scheduler";
 import { buildRuntime } from "./effect-layer";
 
@@ -30,7 +28,7 @@ it.effect("runs its fibers on the browser scheduler", () =>
   }),
 );
 
-// #1705: the container must read settled state after async layer acquisition.
+// #1705: plugin startup must read settled state after async layer acquisition.
 it.effect("reads the loaded value synchronously after the graph builds", () =>
   Effect.gen(function* () {
     const context = yield* Effect.context<never>();
@@ -51,10 +49,7 @@ it.effect("reads the loaded value synchronously after the graph builds", () =>
         await using stack = new AsyncDisposableStack();
         const runtime = buildRuntime(layer, stack);
         await runtime.context();
-        const container = new ServiceContainer(stack, () => {}).useValue({
-          probe: () => runtime.runSync(Probe.use(Effect.succeed)),
-        });
-        return container.services.probe.value;
+        return runtime.runSync(Probe.use(Effect.succeed)).value;
       }),
     );
 

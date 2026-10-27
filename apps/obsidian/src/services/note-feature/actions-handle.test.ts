@@ -30,7 +30,7 @@ import type { BatchUpdateNotices } from "./update-single";
 const UPDATED: UpdateResult = { bodyUpdated: true, duplicateRegionCount: 0 };
 const OPTIONS = { itemKey: "ABCD2345", scope: "full" } as const;
 
-/** The note actions over `updateNote`, bound as `build.ts` binds them. */
+/** The note actions over `updateNote`, bound as `plugin-runtime.ts` binds them. */
 function actionsOver(updateNote: NoteFeature["Service"]["updateNote"]) {
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
