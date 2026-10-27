@@ -1089,11 +1089,16 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     return structure;
   }
 
-  /** Releases the held Structured Characters and their pending label pass. */
+  /**
+   * Releases the held Structured Characters and their pending label pass. The
+   * structure is closed with its document, so a create still waiting on it,
+   * such as a Text Draft the view's close finished, stops waiting.
+   */
   #closeStructure(): void {
     const held = this.#held;
     if (!held) return;
     held.win.cancelIdleCallback(held.idle);
+    held.structure.close();
     this.#held = null;
   }
 

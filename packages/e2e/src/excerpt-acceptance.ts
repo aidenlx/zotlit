@@ -2263,6 +2263,15 @@ export async function verifySavedEditDisplay(
         decoded: !!(image && image.complete && image.naturalWidth > 0),
         created: state.created.slice(),
         revoked: state.revoked.slice(),
+        // The images the other cards paint, which load on their own.
+        othersPaint: app.workspace
+          .getLeavesOfType("zotero-annotation-view")
+          .flatMap((leaf) => [
+            ...leaf.view.containerEl.querySelectorAll<HTMLImageElement>(
+              `.zt-annot-card:not(${cardSelector}) img`,
+            ),
+          ])
+          .map(({ src }) => src),
         diagnostics: (() => {
           const snapshot =
             zotlit.services.excerptImage.rendererDiagnostics!.snapshot();
@@ -2285,7 +2294,11 @@ export async function verifySavedEditDisplay(
   // to show the edited image, that URL is still live, and every URL it
   // superseded — the image before the edit, and any temporary it allocated and
   // did not keep — is released. A refactor is free to allocate more than one.
-  const allocated = edited.created.slice(before.created.length);
+  // The probe hears the whole window, so a URL another card paints is that
+  // card's own load, such as a view still painting its other cards.
+  const allocated = edited.created
+    .slice(before.created.length)
+    .filter((url) => !edited.othersPaint.includes(url));
   const revoked = edited.revoked.slice(before.revoked.length);
   expect(allocated).toContain(edited.src);
   expect(revoked).not.toContain(edited.src);
@@ -2716,30 +2729,23 @@ export async function verifySavedEditDisplay(
   // ── What a remount shows ────────────────────────────────────────────────
   // Reopening the view drops its cards and mounts them again, which is the
   // surface a restart shows: the card seeds from that reference, and what it
-  // paints must be the saved edit's pixels.
-  const viewState = await obRun(
-    vaultId,
-    async ({ app }) => {
-      const leaves = app.workspace.getLeavesOfType("zotero-annotation-view");
-      if (leaves.length === 0)
-        throw new Error("The Annotation View is not open");
-      const state = leaves[0]!.getViewState();
-      for (const leaf of leaves) leaf.detach();
-      return { state: JSON.stringify(state) };
-    },
-    undefined,
-  );
+  // paints must be the saved edit's pixels. The view reopens in its own leaf,
+  // where a restart restores it, so it still follows the PDF tab.
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { state }) => {
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.setViewState(
-          Object.assign({}, JSON.parse(state), { active: true }),
+      async ({ app }) => {
+        const [leaf, ...others] = app.workspace.getLeavesOfType(
+          "zotero-annotation-view",
         );
+        if (!leaf) throw new Error("The Annotation View is not open");
+        const state = leaf.getViewState();
+        for (const other of others) other.detach();
+        await leaf.setViewState({ type: "empty" });
+        await leaf.setViewState(state);
         return true;
       },
-      { state: viewState.state },
+      undefined,
     ),
   ).toBe(true);
   await obRunUntil(

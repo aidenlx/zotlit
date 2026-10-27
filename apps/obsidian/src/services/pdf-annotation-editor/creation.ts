@@ -191,7 +191,7 @@ export interface ReaderPage {
 /** What the creation surfaces write Annotations through. */
 export type AnnotationCreates = Pick<
   AnnotationRepository["Service"],
-  "createAnnotation"
+  "createAnnotation" | "hold"
 >;
 
 /**
@@ -316,7 +316,7 @@ export interface MarkCreationDeps {
   /** What this view's surfaces draw from; the toolbar redraws off it alone. */
   surfaceState: ReaderSurfaceStore;
   annotations: AnnotationCreates;
-  bridge: Pick<EffectBridge, "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   now: () => Temporal.Instant;
 }
 
@@ -1065,6 +1065,12 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#deps.reportCreateFailure(m.pdf_create_reason_no_document());
       return null;
     }
+    // The list stays held until the create settles: a draft the view's close
+    // finishes is created after the view let go of its own hold, and a list
+    // dropped under the create leaves it no Zotero source to write to.
+    using _held = this.#deps.bridge.runSync(
+      this.#deps.annotations.hold([this.#deps.attachmentKey]),
+    );
     const { foreground, disarm } = CREATE_EFFECTS[type];
     if (foreground) {
       this.#writing = true;

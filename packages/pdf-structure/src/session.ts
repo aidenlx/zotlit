@@ -18,6 +18,9 @@ import { adjustRange, rectRotation, selectText } from "@/text-selection";
 
 const logger = getLogger(["zotlit", "pdf-structure"]);
 
+/** What a waiter reads once the document closed under it. */
+const CLOSED = Symbol("closed");
+
 /** The open document, as the Obsidian reader seam exposes it. */
 export interface PdfPageSource extends PageLabelSource {
   /** `page.getTextContent({ includeChars: true })` for a zero-based page. */
@@ -40,9 +43,22 @@ export class PdfTextStructure {
   readonly #settled = new Map<number, StructuredPage>();
   readonly #emptyPagesLogged = new Set<number>();
   #pageLabels: Promise<readonly string[]> | null = null;
+  /**
+   * Settles as the document closes. A closed PDF.js document never answers
+   * the reads it was asked, so a waiter takes this instead.
+   */
+  readonly #closed = Promise.withResolvers<typeof CLOSED>();
 
   constructor(source: PdfPageSource) {
     this.#source = source;
+  }
+
+  /**
+   * The document is closed. A Sort Index or Page Label still waiting on a
+   * read stops waiting: what this session already holds still answers.
+   */
+  close(): void {
+    this.#closed.resolve(CLOSED);
   }
 
   /** The page's Structured Characters, computed once per Reader Session. */
@@ -102,7 +118,12 @@ export class PdfTextStructure {
    * reported once per page for each Reader Session.
    */
   async sortIndex(position: PdfPosition): Promise<string> {
-    const page = await this.page(position.pageIndex);
+    const page = await Promise.race([
+      this.page(position.pageIndex),
+      this.#closed.promise,
+    ]);
+    if (page === CLOSED)
+      throw new Error("The PDF closed before its page was read");
     if (!page.chars.length && !this.#emptyPagesLogged.has(page.pageIndex)) {
       this.#emptyPagesLogged.add(page.pageIndex);
       logger.debug("Page carries no text layer; Sort Index offset stays 0", {
@@ -153,11 +174,19 @@ export class PdfTextStructure {
     );
   }
 
-  /** The Page Label a creation on this page gets. */
+  /**
+   * The Page Label a creation on this page gets. A pass the closed document
+   * cannot finish leaves no extracted label, so the page's own number stands,
+   * as it does in Zotero for a page with none.
+   */
   async pageLabel(
     pageIndex: number,
     previous: readonly PreviousAnnotation[],
   ): Promise<string> {
-    return alignPageLabel(await this.pageLabels(), pageIndex, previous);
+    const labels = await Promise.race([
+      this.pageLabels(),
+      this.#closed.promise,
+    ]);
+    return alignPageLabel(labels === CLOSED ? [] : labels, pageIndex, previous);
   }
 }
