@@ -50,3 +50,28 @@ export const zoteroTreeUnavailableAtom = Atom.map(
   zoteroStateAtom,
   (state) => state.state === "degraded" || state.dbFileMissing,
 );
+
+/** A source became unreadable, so an open query must show its diagnostic. */
+export const zoteroQueryUnavailableRevisionAtom = held(
+  Stream.unwrap(
+    Effect.map(ZoteroReads, (reads) =>
+      reads.events.pipe(
+        Stream.filter(
+          (event) =>
+            event._tag === "degraded" || event._tag === "db-file-missing",
+        ),
+        Stream.scan(
+          () => 0,
+          (revision) => revision + 1,
+        ),
+      ),
+    ),
+  ),
+  0,
+);
+
+/** Whether the current database can answer a read. */
+export const zoteroReadyAtom = Atom.map(
+  zoteroStateAtom,
+  (state) => state.state === "ready",
+);

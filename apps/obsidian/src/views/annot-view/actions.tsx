@@ -7,7 +7,7 @@ import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
 import { AbortError, passAborted } from "@/lib/abort-error";
 import { buildColorMenu } from "@/lib/annotation-colors";
-import type { EffectBridge } from "@/lib/effect-bridge";
+import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -15,39 +15,43 @@ import type { MenuAlign } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import * as toast from "@/lib/toast";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type {
   AnnotationRecord,
-  AnnotationRepository,
-  MutationState,
   TextField,
 } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
+import { groupFailureMessages } from "@/services/annotation-repository/write";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
 import type {
   ExcerptDisplayDemand,
-  ExcerptDisplayService,
   ExcerptImageDisplay,
 } from "@/services/excerpt-image/display";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import { menuSections, raiseMenu } from "@/services/menu-events";
-import type {
-  AnnotationCitation,
-  NoteFeatureHandle,
-} from "@/services/note-feature";
+import type { AnnotationCitation } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
+import {
+  annotationDraftCommand,
+  copyCitationCommand,
+  openExcerptDemandCommand,
+  annotationWriteCommand,
+  resultValue,
+  requireResult,
+} from "./atoms";
+import type { AnnotationWriteRequest } from "./atoms";
 import { chooseAttachment } from "./attachment-suggester";
 import { groupControl, pressControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
 import type { CardClick, CardPlace } from "./card-selection";
-import { blockedNotice, confirmDelete, copyText, recolor } from "./card-verbs";
+import { blockedNotice, copyText, deleteConfirmation } from "./card-verbs";
 import type { CommentRenderer } from "./comment-render";
 import { copiedText } from "./copied-text";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
 import { attachmentLine, headerMenu } from "./presentation";
-import type { AnnotState, FollowMode } from "./store";
+import type { AnnotState, FollowMode } from "./state";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -251,30 +255,8 @@ export interface AnnotActionDeps {
   app: App;
   /** Opens an Annotation at its page. */
   opener: Pick<TargetOpener, "open">;
-  /** The plugin's live display surface for Excerpt Images. */
-  excerptDisplay: Pick<ExcerptDisplayService, "open">;
   excerptImageRequest: AnnotActions["excerptImageRequest"];
-  /**
-   * The one write path for an Annotation. Commands take Indexed Keys: the
-   * repository holds the record a write stamps its precondition off.
-   */
-  annotations: Pick<
-    AnnotationRepository["Service"],
-    | "deleteAnnotation"
-    | "deleteAnnotations"
-    | "discardTextDraft"
-    | "discardConflict"
-    | "discardTagDraft"
-    | "patchColor"
-    | "patchColors"
-    | "editTextField"
-    | "editTags"
-    | "retryTextDraft"
-    | "retryWrite"
-    | "submitTextField"
-    | "submitTags"
-  >;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  registry: ViewRegistryHandle;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
   /**
@@ -297,7 +279,6 @@ export interface AnnotActionDeps {
   /** Add or drop one tag from the list filter, from a card's tag menu. */
   toggleSelectedTag: (tag: string) => void;
   refresh: () => Promise<void>;
-  noteFeature: Pick<NoteFeatureHandle, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
   /**
@@ -340,36 +321,21 @@ export interface AnnotActionDeps {
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const now = deps.now ?? (() => Temporal.Now.instant());
 
-  /**
-   * The seam a write's outcome is rendered at: the repository answers data and
-   * the notice is raised here, once, naming the reason. A failed write's
-   * Pending Proposal goes with it, so a failure needs no undo — the card goes
-   * back to what Zotero holds.
-   *
-   * @see apps/obsidian/policies/ui-seams.md
-   */
-  const report = (outcome: Promise<MutationState>): void => {
-    void outcome
-      .then((state) => {
-        if (state.kind !== "failed") return;
-        new BaseNotice(writeFailureMessage(state.failure, now()));
-      })
-      .catch(passAborted);
+  const sendWrite = (request: AnnotationWriteRequest): void => {
+    deps.registry.set(annotationWriteCommand, {
+      ...request,
+      complete: (states) => {
+        for (const message of groupFailureMessages(states, now()))
+          new BaseNotice(message);
+      },
+    });
   };
 
-  /**
-   * Recolour these cards: one alone, or a group as one History Step in which
-   * each Annotation keeps its own outcome.
-   */
   const setColors = (
     annots: readonly AnnotationRecord[],
     color: string,
   ): void =>
-    void recolor(deps.annotations, deps.bridge, {
-      annotationKeys: annots.map(({ key }) => key),
-      color,
-      now,
-    });
+    sendWrite({ kind: "color", keys: annots.map(({ key }) => key), color });
   /**
    * One verb over these cards, which one card's control decides alone: refused
    * while a write is in flight on any of them, and blocked for the same reason
@@ -439,86 +405,82 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const onOpenField = (annot: AnnotationRecord, field: TextField): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
-    return (
-      deps.bridge.runSync(deps.annotations.editTextField(field, annot.key)) !==
-      null
-    );
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-field",
+      key: annot.key,
+      field,
+    });
+    return resultValue(deps.registry.get(annotationDraftCommand)) === true;
   };
   const onEditField = (
     annot: AnnotationRecord,
     field: TextField,
     text: string,
   ): void => {
-    deps.bridge.runSync(deps.annotations.editTextField(field, annot.key, text));
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-field",
+      key: annot.key,
+      field,
+      text,
+    });
   };
-  const onSaveField = (
-    annot: AnnotationRecord,
-    field: TextField,
-    { text, automatic = false }: { text: string; automatic?: boolean },
-  ): void => {
-    deps.bridge.runSync(deps.annotations.editTextField(field, annot.key, text));
-    report(
-      deps.bridge.runPromise(
-        deps.annotations.submitTextField(field, annot.key, { automatic }),
-      ),
-    );
-  };
+  const onSaveField: AnnotActions["onSaveField"] = (
+    annot,
+    field,
+    { text, automatic = false },
+  ) =>
+    sendWrite({ kind: "submit-field", key: annot.key, field, text, automatic });
   const onDiscardDraft = (annot: AnnotationRecord, field: TextField): void =>
-    deps.bridge.runSync(deps.annotations.discardTextDraft(field, annot.key));
+    deps.registry.set(annotationDraftCommand, {
+      kind: "discard-field",
+      key: annot.key,
+      field,
+    });
   const onOpenTags = (annot: AnnotationRecord): boolean => {
     deps.selectAlone(annot);
     deps.closeEditors();
-    return deps.bridge.runSync(deps.annotations.editTags(annot.key)) !== null;
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-tags",
+      key: annot.key,
+    });
+    return resultValue(deps.registry.get(annotationDraftCommand)) === true;
   };
   const onEditTags = (
     annot: AnnotationRecord,
     names: readonly string[],
-  ): void => {
-    deps.bridge.runSync(deps.annotations.editTags(annot.key, names));
-  };
-  const onSaveTags = (
-    annot: AnnotationRecord,
-    { automatic = false }: { automatic?: boolean } = {},
   ): void =>
-    report(
-      deps.bridge.runPromise(
-        deps.annotations.submitTags(annot.key, { automatic }),
-      ),
-    );
+    deps.registry.set(annotationDraftCommand, {
+      kind: "edit-tags",
+      key: annot.key,
+      names,
+    });
+  const onSaveTags: AnnotActions["onSaveTags"] = (
+    annot,
+    { automatic = false } = {},
+  ) => sendWrite({ kind: "submit-tags", key: annot.key, automatic });
   const onDiscardTags = (annot: AnnotationRecord): void =>
-    deps.bridge.runSync(deps.annotations.discardTagDraft(annot.key));
-  /**
-   * The delete over these cards, after the one confirmation that says what an
-   * erase costs.
-   *
-   * @see apps/obsidian/policies/ui-seams.md
-   */
-  const deleteCards = (
+    deps.registry.set(annotationDraftCommand, {
+      kind: "discard-tags",
+      key: annot.key,
+    });
+  const deleteCards = async (
     annots: readonly AnnotationRecord[],
-  ): Promise<readonly string[]> =>
-    confirmDelete(
-      deps.app,
-      { annotations: deps.annotations, bridge: deps.bridge },
-      {
-        annotationKeys: annots.map(({ key }) => key),
-        now,
-      },
-    );
+  ): Promise<void> => {
+    if (await confirm(deleteConfirmation(annots.length), deps.app))
+      sendWrite({ kind: "delete", keys: annots.map(({ key }) => key) });
+  };
   const onApplyAgain = (annot: AnnotationRecord, field?: TextField): void =>
-    report(
-      field
-        ? deps.bridge.runPromise(
-            deps.annotations.retryTextDraft(field, annot.key),
-          )
-        : deps.bridge.runPromise(deps.annotations.retryWrite(annot.key)),
-    );
+    sendWrite({ kind: "retry", key: annot.key, ...(field && { field }) });
   const onDiscardConflict = (
     annot: AnnotationRecord,
     field?: TextField,
   ): void =>
-    field
-      ? deps.bridge.runSync(deps.annotations.discardTextDraft(field, annot.key))
-      : deps.bridge.runSync(deps.annotations.discardConflict(annot.key));
+    deps.registry.set(
+      annotationDraftCommand,
+      field
+        ? { kind: "discard-field", key: annot.key, field }
+        : { kind: "discard-conflict", key: annot.key },
+    );
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -598,8 +560,13 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .onClick(async () => {
           let citation: AnnotationCitation;
           try {
-            citation = await deps.noteFeature.renderAnnotationCitation(
-              annot.key,
+            citation = await new Promise<AnnotationCitation>(
+              (resolve, reject) =>
+                deps.registry.set(copyCitationCommand, {
+                  key: annot.key,
+                  resolve,
+                  reject,
+                }),
             );
           } catch (e) {
             if (AbortError.test(e)) return;
@@ -780,7 +747,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         )
         .catch(passAborted);
     },
-    openExcerptImage: () => deps.excerptDisplay.open(),
+    openExcerptImage: () => {
+      deps.registry.set(openExcerptDemandCommand, undefined);
+      return requireResult(deps.registry.get(openExcerptDemandCommand));
+    },
     excerptImageRequest: deps.excerptImageRequest,
     onOpenTags,
     onEditTags,

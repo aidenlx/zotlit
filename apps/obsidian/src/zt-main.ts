@@ -11,7 +11,6 @@ import {
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistry } from "@/lib/view-atoms";
 
-import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
@@ -38,6 +37,10 @@ import {
 } from "./services/note-feature/actions";
 import { addProfileActions } from "./services/profile/actions";
 import { ServiceStartupFailed } from "./services/startup-failure";
+import {
+  createProfileDialog,
+  importProfileDialog,
+} from "./setting-tab/profile-dialogs";
 import { createCommentRenderer } from "./views/annot-view/comment-render";
 import { registerAnnotView } from "./views/annot-view/register";
 import { AnnotationView } from "./views/annot-view/view";
@@ -324,30 +327,21 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
+      registry: services.runtime.runSync(ViewRegistry),
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
       query: services.query,
-      annotations: services.annotationRepository,
-      bridge: services.bridge,
-      excerptDisplay: services.excerptDisplay,
-      allowEditing: () =>
-        void services.capabilityNotices.allowEditing().catch(passAborted),
-      reportBlockedGesture: (attachmentKey) =>
-        services.capabilityNotices.reportBlockedGesture(attachmentKey),
-      libraryTagNames: services.libraryTagNames,
-      zoteroPref: services.zoteroPref,
-      noteFeature: services.noteFeature,
       literatureNotes: literatureNotes({
-        runtime: services.runtime,
+        registry: services.runtime.runSync(ViewRegistry),
         app: this.app,
-        noteFeature: services.noteFeature,
-        noteIndex: services.noteIndex,
-        profile: services.profile,
-        template: services.template,
-        zoteroReads: services.zoteroReads,
+        creation: {
+          app: this.app,
+          createProfile: (options) => createProfileDialog(this.app, options),
+          importProfile: (options) => importProfileDialog(this.app, options),
+        },
       }),
       opener: services.targetOpener,
     };
@@ -355,11 +349,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
-      excerptDisplay: services.excerptDisplay,
-      liveUpdate: services.localServer,
       bridge: services.bridge,
       pdfReaders: services.pdfAnnotationEditor,
-      noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
       registry: services.runtime.runSync(ViewRegistry),
@@ -367,7 +358,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
-      registry: services.runtime.runSync(ViewRegistry),
       ...queryViewDeps,
       reads: services.zoteroReads,
       libraryScope: services.libraryScope,
@@ -406,34 +396,16 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
-      runtime: services.runtime,
+      registry: services.runtime.runSync(ViewRegistry),
       bridge: services.bridge,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
-      app: this.app,
-      zoteroReads: services.zoteroReads,
-      query: services.query,
-      noteIndex: services.noteIndex,
-      zoteroPref: services.zoteroPref,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      templates: services.template,
-      templateData: services.templateData,
-      profile: services.profile,
       nativePreview: {
-        runtime: services.runtime,
-        bridge: services.bridge,
-        citationParse: services.citationParse,
         app: this.app,
-        zoteroReads: services.zoteroReads,
-        noteIndex: services.noteIndex,
-        settings: services.settings,
-        templateData: services.templateData,
-        templates: services.template,
-        profile: services.profile,
-        bibliographyRender: services.bibliographyRender,
-        citationLookup: services.citationLookup,
+        registry: services.runtime.runSync(ViewRegistry),
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
@@ -448,41 +420,16 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerNotePreview(this, {
-      runtime: services.runtime,
-      bridge: services.bridge,
-      citationParse: services.citationParse,
       app: this.app,
+      registry: services.runtime.runSync(ViewRegistry),
+      bridge: services.bridge,
       itemLookup: services.itemLookup,
-      profile: services.profile,
-      zoteroReads: services.zoteroReads,
-      noteIndex: services.noteIndex,
       settings: services.settings,
-      templates: services.template,
-      templateData: services.templateData,
-      bibliographyRender: services.bibliographyRender,
-      citationLookup: services.citationLookup,
     });
 
     registerReferencesView(this, {
-      runtime: services.runtime,
-      profile: services.profile,
       app: this.app,
-      db: services.zoteroReads,
-      citationIndex: services.citationIndex,
-      citationLookup: services.citationLookup,
-      libraryScope: services.libraryScope,
-      citationText: services.citationText,
-      citekeyEditor: {
-        // Unload interrupts a pending open. The open logs its own failures,
-        // so the Exit is a success or an interrupt.
-        openIndexedKey: async (indexedKey, pane) => {
-          await services.bridge.runPromiseExit(
-            services.citekeyEditor.openIndexedKey(indexedKey, pane),
-          );
-        },
-      },
-      pandocEngine: services.pandocEngine,
-      bibliographyRender: services.bibliographyRender,
+      registry: services.runtime.runSync(ViewRegistry),
     });
 
     registerCitedByView(this, {
@@ -491,6 +438,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerPandocExport(this, {
+      fileSystem: services.fileSystem,
       citationParse: services.citationParseService,
       profile: services.profile,
       app: this.app,
@@ -508,6 +456,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const citationPresentationDeps = {
+      fileSystem: services.fileSystem,
       app: this.app,
       zoteroPref: services.zoteroPref,
       settings: services.settings,

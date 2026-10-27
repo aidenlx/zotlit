@@ -1,13 +1,12 @@
 // Materializes the Resolved CSL Style a native Pandoc run cites with, the whole
 // `zotlit:csl` contract.
 
+import { Clock, Effect, FileSystem, PlatformError, Schema } from "effect";
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isErrno } from "@/lib/errno";
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log-category";
 
 import { CONTRACT_VERSION } from "./contract";
 import type {
@@ -15,8 +14,6 @@ import type {
   StyleSource,
 } from "./document-presentation";
 import type { CslStyleFailure, ResolvedCslStyle } from "./styles";
-
-const logger = getLogger(["pandoc", "csl"]);
 
 /** The command every answer of this module names itself with. */
 export const CSL_COMMAND = "zotlit:csl";
@@ -60,6 +57,32 @@ export interface CslError {
   message: string;
 }
 
+/** A failed materialization, carried to the CLI boundary with its style identity. */
+export class CslWriteError extends Schema.TaggedError<CslWriteError>()(
+  "CslWriteError",
+  {
+    styleId: Schema.String,
+    parentId: Schema.UndefinedOr(Schema.String),
+    cause: Schema.instanceOf(PlatformError.PlatformError),
+  },
+) {}
+
+/** The JSON diagnostic the CLI emits for a typed write failure. */
+export function cslWriteFailedResponse({
+  styleId,
+  parentId,
+  cause,
+}: CslWriteError): CslResponse {
+  return errorResponse([
+    {
+      code: "csl-write-failed",
+      styleId,
+      parentId,
+      message: `Cannot write the resolved CSL style of "${styleId}" to "${cslStoreDirectory()}": ${describe(cause)}. Restore write access to that directory, then run the command again.`,
+    },
+  ]);
+}
+
 /**
  * Either the Resolved CSL Style of the requested CSL ID as a file citeproc
  * opens, or every failure that stopped it. The two never appear together.
@@ -97,13 +120,21 @@ export type DocumentStyleRead =
 
 export interface CslPorts {
   /** The Resolved CSL Style of one installed CSL ID, from the shared resolver. */
-  resolve: (styleId: string) => Promise<ResolvedCslStyle>;
+  resolve: (
+    styleId: string,
+  ) => Effect.Effect<ResolvedCslStyle, never, FileSystem.FileSystem>;
   /**
    * Where the effective CSL content stands, as an absolute path.
    *
    * @default materializeCslStyle
    */
-  materialize?: (xml: string) => Promise<string>;
+  materialize?: (
+    xml: string,
+  ) => Effect.Effect<
+    string,
+    PlatformError.PlatformError,
+    FileSystem.FileSystem
+  >;
 }
 
 export interface DocumentCslPorts extends CslPorts {
@@ -117,37 +148,42 @@ export interface DocumentCslPorts extends CslPorts {
  * citeproc opens. The answer names where the style came from, so the filter can
  * tell the reader which style the run uses.
  */
-export async function resolveDocumentCslStyle(
-  absolutePath: string,
-  ports: DocumentCslPorts,
-): Promise<CslResponse> {
-  const read = ports.readStyle(absolutePath);
-  if (read.kind === "file-not-found")
-    return errorResponse([
-      {
-        code: "file-not-found",
-        message: `No vault note at "${absolutePath}".`,
-      },
-    ]);
-  if (read.kind === "unusable")
-    return errorResponse([documentError(read, absolutePath)]);
-  const { styleId, source } = read;
-  logger.debug("Resolving the style one note selects", {
-    path: absolutePath,
-    styleId,
-    source: source.kind,
-  });
-  if (styleId === null) {
-    return {
-      contractVersion: CONTRACT_VERSION,
-      command: CSL_COMMAND,
-      styleId: null,
-      source,
-    };
-  }
-  const response = await resolveCslStyle(styleId, ports, source);
-  return "errors" in response ? response : { ...response, source };
-}
+export const resolveDocumentCslStyle = Effect.fn("Csl.resolveDocument")(
+  function* (
+    absolutePath: string,
+    ports: DocumentCslPorts,
+  ): Effect.fn.Return<CslResponse, CslWriteError, FileSystem.FileSystem> {
+    const read = ports.readStyle(absolutePath);
+    if (read.kind === "file-not-found")
+      return errorResponse([
+        {
+          code: "file-not-found",
+          message: `No vault note at "${absolutePath}".`,
+        },
+      ]);
+    if (read.kind === "unusable")
+      return errorResponse([documentError(read, absolutePath)]);
+    const { styleId, source } = read;
+    yield* Effect.logDebug("Resolving the style one note selects").pipe(
+      Effect.annotateLogs({
+        path: absolutePath,
+        styleId,
+        source: source.kind,
+      }),
+    );
+    if (styleId === null) {
+      return {
+        contractVersion: CONTRACT_VERSION,
+        command: CSL_COMMAND,
+        styleId: null,
+        source,
+      };
+    }
+    const response = yield* resolveCslStyle(styleId, ports, source);
+    return "errors" in response ? response : { ...response, source };
+  },
+  withLogCategory("pandoc", "csl"),
+);
 
 function documentError(
   unusable: DocumentPresentationFailure,
@@ -194,47 +230,48 @@ export function flagsInvalidResponse(message: string): CslResponse {
  * `zotlit:csl` contract. A native run carries no vault Citation Locale, so the
  * installed style keeps its own locale behavior.
  */
-export async function resolveCslStyle(
-  styleId: string,
-  { resolve, materialize = materializeCslStyle }: CslPorts,
-  source: StyleSource = { kind: "note" },
-): Promise<CslResponse> {
-  const style = await resolve(styleId);
-  if (style.kind !== "installed") {
-    return errorResponse([
-      style.kind === "failed"
-        ? failure(style.reason, { styleId, parentId: style.parentId, source })
-        : failure("style-missing", { styleId, source }),
-    ]);
-  }
+export const resolveCslStyle = Effect.fn("Csl.resolve")(
+  function* (
+    styleId: string,
+    { resolve, materialize = materializeCslStyle }: CslPorts,
+    source: StyleSource = { kind: "note" },
+  ): Effect.fn.Return<CslResponse, CslWriteError, FileSystem.FileSystem> {
+    const style = yield* resolve(styleId);
+    if (style.kind !== "installed") {
+      return errorResponse([
+        style.kind === "failed"
+          ? failure(style.reason, { styleId, parentId: style.parentId, source })
+          : failure("style-missing", { styleId, source }),
+      ]);
+    }
 
-  let path: string;
-  try {
-    path = await materialize(style.xml);
-  } catch (error) {
-    logger.warn("Cannot materialize the Resolved CSL Style", {
-      styleId,
-      error,
-    });
-    return errorResponse([
-      {
-        code: "csl-write-failed",
+    const path = yield* materialize(style.xml).pipe(
+      Effect.mapError(
+        (cause) =>
+          new CslWriteError({
+            styleId,
+            parentId: style.parentId,
+            cause,
+          }),
+      ),
+    );
+    yield* Effect.logDebug("Materialized the Resolved CSL Style").pipe(
+      Effect.annotateLogs({
         styleId,
-        parentId: style.parentId,
-        message: `Cannot write the resolved CSL style of "${styleId}" to "${cslStoreDirectory()}": ${describe(error)}. Restore write access to that directory, then run the command again.`,
-      },
-    ]);
-  }
-  logger.debug("Materialized the Resolved CSL Style", { styleId, path });
-  return {
-    contractVersion: CONTRACT_VERSION,
-    command: CSL_COMMAND,
-    styleId,
-    parentId: style.parentId,
-    path,
-    title: style.title,
-  };
-}
+        path,
+      }),
+    );
+    return {
+      contractVersion: CONTRACT_VERSION,
+      command: CSL_COMMAND,
+      styleId,
+      parentId: style.parentId,
+      path,
+      title: style.title,
+    };
+  },
+  withLogCategory("pandoc", "csl"),
+);
 
 /**
  * The absolute path the CSL content stands at, addressed by its own SHA-256:
@@ -244,35 +281,45 @@ export async function resolveCslStyle(
  * reading the path never opens a half-written style, and content already
  * materialized is left exactly as it stands.
  */
-export async function materializeCslStyle(
-  xml: string,
-  directory = cslStoreDirectory(),
-): Promise<string> {
-  await mkdir(directory, { recursive: true });
-  const digest = createHash("sha256").update(xml).digest("hex");
-  const path = join(directory, `${digest}${CSL_EXT}`);
-  await using stack = new AsyncDisposableStack();
-  const staging = stack.adopt(
-    join(directory, `.${digest}-${randomUUID()}${CSL_STAGING_EXT}`),
-    (file) =>
-      rm(file, { force: true }).catch((error: unknown) => {
-        logger.warn("Cannot remove a staged CSL style file", {
-          staging: file,
-          error,
-        });
+export const materializeCslStyle = Effect.fn("Csl.materialize")(
+  function* (xml: string, directory = cslStoreDirectory()) {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.makeDirectory(directory, { recursive: true });
+    const digest = createHash("sha256").update(xml).digest("hex");
+    const path = join(directory, `${digest}${CSL_EXT}`);
+    const staging = join(
+      directory,
+      `.${digest}-${randomUUID()}${CSL_STAGING_EXT}`,
+    );
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        yield* Effect.addFinalizer(() =>
+          fs.remove(staging, { force: true }).pipe(
+            Effect.catchTag("PlatformError", (error) =>
+              Effect.logWarning("Cannot remove a staged CSL style file").pipe(
+                Effect.annotateLogs({
+                  staging,
+                  error,
+                }),
+              ),
+            ),
+          ),
+        );
+        yield* fs.writeFileString(staging, xml, { flag: "wx" });
+        // An existing content address already holds the complete style.
+        yield* fs
+          .link(staging, path)
+          .pipe(
+            Effect.catchReason("PlatformError", "AlreadyExists", () =>
+              restamp(path),
+            ),
+          );
+        return path;
       }),
-  );
-  try {
-    await writeFile(staging, xml, { flag: "wx" });
-    await link(staging, path);
-  } catch (error) {
-    // The path already carries this exact content, which is the whole promise
-    // a content address makes: another run materialized it first.
-    if (!isErrno(error, "EEXIST")) throw error;
-    await restamp(path);
-  }
-  return path;
-}
+    );
+  },
+  withLogCategory("pandoc", "csl"),
+);
 
 /**
  * Move the entry's timestamp to now, so the store reaper ages a style from its
@@ -282,12 +329,20 @@ export async function materializeCslStyle(
  * A failed restamp only costs an early eviction, and an early eviction only
  * costs one rewrite, so it never fails the resolve.
  */
-async function restamp(path: string): Promise<void> {
-  const now = Temporal.Now.instant().epochMilliseconds / 1000;
-  await utimes(path, now, now).catch((error: unknown) => {
-    logger.debug("Cannot restamp a materialized CSL style", { path, error });
-  });
-}
+const restamp = Effect.fnUntraced(function* (path: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const now = (yield* Clock.currentTimeMillis) / 1000;
+  yield* fs.utimes(path, now, now).pipe(
+    Effect.catchTag("PlatformError", (error) =>
+      Effect.logDebug("Cannot restamp a materialized CSL style").pipe(
+        Effect.annotateLogs({
+          path,
+          error,
+        }),
+      ),
+    ),
+  );
+});
 
 /**
  * The store both {@link materializeCslStyle} and the store reaper address, so

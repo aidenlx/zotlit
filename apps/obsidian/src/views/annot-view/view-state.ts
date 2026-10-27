@@ -1,7 +1,9 @@
 // What one Annotation View instance remembers in its workspace state.
+import { Option, Schema } from "effect";
+
 import { isIndexedKey } from "@zotlit/db";
 
-import type { FollowMode } from "./store";
+import type { FollowMode } from "./state";
 
 /** The Follow Mode a fresh view starts in. */
 export const DEFAULT_FOLLOW_MODE: FollowMode = "active-tab";
@@ -15,7 +17,13 @@ export interface AnnotViewState {
   pinnedItemKey: string | null;
 }
 
-const MODES: readonly FollowMode[] = ["active-tab", "zotero-reader", "pinned"];
+const decodeString = Schema.decodeUnknownOption(Schema.String);
+const decodeObject = Schema.decodeUnknownOption(
+  Schema.Record(Schema.String, Schema.Unknown),
+);
+const decodeMode = Schema.decodeUnknownOption(
+  Schema.Literals(["active-tab", "zotero-reader", "pinned"]),
+);
 
 /**
  * The names this state carried before ADR 0041 renamed the modes. `linked`
@@ -40,8 +48,10 @@ const RENAMED: Readonly<Record<string, FollowMode>> = {
  * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
  */
 export function parseAnnotViewState(raw: unknown): AnnotViewState {
-  const stored =
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const stored: Readonly<Record<string, unknown>> = Option.getOrElse(
+    decodeObject(raw),
+    () => ({}),
+  );
   const pinnedItemKey = readIndexedKey(
     stored.pinnedItemKey ?? stored.linkedIndexedKey,
   );
@@ -83,17 +93,21 @@ export function unpinnedMode(previousMode: FollowMode): FollowMode {
  * `null` where the state holds none and the sidebar runs its default.
  */
 export function readSidebarQuery(raw: unknown): string | null {
-  if (!raw || typeof raw !== "object") return null;
-  const { query } = raw as Record<string, unknown>;
-  return typeof query === "string" && query.length > 0 ? query : null;
+  const stored = Option.getOrNull(decodeObject(raw));
+  const query = Option.getOrNull(decodeString(stored?.query));
+  return query && query.length > 0 ? query : null;
 }
 
 function readMode(value: unknown): FollowMode {
-  if (typeof value !== "string") return DEFAULT_FOLLOW_MODE;
-  if (MODES.includes(value as FollowMode)) return value as FollowMode;
-  return RENAMED[value] ?? DEFAULT_FOLLOW_MODE;
+  const text = Option.getOrNull(decodeString(value));
+  return Option.getOrElse(decodeMode(value), () =>
+    text === null
+      ? DEFAULT_FOLLOW_MODE
+      : (RENAMED[text] ?? DEFAULT_FOLLOW_MODE),
+  );
 }
 
 function readIndexedKey(value: unknown): string | null {
-  return typeof value === "string" && isIndexedKey(value) ? value : null;
+  const key = Option.getOrNull(decodeString(value));
+  return key !== null && isIndexedKey(key) ? key : null;
 }

@@ -1,18 +1,11 @@
 // @vitest-environment happy-dom
-import { Effect, Layer, Stream } from "effect";
-import { TFile } from "obsidian";
-import type { App, EventRef, WorkspaceLeaf } from "obsidian";
+import type { TFile } from "obsidian";
+import type { App, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
-import {
-  beforeEach as beforeStreamTest,
-  afterEach as afterStreamTest,
-} from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { testEvent } from "@/lib/__fixtures__/event-stream";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
-import { buildRuntime } from "@/lib/effect-layer";
 import * as m from "@/lib/i18n/generated/messages";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { citationOutcome } from "@/services/citation-index/outcome";
@@ -21,14 +14,9 @@ import type {
   DocumentCitationSet,
 } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/sources";
-import type { DocumentCitations } from "@/services/citation-text/present";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
-import type { Held } from "@/services/query-client/service";
-import { defaults } from "@/services/settings/schema";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
@@ -36,23 +24,14 @@ import {
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { makeReferencesHost } from "./__fixtures__";
+import type { ReferencesHost } from "./__fixtures__";
 import { ReferencesView } from "./view";
-import type { ReferencesViewDeps } from "./view";
-
-let streamStack: AsyncDisposableStack;
-let streamRuntime: ReturnType<typeof buildRuntime<never>>;
-beforeStreamTest(() => {
-  streamStack = new AsyncDisposableStack();
-  streamRuntime = buildRuntime(Layer.empty, streamStack);
-});
-afterStreamTest(() => streamStack.disposeAsync());
 
 type RenderedBibliography = Extract<
   BibliographyRenderOutcome,
   { kind: "held" }
 >;
-
-vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 vi.mock("@/components/obsidian/icon-button", async () => {
   const { createElement } = await import("react");
@@ -163,32 +142,25 @@ function failedHeldOutcome(): RenderedBibliography {
 }
 
 let view: TestReferencesView | undefined;
-let renders: PromiseWithResolvers<RenderedBibliography>[] = [];
+let renders: PromiseWithResolvers<BibliographyRenderOutcome>[] = [];
 /** The render requests a test has answered. */
-let answered = new Set<PromiseWithResolvers<RenderedBibliography>>();
+let answered = new Set<PromiseWithResolvers<BibliographyRenderOutcome>>();
 let scans: PromiseWithResolvers<DocumentCitationSet>[] = [];
 let activeFile: TFile;
 let otherFile: TFile;
-let onDbChanged: (() => void) | undefined;
 let reads: TestReads | undefined;
-let onCitedByInvalidated: (() => void) | undefined;
-/** What the Citation Index reports its resolution snapshot as. */
 let citekeyResolution: CitationKeyResolution;
-/** What the citation text service holds for the note on screen. */
-let heldCitations: DocumentCitations | null;
-let onInvalidated: (() => void) | undefined;
-let onActiveLeafChange: (() => void) | undefined;
-let onMetadataChanged: (() => void) | undefined;
 let frontmatter: Record<string, unknown> | undefined;
-
-function markdownFile(basename: string): TFile {
-  const file = new TFile();
-  file.basename = basename;
-  file.extension = "md";
-  file.name = `${basename}.md`;
-  file.path = `notes/${file.name}`;
-  return file;
-}
+let host: ReferencesHost;
+const onDbChanged = () => host.changeZotero();
+const onInvalidated = () => host.invalidate();
+const onCitedByInvalidated = () =>
+  host.setLookup(citekeyResolution ?? "pending");
+const onActiveLeafChange = () => {
+  host.workspace.open(activeFile);
+};
+const onMetadataChanged = () =>
+  host.metadataCache.change(activeFile, { frontmatter });
 
 function copyAction(): HTMLElement {
   return view!.contentEl.querySelector<HTMLElement>(
@@ -198,7 +170,7 @@ function copyAction(): HTMLElement {
 
 /** The newest render request, once it arrived and is still unanswered. */
 async function pendingRender(): Promise<
-  PromiseWithResolvers<RenderedBibliography>
+  PromiseWithResolvers<BibliographyRenderOutcome>
 > {
   // A reload reads the database before it asks for the render, and the test
   // cannot name when that read lands.
@@ -218,9 +190,10 @@ async function finishRender(
   answered.add(render);
   await act(async () => {
     render.resolve(outcome);
-    // The view awaited this promise first, so it has painted by the time this
-    // await returns.
     await render.promise;
+    await vi.waitFor(() =>
+      expect(host.registry.get(view!.model.loaded).waiting).toBe(false),
+    );
   });
 }
 
@@ -255,163 +228,52 @@ async function finishScan(
 /** Follow another note, which the pane learns of before its rescan answers. */
 async function followOtherNote(): Promise<void> {
   activeFile = otherFile;
-  await act(() => onActiveLeafChange!());
+  const previous = scans.at(-1);
+  await act(() => onActiveLeafChange());
+  await vi.waitFor(() => expect(scans.at(-1)).not.toBe(previous));
 }
 
 beforeEach(async () => {
-  renders = [];
   answered = new Set();
-  scans = [];
-  heldCitations = null;
   frontmatter = undefined;
   citekeyResolution = "fresh";
-  activeFile = markdownFile("tidal");
-  otherFile = markdownFile("estuary");
-  const workspaceOn = vi.fn();
-  const metadataOn = vi.fn();
-  workspaceOn.mockImplementation(
-    (event: string, callback: () => void): EventRef => {
-      if (event === "active-leaf-change") onActiveLeafChange = callback;
-      const ref: EventRef = {};
-      return ref;
-    },
-  );
-  metadataOn.mockImplementation(
-    (event: string, callback: () => void): EventRef => {
-      if (event === "changed") onMetadataChanged = callback;
-      const ref: EventRef = {};
-      return ref;
-    },
-  );
+  host = await makeReferencesHost();
+  renders = host.renders;
+  scans = host.scans;
+  activeFile = host.follow("notes/tidal.md")!;
+  otherFile = host.vault.add("notes/estuary.md");
+  otherFile.extension = "md";
+  reads = inProcessReadsService(memoryOpener(() => SEED).open);
   const app = stubService<App>("App", {
     scope: stubService<App["scope"]>("Scope", {}),
     workspace: stubService<App["workspace"]>("Workspace", {
-      getActiveFile: () => activeFile,
-      on: workspaceOn,
-    }),
-    metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
-      on: metadataOn,
-      // No note here declares a style of its own, so every list is rendered
-      // under the vault Citation Presentation.
-      getFileCache: () => (frontmatter ? { frontmatter } : null),
+      getActiveFile: () => host.workspace.getActiveFile(),
     }),
   });
-
-  const profile = {
-    ...profileReader(defaults, app.metadataCache),
-  };
-  reads = inProcessReadsService(memoryOpener(() => SEED).open);
   const leaf = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
     updateHeader: vi.fn(),
   });
   Object.defineProperty(leaf, "app", { value: app });
-  view = new TestReferencesView(
-    leaf,
-    stubService<ReferencesViewDeps>("ReferencesViewDeps", {
-      app,
-      db: stubService<ReferencesViewDeps["db"]>("ZoteroReads", {
-        state: "ready",
-        get reads() {
-          return reads!.reads;
-        },
-        acquireRead: () => reads!.acquireRead(),
-        changed: (() => {
-          const source = testEvent<void>();
-          onDbChanged = () => source.emit();
-          return source.stream;
-        })(),
-      }),
-      citationLookup: {
-        get status() {
-          return citekeyResolution ?? "pending";
-        },
-        "status-changed": (() => {
-          const source = testEvent<void>();
-          onCitedByInvalidated = () => source.emit();
-          return source.stream;
-        })(),
-        changed: Stream.empty,
-      },
-      citationIndex: {
-        getDocumentCitationSet: () => {
-          const deferred = Promise.withResolvers<DocumentCitationSet>();
-          scans.push(deferred);
-          return deferred.promise;
-        },
-        changed: Stream.empty,
-        "membership-changed": Stream.empty,
-        "cited-by-invalidated": Stream.empty,
-        backfilled: Stream.empty,
-      },
-      runtime: streamRuntime,
-      citationText: {
-        changed: Stream.empty,
-        peek: (): Held<DocumentCitations> | null =>
-          heldCitations === null
-            ? null
-            : {
-                value: heldCitations,
-                status: "fresh",
-                settled: Promise.resolve(heldCitations),
-              },
-      },
-      citekeyEditor: { openIndexedKey: () => Promise.resolve() },
-      pandocEngine: {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "PandocEngine",
-          {
-            getStatus: Effect.succeed({
-              kind: "installed",
-              version: "test",
-              binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
-            }),
-            changes: Stream.empty,
-            decline: Effect.void,
-          },
-        ),
-        runSync: Effect.runSync,
-      },
-      bibliographyRender: stubService<ReferencesViewDeps["bibliographyRender"]>(
-        "BibliographyRender",
-        {
-          vaultPresentation: { styleId: null, locale: null },
-          render: () => {
-            const deferred = Promise.withResolvers<RenderedBibliography>();
-            renders.push(deferred);
-            return deferred.promise;
-          },
-          invalidated: (() => {
-            const source = testEvent<void>();
-            onInvalidated = () => source.emit();
-            return source.stream;
-          })(),
-          changed: Stream.empty,
-          settled: Stream.empty,
-        },
-      ),
-      profile,
-      openSettings: () => undefined,
-      openStyleSettings: () => undefined,
-    }),
-  );
-
+  view = new TestReferencesView(leaf, {
+    app,
+    registry: host.registry,
+    openSettings: () => undefined,
+    openStyleSettings: () => undefined,
+  });
   document.body.append(view.contentEl);
   await act(async () => {
     await view!.open();
   });
+  await vi.waitFor(() => expect(scans.length).toBeGreaterThan(0));
   await finishScan();
 });
 
 afterEach(async () => {
   await act(() => view?.close());
   view = undefined;
+  await host?.close();
   await reads?.[Symbol.asyncDispose]();
   reads = undefined;
-  onDbChanged = undefined;
-  onCitedByInvalidated = undefined;
-  onInvalidated = undefined;
-  onActiveLeafChange = undefined;
-  onMetadataChanged = undefined;
   document.body.replaceChildren();
 });
 
@@ -428,7 +290,8 @@ describe("ReferencesView copy readiness", () => {
   it("takes copy back while the retained entries stay on screen", async () => {
     await finishRender();
 
-    await act(() => onDbChanged?.());
+    await act(() => onDbChanged());
+    await pendingRender();
 
     expect(view!.contentEl.textContent).toContain("Rivers, A. (2020).");
     expect(copyAction().getAttribute("aria-label")).toBe(
@@ -444,7 +307,8 @@ describe("ReferencesView copy readiness", () => {
   it("takes copy back but keeps the entries when the held renders go stale", async () => {
     await finishRender();
 
-    await act(() => onInvalidated?.());
+    await act(() => onInvalidated());
+    await pendingRender();
 
     // Stale entries stay on screen while the fresh render replaces them, so
     // a Zotero refresh that changes nothing never flashes the minimal list.
@@ -459,7 +323,8 @@ describe("ReferencesView copy readiness", () => {
   it("keeps held entries visible when their replacement fails", async () => {
     await finishRender();
 
-    await act(() => onDbChanged?.());
+    await act(() => onDbChanged());
+    await pendingRender();
     await finishRender(failedHeldOutcome());
 
     expect(view!.contentEl.textContent).toContain("Rivers, A. (2020).");
@@ -473,7 +338,9 @@ describe("ReferencesView copy readiness", () => {
     await finishRender();
     frontmatter = { [FIELD_CITATION_STYLE]: "new-style" };
 
-    await act(() => onMetadataChanged?.());
+    const previous = scans.at(-1);
+    await act(() => onMetadataChanged());
+    await vi.waitFor(() => expect(scans.at(-1)).not.toBe(previous));
     await finishScan();
 
     expect(view!.contentEl.textContent).not.toContain("Rivers, A. (2020).");
@@ -561,7 +428,7 @@ describe("ReferencesView citekey resolution", () => {
     const failedScan = scans.at(-1);
     citekeyResolution = "fresh";
     await act(() => onCitedByInvalidated!());
-    expect(scans.at(-1)).not.toBe(failedScan);
+    await vi.waitFor(() => expect(scans.at(-1)).not.toBe(failedScan));
     await act(async () => {
       scans.at(-1)!.resolve({ ...citationSet, citations: [] });
     });
@@ -572,12 +439,16 @@ describe("ReferencesView citekey resolution", () => {
   });
 
   it("returns the pending label to a verdict when a rebuild settles unchanged", async () => {
-    await act(() => onActiveLeafChange!());
+    const previous = scans.at(-1);
+    await act(() => host.index.emit({ type: "membership-changed" }));
+    await vi.waitFor(() => expect(scans.at(-1)).not.toBe(previous));
     await finishScan(unresolvedSet);
 
     // No snapshot has settled before this reload reads it.
     citekeyResolution = null;
-    await act(() => onDbChanged?.());
+    host.setLookup("pending");
+    await act(() => onDbChanged());
+    await pendingRender();
     expect(view!.contentEl.textContent).toContain(
       m.references_citekey_pending({ citekey: "ghost2024" }),
     );
@@ -585,7 +456,12 @@ describe("ReferencesView citekey resolution", () => {
     // The rebuild settles with the maps unchanged, so no resolution-changed
     // event follows — only the state flip the settle announces.
     citekeyResolution = "fresh";
-    await act(() => onCitedByInvalidated!());
+    await act(() => onCitedByInvalidated());
+    await vi.waitFor(() =>
+      expect(view!.contentEl.textContent).toContain(
+        m.references_citekey_unresolved({ citekey: "ghost2024" }),
+      ),
+    );
 
     expect(view!.contentEl.textContent).toContain(
       m.references_citekey_unresolved({ citekey: "ghost2024" }),

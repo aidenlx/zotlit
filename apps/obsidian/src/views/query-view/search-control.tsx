@@ -4,7 +4,6 @@
 // button shows in the accent ink while the row stands.
 import { useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { useStore } from "zustand";
 
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
@@ -12,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useAnnotStore, useSetFilterQuery } from "@/views/annot-view/store";
 
 import { datasetSpec } from "./datasets";
+import { useQueryViewState } from "./model";
 import { ToolbarButton } from "./toolbar-button";
 import type { QueryView } from "./view";
 
@@ -57,7 +57,7 @@ export function SearchButton({ bar }: { bar: SearchBar }) {
 
 /** The row under the toolbar that holds the search field, while it stands. */
 export function SearchRow({ view, bar }: { view: QueryView; bar: SearchBar }) {
-  const dataset = useStore(view.state, (s) => s.view?.from);
+  const dataset = useQueryViewState(view, (s) => s.view?.from);
   const query = useAnnotStore((s) => s.filterQuery);
   const setQuery = useSetFilterQuery();
   const inputRef = useRef<HTMLInputElement>(null);

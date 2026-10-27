@@ -4,10 +4,12 @@ import { Effect, Option, Stream } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
-import { viewRuntime } from "@/lib/view-atoms";
+import { held, viewRuntime } from "@/lib/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
 import type { CitedBySnapshot } from "@/services/citation-index/service";
 import { activeKeyAtom } from "@/services/note-index/atoms";
+
+import { CitationLookup } from "./lookup-service";
 
 const citedBy = (key: string) =>
   Stream.unwrap(
@@ -37,4 +39,34 @@ export const activeCitedByAtom: Atom.Atom<CitedBySnapshot | null> = Atom.make(
     const key = get(activeKeyAtom);
     return key ? get(citedByAtom(key)) : null;
   },
+);
+
+/** The lookup publication, including an equal-revision recovery after failure. */
+export const citationLookupStateAtom = held(
+  Stream.unwrap(Effect.map(CitationLookup, (lookup) => lookup.changes)),
+  { status: "pending", revision: null, stopped: false },
+);
+
+/** Document and membership changes; readers select only their own path. */
+export const documentRevisionsAtom = held(
+  Stream.unwrap(
+    Effect.map(CitationIndex, (index) =>
+      Stream.scan(
+        index.events,
+        (): Readonly<Record<string, number>> => ({}),
+        (revisions, event) => {
+          const path =
+            event.type === "changed"
+              ? event.path
+              : event.type === "membership-changed"
+                ? "*"
+                : null;
+          return path === null
+            ? revisions
+            : { ...revisions, [path]: (revisions[path] ?? 0) + 1 };
+        },
+      ),
+    ),
+  ),
+  {},
 );

@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -6,7 +6,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { prepareRunWindow } from "./background-throttling.ts";
 import { LIST_ANNOTATIONS_JS, useListingProfile } from "./listing-profile.ts";
-import { obEval, obEvalUntil } from "./obsidian-cli.ts";
+import { cliCommand, obEval, obEvalUntil } from "./obsidian-cli.ts";
 import { PAGE } from "./page-gestures.ts";
 import {
   clearVault,
@@ -108,6 +108,55 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       withoutTarget: null,
       after: zeroCounts,
     });
+  });
+
+  it("materializes the CSL style selected by a note through the CLI (#1793)", async () => {
+    const styleId = "http://www.zotero.org/styles/chinese-gb7714-1987-numeric";
+    const note = "CSL CLI regression.md";
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obEval(
+        vaultId,
+        `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note)});if(file)await app.vault.delete(file);return true;})()`,
+      );
+    });
+    await obEval(
+      vaultId,
+      `(async()=>{await app.vault.create(${JSON.stringify(note)},${JSON.stringify(`---\nzotlit-csl: ${styleId}\n---\nA draft.\n`)});return true;})()`,
+    );
+    const selected = JSON.parse(
+      await cliCommand(vaultId, "zotlit:csl", { args: { style: styleId } }),
+    );
+    expect(selected).toMatchObject({
+      command: "zotlit:csl",
+      styleId,
+      path: expect.any(String),
+    });
+    await obEvalUntil(
+      vaultId,
+      `app.metadataCache.getFileCache(app.vault.getFileByPath(${JSON.stringify(note)}))?.frontmatter?.["zotlit-csl"]`,
+      { expected: styleId },
+    );
+    const document = JSON.parse(
+      await cliCommand(vaultId, "zotlit:csl", {
+        args: { file: join(path, note) },
+      }),
+    );
+    expect(document).toMatchObject({
+      command: "zotlit:csl",
+      styleId,
+      path: selected.path,
+      source: { kind: "note" },
+    });
+    expect(await readFile(document.path, "utf8")).toContain(
+      `<id>${styleId}</id>`,
+    );
+    const missing = JSON.parse(
+      await cliCommand(vaultId, "zotlit:csl", {
+        args: { style: "https://example.invalid/missing-style" },
+      }),
+    );
+    expect(missing).toMatchObject({ errors: [{ code: "style-missing" }] });
   });
 
   it("shows export destinations within the named vault when the format changes", async () => {

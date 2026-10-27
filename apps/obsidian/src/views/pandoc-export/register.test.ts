@@ -18,6 +18,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -41,7 +42,6 @@ vi.mock("@/services/pandoc/styles", async (importOriginal) => {
     await importOriginal<typeof import("@/services/pandoc/styles")>();
   return {
     ...actual,
-    listInstalledStylesOrNone: () => Promise.resolve(zotero.styles),
     // An installed style resolves as Zotero lists it; anything else takes the
     // real resolver's answer for a data directory that holds no styles.
     resolveInstalledStyle: (
@@ -49,7 +49,7 @@ vi.mock("@/services/pandoc/styles", async (importOriginal) => {
     ) => {
       const listed = zotero.styles.find(({ id }) => id === args[1].styleId);
       return listed
-        ? Promise.resolve({
+        ? Effect.succeed({
             kind: "installed" as const,
             styleId: listed.id,
             title: listed.title,
@@ -66,6 +66,9 @@ vi.mock("@/services/pandoc/export", async (importOriginal) => ({
     exportRun.unload
       ? Effect.interrupt
       : Effect.succeed({ output: new Uint8Array() }),
+}));
+vi.mock("@/services/pandoc/installed-styles", () => ({
+  listInstalledStylesOrNone: () => Effect.succeed(zotero.styles),
 }));
 const DATA_DIR = "/zotero";
 const BASE_PATH = "/vault";
@@ -142,6 +145,7 @@ function openVault({
   });
 
   const deps = stubService<PandocExportDeps>("PandocExportDeps", {
+    fileSystem: nodeFileSystem,
     app,
     pandocEngine: {
       binary: stubService<ManagedBinaryApi<CitationEngine>>("PandocEngine", {

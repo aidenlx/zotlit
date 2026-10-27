@@ -77,15 +77,12 @@ import {
 } from "./excerpt-parts";
 import { CARD_SELECTOR } from "./history";
 import {
-  capabilityOf,
-  fieldDraft,
-  isEditing,
-  selectedAlone,
   useAnnotStore,
   useEditingTarget,
   useMutation,
   useToggleSelectedTag,
-} from "./store";
+} from "./model";
+import { capabilityOf, fieldDraft, isEditing, selectedAlone } from "./state";
 import { tagChipVariants } from "./tag-chip";
 import { autoTags, HeldTagsPanel, TagEditor } from "./tag-editor";
 import type { EndTagSession } from "./tag-editor";

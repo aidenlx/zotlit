@@ -21,9 +21,9 @@ import {
 } from "@/services/note-index/__fixtures__";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
 
+import { makeNotesHost } from "./__fixtures__/notes-host";
+import type { NotesHostDeps as LiteratureNotesDeps } from "./__fixtures__/notes-host";
 import { openTextFileView } from "./__fixtures__/open-text-view";
-import { literatureNotes } from "./table-notes";
-import type { LiteratureNotesDeps } from "./table-notes";
 
 vi.mock("@/views/annot-view/register", () => ({
   activateAnnotView: vi.fn(),
@@ -73,6 +73,7 @@ async function setup(
   const getCache = vi.fn((path: string) => host.metadataCache.getCache(path));
   const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
     runtime: testRuntime(),
+    getFile: (path) => host.vault.getFileByPath(path),
     app: stubService<LiteratureNotesDeps["app"]>("App", {
       metadataCache: stubService<App["metadataCache"]>("MetadataCache", {
         getCache,
@@ -117,7 +118,8 @@ async function setup(
     host.metadataCache.change(file, cache({ properties }));
     await noteIndex.whenSettled();
   };
-  return { notes: literatureNotes(deps), host, getCache, setType, write };
+  const notesHost = owned.use(await makeNotesHost(deps));
+  return { notes: notesHost.notes, host, getCache, setType, write };
 }
 
 describe("literatureNotes vault properties", () => {
@@ -403,6 +405,7 @@ describe("literatureNotes vault property writes", () => {
     });
     const deps = stubService<LiteratureNotesDeps>("LiteratureNotesDeps", {
       runtime: testRuntime(),
+      getFile: (path) => host.app.vault.getFileByPath(path),
       app,
       noteIndex,
       profile: stubService<LiteratureNotesDeps["profile"]>("Profile", {
@@ -425,6 +428,7 @@ describe("literatureNotes vault property writes", () => {
         { createNoteInteractively: createNote, replacedKeys },
       ),
     });
+    const notesHost = owned.use(await makeNotesHost(deps));
     return {
       host,
       replaced,
@@ -433,7 +437,7 @@ describe("literatureNotes vault property writes", () => {
       changed: (of: "profile" | "template") => {
         sources[of].emit();
       },
-      notes: literatureNotes(deps),
+      notes: notesHost.notes,
       createNote,
     };
   }
@@ -620,6 +624,36 @@ describe("literatureNotes vault property writes", () => {
     expect(notes.managed("ITEMDDDD", "status", null)).toBe(false);
   });
 
+  it("updates managed cells when a renamed note's delayed Profile read finishes", async () => {
+    const { host, notes, replacedKeys } = await vault(
+      { "A.md": "---\nzotero-key: ITEMAAAA\n---\n" },
+      { replaced: { "A.md": ["status"] } },
+    );
+    const shown = vi.fn(() => notes.managed("ITEMAAAA", "status", null));
+    const off = notes.on("frontmatter-changed", shown);
+    owned.defer(off);
+    notes.managed("ITEMAAAA", "status", null);
+    await vi.waitFor(() => expect(shown).toHaveReturnedWith(true));
+
+    const started = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<Set<string>>();
+    replacedKeys.mockImplementation(async (file) => {
+      expect(file.path).toBe("Renamed.md");
+      started.resolve();
+      return completed.promise;
+    });
+    const file = host.file("A.md");
+    host.vault.renameFile("A.md", "Renamed.md");
+    expect(host.file("Renamed.md")).toBe(file);
+    // As the table does, read again on the rename and await the Profile.
+    expect(notes.managed("ITEMAAAA", "status", null)).toBe(false);
+    await started.promise;
+    shown.mockClear();
+    completed.resolve(new Set(["status"]));
+    await vi.waitFor(() => expect(shown).toHaveReturnedWith(true));
+    expect(shown).toHaveBeenCalledTimes(1);
+  });
+
   it("reads a note's Profile once, and again when that note's frontmatter changes", async () => {
     const { host, notes, replaced, replacedKeys } = await vault(
       {
@@ -674,7 +708,7 @@ describe("literatureNotes vault property writes", () => {
       // The field is set to the replace strategy.
       replaced["A.md"] = ["status"];
       changed(of);
-      expect(listener).toHaveBeenCalled();
+      await vi.waitFor(() => expect(listener).toHaveBeenCalled());
       notes.managed("ITEMAAAA", "status", null);
       await vi.waitFor(() =>
         expect(notes.managed("ITEMAAAA", "status", null)).toBe(true),

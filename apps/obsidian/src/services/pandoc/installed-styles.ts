@@ -1,19 +1,18 @@
 // The CSL styles Zotero installed, as Effect code over the FileSystem service.
-// Discovery reads the same files the Promise reader in `./styles` reads, and
-// each caller chooses what to show where a folder refuses to be listed.
+// Each caller chooses what to show where a folder refuses to be listed.
 
-import { Effect, FileSystem } from "effect";
-import type { PlatformError } from "effect";
+import { Effect } from "effect";
+import type { FileSystem, PlatformError } from "effect";
 import { join } from "node:path";
 
 import { withLogCategory } from "@/lib/effect-log-category";
 
 import {
-  CSL_EXT,
   HIDDEN_DIR,
+  readStyleDir,
+  readStyleDirOrEmpty,
   selectableStyles,
   STYLES_DIR,
-  styleFileOf,
 } from "./styles";
 import type { InstalledCslStyle } from "./styles";
 
@@ -33,38 +32,20 @@ export const listInstalledStyles = Effect.fn("CslStyles.listInstalled")(
   > {
     const root = join(dataDir, STYLES_DIR);
     return selectableStyles(
-      yield* listStyleDir(root),
-      yield* listStyleDir(join(root, HIDDEN_DIR)),
+      (yield* readStyleDir(root)).files,
+      (yield* readStyleDir(join(root, HIDDEN_DIR))).files,
     );
   },
   withLogCategory("pandoc", "styles"),
 );
-
-/** The styles one folder holds; a folder that is absent holds none. */
-const listStyleDir = Effect.fnUntraced(function* (dir: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const names = yield* fs
-    .readDirectory(dir)
-    .pipe(
-      Effect.catchReason("PlatformError", "NotFound", () =>
-        Effect.succeed<string[]>([]),
-      ),
+/** Dialogs retain the readable styles when either directory refuses to be listed. */
+export const listInstalledStylesOrNone = Effect.fn("CslStyles.listReadable")(
+  function* (dataDir: string) {
+    const root = join(dataDir, STYLES_DIR);
+    return selectableStyles(
+      (yield* readStyleDirOrEmpty(root)).files,
+      (yield* readStyleDirOrEmpty(join(root, HIDDEN_DIR))).files,
     );
-  const files = yield* Effect.forEach(
-    names.filter((name) => name.endsWith(CSL_EXT)),
-    (name) => {
-      const path = join(dir, name);
-      return fs.readFileString(path).pipe(
-        Effect.map((xml) => styleFileOf(path, xml)),
-        Effect.catchTag("PlatformError", (error) =>
-          Effect.as(
-            Effect.logWarning("Cannot read a CSL style file", path, error),
-            undefined,
-          ),
-        ),
-      );
-    },
-    { concurrency: "unbounded" },
-  );
-  return files.filter((file) => file !== undefined);
-});
+  },
+  withLogCategory("pandoc", "styles"),
+);

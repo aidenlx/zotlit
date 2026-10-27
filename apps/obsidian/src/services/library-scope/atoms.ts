@@ -26,3 +26,27 @@ export const availableLibrariesAtom = Atom.map(
   libraryScopeStateAtom,
   (state) => state.all?.available ?? [],
 );
+
+/** Available Libraries changed after the initial scope resolution. */
+export const libraryAvailabilityRevisionAtom = held(
+  Stream.unwrap(
+    Effect.map(LibraryScope, (scope) =>
+      scope.changes.pipe(
+        Stream.map((state) => state.all),
+        Stream.changes,
+        Stream.drop(1),
+        Stream.scan(
+          () => 0,
+          (revision) => revision + 1,
+        ),
+      ),
+    ),
+  ),
+  0,
+);
+
+/** Raw Libraries, independent of the scope selected for library searches. */
+export const libraryRowsAtom = Atom.map(
+  libraryScopeStateAtom,
+  (state) => state.libraryRows,
+);

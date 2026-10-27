@@ -5,14 +5,20 @@ import {
   TextComponent,
   controlsOf,
 } from "@mock/obsidian";
+import { Stream } from "effect";
+import type { TFile } from "obsidian";
 import type { App, PaneType, SplitDirection, WorkspaceLeaf } from "obsidian";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
-import { createSharedPartial } from "./new-partial";
+import { makeWorkbenchHost } from "./__fixtures__";
+import type { WorkbenchHostDeps } from "./__fixtures__";
+import { makeWorkbenchCommand } from "./command";
+import type { CreateSharedPartialOptions } from "./new-partial";
 import type { SharedPartialActions } from "./new-partial";
+import { createSharedPartialEffect } from "./partial-command";
 import { openTemplateWorkbench } from "./register";
 
 vi.mock("./register", () => ({ openTemplateWorkbench: vi.fn(async () => {}) }));
@@ -42,19 +48,47 @@ const app = stubService<App>("App", {
   }),
 });
 
-function actions(taken: readonly string[] = []): SharedPartialActions & {
-  createPartial: ReturnType<typeof vi.fn>;
-} {
+function actions(taken: readonly string[] = []) {
   return {
-    ready: Promise.resolve(),
     getPartialNames: () => taken,
-    createPartial: vi.fn(async (name: string) => ({
-      path: `templates/zotlit-partial.${name}.md`,
-    })),
-  } as unknown as SharedPartialActions & {
-    createPartial: ReturnType<typeof vi.fn>;
+    createPartial: vi.fn(async (name: string) =>
+      stubService<TFile>("TFile", {
+        path: `templates/zotlit-partial.${name}.md`,
+      }),
+    ),
+  } satisfies SharedPartialActions;
+}
+
+function partialFlow(
+  app: App,
+  template: SharedPartialActions,
+  options: CreateSharedPartialOptions = {},
+) {
+  const host = makeWorkbenchHost({
+    app,
+    templates: stubService<WorkbenchHostDeps["templates"]>("Template", {
+      ...template,
+      loaded: true,
+      getPartialDocuments: () => [],
+      "compile-status-changed": Stream.empty,
+    }),
+  });
+  const command = makeWorkbenchCommand(
+    host.registry,
+    (options: CreateSharedPartialOptions) =>
+      createSharedPartialEffect(app, options),
+  );
+  host.own(() => command[Symbol.dispose]());
+  return {
+    result: command.run(options),
+    close: () => command[Symbol.dispose](),
   };
 }
+const createSharedPartial = (
+  app: App,
+  template: SharedPartialActions,
+  options: CreateSharedPartialOptions = {},
+) => partialFlow(app, template, options).result;
 
 /** The prompt the flow opened, with its body built. */
 async function prompt(): Promise<Modal> {
@@ -157,4 +191,15 @@ it("answers null when the reader dismisses the prompt", async () => {
 
   await expect(flow).resolves.toBeNull();
   expect(template.createPartial).not.toHaveBeenCalled();
+});
+
+it("closes the name prompt when its Workbench closes", async () => {
+  const template = actions();
+  const flow = partialFlow(app, template);
+  const result = flow.result.catch((error: unknown) => error);
+  const modal = await prompt();
+  flow.close();
+  await vi.waitFor(() => expect(modal.isOpen).toBe(false));
+  expect(template.createPartial).not.toHaveBeenCalled();
+  expect(await result).toBeInstanceOf(Error);
 });

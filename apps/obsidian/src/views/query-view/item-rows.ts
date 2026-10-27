@@ -6,12 +6,35 @@
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import { useSyncExternalStore } from "react";
 import type { DragEvent, FocusEvent, HTMLAttributes, MouseEvent } from "react";
-import type { StoreApi } from "zustand/vanilla";
+
+type ItemSelection = { readonly key: string | null };
 
 /** What the host does on the gestures over one Item row. */
 export interface ItemRowGestures {
   /** The Indexed Key of the selected row; `null` for none. */
-  readonly selection: StoreApi<{ readonly key: string | null }>;
+  readonly selection: {
+    getState(): { readonly key: string | null };
+    getInitialState(): { readonly key: string | null };
+    setState: {
+      (
+        partial:
+          | ItemSelection
+          | Partial<ItemSelection>
+          | ((state: ItemSelection) => ItemSelection | Partial<ItemSelection>),
+        replace?: false,
+      ): void;
+      (
+        state: ItemSelection | ((state: ItemSelection) => ItemSelection),
+        replace: true,
+      ): void;
+    };
+    subscribe(
+      listener: (
+        state: { readonly key: string | null },
+        previous: { readonly key: string | null },
+      ) => void,
+    ): () => void;
+  };
   /** The Indexed Key of the row the list shows first; `null` for none. */
   first(): string | null;
   /** A click on the row, away from its links and buttons. */

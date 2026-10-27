@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
 import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
 import "@mock/dom-parser";
@@ -60,6 +61,7 @@ it.effect.each(["Profile", "preference override"] as const)(
             Layer.provide(Layer.succeedContext(dependencies)),
             Layer.provide(Layer.succeed(ZoteroPref, pref)),
             Layer.provide(layerQueryClients),
+            Layer.provide(NodeFileSystem.layer),
             Layer.provide(
               Layer.succeed(
                 ZoteroReads,

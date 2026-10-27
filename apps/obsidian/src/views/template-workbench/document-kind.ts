@@ -5,20 +5,10 @@ import type { TFile } from "obsidian";
 
 import type { WorkbenchDocumentKind } from "@zotlit/workbench/document";
 
-import type { EffectBridge } from "@/lib/effect-bridge";
-import type { PluginSettings } from "@/services/settings/service";
 import {
   classifyTemplateFolderFile,
   inTemplateFolder,
 } from "@/services/template/defaults";
-
-/** The template folder the classifier reads within, as the service reads it. */
-export function templateFolderOf(
-  settings: Pick<PluginSettings["Service"], "current">,
-  bridge: Pick<EffectBridge, "runSync">,
-): string {
-  return bridge.runSync(settings.current)["template.folder"];
-}
 
 /**
  * The kind the Template Workbench View opens `file` as. Every kind the
