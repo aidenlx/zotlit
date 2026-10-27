@@ -162,15 +162,15 @@ export async function verifyExternalAnnotationLock({
   // press that says the Lock Reason says it for the lock alone.
   await obRunUntil(
     vaultId,
-    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+    async ({ zotlit }, { attachmentKey }) => {
       const { annotationRepository: repository, bridge } = zotlit.services;
       await bridge.runPromise(repository.probe);
-      const list = await bridge.runPromise(repository.read(__typedArg0));
+      const list = await bridge.runPromise(repository.read(attachmentKey));
       return `${String(list?.source.kind)}/${
-        bridge.runSync(repository.capabilityFor(__typedArg1)).kind
+        bridge.runSync(repository.capabilityFor(attachmentKey)).kind
       }`;
     },
-    { __typedArg0: attachment.key, __typedArg1: attachment.key },
+    { attachmentKey: attachment.key },
     {
       ready: (value) => value === "zotero-local-api/writable",
       what: "lock.ts:174",
@@ -184,21 +184,21 @@ export async function verifyExternalAnnotationLock({
     // under test.
     await obRunUntil(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { annotationKey }) => {
         const card = (
           app.workspace.getLeavesOfType(
             "zotero-annotation-view",
           ) as AnnotationLeaf[]
         )[0]?.view?.containerEl.querySelector<HTMLElement>(
           `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-            __typedArg0,
+            annotationKey,
           )}]`,
         )!;
         if (!card) return "no card";
         if (!card!.hasAttribute("data-alone")) card!.click();
         return card!.hasAttribute("data-alone");
       },
-      { __typedArg0: annotationKey },
+      { annotationKey },
       { what: "lock.ts:191" },
     );
   };
@@ -206,7 +206,7 @@ export async function verifyExternalAnnotationLock({
   const dimmed = (node: string) =>
     obRun(
       vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
+      async ({ app }, { annotationKey, nodeSelector }) => {
         const node = (
           app.workspace.getLeavesOfType(
             "zotero-annotation-view",
@@ -214,45 +214,45 @@ export async function verifyExternalAnnotationLock({
         )[0]?.view?.containerEl
           .querySelector<HTMLElement>(
             `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-              __typedArg0,
+              annotationKey,
             )}]`,
           )!
-          .querySelector<HTMLElement>(__typedArg1)!;
+          .querySelector<HTMLElement>(nodeSelector)!;
         return String(
           node ? String(node.hasAttribute("data-blocked")) : "absent",
         );
       },
-      { __typedArg0: annotationKey, __typedArg1: node },
+      { annotationKey, nodeSelector: node },
     );
 
   // The card quotes the text Zotero took from the page, and shows the lock
   // with the Lock Reason as its name.
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { annotationKey }) => {
       return !!app.workspace
         .getLeavesOfType("zotero-annotation-view")[0]
         ?.view?.containerEl.querySelector<HTMLElement>(
           `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-            __typedArg0,
+            annotationKey,
           )}]`,
         )
         ?.querySelector<HTMLElement>(".zt-annot-lock")!;
     },
-    { __typedArg0: annotationKey },
+    { annotationKey },
     { what: "lock.ts:209" },
   );
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { annotationKey }) => {
         const card = (
           app.workspace.getLeavesOfType(
             "zotero-annotation-view",
           ) as AnnotationLeaf[]
         )[0]?.view?.containerEl.querySelector<HTMLElement>(
           `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-            __typedArg0,
+            annotationKey,
           )}]`,
         )!;
         return {
@@ -265,7 +265,7 @@ export async function verifyExternalAnnotationLock({
             .getAttribute("aria-label"),
         };
       },
-      { __typedArg0: annotationKey },
+      { annotationKey },
     ),
   ).toEqual({
     quote: QUOTED_TEXT,
@@ -290,7 +290,7 @@ export async function verifyExternalAnnotationLock({
     await clearNotices(vaultId);
     await obRun(
       vaultId,
-      async ({ app, page }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+      async ({ app, page }, { annotationKey, node, verb }) => {
         const { press } = page;
         press(
           (
@@ -300,33 +300,33 @@ export async function verifyExternalAnnotationLock({
           )[0]?.view?.containerEl
             .querySelector<HTMLElement>(
               `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                __typedArg0,
+                annotationKey,
               )}]`,
             )!
-            .querySelector<HTMLElement>(__typedArg1)!,
-          __typedArg2,
+            .querySelector<HTMLElement>(node)!,
+          verb,
         );
         return String(true);
       },
-      { __typedArg0: annotationKey, __typedArg1: node, __typedArg2: verb },
+      { annotationKey, node, verb },
     );
     // The press says the Lock Reason, and offers nothing to press: a lock
     // is not lifted from here.
     await obRunUntil(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { reason }) => {
         return page
           .windowDocuments()
           .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
-          .filter((node) => node.textContent.includes(__typedArg0)).length;
+          .filter((node) => node.textContent.includes(reason)).length;
       },
-      { __typedArg0: reason },
+      { reason },
       { ready: (value) => value === 1, what: "lock.ts:249" },
     );
     expect(
       await obRun(
         vaultId,
-        async ({ page }, { __typedArg0 }) => {
+        async ({ page }, { reason }) => {
           return String(
             String(
               page
@@ -334,12 +334,12 @@ export async function verifyExternalAnnotationLock({
                 .flatMap((doc) => [
                   ...doc.querySelectorAll<HTMLElement>(".notice"),
                 ])
-                .filter((node) => node.textContent.includes(__typedArg0))[0]!
+                .filter((node) => node.textContent.includes(reason))[0]!
                 .querySelectorAll<HTMLButtonElement>("button").length,
             ),
           );
         },
-        { __typedArg0: reason },
+        { reason },
       ),
       `a press on ${verb} offers a button`,
     ).toBe("0");
@@ -348,20 +348,20 @@ export async function verifyExternalAnnotationLock({
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { annotationKey }) => {
         return String(
           String(
             !!(app.workspace
               .getLeavesOfType("zotero-annotation-view")[0]
               ?.view?.containerEl.querySelector<HTMLElement>(
                 `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                  __typedArg0,
+                  annotationKey,
                 )}]`,
               )!).querySelector<HTMLElement>(".cm-content, input")!,
           ),
         );
       },
-      { __typedArg0: annotationKey },
+      { annotationKey },
     ),
   ).toBe("false");
 
@@ -370,7 +370,7 @@ export async function verifyExternalAnnotationLock({
   await clearNotices(vaultId);
   await obRun(
     vaultId,
-    async ({ app, page }, { __typedArg0 }) => {
+    async ({ app, page }, { annotationKey }) => {
       const { press } = page;
       press(
         ((
@@ -379,7 +379,7 @@ export async function verifyExternalAnnotationLock({
           ) as AnnotationLeaf[]
         )[0]?.view?.containerEl.querySelector<HTMLElement>(
           `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-            __typedArg0,
+            annotationKey,
           )}]`,
         )!).querySelector<HTMLElement>(
           ".clickable-icon:has(svg.lucide-more-horizontal)",
@@ -388,58 +388,58 @@ export async function verifyExternalAnnotationLock({
       );
       return String(true);
     },
-    { __typedArg0: annotationKey },
+    { annotationKey },
   );
 
   await obRunUntil(
     vaultId,
-    async (_context, { __typedArg0 }) => {
+    async (_context, { menuItemLabel }) => {
       return !![
         ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
-      ].find((node) => node.textContent.trim() === __typedArg0);
+      ].find((node) => node.textContent.trim() === menuItemLabel);
     },
-    { __typedArg0: m.annot_view_menu_delete() },
+    { menuItemLabel: m.annot_view_menu_delete() },
     { what: "lock.ts:279" },
   );
   await obRun(
     vaultId,
-    async ({ page }, { __typedArg0 }) => {
+    async ({ page }, { menuItemLabel }) => {
       const { press } = page;
       press(
         [...document.querySelectorAll<HTMLElement>(".menu .menu-item")].find(
-          (node) => node.textContent.trim() === __typedArg0,
+          (node) => node.textContent.trim() === menuItemLabel,
         ),
         "delete entry",
       );
       return String(true);
     },
-    { __typedArg0: m.annot_view_menu_delete() },
+    { menuItemLabel: m.annot_view_menu_delete() },
   );
   await obRunUntil(
     vaultId,
-    async ({ page }, { __typedArg0 }) => {
+    async ({ page }, { reason }) => {
       return page
         .windowDocuments()
         .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
-        .filter((node) => node.textContent.includes(__typedArg0)).length;
+        .filter((node) => node.textContent.includes(reason)).length;
     },
-    { __typedArg0: reason },
+    { reason },
     { ready: (value) => value === 1, what: "lock.ts:289" },
   );
   expect(
     await obRun(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { reason }) => {
         return {
           buttons: page
             .windowDocuments()
             .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
-            .filter((node) => node.textContent.includes(__typedArg0))[0]!
+            .filter((node) => node.textContent.includes(reason))[0]!
             .querySelectorAll<HTMLButtonElement>("button").length,
           modals: document.querySelectorAll<HTMLElement>(".modal").length,
         };
       },
-      { __typedArg0: reason },
+      { reason },
     ),
   ).toEqual({ buttons: 0, modals: 0 });
   await obRun(
@@ -472,51 +472,51 @@ export async function verifyExternalAnnotationLock({
 
   await obRunUntil(
     vaultId,
-    async ({ page }, { __typedArg0, __typedArg1 }) => {
+    async ({ page }, { attachmentPath, annotationKey }) => {
       const rect = page
-        .pdfView(__typedArg0)
+        .pdfView(attachmentPath)
         ?.containerEl.querySelector<HTMLElement>(
           `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
-            __typedArg1,
+            annotationKey,
           )}]`,
         )
         ?.getBoundingClientRect();
       return !!rect && rect.width > 0;
     },
-    { __typedArg0: attachmentPath, __typedArg1: annotationKey },
+    { attachmentPath, annotationKey },
     { what: "lock.ts:320" },
   );
   await obRun(
     vaultId,
-    async ({ page }, { __typedArg0, __typedArg1 }) => {
+    async ({ page }, { attachmentPath, annotationKey }) => {
       const { tap } = page;
       const rect = (page
-        .pdfView(__typedArg0)
+        .pdfView(attachmentPath)
         ?.containerEl.querySelector<HTMLElement>(
           `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
-            __typedArg1,
+            annotationKey,
           )}]`,
         )!).getBoundingClientRect();
       tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
       return String(true);
     },
-    { __typedArg0: attachmentPath, __typedArg1: annotationKey },
+    { attachmentPath, annotationKey },
   );
   await obRunUntil(
     vaultId,
-    async ({ page }, { __typedArg0, __typedArg1 }) => {
+    async ({ page }, { attachmentPath, annotationKey }) => {
       return (
         !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup")! &&
         (page
-          .pdfView(__typedArg0)
+          .pdfView(attachmentPath)
           ?.containerEl.querySelector<HTMLElement>(
             `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(
-              __typedArg1,
+              annotationKey,
             )}]`,
           )!).classList.contains("is-selected")
       );
     },
-    { __typedArg0: attachmentPath, __typedArg1: annotationKey },
+    { attachmentPath, annotationKey },
     { what: "lock.ts:332" },
   );
   expect(
@@ -551,18 +551,18 @@ export async function verifyExternalAnnotationLock({
   expect(
     await obRun(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { attachmentPath }) => {
         return String(
           String(
             page
-              .pdfView(__typedArg0)!
+              .pdfView(attachmentPath)!
               .containerEl.querySelectorAll<HTMLElement>(
                 ".zt-pdf-annotation-handle",
               ).length,
           ),
         );
       },
-      { __typedArg0: attachmentPath },
+      { attachmentPath },
     ),
   ).toBe("0");
   // Each dimmed verb takes its press and runs nothing: it opens no menu, no
@@ -572,17 +572,17 @@ export async function verifyExternalAnnotationLock({
     await clearNotices(vaultId);
     await obRun(
       vaultId,
-      async ({ page }, { __typedArg0, __typedArg1 }) => {
+      async ({ page }, { verb }) => {
         const { press } = page;
         press(
           document.querySelector<HTMLElement>(
-            `.zt-pdf-mark-popup [data-zt-verb=${JSON.stringify(__typedArg0)}]`,
+            `.zt-pdf-mark-popup [data-zt-verb=${JSON.stringify(verb)}]`,
           )!,
-          `popup ${__typedArg1}`,
+          `popup ${verb}`,
         );
         return String(true);
       },
-      { __typedArg0: verb, __typedArg1: verb },
+      { verb },
     );
     // The press and whatever it would open are done: the gesture settles.
     await settledGesture(vaultId, attachmentPath);
@@ -646,14 +646,14 @@ export async function verifyExternalAnnotationLock({
   });
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { annotationKey }) => {
       const card = (
         app.workspace.getLeavesOfType(
           "zotero-annotation-view",
         ) as AnnotationLeaf[]
       )[0]?.view?.containerEl.querySelector<HTMLElement>(
         `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-          __typedArg0,
+          annotationKey,
         )}]`,
       )!;
       return (
@@ -662,24 +662,24 @@ export async function verifyExternalAnnotationLock({
         !!card!.querySelector<HTMLElement>(".zt-annot-lock")!
       );
     },
-    { __typedArg0: annotationKey },
+    { annotationKey },
     { what: "lock.ts:397" },
   );
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { annotationKey }) => {
         return (app.workspace
           .getLeavesOfType("zotero-annotation-view")[0]
           ?.view?.containerEl.querySelector<HTMLElement>(
             `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-              __typedArg0,
+              annotationKey,
             )}]`,
           )!)
           .querySelector<HTMLElement>(".zt-annot-lock")!
           .getAttribute("aria-label");
       },
-      { __typedArg0: annotationKey },
+      { annotationKey },
     ),
   ).toBe(m.annot_view_lock_label({ reason }));
   await selectCardAlone();
@@ -690,7 +690,7 @@ export async function verifyExternalAnnotationLock({
   await clearNotices(vaultId);
   await obRun(
     vaultId,
-    async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+    async ({ app, page }, { annotationKey, colour }) => {
       const { press } = page;
       press(
         (
@@ -700,36 +700,36 @@ export async function verifyExternalAnnotationLock({
         )[0]?.view?.containerEl
           .querySelector<HTMLElement>(
             `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-              __typedArg0,
+              annotationKey,
             )}]`,
           )!
-          .querySelector<HTMLElement>(__typedArg1)!,
+          .querySelector<HTMLElement>(colour)!,
         "colour",
       );
       return String(true);
     },
-    { __typedArg0: annotationKey, __typedArg1: cardVerbs.colour },
+    { annotationKey, colour: cardVerbs.colour },
   );
   await obRunUntil(
     vaultId,
-    async ({ page }, { __typedArg0 }) => {
+    async ({ page }, { reason }) => {
       return page
         .windowDocuments()
         .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
-        .filter((node) => node.textContent.includes(__typedArg0)).length;
+        .filter((node) => node.textContent.includes(reason)).length;
     },
-    { __typedArg0: reason },
+    { reason },
     { ready: (value) => value === 1, what: "lock.ts:421" },
   );
   expect(
     await obRun(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { reason }) => {
         return {
           buttons: page
             .windowDocuments()
             .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
-            .filter((node) => node.textContent.includes(__typedArg0))[0]!
+            .filter((node) => node.textContent.includes(reason))[0]!
             .querySelectorAll<HTMLButtonElement>("button").length,
           menus: page
             .windowDocuments()
@@ -740,7 +740,7 @@ export async function verifyExternalAnnotationLock({
             ),
         };
       },
-      { __typedArg0: reason },
+      { reason },
     ),
   ).toEqual({ buttons: 0, menus: 0 });
 

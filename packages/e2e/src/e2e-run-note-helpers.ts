@@ -139,10 +139,10 @@ function hasIndexedNotes(
 ): Promise<boolean> {
   return obRunUntil(
     vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
-      return zotlit.services.noteIndex.getNotesByItemKey(__typedArg0).length;
+    async ({ zotlit }, { indexedKey }) => {
+      return zotlit.services.noteIndex.getNotesByItemKey(indexedKey).length;
     },
-    { __typedArg0: indexedKey },
+    { indexedKey },
     { ready: (value) => value === count, what: "e2e-run-note-helpers.ts:81" },
   ).then(
     () => true,
@@ -263,17 +263,17 @@ async function selectItemSuggestion(
 ): Promise<string> {
   await obRun(
     vaultId,
-    async (_context, { __typedArg0 }) => {
+    async (_context, { query }) => {
       var input = Array.from(activeDocument.querySelectorAll(".prompt"))
         .at(-1)!
         .querySelector("input")!;
-      input.value = __typedArg0;
+      input.value = query;
       input.dispatchEvent(
         new input.ownerDocument.defaultView!.Event("input", { bubbles: true }),
       );
       return String(true);
     },
-    { __typedArg0: query },
+    { query },
   );
   return hoverSuggestion(vaultId, { key });
 }
@@ -293,20 +293,20 @@ async function pressPromptKey(
   const keyCode = key === "Enter" ? 13 : 27;
   await obRun(
     vaultId,
-    async (_context, { __typedArg0 }) => {
+    async (_context, { keyEventInit }) => {
       Array.from(activeDocument.querySelectorAll(".prompt"))
         .at(-1)!
         .querySelector("input")!
         .dispatchEvent(
           new (activeWindow as Window & typeof globalThis).KeyboardEvent(
             "keydown",
-            __typedArg0,
+            keyEventInit,
           ),
         );
       return String(true);
     },
     {
-      __typedArg0: {
+      keyEventInit: {
         key,
         code: key,
         keyCode,

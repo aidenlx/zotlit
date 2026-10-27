@@ -24,21 +24,14 @@ export async function verifyAnnotationInsert(
       vaultId,
       async (
         { app, zotlit, page },
-        {
-          __typedArg0,
-          __typedArg1,
-          __typedArg2,
-          __typedArg3,
-          __typedArg4,
-          __typedArg5,
-        },
+        { effectPath, hostNotePath, otherNotePath, host },
       ) => {
         const s = (page.scratch.__zotlitInsertTrial = {
           layout: app.workspace.getLayout(),
         } as InsertTrial);
         const services = zotlit.services;
         s.services = services;
-        await page.installAnnotationPreparation(services, s, __typedArg0);
+        await page.installAnnotationPreparation(services, s, effectPath);
         s.link = app.fileManager.generateMarkdownLink;
         app.fileManager.generateMarkdownLink = new Proxy(s.link, {
           apply: (
@@ -67,15 +60,15 @@ export async function verifyAnnotationInsert(
         );
         for (const leaf of app.workspace.getLeavesOfType("pdf")) leaf.detach();
         const file =
-          app.vault.getFileByPath(__typedArg1)! ??
-          (await app.vault.create(__typedArg2, "before TARGET after"));
+          app.vault.getFileByPath(hostNotePath)! ??
+          (await app.vault.create(hostNotePath, "before TARGET after"));
         s.file = file;
         s.otherFile =
-          app.vault.getFileByPath(__typedArg3)! ??
-          (await app.vault.create(__typedArg4, "other editor"));
+          app.vault.getFileByPath(otherNotePath)! ??
+          (await app.vault.create(otherNotePath, "other editor"));
         s.leaf = app.workspace.getLeaf("tab") as MarkdownLeaf;
         await s.leaf.openFile(file);
-        if (__typedArg5 === "popout") app.workspace.moveLeafToPopout(s.leaf);
+        if (host === "popout") app.workspace.moveLeafToPopout(s.leaf);
         const viewLeaf = app.workspace.getRightLeaf(false) as AnnotationLeaf;
         s.viewLeaf = viewLeaf;
         await viewLeaf.setViewState({
@@ -90,12 +83,10 @@ export async function verifyAnnotationInsert(
         return String(true);
       },
       {
-        __typedArg0: effectPath,
-        __typedArg1: `Insert-${host}.md`,
-        __typedArg2: `Insert-${host}.md`,
-        __typedArg3: `Insert-other-${host}.md`,
-        __typedArg4: `Insert-other-${host}.md`,
-        __typedArg5: host,
+        effectPath,
+        hostNotePath: `Insert-${host}.md`,
+        otherNotePath: `Insert-other-${host}.md`,
+        host,
       },
     );
     await obRunUntil(
@@ -293,22 +284,24 @@ export async function verifyAnnotationInsert(
       );
       await obRunUntil(
         vaultId,
-        async ({ page }, { __typedArg0 }) => {
-          return page.scratch.__zotlitInsertTrial!.finished === __typedArg0;
+        async ({ page }, { expectedFinished }) => {
+          return (
+            page.scratch.__zotlitInsertTrial!.finished === expectedFinished
+          );
         },
-        { __typedArg0: mode === "supersede" ? 2 : 1 },
+        { expectedFinished: mode === "supersede" ? 2 : 1 },
         { what: "annotation-insert.ts:128" },
       );
       if (mode !== "escape" && mode !== "switch" && mode !== "close") {
         await obRunUntil(
           vaultId,
-          async ({ page }, { __typedArg0 }) => {
+          async ({ page }, { expectedMarker }) => {
             return page.scratch
               .__zotlitInsertTrial!.editor.getValue()
-              .includes(__typedArg0);
+              .includes(expectedMarker);
           },
           {
-            __typedArg0:
+            expectedMarker:
               mode === "disabled" ? "[Zotero](zotero://" : "zotlit-excerpt-",
           },
           { what: "annotation-insert.ts:138" },

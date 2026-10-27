@@ -78,10 +78,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const result = JSON.parse(
       await obRun(
         vaultId,
-        async (
-          { app: host, page },
-          { __typedArg0, __typedArg1, __typedArg2 },
-        ) => {
+        async ({ app: host, page }, { emptyMessage, openNoteMessage }) => {
           const app = host as WalkthroughApp;
 
           const { waitFor } = page;
@@ -118,23 +115,22 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const stats = () =>
             content()?.querySelector<HTMLElement>("[data-cited-by-stats]")
               ?.textContent ?? null;
-          await waitFor(empty, __typedArg0, "Uncited literature note");
+          await waitFor(empty, emptyMessage, "Uncited literature note");
           const before = stats();
           await leaf.openFile(plain);
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          await waitFor(empty, __typedArg1, "Ordinary note");
+          await waitFor(empty, openNoteMessage, "Ordinary note");
           const withoutTarget = stats();
           await leaf.openFile(literature);
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          await waitFor(empty, __typedArg2, "Restored literature target");
+          await waitFor(empty, emptyMessage, "Restored literature target");
           return String(
             JSON.stringify({ before, withoutTarget, after: stats() }),
           );
         },
         {
-          __typedArg0: m.cited_by_empty(),
-          __typedArg1: m.cited_by_open_literature_note(),
-          __typedArg2: m.cited_by_empty(),
+          emptyMessage: m.cited_by_empty(),
+          openNoteMessage: m.cited_by_open_literature_note(),
         },
       ),
     );
@@ -153,28 +149,25 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     cleanup.defer(async () => {
       await obRun(
         vaultId,
-        async ({ app: host }, { __typedArg0 }) => {
+        async ({ app: host }, { note }) => {
           const app = host as WalkthroughApp;
 
-          const file = app.vault.getFileByPath(__typedArg0)!;
+          const file = app.vault.getFileByPath(note)!;
           if (file) await app.vault.delete(file);
           return String(true);
         },
-        { __typedArg0: note },
+        { note },
       );
     });
     await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0, __typedArg1 }) => {
+      async ({ app: host }, { note, fileContent }) => {
         const app = host as WalkthroughApp;
 
-        await app.vault.create(__typedArg0, __typedArg1);
+        await app.vault.create(note, fileContent);
         return String(true);
       },
-      {
-        __typedArg0: note,
-        __typedArg1: `---\nzotlit-csl: ${styleId}\n---\nA draft.\n`,
-      },
+      { note, fileContent: `---\nzotlit-csl: ${styleId}\n---\nA draft.\n` },
     );
     const selected = JSON.parse(
       await cliCommand(vaultId, "zotlit:csl", { args: { style: styleId } }),
@@ -186,14 +179,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     });
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { note }) => {
         const app = host as WalkthroughApp;
 
         return await app.metadataCache.getFileCache(
-          app.vault.getFileByPath(__typedArg0)!,
+          app.vault.getFileByPath(note)!,
         )?.frontmatter?.["zotlit-csl"];
       },
-      { __typedArg0: note },
+      { note },
       { ready: (value) => value === styleId, what: "walkthrough.e2e.ts:135" },
     ).then(
       () => true,
@@ -309,37 +302,34 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const notePath = "Welcome navigation.md";
     const noteId = await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { notePath }) => {
         const app = host as WalkthroughApp;
 
         for (const leaf of app.workspace.getLeavesOfType("zotlit-library"))
           leaf.detach();
-        const file = await app.vault.create(
-          __typedArg0,
-          "Keep this note open.",
-        );
+        const file = await app.vault.create(notePath, "Keep this note open.");
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.commands.executeCommandById("zotlit:open-welcome-view");
         return String(await leaf.id);
       },
-      { __typedArg0: notePath },
+      { notePath },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obRun(
         vaultId,
-        async ({ app: host }, { __typedArg0, __typedArg1 }) => {
+        async ({ app: host }, { noteId, notePath }) => {
           const app = host as WalkthroughApp;
 
-          const leaf = app.workspace.getLeafById(__typedArg0);
+          const leaf = app.workspace.getLeafById(noteId);
           leaf?.detach();
-          const file = app.vault.getFileByPath(__typedArg1)!;
+          const file = app.vault.getFileByPath(notePath)!;
           if (file) await app.vault.delete(file);
           return String(true);
         },
-        { __typedArg0: noteId, __typedArg1: notePath },
+        { noteId, notePath },
       );
     });
     await obRunUntil(
@@ -357,16 +347,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obRun(
         vaultId,
-        async ({ app: host }, { __typedArg0 }) => {
+        async ({ app: host }, { noteId }) => {
           const app = host as WalkthroughApp;
 
           return String(
-            await ((
-              app.workspace.getLeafById(__typedArg0)!.view as MarkdownView
-            ).file?.path ?? "<no file>"),
+            await ((app.workspace.getLeafById(noteId)!.view as MarkdownView)
+              .file?.path ?? "<no file>"),
           );
         },
-        { __typedArg0: noteId },
+        { noteId },
       ),
     ).toBe(notePath);
     const welcomeId = await obRun(
@@ -380,16 +369,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     );
     await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { noteId }) => {
         const app = host as WalkthroughApp;
 
-        app.workspace.setActiveLeaf(app.workspace.getLeafById(__typedArg0)!, {
+        app.workspace.setActiveLeaf(app.workspace.getLeafById(noteId)!, {
           focus: true,
         });
         app.commands.executeCommandById("zotlit:open-welcome-view");
         return String(true);
       },
-      { __typedArg0: noteId },
+      { noteId },
     );
     await obRunUntil(
       vaultId,
@@ -420,11 +409,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const notePath = "Search existing note.md";
     const leafId = await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { notePath }) => {
         const app = host as WalkthroughApp;
 
         const file = await app.vault.create(
-          __typedArg0,
+          notePath,
           "---\nzotero-key: DMRGRART\n---\nExisting literature note",
         );
         const leaf = app.workspace.getLeaf("tab");
@@ -436,33 +425,33 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         app.workspace.setActiveLeaf(welcome, { focus: true });
         return String(await leaf.id);
       },
-      { __typedArg0: notePath },
+      { notePath },
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await obRun(
         vaultId,
-        async ({ app: host, page }, { __typedArg0, __typedArg1 }) => {
+        async ({ app: host, page }, { notePath }) => {
           const app = host as WalkthroughApp;
 
           for (const leaf of page.leavesOfType("markdown"))
-            if ((leaf.view as MarkdownView).file?.path === __typedArg0)
+            if ((leaf.view as MarkdownView).file?.path === notePath)
               leaf.detach();
-          const file = app.vault.getFileByPath(__typedArg1)!;
+          const file = app.vault.getFileByPath(notePath)!;
           if (file) await app.vault.delete(file);
           return String(true);
         },
-        { __typedArg0: notePath, __typedArg1: notePath },
+        { notePath },
       );
     });
     await obRunUntil(
       vaultId,
-      async ({ zotlit }, { __typedArg0 }) => {
+      async ({ zotlit }, { notePath }) => {
         return zotlit.services.noteIndex
           .getNotesByItemKey("DMRGRART")
-          .some((file) => file.path === __typedArg0);
+          .some((file) => file.path === notePath);
       },
-      { __typedArg0: notePath },
+      { notePath },
       { what: "walkthrough.e2e.ts:274" },
     );
     await obRun(
@@ -509,35 +498,34 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     );
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { notePath }) => {
         const app = host as WalkthroughApp;
 
         return (
           (app.workspace.activeLeaf?.view as MarkdownView | undefined)?.file
-            ?.path === __typedArg0
+            ?.path === notePath
         );
       },
-      { __typedArg0: notePath },
+      { notePath },
       { what: "walkthrough.e2e.ts:299" },
     );
     expect(
       JSON.parse(
         await obRun(
           vaultId,
-          async ({ app: host, page }, { __typedArg0 }) => {
+          async ({ app: host, page }, { notePath }) => {
             const app = host as WalkthroughApp;
 
             return String(
               JSON.stringify({
                 count: page
                   .leavesOfType("markdown")
-                  .filter((leaf) => leaf.view.file?.path === __typedArg0)
-                  .length,
+                  .filter((leaf) => leaf.view.file?.path === notePath).length,
                 active: app.workspace.activeLeaf!.id,
               }),
             );
           },
-          { __typedArg0: notePath },
+          { notePath },
         ),
       ),
     ).toEqual({ count: 1, active: leafId });
@@ -655,10 +643,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const source = "Before [@rougier2014, p. 1] after\n\nEnd";
     await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { source }) => {
         const app = host as WalkthroughApp;
 
-        const file = await app.vault.create("Citation click.md", __typedArg0);
+        const file = await app.vault.create("Citation click.md", source);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
@@ -667,7 +655,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         (leaf.view as MarkdownView).editor.focus();
         return String(true);
       },
-      { __typedArg0: source },
+      { source },
     );
 
     await obRunUntil(
@@ -1189,16 +1177,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%";
     await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { initial }) => {
         const app = host as WalkthroughApp;
 
-        const file = await app.vault.create("Focus update.md", __typedArg0);
+        const file = await app.vault.create("Focus update.md", initial);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file, { state: { mode: "source", source: false } });
         app.workspace.setActiveLeaf(leaf, { focus: true });
         return String(true);
       },
-      { __typedArg0: initial },
+      { initial },
     );
     await obRunUntil(
       vaultId,
@@ -1222,7 +1210,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       const result = JSON.parse(
         await obRun(
           vaultId,
-          async ({ app: host, page }, { __typedArg0 }) => {
+          async ({ app: host, page }, { selector }) => {
             const app = host as WalkthroughApp;
 
             const { waitFor } = page;
@@ -1237,7 +1225,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 ),
             );
             const target =
-              view!.containerEl.querySelector<HTMLElement>(__typedArg0);
+              view!.containerEl.querySelector<HTMLElement>(selector);
             if (!target) throw Error("Missing focus target");
             target.focus();
             const focused = target === target.ownerDocument.activeElement;
@@ -1256,7 +1244,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               }),
             );
           },
-          { __typedArg0: selector },
+          { selector },
         ),
       );
       expect(result, selector).toEqual({
@@ -1287,29 +1275,29 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       "---\nzotero-key: DMRGRART\n---\n%%zt-managed%%\nstale\n%%/zt-managed%%\n";
     await obRun(
       vaultId,
-      async ({ app: host }, { __typedArg0, __typedArg1 }) => {
+      async ({ app: host }, { notePath, fileContent }) => {
         const app = host as WalkthroughApp;
 
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+        const file = await app.vault.create(notePath, fileContent);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file, { state: { mode: "source", source: false } });
         app.workspace.setActiveLeaf(leaf, { focus: true });
         window.focus();
         return String(true);
       },
-      { __typedArg0: notePath, __typedArg1: source },
+      { notePath, fileContent: source },
     );
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { notePath }) => {
         const app = host as WalkthroughApp;
 
         return (
-          app.metadataCache.getFileCache(app.vault.getFileByPath(__typedArg0)!)
+          app.metadataCache.getFileCache(app.vault.getFileByPath(notePath)!)
             ?.frontmatter?.["zotero-key"] === "DMRGRART"
         );
       },
-      { __typedArg0: notePath },
+      { notePath },
       { what: "walkthrough.e2e.ts:703" },
     );
     await obRun(
@@ -1325,28 +1313,28 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
     await obRunUntil(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { notePath }) => {
         return (
           page
             .leavesOfType("markdown")
-            .find((leaf) => leaf.view.file?.path === __typedArg0)!
+            .find((leaf) => leaf.view.file?.path === notePath)!
             .view.editor.getValue()
             .split("[!note]").length > 2
         );
       },
-      { __typedArg0: notePath },
+      { notePath },
       { what: "walkthrough.e2e.ts:715" },
     );
     const result = JSON.parse(
       await obRun(
         vaultId,
-        async ({ app: host, page }, { __typedArg0 }) => {
+        async ({ app: host, page }, { notePath }) => {
           const app = host as WalkthroughApp;
 
           const { measure, waitFor } = page;
           const view = page
               .leavesOfType("markdown")
-              .find((leaf) => leaf.view.file?.path === __typedArg0)!.view,
+              .find((leaf) => leaf.view.file?.path === notePath)!.view,
             editor = view.editor,
             cm = editor.cm;
           let changed = 0;
@@ -1391,7 +1379,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             }),
           );
         },
-        { __typedArg0: notePath },
+        { notePath },
       ),
     );
     expect(result.accepted).toBe(true);
@@ -1405,14 +1393,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(Math.abs(result.after.top - result.before.top)).toBeLessThan(2);
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { notePath }) => {
         const app = host as WalkthroughApp;
 
         return (
-          await app.vault.read(app.vault.getFileByPath(__typedArg0)!)
+          await app.vault.read(app.vault.getFileByPath(notePath)!)
         ).includes("Unsaved researcher text.");
       },
-      { __typedArg0: notePath },
+      { notePath },
       { what: "walkthrough.e2e.ts:752" },
     );
   });
@@ -1423,7 +1411,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       const notePath = `Popout ${kind}.md`;
       await obRun(
         vaultId,
-        async ({ app: host, zotlit }, { __typedArg0, __typedArg1 }) => {
+        async ({ app: host, zotlit }, { kind, notePath }) => {
           const app = host as WalkthroughApp;
 
           for (const type of [
@@ -1434,10 +1422,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             for (const leaf of app.workspace.getLeavesOfType(type))
               leaf.detach();
           const profile = zotlit.services.profile;
-          if (__typedArg0 === "built-in") await profile.restoreDefault();
+          if (kind === "built-in") await profile.restoreDefault();
           else await profile.materializeDefault();
           const file = await app.vault.create(
-            __typedArg1,
+            notePath,
             "---\nzotero-key: DMRGRART\n---\n# Popout",
           );
           const leaf = app.workspace.getLeaf("tab");
@@ -1445,20 +1433,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           app.workspace.setActiveLeaf(leaf, { focus: true });
           return String(true);
         },
-        { __typedArg0: kind, __typedArg1: notePath },
+        { kind, notePath },
       );
       await obRunUntil(
         vaultId,
-        async ({ app: host }, { __typedArg0 }) => {
+        async ({ app: host }, { notePath }) => {
           const app = host as WalkthroughApp;
 
           return (
-            app.metadataCache.getFileCache(
-              app.vault.getFileByPath(__typedArg0)!,
-            )?.frontmatter?.["zotero-key"] === "DMRGRART"
+            app.metadataCache.getFileCache(app.vault.getFileByPath(notePath)!)
+              ?.frontmatter?.["zotero-key"] === "DMRGRART"
           );
         },
-        { __typedArg0: notePath },
+        { notePath },
         { what: "walkthrough.e2e.ts:777" },
       );
       const result = JSON.parse(
@@ -1570,17 +1557,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     cleanup.defer(async () => {
       await obRun(
         vaultId,
-        async ({ app: host, zotlit }, { __typedArg0 }) => {
+        async ({ app: host, zotlit }, { original }) => {
           const app = host as WalkthroughApp;
 
           const profile = zotlit.services.profile;
           await app.vault.modify(
             app.vault.getFileByPath(profile.defaultDocumentPath)!,
-            __typedArg0,
+            original,
           );
           return String(true);
         },
-        { __typedArg0: original },
+        { original },
       );
     });
     await obRun(
@@ -1608,7 +1595,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     // after its companion panes arrive in the same popout document.
     await obRunUntil(
       vaultId,
-      async ({ zotlit, page }, { __typedArg0 }) => {
+      async ({ zotlit, page }, { actionSelector }) => {
         const { press } = page;
         const view = page
           .leavesOfType("zotlit-template-workbench")
@@ -1631,13 +1618,13 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         // A main-area pane shows the view header, so the reader presses its
         // Choose item action; the in-pane trigger is for a sidebar alone.
         const trigger =
-          ready && view.containerEl.querySelector<HTMLElement>(__typedArg0);
+          ready && view.containerEl.querySelector<HTMLElement>(actionSelector);
         if (!trigger) return "false";
         press(trigger, "Choose item");
         return "true";
       },
       {
-        __typedArg0: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
+        actionSelector: `.view-actions .view-action[aria-label="${m.workbench_choose_item()}"]`,
       },
       { ready: (value) => value === "true", what: "walkthrough.e2e.ts:862" },
     );
@@ -1781,14 +1768,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async (
           { app: host, zotlit, page },
           {
-            __typedArg0,
-            __typedArg1,
-            __typedArg2,
-            __typedArg3,
-            __typedArg4,
-            __typedArg5,
-            __typedArg6,
-            __typedArg7,
+            propertiesTab,
+            ruleText,
+            storedRule,
+            nameAndFolderTab,
+            filenameLabel,
+            nameText,
+            storedName,
+            invalidMessage,
           },
         ) => {
           const app = host as WalkthroughApp;
@@ -1868,7 +1855,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             });
             return () => cm.state.doc.toString();
           };
-          await open(__typedArg0);
+          await open(propertiesTab);
           const toggleOf = () =>
             Array.from(
               el.querySelectorAll<HTMLButtonElement>(
@@ -1885,24 +1872,22 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               .getElementById(toggle!.getAttribute("aria-controls")!)
               ?.querySelector<HTMLElement>(".cm-content");
           await waitFor(() => !!ruleEditor(), true, "Title rule editor");
-          const ruleShown = type(ruleEditor(), __typedArg1);
-          const storedRule = __typedArg2;
+          const ruleShown = type(ruleEditor(), ruleText);
           await waitFor(
             () => view()!.data.includes(storedRule),
             true,
             "Stored rule",
           );
-          await open(__typedArg3);
+          await open(nameAndFolderTab);
           const nameEditor = () =>
             Array.from(el.querySelectorAll<HTMLElement>(".cm-content")).find(
               (content) =>
                 el.ownerDocument.getElementById(
                   content.getAttribute("aria-labelledby")!,
-                )?.textContent === __typedArg4,
+                )?.textContent === filenameLabel,
             );
           await waitFor(() => !!nameEditor(), true, "Note name editor");
-          const nameShown = type(nameEditor(), __typedArg5);
-          const storedName = __typedArg6;
+          const nameShown = type(nameEditor(), nameText);
           await waitFor(
             () => view()!.data.includes(storedName),
             true,
@@ -1912,19 +1897,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             JSON.stringify({
               rule: ruleShown(),
               name: nameShown(),
-              invalid: el.textContent.includes(__typedArg7),
+              invalid: el.textContent.includes(invalidMessage),
             }),
           );
         },
         {
-          __typedArg0: m.workbench_tab_properties(),
-          __typedArg1: rule,
-          __typedArg2: `expr: '${rule}'`,
-          __typedArg3: m.workbench_tab_name_and_folder(),
-          __typedArg4: m.workbench_name_filename_label(),
-          __typedArg5: name,
-          __typedArg6: `filename: '${name.replaceAll("'", "''")}'`,
-          __typedArg7: m.workbench_problem_invalid_manifest(),
+          propertiesTab: m.workbench_tab_properties(),
+          ruleText: rule,
+          storedRule: `expr: '${rule}'`,
+          nameAndFolderTab: m.workbench_tab_name_and_folder(),
+          filenameLabel: m.workbench_name_filename_label(),
+          nameText: name,
+          storedName: `filename: '${name.replaceAll("'", "''")}'`,
+          invalidMessage: m.workbench_problem_invalid_manifest(),
         },
       ),
     );
@@ -1941,12 +1926,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async (
           { app: host, zotlit, page },
           {
-            __typedArg0,
-            __typedArg1,
-            __typedArg2,
-            __typedArg3,
-            __typedArg4,
-            __typedArg5,
+            noteTitle,
+            tabLabel,
+            filenameLabel,
+            expectedPreviewPath,
+            folderLabel,
+            previewed,
           },
         ) => {
           const app = host as WalkthroughApp;
@@ -2010,13 +1995,13 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           if (
             !(await view()!.selectItem({
               id: hit.item.indexedKey,
-              title: __typedArg0,
+              title: noteTitle,
             }))
           )
             throw new Error("Profile item was not selected");
           press(
             Array.from(el.querySelectorAll<HTMLElement>('[role="tab"]')).find(
-              (tab) => tab.textContent === __typedArg1,
+              (tab) => tab.textContent === tabLabel,
             ),
             "Name and folder",
           );
@@ -2034,7 +2019,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               (content) =>
                 el.ownerDocument.getElementById(
                   content.getAttribute("aria-labelledby")!,
-                )?.textContent === __typedArg2,
+                )?.textContent === filenameLabel,
             );
           await waitFor(() => !!nameEditor(), true, "Note name editor");
           const cm = (
@@ -2049,11 +2034,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             selection: { anchor: name.length },
             userEvent: "input.type",
           });
-          await waitFor(preview, __typedArg3, "Preview with a subfolder");
+          await waitFor(
+            preview,
+            expectedPreviewPath,
+            "Preview with a subfolder",
+          );
           // A folder override moves the whole preview.
           const label = Array.from(
             el.querySelectorAll<HTMLLabelElement>("label[for]"),
-          ).find((label) => label.textContent === __typedArg4);
+          ).find((label) => label.textContent === folderLabel);
           const folder = el.ownerDocument.getElementById(
             label!.htmlFor,
           ) as HTMLInputElement;
@@ -2069,7 +2058,6 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               bubbles: true,
             }),
           );
-          const previewed = __typedArg5;
           await waitFor(
             preview,
             previewed,
@@ -2103,12 +2091,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           );
         },
         {
-          __typedArg0: title,
-          __typedArg1: m.workbench_tab_name_and_folder(),
-          __typedArg2: m.workbench_name_filename_label(),
-          __typedArg3: `path-notes/Findings/${title}.md`,
-          __typedArg4: m.workbench_name_binding_folder(),
-          __typedArg5: `Reading list/Findings/${title}.md`,
+          noteTitle: title,
+          tabLabel: m.workbench_tab_name_and_folder(),
+          filenameLabel: m.workbench_name_filename_label(),
+          expectedPreviewPath: `path-notes/Findings/${title}.md`,
+          folderLabel: m.workbench_name_binding_folder(),
+          previewed: `Reading list/Findings/${title}.md`,
         },
       ),
     );
@@ -2194,7 +2182,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     };
     await obRunUntil(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { expectedJson }) => {
         return (
           JSON.stringify(
             (() => ({
@@ -2209,10 +2197,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 .leavesOfType("zotlit-template-data-explorer")[0]
                 ?.view.getState().root,
             }))(),
-          ) === __typedArg0
+          ) === expectedJson
         );
       },
-      { __typedArg0: JSON.stringify(expected) },
+      { expectedJson: JSON.stringify(expected) },
       { what: "walkthrough.e2e.ts:1100" },
     );
     await obRun(
@@ -2306,15 +2294,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ) as { id: string; path: string };
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { createdPath }) => {
         const app = host as WalkthroughApp;
 
         return (
-          app.metadataCache.getFileCache(app.vault.getFileByPath(__typedArg0)!)
+          app.metadataCache.getFileCache(app.vault.getFileByPath(createdPath)!)
             ?.frontmatter?.["zotero-key"] === "DMRGRART"
         );
       },
-      { __typedArg0: created.path },
+      { createdPath: created.path },
       { what: "walkthrough.e2e.ts:1145" },
     );
     await obRun(
@@ -2334,31 +2322,31 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
     await obRunUntil(
       vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { target }) => {
         return !!Array.from(
           Array.from(activeDocument.querySelectorAll<HTMLElement>(".prompt"))
             .at(-1)
             ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
-        ).find((el) => el.textContent.includes(__typedArg0));
+        ).find((el) => el.textContent.includes(target));
       },
-      { __typedArg0: target },
+      { target },
       { what: "walkthrough.e2e.ts:1158" },
     );
     await obRun(
       vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { target }) => {
         const { press } = page;
         press(
           Array.from(
             Array.from(activeDocument.querySelectorAll<HTMLElement>(".prompt"))
               .at(-1)
               ?.querySelectorAll<HTMLElement>(".suggestion-item") ?? [],
-          ).find((el) => el.textContent.includes(__typedArg0)),
+          ).find((el) => el.textContent.includes(target)),
           "Profile row",
         );
         return String(true);
       },
-      { __typedArg0: target },
+      { target },
     );
 
     await obRunUntil(
@@ -2445,15 +2433,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     );
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { target }) => {
         const app = host as WalkthroughApp;
 
         return (
-          app.metadataCache.getFileCache(app.vault.getFileByPath(__typedArg0)!)
+          app.metadataCache.getFileCache(app.vault.getFileByPath(target)!)
             ?.frontmatter?.["zotlit-profile"] ?? ""
         );
       },
-      { __typedArg0: target },
+      { target },
       {
         ready: (value) => value === `Books (${created.id})`,
         what: "walkthrough.e2e.ts:1180",
@@ -2462,30 +2450,23 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obRun(
         vaultId,
-        async (
-          { app: host, zotlit },
-          { __typedArg0, __typedArg1, __typedArg2 },
-        ) => {
+        async ({ app: host, zotlit }, { target, createdPath, createdId }) => {
           const app = host as WalkthroughApp;
 
-          const moved = app.vault.getFileByPath(__typedArg0)!;
+          const moved = app.vault.getFileByPath(target)!;
           const body = await app.vault.read(moved);
-          const left = !!app.vault.getAbstractFileByPath(__typedArg1);
+          const left = !!app.vault.getAbstractFileByPath(createdPath);
           await app.vault.delete(moved);
           const { profile } = zotlit.services;
           await app.vault.delete(
             app.vault.getFileByPath(
-              profile.profiles.find((p) => p.id === __typedArg2)!.path,
+              profile.profiles.find((p) => p.id === createdId)!.path,
             )!,
           );
           app.workspace.detachLeavesOfType("empty");
           return String(String(!left && body.includes("My reading notes")));
         },
-        {
-          __typedArg0: target,
-          __typedArg1: created.path,
-          __typedArg2: created.id,
-        },
+        { target, createdPath: created.path, createdId: created.id },
       ),
     ).toBe("true");
   });
@@ -2529,47 +2510,47 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
     await obRunUntil(
       vaultId,
-      async ({ app: host }, { __typedArg0 }) => {
+      async ({ app: host }, { addProfileLabel }) => {
         const app = host as WalkthroughApp;
 
         return !!app.setting.containerEl.querySelector<HTMLElement>(
-          `[aria-label=${JSON.stringify(__typedArg0)}]`,
+          `[aria-label=${JSON.stringify(addProfileLabel)}]`,
         );
       },
-      { __typedArg0: m.settings_profile_add() },
+      { addProfileLabel: m.settings_profile_add() },
       { what: "walkthrough.e2e.ts:1216" },
     );
     await obRun(
       vaultId,
-      async ({ app: host, page }, { __typedArg0 }) => {
+      async ({ app: host, page }, { addProfileLabel }) => {
         const app = host as WalkthroughApp;
 
         const { press } = page;
         press(
           app.setting.containerEl.querySelector<HTMLElement>(
-            `[aria-label=${JSON.stringify(__typedArg0)}]`,
+            `[aria-label=${JSON.stringify(addProfileLabel)}]`,
           ),
           "Add profile",
         );
         return String(true);
       },
-      { __typedArg0: m.settings_profile_add() },
+      { addProfileLabel: m.settings_profile_add() },
     );
 
     await obRunUntil(
       vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { addProfileLabel }) => {
         return Array.from(
           activeDocument.querySelectorAll<HTMLElement>(".modal"),
         )
           .find(
             (el) =>
               el.querySelector<HTMLElement>(".modal-title")?.textContent ===
-              __typedArg0,
+              addProfileLabel,
           )
           ?.querySelector<HTMLElement>('p[role="status"]')?.textContent;
       },
-      { __typedArg0: m.settings_profile_add() },
+      { addProfileLabel: m.settings_profile_add() },
       {
         ready: (value) => value === m.settings_profile_name_invalid(),
         what: "walkthrough.e2e.ts:1225",
@@ -2578,7 +2559,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(
       await obRun(
         vaultId,
-        async (_context, { __typedArg0 }) => {
+        async (_context, { addProfileLabel }) => {
           return String(
             String(
               (Array.from(
@@ -2587,7 +2568,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 .find(
                   (el) =>
                     el.querySelector<HTMLElement>(".modal-title")
-                      ?.textContent === __typedArg0,
+                      ?.textContent === addProfileLabel,
                 )
                 ?.querySelector<HTMLElement>(
                   'p[role="status"]',
@@ -2595,14 +2576,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             ),
           );
         },
-        { __typedArg0: m.settings_profile_add() },
+        { addProfileLabel: m.settings_profile_add() },
       ),
     ).toBe("false");
 
     expect(
       await obRun(
         vaultId,
-        async (_context, { __typedArg0, __typedArg1 }) => {
+        async (_context, { addProfileLabel }) => {
           return String(
             String(
               Array.from(
@@ -2612,34 +2593,31 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                   .find(
                     (el) =>
                       el.querySelector<HTMLElement>(".modal-title")
-                        ?.textContent === __typedArg0,
+                        ?.textContent === addProfileLabel,
                   )!
                   .querySelectorAll<HTMLButtonElement>(
                     ".modal-button-container button",
                   ),
-              ).find((el) => el.textContent === __typedArg1)!.disabled,
+              ).find((el) => el.textContent === addProfileLabel)!.disabled,
             ),
           );
         },
-        {
-          __typedArg0: m.settings_profile_add(),
-          __typedArg1: m.settings_profile_add(),
-        },
+        { addProfileLabel: m.settings_profile_add() },
       ),
     ).toBe("true");
     await obRun(
       vaultId,
-      async (_context, { __typedArg0, __typedArg1 }) => {
+      async (_context, { addProfileLabel, profileNameText }) => {
         const input = Array.from(
           Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
             .find(
               (el) =>
                 el.querySelector<HTMLElement>(".modal-title")?.textContent ===
-                __typedArg0,
+                addProfileLabel,
             )!
             .querySelectorAll<HTMLLabelElement>("label"),
         )
-          .find((el) => el.firstChild?.textContent === __typedArg1)!
+          .find((el) => el.firstChild?.textContent === profileNameText)!
           .querySelector<HTMLInputElement>("input");
         input!.value = "Reading group";
         input!.dispatchEvent(
@@ -2650,34 +2628,31 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         return String(true);
       },
       {
-        __typedArg0: m.settings_profile_add(),
-        __typedArg1: m.settings_profile_name_name(),
+        addProfileLabel: m.settings_profile_add(),
+        profileNameText: m.settings_profile_name_name(),
       },
     );
     await obRunUntil(
       vaultId,
-      async (_context, { __typedArg0, __typedArg1 }) => {
+      async (_context, { addProfileLabel }) => {
         return Array.from(
           Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
             .find(
               (el) =>
                 el.querySelector<HTMLElement>(".modal-title")?.textContent ===
-                __typedArg0,
+                addProfileLabel,
             )!
             .querySelectorAll<HTMLButtonElement>(
               ".modal-button-container button",
             ),
-        ).find((el) => el.textContent === __typedArg1)!.disabled;
+        ).find((el) => el.textContent === addProfileLabel)!.disabled;
       },
-      {
-        __typedArg0: m.settings_profile_add(),
-        __typedArg1: m.settings_profile_add(),
-      },
+      { addProfileLabel: m.settings_profile_add() },
       { ready: (value) => value === false, what: "walkthrough.e2e.ts:1242" },
     );
     await obRun(
       vaultId,
-      async ({ page }, { __typedArg0, __typedArg1 }) => {
+      async ({ page }, { addProfileLabel }) => {
         const { press } = page;
         press(
           Array.from(
@@ -2685,20 +2660,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               .find(
                 (el) =>
                   el.querySelector<HTMLElement>(".modal-title")?.textContent ===
-                  __typedArg0,
+                  addProfileLabel,
               )!
               .querySelectorAll<HTMLButtonElement>(
                 ".modal-button-container button",
               ),
-          ).find((el) => el.textContent === __typedArg1),
+          ).find((el) => el.textContent === addProfileLabel),
           "Add",
         );
         return String(true);
       },
-      {
-        __typedArg0: m.settings_profile_add(),
-        __typedArg1: m.settings_profile_add(),
-      },
+      { addProfileLabel: m.settings_profile_add() },
     );
 
     await obRunUntil(

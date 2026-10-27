@@ -42,7 +42,7 @@ export async function verifyPdfReads(
   cleanup.defer(async () => {
     const restored = await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { saved }) => {
         app.workspace.requestActiveLeafEvents.run();
         const oldServices = zotlit.services;
         await app.plugins.disablePlugin("zotlit");
@@ -51,14 +51,11 @@ export async function verifyPdfReads(
           await new Promise((r) => setTimeout(r, 25));
         if (!oldServices.bridge.closed())
           throw new Error("The ZotLit services did not close");
-        app.saveLocalStorage(
-          "zotlit-use-ledger",
-          JSON.parse(__typedArg0).ledger,
-        );
+        app.saveLocalStorage("zotlit-use-ledger", JSON.parse(saved).ledger);
         await app.plugins.enablePlugin("zotlit");
         return String(JSON.stringify(zotlit.services.useLedger.current));
       },
-      { __typedArg0: saved },
+      { saved },
     );
     expect(JSON.parse(restored)).toEqual(JSON.parse(saved).ledger ?? {});
   });
@@ -69,7 +66,7 @@ export async function verifyPdfReads(
     );
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { savedJson }) => {
         const s = zotlit.services;
         (
           app.workspace.getLeavesOfType(
@@ -78,7 +75,7 @@ export async function verifyPdfReads(
             view: PagePdfView;
           })[]
         ).forEach((l) => l.detach());
-        const saved = JSON.parse(__typedArg0);
+        const saved = JSON.parse(savedJson);
         s.bridge.runSync(
           s.settings.update({
             "library.document": saved.settings["library.document"] ?? null,
@@ -89,7 +86,7 @@ export async function verifyPdfReads(
         await s.zoteroReads.refresh();
         return String(true);
       },
-      { __typedArg0: saved },
+      { savedJson: saved },
     );
   });
   await obRun(
@@ -132,23 +129,20 @@ export async function verifyPdfReads(
 
   await obRun(
     vaultId,
-    async ({ app, zotlit }, { __typedArg0 }) => {
+    async ({ app, zotlit }, { itemId }) => {
       const s = zotlit.services;
       app.workspace.protocolHandler.handlers.get("zotlit/open-attachment")!({
         action: "zotlit/open-attachment",
-        item: __typedArg0,
+        item: itemId,
         "source-id": s.zoteroPref.sourceId!,
       });
       return String(true);
     },
-    { __typedArg0: String(attachment.itemID) },
+    { itemId: String(attachment.itemID) },
   );
   await obRun(
     vaultId,
-    async (
-      { app, zotlit, page },
-      { __typedArg0, __typedArg1, __typedArg2 },
-    ) => {
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
       const { until } = page;
       const s = zotlit.services;
       await until(
@@ -160,21 +154,20 @@ export async function verifyPdfReads(
             ) as (import("obsidian").WorkspaceLeaf & {
               view: PagePdfView;
             })[]
-          ).find((l) => l.view.file?.path === __typedArg0);
+          ).find((l) => l.view.file?.path === notePath);
           return (
             (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
               0 &&
             leaf!.view.viewer.child.getPage(1)?.pdfPage &&
-            s.pdfAnnotationEditor.bindings.find(
-              (b) => b.filePath === __typedArg1,
-            )?.session?.target?.attachmentKey === __typedArg2
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
           );
         },
         20000,
       );
       return String(true);
     },
-    { __typedArg0: path, __typedArg1: path, __typedArg2: attachmentKey },
+    { notePath: path, attachmentKey },
   );
   expect(
     (
@@ -315,10 +308,7 @@ export async function verifyPdfReads(
   await cli([`vault=${vaultId}`, "plugin:reload", "id=zotlit"]);
   await obRun(
     vaultId,
-    async (
-      { app, zotlit, page },
-      { __typedArg0, __typedArg1, __typedArg2 },
-    ) => {
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
       const { until } = page;
       const s = zotlit.services;
       await until(
@@ -330,21 +320,20 @@ export async function verifyPdfReads(
             ) as (import("obsidian").WorkspaceLeaf & {
               view: PagePdfView;
             })[]
-          ).find((l) => l.view.file?.path === __typedArg0);
+          ).find((l) => l.view.file?.path === notePath);
           return (
             (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
               0 &&
             leaf!.view.viewer.child.getPage(1)?.pdfPage &&
-            s.pdfAnnotationEditor.bindings.find(
-              (b) => b.filePath === __typedArg1,
-            )?.session?.target?.attachmentKey === __typedArg2
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
           );
         },
         20000,
       );
       return String(true);
     },
-    { __typedArg0: path, __typedArg1: path, __typedArg2: attachmentKey },
+    { notePath: path, attachmentKey },
   );
   expect(
     (
@@ -365,10 +354,7 @@ export async function verifyPdfReads(
   await reloadWindow();
   await obRun(
     vaultId,
-    async (
-      { app, zotlit, page },
-      { __typedArg0, __typedArg1, __typedArg2 },
-    ) => {
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
       const { until } = page;
       const s = zotlit.services;
       await until(
@@ -380,21 +366,20 @@ export async function verifyPdfReads(
             ) as (import("obsidian").WorkspaceLeaf & {
               view: PagePdfView;
             })[]
-          ).find((l) => l.view.file?.path === __typedArg0);
+          ).find((l) => l.view.file?.path === notePath);
           return (
             (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
               0 &&
             leaf!.view.viewer.child.getPage(1)?.pdfPage &&
-            s.pdfAnnotationEditor.bindings.find(
-              (b) => b.filePath === __typedArg1,
-            )?.session?.target?.attachmentKey === __typedArg2
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
           );
         },
         20000,
       );
       return String(true);
     },
-    { __typedArg0: path, __typedArg1: path, __typedArg2: attachmentKey },
+    { notePath: path, attachmentKey },
   );
   expect(
     (
@@ -451,7 +436,7 @@ export async function verifyPdfReads(
   // throttle history, so this real transition proves the subscription records.
   await obRun(
     vaultId,
-    async ({ app, zotlit, page }, { __typedArg0, __typedArg1 }) => {
+    async ({ app, zotlit, page }, { itemKey, firstInstant }) => {
       const { until } = page;
       const s = zotlit.services;
       const reader = (
@@ -468,11 +453,11 @@ export async function verifyPdfReads(
       );
       await until(
         "page read",
-        () => s.useLedger.get(__typedArg0)?.instant.toString() !== __typedArg1,
+        () => s.useLedger.get(itemKey)?.instant.toString() !== firstInstant,
       );
       return String(true);
     },
-    { __typedArg0: itemKey, __typedArg1: firstRead.instant },
+    { itemKey, firstInstant: firstRead.instant },
   );
   const pageRead = (
     await obRun(
@@ -535,7 +520,7 @@ export async function verifyPdfReads(
   )[itemKey]!;
   await obRun(
     vaultId,
-    async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+    async ({ app, page }, { path }) => {
       const { until } = page;
 
       const leaf = (
@@ -547,22 +532,19 @@ export async function verifyPdfReads(
       )[0]!;
       app.workspace.leftSplit.expand();
       await app.workspace.revealLeaf(leaf);
-      leaf.view.revealInFolder(app.vault.getFileByPath(__typedArg0)!);
+      leaf.view.revealInFolder(app.vault.getFileByPath(path)!);
       const row = await until(
         "PDF file explorer row",
-        () => leaf.view.fileItems[__typedArg1]?.selfEl,
+        () => leaf.view.fileItems[path]?.selfEl,
       );
       row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
       return String(true);
     },
-    { __typedArg0: path, __typedArg1: path },
+    { path },
   );
   await obRun(
     vaultId,
-    async (
-      { app, zotlit, page },
-      { __typedArg0, __typedArg1, __typedArg2 },
-    ) => {
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
       const { until } = page;
       const s = zotlit.services;
       await until(
@@ -574,21 +556,20 @@ export async function verifyPdfReads(
             ) as (import("obsidian").WorkspaceLeaf & {
               view: PagePdfView;
             })[]
-          ).find((l) => l.view.file?.path === __typedArg0);
+          ).find((l) => l.view.file?.path === notePath);
           return (
             (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
               0 &&
             leaf!.view.viewer.child.getPage(1)?.pdfPage &&
-            s.pdfAnnotationEditor.bindings.find(
-              (b) => b.filePath === __typedArg1,
-            )?.session?.target?.attachmentKey === __typedArg2
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
           );
         },
         20000,
       );
       return String(true);
     },
-    { __typedArg0: path, __typedArg1: path, __typedArg2: attachmentKey },
+    { notePath: path, attachmentKey },
   );
   expect(
     (
@@ -641,18 +622,15 @@ export async function verifyPdfReads(
   );
   await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
-      await app.workspace.openLinkText(__typedArg0, "", true);
+    async ({ app }, { path }) => {
+      await app.workspace.openLinkText(path, "", true);
       return String(true);
     },
-    { __typedArg0: path },
+    { path },
   );
   await obRun(
     vaultId,
-    async (
-      { app, zotlit, page },
-      { __typedArg0, __typedArg1, __typedArg2 },
-    ) => {
+    async ({ app, zotlit, page }, { notePath, attachmentKey }) => {
       const { until } = page;
       const s = zotlit.services;
       await until(
@@ -664,31 +642,30 @@ export async function verifyPdfReads(
             ) as (import("obsidian").WorkspaceLeaf & {
               view: PagePdfView;
             })[]
-          ).find((l) => l.view.file?.path === __typedArg0);
+          ).find((l) => l.view.file?.path === notePath);
           return (
             (leaf?.view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) >
               0 &&
             leaf!.view.viewer.child.getPage(1)?.pdfPage &&
-            s.pdfAnnotationEditor.bindings.find(
-              (b) => b.filePath === __typedArg1,
-            )?.session?.target?.attachmentKey === __typedArg2
+            s.pdfAnnotationEditor.bindings.find((b) => b.filePath === notePath)
+              ?.session?.target?.attachmentKey === attachmentKey
           );
         },
         20000,
       );
       return String(true);
     },
-    { __typedArg0: path, __typedArg1: path, __typedArg2: attachmentKey },
+    { notePath: path, attachmentKey },
   );
   expect(
     await obRun(
       vaultId,
-      async ({ zotlit }, { __typedArg0 }) => {
+      async ({ zotlit }, { path }) => {
         return zotlit.services.pdfAnnotationEditor.bindings.find(
-          (b) => b.filePath === __typedArg0,
+          (b) => b.filePath === path,
         )?.session.target;
       },
-      { __typedArg0: path },
+      { path },
     ),
   ).toMatchObject({ attachmentKey, itemKey: null });
   await obRun(

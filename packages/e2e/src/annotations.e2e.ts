@@ -33,8 +33,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     try {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          const file = app.vault.getFileByPath(__typedArg0)!;
+        async ({ app }, { annotationAttachmentPath }) => {
+          const file = app.vault.getFileByPath(annotationAttachmentPath)!;
           const leaf = app.workspace.getLeaf("tab");
           await leaf.openFile(file);
           app.workspace.setActiveLeaf(leaf, { focus: true });
@@ -44,21 +44,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           return String(true);
         },
-        { __typedArg0: annotationAttachment.path! },
+        { annotationAttachmentPath: annotationAttachment.path! },
       );
       const expected = [...annotationKeys].sort();
 
       await obRunUntil(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
+        async ({ zotlit }, { annotationAttachmentKey }) => {
           const { annotationRepository: repository, bridge } = zotlit.services;
-          const list = await bridge.runPromise(repository.read(__typedArg0));
+          const list = await bridge.runPromise(
+            repository.read(annotationAttachmentKey),
+          );
           return {
             source: list?.source.kind ?? null,
             keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
           };
         },
-        { __typedArg0: annotationAttachment.key },
+        { annotationAttachmentKey: annotationAttachment.key },
         {
           ready: (value) =>
             isDeepStrictEqual(value, { source: "zotero-db", keys: expected }),
@@ -69,11 +71,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ zotlit }, { __typedArg0 }) => {
+            async ({ zotlit }, { annotationAttachmentKey }) => {
               const { annotationRepository: repository, bridge } =
                 zotlit.services;
               const list = await bridge.runPromise(
-                repository.read(__typedArg0),
+                repository.read(annotationAttachmentKey),
               );
               return String(
                 JSON.stringify({
@@ -82,7 +84,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 }),
               );
             },
-            { __typedArg0: annotationAttachment.key },
+            { annotationAttachmentKey: annotationAttachment.key },
           ),
         ),
       ).toEqual({
@@ -320,7 +322,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
       await obRun(
         run.vaultId,
-        async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+        async ({ app, page }, { tagTriggerLabel, activeTriggerPrefix }) => {
           const { press } = page;
           const root = (
             app.workspace.getLeavesOfType(
@@ -339,7 +341,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? [],
             ).find((b) => {
               const label = b.getAttribute("aria-label") ?? "";
-              return label === __typedArg0 || label.startsWith(__typedArg1);
+              return (
+                label === tagTriggerLabel ||
+                label.startsWith(activeTriggerPrefix)
+              );
             });
             return trigger
               ? root!.ownerDocument.getElementById(
@@ -358,8 +363,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return String(true);
         },
         {
-          __typedArg0: run.m.annot_view_filter_tag_trigger(),
-          __typedArg1: run.m.annot_view_filter_tag_trigger_active({ tags: "" }),
+          tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
+          activeTriggerPrefix: run.m.annot_view_filter_tag_trigger_active({
+            tags: "",
+          }),
         },
       );
       // `menuChrome` is the computed-style half of the proof. The popup wears no
@@ -391,7 +398,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
       await obRunUntil(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { tagTriggerLabel, activeTriggerPrefix }) => {
           return (() => {
             const popup = (() => {
               const root = (
@@ -405,7 +412,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ) ?? [],
               ).find((b) => {
                 const label = b.getAttribute("aria-label") ?? "";
-                return label === __typedArg0 || label.startsWith(__typedArg1);
+                return (
+                  label === tagTriggerLabel ||
+                  label.startsWith(activeTriggerPrefix)
+                );
               });
               return trigger
                 ? root!.ownerDocument.getElementById(
@@ -475,8 +485,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           })();
         },
         {
-          __typedArg0: run.m.annot_view_filter_tag_trigger(),
-          __typedArg1: run.m.annot_view_filter_tag_trigger_active({
+          tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
+          activeTriggerPrefix: run.m.annot_view_filter_tag_trigger_active({
             tags: "",
           }),
         },
@@ -493,7 +503,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { tagTriggerLabel, activeTriggerPrefix }) => {
           const popup = (() => {
             const root = (
               app.workspace.getLeavesOfType(
@@ -506,7 +516,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? [],
             ).find((b) => {
               const label = b.getAttribute("aria-label") ?? "";
-              return label === __typedArg0 || label.startsWith(__typedArg1);
+              return (
+                label === tagTriggerLabel ||
+                label.startsWith(activeTriggerPrefix)
+              );
             });
             return trigger
               ? root!.ownerDocument.getElementById(
@@ -518,8 +531,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return String(true);
         },
         {
-          __typedArg0: run.m.annot_view_filter_tag_trigger(),
-          __typedArg1: run.m.annot_view_filter_tag_trigger_active({ tags: "" }),
+          tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
+          activeTriggerPrefix: run.m.annot_view_filter_tag_trigger_active({
+            tags: "",
+          }),
         },
       );
       // A closed popover is hidden by the user-agent rule
@@ -531,7 +546,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // place the closed state can be proven.
       await obRunUntil(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { tagTriggerLabel, activeTriggerPrefix }) => {
           return (() => {
             const popup = (() => {
               const root = (
@@ -545,7 +560,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ) ?? [],
               ).find((b) => {
                 const label = b.getAttribute("aria-label") ?? "";
-                return label === __typedArg0 || label.startsWith(__typedArg1);
+                return (
+                  label === tagTriggerLabel ||
+                  label.startsWith(activeTriggerPrefix)
+                );
               });
               return trigger
                 ? root!.ownerDocument.getElementById(
@@ -563,8 +581,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           })();
         },
         {
-          __typedArg0: run.m.annot_view_filter_tag_trigger(),
-          __typedArg1: run.m.annot_view_filter_tag_trigger_active({
+          tagTriggerLabel: run.m.annot_view_filter_tag_trigger(),
+          activeTriggerPrefix: run.m.annot_view_filter_tag_trigger_active({
             tags: "",
           }),
         },
@@ -578,16 +596,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const pageKeys = annotations.map(({ key }) => key).sort();
         await obRunUntil(
           run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+          async (
+            { app },
+            { annotationAttachmentPath, pageNumber, pageKeys },
+          ) => {
             const pdfView = (
               app.workspace.getLeavesOfType(
                 "pdf",
               ) as (import("obsidian").WorkspaceLeaf & {
                 view: PagePdfView;
               })[]
-            ).find(({ view }) => view.file?.path === __typedArg0)?.view;
+            ).find(
+              ({ view }) => view.file?.path === annotationAttachmentPath,
+            )?.view;
             const pdfPage = pdfView?.containerEl.querySelector<HTMLElement>(
-              `.page[data-page-number="${JSON.stringify(__typedArg1)}"]`,
+              `.page[data-page-number="${JSON.stringify(pageNumber)}"]`,
             )!;
             pdfPage?.scrollIntoView({ block: "center" });
             const marks = Array.from(
@@ -595,13 +618,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ".zt-pdf-annotation-mark[data-zotero-annotation-key]",
               ) ?? [],
               (el) => el.getAttribute("data-zotero-annotation-key"),
-            ).filter((key) => __typedArg2.includes(key!));
+            ).filter((key) => pageKeys.includes(key!));
             return [...new Set(marks)].sort();
           },
           {
-            __typedArg0: annotationAttachment.path,
-            __typedArg1: pageIndex + 1,
-            __typedArg2: pageKeys,
+            annotationAttachmentPath: annotationAttachment.path,
+            pageNumber: pageIndex + 1,
+            pageKeys,
           },
           {
             ready: (value) => isDeepStrictEqual(value, pageKeys),
@@ -612,7 +635,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obRun(
           run.vaultId,
-          async ({ app, zotlit }, { __typedArg0 }) => {
+          async ({ app, zotlit }, { annotationAttachmentKey }) => {
             const { annotationRepository: repository, bridge } =
               zotlit.services;
             const text =
@@ -625,7 +648,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             return String(
               JSON.stringify({
                 capability: bridge.runSync(
-                  repository.capabilityFor(__typedArg0),
+                  repository.capabilityFor(annotationAttachmentKey),
                 ),
                 sourceLabels: labels.some((label) =>
                   text.toLowerCase().includes(label.toLowerCase()),
@@ -633,7 +656,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               }),
             );
           },
-          { __typedArg0: annotationAttachment.key },
+          { annotationAttachmentKey: annotationAttachment.key },
         ),
       ).toBe(
         JSON.stringify({
@@ -647,11 +670,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     } finally {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
+        async ({ app }, { layout }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
           return String(true);
         },
-        { __typedArg0: layout },
+        { layout },
       );
     }
   }, 120000);
@@ -668,17 +691,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
+        async ({ app }, { layout }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
           return String(true);
         },
-        { __typedArg0: layout },
+        { layout },
       );
     });
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        const file = app.vault.getFileByPath(__typedArg0)!;
+      async ({ app }, { annotationAttachmentPath }) => {
+        const file = app.vault.getFileByPath(annotationAttachmentPath)!;
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
@@ -686,7 +709,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
         return String(true);
       },
-      { __typedArg0: annotationAttachment.path! },
+      { annotationAttachmentPath: annotationAttachment.path! },
     );
 
     /** The sidebar's cards in screen order, each under the group heading above it. */
@@ -781,52 +804,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obRunUntil(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { groupByLabel }) => {
         return !!Array.from(
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
             item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === __typedArg0,
+              ?.textContent === groupByLabel,
         );
       },
-      { __typedArg0: run.m.annot_view_group_by() },
+      { groupByLabel: run.m.annot_view_group_by() },
       { what: "annotations.ts:259" },
     );
     await obRun(
       run.vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { groupByLabel }) => {
         const { press } = page;
         const item = Array.from(
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
             item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === __typedArg0,
+              ?.textContent === groupByLabel,
         );
         item!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
         press(item, "Group by");
         return String(true);
       },
-      { __typedArg0: run.m.annot_view_group_by() },
+      { groupByLabel: run.m.annot_view_group_by() },
     );
     await obRunUntil(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { propertyColorLabel }) => {
         return !!Array.from(
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
             item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === __typedArg0,
+              ?.textContent === propertyColorLabel,
         );
       },
-      { __typedArg0: run.m.query_view_property_color() },
+      { propertyColorLabel: run.m.query_view_property_color() },
       { what: "annotations.ts:272" },
     );
     await obRun(
       run.vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { propertyColorLabel }) => {
         const { press } = page;
         press(
           Array.from(
@@ -834,13 +857,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).find(
             (item) =>
               item!.querySelector<HTMLElement>(".menu-item-title")
-                ?.textContent === __typedArg0,
+                ?.textContent === propertyColorLabel,
           ),
           "Color",
         );
         return String(true);
       },
-      { __typedArg0: run.m.query_view_property_color() },
+      { propertyColorLabel: run.m.query_view_property_color() },
     );
 
     const grouped = await sidebarWhen(({ cards }) =>
@@ -884,21 +907,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe("true");
     await obRunUntil(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { filterLabel }) => {
         return !!Array.from(
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
             item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === __typedArg0,
+              ?.textContent === filterLabel,
         );
       },
-      { __typedArg0: run.m.annot_view_filter() },
+      { filterLabel: run.m.annot_view_filter() },
       { what: "annotations.ts:309" },
     );
     await obRun(
       run.vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { filterLabel }) => {
         const { press } = page;
         press(
           Array.from(
@@ -906,13 +929,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).find(
             (item) =>
               item!.querySelector<HTMLElement>(".menu-item-title")
-                ?.textContent === __typedArg0,
+                ?.textContent === filterLabel,
           ),
           "Filter",
         );
         return String(true);
       },
-      { __typedArg0: run.m.annot_view_filter() },
+      { filterLabel: run.m.annot_view_filter() },
     );
 
     await obRunUntil(
@@ -956,7 +979,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const escapes = JSON.parse(
       await obRun(
         run.vaultId,
-        async ({ app, page }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+        async (
+          { app, page },
+          { addConditionLabel, removeConditionLabel, editExpressionLabel },
+        ) => {
           const { press, until } = page;
           await using cleanup = new AsyncDisposableStack();
           const contents = (
@@ -987,7 +1013,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).length;
           press(
             [...section!.querySelectorAll<HTMLButtonElement>("button")].find(
-              (button) => button.textContent.trim() === __typedArg0,
+              (button) => button.textContent.trim() === addConditionLabel,
             ),
             "Add condition",
           );
@@ -1004,13 +1030,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 '[data-filter-section="view"] [data-condition-row]',
               )
               [before]?.querySelector<HTMLElement>(
-                `button[aria-label=${JSON.stringify(__typedArg1)}]`,
+                `button[aria-label=${JSON.stringify(removeConditionLabel)}]`,
               )!;
             if (remove) press(remove, "Remove condition");
           });
           press(
             row.querySelector<HTMLElement>(
-              `button[aria-label=${JSON.stringify(__typedArg2)}]`,
+              `button[aria-label=${JSON.stringify(editExpressionLabel)}]`,
             )!,
             "Edit as expression",
           );
@@ -1149,9 +1175,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           return String(JSON.stringify({ list, hint, tab, typed }));
         },
         {
-          __typedArg0: run.m.workbench_match_add_condition(),
-          __typedArg1: run.m.workbench_match_remove_condition(),
-          __typedArg2: run.m.workbench_match_edit_as_expression(),
+          addConditionLabel: run.m.workbench_match_add_condition(),
+          removeConditionLabel: run.m.workbench_match_remove_condition(),
+          editExpressionLabel: run.m.workbench_match_edit_as_expression(),
         },
       ),
     );
@@ -1208,12 +1234,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const noteText = await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        return String(
-          await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
-        );
+      async ({ app }, { notePath }) => {
+        return String(await app.vault.read(app.vault.getFileByPath(notePath)!));
       },
-      { __typedArg0: notePath },
+      { notePath },
     );
 
     /**
@@ -1291,31 +1315,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       if (picked) await pickColor(null);
       await obRun(
         run.vaultId,
-        async (
-          { app },
-          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-        ) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          await app.vault.modify(
-            app.vault.getFileByPath(__typedArg1)!,
-            __typedArg2,
-          );
-          const saved = app.vault.getFileByPath(__typedArg3)!;
+        async ({ app }, { layout, notePath, noteText, savedPath }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          await app.vault.modify(app.vault.getFileByPath(notePath)!, noteText);
+          const saved = app.vault.getFileByPath(savedPath)!;
           if (saved) await app.vault.delete(saved);
           return String(true);
         },
-        {
-          __typedArg0: layout,
-          __typedArg1: notePath,
-          __typedArg2: noteText,
-          __typedArg3: savedPath,
-        },
+        { layout, notePath, noteText, savedPath },
       );
     });
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        const file = app.vault.getFileByPath(__typedArg0)!;
+      async ({ app }, { annotationAttachmentPath }) => {
+        const file = app.vault.getFileByPath(annotationAttachmentPath)!;
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
@@ -1323,7 +1336,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         app.commands.executeCommandById("zotlit:annot-view-follow-active-tab");
         return String(true);
       },
-      { __typedArg0: annotationAttachment.path! },
+      { annotationAttachmentPath: annotationAttachment.path! },
     );
 
     const expected = [...annotationKeys].sort();
@@ -1421,21 +1434,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obRunUntil(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { saveQueryLabel }) => {
         return !!Array.from(
           document.querySelectorAll<HTMLElement>(".menu .menu-item"),
         ).find(
           (item) =>
             item!.querySelector<HTMLElement>(".menu-item-title")
-              ?.textContent === __typedArg0,
+              ?.textContent === saveQueryLabel,
         );
       },
-      { __typedArg0: run.m.annot_view_save_as_query_file() },
+      { saveQueryLabel: run.m.annot_view_save_as_query_file() },
       { what: "annotations.ts:443" },
     );
     await obRun(
       run.vaultId,
-      async ({ page }, { __typedArg0 }) => {
+      async ({ page }, { saveQueryLabel }) => {
         const { press } = page;
         press(
           Array.from(
@@ -1443,13 +1456,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ).find(
             (item) =>
               item!.querySelector<HTMLElement>(".menu-item-title")
-                ?.textContent === __typedArg0,
+                ?.textContent === saveQueryLabel,
           ),
           "Save as query file",
         );
         return String(true);
       },
-      { __typedArg0: run.m.annot_view_save_as_query_file() },
+      { saveQueryLabel: run.m.annot_view_save_as_query_file() },
     );
 
     // The dialog asks the name, the folder, and which records the file shows.
@@ -1549,13 +1562,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obRunUntil(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { savedPath }) => {
         const view = app.workspace.getMostRecentLeaf()?.view as
           | import("../../../apps/obsidian/src/views/query-view/file-view.ts").QueryFileView
           | undefined;
         if (
           view?.getViewType() !== "zotlit-query-file" ||
-          view.file?.path !== __typedArg0
+          view.file?.path !== savedPath
         )
           return "null";
         await view.query.settled;
@@ -1569,7 +1582,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .length,
         };
       },
-      { __typedArg0: savedPath },
+      { savedPath },
       {
         ready: (value) =>
           isDeepStrictEqual(value, { diagnostic: "unbound-context", cards: 0 }),
@@ -1579,12 +1592,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const saved = await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { savedPath }) => {
         return String(
-          await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
+          await app.vault.read(app.vault.getFileByPath(savedPath)!),
         );
       },
-      { __typedArg0: savedPath },
+      { savedPath },
     );
     expect(saved).toMatch(/^filters: item == this\.item$/m);
     expect(saved).toMatch(/^ {4}filters: color/m);
@@ -1593,17 +1606,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Annotations of the colour.
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = app.vault.getFileByPath(__typedArg0)!;
-        await app.vault.modify(file, __typedArg1);
+      async ({ app }, { notePath, updatedNoteText }) => {
+        const file = app.vault.getFileByPath(notePath)!;
+        await app.vault.modify(file, updatedNoteText);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file, { state: { mode: "preview" } });
         app.workspace.setActiveLeaf(leaf, { focus: true });
         return String(true);
       },
       {
-        __typedArg0: notePath,
-        __typedArg1: noteText.replace(
+        notePath,
+        updatedNoteText: noteText.replace(
           /^(---\n[\s\S]*?\n---\n)/,
           "$1\n![[Saved colour.zotquery]]\n\n",
         ),

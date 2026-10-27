@@ -20,7 +20,7 @@ export async function verifyAnnotationDrag(
       vaultId,
       async (
         { app, zotlit, page },
-        { __typedArg0, __typedArg1, __typedArg2, __typedArg3, __typedArg4 },
+        { effectPath, notePath, targetHost, sourceHost },
       ) => {
         const s = (page.scratch.__zotlitDragTrial = {
           layout: app.workspace.getLayout(),
@@ -32,7 +32,7 @@ export async function verifyAnnotationDrag(
         } as DragTrial);
         const services = zotlit.services;
         s.services = services;
-        await page.installAnnotationPreparation(services, s, __typedArg0);
+        await page.installAnnotationPreparation(services, s, effectPath);
         s.link = app.fileManager.generateMarkdownLink;
         app.fileManager.generateMarkdownLink = new Proxy(s.link, {
           apply: (
@@ -60,12 +60,12 @@ export async function verifyAnnotationDrag(
           services.settings.update({ "attachment.import": true }),
         );
         const file =
-          app.vault.getFileByPath(__typedArg1)! ??
-          (await app.vault.create(__typedArg2, "LEFT RIGHT"));
+          app.vault.getFileByPath(notePath)! ??
+          (await app.vault.create(notePath, "LEFT RIGHT"));
         s.file = file;
         s.targetLeaf = app.workspace.getLeaf("tab") as MarkdownLeaf;
         await s.targetLeaf.openFile(file);
-        if (__typedArg3 === "popout")
+        if (targetHost === "popout")
           app.workspace.moveLeafToPopout(s.targetLeaf);
         s.editor = s.targetLeaf.view.editor;
         s.editor.setValue("LEFT RIGHT");
@@ -74,8 +74,7 @@ export async function verifyAnnotationDrag(
           type: "zotero-annotation-view",
           state: { followMode: "pinned", pinnedItemKey: "RUGIER24" },
         });
-        if (__typedArg4 === "popout")
-          app.workspace.moveLeafToPopout(s.viewLeaf);
+        if (sourceHost === "popout") app.workspace.moveLeafToPopout(s.viewLeaf);
         s.view = s.viewLeaf.view;
         await s.view.read;
         app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
@@ -83,11 +82,10 @@ export async function verifyAnnotationDrag(
         return String(true);
       },
       {
-        __typedArg0: effectPath,
-        __typedArg1: `Drag-${sourceHost}-${targetHost}.md`,
-        __typedArg2: `Drag-${sourceHost}-${targetHost}.md`,
-        __typedArg3: targetHost,
-        __typedArg4: sourceHost,
+        effectPath,
+        notePath: `Drag-${sourceHost}-${targetHost}.md`,
+        targetHost,
+        sourceHost,
       },
     );
     await obRunUntil(

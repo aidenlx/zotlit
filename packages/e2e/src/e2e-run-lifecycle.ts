@@ -45,30 +45,30 @@ async function bootstrap(): Promise<void> {
   const serverPort = await availableLoopbackPort();
   await obRun(
     run.vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { serverPort }) => {
       zotlit.services.bridge.runSync(
         zotlit.services.settings.update({
           "server.enabled": false,
-          "server.port": __typedArg0,
+          "server.port": serverPort,
         }),
       );
       return String(true);
     },
-    { __typedArg0: serverPort },
+    { serverPort },
   );
   await obRunUntil(
     run.vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { serverPort }) => {
       return (
         !zotlit.services.bridge.runSync(
           zotlit.services.localServer.available,
         ) &&
         zotlit.services.bridge.runSync(zotlit.services.settings.current)[
           "server.port"
-        ] === __typedArg0
+        ] === serverPort
       );
     },
-    { __typedArg0: serverPort },
+    { serverPort },
     { what: "lifecycle.ts:45" },
   );
   await obRun(
@@ -83,15 +83,15 @@ async function bootstrap(): Promise<void> {
   );
   await obRunUntil(
     run.vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { serverPort }) => {
       return (
         zotlit.services.bridge.runSync(zotlit.services.localServer.available) &&
         zotlit.services.bridge.runSync(zotlit.services.settings.current)[
           "server.port"
-        ] === __typedArg0
+        ] === serverPort
       );
     },
-    { __typedArg0: serverPort },
+    { serverPort },
     { what: "lifecycle.ts:56" },
   );
 }

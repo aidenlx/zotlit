@@ -109,12 +109,10 @@ async function resolveDigest(
   return JSON.parse(
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+      async ({ app, zotlit }, { entry, relative, caseIndex }) => {
         const outcome = await zotlit.services.bridge.runPromise(
           zotlit.services.excerptImage.resolve(
             (() => {
-              const entry = __typedArg0;
-              const relative = __typedArg1;
               const file = app.vault.getAbstractFileByPath(relative);
               if (!file)
                 throw new Error(
@@ -162,7 +160,7 @@ async function resolveDigest(
                 zoteroPngPath: null,
               }))(
                 entry,
-                __typedArg2,
+                caseIndex,
                 (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
               );
             })(),
@@ -185,9 +183,9 @@ async function resolveDigest(
         );
       },
       {
-        __typedArg0: EXCERPT_RENDERING_CASES[index]!,
-        __typedArg1: relativePdf,
-        __typedArg2: index,
+        entry: EXCERPT_RENDERING_CASES[index]!,
+        relative: relativePdf,
+        caseIndex: index,
       },
     ),
   ) as PixelResult;
@@ -302,7 +300,7 @@ async function startRenderProbe(
     vaultId,
     async (
       { app, zotlit, page: helpers },
-      { __typedArg0, __typedArg1, __typedArg2, __typedArg3, __typedArg4 },
+      { phase, entry, relative, caseIndex },
     ) => {
       if (helpers.scratch.__zotlitExcerptProbe)
         throw new Error("Excerpt probe already active");
@@ -310,10 +308,8 @@ async function startRenderProbe(
       const diagnostics = service.rendererDiagnostics;
       if (!diagnostics)
         throw new Error("Excerpt renderer diagnostics unavailable");
-      diagnostics.hold(__typedArg0);
+      diagnostics.hold(phase);
       const request = (() => {
-        const entry = __typedArg1;
-        const relative = __typedArg2;
         const file = app.vault.getAbstractFileByPath(relative);
         if (!file)
           throw new Error("Excerpt acceptance PDF missing from Fixture Vault");
@@ -356,11 +352,11 @@ async function startRenderProbe(
           zoteroPngPath: null,
         }))(
           entry,
-          __typedArg3,
+          caseIndex,
           (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
         );
       })();
-      request.sourceScope += `:probe:${__typedArg4}:${performance.now()}`;
+      request.sourceScope += `:probe:${phase}:${performance.now()}`;
       const state: ExcerptProbeState = {
         settled: false,
         outcome: null,
@@ -398,22 +394,21 @@ async function startRenderProbe(
       return String(true);
     },
     {
-      __typedArg0: phase,
-      __typedArg1: EXCERPT_RENDERING_CASES[index]!,
-      __typedArg2: relativePdf,
-      __typedArg3: index,
-      __typedArg4: phase,
+      phase,
+      entry: EXCERPT_RENDERING_CASES[index]!,
+      relative: relativePdf,
+      caseIndex: index,
     },
   );
   await obRunUntil(
     vaultId,
-    async ({ page: helpers }, { __typedArg0 }) => {
+    async ({ page: helpers }, { renderPhase }) => {
       return await String(
         helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().phase ===
-          __typedArg0,
+          renderPhase,
       );
     },
-    { __typedArg0: phase },
+    { renderPhase: phase },
     {
       ready: (value) => value === "true",
       tries: 80,
@@ -532,9 +527,9 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
   cleanup.defer(async () => {
     await obRun(
       vaultId,
-      async ({ page: helpers }, { __typedArg0 }) => {
+      async ({ page: helpers }, { expectedOwner }) => {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
-        if (!acceptance || acceptance.owner !== __typedArg0)
+        if (!acceptance || acceptance.owner !== expectedOwner)
           return String(true);
         acceptance.controller.abort();
         if (acceptance.timer !== null) {
@@ -552,28 +547,28 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
           throw new Error("Excerpt acceptance did not settle after abort");
         return String(true);
       },
-      { __typedArg0: owner },
+      { expectedOwner: owner },
     );
   });
   expect(
     await obRun(
       vaultId,
-      async ({ page: helpers }, { __typedArg0, __typedArg1 }) => {
+      async ({ page: helpers }, { ownerName, EXCERPT_RENDERING_CASES }) => {
         if (helpers.scratch.__zotlitExcerptAcceptance)
           throw new Error("Excerpt acceptance already active");
         helpers.scratch.__zotlitExcerptAcceptance = {
-          owner: __typedArg0,
+          owner: ownerName,
           started: false,
           settled: false,
           timer: null,
           controller: new AbortController(),
           result: null,
           error: null,
-          cases: __typedArg1,
+          cases: EXCERPT_RENDERING_CASES,
         };
         return String(true);
       },
-      { __typedArg0: owner, __typedArg1: EXCERPT_RENDERING_CASES },
+      { ownerName: owner, EXCERPT_RENDERING_CASES },
     ),
   ).toBe("true");
   expect(
@@ -581,7 +576,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       vaultId,
       async (
         { app, zotlit, page: helpers },
-        { __typedArg0, __typedArg1, __typedArg2 },
+        { failuresToCheck, relative, EXCERPT_RENDERING_VAULT_DIR },
       ) => {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
         if (!acceptance || acceptance.settled)
@@ -615,8 +610,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
             };
             const pdfLeavesBefore = app.workspace.getLeavesOfType("pdf").length;
             const cases = acceptance.cases;
-            const failuresToCheck = __typedArg0;
-            const relative = __typedArg1;
             const file = app.vault.getAbstractFileByPath(relative);
             if (!file)
               throw new Error(
@@ -738,7 +731,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
             const failures = [];
             for (const name of failuresToCheck) {
               const path = (app.vault.adapter as FileSystemAdapter).getFullPath(
-                `${__typedArg2}/${name}`,
+                `${EXCERPT_RENDERING_VAULT_DIR}/${name}`,
               );
               const input: ExcerptRequest = {
                 ...request(cases[0]!, 90 + failures.length),
@@ -819,11 +812,11 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         return String(true);
       },
       {
-        __typedArg0: EXCERPT_RENDERING_PDFS.filter(
+        failuresToCheck: EXCERPT_RENDERING_PDFS.filter(
           ({ outcome }) => outcome !== "renderable",
         ).map(({ asset }) => asset.split("/").at(-1)!),
-        __typedArg1: relativePdf,
-        __typedArg2: EXCERPT_RENDERING_VAULT_DIR,
+        relative: relativePdf,
+        EXCERPT_RENDERING_VAULT_DIR,
       },
     ),
   ).toBe("true");
@@ -1081,7 +1074,7 @@ export async function verifyZoteroExcerptParity(
   const result = JSON.parse(
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { keys }) => {
         const services = zotlit.services;
         await services.zoteroReads.refresh();
         const list = await services.bridge.runPromise(
@@ -1223,7 +1216,7 @@ export async function verifyZoteroExcerptParity(
         };
         await services.bridge.runPromise(services.excerptImage.clear);
         const output = [];
-        for (const key of __typedArg0) {
+        for (const key of keys) {
           const annotation = list.annotations.find(
             (value) => value.key === key,
           );
@@ -1266,7 +1259,7 @@ export async function verifyZoteroExcerptParity(
         }
         return String(await JSON.stringify(output));
       },
-      { __typedArg0: keys },
+      { keys },
     ),
   ) as {
     key: string;

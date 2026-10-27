@@ -32,12 +32,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     const original = await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        return String(
-          await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
-        );
+      async ({ app }, { path }) => {
+        return String(await app.vault.read(app.vault.getFileByPath(path)!));
       },
-      { __typedArg0: path },
+      { path },
     );
     const created: string[] = [];
     await using cleanup = new AsyncDisposableStack();
@@ -47,45 +45,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
       await obRun(
         run.vaultId,
-        async (
-          { app },
-          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-        ) => {
+        async ({ app }, { filePath, original, created, layout }) => {
           for (const popup of activeDocument.querySelectorAll<HTMLElement>(
             "[popover]:popover-open",
           ))
             popup.hidePopover();
           for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
             leaf.detach();
-          await app.vault.modify(
-            app.vault.getFileByPath(__typedArg0)!,
-            __typedArg1,
-          );
-          for (const path of __typedArg2) {
+          await app.vault.modify(app.vault.getFileByPath(filePath)!, original);
+          for (const path of created) {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           }
-          await app.workspace.changeLayout(JSON.parse(__typedArg3));
+          await app.workspace.changeLayout(JSON.parse(layout));
           return String(true);
         },
-        {
-          __typedArg0: path,
-          __typedArg1: original,
-          __typedArg2: created,
-          __typedArg3: layout,
-        },
+        { filePath: path, original, created, layout },
       );
     });
 
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { path }) => {
         const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(app.vault.getFileByPath(__typedArg0)!);
+        await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         return String(true);
       },
-      { __typedArg0: path },
+      { path },
     );
     await obRunUntil(
       run.vaultId,
@@ -122,11 +109,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         table = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0 }) => {
+            async ({ app }, { expectedPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
                 return String("null");
               await (
@@ -183,7 +171,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 }),
               );
             },
-            { __typedArg0: path },
+            { expectedPath: path },
           ),
         ) as Table | null;
         return table !== null && ready(table);
@@ -222,17 +210,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obRunUntil(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { expectedValue }) => {
         return (
           activeDocument
             .querySelector<HTMLElement>(
               "[data-query-view-list]:popover-open [data-chooser-page]",
             )
             ?.querySelector<HTMLInputElement>("[data-query-view-name]")
-            ?.value === __typedArg0
+            ?.value === expectedValue
         );
       },
-      { __typedArg0: "All annotations" },
+      { expectedValue: "All annotations" },
       { what: "query-view-table.e2e.ts:103" },
     );
     await obRun(
@@ -312,16 +300,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The view saves as a Table of Items, and keeps its grouping.
     await obRunUntil(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const text = await app.vault.read(
-          app.vault.getFileByPath(__typedArg0)!,
-        );
+      async ({ app }, { path, expectedBlock }) => {
+        const text = await app.vault.read(app.vault.getFileByPath(path)!);
         const first = text.split("name: Figures")[0];
-        return first!.includes(__typedArg1) && first!.includes("groupBy");
+        return first!.includes(expectedBlock) && first!.includes("groupBy");
       },
       {
-        __typedArg0: path,
-        __typedArg1:
+        path,
+        expectedBlock:
           "  - type: table\n    name: All annotations\n    from: items\n",
       },
       { what: "query-view-table.e2e.ts:145" },
@@ -359,18 +345,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const click = (selector: string) =>
       obRun(
         run.vaultId,
-        async ({ app, page: pageHelpers }, { __typedArg0, __typedArg1 }) => {
+        async ({ app, page: pageHelpers }, { selector }) => {
           const { press } = pageHelpers;
           press(
             (
               app.workspace.getMostRecentLeaf()!
                 .view as import("obsidian").ItemView
-            ).contentEl.querySelector<HTMLElement>(__typedArg0)!,
-            __typedArg1,
+            ).contentEl.querySelector<HTMLElement>(selector)!,
+            selector,
           );
           return String(true);
         },
-        { __typedArg0: selector, __typedArg1: selector },
+        { selector },
       );
     await click(`[data-query-expand="item:${item}"]`);
     await tableWhen((table) => table.attachments.length === attachments.length);
@@ -398,7 +384,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const before = Number(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { pdfName }) => {
           return String(
             String(
               app.workspace
@@ -406,23 +392,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 .filter(
                   (l) =>
                     (l.view as import("obsidian").FileView).file?.name ===
-                    __typedArg0,
+                    pdfName,
                 ).length,
             ),
           );
         },
-        { __typedArg0: pdfName },
+        { pdfName },
       ),
     );
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { annotationAttachmentKey }) => {
         {
           const el = (
             app.workspace.getLeavesOfType("zotlit-query-file")[0]!
               .view as import("obsidian").ItemView
           ).contentEl.querySelector<HTMLTableRowElement>(
-            `[data-query-table-row="attachment"][data-query-key="${__typedArg0}"] [data-query-open="attachment"]`,
+            `[data-query-table-row="attachment"][data-query-key="${annotationAttachmentKey}"] [data-query-open="attachment"]`,
           )!;
           el!.dispatchEvent(
             new el!.ownerDocument.defaultView!.MouseEvent("click", {
@@ -436,20 +422,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }
         return String(true);
       },
-      { __typedArg0: annotationAttachment.key },
+      { annotationAttachmentKey: annotationAttachment.key },
     );
     await obRunUntil(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { pdfName }) => {
         return app.workspace
           .getLeavesOfType("pdf")
           .filter(
             (l) =>
-              (l.view as import("obsidian").FileView).file?.name ===
-              __typedArg0,
+              (l.view as import("obsidian").FileView).file?.name === pdfName,
           ).length;
       },
-      { __typedArg0: pdfName },
+      { pdfName },
       {
         ready: (value) => value === before + 1,
         what: "query-view-table.e2e.ts:221",
@@ -457,13 +442,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { annotationAttachmentKey }) => {
         {
           const el = (
             app.workspace.getLeavesOfType("zotlit-query-file")[0]!
               .view as import("obsidian").ItemView
           ).contentEl.querySelector<HTMLTableRowElement>(
-            `[data-query-table-row="attachment"][data-query-key="${__typedArg0}"] [data-query-open="attachment"]`,
+            `[data-query-table-row="attachment"][data-query-key="${annotationAttachmentKey}"] [data-query-open="attachment"]`,
           )!;
           el!.dispatchEvent(
             new el!.ownerDocument.defaultView!.MouseEvent("auxclick", {
@@ -475,20 +460,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         }
         return String(true);
       },
-      { __typedArg0: annotationAttachment.key },
+      { annotationAttachmentKey: annotationAttachment.key },
     );
     await obRunUntil(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { pdfName }) => {
         return app.workspace
           .getLeavesOfType("pdf")
           .filter(
             (l) =>
-              (l.view as import("obsidian").FileView).file?.name ===
-              __typedArg0,
+              (l.view as import("obsidian").FileView).file?.name === pdfName,
           ).length;
       },
-      { __typedArg0: pdfName },
+      { pdfName },
       {
         ready: (value) => value === before + 2,
         what: "query-view-table.e2e.ts:230",
@@ -568,7 +552,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+        async ({ app, page: pageHelpers }, { snapshotKey }) => {
           const { press, until } = pageHelpers;
           const native = window.open;
           let opened: string | null = null;
@@ -582,7 +566,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 app.workspace.getLeavesOfType("zotlit-query-file")[0]!
                   .view as import("obsidian").ItemView
               ).contentEl.querySelector<HTMLTableRowElement>(
-                `[data-query-table-row="attachment"][data-query-key="${__typedArg0}"] [data-query-open="attachment"]`,
+                `[data-query-table-row="attachment"][data-query-key="${snapshotKey}"] [data-query-open="attachment"]`,
               )!,
               "snapshot link",
             );
@@ -593,7 +577,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             window.open = native;
           }
         },
-        { __typedArg0: snapshot.key },
+        { snapshotKey: snapshot.key },
       ),
     ).toBe(`zotero://open/library/items/${snapshot.key}`);
 
@@ -672,16 +656,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { notePath }) => {
           return String(
             String(
               app.metadataCache.getFileCache(
-                app.vault.getFileByPath(__typedArg0!)!,
+                app.vault.getFileByPath(notePath!)!,
               )?.frontmatter?.["zotero-key"],
             ),
           );
         },
-        { __typedArg0: linked.notes[book] },
+        { notePath: linked.notes[book] },
       ),
     ).toBe(book);
   }, 180000);
@@ -733,18 +717,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const originals = JSON.parse(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { seeded }) => {
           return String(
             JSON.stringify(
               await Promise.all(
-                __typedArg0.map((path) =>
+                seeded.map((path) =>
                   app.vault.read(app.vault.getFileByPath(path)!),
                 ),
               ),
             ),
           );
         },
-        { __typedArg0: seeded },
+        { seeded },
       ),
     ) as string[];
     const created: string[] = [path];
@@ -752,38 +736,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async (
-          { app },
-          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-        ) => {
+        async ({ app }, { created, originals, seeded, layout }) => {
           for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
             leaf.detach();
-          for (const path of __typedArg0) {
+          for (const path of created) {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           }
-          const originals = __typedArg1;
-          for (const [at, path] of __typedArg2.entries())
+          for (const [at, path] of seeded.entries())
             await app.vault.modify(
               app.vault.getFileByPath(path)!,
               originals[at]!,
             );
-          await app.workspace.changeLayout(JSON.parse(__typedArg3));
+          await app.workspace.changeLayout(JSON.parse(layout));
           return String(true);
         },
-        {
-          __typedArg0: created,
-          __typedArg1: originals,
-          __typedArg2: seeded,
-          __typedArg3: layout,
-        },
+        { created, originals, seeded, layout },
       );
     });
     await obRun(
       run.vaultId,
       async (
         { app },
-        { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+        { firstNotePath, secondNotePath, newFilePath, newFileContent },
       ) => {
         const set = (
           path: string,
@@ -793,22 +768,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             app.vault.getFileByPath(path)!,
             (fm) => Object.assign(fm, props),
           );
-        await set(__typedArg0, {
+        await set(firstNotePath, {
           "zt-status": "unread",
           "zt-done": false,
           "zt-projects": ["a"],
           "zt-rank": 1,
           "zt-due": "2024-05-01",
         });
-        await set(__typedArg1, { "zt-done": true, "zt-rank": 2 });
-        await app.vault.create(__typedArg2, __typedArg3);
+        await set(secondNotePath, { "zt-done": true, "zt-rank": 2 });
+        await app.vault.create(newFilePath, newFileContent);
         return String(true);
       },
       {
-        __typedArg0: notePath(tieFirst),
-        __typedArg1: notePath(tieSecond),
-        __typedArg2: path,
-        __typedArg3: viewText(""),
+        firstNotePath: notePath(tieFirst),
+        secondNotePath: notePath(tieSecond),
+        newFilePath: path,
+        newFileContent: viewText(""),
       },
     );
 
@@ -817,10 +792,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await waitFor(async () => {
         indexed = await obRun(
           run.vaultId,
-          async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
+          async ({ app, zotlit }, { tieFirst, tieSecond }) => {
             return String(
               JSON.stringify(
-                [__typedArg0, __typedArg1].map((key) => [
+                [tieFirst, tieSecond].map((key) => [
                   key,
                   zotlit.services.noteIndex
                     .getNotesByItemKey(key)
@@ -831,7 +806,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
             );
           },
-          { __typedArg0: tieFirst, __typedArg1: tieSecond },
+          { tieFirst, tieSecond },
         );
         return (JSON.parse(indexed) as [string, string[], unknown][]).every(
           ([key, paths, rank]) =>
@@ -842,13 +817,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { path }) => {
         const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(app.vault.getFileByPath(__typedArg0)!);
+        await leaf.openFile(app.vault.getFileByPath(path)!);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         return String(true);
       },
-      { __typedArg0: path },
+      { path },
     );
     await raiseWindow(run.vaultId);
 
@@ -909,16 +884,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.parse(
         await obRun(
           run.vaultId,
-          async ({ app }, { __typedArg0 }) => {
+          async ({ app }, { path }) => {
             return String(
               JSON.stringify(
-                app.metadataCache.getFileCache(
-                  app.vault.getFileByPath(__typedArg0)!,
-                )?.frontmatter ?? null,
+                app.metadataCache.getFileCache(app.vault.getFileByPath(path)!)
+                  ?.frontmatter ?? null,
               ),
             );
           },
-          { __typedArg0: path },
+          { path },
         ),
       ) as Record<string, unknown> | null;
     const frontmatterWhen = async (
@@ -1009,41 +983,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const key = async (keyCode: string, modifiers: string[] = []) =>
       obRun(
         run.vaultId,
-        async (
-          _context,
-          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-        ) => {
+        async (_context, { keyCode, modifiers }) => {
           const contents = require("@electron/remote").getCurrentWebContents();
           contents.sendInputEvent({
             type: "keyDown",
-            keyCode: __typedArg0,
-            modifiers: __typedArg1,
+            keyCode: keyCode,
+            modifiers: modifiers,
           });
           contents.sendInputEvent({
             type: "keyUp",
-            keyCode: __typedArg2,
-            modifiers: __typedArg3,
+            keyCode: keyCode,
+            modifiers: modifiers,
           });
           return String(true);
         },
-        {
-          __typedArg0: keyCode,
-          __typedArg1: modifiers,
-          __typedArg2: keyCode,
-          __typedArg3: modifiers,
-        },
+        { keyCode, modifiers },
       );
     /** Text typed into the focused field, as the keyboard types it. */
     const typeText = async (text: string) =>
       obRun(
         run.vaultId,
-        async (_context, { __typedArg0 }) => {
-          require("@electron/remote")
-            .getCurrentWebContents()
-            .insertText(__typedArg0);
+        async (_context, { text }) => {
+          require("@electron/remote").getCurrentWebContents().insertText(text);
           return String(true);
         },
-        { __typedArg0: text },
+        { text },
       );
 
     // An empty cell is a click target across the whole cell, so the first
@@ -1080,12 +1044,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const restLine = Number(
         await obRun(
           run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
+          async ({ app }, { tieFirst, name }) => {
             const el = (
               app.workspace.getLeavesOfType("zotlit-query-file")[0]!
                 .view as import("obsidian").ItemView
             ).contentEl.querySelector<HTMLElement>(
-              `[data-query-key="${__typedArg0}"] [data-query-vault-cell][data-query-vault-name="${__typedArg1}"]`,
+              `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
             )!;
             const row = el!
               .closest<HTMLTableRowElement>("tr")!
@@ -1133,7 +1097,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
             );
           },
-          { __typedArg0: tieFirst, __typedArg1: name },
+          { tieFirst, name },
         ),
       );
       await click({ key: tieFirst, name });
@@ -1151,12 +1115,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const editLine = Number(
         await obRun(
           run.vaultId,
-          async ({ app }, { __typedArg0, __typedArg1 }) => {
+          async ({ app }, { tieFirst, name }) => {
             const el = (
               app.workspace.getLeavesOfType("zotlit-query-file")[0]!
                 .view as import("obsidian").ItemView
             ).contentEl.querySelector<HTMLElement>(
-              `[data-query-key="${__typedArg0}"] [data-query-vault-cell][data-query-vault-name="${__typedArg1}"]`,
+              `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="${name}"]`,
             )!;
             const row = el!
               .closest<HTMLTableRowElement>("tr")!
@@ -1204,7 +1168,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
             );
           },
-          { __typedArg0: tieFirst, __typedArg1: name },
+          { tieFirst, name },
         ),
       );
       expect(
@@ -1217,26 +1181,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { propertyNames, tieFirst }) => {
           return String(
-            __typedArg0
+            propertyNames
               .map((name) =>
                 (
                   app.workspace.getLeavesOfType("zotlit-query-file")[0]!
                     .view as import("obsidian").ItemView
                 ).contentEl
                   .querySelector<HTMLElement>(
-                    `[data-query-key="${__typedArg1}"] [data-query-vault-name="${name}"]`,
+                    `[data-query-key="${tieFirst}"] [data-query-vault-name="${name}"]`,
                   )
                   ?.getAttribute("data-query-vault-type"),
               )
               .join(),
           );
         },
-        {
-          __typedArg0: ["zt-rank", "zt-due", "zt-projects"],
-          __typedArg1: tieFirst,
-        },
+        { propertyNames: ["zt-rank", "zt-due", "zt-projects"], tieFirst },
       ),
     ).toBe("number,date,multitext");
     for (const name of ["zt-rank", "zt-due", "zt-projects"]) {
@@ -1382,7 +1343,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { tieFirst }) => {
           return String(
             String(
               !!(
@@ -1390,14 +1351,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .view as import("obsidian").ItemView
               ).contentEl
                 .querySelector<HTMLElement>(
-                  `[data-query-key="${__typedArg0}"] [data-query-vault-cell][data-query-vault-name="zt-projects"]`,
+                  `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="zt-projects"]`,
                 )!
                 .querySelector<HTMLElement>('[data-query-vault-chip="c"]')! &&
                 !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
             ),
           );
         },
-        { __typedArg0: tieFirst },
+        { tieFirst },
       ),
     ).toBe("true");
     await key("Escape");
@@ -1466,14 +1427,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await obRunUntil(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { chipLabel }) => {
         return !![
           ...activeDocument.querySelectorAll<HTMLElement>(
             "body > .menu .menu-item",
           ),
-        ].find((entry) => entry.textContent === __typedArg0);
+        ].find((entry) => entry.textContent === chipLabel);
       },
-      { __typedArg0: run.m.query_view_vault_chip_edit() },
+      { chipLabel: run.m.query_view_vault_chip_edit() },
       { what: "query-view-table.e2e.ts:643" },
     );
     expect(
@@ -1615,9 +1576,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await waitFor(async () => {
         const found = await obRun(
           run.vaultId,
-          async ({ zotlit }, { __typedArg0 }) => {
-            const note =
-              zotlit.services.noteIndex.getNotesByItemKey(__typedArg0)[0];
+          async ({ zotlit }, { fresh }) => {
+            const note = zotlit.services.noteIndex.getNotesByItemKey(fresh)[0];
             if (note) return String(note.path);
             const prompt =
               activeDocument.querySelector<HTMLInputElement>(".prompt input")!;
@@ -1636,7 +1596,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               );
             return String("none");
           },
-          { __typedArg0: fresh },
+          { fresh },
         );
         if (found !== "none") createdPath = found;
         return found !== "none";
@@ -1652,16 +1612,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // breaks the tie of their dates: the higher rank first.
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        await app.vault.modify(
-          app.vault.getFileByPath(__typedArg0)!,
-          __typedArg1,
-        );
+      async ({ app }, { path, viewYaml }) => {
+        await app.vault.modify(app.vault.getFileByPath(path)!, viewYaml);
         return String(true);
       },
       {
-        __typedArg0: path,
-        __typedArg1: viewText(
+        path,
+        viewYaml: viewText(
           [
             "        - 'vault[\"zt-done\"] == true'",
             "    sort:",
@@ -1696,17 +1653,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { paths, layout }) => {
           for (const leaf of app.workspace.getLeavesOfType("zotlit-query-file"))
             leaf.detach();
-          for (const path of __typedArg0) {
+          for (const path of paths) {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           }
-          await app.workspace.changeLayout(JSON.parse(__typedArg1));
+          await app.workspace.changeLayout(JSON.parse(layout));
           return String(true);
         },
-        { __typedArg0: paths, __typedArg1: layout },
+        { paths, layout },
       );
     });
     const itemTypes = [
@@ -1801,14 +1758,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ].join("\n");
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          const file = await app.vault.create(__typedArg0, __typedArg1);
+        async ({ app }, { path, text }) => {
+          const file = await app.vault.create(path, text);
           const leaf = app.workspace.getLeaf("tab");
           await leaf.openFile(file);
           app.workspace.setActiveLeaf(leaf, { focus: true });
           return String(true);
         },
-        { __typedArg0: path, __typedArg1: text },
+        { path, text },
       );
 
       let shown: {
@@ -1820,11 +1777,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         shown = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0 }) => {
+            async ({ app }, { expectedPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
                 return String("null");
               await (
@@ -1845,7 +1803,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 }),
               );
             },
-            { __typedArg0: path },
+            { expectedPath: path },
           ),
         ) as typeof shown;
         return shown !== null && shown.rows > 0;

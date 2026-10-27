@@ -213,14 +213,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obRunUntil(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+        async ({ zotlit }, { targetItemKey }) => {
           return await zotlit.services.citationLookup
-            .read({ indexedKeys: [__typedArg0] })
+            .read({ indexedKeys: [targetItemKey] })
             .then(function (answer) {
-              return String(answer.citekeyOf(__typedArg1));
+              return String(answer.citekeyOf(targetItemKey));
             });
         },
-        { __typedArg0: targetItem.key, __typedArg1: targetItem.key },
+        { targetItemKey: targetItem.key },
         {
           ready: (value) => value === targetItem.citationKey!,
           what: "query-cli-scope.e2e.ts:142",
@@ -280,14 +280,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const hits = JSON.parse(
         await obRun(
           run.vaultId,
-          async ({ zotlit }, { __typedArg0 }) => {
+          async ({ zotlit }, { targetItemTitle }) => {
             return String(
               await zotlit.services.itemLookup
-                .search(__typedArg0, { limit: 1 })
+                .search(targetItemTitle, { limit: 1 })
                 .then(JSON.stringify),
             );
           },
-          { __typedArg0: targetItem.title },
+          { targetItemTitle: targetItem.title },
         ),
       ) as { item: { itemID: number; fields: { title: string } } }[];
       expect(hits).toMatchObject([
@@ -311,18 +311,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obRunUntil(
         run.vaultId,
-        async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+        async ({ zotlit }, { targetItemKey }) => {
           return await zotlit.services.citationLookup
             .whenResolved()
             .then(function () {
               return zotlit.services.citationLookup
-                .read({ indexedKeys: [__typedArg0] })
+                .read({ indexedKeys: [targetItemKey] })
                 .then(function (answer) {
-                  return String(answer.citekeyOf(__typedArg1));
+                  return String(answer.citekeyOf(targetItemKey));
                 });
             });
         },
-        { __typedArg0: targetItem.key, __typedArg1: targetItem.key },
+        { targetItemKey: targetItem.key },
         {
           ready: (value) => value === targetItem.citationKey!,
           what: "query-cli-scope.e2e.ts:196",

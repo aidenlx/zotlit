@@ -32,12 +32,12 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         async (
           { app, zotlit, page },
           {
-            __typedArg0,
-            __typedArg1,
-            __typedArg2,
-            __typedArg3,
-            __typedArg4,
-            __typedArg5,
+            templateText,
+            literaturePath,
+            literatureContent,
+            note,
+            draftContent,
+            body,
           },
         ) => {
           const cleanup = new AsyncDisposableStack();
@@ -79,7 +79,7 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             throw Error("Default profile has no annotation section");
           const source =
             original.slice(0, original.indexOf(header) + header.length) +
-            __typedArg0;
+            templateText;
           if (existing) {
             cleanup.defer(async () => {
               await app.vault.modify(existing, original);
@@ -114,9 +114,12 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             state: { followMode: "pinned", pinnedItemKey: "RUGIER24" },
           });
           await s.annotations!.view.read;
-          const literature = await app.vault.create(__typedArg1, __typedArg2);
+          const literature = await app.vault.create(
+            literaturePath,
+            literatureContent,
+          );
           cleanup.defer(() => app.vault.delete(literature));
-          s.file = await app.vault.create(__typedArg3, __typedArg4);
+          s.file = await app.vault.create(note, draftContent);
           cleanup.defer(() => app.vault.delete(s.file!));
           s.leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
             leaf.detach(),
@@ -128,17 +131,17 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           });
           cleanup.defer(() => s.leaf!.view.save());
           s.editor = s.leaf!.view.editor;
-          s.editor!.setValue(__typedArg5);
+          s.editor!.setValue(body);
           await s.leaf!.view.save();
           return String(true);
         },
         {
-          __typedArg0: "\n![]({{ zt.backlink }})\n",
-          __typedArg1: literature,
-          __typedArg2: "---\nzotero-key: RUGIER24\n---\n",
-          __typedArg3: note,
-          __typedArg4: "An empty draft.\n",
-          __typedArg5: body,
+          templateText: "\n![]({{ zt.backlink }})\n",
+          literaturePath: literature,
+          literatureContent: "---\nzotero-key: RUGIER24\n---\n",
+          note,
+          draftContent: "An empty draft.\n",
+          body,
         },
       );
       await obRunUntil(
@@ -191,12 +194,12 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
       );
       await obRunUntil(
         vaultId,
-        async ({ page }, { __typedArg0 }) => {
+        async ({ page }, { expectedEmbed }) => {
           return page.scratch
             .citationScan!.editor!.getValue()
-            .includes(__typedArg0);
+            .includes(expectedEmbed);
         },
-        { __typedArg0: `![](${uri})` },
+        { expectedEmbed: `![](${uri})` },
         { what: "citation-scan.e2e.ts:98" },
       );
       await obRun(
@@ -381,13 +384,13 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
       // New offsets prove the replacement worker parsed a new edit, rather than serving held records alone.
       await obRun(
         vaultId,
-        async ({ page }, { __typedArg0 }) => {
+        async ({ page }, { prependText }) => {
           const s = page.scratch.citationScan!;
-          s.editor!.setValue(__typedArg0 + s.editor!.getValue());
+          s.editor!.setValue(prependText + s.editor!.getValue());
           await s.leaf!.view.save();
           return String(true);
         },
-        { __typedArg0: "After restart.\n\n" },
+        { prependText: "After restart.\n\n" },
       );
       await expect
         .poll(

@@ -101,13 +101,13 @@ export async function settledGesture(
 ): Promise<void> {
   await obRun(
     vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { attachmentPath }) => {
       await zotlit.services.pdfAnnotationEditor.bindings.find(
-        (candidate) => candidate.filePath === __typedArg0,
+        (candidate) => candidate.filePath === attachmentPath,
       )!.gestured;
       return String(true);
     },
-    { __typedArg0: attachmentPath },
+    { attachmentPath },
   );
 }
 
@@ -166,30 +166,30 @@ export async function openPdfWithAnnotationView(
   cleanup.defer(async () => {
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
-        await app.workspace.changeLayout(JSON.parse(__typedArg0));
+      async ({ app }, { layout }) => {
+        await app.workspace.changeLayout(JSON.parse(layout));
         return String(true);
       },
-      { __typedArg0: layout },
+      { layout },
     );
   });
   await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
-      const file = app.vault.getFileByPath(__typedArg0)!;
+    async ({ app }, { attachmentPath }) => {
+      const file = app.vault.getFileByPath(attachmentPath)!;
       await app.workspace.getLeaf("tab").openFile(file);
       return String(true);
     },
-    { __typedArg0: attachmentPath },
+    { attachmentPath },
   );
   await obRunUntil(
     vaultId,
-    async ({ zotlit }, { __typedArg0 }) => {
+    async ({ zotlit }, { attachmentPath }) => {
       return !!zotlit.services.pdfAnnotationEditor.bindings.find(
-        (b) => b.filePath === __typedArg0,
+        (b) => b.filePath === attachmentPath,
       )?.session;
     },
-    { __typedArg0: attachmentPath },
+    { attachmentPath },
     { what: "reader-gestures.ts:198" },
   );
   await obRun(

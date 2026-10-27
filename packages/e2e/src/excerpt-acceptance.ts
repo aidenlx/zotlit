@@ -318,12 +318,12 @@ export async function verifyReaderBackedExcerpts(
   const filterKey = JSON.stringify(`zotlit-annot-filter-${item.key}`);
   const savedFilter = await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { storageKey }) => {
       return String(
-        await JSON.stringify(app.loadLocalStorage(__typedArg0) ?? null),
+        await JSON.stringify(app.loadLocalStorage(storageKey) ?? null),
       );
     },
-    { __typedArg0: JSON.parse(filterKey) },
+    { storageKey: JSON.parse(filterKey) },
   );
   await using cleanup = new AsyncDisposableStack();
   // Disposal is LIFO, so these read bottom to top: the saved filter goes back
@@ -332,13 +332,13 @@ export async function verifyReaderBackedExcerpts(
     cleanupStep(async () => {
       await obRun(
         vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          app.saveLocalStorage(__typedArg0, __typedArg1);
+        async ({ app }, { storageKey, storageValue }) => {
+          app.saveLocalStorage(storageKey, storageValue);
           return String(true);
         },
         {
-          __typedArg0: JSON.parse(filterKey),
-          __typedArg1: JSON.parse(savedFilter),
+          storageKey: JSON.parse(filterKey),
+          storageValue: JSON.parse(savedFilter),
         },
       );
     }),
@@ -347,11 +347,11 @@ export async function verifyReaderBackedExcerpts(
     cleanupStep(async () => {
       await obRun(
         vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0!));
+        async ({ app }, { layout }) => {
+          await app.workspace.changeLayout(JSON.parse(layout!));
           return String(true);
         },
-        { __typedArg0: layout },
+        { layout },
       );
     }),
   );
@@ -363,7 +363,7 @@ export async function verifyReaderBackedExcerpts(
   expect(
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0 }) => {
+      async ({ app, zotlit }, { vaultPath }) => {
         for (const leaf of app.workspace.getLeavesOfType(
           "zotero-annotation-view",
         ))
@@ -371,7 +371,7 @@ export async function verifyReaderBackedExcerpts(
         await zotlit.services.bridge.runPromise(
           zotlit.services.excerptImage.clear,
         );
-        const file = app.vault.getFileByPath(__typedArg0!);
+        const file = app.vault.getFileByPath(vaultPath!);
         if (!file)
           throw new Error("The Fixture PDF is not in the Fixture Vault");
         const leaf = app.workspace.getLeaf("tab");
@@ -379,21 +379,21 @@ export async function verifyReaderBackedExcerpts(
         app.workspace.setActiveLeaf(leaf, { focus: true });
         return String(true);
       },
-      { __typedArg0: vaultPath },
+      { vaultPath },
     ),
   ).toBe("true");
   await obRunUntil(
     vaultId,
-    async ({ app, zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+    async ({ app, zotlit }, { vaultPath, pageNumber }) => {
       const state = JSON.parse(
         (function () {
           const leaves = app.workspace.getLeavesOfType("pdf");
           const leaf = leaves.find(
             (candidate) =>
-              (candidate.view as PDFFileView).file?.path === __typedArg0,
+              (candidate.view as PDFFileView).file?.path === vaultPath,
           );
           const page = leaf?.view.containerEl.querySelector(
-            `.page[data-page-number="${__typedArg1}"]`,
+            `.page[data-page-number="${pageNumber}"]`,
           );
           const canvas = page?.querySelector("canvas");
           return JSON.stringify({
@@ -401,20 +401,14 @@ export async function verifyReaderBackedExcerpts(
             page: !!page,
             canvas: !!canvas && canvas.width > 0 && canvas.height > 0,
             borrowed: !!zotlit.services.pdfAnnotationEditor.borrowDocument(
-              (app.vault.adapter as FileSystemAdapter).getFullPath(
-                __typedArg2!,
-              ),
+              (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
             ),
           });
         })(),
       );
       return await String(state.page && state.canvas && state.borrowed);
     },
-    {
-      __typedArg0: vaultPath,
-      __typedArg1: target.position.pageIndex + 1,
-      __typedArg2: vaultPath,
-    },
+    { vaultPath, pageNumber: target.position.pageIndex + 1 },
     {
       ready: (value) => value === "true",
       tries: 80,
@@ -423,14 +417,13 @@ export async function verifyReaderBackedExcerpts(
   );
   const held = await obRun(
     vaultId,
-    async ({ app, zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+    async ({ app, zotlit }, { vaultPath, pageNumber }) => {
       const leaves = app.workspace.getLeavesOfType("pdf");
       const leaf = leaves.find(
-        (candidate) =>
-          (candidate.view as PDFFileView).file?.path === __typedArg0,
+        (candidate) => (candidate.view as PDFFileView).file?.path === vaultPath,
       );
       const page = leaf?.view.containerEl.querySelector(
-        `.page[data-page-number="${__typedArg1}"]`,
+        `.page[data-page-number="${pageNumber}"]`,
       );
       const canvas = page?.querySelector("canvas");
       return {
@@ -438,15 +431,11 @@ export async function verifyReaderBackedExcerpts(
         page: !!page,
         canvas: !!canvas && canvas.width > 0 && canvas.height > 0,
         borrowed: !!zotlit.services.pdfAnnotationEditor.borrowDocument(
-          (app.vault.adapter as FileSystemAdapter).getFullPath(__typedArg2!),
+          (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
         ),
       };
     },
-    {
-      __typedArg0: vaultPath,
-      __typedArg1: target.position.pageIndex + 1,
-      __typedArg2: vaultPath,
-    },
+    { vaultPath, pageNumber: target.position.pageIndex + 1 },
   );
   expect(held).toMatchObject({ page: true, canvas: true, borrowed: true });
 
@@ -454,11 +443,11 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     async (
       { app, zotlit },
-      { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+      { attachmentKey, libraryId, vaultPath, targetKey },
     ) => {
       const services = zotlit.services;
       const list = await services.bridge.runPromise(
-        services.annotationRepository.read(__typedArg0),
+        services.annotationRepository.read(attachmentKey),
       );
       if (!list) throw new Error("The Fixture Attachment has no Annotations");
       const requestFor = (key: string) => {
@@ -472,9 +461,9 @@ export async function verifyReaderBackedExcerpts(
           source: list.source,
           sourceScope: services.zoteroPref.dataDir,
           attachmentKey: annotation.parentKey,
-          libraryID: __typedArg1,
+          libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
-            __typedArg2!,
+            vaultPath!,
           ),
           zoteroPngPath: require("path").join(
             services.zoteroPref.dataDir,
@@ -485,7 +474,7 @@ export async function verifyReaderBackedExcerpts(
         };
       };
       const service = services.excerptImage;
-      const request = requestFor(__typedArg3);
+      const request = requestFor(targetKey);
       await zotlit.services.bridge.runPromise(service.clear);
       const before = (() => {
         const snapshot =
@@ -569,10 +558,10 @@ export async function verifyReaderBackedExcerpts(
       };
     },
     {
-      __typedArg0: attachment.key,
-      __typedArg1: attachment.libraryID,
-      __typedArg2: vaultPath,
-      __typedArg3: target.key,
+      attachmentKey: attachment.key,
+      libraryId: attachment.libraryID,
+      vaultPath,
+      targetKey: target.key,
     },
   );
   expect(borrowed.outcome).toMatchObject({
@@ -607,14 +596,14 @@ export async function verifyReaderBackedExcerpts(
   expect(
     await obRun(
       vaultId,
-      async ({ app, zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+      async ({ app, zotlit }, { vaultPath, pageNumber }) => {
         const leaves = app.workspace.getLeavesOfType("pdf");
         const leaf = leaves.find(
           (candidate) =>
-            (candidate.view as PDFFileView).file?.path === __typedArg0,
+            (candidate.view as PDFFileView).file?.path === vaultPath,
         );
         const page = leaf?.view.containerEl.querySelector(
-          `.page[data-page-number="${__typedArg1}"]`,
+          `.page[data-page-number="${pageNumber}"]`,
         );
         const canvas = page?.querySelector("canvas");
         return {
@@ -622,15 +611,11 @@ export async function verifyReaderBackedExcerpts(
           page: !!page,
           canvas: !!canvas && canvas.width > 0 && canvas.height > 0,
           borrowed: !!zotlit.services.pdfAnnotationEditor.borrowDocument(
-            (app.vault.adapter as FileSystemAdapter).getFullPath(__typedArg2!),
+            (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
           ),
         };
       },
-      {
-        __typedArg0: vaultPath,
-        __typedArg1: target.position.pageIndex + 1,
-        __typedArg2: vaultPath,
-      },
+      { vaultPath, pageNumber: target.position.pageIndex + 1 },
     ),
   ).toEqual(held);
 
@@ -641,17 +626,17 @@ export async function verifyReaderBackedExcerpts(
   // resolve those Annotations through the excerpt service the cards share.
   const importedNote = await obRun(
     vaultId,
-    async ({ app, zotlit }, { __typedArg0, __typedArg1 }) => {
+    async ({ app, zotlit }, { noteItemKey }) => {
       const services = zotlit.services;
       await services.noteIndex.whenIndexed();
-      const file = services.noteIndex.getImportedNoteByNoteKey(__typedArg0)[0];
+      const file = services.noteIndex.getImportedNoteByNoteKey(noteItemKey)[0];
       if (!file)
         throw new Error(
-          `The Fixture Vault holds no Imported Note for ${__typedArg1}`,
+          `The Fixture Vault holds no Imported Note for ${noteItemKey}`,
         );
       return { path: file.path, source: await app.vault.read(file) };
     },
-    { __typedArg0: noteItem.key, __typedArg1: noteItem.key },
+    { noteItemKey: noteItem.key },
   );
   const templateBinding = await obRun(
     vaultId,
@@ -673,12 +658,12 @@ export async function verifyReaderBackedExcerpts(
       await settleImport();
       await obRun(
         vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          const file = app.vault.getFileByPath(__typedArg0!);
-          if (file) await app.vault.modify(file, __typedArg1);
+        async ({ app }, { importedNotePath, source }) => {
+          const file = app.vault.getFileByPath(importedNotePath!);
+          if (file) await app.vault.modify(file, source);
           return String(true);
         },
-        { __typedArg0: importedNote.path, __typedArg1: importedNote.source },
+        { importedNotePath: importedNote.path, source: importedNote.source },
       );
     }),
   );
@@ -687,15 +672,15 @@ export async function verifyReaderBackedExcerpts(
       await settleImport();
       await obRun(
         vaultId,
-        async ({ zotlit }, { __typedArg0 }) => {
+        async ({ zotlit }, { enabled }) => {
           zotlit.services.bridge.runSync(
             zotlit.services.settings.updateDefaultLiteratureNoteProfileBindings(
-              { "note.import-annotations-as-template": __typedArg0 },
+              { "note.import-annotations-as-template": enabled },
             ),
           );
           return String(true);
         },
-        { __typedArg0: templateBinding.enabled },
+        { enabled: templateBinding.enabled },
       );
     }),
   );
@@ -711,14 +696,14 @@ export async function verifyReaderBackedExcerpts(
       const known = JSON.stringify([...existingFiles]);
       await obRun(
         vaultId,
-        async ({ app }, { __typedArg0 }) => {
-          const known = new Set(__typedArg0);
+        async ({ app }, { knownKeys }) => {
+          const known = new Set(knownKeys);
           for (const file of app.vault.getFiles()) {
             if (!known.has(file.path)) await app.vault.delete(file);
           }
           return String(true);
         },
-        { __typedArg0: JSON.parse(known) },
+        { knownKeys: JSON.parse(known) },
       );
     }),
   );
@@ -727,10 +712,10 @@ export async function verifyReaderBackedExcerpts(
   // first, so the cache stands for them when the import runs.
   const prepared = await obRun(
     vaultId,
-    async ({ app, zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+    async ({ app, zotlit }, { attachmentKey, libraryId, vaultPath }) => {
       const services = zotlit.services;
       const list = await services.bridge.runPromise(
-        services.annotationRepository.read(__typedArg0),
+        services.annotationRepository.read(attachmentKey),
       );
       if (!list) throw new Error("The Fixture Attachment has no Annotations");
       const requestFor = (key: string) => {
@@ -744,9 +729,9 @@ export async function verifyReaderBackedExcerpts(
           source: list.source,
           sourceScope: services.zoteroPref.dataDir,
           attachmentKey: annotation.parentKey,
-          libraryID: __typedArg1,
+          libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
-            __typedArg2!,
+            vaultPath!,
           ),
           zoteroPngPath: require("path").join(
             services.zoteroPref.dataDir,
@@ -783,9 +768,9 @@ export async function verifyReaderBackedExcerpts(
       return { keys, outcomes };
     },
     {
-      __typedArg0: attachment.key,
-      __typedArg1: attachment.libraryID,
-      __typedArg2: vaultPath,
+      attachmentKey: attachment.key,
+      libraryId: attachment.libraryID,
+      vaultPath,
     },
   );
   expect(prepared.keys.slice().sort()).toEqual(
@@ -825,7 +810,7 @@ export async function verifyReaderBackedExcerpts(
   expect(
     await obRun(
       vaultId,
-      async ({ zotlit, page: helpers }, { __typedArg0 }) => {
+      async ({ zotlit, page: helpers }, { itemID }) => {
         const services = zotlit.services;
         const memory = () => {
           try {
@@ -869,7 +854,7 @@ export async function verifyReaderBackedExcerpts(
           });
         await services.noteIndex.whenIndexed();
         void services.batchImport
-          .runBatchImport("note", [__typedArg0])
+          .runBatchImport("note", [itemID])
           .then(
             (result) => {
               state.after = (() => {
@@ -909,7 +894,7 @@ export async function verifyReaderBackedExcerpts(
           });
         return String(true);
       },
-      { __typedArg0: noteItem.itemID },
+      { itemID: noteItem.itemID },
     ),
   ).toBe("true");
   await settleImport();
@@ -996,12 +981,11 @@ export async function verifyReaderBackedExcerpts(
         async (
           { app, page: helpers },
           {
-            __typedArg0,
-            __typedArg1,
-            __typedArg2,
-            __typedArg3,
-            __typedArg4,
-            __typedArg5,
+            itemKey,
+            filterTriggerLabel,
+            activeTriggerPrefix,
+            colorListLabel,
+            expectedColor,
           },
         ) => {
           const leaf = app.workspace.getLeavesOfType(
@@ -1009,16 +993,13 @@ export async function verifyReaderBackedExcerpts(
           )[0];
           if (!leaf) return String(await JSON.stringify("no view"));
           const state = (leaf.view as AnnotationView).snapshot;
-          if (
-            state.followMode !== "pinned" ||
-            state.pinnedItemKey !== __typedArg0
-          )
+          if (state.followMode !== "pinned" || state.pinnedItemKey !== itemKey)
             await leaf.setViewState({
               type: "zotero-annotation-view",
               state: {
                 followMode: "pinned",
                 previousMode: "active-tab",
-                pinnedItemKey: __typedArg1,
+                pinnedItemKey: itemKey,
               },
               active: true,
             });
@@ -1029,8 +1010,10 @@ export async function verifyReaderBackedExcerpts(
               root.querySelectorAll<HTMLButtonElement>("button[aria-label]"),
             ).find(
               (button) =>
-                button.getAttribute("aria-label") === __typedArg2 ||
-                button.getAttribute("aria-label")!.startsWith(__typedArg3),
+                button.getAttribute("aria-label") === filterTriggerLabel ||
+                button
+                  .getAttribute("aria-label")!
+                  .startsWith(activeTriggerPrefix),
             );
             if (!trigger)
               return String(await JSON.stringify("no colour Chooser"));
@@ -1044,7 +1027,7 @@ export async function verifyReaderBackedExcerpts(
                 (list) =>
                   root.ownerDocument.getElementById(
                     list.getAttribute("aria-labelledby")!,
-                  )?.textContent === __typedArg4,
+                  )?.textContent === colorListLabel,
               );
               return list?.checkVisibility() ? list : null;
             });
@@ -1056,7 +1039,7 @@ export async function verifyReaderBackedExcerpts(
                   .querySelector<HTMLElement>('[style*="--zt-swatch-color"]')
                   ?.style.getPropertyValue("--zt-swatch-color")
                   .trim()
-                  .toLowerCase() === __typedArg5,
+                  .toLowerCase() === expectedColor,
             );
             if (!row) return String(await JSON.stringify("no swatch"));
             if (row.getAttribute("aria-selected") !== "true") {
@@ -1081,12 +1064,13 @@ export async function verifyReaderBackedExcerpts(
           }
         },
         {
-          __typedArg0: item.key,
-          __typedArg1: item.key,
-          __typedArg2: m.annot_view_filter_color_trigger(),
-          __typedArg3: m.annot_view_filter_color_trigger_active({ colors: "" }),
-          __typedArg4: m.annot_view_filter_color_list(),
-          __typedArg5: target.color.toLowerCase(),
+          itemKey: item.key,
+          filterTriggerLabel: m.annot_view_filter_color_trigger(),
+          activeTriggerPrefix: m.annot_view_filter_color_trigger_active({
+            colors: "",
+          }),
+          colorListLabel: m.annot_view_filter_color_list(),
+          expectedColor: target.color.toLowerCase(),
         },
         {
           ready: (value) => value === options.expected,
@@ -1130,12 +1114,12 @@ export async function verifyReaderBackedExcerpts(
   ).toBe(true);
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { cardSelector }) => {
       return await String(
         !!(() => {
           const image = app.workspace
             .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
             .find(Boolean)
             ?.querySelector("img");
           return (
@@ -1148,7 +1132,7 @@ export async function verifyReaderBackedExcerpts(
       );
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
     {
       ready: (value) => value === "true",
@@ -1173,11 +1157,11 @@ export async function verifyReaderBackedExcerpts(
   await installUrlProbe(vaultId);
   const demand = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -1200,7 +1184,7 @@ export async function verifyReaderBackedExcerpts(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(demand.src).toMatch(/^blob:/);
@@ -1237,15 +1221,15 @@ export async function verifyReaderBackedExcerpts(
   ).toBe("true");
   await obRunUntil(
     vaultId,
-    async ({ app, zotlit }, { __typedArg0 }) => {
+    async ({ app, zotlit }, { vaultPath }) => {
       return await String(
         app.workspace.getLeavesOfType("pdf").length === 0 &&
           !zotlit.services.pdfAnnotationEditor.borrowDocument(
-            (app.vault.adapter as FileSystemAdapter).getFullPath(__typedArg0!),
+            (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
           ),
       );
     },
-    { __typedArg0: vaultPath },
+    { vaultPath },
     {
       ready: (value) => value === "true",
       tries: 40,
@@ -1293,11 +1277,11 @@ export async function verifyReaderBackedExcerpts(
   );
   const replacing = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -1320,7 +1304,7 @@ export async function verifyReaderBackedExcerpts(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(replacing).toMatchObject({
@@ -1353,22 +1337,19 @@ export async function verifyReaderBackedExcerpts(
     async (
       { app, zotlit, page: helpers },
       {
-        __typedArg0,
-        __typedArg1,
-        __typedArg2,
-        __typedArg3,
-        __typedArg4,
-        __typedArg5,
-        __typedArg6,
-        __typedArg7,
-        __typedArg8,
+        cardSelector,
+        pixelsWidth,
+        pixelsHeight,
+        pixelData,
+        createdLength,
+        imageSrc,
       },
     ) => {
       const pixels = JSON.parse(
         await (async () => {
           const image = app.workspace
             .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
             .find(Boolean)
             ?.querySelector("img");
           if (!image || !image.complete || image.naturalWidth === 0)
@@ -1402,15 +1383,15 @@ export async function verifyReaderBackedExcerpts(
       );
       if (
         !pixels ||
-        pixels.width !== __typedArg1 ||
-        pixels.height !== __typedArg2 ||
-        pixels.pixels !== __typedArg3
+        pixels.width !== pixelsWidth ||
+        pixels.height !== pixelsHeight ||
+        pixels.pixels !== pixelData
       )
         return "false";
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg4))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       const diagnostics = (() => {
@@ -1426,28 +1407,25 @@ export async function verifyReaderBackedExcerpts(
         };
       })();
       if (
-        state.created.length === __typedArg5 &&
-        image!.src === __typedArg6 &&
+        state.created.length === createdLength &&
+        image!.src === imageSrc &&
         !diagnostics.jobActive &&
         diagnostics.phase === "idle"
       )
         return "true";
       return await String(
-        state.created.length > __typedArg7 &&
+        state.created.length > createdLength &&
           image!.src === state.created[state.created.length - 1] &&
-          state.revoked.includes(__typedArg8!),
+          state.revoked.includes(imageSrc!),
       );
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
-      __typedArg1: borrowed.pixels!.width,
-      __typedArg2: borrowed.pixels!.height,
-      __typedArg3: borrowed.pixels!.pixels,
-      __typedArg4: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
-      __typedArg5: demand.created.length,
-      __typedArg6: demand.src,
-      __typedArg7: demand.created.length,
-      __typedArg8: demand.src,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      pixelsWidth: borrowed.pixels!.width,
+      pixelsHeight: borrowed.pixels!.height,
+      pixelData: borrowed.pixels!.pixels,
+      createdLength: demand.created.length,
+      imageSrc: demand.src,
     },
     {
       ready: (value) => value === "true",
@@ -1457,11 +1435,11 @@ export async function verifyReaderBackedExcerpts(
   );
   const replaced = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -1484,7 +1462,7 @@ export async function verifyReaderBackedExcerpts(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   // URL lifetime, not an allocation count: the previous URL stayed usable while
@@ -1629,9 +1607,8 @@ export async function verifyMultiPdfExcerptBatch(
   const measurePass = (): Promise<BatchChunk> =>
     obRun(
       vaultId,
-      async ({ zotlit }, { __typedArg0 }) => {
+      async ({ zotlit }, { excerpts }) => {
         const service = zotlit.services.excerptImage;
-        const excerpts = __typedArg0;
         const sampleMemory = () => {
           try {
             const value = process.memoryUsage();
@@ -1793,7 +1770,7 @@ export async function verifyMultiPdfExcerptBatch(
         });
         return { ms, requests: answers.map(flatten), memory };
       },
-      { __typedArg0: excerpts },
+      { excerpts },
       {
         timeoutMs: // Five minutes: every request here settles in well under a second on an
           // idle machine, so anything near this bound is the machine, not the batch.
@@ -1935,14 +1912,15 @@ export async function verifySavedEditDisplay(
 ): Promise<void> {
   const card = await obRun(
     vaultId,
-    async ({ zotlit }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+    async ({ zotlit }, { attachmentKey, targetKey }) => {
       const { annotationRepository: repository, bridge } = zotlit.services;
-      const list = await bridge.runPromise(repository.read(__typedArg0));
+      const list = await bridge.runPromise(repository.read(attachmentKey));
       const record =
-        list?.annotations?.find(
-          (annotation) => annotation.key === __typedArg1,
-        ) ?? null;
-      const capability = bridge.runSync(repository.capabilityFor(__typedArg2));
+        list?.annotations?.find((annotation) => annotation.key === targetKey) ??
+        null;
+      const capability = bridge.runSync(
+        repository.capabilityFor(attachmentKey),
+      );
       return {
         capability:
           capability.kind === "cooldown"
@@ -1954,11 +1932,7 @@ export async function verifySavedEditDisplay(
         record: record && { color: record.color, comment: record.comment },
       };
     },
-    {
-      __typedArg0: attachment.key,
-      __typedArg1: target.key,
-      __typedArg2: attachment.key,
-    },
+    { attachmentKey: attachment.key, targetKey: target.key },
   );
   if (card.capability.kind !== "writable") {
     context.skip(
@@ -1969,12 +1943,12 @@ export async function verifySavedEditDisplay(
   expect(card.record).not.toBeNull();
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { cardSelector }) => {
       return await String(
         !!(() => {
           const image = app.workspace
             .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
             .find(Boolean)
             ?.querySelector("img");
           return (
@@ -1987,7 +1961,7 @@ export async function verifySavedEditDisplay(
       );
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
     {
       ready: (value) => value === "true",
@@ -2030,29 +2004,25 @@ export async function verifySavedEditDisplay(
     cleanupStep(async () => {
       await obRun(
         vaultId,
-        async (
-          { zotlit },
-          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-        ) => {
+        async ({ zotlit }, { targetKey, commentText, colorValue }) => {
           const repository = zotlit.services.annotationRepository,
             bridge = zotlit.services.bridge;
           const comment = await bridge.runPromise(
-            repository.patchComment(__typedArg0, __typedArg1),
+            repository.patchComment(targetKey, commentText),
           );
           if (comment.kind !== "idle")
             throw new Error("The saved comment was not restored");
           const color = await bridge.runPromise(
-            repository.patchColor(__typedArg2, __typedArg3),
+            repository.patchColor(targetKey, colorValue),
           );
           if (color.kind !== "idle")
             throw new Error("The saved colour was not restored");
           return String(true);
         },
         {
-          __typedArg0: target.key,
-          __typedArg1: card.record!.comment ?? "",
-          __typedArg2: target.key,
-          __typedArg3: card.record!.color ?? editedColor,
+          targetKey: target.key,
+          commentText: card.record!.comment ?? "",
+          colorValue: card.record!.color ?? editedColor,
         },
       );
     }),
@@ -2060,11 +2030,11 @@ export async function verifySavedEditDisplay(
   await installUrlProbe(vaultId);
   const before = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -2087,7 +2057,7 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(before.src).toMatch(/^blob:/);
@@ -2098,11 +2068,11 @@ export async function verifySavedEditDisplay(
     vaultId,
     async (
       { app, zotlit, page: helpers },
-      { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+      { attachmentKey, libraryId, vaultPath, targetKey },
     ) => {
       const services = zotlit.services;
       const list = await services.bridge.runPromise(
-        services.annotationRepository.read(__typedArg0),
+        services.annotationRepository.read(attachmentKey),
       );
       if (!list) throw new Error("The Fixture Attachment has no Annotations");
       const requestFor = (key: string) => {
@@ -2116,9 +2086,9 @@ export async function verifySavedEditDisplay(
           source: list.source,
           sourceScope: services.zoteroPref.dataDir,
           attachmentKey: annotation.parentKey,
-          libraryID: __typedArg1,
+          libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
-            __typedArg2!,
+            vaultPath!,
           ),
           zoteroPngPath: require("path").join(
             services.zoteroPref.dataDir,
@@ -2128,7 +2098,7 @@ export async function verifySavedEditDisplay(
           ),
         };
       };
-      const request = requestFor(__typedArg3);
+      const request = requestFor(targetKey);
       helpers.scratch.__zotlitExcerptStale = request;
       return {
         version: request.annotation.version ?? null,
@@ -2136,10 +2106,10 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: attachment.key,
-      __typedArg1: attachment.libraryID,
-      __typedArg2: vaultPath,
-      __typedArg3: target.key,
+      attachmentKey: attachment.key,
+      libraryId: attachment.libraryID,
+      vaultPath,
+      targetKey: target.key,
     },
   );
   expect(staleSnapshot.color).toBe(card.record!.color);
@@ -2151,10 +2121,10 @@ export async function verifySavedEditDisplay(
   // against it, so a fresh URL over the old pixels cannot pass.
   const beforePixels = await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { cardSelector }) => {
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       if (!image || !image.complete || image.naturalWidth === 0) return null;
@@ -2185,7 +2155,7 @@ export async function verifySavedEditDisplay(
       }
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(beforePixels?.pixels).toMatch(/^[0-9a-f]{64}$/);
@@ -2207,16 +2177,13 @@ export async function verifySavedEditDisplay(
   ).toBe("true");
   const saved = await obRun(
     vaultId,
-    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+    async ({ zotlit }, { targetKey, editedColor }) => {
       const outcome = await zotlit.services.bridge.runPromise(
-        zotlit.services.annotationRepository.patchColor(
-          __typedArg0,
-          __typedArg1,
-        ),
+        zotlit.services.annotationRepository.patchColor(targetKey, editedColor),
       );
       return { kind: outcome.kind };
     },
-    { __typedArg0: target.key, __typedArg1: editedColor },
+    { targetKey: target.key, editedColor },
   );
   expect(saved).toMatchObject({ kind: "idle" });
   await obRunUntil(
@@ -2245,11 +2212,11 @@ export async function verifySavedEditDisplay(
   );
   const held = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -2272,7 +2239,7 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(held).toMatchObject({
@@ -2292,12 +2259,12 @@ export async function verifySavedEditDisplay(
   );
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+    async ({ app }, { cardSelector, beforeImageSrc }) => {
       return await String(
         !!(() => {
           const image = app.workspace
             .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
             .find(Boolean)
             ?.querySelector("img");
           return (
@@ -2309,15 +2276,14 @@ export async function verifySavedEditDisplay(
         })() &&
           app.workspace
             .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(__typedArg1))
+            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
             .find(Boolean)
-            ?.querySelector("img")!.src !== __typedArg2,
+            ?.querySelector("img")!.src !== beforeImageSrc,
       );
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
-      __typedArg1: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
-      __typedArg2: before.src,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      beforeImageSrc: before.src,
     },
     {
       ready: (value) => value === "true",
@@ -2327,11 +2293,11 @@ export async function verifySavedEditDisplay(
   );
   const edited = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -2354,7 +2320,7 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   // URL ownership, not an allocation count: the card paints a URL it allocated
@@ -2377,10 +2343,10 @@ export async function verifySavedEditDisplay(
   // pre-edit record resolved to.
   const editedPixels = await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { cardSelector }) => {
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       if (!image || !image.complete || image.naturalWidth === 0) return null;
@@ -2411,18 +2377,18 @@ export async function verifySavedEditDisplay(
       }
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   const resolved = await obRun(
     vaultId,
     async (
       { app, zotlit },
-      { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+      { attachmentKey, libraryId, vaultPath, targetKey },
     ) => {
       const services = zotlit.services;
       const list = await services.bridge.runPromise(
-        services.annotationRepository.read(__typedArg0),
+        services.annotationRepository.read(attachmentKey),
       );
       if (!list) throw new Error("The Fixture Attachment has no Annotations");
       const requestFor = (key: string) => {
@@ -2436,9 +2402,9 @@ export async function verifySavedEditDisplay(
           source: list.source,
           sourceScope: services.zoteroPref.dataDir,
           attachmentKey: annotation.parentKey,
-          libraryID: __typedArg1,
+          libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
-            __typedArg2!,
+            vaultPath!,
           ),
           zoteroPngPath: require("path").join(
             services.zoteroPref.dataDir,
@@ -2449,7 +2415,7 @@ export async function verifySavedEditDisplay(
         };
       };
       const outcome = await services.bridge.runPromise(
-        services.excerptImage.resolve(requestFor(__typedArg3)),
+        services.excerptImage.resolve(requestFor(targetKey)),
       );
       return {
         pixels:
@@ -2493,10 +2459,10 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: attachment.key,
-      __typedArg1: attachment.libraryID,
-      __typedArg2: vaultPath,
-      __typedArg3: target.key,
+      attachmentKey: attachment.key,
+      libraryId: attachment.libraryID,
+      vaultPath,
+      targetKey: target.key,
     },
   );
   expect(editedPixels).toMatchObject({
@@ -2511,7 +2477,7 @@ export async function verifySavedEditDisplay(
   // the card keeps the very URL it paints from.
   const idle = await obRun(
     vaultId,
-    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+    async ({ zotlit }, { targetKey, editedComment }) => {
       const { annotationRepository: repository, bridge } = zotlit.services;
       const before = (() => {
         const snapshot =
@@ -2526,7 +2492,7 @@ export async function verifySavedEditDisplay(
         };
       })();
       const outcome = await bridge.runPromise(
-        repository.patchComment(__typedArg0, __typedArg1),
+        repository.patchComment(targetKey, editedComment),
       );
       const after = (() => {
         const snapshot =
@@ -2542,21 +2508,21 @@ export async function verifySavedEditDisplay(
       })();
       return { before, after, outcome: { kind: outcome.kind } };
     },
-    { __typedArg0: target.key, __typedArg1: editedComment },
+    { targetKey: target.key, editedComment },
   );
   expect(idle.outcome).toMatchObject({ kind: "idle" });
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { editedComment }) => {
       return await String(
         app.workspace
           .getLeavesOfType("zotero-annotation-view")
           .some((leaf) =>
-            leaf.view.containerEl.textContent?.includes(__typedArg0),
+            leaf.view.containerEl.textContent?.includes(editedComment),
           ),
       );
     },
-    { __typedArg0: editedComment },
+    { editedComment },
     {
       ready: (value) => value === "true",
       tries: 80,
@@ -2565,11 +2531,11 @@ export async function verifySavedEditDisplay(
   );
   const unchanged = await obRun(
     vaultId,
-    async ({ app, zotlit, page: helpers }, { __typedArg0 }) => {
+    async ({ app, zotlit, page: helpers }, { cardSelector }) => {
       const state = helpers.scratch.__zotlitExcerptUrlProbe!;
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       return {
@@ -2592,7 +2558,7 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(unchanged).toMatchObject({
@@ -2616,11 +2582,11 @@ export async function verifySavedEditDisplay(
     vaultId,
     async (
       { app, zotlit, page: helpers },
-      { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+      { attachmentKey, libraryId, vaultPath, targetKey },
     ) => {
       const services = zotlit.services;
       const list = await services.bridge.runPromise(
-        services.annotationRepository.read(__typedArg0),
+        services.annotationRepository.read(attachmentKey),
       );
       if (!list) throw new Error("The Fixture Attachment has no Annotations");
       const requestFor = (key: string) => {
@@ -2634,9 +2600,9 @@ export async function verifySavedEditDisplay(
           source: list.source,
           sourceScope: services.zoteroPref.dataDir,
           attachmentKey: annotation.parentKey,
-          libraryID: __typedArg1,
+          libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
-            __typedArg2!,
+            vaultPath!,
           ),
           zoteroPngPath: require("path").join(
             services.zoteroPref.dataDir,
@@ -2675,7 +2641,7 @@ export async function verifySavedEditDisplay(
           renderTaskActive: snapshot.renderTaskActive,
         };
       })();
-      const current = requestFor(__typedArg3);
+      const current = requestFor(targetKey);
       const reference = await services.bridge.runPromise(
         services.excerptImage.stored(current),
       );
@@ -2768,10 +2734,10 @@ export async function verifySavedEditDisplay(
       };
     },
     {
-      __typedArg0: attachment.key,
-      __typedArg1: attachment.libraryID,
-      __typedArg2: vaultPath,
-      __typedArg3: target.key,
+      attachmentKey: attachment.key,
+      libraryId: attachment.libraryID,
+      vaultPath,
+      targetKey: target.key,
     },
   );
   expect(superseded.outcome.kind).toBe("available");
@@ -2809,24 +2775,24 @@ export async function verifySavedEditDisplay(
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { state }) => {
         const leaf = app.workspace.getLeaf("tab");
         await leaf.setViewState(
-          Object.assign({}, JSON.parse(__typedArg0), { active: true }),
+          Object.assign({}, JSON.parse(state), { active: true }),
         );
         return String(true);
       },
-      { __typedArg0: viewState.state },
+      { state: viewState.state },
     ),
   ).toBe("true");
   await obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { cardSelector }) => {
       return await String(
         !!(() => {
           const image = app.workspace
             .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
             .find(Boolean)
             ?.querySelector("img");
           return (
@@ -2839,7 +2805,7 @@ export async function verifySavedEditDisplay(
       );
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
     {
       ready: (value) => value === "true",
@@ -2849,10 +2815,10 @@ export async function verifySavedEditDisplay(
   );
   const remounted = await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { cardSelector }) => {
       const image = app.workspace
         .getLeavesOfType("zotero-annotation-view")
-        .map((leaf) => leaf.view.containerEl.querySelector(__typedArg0))
+        .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
         .find(Boolean)
         ?.querySelector("img");
       if (!image || !image.complete || image.naturalWidth === 0) return null;
@@ -2883,7 +2849,7 @@ export async function verifySavedEditDisplay(
       }
     },
     {
-      __typedArg0: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
+      cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
   );
   expect(

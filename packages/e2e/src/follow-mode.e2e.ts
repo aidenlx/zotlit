@@ -279,10 +279,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const dimensions = JSON.parse(
         await obRun(
           imageVaultId,
-          async (_context, { __typedArg0 }) => {
+          async (_context, { renderedPath }) => {
             const bytes = (
               require("node:fs") as typeof import("node:fs")
-            ).readFileSync(__typedArg0);
+            ).readFileSync(renderedPath);
             const bitmap = await createImageBitmap(
               new Blob([bytes], { type: "image/png" }),
             );
@@ -290,7 +290,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             bitmap.close();
             return String(JSON.stringify(result));
           },
-          { __typedArg0: rendered.path },
+          { renderedPath: rendered.path },
         ),
       ) as { width: number; height: number };
       expect(dimensions.width).toBeGreaterThan(0);

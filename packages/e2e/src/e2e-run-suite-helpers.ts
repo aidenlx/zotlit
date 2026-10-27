@@ -31,13 +31,13 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
   cleanup.defer(async () => {
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { windowSize }) => {
         (require("@electron/remote") as typeof import("@electron/remote"))
           .getCurrentWindow()
-          .setSize(...(__typedArg0 as [number, number]));
+          .setSize(...(windowSize as [number, number]));
         return String(true);
       },
-      { __typedArg0: JSON.parse(size) },
+      { windowSize: JSON.parse(size) },
     );
   });
   await obRun(
@@ -211,18 +211,18 @@ async function shapeCondition(
 async function addLibraryCondition(selector: string): Promise<void> {
   await obRun(
     run.vaultId,
-    async ({ page }, { __typedArg0 }) => {
+    async ({ page }, { addConditionLabel }) => {
       const { press } = page;
       var editor = page.workbench()?.contentEl;
       press(
         Array.from(editor!.querySelectorAll("button")).find(
-          (button) => button.textContent.trim() === __typedArg0,
+          (button) => button.textContent.trim() === addConditionLabel,
         ),
         "Add condition",
       );
       return String(true);
     },
-    { __typedArg0: run.m.workbench_match_add_condition() },
+    { addConditionLabel: run.m.workbench_match_add_condition() },
   );
   await shapeCondition(1, "library", selector);
 }
@@ -231,43 +231,44 @@ async function openMatchEditor(): Promise<void> {
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
   await obRunUntil(
     run.vaultId,
-    async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+    async ({ app, page }, { booksProfileLabel, editButtonLabel }) => {
       const { press } = page;
       var settings = app.setting.containerEl;
       var row = Array.from(settings.querySelectorAll(".setting-item")).find(
         (el) =>
-          el.querySelector(".setting-item-name")?.textContent === __typedArg0,
+          el.querySelector(".setting-item-name")?.textContent ===
+          booksProfileLabel,
       );
       var button =
         row &&
         Array.from(row.querySelectorAll("button")).find(
-          (button) => button.getAttribute("aria-label") === __typedArg1,
+          (button) => button.getAttribute("aria-label") === editButtonLabel,
         );
       if (!button || button.disabled) return false;
       press(button, "Edit profile");
       return true;
     },
     {
-      __typedArg0: booksProfile.label,
-      __typedArg1: run.m.settings_profile_edit(),
+      booksProfileLabel: booksProfile.label,
+      editButtonLabel: run.m.settings_profile_edit(),
     },
     { what: "suite.ts:138" },
   );
   await obRunUntil(
     run.vaultId,
-    async ({ page }, { __typedArg0 }) => {
+    async ({ page }, { tabLabel }) => {
       const { press } = page;
       var editor = page.workbench()?.contentEl;
       var tab = Array.from(
         editor?.querySelectorAll<HTMLElement>("[role=tab]") ?? [],
-      ).find((tab) => tab.textContent.trim() === __typedArg0);
+      ).find((tab) => tab.textContent.trim() === tabLabel);
       press(tab, "Match tab");
       return (
         !!editor?.querySelector("[data-part=fieldset]") &&
         !editor?.ownerDocument.querySelector(".modal.mod-settings")
       );
     },
-    { __typedArg0: run.m.workbench_tab_match() },
+    { tabLabel: run.m.workbench_tab_match() },
     { what: "suite.ts:145" },
   );
 }
@@ -314,25 +315,25 @@ async function mainSettings() {
 function clickTemplateCustomize() {
   return obRunUntil(
     run.vaultId,
-    async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+    async ({ app, page }, { settingName, editButtonLabel }) => {
       const { press } = page;
       var settings = app.setting.containerEl;
       var row = Array.from(settings.querySelectorAll(".setting-item")).find(
         (el) =>
-          el.querySelector(".setting-item-name")?.textContent === __typedArg0,
+          el.querySelector(".setting-item-name")?.textContent === settingName,
       );
       var button =
         row &&
         Array.from(row.querySelectorAll("button")).find(
-          (el) => el.getAttribute("aria-label") === __typedArg1,
+          (el) => el.getAttribute("aria-label") === editButtonLabel,
         );
       if (!button || button.disabled) return false;
       press(button, "Edit template");
       return true;
     },
     {
-      __typedArg0: run.m.settings_profile_document_name(),
-      __typedArg1: run.m.settings_profile_edit(),
+      settingName: run.m.settings_profile_document_name(),
+      editButtonLabel: run.m.settings_profile_edit(),
     },
     { what: "suite.ts:175" },
   ).then(
@@ -344,19 +345,22 @@ function clickTemplateCustomize() {
 async function saveMatch(match: unknown): Promise<void> {
   await obRunUntil(
     run.vaultId,
-    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+    async ({ zotlit }, { booksProfileId, expectedMatchJson }) => {
       return (
         JSON.stringify(
           (() => {
             const match = zotlit.services.profile.profiles.find(
-              (p) => p.id === __typedArg0,
+              (p) => p.id === booksProfileId,
             )?.match;
             return match && "tree" in match ? match.tree : undefined;
           })(),
-        ) === __typedArg1
+        ) === expectedMatchJson
       );
     },
-    { __typedArg0: booksProfile.id, __typedArg1: JSON.stringify(match) },
+    {
+      booksProfileId: booksProfile.id,
+      expectedMatchJson: JSON.stringify(match),
+    },
     { what: "suite.ts:184" },
   );
   await openProfilesSettings(run.vaultId, "settings_page_profiles");
@@ -381,19 +385,19 @@ async function writeMatch(
   );
   await obRunUntil(
     run.vaultId,
-    async ({ zotlit }, { __typedArg0, __typedArg1 }) => {
+    async ({ zotlit }, { profileId, expectedMatchJson }) => {
       return (
         JSON.stringify(
           (() => {
             const match = zotlit.services.profile.profiles.find(
-              (p) => p.id === __typedArg0,
+              (p) => p.id === profileId,
             )?.match;
             return match && "tree" in match ? match.tree : undefined;
           })(),
-        ) === __typedArg1
+        ) === expectedMatchJson
       );
     },
-    { __typedArg0: profile.id, __typedArg1: JSON.stringify(match) },
+    { profileId: profile.id, expectedMatchJson: JSON.stringify(match) },
     { what: "suite.ts:211" },
   );
 }

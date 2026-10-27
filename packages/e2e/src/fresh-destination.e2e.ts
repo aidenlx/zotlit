@@ -69,13 +69,13 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(original).toContain("```zotquery");
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { firstPath }) => {
         await app.workspace
           .getLeaf(false)
-          .openFile(app.vault.getFileByPath(__typedArg0)!);
+          .openFile(app.vault.getFileByPath(firstPath)!);
         return String(true);
       },
-      { __typedArg0: first.path },
+      { firstPath: first.path },
     );
     await obRunUntil(
       vaultId,
@@ -102,51 +102,48 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     const openAdd = async () => {
       await obRun(
         vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { firstPath }) => {
           var leaf = app.workspace
             .getLeavesOfType("markdown")
             .find(
               (leaf) =>
                 (leaf.view as import("obsidian").FileView).file?.path ===
-                __typedArg0,
+                firstPath,
             );
           await app.workspace.revealLeaf(leaf!);
           leaf!.getContainer().focus();
           return String(true);
         },
-        { __typedArg0: first.path },
+        { firstPath: first.path },
       );
       await openProfilesSettings(vaultId, "settings_page_profiles");
       await obRunUntil(
         vaultId,
-        async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+        async ({ app, page }, { addButtonLabel }) => {
           const { press } = page;
           var settings = app.setting.containerEl;
           var button = Array.from(
             settings.querySelectorAll<HTMLButtonElement>("[aria-label],button"),
           ).find(
             (el) =>
-              el.getAttribute("aria-label") === __typedArg0 ||
-              el.textContent.trim() === __typedArg1,
+              el.getAttribute("aria-label") === addButtonLabel ||
+              el.textContent.trim() === addButtonLabel,
           );
           if (!button || button.disabled) return false;
           press(button, "Add profile");
           return true;
         },
-        {
-          __typedArg0: m.settings_profile_add(),
-          __typedArg1: m.settings_profile_add(),
-        },
+        { addButtonLabel: m.settings_profile_add() },
         { what: "fresh-destination.e2e.ts:97" },
       );
       await obRunUntil(
         vaultId,
-        async (_context, { __typedArg0 }) => {
+        async (_context, { addButtonText }) => {
           return Array.from(document.querySelectorAll(".modal-title")).some(
-            (el) => el.textContent === __typedArg0,
+            (el) => el.textContent === addButtonText,
           );
         },
-        { __typedArg0: m.settings_profile_add() },
+        { addButtonText: m.settings_profile_add() },
         { what: "fresh-destination.e2e.ts:104" },
       );
     };
@@ -173,14 +170,14 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     expect(
       await obRun(
         vaultId,
-        async (_context, { __typedArg0, __typedArg1 }) => {
+        async (_context, { nameLabel, folderLabel }) => {
           var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
           var labels = Array.from(modal.querySelectorAll("label"));
           var name = labels
-            .find((el) => el.textContent === __typedArg0)
+            .find((el) => el.textContent === nameLabel)
             ?.querySelector("input");
           var folder = labels
-            .find((el) => el.textContent === __typedArg1)
+            .find((el) => el.textContent === folderLabel)
             ?.querySelector("input");
           return String(
             String(
@@ -193,44 +190,43 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
           );
         },
         {
-          __typedArg0: m.settings_profile_name_name(),
-          __typedArg1: m.settings_profile_folder_name(),
+          nameLabel: m.settings_profile_name_name(),
+          folderLabel: m.settings_profile_folder_name(),
         },
       ),
     ).toBe("true");
     const fill = async (name: string, folder: string) => {
       await obRun(
         vaultId,
-        async (_context, { __typedArg0 }) => {
+        async (_context, { values }) => {
           var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
-          var values = __typedArg0;
           Array.from(modal.querySelectorAll("input")).forEach((input, i) => {
             input.value = values[i]!;
             input.dispatchEvent(new Event("input", { bubbles: true }));
           });
           return String(true);
         },
-        { __typedArg0: [name, folder] },
+        { values: [name, folder] },
       );
     };
     await fill("Default", "books");
     await obRunUntil(
       vaultId,
-      async (_context, { __typedArg0, __typedArg1 }) => {
+      async (_context, { addButtonText, invalidStatusText }) => {
         var modal = Array.from(document.querySelectorAll(".modal")).at(-1)!;
         var status = modal?.querySelector("[role=status]");
         var button = Array.from(modal?.querySelectorAll("button") ?? []).find(
-          (el) => el.textContent === __typedArg0,
+          (el) => el.textContent === addButtonText,
         );
         return (
-          status?.textContent === __typedArg1 &&
+          status?.textContent === invalidStatusText &&
           status.getBoundingClientRect().height > 0 &&
           button?.disabled
         );
       },
       {
-        __typedArg0: m.settings_profile_add(),
-        __typedArg1: m.settings_profile_name_invalid(),
+        addButtonText: m.settings_profile_add(),
+        invalidStatusText: m.settings_profile_name_invalid(),
       },
       { what: "fresh-destination.e2e.ts:142" },
     );
@@ -267,39 +263,39 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
 
     await obRunUntil(
       vaultId,
-      async ({ page }, { __typedArg0, __typedArg1 }) => {
-        var view = page.workbench({ path: __typedArg0 });
+      async ({ page }, { booksPath, tabTitleText }) => {
+        var view = page.workbench({ path: booksPath });
         return (
           view?.contentEl
             .querySelector("[role=tab][aria-selected=true]")
-            ?.textContent.trim() === __typedArg1 &&
+            ?.textContent.trim() === tabTitleText &&
           Array.from(view!.contentEl.querySelectorAll("input")).some(
             (el) => el.value === "books",
           )
         );
       },
       {
-        __typedArg0: books.path,
-        __typedArg1: m.workbench_tab_name_and_folder(),
+        booksPath: books.path,
+        tabTitleText: m.workbench_tab_name_and_folder(),
       },
       { what: "fresh-destination.e2e.ts:170" },
     );
 
     await obRun(
       vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { firstPath }) => {
         var leaf = app.workspace
           .getLeavesOfType("markdown")
           .find(
             (leaf) =>
               (leaf.view as import("obsidian").FileView).file?.path ===
-              __typedArg0,
+              firstPath,
           );
         await app.workspace.revealLeaf(leaf!);
         leaf!.getContainer().focus();
         return String(true);
       },
-      { __typedArg0: first.path },
+      { firstPath: first.path },
     );
     await obRunUntil(
       vaultId,

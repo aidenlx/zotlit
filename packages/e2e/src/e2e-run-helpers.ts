@@ -58,14 +58,14 @@ export async function openProfilesSettings(
   );
   await obRun(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { pageId }) => {
       app.setting.navigateToSearchResult({
         tab: app.setting.activeTab!,
-        pagePath: [__typedArg0],
+        pagePath: [pageId],
       });
       return String(true);
     },
-    { __typedArg0: pageId },
+    { pageId },
   );
 }
 
@@ -180,15 +180,15 @@ export async function activeTab(vaultId: string): Promise<ActiveTab> {
 export function pdfOpened(vaultId: string, path: string): Promise<boolean> {
   return obRunUntil(
     vaultId,
-    async ({ app }, { __typedArg0 }) => {
+    async ({ app }, { expectedPath }) => {
       const view = app.workspace.activeLeaf?.view as PagePdfView | undefined;
       return (
         view?.getViewType() === "pdf" &&
-        view.file?.path === __typedArg0 &&
+        view.file?.path === expectedPath &&
         (view.viewer?.child?.pdfViewer?.pdfViewer?.pagesCount ?? 0) > 0
       );
     },
-    { __typedArg0: path },
+    { expectedPath: path },
     { tries: 120, what: "e2e-run-helpers.ts:111" },
   ).then(
     () => true,
