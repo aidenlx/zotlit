@@ -51,6 +51,7 @@ export type WorkspaceSource = Pick<
   | "openLinkText"
   | "getLeaf"
   | "setActiveLeaf"
+  | "revealLeaf"
   | "trigger"
   | "requestActiveLeafEvents"
   | "readWorkspaceFile"
@@ -139,6 +140,8 @@ export interface WorkspaceShape {
    * open in.
    */
   getLeaf(newLeaf?: PaneType | boolean): Effect.Effect<WorkspaceLeaf>;
+  /** Reveal an existing leaf before focusing it. */
+  revealLeaf(leaf: WorkspaceLeaf): Effect.Effect<void, Cause.UnknownError>;
   /** Obsidian's `setActiveLeaf`: make `leaf` the active leaf, focused when `focus`. */
   setActiveLeaf(
     leaf: WorkspaceLeaf,
@@ -268,6 +271,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     ),
     getLeaf: Effect.fn("Workspace.getLeaf")((newLeaf) =>
       Effect.sync(() => source.getLeaf(newLeaf)),
+    ),
+    revealLeaf: Effect.fn("Workspace.revealLeaf")((leaf) =>
+      Effect.tryPromise((_signal) => source.revealLeaf(leaf)),
     ),
     setActiveLeaf: Effect.fn("Workspace.setActiveLeaf")((leaf, options = {}) =>
       Effect.sync(() => source.setActiveLeaf(leaf, options)),
