@@ -53,6 +53,17 @@ A ticket gets one progress comment when its branch merges into the integration b
 
 Closing keywords (`Closes #N`) act only on merges into the default branch `main`; PRs merge into `next` ([CONTRIBUTING.md](../../CONTRIBUTING.md)). After a PR merges into `next`, close its spec and each ticket still open with `gh issue close`, carrying that one progress comment.
 
+## Stacked pull requests
+
+A change too large for one review lands as a **stack**: a chain of PRs where each PR targets the branch of the PR below it, and the bottom PR targets `next`. GitHub's native stacks land the chain; drive them with the `gh stack` extension (`gh extension install github/gh-stack`).
+
+- **Chain**: each branch head contains the branch below it. Merge each branch into the one above it after a change lower down, and push the chain in one `git push origin <branch> <branch> …`, so the pre-push hook runs once. Two tails that fork from one PR become one chain first: merge the top of one tail into the bottom of the other.
+- **Link**: `gh stack link --base next <pr> <pr> …`, bottom to top. It sets the bottom PR's base to `next`.
+- **Ready**: a stack merges only non-draft PRs. Run `gh pr ready <pr>` for each one.
+- **Merge**: `gh stack merge <top-pr> --squash --yes`. GitHub merges every PR up to `<top-pr>` in one all-or-nothing operation, as one squash commit per PR on `next`, in stack order. A commit is titled `<PR title> (#N)`; a PR that holds a single commit gets that commit's message.
+- **Partial landing**: `gh stack merge <pr>` lands the stack up to that PR.
+- **After the merge**: a PR outside the stack that targets a merged branch keeps that base. Set it with `gh pr edit <pr> --base next`, and keep the merged branch until no PR targets it.
+
 ## Pull requests as a triage surface
 
 External pull requests are not a request or triage surface. Triage GitHub issues only.

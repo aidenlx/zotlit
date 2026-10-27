@@ -108,6 +108,10 @@
     "//#lint:messages": {
       "cache": false
     },
+    "//#lint:unused": {
+      "dependsOn": ["//#lint:repo:deps"],
+      "cache": false
+    },
     "//#review:plugin:deps": {
       "dependsOn": [
         "@zotlit/obsidian#lint:deps",
