@@ -388,7 +388,6 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         app: this.app,
         noteFeature: services.noteFeature,
         opener: services.targetOpener,
-        notify: (message) => new BaseNotice(message),
       }),
     });
 

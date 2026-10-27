@@ -2,6 +2,7 @@
 // The Library View tab runs the query its Library View Document derives: the
 // document plugin data holds when the tab opens, and after a toolbar change,
 // the same query when the tab opens again.
+import { it as effectIt } from "@effect/vitest";
 import {
   Menu,
   controlsOf,
@@ -11,10 +12,18 @@ import {
   TextComponent,
 } from "@mock/obsidian";
 import { Effect, Layer, Stream } from "effect";
-import type { App, WorkspaceItem, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  Plugin,
+  TFile,
+  WorkspaceItem,
+  WorkspaceLeaf,
+} from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Item } from "@zotlit/db";
+import { makeItem } from "@zotlit/db/test-utils";
 import { testItemSeed } from "@zotlit/item-query";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
@@ -74,7 +83,8 @@ import { openWelcomeView } from "@/views/welcome/register";
 import { holdNow, useAt, makeLibraryHost } from "./__fixtures__";
 import { nodeKey } from "./document";
 import type { LibraryNode } from "./document";
-import { openLibraryView } from "./register";
+import { itemActions } from "./item-actions";
+import { openLibraryView, registerLibraryView } from "./register";
 import { LibraryView } from "./view";
 import type { LibraryViewDeps } from "./view";
 
@@ -448,7 +458,7 @@ const GROUPS: Readonly<Record<string, (item: SeedItem) => readonly string[]>> =
   };
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
-async function pluginData(stored?: unknown) {
+async function pluginData(stored?: unknown, actionItem?: Item) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
@@ -496,7 +506,13 @@ async function pluginData(stored?: unknown) {
   vi.spyOn(sourceReads.reads, "ConnectionReadout").mockImplementation(() =>
     Effect.succeed({ itemCount: 8 }),
   );
+  vi.spyOn(sourceReads.reads, "ItemsByIndexedKeys").mockImplementation(() =>
+    Effect.succeed(
+      new Map(actionItem ? [[actionItem.indexedKey, actionItem]] : []),
+    ),
+  );
   const readApi = stubService<ZoteroReads["Service"]["reads"]>("ZoteroReads", {
+    ItemsByIndexedKeys: sourceReads.reads.ItemsByIndexedKeys,
     CollectionPaths: sourceReads.reads.CollectionPaths,
     ConnectionReadout: sourceReads.reads.ConnectionReadout,
   });
@@ -638,6 +654,8 @@ async function pluginData(stored?: unknown) {
         layerHost({ vault: app.vault }),
         Layer.succeed(PluginSettings, settings),
         Layer.mock(NoteIndex, {
+          whenIndexed: Effect.void,
+          getNotesByItemKey: () => Effect.succeed([]),
           getIndexedItemKeys: Effect.sync(() => [...notes]),
           changes: nativeNotes.stream,
         }),
@@ -4065,3 +4083,61 @@ describe("Tag Selector", () => {
     expect(pressed(view)).toEqual(["method"]);
   });
 });
+
+// #1710: a shared item gesture finishes after the last Library tab closes.
+effectIt.live(
+  "opens the created note after the last Library tab closes during the Profile prompt",
+  () =>
+    Effect.promise(async () => {
+      const item = makeItem({ itemType: "journalArticle", title: "Paper" });
+      const { deps, host } = await pluginData(undefined, item);
+      const pluginLifetime = new DisposableStack();
+      cleanup.defer(() => pluginLifetime.dispose());
+      registerLibraryView(
+        stubService<Plugin>("Plugin", {
+          app: deps.app,
+          register: (release) => pluginLifetime.defer(release),
+          registerView: () => {},
+          addCommand: (command) => command,
+          addRibbonIcon: () => document.createElement("div"),
+        }),
+        deps,
+      );
+      const view = await openTab(deps);
+      const created = Promise.withResolvers<TFile>();
+      const createNoteInteractively = vi.fn(() => created.promise);
+      const openLinkText = vi.fn(async () => {});
+      Object.assign(deps.app.workspace, { openLinkText });
+      const actions = itemActions({
+        app: deps.app,
+        registry: deps.registry,
+        opener: deps.opener,
+        noteFeature: { createNoteInteractively, renderCitation: () => "" },
+      });
+      const opening = actions.openNote(item.indexedKey, "tab");
+      await waitFor(() =>
+        expect(createNoteInteractively).toHaveBeenCalledOnce(),
+      );
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      cleanup.defer(() => void vi.useRealTimers());
+      await view.close();
+      await vi.advanceTimersByTimeAsync(10);
+      const file = host.vault.addFile("literatures/paper.md", "Paper");
+      created.resolve(file);
+      await opening;
+      expect(openLinkText).toHaveBeenCalledWith(file.path, "", "tab", {
+        active: true,
+      });
+      const next = Promise.withResolvers<TFile>();
+      createNoteInteractively.mockImplementation(() => next.promise);
+      const interrupted = actions.openNote(item.indexedKey, "tab");
+      await waitFor(() =>
+        expect(createNoteInteractively).toHaveBeenCalledTimes(2),
+      );
+      pluginLifetime.dispose();
+      await vi.advanceTimersByTimeAsync(10);
+      await interrupted;
+      next.resolve(file);
+      expect(openLinkText).toHaveBeenCalledOnce();
+    }),
+);

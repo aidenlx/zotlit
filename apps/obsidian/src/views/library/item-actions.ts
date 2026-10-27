@@ -18,7 +18,7 @@ import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import * as toast from "@/lib/toast";
+import { Notifier, reportOutcome } from "@/lib/notifier";
 import { viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
@@ -46,6 +46,7 @@ export const libraryItemCommand = viewRuntime.fn(
     readonly result: PromiseWithResolvers<void>;
   }) =>
     request.effect.pipe(
+      Effect.scoped,
       Effect.onExit((exit) =>
         Effect.sync(() => {
           if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
@@ -98,8 +99,6 @@ export type ItemActionsDeps = Pick<AttachmentOpenDeps, "app" | "opener"> & {
     NoteFeatureHandle,
     "createNoteInteractively" | "renderCitation"
   >;
-  /** Show a short message to the researcher. */
-  notify: (message: string) => void;
   /**
    * Hands a `zotero://` link to the system.
    * @default window.open
@@ -255,7 +254,9 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         Effect.gen(function* () {
           const into = target ?? editorTarget(deps);
           if (!into) {
-            deps.notify(m.library_view_cite_no_note());
+            yield* Notifier.use((notifier) =>
+              notifier.show(m.library_view_cite_no_note()),
+            );
             return;
           }
           const { editor, info } = into;
@@ -276,7 +277,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
           if (!item) return;
           const outcome = yield* resolveCitation(item);
           if (outcome.kind === "notice") {
-            deps.notify(outcome.message);
+            yield* Notifier.use((notifier) => notifier.show(outcome.message));
             return;
           }
           if (
@@ -294,19 +295,20 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
           const citationKey =
             "citationKey" in item.fields ? item.fields.citationKey : null;
           if (!citationKey) {
-            deps.notify(m.notice_no_citekey({ key: item.key }));
+            yield* Notifier.use((notifier) =>
+              notifier.show(m.notice_no_citekey({ key: item.key })),
+            );
             return;
           }
-          const copied = yield* Effect.tryPromise(() =>
-            toast.promise(navigator.clipboard.writeText(citationKey), {
-              success: m.graph_citations_citekey_copied(),
-              error: m.graph_citations_citekey_copy_failed(),
-              swallowError: false,
-            }),
-          ).pipe(
-            Effect.match({ onFailure: () => false, onSuccess: () => true }),
+          const copied = yield* Effect.exit(
+            Effect.tryPromise(() => navigator.clipboard.writeText(citationKey)),
           );
-          if (copied) yield* (yield* UseLedger).record(indexedKey, "cited");
+          yield* reportOutcome(copied, {
+            success: () => m.graph_citations_citekey_copied(),
+            error: () => m.graph_citations_citekey_copy_failed(),
+          });
+          if (Exit.isSuccess(copied))
+            yield* (yield* UseLedger).record(indexedKey, "cited");
         }),
       ),
     showInZotero: (indexedKey) => {

@@ -60,7 +60,6 @@ import type {
 } from "./document";
 import { renderHeading } from "./heading";
 import { ZOTLIT_MARK_ICON } from "./icon";
-import { libraryItemCommand, openLibraryTargetCommand } from "./item-actions";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
 import { FACET_LABELS, LibraryTree } from "./library-tree";
@@ -167,8 +166,6 @@ export class LibraryView extends ItemView {
     const releases = [
       this.#deps.registry.mount(this.model.selection),
       this.#deps.registry.mount(this.#itemNodeCommand),
-      this.#deps.registry.mount(libraryItemCommand),
-      this.#deps.registry.mount(openLibraryTargetCommand),
       this.#deps.registry.mount(useLedgerAtom),
       this.#deps.registry.mount(notedItemKeysAtom),
       this.#deps.registry.mount(libraryScopeStateAtom),
