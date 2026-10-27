@@ -8,6 +8,11 @@
   "imports": {
     "#language-pack-options": "./scripts/language-pack-options.ts"
   },
+  "exports": {
+    "./e2e": {
+      "types": "./src/e2e.ts"
+    }
+  },
   "scripts": {
     "build": "vite build && npm run typecheck",
     "build:dev": "vite build --mode development",

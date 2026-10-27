@@ -9,6 +9,9 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { createObsidianCall } from "@zotlit/scripts/obsidian-cli";
 
+import type { ObsidianContext, JsonCompatible } from "./page-context.ts";
+import { createPageHelpers } from "./page-helpers.ts";
+
 const CLI_TIMEOUT_MS = 15_000;
 
 const boundedCall = createObsidianCall({ timeoutMs: CLI_TIMEOUT_MS });
@@ -218,4 +221,58 @@ export async function obEvalUntil(
     const answer = await obEval(vaultId, code).catch(() => "");
     return answer === options.expected;
   }, options.tries);
+}
+
+/** The JSON callback boundary; all imports used by its code must be type-only. */
+// oxlint-disable-next-line max-params -- The approved callback API keeps options fourth (#1848).
+export async function obRun<A = undefined, R = void>(
+  vaultId: string,
+  callback: (
+    context: ObsidianContext,
+    args: A,
+  ) => (R & JsonCompatible<R>) | Promise<R & JsonCompatible<R>>,
+  args?: A & JsonCompatible<A>,
+  options: { timeoutMs?: number } = {},
+): Promise<Awaited<R>> {
+  const code = `(async()=>{const page=globalThis.__zotlitPageHelpers;if(!page)return '__zotlitHelpersMissing__';const result=await (${callback.toString()})({app,zotlit:app.plugins.plugins.zotlit,page},${JSON.stringify(args) ?? "undefined"});return JSON.stringify({value:result});})()`;
+  let reply = await obEval(vaultId, code, options.timeoutMs);
+  if (reply === "__zotlitHelpersMissing__") {
+    await obEval(
+      vaultId,
+      `globalThis.__zotlitPageHelpers=(${createPageHelpers.toString()})(app);true`,
+      options.timeoutMs,
+    );
+    reply = await obEval(vaultId, code, options.timeoutMs);
+  }
+  return (JSON.parse(reply) as { value: Awaited<R> }).value;
+}
+
+/** Poll a typed page callback; reloads and missing replies count as not ready. */
+// oxlint-disable-next-line max-params -- The approved callback API keeps options fourth (#1848).
+export async function obRunUntil<A = undefined, R = boolean>(
+  vaultId: string,
+  callback: (
+    context: ObsidianContext,
+    args: A,
+  ) => (R & JsonCompatible<R>) | Promise<R & JsonCompatible<R>>,
+  args: (A & JsonCompatible<A>) | undefined,
+  {
+    ready = (value) => value === true,
+    what,
+    tries = 40,
+  }: { ready?: (value: Awaited<R>) => boolean; what: string; tries?: number },
+): Promise<Awaited<R>> {
+  let last: unknown;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      // oxlint-disable-next-line zotlit-tests/no-eval-capture -- Forward the caller-checked callback through the transport.
+      const value = await obRun(vaultId, callback, args);
+      last = value;
+      if (ready(value)) return value;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    await delay(250);
+  }
+  throw new Error(`${what}: ${JSON.stringify(last)}`);
 }
