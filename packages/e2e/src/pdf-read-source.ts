@@ -118,11 +118,9 @@ export async function verifyPdfReadSource(
           vaultId,
           async ({ zotlit }, { pdfPath }) => {
             return String(
-              String(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.attachmentResolver.resolve(pdfPath),
-                ).kind === "resolved",
-              ),
+              zotlit.services.bridge.runSync(
+                zotlit.services.attachmentResolver.resolve(pdfPath),
+              ).kind === "resolved",
             );
           },
           { pdfPath: join(vaultPath, oldPdf) },
@@ -147,11 +145,9 @@ export async function verifyPdfReadSource(
           vaultId,
           async ({ zotlit }) => {
             return String(
-              String(
-                zotlit.services.pdfAnnotationEditor.bindings.find(
-                  (b) => b.filePath === "old-source.pdf",
-                )?.session?.target?.attachmentKey === "RGRPDF24",
-              ),
+              zotlit.services.pdfAnnotationEditor.bindings.find(
+                (b) => b.filePath === "old-source.pdf",
+              )?.session?.target?.attachmentKey === "RGRPDF24",
             );
           },
           undefined,
@@ -176,11 +172,9 @@ export async function verifyPdfReadSource(
           vaultId,
           async ({ zotlit }, { pdfPath }) => {
             return String(
-              String(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.attachmentResolver.resolve(pdfPath),
-                ).kind === "unresolved",
-              ),
+              zotlit.services.bridge.runSync(
+                zotlit.services.attachmentResolver.resolve(pdfPath),
+              ).kind === "unresolved",
             );
           },
           { pdfPath: join(vaultPath, oldPdf) },

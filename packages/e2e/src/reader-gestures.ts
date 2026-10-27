@@ -159,7 +159,7 @@ export async function openPdfWithAnnotationView(
   const layout = await obRun(
     vaultId,
     async ({ app }) => {
-      return String(JSON.stringify(app.workspace.getLayout()));
+      return JSON.stringify(app.workspace.getLayout());
     },
     undefined,
   );
@@ -433,7 +433,7 @@ export async function watchExcerptPixels(
         await obRun(
           vaultId,
           async ({ page }) => {
-            return String(JSON.stringify(page.scratch.pixels));
+            return JSON.stringify(page.scratch.pixels);
           },
           undefined,
         ),

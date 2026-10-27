@@ -218,9 +218,7 @@ export async function verifyExternalAnnotationLock({
             )}]`,
           )!
           .querySelector<HTMLElement>(nodeSelector)!;
-        return String(
-          node ? String(node.hasAttribute("data-blocked")) : "absent",
-        );
+        return node ? String(node.hasAttribute("data-blocked")) : "absent";
       },
       { annotationKey, nodeSelector: node },
     );
@@ -331,15 +329,13 @@ export async function verifyExternalAnnotationLock({
         vaultId,
         async ({ page }, { reason }) => {
           return String(
-            String(
-              page
-                .windowDocuments()
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .filter((node) => node.textContent.includes(reason))[0]!
-                .querySelectorAll<HTMLButtonElement>("button").length,
-            ),
+            page
+              .windowDocuments()
+              .flatMap((doc) => [
+                ...doc.querySelectorAll<HTMLElement>(".notice"),
+              ])
+              .filter((node) => node.textContent.includes(reason))[0]!
+              .querySelectorAll<HTMLButtonElement>("button").length,
           );
         },
         { reason },
@@ -353,15 +349,13 @@ export async function verifyExternalAnnotationLock({
       vaultId,
       async ({ app }, { annotationKey }) => {
         return String(
-          String(
-            !!(app.workspace
-              .getLeavesOfType("zotero-annotation-view")[0]
-              ?.view?.containerEl.querySelector<HTMLElement>(
-                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
-                  annotationKey,
-                )}]`,
-              )!).querySelector<HTMLElement>(".cm-content, input")!,
-          ),
+          !!(app.workspace
+            .getLeavesOfType("zotero-annotation-view")[0]
+            ?.view?.containerEl.querySelector<HTMLElement>(
+              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(
+                annotationKey,
+              )}]`,
+            )!).querySelector<HTMLElement>(".cm-content, input")!,
         );
       },
       { annotationKey },
@@ -561,13 +555,11 @@ export async function verifyExternalAnnotationLock({
       vaultId,
       async ({ page }, { attachmentPath }) => {
         return String(
-          String(
-            page
-              .pdfView(attachmentPath)!
-              .containerEl.querySelectorAll<HTMLElement>(
-                ".zt-pdf-annotation-handle",
-              ).length,
-          ),
+          page
+            .pdfView(attachmentPath)!
+            .containerEl.querySelectorAll<HTMLElement>(
+              ".zt-pdf-annotation-handle",
+            ).length,
         );
       },
       { attachmentPath },

@@ -166,20 +166,18 @@ async function resolveDigest(
             })(),
           ),
         );
-        return String(
-          await JSON.stringify(
-            outcome.kind === "available"
-              ? {
-                  kind: outcome.kind,
-                  provenance: outcome.provenance,
-                  bytes: outcome.bytes.length,
-                  sha256: require("crypto")
-                    .createHash("sha256")
-                    .update(outcome.bytes)
-                    .digest("hex"),
-                }
-              : { kind: outcome.kind },
-          ),
+        return await JSON.stringify(
+          outcome.kind === "available"
+            ? {
+                kind: outcome.kind,
+                provenance: outcome.provenance,
+                bytes: outcome.bytes.length,
+                sha256: require("crypto")
+                  .createHash("sha256")
+                  .update(outcome.bytes)
+                  .digest("hex"),
+              }
+            : { kind: outcome.kind },
         );
       },
       {
@@ -196,13 +194,13 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
     vaultId,
     async ({ page: helpers }) => {
       const state = helpers.scratch.__zotlitExcerptProbe!;
-      if (!state) return String("absent");
+      if (!state) return "absent";
       state.controller.abort();
       state.diagnostics.release();
       void state.completion!.catch(() => {
         state.settled = true;
       });
-      return String("active");
+      return "active";
     },
     undefined,
   );
@@ -229,19 +227,17 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
       async ({ page: helpers }) => {
         const state = helpers.scratch.__zotlitExcerptProbe!;
         if (!state)
-          return String(
-            await JSON.stringify({
-              snapshot: {
-                phase: "idle",
-                jobActive: false,
-                fileOpen: false,
-                renderTaskActive: false,
-                canvas: null,
-                lastCanvas: null,
-              },
-              toBlobRestored: true,
-            }),
-          );
+          return await JSON.stringify({
+            snapshot: {
+              phase: "idle",
+              jobActive: false,
+              fileOpen: false,
+              renderTaskActive: false,
+              canvas: null,
+              lastCanvas: null,
+            },
+            toBlobRestored: true,
+          });
         const snapshot = state.diagnostics.snapshot();
         const value = {
           snapshot,
@@ -249,7 +245,7 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
             HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
         };
         delete helpers.scratch.__zotlitExcerptProbe;
-        return String(await JSON.stringify(value));
+        return await JSON.stringify(value);
       },
       undefined,
     ),
@@ -285,7 +281,7 @@ async function startRenderProbe(
     (await obRun(
       vaultId,
       async ({ page: helpers }) => {
-        return String(await String(!!helpers.scratch.__zotlitExcerptProbe));
+        return await String(!!helpers.scratch.__zotlitExcerptProbe);
       },
       undefined,
     )) === "true"
@@ -442,10 +438,8 @@ async function startRenderProbe(
         await obRun(
           vaultId,
           async ({ page: helpers }) => {
-            return String(
-              await JSON.stringify(
-                helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
-              ),
+            return await JSON.stringify(
+              helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
             );
           },
           undefined,
@@ -461,20 +455,18 @@ async function startRenderProbe(
             const outcome = await state.bridge.runPromise(
               state.service.resolve(state.request),
             );
-            return String(
-              await JSON.stringify(
-                outcome.kind === "available"
-                  ? {
-                      kind: outcome.kind,
-                      provenance: outcome.provenance,
-                      bytes: outcome.bytes.length,
-                      sha256: require("crypto")
-                        .createHash("sha256")
-                        .update(outcome.bytes)
-                        .digest("hex"),
-                    }
-                  : { kind: outcome.kind },
-              ),
+            return await JSON.stringify(
+              outcome.kind === "available"
+                ? {
+                    kind: outcome.kind,
+                    provenance: outcome.provenance,
+                    bytes: outcome.bytes.length,
+                    sha256: require("crypto")
+                      .createHash("sha256")
+                      .update(outcome.bytes)
+                      .digest("hex"),
+                  }
+                : { kind: outcome.kind },
             );
           },
           undefined,
@@ -502,16 +494,14 @@ async function startRenderProbe(
           vaultId,
           async ({ page: helpers }) => {
             const state = helpers.scratch.__zotlitExcerptProbe!;
-            return String(
-              await JSON.stringify({
-                outcome: state.outcome,
-                before: state.before,
-                after: state.after,
-                snapshot: state.diagnostics.snapshot(),
-                toBlobRestored:
-                  HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
-              }),
-            );
+            return await JSON.stringify({
+              outcome: state.outcome,
+              before: state.before,
+              after: state.after,
+              snapshot: state.diagnostics.snapshot(),
+              toBlobRestored:
+                HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+            });
           },
           undefined,
         ),
@@ -839,7 +829,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
         const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
         if (!acceptance) throw new Error("Excerpt acceptance missing");
         if (acceptance.error) throw new Error(acceptance.error);
-        return String(await JSON.stringify(acceptance.result));
+        return await JSON.stringify(acceptance.result);
       },
       undefined,
     ),
@@ -935,9 +925,7 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       await obRun(
         vaultId,
         async () => {
-          return String(
-            await process.getProcessMemoryInfo().then(JSON.stringify),
-          );
+          return await process.getProcessMemoryInfo().then(JSON.stringify);
         },
         undefined,
       ),
@@ -1257,7 +1245,7 @@ export async function verifyZoteroExcerptParity(
             ),
           });
         }
-        return String(await JSON.stringify(output));
+        return await JSON.stringify(output);
       },
       { keys },
     ),

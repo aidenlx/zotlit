@@ -56,7 +56,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       defaultPath = await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(zotlit.services.profile.defaultDocumentPath);
+          return zotlit.services.profile.defaultDocumentPath;
         },
         undefined,
       );
@@ -143,17 +143,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ app, zotlit, page }, { defaultPath }) => {
             return String(
-              String(
-                !!app.vault.getFileByPath(defaultPath) &&
-                  page.workbench()?.controller.readOnly === false &&
-                  page.scratch.workbenchLaunch === undefined &&
-                  !zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  )["server.enabled"] &&
-                  !zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  )["server.workbench"],
-              ),
+              !!app.vault.getFileByPath(defaultPath) &&
+                page.workbench()?.controller.readOnly === false &&
+                page.scratch.workbenchLaunch === undefined &&
+                !zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["server.enabled"] &&
+                !zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["server.workbench"],
             );
           },
           { defaultPath },
@@ -182,12 +180,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ zotlit, page }) => {
             return String(
-              String(
-                page.scratch.workbenchLaunch === undefined &&
-                  !zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  )["server.enabled"],
-              ),
+              page.scratch.workbenchLaunch === undefined &&
+                !zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["server.enabled"],
             );
           },
           undefined,
@@ -540,7 +536,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ page }) => {
-              return String(String(page.scratch.workbenchLaunch === undefined));
+              return String(page.scratch.workbenchLaunch === undefined);
             },
             undefined,
           ),

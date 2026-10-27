@@ -165,7 +165,7 @@ export async function verifyAnnotationDrag(
           result.afterUndo = s.editor.getValue();
           s.sourceWin.focus();
           app.workspace.setActiveLeaf(s.viewLeaf, { focus: true });
-          return String(JSON.stringify(result));
+          return JSON.stringify(result);
         },
         undefined,
       ),
@@ -246,36 +246,34 @@ export async function verifyAnnotationDrag(
       await obRun(
         vaultId,
         async ({ app, page }) => {
-          return String(
-            JSON.stringify({
-              sourceMain:
-                page.scratch.__zotlitDragTrial!.sourceWin ===
-                page.scratch.__zotlitDragTrial!.mainWin,
-              targetMain:
-                page.scratch.__zotlitDragTrial!.targetWin ===
-                page.scratch.__zotlitDragTrial!.mainWin,
-              separate:
-                page.scratch.__zotlitDragTrial!.sourceWin !==
-                page.scratch.__zotlitDragTrial!.targetWin,
-              noAsset:
-                page.scratch.__zotlitDragTrial!.assetsAfterStart ===
-                page.scratch.__zotlitDragTrial!.assetsBeforeStart,
-              prepareCallsAfterStart:
-                page.scratch.__zotlitDragTrial!.prepareCallsAfterStart,
-              activeAtStart: page.scratch.__zotlitDragTrial!.activeAtStart,
-              activeAfterCapture:
-                app.workspace.activeLeaf ===
-                page.scratch.__zotlitDragTrial!.viewLeaf,
-              targetInactive:
-                app.workspace.activeLeaf !==
-                page.scratch.__zotlitDragTrial!.targetLeaf,
-              dropPrevented: page.scratch.__zotlitDragTrial!.dropPrevented,
-              calls: page.scratch.__zotlitDragTrial!.coordinateCalls,
-              expected: page.scratch.__zotlitDragTrial!.expectedCoords,
-              directPosition: page.scratch.__zotlitDragTrial!.directPosition,
-              notePath: page.scratch.__zotlitDragTrial!.options!.notePath,
-            }),
-          );
+          return JSON.stringify({
+            sourceMain:
+              page.scratch.__zotlitDragTrial!.sourceWin ===
+              page.scratch.__zotlitDragTrial!.mainWin,
+            targetMain:
+              page.scratch.__zotlitDragTrial!.targetWin ===
+              page.scratch.__zotlitDragTrial!.mainWin,
+            separate:
+              page.scratch.__zotlitDragTrial!.sourceWin !==
+              page.scratch.__zotlitDragTrial!.targetWin,
+            noAsset:
+              page.scratch.__zotlitDragTrial!.assetsAfterStart ===
+              page.scratch.__zotlitDragTrial!.assetsBeforeStart,
+            prepareCallsAfterStart:
+              page.scratch.__zotlitDragTrial!.prepareCallsAfterStart,
+            activeAtStart: page.scratch.__zotlitDragTrial!.activeAtStart,
+            activeAfterCapture:
+              app.workspace.activeLeaf ===
+              page.scratch.__zotlitDragTrial!.viewLeaf,
+            targetInactive:
+              app.workspace.activeLeaf !==
+              page.scratch.__zotlitDragTrial!.targetLeaf,
+            dropPrevented: page.scratch.__zotlitDragTrial!.dropPrevented,
+            calls: page.scratch.__zotlitDragTrial!.coordinateCalls,
+            expected: page.scratch.__zotlitDragTrial!.expectedCoords,
+            directPosition: page.scratch.__zotlitDragTrial!.directPosition,
+            notePath: page.scratch.__zotlitDragTrial!.options!.notePath,
+          });
         },
         undefined,
       ),
@@ -336,12 +334,10 @@ export async function verifyAnnotationDrag(
         vaultId,
         async ({ app, page }) => {
           return String(
-            String(
-              app.workspace.activeLeaf ===
-                page.scratch.__zotlitDragTrial!.viewLeaf &&
-                app.workspace.activeLeaf !==
-                  page.scratch.__zotlitDragTrial!.targetLeaf,
-            ),
+            app.workspace.activeLeaf ===
+              page.scratch.__zotlitDragTrial!.viewLeaf &&
+              app.workspace.activeLeaf !==
+                page.scratch.__zotlitDragTrial!.targetLeaf,
           );
         },
         undefined,
@@ -361,8 +357,8 @@ export async function verifyAnnotationDrag(
       await obRun(
         vaultId,
         async ({ page }) => {
-          return String(
-            JSON.stringify(page.scratch.__zotlitDragTrial!.editor.getValue()),
+          return JSON.stringify(
+            page.scratch.__zotlitDragTrial!.editor.getValue(),
           );
         },
         undefined,
@@ -411,7 +407,7 @@ export async function verifyAnnotationDrag(
       await obRun(
         vaultId,
         async ({ page }) => {
-          return String(page.scratch.__zotlitDragTrial!.editor.getValue());
+          return page.scratch.__zotlitDragTrial!.editor.getValue();
         },
         undefined,
       ),

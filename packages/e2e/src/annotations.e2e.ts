@@ -26,7 +26,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -77,12 +77,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               const list = await bridge.runPromise(
                 repository.read(annotationAttachmentKey),
               );
-              return String(
-                JSON.stringify({
-                  source: list?.source.kind ?? null,
-                  keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
-                }),
-              );
+              return JSON.stringify({
+                source: list?.source.kind ?? null,
+                keys: (list?.annotations ?? []).map(({ key }) => key).sort(),
+              });
             },
             { annotationAttachmentKey: annotationAttachment.key },
           ),
@@ -123,44 +121,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const state = await obRun(
           run.vaultId,
           async ({ app, zotlit }) => {
-            return String(
-              JSON.stringify(
-                (() => {
-                  const services = zotlit.services;
-                  const leaves = app.workspace.getLeavesOfType(
-                    "zotero-annotation-view",
-                  ) as AnnotationLeaf[];
-                  const active = app.workspace.getActiveFile();
-                  const full = active
-                    ? (
-                        app.vault
-                          .adapter as import("obsidian").FileSystemAdapter
-                      ).getFullPath(active.path)
-                    : null;
-                  const session = active
-                    ? services.pdfAnnotationEditor.bindings.find(
-                        (b) => b.filePath === active.path,
-                      )?.session
-                    : null;
-                  return {
-                    count: leaves.length,
-                    snapshot: leaves[0]?.view.snapshot ?? null,
-                    active: active?.path ?? null,
-                    session: session
-                      ? { filePath: active?.path, target: session.target }
-                      : null,
-                    resolution: full
-                      ? services.bridge.runSync(
-                          services.attachmentResolver.resolve(full),
-                        )
-                      : null,
-                    fullPath: full,
-                    exists: full ? require("fs").existsSync(full) : false,
-                    profileDir: services.zoteroPref.resolvedProfileDir,
-                    dataDir: services.zoteroPref.dataDir,
-                  };
-                })(),
-              ),
+            return JSON.stringify(
+              (() => {
+                const services = zotlit.services;
+                const leaves = app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                ) as AnnotationLeaf[];
+                const active = app.workspace.getActiveFile();
+                const full = active
+                  ? (
+                      app.vault.adapter as import("obsidian").FileSystemAdapter
+                    ).getFullPath(active.path)
+                  : null;
+                const session = active
+                  ? services.pdfAnnotationEditor.bindings.find(
+                      (b) => b.filePath === active.path,
+                    )?.session
+                  : null;
+                return {
+                  count: leaves.length,
+                  snapshot: leaves[0]?.view.snapshot ?? null,
+                  active: active?.path ?? null,
+                  session: session
+                    ? { filePath: active?.path, target: session.target }
+                    : null,
+                  resolution: full
+                    ? services.bridge.runSync(
+                        services.attachmentResolver.resolve(full),
+                      )
+                    : null,
+                  fullPath: full,
+                  exists: full ? require("fs").existsSync(full) : false,
+                  profileDir: services.zoteroPref.resolvedProfileDir,
+                  dataDir: services.zoteroPref.dataDir,
+                };
+              })(),
             );
           },
           undefined,
@@ -172,23 +167,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ app }) => {
-              return String(
-                JSON.stringify(
-                  (() => {
-                    const annotationView = (
-                      app.workspace.getLeavesOfType(
-                        "zotero-annotation-view",
-                      ) as AnnotationLeaf[]
-                    )[0]?.view;
-                    const cards = Array.from(
-                      annotationView?.containerEl.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ) ?? [],
-                      (el) => el.getAttribute("data-zotero-annotation-key"),
-                    ).filter(Boolean);
-                    return [...new Set(cards)].sort();
-                  })(),
-                ),
+              return JSON.stringify(
+                (() => {
+                  const annotationView = (
+                    app.workspace.getLeavesOfType(
+                      "zotero-annotation-view",
+                    ) as AnnotationLeaf[]
+                  )[0]?.view;
+                  const cards = Array.from(
+                    annotationView?.containerEl.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ) ?? [],
+                    (el) => el.getAttribute("data-zotero-annotation-key"),
+                  ).filter(Boolean);
+                  return [...new Set(cards)].sort();
+                })(),
               );
             },
             undefined,
@@ -257,7 +250,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .matches;
             const select = probe(true);
             const deselect = probe(false);
-            return String(JSON.stringify({ motion, select, deselect }));
+            return JSON.stringify({ motion, select, deselect });
           },
           undefined,
         ),
@@ -277,33 +270,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }) => {
-            return String(
-              JSON.stringify(
-                (() => {
-                  const root = (
-                    app.workspace.getLeavesOfType(
-                      "zotero-annotation-view",
-                    ) as AnnotationLeaf[]
-                  )[0]?.view.containerEl;
-                  const block =
-                    root?.querySelector<HTMLElement>(".zt-annot-header")
-                      ?.parentElement ?? null;
-                  return {
-                    focusable: block
-                      ? [
-                          ...block.querySelectorAll<HTMLButtonElement>(
-                            'button, [tabindex]:not([tabindex="-1"]), a[href], input',
-                          ),
-                        ].filter(
-                          (el) => !el.closest("[data-annot-view-more-options]"),
-                        ).length
-                      : -1,
-                    titled: root
-                      ? root!.querySelectorAll<HTMLElement>("[title]").length
-                      : -1,
-                  };
-                })(),
-              ),
+            return JSON.stringify(
+              (() => {
+                const root = (
+                  app.workspace.getLeavesOfType(
+                    "zotero-annotation-view",
+                  ) as AnnotationLeaf[]
+                )[0]?.view.containerEl;
+                const block =
+                  root?.querySelector<HTMLElement>(".zt-annot-header")
+                    ?.parentElement ?? null;
+                return {
+                  focusable: block
+                    ? [
+                        ...block.querySelectorAll<HTMLButtonElement>(
+                          'button, [tabindex]:not([tabindex="-1"]), a[href], input',
+                        ),
+                      ].filter(
+                        (el) => !el.closest("[data-annot-view-more-options]"),
+                      ).length
+                    : -1,
+                  titled: root
+                    ? root!.querySelectorAll<HTMLElement>("[title]").length
+                    : -1,
+                };
+              })(),
             );
           },
           undefined,
@@ -645,16 +636,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ) as AnnotationLeaf[]
               )[0]?.view.contentEl.textContent ?? "";
             const labels = ["Zotero DB", "Local API", "database source"];
-            return String(
-              JSON.stringify({
-                capability: bridge.runSync(
-                  repository.capabilityFor(annotationAttachmentKey),
-                ),
-                sourceLabels: labels.some((label) =>
-                  text.toLowerCase().includes(label.toLowerCase()),
-                ),
-              }),
-            );
+            return JSON.stringify({
+              capability: bridge.runSync(
+                repository.capabilityFor(annotationAttachmentKey),
+              ),
+              sourceLabels: labels.some((label) =>
+                text.toLowerCase().includes(label.toLowerCase()),
+              ),
+            });
           },
           { annotationAttachmentKey: annotationAttachment.key },
         ),
@@ -683,7 +672,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -733,7 +722,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                     "zotero-annotation-view",
                   ) as AnnotationLeaf[]
                 )[0]?.view;
-                if (!view) return String("null");
+                if (!view) return "null";
                 await view.read;
                 const grid =
                   view.contentEl.querySelector<HTMLElement>('[role="grid"]')!;
@@ -752,12 +741,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                     group,
                   });
                 }
-                return String(
-                  JSON.stringify({
-                    cards,
-                    query: view.getState().query ?? null,
-                  }),
-                );
+                return JSON.stringify({
+                  cards,
+                  query: view.getState().query ?? null,
+                });
               },
               undefined,
             );
@@ -900,7 +887,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )!,
             "More options",
           );
-          return String("true");
+          return "true";
         },
         undefined,
       ),
@@ -1070,7 +1057,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               !document.querySelector<HTMLElement>(".cm-tooltip-autocomplete")!,
           );
           const list = { dialog: !!modal() };
-          if (!modal()) return String(JSON.stringify({ list }));
+          if (!modal()) return JSON.stringify({ list });
           type("text.slice(1, ");
           await until("Signature Hint", () =>
             document.querySelector<HTMLElement>(".zt-signature-hint")!,
@@ -1172,7 +1159,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               await key("Escape");
             }
           }
-          return String(JSON.stringify({ list, hint, tab, typed }));
+          return JSON.stringify({ list, hint, tab, typed });
         },
         {
           addConditionLabel: run.m.workbench_match_add_condition(),
@@ -1231,14 +1218,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const noteText = await obRun(
       run.vaultId,
       async ({ app }, { notePath }) => {
-        return String(await app.vault.read(app.vault.getFileByPath(notePath)!));
+        return await app.vault.read(app.vault.getFileByPath(notePath)!);
       },
       { notePath },
     );
@@ -1424,11 +1411,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )!,
               "More options",
             );
-            return String(
-              JSON.stringify({
-                label: button.getAttribute("aria-label"),
-              }),
-            );
+            return JSON.stringify({
+              label: button.getAttribute("aria-label"),
+            });
           },
           undefined,
         ),
@@ -1477,30 +1462,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const modal = document.querySelector<HTMLElement>(
             ".modal.zt-save-query-file-modal",
           )!;
-          return String(
-            JSON.stringify(
-              modal
-                ? {
-                    title:
-                      modal!.querySelector<HTMLElement>(".modal-title")
-                        ?.textContent ?? null,
-                    fields: [
-                      ...modal!.querySelectorAll<HTMLElement>(
-                        "[data-save-field]",
-                      ),
-                    ].map((n) => n.getAttribute("data-save-field")),
-                    records: [
-                      ...modal!.querySelectorAll<HTMLInputElement>(
-                        "[data-save-records]",
-                      ),
-                    ].map((n) => ({
-                      value: n.getAttribute("data-save-records"),
-                      label: n.closest("label")!.textContent,
-                      checked: n.checked,
-                    })),
-                  }
-                : null,
-            ),
+          return JSON.stringify(
+            modal
+              ? {
+                  title:
+                    modal!.querySelector<HTMLElement>(".modal-title")
+                      ?.textContent ?? null,
+                  fields: [
+                    ...modal!.querySelectorAll<HTMLElement>(
+                      "[data-save-field]",
+                    ),
+                  ].map((n) => n.getAttribute("data-save-field")),
+                  records: [
+                    ...modal!.querySelectorAll<HTMLInputElement>(
+                      "[data-save-records]",
+                    ),
+                  ].map((n) => ({
+                    value: n.getAttribute("data-save-records"),
+                    label: n.closest("label")!.textContent,
+                    checked: n.checked,
+                  })),
+                }
+              : null,
           );
         },
         undefined,
@@ -1596,9 +1579,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const saved = await obRun(
       run.vaultId,
       async ({ app }, { savedPath }) => {
-        return String(
-          await app.vault.read(app.vault.getFileByPath(savedPath)!),
-        );
+        return await app.vault.read(app.vault.getFileByPath(savedPath)!);
       },
       { savedPath },
     );

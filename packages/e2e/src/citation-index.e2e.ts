@@ -81,19 +81,17 @@ async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
           (await obRun(
             vaultId,
             async ({ zotlit }, { itemKey, itemTitle }) => {
-              return String(
-                await zotlit.services.itemLookup
-                  .search(itemKey, { limit: 1 })
-                  .then((hits) =>
-                    String(
-                      (hits[0] && "title" in hits[0].item.fields
-                        ? "title" in hits[0]!.item.fields
-                          ? hits[0]!.item.fields.title
-                          : undefined
-                        : undefined) === itemTitle,
-                    ),
+              return await zotlit.services.itemLookup
+                .search(itemKey, { limit: 1 })
+                .then((hits) =>
+                  String(
+                    (hits[0] && "title" in hits[0].item.fields
+                      ? "title" in hits[0]!.item.fields
+                        ? hits[0]!.item.fields.title
+                        : undefined
+                      : undefined) === itemTitle,
                   ),
-              );
+                );
             },
             { itemKey: item.key, itemTitle: item.title },
           )) === "true",
@@ -136,13 +134,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
         const answer = await obRun(
           vaultId,
           async ({ zotlit }, { itemTitle, expectedItemId }) => {
-            return String(
-              await zotlit.services.itemLookup
-                .search(itemTitle, { limit: 1 })
-                .then((hits) =>
-                  String(hits[0]?.item.itemID === expectedItemId),
-                ),
-            );
+            return await zotlit.services.itemLookup
+              .search(itemTitle, { limit: 1 })
+              .then((hits) => String(hits[0]?.item.itemID === expectedItemId));
           },
           { itemTitle: item.title, expectedItemId: item.itemID },
         ).catch(() => "");
@@ -197,12 +191,10 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           s.zoteroReads.notifyExternalChange();
           await settled.promise;
           const hits = await s.itemLookup.search(itemKey, { limit: 1 });
-          return String(
-            JSON.stringify({
-              publications,
-              itemID: hits[0]?.item.itemID,
-            }),
-          );
+          return JSON.stringify({
+            publications,
+            itemID: hits[0]?.item.itemID,
+          });
         },
         { itemKey: item.key },
         { timeoutMs: 30000 },
@@ -317,20 +309,18 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                       );
                     }
                   });
-                  return String(
-                    JSON.stringify({
-                      gaps,
-                      readMs,
-                      citationReadMs,
-                      readsDuringRefresh,
-                      readsCorrect,
-                      heldThroughout,
-                      sameRevision: fresh.revision === held.revision,
-                      citekey: fresh.citekeyOf(key),
-                      unique: fresh.resolve(expected).kind === "unique",
-                      unrequested,
-                    }),
-                  );
+                  return JSON.stringify({
+                    gaps,
+                    readMs,
+                    citationReadMs,
+                    readsDuringRefresh,
+                    readsCorrect,
+                    heldThroughout,
+                    sameRevision: fresh.revision === held.revision,
+                    citekey: fresh.citekeyOf(key),
+                    unique: fresh.resolve(expected).kind === "unique",
+                    unrequested,
+                  });
                 },
                 {
                   itemKey: item.key,
@@ -481,9 +471,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                     performance.now() < deadline
                   );
                   await settled;
-                  return String(
-                    JSON.stringify({ maximum, samples, correct, fresh }),
-                  );
+                  return JSON.stringify({ maximum, samples, correct, fresh });
                 },
                 {
                   itemKey: item.key,
@@ -540,9 +528,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
             rejected = true;
           }
           const hits = await s.itemLookup.search(itemKey, { limit: 1 });
-          return String(
-            JSON.stringify({ rejected, itemID: hits[0]?.item.itemID }),
-          );
+          return JSON.stringify({ rejected, itemID: hits[0]?.item.itemID });
         },
         { itemKey: item.key },
         { timeoutMs: 120000 },

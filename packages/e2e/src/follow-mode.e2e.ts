@@ -95,24 +95,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             .querySelector<HTMLElement>("button.zt-annot-header")!
             .getBoundingClientRect()!;
           var items = Array.from(popup.querySelectorAll(".menu-item"));
-          return String(
-            JSON.stringify({
-              labels: items.map(function (item) {
-                return item.textContent!.trim();
-              }),
-              covered: items.filter(function (item) {
-                var rect = item.getBoundingClientRect();
-                return (
-                  rect.height > 0 &&
-                  rect.top >= box.top - 1 &&
-                  rect.bottom <= box.bottom + 1
-                );
-              }).length,
-              belowTriggerBy: Math.round(box.top - anchor.bottom),
-              overlapsTriggerX:
-                box.left < anchor.right && box.right > anchor.left,
+          return JSON.stringify({
+            labels: items.map(function (item) {
+              return item.textContent!.trim();
             }),
-          );
+            covered: items.filter(function (item) {
+              var rect = item.getBoundingClientRect();
+              return (
+                rect.height > 0 &&
+                rect.top >= box.top - 1 &&
+                rect.bottom <= box.bottom + 1
+              );
+            }).length,
+            belowTriggerBy: Math.round(box.top - anchor.bottom),
+            overlapsTriggerX:
+              box.left < anchor.right && box.right > anchor.left,
+          });
         },
         undefined,
       ),
@@ -288,7 +286,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
             const result = { width: bitmap.width, height: bitmap.height };
             bitmap.close();
-            return String(JSON.stringify(result));
+            return JSON.stringify(result);
           },
           { renderedPath: rendered.path },
         ),

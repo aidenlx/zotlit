@@ -178,7 +178,7 @@ export function registerEndToEndRunHooks(): void {
           },
           5000,
         );
-        return String(JSON.stringify(left));
+        return JSON.stringify(left);
       },
       undefined,
     );

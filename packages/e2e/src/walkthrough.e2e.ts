@@ -49,7 +49,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host }) => {
           const app = host as WalkthroughApp;
 
-          return String(String(app.internalPlugins.plugins.sync.enabled));
+          return String(app.internalPlugins.plugins.sync.enabled);
         },
         undefined,
       ),
@@ -59,13 +59,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async (_context) => {
           return String(
-            String(
-              Array.from(
-                document.querySelectorAll<HTMLElement>(
-                  ".status-bar [aria-label]",
-                ),
-              ).some((el) => el.getAttribute("aria-label") === "Uninitialized"),
-            ),
+            Array.from(
+              document.querySelectorAll<HTMLElement>(
+                ".status-bar [aria-label]",
+              ),
+            ).some((el) => el.getAttribute("aria-label") === "Uninitialized"),
           );
         },
         undefined,
@@ -124,9 +122,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           await leaf.openFile(literature);
           app.workspace.setActiveLeaf(leaf, { focus: true });
           await waitFor(empty, emptyMessage, "Restored literature target");
-          return String(
-            JSON.stringify({ before, withoutTarget, after: stats() }),
-          );
+          return JSON.stringify({ before, withoutTarget, after: stats() });
         },
         {
           emptyMessage: m.cited_by_empty(),
@@ -270,18 +266,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               bubbles: true,
             }),
           );
-          return String(
-            JSON.stringify({
-              word,
-              html: row!.querySelector<HTMLElement>(
-                ".setting-item-description",
-              )!.textContent,
-              vault: app.vault.getName(),
-              absolutePathShown: modal!.textContent.includes(
-                app.vault.adapter.getBasePath(),
-              ),
-            }),
-          );
+          return JSON.stringify({
+            word,
+            html: row!.querySelector<HTMLElement>(".setting-item-description")!
+              .textContent,
+            vault: app.vault.getName(),
+            absolutePathShown: modal!.textContent.includes(
+              app.vault.adapter.getBasePath(),
+            ),
+          });
         },
         undefined,
       ),
@@ -315,7 +308,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.commands.executeCommandById("zotlit:open-welcome-view");
-        return String(await leaf.id);
+        return await leaf.id;
       },
       { notePath },
     );
@@ -353,10 +346,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host }, { noteId }) => {
           const app = host as WalkthroughApp;
 
-          return String(
-            await ((app.workspace.getLeafById(noteId)!.view as MarkdownView)
-              .file?.path ?? "<no file>"),
-          );
+          return await ((
+            app.workspace.getLeafById(noteId)!.view as MarkdownView
+          ).file?.path ?? "<no file>");
         },
         { noteId },
       ),
@@ -366,7 +358,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host }) => {
         const app = host as WalkthroughApp;
 
-        return String(await app.workspace.activeLeaf!.id);
+        return await app.workspace.activeLeaf!.id;
       },
       undefined,
     );
@@ -402,9 +394,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host }) => {
           const app = host as WalkthroughApp;
 
-          return String(
-            String(app.workspace.getLeavesOfType("zotlit-library").length),
-          );
+          return String(app.workspace.getLeavesOfType("zotlit-library").length);
         },
         undefined,
       ),
@@ -429,7 +419,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           app.workspace.getLeaf("tab");
         await welcome.setViewState({ type: "zotlit-library", active: true });
         app.workspace.setActiveLeaf(welcome, { focus: true });
-        return String(await leaf.id);
+        return await leaf.id;
       },
       { notePath },
     );
@@ -526,14 +516,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           async ({ app: host, page }, { notePath }) => {
             const app = host as WalkthroughApp;
 
-            return String(
-              JSON.stringify({
-                count: page
-                  .leavesOfType("markdown")
-                  .filter((leaf) => leaf.view.file?.path === notePath).length,
-                active: app.workspace.activeLeaf!.id,
-              }),
-            );
+            return JSON.stringify({
+              count: page
+                .leavesOfType("markdown")
+                .filter((leaf) => leaf.view.file?.path === notePath).length,
+              active: app.workspace.activeLeaf!.id,
+            });
           },
           { notePath },
         ),
@@ -621,19 +609,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               write: resolve,
             }),
           );
-          return String(
-            JSON.stringify({
-              failedStatus,
-              keptText: failed === first,
-              duringCooldown,
-              reads,
-              recovered: recovered === first,
-              status,
-              widget: !!(
-                leaf.view as MarkdownView
-              ).contentEl.querySelector<HTMLElement>(".zt-citation"),
-            }),
-          );
+          return JSON.stringify({
+            failedStatus,
+            keptText: failed === first,
+            duringCooldown,
+            reads,
+            recovered: recovered === first,
+            status,
+            widget: !!(
+              leaf.view as MarkdownView
+            ).contentEl.querySelector<HTMLElement>(".zt-citation"),
+          });
         },
         undefined,
       ),
@@ -744,13 +730,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 !!view.contentEl.querySelector<HTMLElement>(".zt-citation"),
             };
           };
-          return String(
-            JSON.stringify({
-              plain: await gesture("plain"),
-              drag: await gesture("drag"),
-              extend: await gesture("extend"),
-            }),
-          );
+          return JSON.stringify({
+            plain: await gesture("plain"),
+            drag: await gesture("drag"),
+            extend: await gesture("extend"),
+          });
         },
         undefined,
       ),
@@ -824,7 +808,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                 modifiers,
               });
           }
-          return String(JSON.stringify(requests));
+          return JSON.stringify(requests);
         },
         undefined,
       ),
@@ -907,7 +891,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             });
           }
           await (leaf.view as MarkdownView).save();
-          return String(JSON.stringify(results));
+          return JSON.stringify(results);
         },
         undefined,
       ),
@@ -1082,9 +1066,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const open = suggest!.isOpen,
             before = editor.getValue();
           await pressKey(debugger_, "Enter", 13);
-          return String(
-            JSON.stringify({ open, before, after: editor.getValue() }),
-          );
+          return JSON.stringify({ open, before, after: editor.getValue() });
         },
         undefined,
       ),
@@ -1174,7 +1156,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             }
           }
           app.setting.close();
-          return String(JSON.stringify({ tutorial, changed, errors }));
+          return JSON.stringify({ tutorial, changed, errors });
         },
         undefined,
       ),
@@ -1248,13 +1230,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               false,
               "Literature note update",
             );
-            return String(
-              JSON.stringify({
-                focused,
-                accepted,
-                updated: !editor.getValue().includes("FOCUS_UPDATE_SENTINEL"),
-              }),
-            );
+            return JSON.stringify({
+              focused,
+              accepted,
+              updated: !editor.getValue().includes("FOCUS_UPDATE_SENTINEL"),
+            });
           },
           { selector },
         ),
@@ -1379,17 +1359,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const undoMatches = editor.getValue() === edited;
           editor.redo();
           const redoMatches = editor.getValue() === updated;
-          return String(
-            JSON.stringify({
-              accepted,
-              before,
-              after,
-              undoMatches,
-              redoMatches,
-              updated: !updated.includes("[!quote]"),
-              unsaved: updated.includes("Unsaved researcher text."),
-            }),
-          );
+          return JSON.stringify({
+            accepted,
+            before,
+            after,
+            undoMatches,
+            redoMatches,
+            updated: !updated.includes("[!quote]"),
+            unsaved: updated.includes("Unsaved researcher text."),
+          });
         },
         { notePath },
       ),
@@ -1507,16 +1485,14 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               "Template Workbench and companion views",
             );
             sample();
-            return String(
-              JSON.stringify({
-                accepted,
-                ready: ready(),
-                mainSamples,
-                customized: !!app.vault.getFileByPath(
-                  zotlit.services.profile.defaultDocumentPath,
-                )!,
-              }),
-            );
+            return JSON.stringify({
+              accepted,
+              ready: ready(),
+              mainSamples,
+              customized: !!app.vault.getFileByPath(
+                zotlit.services.profile.defaultDocumentPath,
+              )!,
+            });
           },
           undefined,
         ),
@@ -1561,10 +1537,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
         const profile = zotlit.services.profile;
         await profile.materializeDefault();
-        return String(
-          await app.vault.read(
-            app.vault.getFileByPath(profile.defaultDocumentPath)!,
-          ),
+        return await app.vault.read(
+          app.vault.getFileByPath(profile.defaultDocumentPath)!,
         );
       },
       undefined,
@@ -1760,25 +1734,21 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async ({ zotlit, page }) => {
           return String(
-            String(
-              Array.from(
-                (page
-                  .leavesOfType("zotlit-note-preview")
-                  .find(
-                    (leaf) =>
-                      leaf.view.contentEl?.ownerDocument ===
-                      page
-                        .leavesOfType("zotlit-template-workbench")
-                        .find(
-                          (leaf) =>
-                            leaf.view.file?.path ===
-                            zotlit.services.profile.defaultDocumentPath,
-                        )?.view?.contentEl?.ownerDocument,
-                  )?.view.contentEl)!.querySelectorAll<HTMLElement>(
-                  ".callout p",
-                ),
-              ).some((p) => p.classList.contains("zt:bg-accent")),
-            ),
+            Array.from(
+              (page
+                .leavesOfType("zotlit-note-preview")
+                .find(
+                  (leaf) =>
+                    leaf.view.contentEl?.ownerDocument ===
+                    page
+                      .leavesOfType("zotlit-template-workbench")
+                      .find(
+                        (leaf) =>
+                          leaf.view.file?.path ===
+                          zotlit.services.profile.defaultDocumentPath,
+                      )?.view?.contentEl?.ownerDocument,
+                )?.view.contentEl)!.querySelectorAll<HTMLElement>(".callout p"),
+            ).some((p) => p.classList.contains("zt:bg-accent")),
           );
         },
         undefined,
@@ -1920,13 +1890,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             true,
             "Stored note name",
           );
-          return String(
-            JSON.stringify({
-              rule: ruleShown(),
-              name: nameShown(),
-              invalid: el.textContent.includes(invalidMessage),
-            }),
-          );
+          return JSON.stringify({
+            rule: ruleShown(),
+            name: nameShown(),
+            invalid: el.textContent.includes(invalidMessage),
+          });
         },
         {
           propertiesTab: m.workbench_tab_properties(),
@@ -2113,9 +2081,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           });
-          return String(
-            JSON.stringify({ previewed: preview(), created: path }),
-          );
+          return JSON.stringify({ previewed: preview(), created: path });
         },
         {
           noteTitle: title,
@@ -2270,21 +2236,19 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         await obRun(
           vaultId,
           async ({ page }) => {
-            return String(
-              JSON.stringify(
-                (() => ({
-                  tab: (page.leavesOfType("zotlit-template-workbench")[0]
-                    ?.view)!.store.getState().tab,
-                  editor: (page.leavesOfType("zotlit-template-workbench")[0]
-                    ?.view)!.store.getState().root,
-                  preview: page
-                    .leavesOfType("zotlit-note-preview")[0]
-                    ?.view.getState().root,
-                  fields: page
-                    .leavesOfType("zotlit-template-data-explorer")[0]
-                    ?.view.getState().root,
-                }))(),
-              ),
+            return JSON.stringify(
+              (() => ({
+                tab: (page.leavesOfType("zotlit-template-workbench")[0]
+                  ?.view)!.store.getState().tab,
+                editor: (page.leavesOfType("zotlit-template-workbench")[0]
+                  ?.view)!.store.getState().root,
+                preview: page
+                  .leavesOfType("zotlit-note-preview")[0]
+                  ?.view.getState().root,
+                fields: page
+                  .leavesOfType("zotlit-template-data-explorer")[0]
+                  ?.view.getState().root,
+              }))(),
             );
           },
           undefined,
@@ -2318,7 +2282,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const leaf = app.workspace.getLeaf("tab");
           await leaf.openFile(file);
           app.workspace.setActiveLeaf(leaf, { focus: true });
-          return String(JSON.stringify({ id: books.id, path: file.path }));
+          return JSON.stringify({ id: books.id, path: file.path });
         },
         undefined,
       ),
@@ -2499,7 +2463,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             )!,
           );
           app.workspace.detachLeavesOfType("empty");
-          return String(String(!left && body.includes("My reading notes")));
+          return String(!left && body.includes("My reading notes"));
         },
         { target, createdPath: created.path, createdId: created.id },
       ),
@@ -2596,19 +2560,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async (_context, { addProfileLabel }) => {
           return String(
-            String(
-              (Array.from(
-                activeDocument.querySelectorAll<HTMLElement>(".modal"),
+            (Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+              .find(
+                (el) =>
+                  el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+                  addProfileLabel,
               )
-                .find(
-                  (el) =>
-                    el.querySelector<HTMLElement>(".modal-title")
-                      ?.textContent === addProfileLabel,
-                )
-                ?.querySelector<HTMLElement>(
-                  'p[role="status"]',
-                ))!.classList.contains("zt:text-(--text-error)"),
-            ),
+              ?.querySelector<HTMLElement>(
+                'p[role="status"]',
+              ))!.classList.contains("zt:text-(--text-error)"),
           );
         },
         { addProfileLabel: m.settings_profile_add() },
@@ -2620,21 +2580,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         vaultId,
         async (_context, { addProfileLabel }) => {
           return String(
-            String(
-              Array.from(
-                Array.from(
-                  activeDocument.querySelectorAll<HTMLElement>(".modal"),
-                )
-                  .find(
-                    (el) =>
-                      el.querySelector<HTMLElement>(".modal-title")
-                        ?.textContent === addProfileLabel,
-                  )!
-                  .querySelectorAll<HTMLButtonElement>(
-                    ".modal-button-container button",
-                  ),
-              ).find((el) => el.textContent === addProfileLabel)!.disabled,
-            ),
+            Array.from(
+              Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal"))
+                .find(
+                  (el) =>
+                    el.querySelector<HTMLElement>(".modal-title")
+                      ?.textContent === addProfileLabel,
+                )!
+                .querySelectorAll<HTMLButtonElement>(
+                  ".modal-button-container button",
+                ),
+            ).find((el) => el.textContent === addProfileLabel)!.disabled,
           );
         },
         { addProfileLabel: m.settings_profile_add() },
@@ -2732,19 +2688,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host, page }) => {
           const app = host as WalkthroughApp;
 
-          return String(
-            await app.vault
-              .read(
-                page
-                  .leavesOfType("zotlit-template-workbench")
-                  .map((leaf) => leaf.view)
-                  .find(
-                    (view) =>
-                      view.file?.name === "zotlit-profile.reading-group.md",
-                  )!.file!,
-              )
-              .then((text) => String(/^folder:/m.test(text))),
-          );
+          return await app.vault
+            .read(
+              page
+                .leavesOfType("zotlit-template-workbench")
+                .map((leaf) => leaf.view)
+                .find(
+                  (view) =>
+                    view.file?.name === "zotlit-profile.reading-group.md",
+                )!.file!,
+            )
+            .then((text) => String(/^folder:/m.test(text)));
         },
         undefined,
       ),

@@ -26,14 +26,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const original = await obRun(
       run.vaultId,
       async ({ app }, { path }) => {
-        return String(await app.vault.read(app.vault.getFileByPath(path)!));
+        return await app.vault.read(app.vault.getFileByPath(path)!);
       },
       { path },
     );
@@ -118,7 +118,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -129,49 +129,44 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                     `[data-query-table-row="${kind}"]`,
                   ),
                 ].map((n) => n.getAttribute("data-query-key"));
-              return String(
-                JSON.stringify({
-                  header: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] thead th",
-                    ),
-                  ].map((n) => n.textContent),
-                  rows: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      "[data-query-table-row]",
-                    ),
-                  ].map((n) => [
-                    n.getAttribute("data-query-table-row"),
-                    n.getAttribute("data-query-key"),
-                  ]),
-                  items: keys("item"),
-                  attachments: keys("attachment"),
-                  annotations: keys("annotation"),
-                  childNotes: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      '[data-query-table-row="note"]',
-                    ),
-                  ].map((n) => [
-                    n.getAttribute("data-query-key"),
-                    n.textContent,
-                  ]),
-                  notes: Object.fromEntries(
-                    [
-                      ...el.querySelectorAll<HTMLElement>("[data-query-note]"),
-                    ].map((n) => [
-                      n
-                        .closest<HTMLTableRowElement>("tr")!
-                        .getAttribute("data-query-key"),
-                      n.getAttribute("data-query-note"),
-                    ]),
+              return JSON.stringify({
+                header: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] thead th",
                   ),
-                  create: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-query-create-note]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-create-note")),
-                }),
-              );
+                ].map((n) => n.textContent),
+                rows: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    "[data-query-table-row]",
+                  ),
+                ].map((n) => [
+                  n.getAttribute("data-query-table-row"),
+                  n.getAttribute("data-query-key"),
+                ]),
+                items: keys("item"),
+                attachments: keys("attachment"),
+                annotations: keys("annotation"),
+                childNotes: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-table-row="note"]',
+                  ),
+                ].map((n) => [n.getAttribute("data-query-key"), n.textContent]),
+                notes: Object.fromEntries(
+                  [
+                    ...el.querySelectorAll<HTMLElement>("[data-query-note]"),
+                  ].map((n) => [
+                    n
+                      .closest<HTMLTableRowElement>("tr")!
+                      .getAttribute("data-query-key"),
+                    n.getAttribute("data-query-note"),
+                  ]),
+                ),
+                create: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    "[data-query-create-note]",
+                  ),
+                ].map((n) => n.getAttribute("data-query-create-note")),
+              });
             },
             { expectedPath: path },
           ),
@@ -392,15 +387,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { pdfName }) => {
           return String(
-            String(
-              app.workspace
-                .getLeavesOfType("pdf")
-                .filter(
-                  (l) =>
-                    (l.view as import("obsidian").FileView).file?.name ===
-                    pdfName,
-                ).length,
-            ),
+            app.workspace
+              .getLeavesOfType("pdf")
+              .filter(
+                (l) =>
+                  (l.view as import("obsidian").FileView).file?.name ===
+                  pdfName,
+              ).length,
           );
         },
         { pdfName },
@@ -489,7 +482,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }) => {
           return String(
-            String(app.workspace.getLeavesOfType("zotlit-query-file").length),
+            app.workspace.getLeavesOfType("zotlit-query-file").length,
           );
         },
         undefined,
@@ -576,8 +569,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )!,
               "snapshot link",
             );
-            return String(
-              await until("Zotero opens the snapshot", () => opened, 10000),
+            return await until(
+              "Zotero opens the snapshot",
+              () => opened,
+              10000,
             );
           } finally {
             window.open = native;
@@ -664,11 +659,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { notePath }) => {
           return String(
-            String(
-              app.metadataCache.getFileCache(
-                app.vault.getFileByPath(notePath!)!,
-              )?.frontmatter?.["zotero-key"],
-            ),
+            app.metadataCache.getFileCache(app.vault.getFileByPath(notePath!)!)
+              ?.frontmatter?.["zotero-key"],
           );
         },
         { notePath: linked.notes[book] },
@@ -715,7 +707,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -724,12 +716,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { seeded }) => {
-          return String(
-            JSON.stringify(
-              await Promise.all(
-                seeded.map((path) =>
-                  app.vault.read(app.vault.getFileByPath(path)!),
-                ),
+          return JSON.stringify(
+            await Promise.all(
+              seeded.map((path) =>
+                app.vault.read(app.vault.getFileByPath(path)!),
               ),
             ),
           );
@@ -799,17 +789,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         indexed = await obRun(
           run.vaultId,
           async ({ app, zotlit }, { tieFirst, tieSecond }) => {
-            return String(
-              JSON.stringify(
-                [tieFirst, tieSecond].map((key) => [
-                  key,
-                  zotlit.services.noteIndex
-                    .getNotesByItemKey(key)
-                    .map((file) => file.path),
-                  app.metadataCache.getCache(`literatures/${key}.md`)
-                    ?.frontmatter?.["zt-rank"] ?? null,
-                ]),
-              ),
+            return JSON.stringify(
+              [tieFirst, tieSecond].map((key) => [
+                key,
+                zotlit.services.noteIndex
+                  .getNotesByItemKey(key)
+                  .map((file) => file.path),
+                app.metadataCache.getCache(`literatures/${key}.md`)
+                  ?.frontmatter?.["zt-rank"] ?? null,
+              ]),
             );
           },
           { tieFirst, tieSecond },
@@ -849,33 +837,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             async ({ app }) => {
               const view =
                 app.workspace.getLeavesOfType("zotlit-query-file")[0]!.view;
-              if (!view) return String("null");
+              if (!view) return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  rows: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      '[data-query-table-row="item"]',
-                    ),
-                  ].map((n) => n.getAttribute("data-query-key")),
-                  editing: !!el.querySelector<HTMLInputElement>(
-                    "[data-query-vault-input]",
-                  )!,
-                  cells: Object.fromEntries(
-                    [
-                      ...el.querySelectorAll<HTMLElement>(
-                        "[data-query-vault-cell]",
-                      ),
-                    ].map((n) => [
-                      `${n.closest<HTMLTableRowElement>("tr")!.getAttribute("data-query-key")}/${n.getAttribute("data-query-vault-name")}`,
-                      n.textContent,
-                    ]),
+              return JSON.stringify({
+                rows: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-table-row="item"]',
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-key")),
+                editing: !!el.querySelector<HTMLInputElement>(
+                  "[data-query-vault-input]",
+                )!,
+                cells: Object.fromEntries(
+                  [
+                    ...el.querySelectorAll<HTMLElement>(
+                      "[data-query-vault-cell]",
+                    ),
+                  ].map((n) => [
+                    `${n.closest<HTMLTableRowElement>("tr")!.getAttribute("data-query-key")}/${n.getAttribute("data-query-vault-name")}`,
+                    n.textContent,
+                  ]),
+                ),
+              });
             },
             undefined,
           ),
@@ -891,11 +877,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }, { path }) => {
-            return String(
-              JSON.stringify(
-                app.metadataCache.getFileCache(app.vault.getFileByPath(path)!)
-                  ?.frontmatter ?? null,
-              ),
+            return JSON.stringify(
+              app.metadataCache.getFileCache(app.vault.getFileByPath(path)!)
+                ?.frontmatter ?? null,
             );
           },
           { path },
@@ -1066,20 +1050,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const chip = (editor ?? el)!.querySelector<HTMLElement>(
               "[data-query-vault-chip]",
             )!;
-            if (chip)
-              return String(String(chip.getBoundingClientRect().top - row));
+            if (chip) return String(chip.getBoundingClientRect().top - row);
             const field = editor
               ? editor.querySelector<HTMLInputElement>("textarea,input")!
               : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
             if (field) {
               const style = getComputedStyle(field);
               return String(
-                String(
-                  field.getBoundingClientRect().top +
-                    Number.parseFloat(style.borderTopWidth) +
-                    Number.parseFloat(style.paddingTop) -
-                    row,
-                ),
+                field.getBoundingClientRect().top +
+                  Number.parseFloat(style.borderTopWidth) +
+                  Number.parseFloat(style.paddingTop) -
+                  row,
               );
             }
             const walker = activeDocument.createTreeWalker(
@@ -1092,15 +1073,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             range.selectNodeContents(text!);
             const rect = range.getClientRects()[0];
             return String(
-              String(
-                rect!.top -
-                  (Number.parseFloat(
-                    getComputedStyle(text!.parentElement!).lineHeight,
-                  ) -
-                    rect!.height) /
-                    2 -
-                  row,
-              ),
+              rect!.top -
+                (Number.parseFloat(
+                  getComputedStyle(text!.parentElement!).lineHeight,
+                ) -
+                  rect!.height) /
+                  2 -
+                row,
             );
           },
           { tieFirst, name },
@@ -1139,20 +1118,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const chip = (editor ?? el)!.querySelector<HTMLElement>(
               "[data-query-vault-chip]",
             )!;
-            if (chip)
-              return String(String(chip.getBoundingClientRect().top - row));
+            if (chip) return String(chip.getBoundingClientRect().top - row);
             const field = editor
               ? editor.querySelector<HTMLInputElement>("textarea,input")!
               : el!.querySelector<HTMLElement>("[data-query-vault-date]")!;
             if (field) {
               const style = getComputedStyle(field);
               return String(
-                String(
-                  field.getBoundingClientRect().top +
-                    Number.parseFloat(style.borderTopWidth) +
-                    Number.parseFloat(style.paddingTop) -
-                    row,
-                ),
+                field.getBoundingClientRect().top +
+                  Number.parseFloat(style.borderTopWidth) +
+                  Number.parseFloat(style.paddingTop) -
+                  row,
               );
             }
             const walker = activeDocument.createTreeWalker(
@@ -1165,15 +1141,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             range.selectNodeContents(text!);
             const rect = range.getClientRects()[0];
             return String(
-              String(
-                rect!.top -
-                  (Number.parseFloat(
-                    getComputedStyle(text!.parentElement!).lineHeight,
-                  ) -
-                    rect!.height) /
-                    2 -
-                  row,
-              ),
+              rect!.top -
+                (Number.parseFloat(
+                  getComputedStyle(text!.parentElement!).lineHeight,
+                ) -
+                  rect!.height) /
+                  2 -
+                row,
             );
           },
           { tieFirst, name },
@@ -1190,20 +1164,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { propertyNames, tieFirst }) => {
-          return String(
-            propertyNames
-              .map((name) =>
-                (
-                  app.workspace.getLeavesOfType("zotlit-query-file")[0]!
-                    .view as import("obsidian").ItemView
-                ).contentEl
-                  .querySelector<HTMLElement>(
-                    `[data-query-key="${tieFirst}"] [data-query-vault-name="${name}"]`,
-                  )
-                  ?.getAttribute("data-query-vault-type"),
-              )
-              .join(),
-          );
+          return propertyNames
+            .map((name) =>
+              (
+                app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                  .view as import("obsidian").ItemView
+              ).contentEl
+                .querySelector<HTMLElement>(
+                  `[data-query-key="${tieFirst}"] [data-query-vault-name="${name}"]`,
+                )
+                ?.getAttribute("data-query-vault-type"),
+            )
+            .join();
         },
         { propertyNames: ["zt-rank", "zt-due", "zt-projects"], tieFirst },
       ),
@@ -1342,7 +1314,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          return String(await pageHelpers.menuReady());
+          return await pageHelpers.menuReady();
         },
         undefined,
       ),
@@ -1353,17 +1325,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { tieFirst }) => {
           return String(
-            String(
-              !!(
-                app.workspace.getLeavesOfType("zotlit-query-file")[0]!
-                  .view as import("obsidian").ItemView
-              ).contentEl
-                .querySelector<HTMLElement>(
-                  `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="zt-projects"]`,
-                )!
-                .querySelector<HTMLElement>('[data-query-vault-chip="c"]')! &&
-                !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
-            ),
+            !!(
+              app.workspace.getLeavesOfType("zotlit-query-file")[0]!
+                .view as import("obsidian").ItemView
+            ).contentEl
+              .querySelector<HTMLElement>(
+                `[data-query-key="${tieFirst}"] [data-query-vault-cell][data-query-vault-name="zt-projects"]`,
+              )!
+              .querySelector<HTMLElement>('[data-query-vault-chip="c"]')! &&
+              !!activeDocument.querySelector<HTMLElement>("body > .menu")!,
           );
         },
         { tieFirst },
@@ -1386,11 +1356,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async (_context) => {
           return String(
-            String(
-              activeDocument.activeElement?.matches(
-                '[data-query-vault-chip="c"]',
-              ) ?? false,
-            ),
+            activeDocument.activeElement?.matches(
+              '[data-query-vault-chip="c"]',
+            ) ?? false,
           );
         },
         undefined,
@@ -1451,7 +1419,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          return String(await pageHelpers.menuReady());
+          return await pageHelpers.menuReady();
         },
         undefined,
       ),
@@ -1476,11 +1444,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async (_context) => {
             return String(
-              String(
-                activeDocument.activeElement?.matches(
-                  "[data-query-vault-chip-input]",
-                ) && (activeDocument.activeElement as HTMLInputElement).value,
-              ),
+              activeDocument.activeElement?.matches(
+                "[data-query-vault-chip-input]",
+              ) && (activeDocument.activeElement as HTMLInputElement).value,
             );
           },
           undefined,
@@ -1534,7 +1500,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "button,input,select,a,[role],[tabindex],[popover]",
                 )!;
             }
-          if (!found) return String("no empty space");
+          if (!found) return "no empty space";
           const zoom = require("electron").webFrame.getZoomFactor();
           const point = { x: Math.round(x * zoom), y: Math.round(y * zoom) };
           const contents = require("@electron/remote").getCurrentWebContents();
@@ -1551,7 +1517,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             clickCount: 1,
             ...point,
           });
-          return String("clicked");
+          return "clicked";
         },
         undefined,
       ),
@@ -1590,7 +1556,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ zotlit }, { fresh }) => {
             const note = zotlit.services.noteIndex.getNotesByItemKey(fresh)[0];
-            if (note) return String(note.path);
+            if (note) return note.path;
             const prompt =
               activeDocument.querySelector<HTMLInputElement>(".prompt input")!;
             if (prompt)
@@ -1606,7 +1572,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   },
                 ),
               );
-            return String("none");
+            return "none";
           },
           { fresh },
         );
@@ -1656,7 +1622,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1796,24 +1762,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  rows: el.querySelectorAll<HTMLTableRowElement>(
-                    '[data-query-row], [data-query-table-row="item"]',
-                  ).length,
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
-                  ].map((n) => n.textContent),
-                  unused:
-                    el.querySelector<HTMLElement>("[data-query-unused]")
-                      ?.textContent ?? null,
-                }),
-              );
+              return JSON.stringify({
+                rows: el.querySelectorAll<HTMLTableRowElement>(
+                  '[data-query-row], [data-query-table-row="item"]',
+                ).length,
+                headings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
+                ].map((n) => n.textContent),
+                unused:
+                  el.querySelector<HTMLElement>("[data-query-unused]")
+                    ?.textContent ?? null,
+              });
             },
             { expectedPath: path },
           ),

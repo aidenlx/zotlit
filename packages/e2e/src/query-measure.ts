@@ -442,11 +442,9 @@ async function isVisible(): Promise<boolean> {
     async (_context) => {
       const win = require("@electron/remote").getCurrentWindow();
       return String(
-        String(
-          document.visibilityState === "visible" &&
-            win.isVisible() &&
-            !win.isMinimized(),
-        ),
+        document.visibilityState === "visible" &&
+          win.isVisible() &&
+          !win.isMinimized(),
       );
     },
     undefined,
@@ -752,7 +750,7 @@ async function measureTier(raw: RawTier): Promise<void> {
         async ({ app }) => {
           const at = Temporal.Now.instant().epochMilliseconds;
           await app.plugins.disablePlugin("zotlit");
-          return String(String(at));
+          return String(at);
         },
         undefined,
       ),
@@ -1013,14 +1011,12 @@ async function environment(): Promise<string[]> {
   const versions = await obRun(
     vaultId,
     async ({ app }) => {
-      return String(
-        JSON.stringify({
-          obsidian: require("electron").ipcRenderer.sendSync("version"),
-          electron: process.versions.electron,
-          chrome: process.versions.chrome,
-          zotlit: app.plugins.manifests.zotlit!.version,
-        }),
-      );
+      return JSON.stringify({
+        obsidian: require("electron").ipcRenderer.sendSync("version"),
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        zotlit: app.plugins.manifests.zotlit!.version,
+      });
     },
     undefined,
   ).catch(() => "{}");

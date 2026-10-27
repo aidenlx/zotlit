@@ -53,15 +53,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -304,15 +302,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               }
               observer.disconnect();
             }
-            return String(
-              JSON.stringify({
-                from: frames[0]!.title,
-                to: frames.at(-1)!.title,
-                frames,
-                mutations,
-                delayedCards,
-              }),
-            );
+            return JSON.stringify({
+              from: frames[0]!.title,
+              to: frames.at(-1)!.title,
+              frames,
+              mutations,
+              delayedCards,
+            });
           },
           {
             toInput: to,
@@ -438,12 +434,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const keys = [
             ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
           ].map((n) => n.getAttribute("data-query-item-row")!);
-          return String(
-            JSON.stringify({
-              rows: keys.slice(0, 7),
-              listed: keys.find((k) => k!.endsWith(annotationItemKey)) ?? null,
-            }),
-          );
+          return JSON.stringify({
+            rows: keys.slice(0, 7),
+            listed: keys.find((k) => k!.endsWith(annotationItemKey)) ?? null,
+          });
         },
         { annotationItemKey: annotationItem.key },
       ),
@@ -577,7 +571,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -803,7 +797,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               service.run = run;
               observer.disconnect();
             }
-            return String(JSON.stringify({ frames, mutations }));
+            return JSON.stringify({ frames, mutations });
           },
           { mode: mode, from: from, titleInput: title, to: to, delay: delay },
         ),
@@ -947,19 +941,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -1297,9 +1289,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const text = await obRun(
       run.vaultId,
       async ({ app }, { savedpath }) => {
-        return String(
-          await app.vault.read(app.vault.getFileByPath(savedpath)!),
-        );
+        return await app.vault.read(app.vault.getFileByPath(savedpath)!);
       },
       { savedpath: savedPath },
     );
@@ -1313,15 +1303,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -1398,53 +1386,49 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "zotlit-library",
                 ) as (WorkspaceLeaf & { view: LibraryView })[]
               )[0]?.view;
-              if (!view?.tree) return String("null");
+              if (!view?.tree) return "null";
               await view.searched;
               await view.query.settled;
               await view.tree.settled;
               const el = view.contentEl;
-              return String(
-                JSON.stringify({
-                  phase: view.query.state.getState().phase,
-                  header: ((h: Element | null) =>
-                    h
-                      ? ["[data-library-header]", "[data-library-header-count]"]
-                          .map((s) => h.querySelector(s)?.textContent ?? "")
-                          .filter((t) => t !== "")
-                          .join(" | ")
-                      : null)(el.querySelector("[data-library-heading]")),
-                  facets: Object.fromEntries(
-                    [
-                      ...el.querySelectorAll<HTMLElement>(
-                        "[data-library-facet]",
-                      ),
-                    ].map((n) => [
-                      n.getAttribute("data-library-facet"),
-                      n.getAttribute("aria-pressed") === "true",
-                    ]),
+              return JSON.stringify({
+                phase: view.query.state.getState().phase,
+                header: ((h: Element | null) =>
+                  h
+                    ? ["[data-library-header]", "[data-library-header-count]"]
+                        .map((s) => h.querySelector(s)?.textContent ?? "")
+                        .filter((t) => t !== "")
+                        .join(" | ")
+                    : null)(el.querySelector("[data-library-heading]")),
+                facets: Object.fromEntries(
+                  [
+                    ...el.querySelectorAll<HTMLElement>("[data-library-facet]"),
+                  ].map((n) => [
+                    n.getAttribute("data-library-facet"),
+                    n.getAttribute("aria-pressed") === "true",
+                  ]),
+                ),
+                selected:
+                  el
+                    .querySelector<HTMLElement>(
+                      '[data-library-node][aria-selected="true"]',
+                    )
+                    ?.getAttribute("data-library-node") ?? null,
+                search: (
+                  el.querySelector<HTMLElement>(
+                    "[data-library-search] input",
+                  ) as HTMLInputElement
+                ).value,
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                rows: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    "[data-query-papers-row]",
                   ),
-                  selected:
-                    el
-                      .querySelector<HTMLElement>(
-                        '[data-library-node][aria-selected="true"]',
-                      )
-                      ?.getAttribute("data-library-node") ?? null,
-                  search: (
-                    el.querySelector<HTMLElement>(
-                      "[data-library-search] input",
-                    ) as HTMLInputElement
-                  ).value,
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  rows: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-query-papers-row]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-papers-row")!),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-papers-row")!),
+              });
             },
             undefined,
           ),
@@ -1717,8 +1701,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const notePath = await obRun(
       run.vaultId,
       async ({ zotlit }, { readerKey }) => {
-        return String(
-          zotlit.services.noteIndex.getNotesByItemKey(readerKey)[0]?.path ?? "",
+        return (
+          zotlit.services.noteIndex.getNotesByItemKey(readerKey)[0]?.path ?? ""
         );
       },
       { readerKey: reader.key },
@@ -1733,9 +1717,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const readNotePath = await obRun(
       run.vaultId,
       async ({ zotlit }, { readPaperKey }) => {
-        return String(
+        return (
           zotlit.services.noteIndex.getNotesByItemKey(readPaperKey)[0]?.path ??
-            "",
+          ""
         );
       },
       { readPaperKey: readPaper.key },
@@ -1845,11 +1829,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               : s.libraryScope.libraries.filter(
                   (l) => l.selector.type === "personal",
                 );
-            return String(
-              JSON.stringify(
-                (
-                  await s.itemLookup.search(query, { limit: 500, libraries })
-                ).map((h) => h.item.indexedKey),
+            return JSON.stringify(
+              (await s.itemLookup.search(query, { limit: 500, libraries })).map(
+                (h) => h.item.indexedKey,
               ),
             );
           },
@@ -2010,15 +1992,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -2098,7 +2078,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "zotlit-library",
                 ) as (WorkspaceLeaf & { view: LibraryView })[]
               )[0]?.view;
-              if (!view?.tree) return String("null");
+              if (!view?.tree) return "null";
               await view.searched;
               await view.query.settled;
               await view.tree.settled;
@@ -2106,36 +2086,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               const tags = [
                 ...el.querySelectorAll<HTMLElement>("[data-library-tag]"),
               ];
-              return String(
-                JSON.stringify({
-                  phase: view.query.state.getState().phase,
-                  header: ((h: Element | null) =>
-                    h
-                      ? ["[data-library-header]", "[data-library-header-count]"]
-                          .map((s) => h.querySelector(s)?.textContent ?? "")
-                          .filter((t) => t !== "")
-                          .join(" | ")
-                      : null)(el.querySelector("[data-library-heading]")),
-                  tags: tags.map((n) => n.getAttribute("data-library-tag")),
-                  chips: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-library-filter]",
-                    ),
-                  ].map((n) => n.getAttribute("data-library-filter")),
-                  pressed: tags
-                    .filter((n) => n.getAttribute("aria-pressed") === "true")
-                    .map((n) => n.getAttribute("data-library-tag")),
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  rows: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      "[data-query-papers-row]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-papers-row")!),
-                }),
-              );
+              return JSON.stringify({
+                phase: view.query.state.getState().phase,
+                header: ((h: Element | null) =>
+                  h
+                    ? ["[data-library-header]", "[data-library-header-count]"]
+                        .map((s) => h.querySelector(s)?.textContent ?? "")
+                        .filter((t) => t !== "")
+                        .join(" | ")
+                    : null)(el.querySelector("[data-library-heading]")),
+                tags: tags.map((n) => n.getAttribute("data-library-tag")),
+                chips: [
+                  ...el.querySelectorAll<HTMLElement>("[data-library-filter]"),
+                ].map((n) => n.getAttribute("data-library-filter")),
+                pressed: tags
+                  .filter((n) => n.getAttribute("aria-pressed") === "true")
+                  .map((n) => n.getAttribute("data-library-tag")),
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                rows: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    "[data-query-papers-row]",
+                  ),
+                ].map((n) => n.getAttribute("data-query-papers-row")!),
+              });
             },
             undefined,
           ),
@@ -2339,12 +2315,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            JSON.stringify(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ]!.tags,
-            ),
+          return JSON.stringify(
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ]!.tags,
           );
         },
         undefined,
@@ -2356,19 +2330,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -2465,11 +2437,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               : s.libraryScope.libraries.filter(
                   (l) => l.selector.type === "personal",
                 );
-            return String(
-              JSON.stringify(
-                (
-                  await s.itemLookup.search(query, { limit: 500, libraries })
-                ).map((h) => h.item.indexedKey),
+            return JSON.stringify(
+              (await s.itemLookup.search(query, { limit: 500, libraries })).map(
+                (h) => h.item.indexedKey,
               ),
             );
           },
@@ -3054,15 +3024,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -3211,12 +3179,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             () => el.querySelector<HTMLElement>("[data-query-item-row]"),
             10000,
           );
-          return String(
+          return (
             el
               .querySelector<HTMLElement>(
                 "[data-query-item-row][data-selected]",
               )
-              ?.getAttribute("data-query-item-row") ?? "none",
+              ?.getAttribute("data-query-item-row") ?? "none"
           );
         },
         undefined,
@@ -3269,9 +3237,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
           ].map((n) => n.getAttribute("data-query-item-row")!);
           keydown(row(readingKey)!, { key: "ArrowDown" });
-          return String(
-            JSON.stringify({ next: keys[keys.indexOf(readingKey) + 1] }),
-          );
+          return JSON.stringify({ next: keys[keys.indexOf(readingKey) + 1] });
         },
         { readingKey: reading.key },
       ),
@@ -3532,11 +3498,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const menu = await until("row menu", () =>
               activeDocument.querySelector<HTMLElement>(".menu"),
             );
-            return String(
-              JSON.stringify(
-                [...menu.querySelectorAll<HTMLElement>(".menu-item")].map(
-                  (item) => item.textContent,
-                ),
+            return JSON.stringify(
+              [...menu.querySelectorAll<HTMLElement>(".menu-item")].map(
+                (item) => item.textContent,
               ),
             );
           } finally {
@@ -3593,15 +3557,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await obRun(
               run.vaultId,
               async ({ app }, { notepath }) => {
-                return String(
-                  (
-                    app.workspace.getLeavesOfType(
-                      "markdown",
-                    ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                  )
-                    .find((leaf) => leaf.view.file?.path === notepath)!
-                    .view.editor.getValue(),
-                );
+                return (
+                  app.workspace.getLeavesOfType(
+                    "markdown",
+                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
+                )
+                  .find((leaf) => leaf.view.file?.path === notepath)!
+                  .view.editor.getValue();
               },
               { notepath: notePath },
             ),
@@ -3613,15 +3575,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { notepath }) => {
-          return String(
-            (
-              app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-                view: MarkdownView;
-              })[]
-            )
-              .find((leaf) => leaf.view.file?.path === notepath)!
-              .view.editor.getValue(),
-          );
+          return (
+            app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+              view: MarkdownView;
+            })[]
+          )
+            .find((leaf) => leaf.view.file?.path === notepath)!
+            .view.editor.getValue();
         },
         { notepath: notePath },
       ),
@@ -3681,9 +3641,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }),
           );
           source!.dispatchEvent(new DragEvent("dragend", { bubbles: true }));
-          return String(
-            JSON.stringify({ refused, types: [...transfer.types] }),
-          );
+          return JSON.stringify({ refused, types: [...transfer.types] });
         },
         { notepath: notePath, unwrittenkey: unwrittenKey },
       ),
@@ -3699,15 +3657,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await obRun(
               run.vaultId,
               async ({ app }, { notepath }) => {
-                return String(
-                  (
-                    app.workspace.getLeavesOfType(
-                      "markdown",
-                    ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                  )
-                    .find((leaf) => leaf.view.file?.path === notepath)!
-                    .view.editor.getValue(),
-                );
+                return (
+                  app.workspace.getLeavesOfType(
+                    "markdown",
+                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
+                )
+                  .find((leaf) => leaf.view.file?.path === notepath)!
+                  .view.editor.getValue();
               },
               { notepath: notePath },
             ),
@@ -3719,15 +3675,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { notepath }) => {
-          return String(
-            (
-              app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-                view: MarkdownView;
-              })[]
-            )
-              .find((leaf) => leaf.view.file?.path === notepath)!
-              .view.editor.getValue(),
-          );
+          return (
+            app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+              view: MarkdownView;
+            })[]
+          )
+            .find((leaf) => leaf.view.file?.path === notepath)!
+            .view.editor.getValue();
         },
         { notepath: notePath },
       ),
@@ -3798,15 +3752,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            data: await app.vault.adapter.read(
-              `${app.vault.configDir}/plugins/zotlit/data.json`,
-            ),
-            dataDir: zotlit.services.zoteroPref.dataDirOverride,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          data: await app.vault.adapter.read(
+            `${app.vault.configDir}/plugins/zotlit/data.json`,
+          ),
+          dataDir: zotlit.services.zoteroPref.dataDirOverride,
+        });
       },
       undefined,
     );
@@ -3926,13 +3878,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }) => {
           return String(
-            String(
-              (
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              ).length,
-            ),
+            (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            ).length,
           );
         },
         undefined,
@@ -4042,9 +3992,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             () => input!.ownerDocument.activeElement === input,
           );
           return String(
-            String(
-              !activeDocument.querySelector<HTMLElement>(".modal-container"),
-            ),
+            !activeDocument.querySelector<HTMLElement>(".modal-container"),
           );
         },
         { welcomeActionSearchLabel: run.m.welcome_action_search() },
@@ -4086,11 +4034,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }) => {
           return String(
-            String(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "welcome.dismissed"
-              ],
-            ),
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "welcome.dismissed"
+            ],
           );
         },
         undefined,
@@ -4211,20 +4157,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             active: action!.classList.contains("is-active"),
             pressed: action!.getAttribute("aria-pressed"),
           };
-          return String(
-            JSON.stringify({
-              before,
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              steps: el.querySelectorAll<HTMLElement>("[data-welcome-step]")
-                .length,
-              rows: view.contentEl.querySelectorAll<HTMLElement>(
-                "[data-welcome-help-row]",
-              ).length,
-              ...pressed,
-            }),
-          );
+          return JSON.stringify({
+            before,
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            steps: el.querySelectorAll<HTMLElement>("[data-welcome-step]")
+              .length,
+            rows: view.contentEl.querySelectorAll<HTMLElement>(
+              "[data-welcome-help-row]",
+            ).length,
+            ...pressed,
+          });
         },
         {
           value: `.view-actions .view-action[aria-label="${run.m.library_view_help_action()}"]`,
@@ -4285,15 +4229,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             active: action!.classList.contains("is-active"),
             pressed: action!.getAttribute("aria-pressed"),
           };
-          return String(
-            JSON.stringify({
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              saved,
-              ...pressed,
-            }),
-          );
+          return JSON.stringify({
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            saved,
+            ...pressed,
+          });
         },
         {
           value: `.view-actions .view-action[aria-label="${run.m.library_view_help_action()}"]`,
@@ -4324,21 +4266,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )[0]!.view;
           await view.query.settled;
           const el = view.contentEl;
-          return String(
-            JSON.stringify({
-              missing:
-                el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
-              rows: [
-                ...el.querySelectorAll<HTMLElement>(
-                  'tr[data-query-table-row="item"], [data-query-papers-row]',
-                ),
-              ].map(
-                (n) =>
-                  n.getAttribute("data-query-key")! ??
-                  n.getAttribute("data-query-papers-row")!,
+          return JSON.stringify({
+            missing:
+              el.querySelector<HTMLElement>("[data-zotero-missing]") !== null,
+            rows: [
+              ...el.querySelectorAll<HTMLElement>(
+                'tr[data-query-table-row="item"], [data-query-papers-row]',
               ),
-            }),
-          );
+            ].map(
+              (n) =>
+                n.getAttribute("data-query-key")! ??
+                n.getAttribute("data-query-papers-row")!,
+            ),
+          });
         },
         undefined,
       ),
@@ -4465,14 +4405,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            data: await app.vault.adapter.read(
-              `${app.vault.configDir}/plugins/zotlit/data.json`,
-            ),
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          data: await app.vault.adapter.read(
+            `${app.vault.configDir}/plugins/zotlit/data.json`,
+          ),
+        });
       },
       undefined,
     );
@@ -4592,12 +4530,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const input = view.contentEl.querySelector<HTMLElement>(
               "[data-library-search] input",
             );
-            return String(
-              JSON.stringify({
-                banner: view.welcome.shown,
-                focused: input!.ownerDocument.activeElement === input,
-              }),
-            );
+            return JSON.stringify({
+              banner: view.welcome.shown,
+              focused: input!.ownerDocument.activeElement === input,
+            });
           },
           undefined,
         ),
@@ -4610,14 +4546,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ app, zotlit }) => {
         await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            data: await app.vault.adapter.read(
-              `${app.vault.configDir}/plugins/zotlit/data.json`,
-            ),
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          data: await app.vault.adapter.read(
+            `${app.vault.configDir}/plugins/zotlit/data.json`,
+          ),
+        });
       },
       undefined,
     );
@@ -4666,7 +4600,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const leaf = app.workspace.getLeaf(false);
           await leaf.openFile(file!);
           app.workspace.setActiveLeaf(leaf);
-          return String(JSON.stringify({ id: leaf.id, path: file!.path }));
+          return JSON.stringify({ id: leaf.id, path: file!.path });
         },
         undefined,
       ),
@@ -4699,17 +4633,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { noteId }) => {
-          return String(
-            JSON.stringify({
-              note: (app.workspace.getLeafById(noteId)!.view as FileView).file
-                ?.path,
-              library: (
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              ).map((leaf) => leaf.id !== noteId),
-            }),
-          );
+          return JSON.stringify({
+            note: (app.workspace.getLeafById(noteId)!.view as FileView).file
+              ?.path,
+            library: (
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            ).map((leaf) => leaf.id !== noteId),
+          });
         },
         { noteId: note.id },
       ),
@@ -4718,7 +4650,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const version = await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(zotlit.services.release.version);
+        return zotlit.services.release.version;
       },
       undefined,
     );
@@ -4779,11 +4711,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }) => {
           return String(
-            String(
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "release.update-pending"
-              ],
-            ),
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "release.update-pending"
+            ],
           );
         },
         undefined,
@@ -4838,14 +4768,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ...leaves.map((leaf) => leaf.view.getState().url),
           ];
           leaves.forEach((leaf) => leaf.detach());
-          return String(
-            JSON.stringify({
-              urls,
-              pending: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["release.update-pending"],
-            }),
-          );
+          return JSON.stringify({
+            urls,
+            pending: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["release.update-pending"],
+          });
         },
         { welcomeUpdateActionLabel: run.m.welcome_update_action() },
       ),
@@ -4897,18 +4825,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )[0]!.view.contentEl,
           );
           await new Promise((r) => setTimeout(r, 500));
-          return String(
-            JSON.stringify({
-              opened,
-              banner: !!(
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              )[0]!.view.contentEl.querySelector<HTMLElement>(
-                "[data-welcome-banner]",
-              ),
-            }),
-          );
+          return JSON.stringify({
+            opened,
+            banner: !!(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelector<HTMLElement>(
+              "[data-welcome-banner]",
+            ),
+          });
         },
         undefined,
       ),
@@ -5070,23 +4996,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )[0]!.view.contentEl,
           );
           await new Promise((r) => setTimeout(r, 500));
-          return String(
-            JSON.stringify({
-              banner: !!(
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              )[0]!.view.contentEl.querySelector<HTMLElement>(
-                "[data-welcome-banner]",
-              ),
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              update: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["release.update-pending"],
-            }),
-          );
+          return JSON.stringify({
+            banner: !!(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.contentEl.querySelector<HTMLElement>(
+              "[data-welcome-banner]",
+            ),
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            update: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["release.update-pending"],
+          });
         },
         undefined,
       ),
@@ -5105,23 +5029,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { keys }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            size: require("@electron/remote").getCurrentWindow().getSize(),
-            folder: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["note.default-profile"].bindings["note.literature-folder"],
-            settings: Object.fromEntries(
-              keys.map((k) => [
-                k,
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )[k],
-              ]),
-            ),
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          size: require("@electron/remote").getCurrentWindow().getSize(),
+          folder: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["note.default-profile"].bindings["note.literature-folder"],
+          settings: Object.fromEntries(
+            keys.map((k) => [
+              k,
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                k
+              ],
+            ]),
+          ),
+        });
       },
       { keys: keys },
     );
@@ -5152,9 +5074,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const created = await obRun(
       run.vaultId,
       async ({ app }, { folder }) => {
-        if (app.vault.getFolderByPath(folder)) return String("false");
+        if (app.vault.getFolderByPath(folder)) return "false";
         await app.vault.createFolder(folder);
-        return String("true");
+        return "true";
       },
       { folder: folder },
     );
@@ -5352,50 +5274,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ),
               ].filter((n) => !n.closest<HTMLElement>("[data-welcome-step]"));
               const banner = R(b);
-              return String(
-                JSON.stringify({
-                  banner,
-                  contentStart: banner.l + Number.parseFloat(cs.paddingLeft),
-                  contentEnd: banner.r - Number.parseFloat(cs.paddingRight),
-                  gap:
-                    Number.parseFloat(getComputedStyle(grid!).columnGap) || 0,
-                  lockup: R(
-                    b.querySelector<HTMLElement>("[data-welcome-lockup]") ??
-                      b.querySelector<HTMLElement>(
-                        '[role=heading][aria-level="2"]',
-                      ),
-                  ),
-                  marks: all(
-                    "[data-welcome-mark]",
-                    "[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child",
-                  ).map(R),
-                  notices: notices.map(R),
-                  surfaces: [
-                    ...b.querySelectorAll<HTMLElement>(
-                      "[data-welcome-step][data-open]",
+              return JSON.stringify({
+                banner,
+                contentStart: banner.l + Number.parseFloat(cs.paddingLeft),
+                contentEnd: banner.r - Number.parseFloat(cs.paddingRight),
+                gap: Number.parseFloat(getComputedStyle(grid!).columnGap) || 0,
+                lockup: R(
+                  b.querySelector<HTMLElement>("[data-welcome-lockup]") ??
+                    b.querySelector<HTMLElement>(
+                      '[role=heading][aria-level="2"]',
                     ),
-                    ...notices.map(
-                      (n) =>
-                        n.closest<HTMLElement>("[data-welcome-callout]") ??
-                        n.parentElement!.parentElement,
-                    ),
-                  ].map(R),
-                  header: R(b.querySelector<HTMLElement>("header")),
-                  column: R(column),
-                  first: R(column!.firstElementChild),
-                  help: R(help),
-                  tiles: all(
-                    "[data-welcome-help-tile]",
-                    "[data-welcome-help] > div > a",
-                  ).map(R),
-                  dismiss: R(
-                    b.querySelector<HTMLElement>("[data-welcome-dismiss]"),
+                ),
+                marks: all(
+                  "[data-welcome-mark]",
+                  "[data-welcome-step] > div > span:first-child, [data-welcome-setup-done] > span:first-child",
+                ).map(R),
+                notices: notices.map(R),
+                surfaces: [
+                  ...b.querySelectorAll<HTMLElement>(
+                    "[data-welcome-step][data-open]",
                   ),
-                  glyph: R(
-                    b.querySelector<HTMLElement>("[data-welcome-dismiss] svg"),
+                  ...notices.map(
+                    (n) =>
+                      n.closest<HTMLElement>("[data-welcome-callout]") ??
+                      n.parentElement!.parentElement,
                   ),
-                }),
-              );
+                ].map(R),
+                header: R(b.querySelector<HTMLElement>("header")),
+                column: R(column),
+                first: R(column!.firstElementChild),
+                help: R(help),
+                tiles: all(
+                  "[data-welcome-help-tile]",
+                  "[data-welcome-help] > div > a",
+                ).map(R),
+                dismiss: R(
+                  b.querySelector<HTMLElement>("[data-welcome-dismiss]"),
+                ),
+                glyph: R(
+                  b.querySelector<HTMLElement>("[data-welcome-dismiss] svg"),
+                ),
+              });
             },
             {
               width: width,

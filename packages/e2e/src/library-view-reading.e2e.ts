@@ -33,16 +33,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            dataDir: zotlit.services.zoteroPref.dataDirOverride,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          dataDir: zotlit.services.zoteroPref.dataDirOverride,
+        });
       },
       undefined,
     );
@@ -155,37 +153,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const part = (name: string) =>
             card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
               ?.textContent ?? null;
-          return String(
-            JSON.stringify(
-              card!.checkVisibility()
-                ? {
-                    title: part("title"),
-                    creators: part("creators"),
-                    venue: part("venue"),
-                    citationKey: part("citekey"),
-                    abstract: part("abstract"),
-                    actions: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        "[data-library-card-action]",
-                      ),
-                    ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                    cards: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ),
-                    ]
-                      .map((n) => ({
-                        key: n.getAttribute("data-zotero-annotation-key")!,
-                        color: n.getAttribute("data-annot-color"),
-                        page:
-                          n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                            ?.textContent ?? null,
-                        text: n.textContent,
-                      }))
-                      .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                  }
-                : null,
-            ),
+          return JSON.stringify(
+            card!.checkVisibility()
+              ? {
+                  title: part("title"),
+                  creators: part("creators"),
+                  venue: part("venue"),
+                  citationKey: part("citekey"),
+                  abstract: part("abstract"),
+                  actions: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      "[data-library-card-action]",
+                    ),
+                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
+                  cards: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ),
+                  ]
+                    .map((n) => ({
+                      key: n.getAttribute("data-zotero-annotation-key")!,
+                      color: n.getAttribute("data-annot-color"),
+                      page:
+                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
+                          ?.textContent ?? null,
+                      text: n.textContent,
+                    }))
+                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                }
+              : null,
           );
         },
         { paperKey: paper.key },
@@ -227,25 +223,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const toggle = card!.querySelector<HTMLElement>(
               '[data-library-card-toggle="annotations"]',
             );
-            return String(
-              JSON.stringify({
-                toggle: toggle!.textContent,
-                expanded: toggle!.getAttribute("aria-expanded"),
-                cards:
-                  card!.querySelectorAll<HTMLElement>(".zt-annot-card").length,
-                quotes: card!.querySelectorAll<HTMLElement>(
-                  "[data-library-card-quote]",
-                ).length,
-                colours: [
-                  ...card!.querySelectorAll<HTMLElement>(
-                    "[data-library-card-colour]",
-                  ),
-                ].reduce(
-                  (sum, n) => sum + Number(n.textContent.split(": ").at(-1)),
-                  0,
+            return JSON.stringify({
+              toggle: toggle!.textContent,
+              expanded: toggle!.getAttribute("aria-expanded"),
+              cards:
+                card!.querySelectorAll<HTMLElement>(".zt-annot-card").length,
+              quotes: card!.querySelectorAll<HTMLElement>(
+                "[data-library-card-quote]",
+              ).length,
+              colours: [
+                ...card!.querySelectorAll<HTMLElement>(
+                  "[data-library-card-colour]",
                 ),
-              }),
-            );
+              ].reduce(
+                (sum, n) => sum + Number(n.textContent.split(": ").at(-1)),
+                0,
+              ),
+            });
           },
           { paperKey: paper.key },
         ),
@@ -292,37 +286,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const part = (name: string) =>
             card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
               ?.textContent ?? null;
-          return String(
-            JSON.stringify(
-              card!.checkVisibility()
-                ? {
-                    title: part("title"),
-                    creators: part("creators"),
-                    venue: part("venue"),
-                    citationKey: part("citekey"),
-                    abstract: part("abstract"),
-                    actions: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        "[data-library-card-action]",
-                      ),
-                    ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                    cards: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ),
-                    ]
-                      .map((n) => ({
-                        key: n.getAttribute("data-zotero-annotation-key")!,
-                        color: n.getAttribute("data-annot-color"),
-                        page:
-                          n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                            ?.textContent ?? null,
-                        text: n.textContent,
-                      }))
-                      .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                  }
-                : null,
-            ),
+          return JSON.stringify(
+            card!.checkVisibility()
+              ? {
+                  title: part("title"),
+                  creators: part("creators"),
+                  venue: part("venue"),
+                  citationKey: part("citekey"),
+                  abstract: part("abstract"),
+                  actions: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      "[data-library-card-action]",
+                    ),
+                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
+                  cards: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ),
+                  ]
+                    .map((n) => ({
+                      key: n.getAttribute("data-zotero-annotation-key")!,
+                      color: n.getAttribute("data-annot-color"),
+                      page:
+                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
+                          ?.textContent ?? null,
+                      text: n.textContent,
+                    }))
+                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                }
+              : null,
           );
         },
         { seededCardsLength: seededCards.length },
@@ -392,29 +384,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const el = leaf!.view.contentEl;
             const card = el.querySelector<HTMLElement>("[data-library-card]");
 
-            return String(
-              JSON.stringify({
-                capability: zotlit.services.bridge.runSync(
-                  zotlit.services.annotationRepository.capabilityFor(
-                    annotationAttachmentKey,
-                  ),
+            return JSON.stringify({
+              capability: zotlit.services.bridge.runSync(
+                zotlit.services.annotationRepository.capabilityFor(
+                  annotationAttachmentKey,
                 ),
-                blocked:
-                  [
-                    ...card!.querySelectorAll<HTMLElement>(".zt-annot-card"),
-                  ].every(
-                    (n) =>
-                      n.querySelectorAll<HTMLElement>(
-                        ".clickable-icon[data-blocked]",
-                      ).length >= 2,
-                  ) &&
-                  [
-                    ...card!.querySelectorAll<HTMLElement>(
-                      ".zt-annot-comment-field[role=textbox]",
-                    ),
-                  ].every((f) => f.hasAttribute("data-blocked")),
-              }),
-            );
+              ),
+              blocked:
+                [
+                  ...card!.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].every(
+                  (n) =>
+                    n.querySelectorAll<HTMLElement>(
+                      ".clickable-icon[data-blocked]",
+                    ).length >= 2,
+                ) &&
+                [
+                  ...card!.querySelectorAll<HTMLElement>(
+                    ".zt-annot-comment-field[role=textbox]",
+                  ),
+                ].every((f) => f.hasAttribute("data-blocked")),
+            });
           },
           { annotationAttachmentKey: annotationAttachment.key },
         ),
@@ -471,15 +461,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ app }, { notepath }) => {
-              return String(
-                (
-                  app.workspace.getLeavesOfType(
-                    "markdown",
-                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                )
-                  .find((leaf) => leaf.view.file?.path === notepath)!
-                  .view.editor.getValue(),
-              );
+              return (
+                app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+                  view: MarkdownView;
+                })[]
+              )
+                .find((leaf) => leaf.view.file?.path === notepath)!
+                .view.editor.getValue();
             },
             { notepath: notePath },
           )
@@ -648,18 +636,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 (getComputedStyle(card!).position === "absolute") === enabled,
               5000,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                over: getComputedStyle(card!).position === "absolute",
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              over: getComputedStyle(card!).position === "absolute",
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+            });
           },
           {
             positionInput: 30,
@@ -698,20 +684,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "Close",
             );
             await until("card hides", () => !card!.checkVisibility());
-            return String(
-              JSON.stringify({
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           undefined,
         ),
@@ -742,7 +726,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const keys = [
               ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
             ].map((n) => n.getAttribute("data-query-item-row")!);
-            return String(JSON.stringify(keys[keys.indexOf(key) + 1] ?? null));
+            return JSON.stringify(keys[keys.indexOf(key) + 1] ?? null);
           },
           { key: key },
         ),
@@ -801,21 +785,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { arrowDown: "ArrowDown", choice: "hides", enabled: false },
         ),
@@ -853,21 +835,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { text: " ", choice: "shows", enabled: true },
         ),
@@ -905,21 +885,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { escape: "Escape", choice: "hides", enabled: false },
         ),
@@ -969,7 +947,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             contents.sendInputEvent({ type: "mouseDown", ...at, clickCount });
             contents.sendInputEvent({ type: "mouseUp", ...at, clickCount });
           }
-          return String("double-clicked");
+          return "double-clicked";
         },
         { paperKey: paper.key },
       ),
@@ -1022,23 +1000,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await until("first row selected", () =>
             first!.hasAttribute("data-selected"),
           );
-          return String(
-            JSON.stringify({
-              card: card!.checkVisibility(),
-              selected: el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )!
-                .getAttribute("data-query-item-row")!,
-              focused:
-                activeDocument.activeElement?.getAttribute(
-                  "data-query-item-row",
-                ) ?? null,
-              first: el
-                .querySelector<HTMLElement>("[data-query-item-row]")!
-                .getAttribute("data-query-item-row")!,
-            }),
-          );
+          return JSON.stringify({
+            card: card!.checkVisibility(),
+            selected: el
+              .querySelector<HTMLElement>(
+                "[data-query-item-row][data-selected]",
+              )!
+              .getAttribute("data-query-item-row")!,
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+            first: el
+              .querySelector<HTMLElement>("[data-query-item-row]")!
+              .getAttribute("data-query-item-row")!,
+          });
         },
         undefined,
       ),
@@ -1082,21 +1058,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { text: " ", choice: "shows", enabled: true },
         ),
@@ -1134,21 +1108,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { escape: "Escape", choice: "hides", enabled: false },
         ),
@@ -1209,21 +1181,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { arrowUp: "ArrowUp", choice: "hides", enabled: false },
         ),
@@ -1265,18 +1235,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 (getComputedStyle(card!).position === "absolute") === enabled,
               5000,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                over: getComputedStyle(card!).position === "absolute",
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              over: getComputedStyle(card!).position === "absolute",
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+            });
           },
           {
             positionInput: 90,
@@ -1320,21 +1288,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `card ${choice}`,
               () => card!.checkVisibility() === enabled,
             );
-            return String(
-              JSON.stringify({
-                card: card!.checkVisibility(),
-                selected:
-                  el
-                    .querySelector<HTMLElement>(
-                      "[data-query-item-row][data-selected]",
-                    )
-                    ?.getAttribute("data-query-item-row") ?? null,
-                focused:
-                  activeDocument.activeElement?.getAttribute(
-                    "data-query-item-row",
-                  ) ?? null,
-              }),
-            );
+            return JSON.stringify({
+              card: card!.checkVisibility(),
+              selected:
+                el
+                  .querySelector<HTMLElement>(
+                    "[data-query-item-row][data-selected]",
+                  )
+                  ?.getAttribute("data-query-item-row") ?? null,
+              focused:
+                activeDocument.activeElement?.getAttribute(
+                  "data-query-item-row",
+                ) ?? null,
+            });
           },
           { arrowDown: "ArrowDown", choice: "shows", enabled: true },
         ),
@@ -1428,37 +1394,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const part = (name: string) =>
             card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
               ?.textContent ?? null;
-          return String(
-            JSON.stringify(
-              card!.checkVisibility()
-                ? {
-                    title: part("title"),
-                    creators: part("creators"),
-                    venue: part("venue"),
-                    citationKey: part("citekey"),
-                    abstract: part("abstract"),
-                    actions: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        "[data-library-card-action]",
-                      ),
-                    ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                    cards: [
-                      ...card!.querySelectorAll<HTMLElement>(
-                        ".zt-annot-card[data-zotero-annotation-key]",
-                      ),
-                    ]
-                      .map((n) => ({
-                        key: n.getAttribute("data-zotero-annotation-key")!,
-                        color: n.getAttribute("data-annot-color"),
-                        page:
-                          n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                            ?.textContent ?? null,
-                        text: n.textContent,
-                      }))
-                      .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                  }
-                : null,
-            ),
+          return JSON.stringify(
+            card!.checkVisibility()
+              ? {
+                  title: part("title"),
+                  creators: part("creators"),
+                  venue: part("venue"),
+                  citationKey: part("citekey"),
+                  abstract: part("abstract"),
+                  actions: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      "[data-library-card-action]",
+                    ),
+                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
+                  cards: [
+                    ...card!.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-zotero-annotation-key]",
+                    ),
+                  ]
+                    .map((n) => ({
+                      key: n.getAttribute("data-zotero-annotation-key")!,
+                      color: n.getAttribute("data-annot-color"),
+                      page:
+                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
+                          ?.textContent ?? null,
+                      text: n.textContent,
+                    }))
+                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
+                }
+              : null,
           );
         },
         undefined,

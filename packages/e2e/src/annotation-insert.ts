@@ -106,10 +106,8 @@ export async function verifyAnnotationInsert(
         vaultId,
         async ({ page }) => {
           return String(
-            String(
-              page.scratch.__zotlitInsertTrial!.leaf.view.editor.cm.dom
-                .ownerDocument.defaultView === window,
-            ),
+            page.scratch.__zotlitInsertTrial!.leaf.view.editor.cm.dom
+              .ownerDocument.defaultView === window,
           );
         },
         undefined,
@@ -129,12 +127,10 @@ export async function verifyAnnotationInsert(
         vaultId,
         async ({ app, page }) => {
           return String(
-            String(
-              app.vault
-                .getFiles()
-                .filter((f) => f.name.startsWith("zotlit-excerpt-")).length ===
-                page.scratch.__zotlitInsertTrial!.assets,
-            ),
+            app.vault
+              .getFiles()
+              .filter((f) => f.name.startsWith("zotlit-excerpt-")).length ===
+              page.scratch.__zotlitInsertTrial!.assets,
           );
         },
         undefined,
@@ -314,8 +310,8 @@ export async function verifyAnnotationInsert(
           ? await obRun(
               vaultId,
               async ({ app, page }) => {
-                return String(
-                  await app.vault.read(page.scratch.__zotlitInsertTrial!.file),
+                return await app.vault.read(
+                  page.scratch.__zotlitInsertTrial!.file,
                 );
               },
               undefined,
@@ -324,10 +320,8 @@ export async function verifyAnnotationInsert(
               await obRun(
                 vaultId,
                 async ({ page }) => {
-                  return String(
-                    JSON.stringify(
-                      page.scratch.__zotlitInsertTrial!.editor.getValue(),
-                    ),
+                  return JSON.stringify(
+                    page.scratch.__zotlitInsertTrial!.editor.getValue(),
                   );
                 },
                 undefined,
@@ -397,9 +391,7 @@ export async function verifyAnnotationInsert(
           await obRun(
             vaultId,
             async ({ page }) => {
-              return String(
-                page.scratch.__zotlitInsertTrial!.editor.getValue(),
-              );
+              return page.scratch.__zotlitInsertTrial!.editor.getValue();
             },
             undefined,
           ),

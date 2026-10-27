@@ -209,12 +209,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     const saved = await obRun(
       vaultId!,
       async ({ app }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
+        });
       },
       undefined,
     );
@@ -960,10 +958,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ zotlit }) => {
               return String(
-                String(
-                  zotlit.services.bridge.runSync(
-                    zotlit.services.localServer.available,
-                  ),
+                zotlit.services.bridge.runSync(
+                  zotlit.services.localServer.available,
                 ),
               );
             },
@@ -1215,7 +1211,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await Promise.all(
               editor.bindings.map((binding) => binding.stepped),
             );
-            return String("stepped");
+            return "stepped";
           },
           undefined,
         );
@@ -1856,14 +1852,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               }: { attachmentPath: string; createdKey: string },
             ) => {
               return String(
-                String(
-                  !!pageHelpers
-                    .pdfView(attachmentPath)
-                    ?.containerEl.querySelector<SVGGraphicsElement>(
-                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
-                    )
-                    ?.classList.contains("is-selected"),
-                ),
+                !!pageHelpers
+                  .pdfView(attachmentPath)
+                  ?.containerEl.querySelector<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
+                  )
+                  ?.classList.contains("is-selected"),
               );
             },
             { attachmentPath, createdKey },
@@ -2111,21 +2105,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   toolName,
                 }: { attachmentPath: string; toolName: "image" },
               ) => {
-                return String(
-                  JSON.stringify({
-                    armed: pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelector<HTMLElement>(
-                        `[data-zt-tool=${JSON.stringify(toolName)}]`,
-                      )!
-                      .getAttribute("aria-pressed"),
-                    preview: !!pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelector<HTMLElement>(
-                        ".zt-pdf-capture-rect",
-                      ),
-                  }),
-                );
+                return JSON.stringify({
+                  armed: pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      `[data-zt-tool=${JSON.stringify(toolName)}]`,
+                    )!
+                    .getAttribute("aria-pressed"),
+                  preview: !!pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      ".zt-pdf-capture-rect",
+                    ),
+                });
               },
               { attachmentPath, toolName: "image" },
             ),
@@ -2331,18 +2323,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               fire("pointerup", at.x, at.y, container);
               fire("click", at.x, at.y, pageHelpers.scratch.__ztInkNode);
               delete pageHelpers.scratch.__ztInkNode;
-              return String(
-                JSON.stringify({
-                  pending: container.querySelectorAll<SVGGraphicsElement>(
-                    ".zt-pdf-pending-stroke",
-                  ).length,
-                  live: !!pageHelpers
-                    .pdfView(attachmentPath)!
-                    .containerEl.querySelector<SVGGraphicsElement>(
-                      ".zt-pdf-live-stroke",
-                    ),
-                }),
-              );
+              return JSON.stringify({
+                pending: container.querySelectorAll<SVGGraphicsElement>(
+                  ".zt-pdf-pending-stroke",
+                ).length,
+                live: !!pageHelpers
+                  .pdfView(attachmentPath)!
+                  .containerEl.querySelector<SVGGraphicsElement>(
+                    ".zt-pdf-live-stroke",
+                  ),
+              });
             },
             { attachmentPath, pointX: x, pointY: y },
           );
@@ -2685,14 +2675,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obRun(
               vaultId!,
               async ({ app, zotlit }) => {
-                return String(
-                  JSON.stringify([
-                    app.vault.getConfig("nativeMenus"),
-                    zotlit.services.bridge.runSync(
-                      zotlit.services.settings.current,
-                    )["reader.ink-width"],
-                  ]),
-                );
+                return JSON.stringify([
+                  app.vault.getConfig("nativeMenus"),
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )["reader.ink-width"],
+                ]);
               },
               undefined,
             ).then((reply) => JSON.parse(reply) as [boolean, number])
@@ -2854,12 +2842,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers.pdfView(attachmentPath)!.viewer.child.pdfViewer
-                      .pdfViewer.container,
-                  ).touchAction,
-                );
+                return getComputedStyle(
+                  pageHelpers.pdfView(attachmentPath)!.viewer.child.pdfViewer
+                    .pdfViewer.container,
+                ).touchAction;
               },
               { attachmentPath },
             ),
@@ -2871,14 +2857,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers
-                      .pdfView(attachmentPath)!
-                      .viewer.child.getPage(1)!
-                      .div.querySelector<HTMLElement>(".textLayer span")!,
-                  ).cursor,
-                );
+                return getComputedStyle(
+                  pageHelpers
+                    .pdfView(attachmentPath)!
+                    .viewer.child.getPage(1)!
+                    .div.querySelector<HTMLElement>(".textLayer span")!,
+                ).cursor;
               },
               { attachmentPath },
             ),
@@ -2894,11 +2878,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers.pdfView(attachmentPath)!.containerEl,
-                  ).cursor,
-                );
+                return getComputedStyle(
+                  pageHelpers.pdfView(attachmentPath)!.containerEl,
+                ).cursor;
               },
               { attachmentPath },
             ),
@@ -2911,11 +2893,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers.pdfView(attachmentPath)!.containerEl,
-                  ).cursor,
-                );
+                return getComputedStyle(
+                  pageHelpers.pdfView(attachmentPath)!.containerEl,
+                ).cursor;
               },
               { attachmentPath },
             ),
@@ -2971,12 +2951,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers.pdfView(attachmentPath)!.viewer.child.pdfViewer
-                      .pdfViewer.container,
-                  ).touchAction,
-                );
+                return getComputedStyle(
+                  pageHelpers.pdfView(attachmentPath)!.viewer.child.pdfViewer
+                    .pdfViewer.container,
+                ).touchAction;
               },
               { attachmentPath },
             ),
@@ -2988,14 +2966,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers
-                      .pdfView(attachmentPath)!
-                      .viewer.child.getPage(1)!
-                      .div.querySelector<HTMLElement>(".textLayer span")!,
-                  ).cursor,
-                );
+                return getComputedStyle(
+                  pageHelpers
+                    .pdfView(attachmentPath)!
+                    .viewer.child.getPage(1)!
+                    .div.querySelector<HTMLElement>(".textLayer span")!,
+                ).cursor;
               },
               { attachmentPath },
             ),
@@ -3035,11 +3011,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const page = pageHelpers
                   .pdfView(attachmentPath)!
                   .viewer.child.getPage(1)!.div;
-                return String(
-                  [page, page.querySelector<HTMLElement>(".textLayer span")]
-                    .map((node) => getComputedStyle(node!).cursor)
-                    .join(),
-                );
+                return [
+                  page,
+                  page.querySelector<HTMLElement>(".textLayer span"),
+                ]
+                  .map((node) => getComputedStyle(node!).cursor)
+                  .join();
               },
               { attachmentPath },
             ),
@@ -3055,11 +3032,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const page = pageHelpers
                   .pdfView(attachmentPath)!
                   .viewer.child.getPage(1)!.div;
-                return String(
-                  [page, page.querySelector<HTMLElement>(".textLayer span")]
-                    .map((node) => getComputedStyle(node!).cursor)
-                    .join(),
-                );
+                return [
+                  page,
+                  page.querySelector<HTMLElement>(".textLayer span"),
+                ]
+                  .map((node) => getComputedStyle(node!).cursor)
+                  .join();
               },
               { attachmentPath },
             ),
@@ -3075,11 +3053,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const page = pageHelpers
                   .pdfView(attachmentPath)!
                   .viewer.child.getPage(1)!.div;
-                return String(
-                  [page, page.querySelector<HTMLElement>(".textLayer span")]
-                    .map((node) => getComputedStyle(node!).cursor)
-                    .join(),
-                );
+                return [
+                  page,
+                  page.querySelector<HTMLElement>(".textLayer span"),
+                ]
+                  .map((node) => getComputedStyle(node!).cursor)
+                  .join();
               },
               { attachmentPath },
             ),
@@ -3095,11 +3074,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const page = pageHelpers
                   .pdfView(attachmentPath)!
                   .viewer.child.getPage(1)!.div;
-                return String(
-                  [page, page.querySelector<HTMLElement>(".textLayer span")]
-                    .map((node) => getComputedStyle(node!).cursor)
-                    .join(),
-                );
+                return [
+                  page,
+                  page.querySelector<HTMLElement>(".textLayer span"),
+                ]
+                  .map((node) => getComputedStyle(node!).cursor)
+                  .join();
               },
               { attachmentPath },
             ),
@@ -3116,13 +3096,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { attachmentPath }: { attachmentPath: string },
               ) => {
                 return String(
-                  String(
-                    !!pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelector<HTMLElement>(
-                        ".zt-pdf-capture-rect",
-                      ),
-                  ),
+                  !!pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      ".zt-pdf-capture-rect",
+                    ),
                 );
               },
               { attachmentPath },
@@ -3135,11 +3113,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers.pdfView(attachmentPath)!.containerEl,
-                  ).cursor,
-                );
+                return getComputedStyle(
+                  pageHelpers.pdfView(attachmentPath)!.containerEl,
+                ).cursor;
               },
               { attachmentPath },
             ),
@@ -3152,11 +3128,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { page: pageHelpers },
                 { attachmentPath }: { attachmentPath: string },
               ) => {
-                return String(
-                  getComputedStyle(
-                    pageHelpers.pdfView(attachmentPath)!.containerEl,
-                  ).cursor,
-                );
+                return getComputedStyle(
+                  pageHelpers.pdfView(attachmentPath)!.containerEl,
+                ).cursor;
               },
               { attachmentPath },
             ),
@@ -3173,11 +3147,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const page = pageHelpers
                   .pdfView(attachmentPath)!
                   .viewer.child.getPage(1)!.div;
-                return String(
-                  [page, page.querySelector<HTMLElement>(".textLayer span")]
-                    .map((node) => getComputedStyle(node!).cursor)
-                    .join(),
-                );
+                return [
+                  page,
+                  page.querySelector<HTMLElement>(".textLayer span"),
+                ]
+                  .map((node) => getComputedStyle(node!).cursor)
+                  .join();
               },
               { attachmentPath },
             ),
@@ -3201,11 +3176,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   const page = pageHelpers
                     .pdfView(attachmentPath)!
                     .viewer.child.getPage(1)!.div;
-                  return String(
-                    [page, page.querySelector<HTMLElement>(".textLayer span")]
-                      .map((node) => getComputedStyle(node!).cursor)
-                      .join(),
-                  );
+                  return [
+                    page,
+                    page.querySelector<HTMLElement>(".textLayer span"),
+                  ]
+                    .map((node) => getComputedStyle(node!).cursor)
+                    .join();
                 },
                 { attachmentPath },
               ),
@@ -3218,11 +3194,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   { page: pageHelpers },
                   { attachmentPath }: { attachmentPath: string },
                 ) => {
-                  return String(
-                    getComputedStyle(
-                      pageHelpers.pdfView(attachmentPath)!.containerEl,
-                    ).cursor,
-                  );
+                  return getComputedStyle(
+                    pageHelpers.pdfView(attachmentPath)!.containerEl,
+                  ).cursor;
                 },
                 { attachmentPath },
               ),
@@ -3235,11 +3209,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   { page: pageHelpers },
                   { attachmentPath }: { attachmentPath: string },
                 ) => {
-                  return String(
-                    getComputedStyle(
-                      pageHelpers.pdfView(attachmentPath)!.containerEl,
-                    ).cursor,
-                  );
+                  return getComputedStyle(
+                    pageHelpers.pdfView(attachmentPath)!.containerEl,
+                  ).cursor;
                 },
                 { attachmentPath },
               ),
@@ -3313,20 +3285,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const underPage = page.top < y && y < page.bottom;
                 fire("pointerup", x, y, node);
                 fire("click", x, y, node);
-                return String(
-                  JSON.stringify({
-                    underPage,
-                    pending: container.querySelectorAll<SVGGraphicsElement>(
-                      ".zt-pdf-pending-stroke",
-                    ).length,
-                    live: !!pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelector<SVGGraphicsElement>(
-                        ".zt-pdf-live-stroke",
-                      ),
-                    armed: node!.getAttribute("aria-pressed"),
-                  }),
-                );
+                return JSON.stringify({
+                  underPage,
+                  pending: container.querySelectorAll<SVGGraphicsElement>(
+                    ".zt-pdf-pending-stroke",
+                  ).length,
+                  live: !!pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<SVGGraphicsElement>(
+                      ".zt-pdf-live-stroke",
+                    ),
+                  armed: node!.getAttribute("aria-pressed"),
+                });
               },
               { attachmentPath, toolName: "ink" },
             ),
@@ -3478,13 +3448,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { attachmentPath }: { attachmentPath: string },
               ) => {
                 return String(
-                  String(
-                    pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelectorAll<SVGGraphicsElement>(
-                        ".zt-pdf-annotation-mark.is-selected",
-                      ).length,
-                  ),
+                  pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelectorAll<SVGGraphicsElement>(
+                      ".zt-pdf-annotation-mark.is-selected",
+                    ).length,
                 );
               },
               { attachmentPath },
@@ -3534,13 +3502,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   { attachmentPath }: { attachmentPath: string },
                 ) => {
                   return String(
-                    String(
-                      !!pageHelpers
-                        .pdfView(attachmentPath)!
-                        .containerEl.querySelector<SVGGraphicsElement>(
-                          ".zt-pdf-live-stroke",
-                        ),
-                    ),
+                    !!pageHelpers
+                      .pdfView(attachmentPath)!
+                      .containerEl.querySelector<SVGGraphicsElement>(
+                        ".zt-pdf-live-stroke",
+                      ),
                   );
                 },
                 { attachmentPath },
@@ -3936,18 +3902,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const area = pageHelpers
                   .pdfView(attachmentPath)!
                   .containerEl.querySelector<HTMLElement>(".zt-pdf-text-draft");
-                return String(
-                  JSON.stringify({
-                    draft: !!area,
-                    focused: !!area && document.activeElement === area,
-                    armed: pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelector<HTMLElement>(
-                        `[data-zt-tool=${JSON.stringify(toolId)}]`,
-                      )!
-                      .getAttribute("aria-pressed"),
-                  }),
-                );
+                return JSON.stringify({
+                  draft: !!area,
+                  focused: !!area && document.activeElement === area,
+                  armed: pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      `[data-zt-tool=${JSON.stringify(toolId)}]`,
+                    )!
+                    .getAttribute("aria-pressed"),
+                });
               },
               { attachmentPath, pointX: x, pointY: y, toolId: "text" },
             ),
@@ -4181,7 +4145,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 )?.readOnly;
                 fire("pointerup", at.x, at.y, node);
                 fire("click", at.x, at.y, node);
-                return String(String(saving));
+                return String(saving);
               },
               { attachmentPath, pointX: x, pointY: y - 60 },
             ),
@@ -4394,13 +4358,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { attachmentPath }: { attachmentPath: string },
               ) => {
                 return String(
-                  String(
-                    !!pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelector<HTMLElement>(
-                        ".zt-pdf-text-draft",
-                      ),
-                  ),
+                  !!pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      ".zt-pdf-text-draft",
+                    ),
                 );
               },
               { attachmentPath },
@@ -4532,14 +4494,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obRun(
               vaultId!,
               async ({ app, zotlit }) => {
-                return String(
-                  JSON.stringify([
-                    app.vault.getConfig("nativeMenus"),
-                    zotlit.services.bridge.runSync(
-                      zotlit.services.settings.current,
-                    )["reader.text-font-size"],
-                  ]),
-                );
+                return JSON.stringify([
+                  app.vault.getConfig("nativeMenus"),
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )["reader.text-font-size"],
+                ]);
               },
               undefined,
             ).then((reply) => JSON.parse(reply) as [boolean, number])
@@ -4616,17 +4576,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 recentColorsKey: "reader.recent-colors";
               },
             ) => {
-              return String(
-                JSON.stringify([
-                  app.vault.getConfig("nativeMenus"),
-                  zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  )[annotationColorsKey] ?? null,
-                  zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  )[recentColorsKey] ?? null,
-                ]),
-              );
+              return JSON.stringify([
+                app.vault.getConfig("nativeMenus"),
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )[annotationColorsKey] ?? null,
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )[recentColorsKey] ?? null,
+              ]);
             },
             {
               annotationColorsKey: "reader.annotation-colors",
@@ -4715,7 +4673,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   ),
                 );
                 press(item, "Green");
-                return String(String(!!item));
+                return String(!!item);
               },
               { attachmentPath, green },
             ),
@@ -4803,25 +4761,23 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   }: { attachmentPath: string; annotationKey: "HRK7BG32" },
                 ) => {
                   const view = pageHelpers.pdfView(attachmentPath)!;
-                  if (!view) return String("no view");
+                  if (!view) return "no view";
                   view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
                   const mark =
                     view.containerEl.querySelector<SVGGraphicsElement>(
                       `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`,
                     );
-                  if (!mark) return String("none");
-                  return String(
-                    JSON.stringify(
-                      [...mark.children].map((line) => [
-                        line.textContent,
-                        Number(line.getAttribute("y")).toFixed(3),
-                        Number(
-                          (line as SVGTextContentElement)
-                            .getComputedTextLength()
-                            .toFixed(3),
-                        ),
-                      ]),
-                    ),
+                  if (!mark) return "none";
+                  return JSON.stringify(
+                    [...mark.children].map((line) => [
+                      line.textContent,
+                      Number(line.getAttribute("y")).toFixed(3),
+                      Number(
+                        (line as SVGTextContentElement)
+                          .getComputedTextLength()
+                          .toFixed(3),
+                      ),
+                    ]),
                   );
                 },
                 { attachmentPath, annotationKey: "HRK7BG32" },
@@ -4915,25 +4871,23 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   }: { attachmentPath: string; textKey: string },
                 ) => {
                   const view = pageHelpers.pdfView(attachmentPath)!;
-                  if (!view) return String("no view");
+                  if (!view) return "no view";
                   view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
                   const mark =
                     view.containerEl.querySelector<SVGGraphicsElement>(
                       `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]`,
                     );
-                  if (!mark) return String("none");
-                  return String(
-                    JSON.stringify(
-                      [...mark.children].map((line) => [
-                        line.textContent,
-                        Number(line.getAttribute("y")).toFixed(3),
-                        Number(
-                          (line as SVGTextContentElement)
-                            .getComputedTextLength()
-                            .toFixed(3),
-                        ),
-                      ]),
-                    ),
+                  if (!mark) return "none";
+                  return JSON.stringify(
+                    [...mark.children].map((line) => [
+                      line.textContent,
+                      Number(line.getAttribute("y")).toFixed(3),
+                      Number(
+                        (line as SVGTextContentElement)
+                          .getComputedTextLength()
+                          .toFixed(3),
+                      ),
+                    ]),
                   );
                 },
                 { attachmentPath, textKey },
@@ -5130,13 +5084,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.containerEl.querySelector<SVGGraphicsElement>(
                   `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]`,
                 );
-              if (mark!.classList.contains("is-selected"))
-                return String("selected");
+              if (mark!.classList.contains("is-selected")) return "selected";
               const rect = mark!.getBoundingClientRect();
               const x = rect.left + rect.width / 2,
                 y = rect.top + rect.height / 2;
               tap(x, y);
-              return String("clicked");
+              return "clicked";
             },
             { attachmentPath, imageKey },
           );
@@ -5190,19 +5143,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.containerEl.querySelector<SVGGraphicsElement>(
                       `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]`,
                     )!.ownerSVGElement;
-                  return String(
-                    JSON.stringify({
-                      x,
-                      y,
-                      perX:
-                        overlay!.getBoundingClientRect().width /
-                        overlay!.viewBox.baseVal.width,
-                      perY:
-                        overlay!.getBoundingClientRect().height /
-                        overlay!.viewBox.baseVal.height,
-                      onTop: document.elementFromPoint(x, y) === node,
-                    }),
-                  );
+                  return JSON.stringify({
+                    x,
+                    y,
+                    perX:
+                      overlay!.getBoundingClientRect().width /
+                      overlay!.viewBox.baseVal.width,
+                    perY:
+                      overlay!.getBoundingClientRect().height /
+                      overlay!.viewBox.baseVal.height,
+                    onTop: document.elementFromPoint(x, y) === node,
+                  });
                 },
                 { attachmentPath, imageKey },
               );
@@ -5239,16 +5190,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 .find(Boolean)
                 ?.querySelector<HTMLElement>(".zt-annot-conflict");
               if (!panel || panel.getBoundingClientRect().width === 0)
-                return String("none");
+                return "none";
               return String(
-                String(
-                  panel.textContent.includes(
-                    "The annotation's position changed in Zotero.",
-                  ) &&
-                    [...panel.querySelectorAll<HTMLElement>("button")].some(
-                      (node) => node.textContent === "Apply again",
-                    ),
-                ),
+                panel.textContent.includes(
+                  "The annotation's position changed in Zotero.",
+                ) &&
+                  [...panel.querySelectorAll<HTMLElement>("button")].some(
+                    (node) => node.textContent === "Apply again",
+                  ),
               );
             },
             { imageKey },
@@ -5671,14 +5620,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 }: { attachmentPath: string; imageKey: "FDRFQ7C2" },
               ) => {
                 return String(
-                  String(
-                    pageHelpers
-                      .pdfView(attachmentPath)
-                      ?.containerEl.querySelector<SVGGraphicsElement>(
-                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]`,
-                      )!
-                      .classList.contains("is-selected"),
-                  ),
+                  pageHelpers
+                    .pdfView(attachmentPath)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]`,
+                    )!
+                    .classList.contains("is-selected"),
                 );
               },
               { attachmentPath, imageKey },
@@ -6051,9 +5998,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                       node.getBoundingClientRect().width > 0 &&
                       node.textContent === "Apply again",
                   );
-                  if (!button) return String("no button");
+                  if (!button) return "no button";
                   press(button, "Apply again");
-                  return String("applied");
+                  return "applied";
                 },
                 { imageKey },
               ),
@@ -6269,13 +6216,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ?.containerEl.querySelector<SVGGraphicsElement>(
                   `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(inkKey)}]`,
                 );
-              if (mark!.classList.contains("is-selected"))
-                return String("selected");
+              if (mark!.classList.contains("is-selected")) return "selected";
               const rect = mark!.getBoundingClientRect();
               const x = rect.left + rect.width / 2,
                 y = rect.top + rect.height / 2;
               tap(x, y);
-              return String("clicked");
+              return "clicked";
             },
             { attachmentPath, inkKey },
           );
@@ -6330,24 +6276,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.containerEl.querySelector<SVGGraphicsElement>(
                       `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(inkKey)}]`,
                     )!.ownerSVGElement;
-                  return String(
-                    JSON.stringify({
-                      body: {
-                        x: box!.left + box!.width / 2,
-                        y: box!.top + box!.height / 2,
-                      },
-                      corner: {
-                        x: handle.left + handle.width / 2,
-                        y: handle.top + handle.height / 2,
-                      },
-                      perX:
-                        overlay!.getBoundingClientRect().width /
-                        overlay!.viewBox.baseVal.width,
-                      perY:
-                        overlay!.getBoundingClientRect().height /
-                        overlay!.viewBox.baseVal.height,
-                    }),
-                  );
+                  return JSON.stringify({
+                    body: {
+                      x: box!.left + box!.width / 2,
+                      y: box!.top + box!.height / 2,
+                    },
+                    corner: {
+                      x: handle.left + handle.width / 2,
+                      y: handle.top + handle.height / 2,
+                    },
+                    perX:
+                      overlay!.getBoundingClientRect().width /
+                      overlay!.viewBox.baseVal.width,
+                    perY:
+                      overlay!.getBoundingClientRect().height /
+                      overlay!.viewBox.baseVal.height,
+                  });
                 },
                 { attachmentPath, inkKey },
               );
@@ -6612,13 +6556,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { attachmentPath }: { attachmentPath: string },
               ) => {
                 return String(
-                  String(
-                    pageHelpers
-                      .pdfView(attachmentPath)!
-                      .containerEl.querySelectorAll<SVGGraphicsElement>(
-                        ".zt-pdf-annotation-mark.is-selected",
-                      ).length,
-                  ),
+                  pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelectorAll<SVGGraphicsElement>(
+                      ".zt-pdf-annotation-mark.is-selected",
+                    ).length,
                 );
               },
               { attachmentPath },
@@ -6782,10 +6724,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   )!
                   .classList.contains("is-selected")
               )
-                return String("selected");
+                return "selected";
               const at = clientOf(cx, cy);
               tap(at.x, at.y);
-              return String("clicked");
+              return "clicked";
             },
             { attachmentPath, key, cx, cy },
           );
@@ -6883,18 +6825,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ?.containerEl.querySelector<SVGGraphicsElement>(
                       `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]`,
                     )!.ownerSVGElement;
-                  return String(
-                    JSON.stringify({
-                      body: clientOf(cx, cy),
-                      handles,
-                      perX:
-                        overlay!.getBoundingClientRect().width /
-                        overlay!.viewBox.baseVal.width,
-                      perY:
-                        overlay!.getBoundingClientRect().height /
-                        overlay!.viewBox.baseVal.height,
-                    }),
-                  );
+                  return JSON.stringify({
+                    body: clientOf(cx, cy),
+                    handles,
+                    perX:
+                      overlay!.getBoundingClientRect().width /
+                      overlay!.viewBox.baseVal.width,
+                    perY:
+                      overlay!.getBoundingClientRect().height /
+                      overlay!.viewBox.baseVal.height,
+                  });
                 },
                 { attachmentPath, key, cx, cy },
               );
@@ -7068,7 +7008,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     line = word;
                   }
                 }
-                return String(String(lines));
+                return String(lines);
               },
               {
                 fontPrefix: `${textSeed.fontSize}px `,
@@ -7132,7 +7072,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   .getContext("2d");
                 context!.font =
                   fontPrefix + getComputedStyle(document.body).fontFamily;
-                return String(String(context!.measureText(comment!).width));
+                return String(context!.measureText(comment!).width);
               },
               {
                 fontPrefix: `${textSeed.fontSize}px `,
@@ -7252,13 +7192,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]`,
                   ),
               ][1];
-              if (mark!.classList.contains("is-selected"))
-                return String("selected");
+              if (mark!.classList.contains("is-selected")) return "selected";
               const rect = mark!.getBoundingClientRect();
               const x = rect.left + rect.width / 2,
                 y = rect.top + rect.height / 2;
               tap(x, y);
-              return String("clicked");
+              return "clicked";
             },
             { attachmentPath, highlightKey },
           );
@@ -7303,13 +7242,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   const handle = node!.getBoundingClientRect();
                   const x = handle.left + handle.width / 2,
                     y = handle.top + handle.height / 2;
-                  return String(
-                    JSON.stringify({
-                      x,
-                      y,
-                      onTop: document.elementFromPoint(x, y) === node,
-                    }),
-                  );
+                  return JSON.stringify({
+                    x,
+                    y,
+                    onTop: document.elementFromPoint(x, y) === node,
+                  });
                 },
                 { attachmentPath },
               );
@@ -7983,11 +7920,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 .containerEl.querySelector<SVGGraphicsElement>(
                   `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(historyKey)}]`,
                 );
-              if (mark!.classList.contains("is-selected"))
-                return String("selected");
+              if (mark!.classList.contains("is-selected")) return "selected";
               const rect = mark!.getBoundingClientRect();
               tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
-              return String("clicked");
+              return "clicked";
             },
             { attachmentPath, historyKey },
           );
@@ -8170,13 +8106,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 const view = pageHelpers.pdfView(attachmentPath)!;
                 app.workspace.setActiveLeaf(view.leaf, { focus: true });
                 return String(
-                  String(
-                    (
-                      app.commands as typeof app.commands & {
-                        findCommand(id: string): import("obsidian").Command;
-                      }
-                    ).findCommand(commandId).checkCallback!(true),
-                  ),
+                  (
+                    app.commands as typeof app.commands & {
+                      findCommand(id: string): import("obsidian").Command;
+                    }
+                  ).findCommand(commandId).checkCallback!(true),
                 );
               },
               { attachmentPath, commandId: `zotlit:${id}` },
@@ -8195,9 +8129,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ) => {
                 const view = pageHelpers.pdfView(attachmentPath)!;
                 app.workspace.setActiveLeaf(view.leaf, { focus: true });
-                return String(
-                  String(app.commands.executeCommandById(commandId)),
-                );
+                return String(app.commands.executeCommandById(commandId));
               },
               { attachmentPath, commandId: `zotlit:${id}` },
             );
@@ -8514,7 +8446,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   "comment field",
                 );
                 await new Promise((resolve) => requestAnimationFrame(resolve));
-                return String(String(!!pageHelpers.popupEditor()));
+                return String(!!pageHelpers.popupEditor());
               },
               undefined,
             ),
@@ -8841,19 +8773,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     { historyKey }: { historyKey: "PUPR5FG5" },
                   ) => {
                     return String(
-                      String(
-                        !!app.workspace
-                          .getLeavesOfType("zotero-annotation-view")
-                          .map((leaf) =>
-                            leaf.view.containerEl.querySelector<HTMLElement>(
-                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]`,
-                            ),
-                          )
-                          .find(Boolean)
-                          ?.querySelector<HTMLInputElement>(
-                            ".zt-annot-tag-input",
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")
+                        .map((leaf) =>
+                          leaf.view.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]`,
                           ),
-                      ),
+                        )
+                        .find(Boolean)
+                        ?.querySelector<HTMLInputElement>(
+                          ".zt-annot-tag-input",
+                        ),
                     );
                   },
                   { historyKey },
@@ -9351,7 +9281,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   );
                 const rect = mark!.getBoundingClientRect();
                 tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
-                return String("tapped");
+                return "tapped";
               },
               { attachmentPath, key },
             ),
@@ -9364,14 +9294,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ app }, { id }: { id: string }) => {
               app.commands.executeCommandById(id);
-              return String(
-                String(
-                  (
-                    app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                      ?.view as AnnotationView
-                  )?.snapshot.followMode,
-                ),
-              );
+              return (
+                app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view as AnnotationView
+              )?.snapshot.followMode;
             },
             { id },
           );
@@ -9443,14 +9369,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obRun(
               vaultId!,
               async ({ app }) => {
-                return String(
-                  String(
-                    (
-                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view as AnnotationView
-                    )?.snapshot.followMode,
-                  ),
-                );
+                return (
+                  app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view as AnnotationView
+                )?.snapshot.followMode;
               },
               undefined,
             ),
@@ -9605,7 +9527,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { modifiers: [], cardKey },
           ).then((value) => {
@@ -9716,7 +9638,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { modifiers: [], cardKey },
           ).then((value) => {
@@ -9777,7 +9699,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { modifiers: [], cardKey },
           ).then((value) => {
@@ -9796,7 +9718,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   require("@electron/remote").getCurrentWebContents();
                 contents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
                 contents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
-                return String("pressed");
+                return "pressed";
               },
               undefined,
             ),
@@ -9834,14 +9756,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 vaultId!,
                 async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                   return String(
-                    String(
-                      !!app.workspace
-                        .getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view?.containerEl.querySelector(
-                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                        )
-                        ?.querySelector<HTMLElement>(".zt-annot-comment-field"),
-                    ),
+                    !!app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(".zt-annot-comment-field"),
                   );
                 },
                 { cardKey },
@@ -9900,7 +9820,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { modifiers: [], cardKey },
             ).then((value) => {
@@ -9913,15 +9833,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     vaultId!,
                     async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                       return String(
-                        String(
-                          !!app.workspace
-                            .getLeavesOfType("zotero-annotation-view")[0]
-                            ?.view?.containerEl.querySelector(
-                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                            )
-                            ?.querySelector<HTMLElement>(".cm-content")
-                            ?.contains(document.activeElement),
-                        ),
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                          )
+                          ?.querySelector<HTMLElement>(".cm-content")
+                          ?.contains(document.activeElement),
                       );
                     },
                     { cardKey },
@@ -10005,7 +9923,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { modifiers: [], cardKey },
             ).then((value) => {
@@ -10018,14 +9936,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     vaultId!,
                     async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                       return String(
-                        String(
-                          !!app.workspace
-                            .getLeavesOfType("zotero-annotation-view")[0]
-                            ?.view?.containerEl.querySelector(
-                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                            )
-                            ?.querySelector<HTMLElement>(".cm-content"),
-                        ),
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                          )
+                          ?.querySelector<HTMLElement>(".cm-content"),
                       );
                     },
                     { cardKey },
@@ -10195,7 +10111,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { cardKey, modifiers: [] },
           ).then((value) => {
@@ -10277,7 +10193,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { modifiers: [], attachmentPath, markKey },
           ).then((value) => {
@@ -10290,23 +10206,21 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obRun(
               vaultId!,
               async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
-                return String(
-                  JSON.stringify({
-                    open: !!app.workspace
-                      .getLeavesOfType("zotero-annotation-view")[0]
-                      ?.view?.containerEl.querySelector<HTMLElement>(
-                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                      )
-                      ?.querySelector<HTMLElement>(".cm-content"),
-                    focused: !!app.workspace
-                      .getLeavesOfType("zotero-annotation-view")[0]
-                      ?.view?.containerEl.querySelector<HTMLElement>(
-                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                      )
-                      ?.querySelector<HTMLElement>(".cm-content")
-                      ?.contains(document.activeElement),
-                  }),
-                );
+                return JSON.stringify({
+                  open: !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(".cm-content"),
+                  focused: !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(".cm-content")
+                    ?.contains(document.activeElement),
+                });
               },
               { cardKey },
             ),
@@ -10364,7 +10278,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { cardKey, modifiers: [] },
           ).then((value) => {
@@ -10378,7 +10292,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   require("@electron/remote").getCurrentWebContents();
                 contents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
                 contents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
-                return String("pressed");
+                return "pressed";
               },
               undefined,
             ),
@@ -10391,14 +10305,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               vaultId!,
               async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                 return String(
-                  String(
-                    !!app.workspace
-                      .getLeavesOfType("zotero-annotation-view")[0]
-                      ?.view?.containerEl.querySelector<HTMLElement>(
-                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                      )
-                      ?.querySelector<HTMLElement>(".cm-content"),
-                  ),
+                  !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(".cm-content"),
                 );
               },
               { cardKey },
@@ -10484,7 +10396,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { cardKey, modifiers: [] },
             ).then((value) => {
@@ -10531,14 +10443,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   vaultId!,
                   async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                     return String(
-                      String(
-                        !!app.workspace
-                          .getLeavesOfType("zotero-annotation-view")[0]
-                          ?.view?.containerEl.querySelector<HTMLElement>(
-                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                          )
-                          ?.hasAttribute("data-alone"),
-                      ),
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                        )
+                        ?.hasAttribute("data-alone"),
                     );
                   },
                   { cardKey },
@@ -10880,7 +10790,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { modifiers: [], cardKey },
             ).then((value) => {
@@ -11117,16 +11027,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   vaultId!,
                   async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                     return String(
-                      String(
-                        !!app.workspace
-                          .getLeavesOfType("zotero-annotation-view")[0]
-                          ?.view?.containerEl.querySelector<HTMLElement>(
-                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                          )
-                          ?.querySelector<HTMLElement>(
-                            "blockquote .cm-content",
-                          ),
-                      ),
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                        )
+                        ?.querySelector<HTMLElement>("blockquote .cm-content"),
                     );
                   },
                   { cardKey },
@@ -11152,7 +11058,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   type: "keyUp",
                   keyCode: keyCode,
                 });
-                return String("pressed");
+                return "pressed";
               },
               { keyCode },
             ),
@@ -11165,14 +11071,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obRun(
               vaultId!,
               async ({ app }) => {
-                return String(
-                  String(
-                    (
-                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view as AnnotationView
-                    )?.snapshot.followMode,
-                  ),
-                );
+                return (
+                  app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view as AnnotationView
+                )?.snapshot.followMode;
               },
               undefined,
             ),
@@ -11189,7 +11091,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     '[role="grid"] > [role="row"]',
                   )!,
               ].map((row) => row.dataset.zoteroAnnotationKey);
-              return String(String(rows[rows.indexOf(cardKey) + 1]));
+              return String(rows[rows.indexOf(cardKey) + 1]);
             },
             { cardKey },
           );
@@ -11244,7 +11146,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { cardKey, modifiers: [] },
           ).then((value) => {
@@ -11258,14 +11160,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               vaultId!,
               async ({ app }, { cardKey }: { cardKey: "Q8ZR4TDH" }) => {
                 return String(
-                  String(
-                    document.activeElement ===
-                      app.workspace
-                        .getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view?.containerEl.querySelector<HTMLElement>(
-                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
-                        ),
-                  ),
+                  document.activeElement ===
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(cardKey)}]`,
+                      ),
                 );
               },
               { cardKey },
@@ -11326,19 +11226,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               vaultId!,
               async ({ app }, { next }: { next: string }) => {
                 return String(
-                  String(
-                    document.activeElement ===
-                      app.workspace
-                        .getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view?.containerEl.querySelector<HTMLElement>(
-                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(next)}]`,
-                        ) &&
-                      app.workspace
-                        .getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view?.containerEl.querySelector<HTMLElement>(
-                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(next)}]`,
-                        )!.tabIndex === 0,
-                  ),
+                  document.activeElement ===
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(next)}]`,
+                      ) &&
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(next)}]`,
+                      )!.tabIndex === 0,
                 );
               },
               { next },
@@ -11456,7 +11354,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const mod = await obRun(
             vaultId!,
             async (_context) => {
-              return String(process.platform === "darwin" ? "meta" : "control");
+              return process.platform === "darwin" ? "meta" : "control";
             },
             undefined,
           );
@@ -11527,13 +11425,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 vaultId!,
                 async ({ app }) => {
                   return String(
-                    String(
-                      !!app.workspace
-                        .getLeavesOfType("zotero-annotation-view")[0]
-                        ?.view?.containerEl.querySelector<HTMLElement>(
-                          ".zt-annot-card .cm-content",
-                        ),
-                    ),
+                    !!app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        ".zt-annot-card .cm-content",
+                      ),
                   );
                 },
                 undefined,
@@ -11597,7 +11493,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { second, modifiers: [mod] },
             ).then((value) => {
@@ -11663,7 +11559,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { second, modifiers: [mod] },
             ).then((value) => {
@@ -11728,7 +11624,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   clickCount: 1,
                   modifiers,
                 });
-                return String("clicked");
+                return "clicked";
               },
               { second, modifiers: [] },
             ).then((value) => {
@@ -11752,7 +11648,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const mod = await obRun(
             vaultId!,
             async (_context) => {
-              return String(process.platform === "darwin" ? "meta" : "control");
+              return process.platform === "darwin" ? "meta" : "control";
             },
             undefined,
           );
@@ -11770,10 +11666,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { attachmentPath }: { attachmentPath: string },
               ) => {
                 return String(
-                  String(
-                    pageHelpers.pdfView(attachmentPath)!.viewer.child.pdfViewer
-                      .pdfViewer.currentPageNumber,
-                  ),
+                  pageHelpers.pdfView(attachmentPath)!.viewer.child.pdfViewer
+                    .pdfViewer.currentPageNumber,
                 );
               },
               { attachmentPath },
@@ -11788,7 +11682,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 pageHelpers.pdfView(
                   attachmentPath,
                 )!.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
-                return String("top");
+                return "top";
               },
               { attachmentPath },
             );
@@ -11874,7 +11768,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { underline, modifiers: [] },
           ).then((value) => {
@@ -11942,7 +11836,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { highlight, modifiers: [mod] },
           ).then((value) => {
@@ -12015,7 +11909,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { cardKey, modifiers: ["shift"] },
           ).then((value) => {
@@ -12032,18 +11926,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obRun(
               vaultId!,
               async ({ app }) => {
-                return String(
-                  JSON.stringify(
-                    [
-                      ...app.workspace
-                        .getLeavesOfType("zotero-annotation-view")[0]!
-                        .view.containerEl.querySelectorAll<HTMLElement>(
-                          ".zt-annot-card",
-                        ),
-                    ]
-                      .map((card) => card.dataset.zoteroAnnotationKey)
-                      .sort(),
-                  ),
+                return JSON.stringify(
+                  [
+                    ...app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]!
+                      .view.containerEl.querySelectorAll<HTMLElement>(
+                        ".zt-annot-card",
+                      ),
+                  ]
+                    .map((card) => card.dataset.zoteroAnnotationKey)
+                    .sort(),
                 );
               },
               undefined,
@@ -12065,7 +11957,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   keyCode: "A",
                   modifiers: [mod],
                 });
-                return String("pressed");
+                return "pressed";
               },
               { mod },
             ),
@@ -12132,7 +12024,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { underline, modifiers: [] },
           ).then((value) => {
@@ -12197,7 +12089,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { image, modifiers: [mod] },
           ).then((value) => {
@@ -12263,7 +12155,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { image, modifiers: [mod] },
           ).then((value) => {
@@ -12333,7 +12225,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { underline, modifiers: [mod] },
           ).then((value) => {
@@ -12400,7 +12292,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clickCount: 1,
                 modifiers,
               });
-              return String("clicked");
+              return "clicked";
             },
             { cardKey, modifiers: ["shift"] },
           ).then((value) => {
@@ -12561,7 +12453,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                     ),
                   ].find((node) => node.textContent === "Delete");
                   press(button, "Delete");
-                  return String("confirmed");
+                  return "confirmed";
                 },
                 undefined,
               ),
@@ -12824,7 +12716,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const nativeMenus = await obRun(
             vaultId!,
             async ({ app }) => {
-              return String(String(app.vault.getConfig("nativeMenus")));
+              return String(app.vault.getConfig("nativeMenus"));
             },
             undefined,
           );
@@ -13256,21 +13148,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 cancelable: true,
               });
               editor!.dispatchEvent(event);
-              return String(
-                JSON.stringify({
-                  prevented: event.defaultPrevented,
-                  open: editor!.isConnected,
-                  owned:
-                    editor!.win !==
-                    (app.workspace
-                      .getLeavesOfType("pdf")
-                      .find(({ view }) =>
-                        view.containerEl.querySelector<SVGGraphicsElement>(
-                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
-                        ),
-                      )?.view.containerEl)!.win,
-                }),
-              );
+              return JSON.stringify({
+                prevented: event.defaultPrevented,
+                open: editor!.isConnected,
+                owned:
+                  editor!.win !==
+                  (app.workspace
+                    .getLeavesOfType("pdf")
+                    .find(({ view }) =>
+                      view.containerEl.querySelector<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
+                      ),
+                    )?.view.containerEl)!.win,
+              });
             },
             { createdKey },
           ),
@@ -13288,17 +13178,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ app }, { createdKey }: { createdKey: string }) => {
               return String(
-                String(
-                  !!app.workspace
-                    .getLeavesOfType("zotero-annotation-view")
-                    .map((leaf) =>
-                      leaf.view.containerEl.querySelector<HTMLElement>(
-                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
-                      ),
-                    )
-                    .find(Boolean)
-                    ?.querySelector<HTMLElement>(".cm-content"),
-                ),
+                !!app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
+                    ),
+                  )
+                  .find(Boolean)
+                  ?.querySelector<HTMLElement>(".cm-content"),
               );
             },
             { createdKey },
@@ -13353,17 +13241,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ app }, { createdKey }: { createdKey: string }) => {
               return String(
-                String(
-                  !!app.workspace
-                    .getLeavesOfType("zotero-annotation-view")
-                    .map((leaf) =>
-                      leaf.view.containerEl.querySelector<HTMLElement>(
-                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
-                      ),
-                    )
-                    .find(Boolean)
-                    ?.querySelector<HTMLElement>(".cm-content"),
-                ),
+                !!app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]`,
+                    ),
+                  )
+                  .find(Boolean)
+                  ?.querySelector<HTMLElement>(".cm-content"),
               );
             },
             { createdKey },
@@ -13446,11 +13332,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ zotlit }) => {
               return String(
-                String(
-                  zotlit.services.bridge.runSync(
-                    zotlit.services.settings.current,
-                  )["server.live-update"],
-                ),
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["server.live-update"],
               );
             },
             undefined,
@@ -13876,7 +13760,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const savedLayout = await obRun(
           vaultId!,
           async ({ app }) => {
-            return String(JSON.stringify(app.workspace.getLayout()));
+            return JSON.stringify(app.workspace.getLayout());
           },
           undefined,
         );
@@ -14348,10 +14232,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const popout = await obRun(
           vaultId!,
           async ({ app }) => {
-            return String(
-              JSON.stringify(
-                app.vault.getConfig("settingsPopoutWindow") ?? null,
-              ),
+            return JSON.stringify(
+              app.vault.getConfig("settingsPopoutWindow") ?? null,
             );
           },
           undefined,
@@ -14451,11 +14333,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               const { annotationRepository: repository, bridge } =
                 zotlit.services;
               await bridge.runPromise(repository.probe);
-              return String(
-                String(
-                  bridge.runSync(repository.capabilityFor(attachmentKey)).kind,
-                ),
-              );
+              return bridge.runSync(repository.capabilityFor(attachmentKey))
+                .kind;
             },
             { attachmentKey: attachment.key },
           ),
@@ -14465,13 +14344,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ app }) => {
               return String(
-                String(
-                  !!JSON.parse(
-                    app.secretStorage.getSecret(
-                      "zotlit-zotero-write-authorization",
-                    ) ?? "{}",
-                  ).key,
-                ),
+                !!JSON.parse(
+                  app.secretStorage.getSecret(
+                    "zotlit-zotero-write-authorization",
+                  ) ?? "{}",
+                ).key,
               );
             },
             undefined,
@@ -14502,9 +14379,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 [...notice.querySelectorAll<HTMLElement>("button")].find(
                   (el) => el.textContent.trim() === "Allow editing",
                 );
-              if (!button) return String("false");
+              if (!button) return "false";
               press(button, "Allow editing");
-              return String("true");
+              return "true";
             },
             { notAllowed },
           ),
@@ -14572,13 +14449,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             vaultId!,
             async ({ app }) => {
               return String(
-                String(
-                  !!JSON.parse(
-                    app.secretStorage.getSecret(
-                      "zotlit-zotero-write-authorization",
-                    ) ?? "{}",
-                  ).key,
-                ),
+                !!JSON.parse(
+                  app.secretStorage.getSecret(
+                    "zotlit-zotero-write-authorization",
+                  ) ?? "{}",
+                ).key,
               );
             },
             undefined,
@@ -14906,7 +14781,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       const layout = await obRun(
         vaultId!,
         async ({ app }) => {
-          return String(JSON.stringify(app.workspace.getLayout()));
+          return JSON.stringify(app.workspace.getLayout());
         },
         undefined,
       );
@@ -14918,9 +14793,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             notePath,
           }: { notePath: "literatures/rougierTenSimpleRules2014.md" },
         ) => {
-          return String(
-            await app.vault.read(app.vault.getFileByPath(notePath)!),
-          );
+          return await app.vault.read(app.vault.getFileByPath(notePath)!);
         },
         { notePath },
       );
@@ -15272,7 +15145,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 clientY: Math.floor((rect!.top + rect!.bottom) / 2),
               }),
             );
-            return String("dropped");
+            return "dropped";
           },
           { notePath, embed, key },
         ),
@@ -15344,7 +15217,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const layout = await obRun(
           vaultId!,
           async ({ app }) => {
-            return String(JSON.stringify(app.workspace.getLayout()));
+            return JSON.stringify(app.workspace.getLayout());
           },
           undefined,
         );
@@ -15453,9 +15326,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           obRun(
             vaultId!,
             async ({ app }, { created }: { created: string }) => {
-              return String(
-                await app.vault.read(app.vault.getFileByPath(created)!),
-              );
+              return await app.vault.read(app.vault.getFileByPath(created)!);
             },
             { created },
           );
@@ -15852,7 +15723,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ) => {
               const file = app.vault.getFileByPath(created);
               await app.vault.modify(file!, legacy);
-              return String(String((await app.vault.read(file!)) === legacy));
+              return String((await app.vault.read(file!)) === legacy);
             },
             { created, legacy },
           ),
@@ -16175,7 +16046,7 @@ async function restoreWriteOutcomeProbe(vaultId: string): Promise<void> {
     vaultId,
     async ({ page: pageHelpers }) => {
       const probe = pageHelpers.scratch.__zotlitWriteOutcomeProbe;
-      if (!probe) return String("clean");
+      if (!probe) return "clean";
       try {
         probe.release?.();
         await probe.pending;
@@ -16184,7 +16055,7 @@ async function restoreWriteOutcomeProbe(vaultId: string): Promise<void> {
         probe.api.listAnnotations = probe.listAnnotations;
         delete pageHelpers.scratch.__zotlitWriteOutcomeProbe;
       }
-      return String("restored");
+      return "restored";
     },
     undefined,
   );
@@ -16196,7 +16067,7 @@ async function writeOutcomeCalls(vaultId: string): Promise<number> {
       vaultId,
       async ({ page: pageHelpers }) => {
         return String(
-          String(pageHelpers.scratch.__zotlitWriteOutcomeProbe?.calls ?? -1),
+          pageHelpers.scratch.__zotlitWriteOutcomeProbe?.calls ?? -1,
         );
       },
       undefined,
@@ -16751,7 +16622,7 @@ function tagEditorIn(
                 cancelable: true,
               }),
             );
-          return String("typed");
+          return "typed";
         },
         { root, text, enter },
       ),
@@ -16794,14 +16665,14 @@ function tagEditorIn(
                 "[data-slot=tags-input-item-text]",
               )?.textContent === name,
           );
-          if (!chip) return String("absent");
+          if (!chip) return "absent";
           press(
             chip.querySelector<HTMLInputElement>(
               "[data-slot=tags-input-item-remove]",
             ),
             `remove ${name}`,
           );
-          return String("removed");
+          return "removed";
         },
         { root, name },
       ),

@@ -86,7 +86,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ zotlit }) => {
-          return String(String(zotlit.services.profile.profiles.length));
+          return String(zotlit.services.profile.profiles.length);
         },
         undefined,
       ),
@@ -702,7 +702,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             notes.push({ path: note.path, text: await app.vault.read(file) });
             await app.vault.delete(file);
           }
-          return String(JSON.stringify(notes));
+          return JSON.stringify(notes);
         },
         { itemKey: item.key },
       ),
@@ -726,7 +726,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(String(app.vault.getMarkdownFiles().length));
+          return String(app.vault.getMarkdownFiles().length);
         },
         undefined,
       );
@@ -736,10 +736,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }, { childNoteKey }) => {
           return String(
-            String(
-              zotlit.services.noteIndex.getImportedNoteByNoteKey(childNoteKey)
-                .length,
-            ),
+            zotlit.services.noteIndex.getImportedNoteByNoteKey(childNoteKey)
+              .length,
           );
         },
         { childNoteKey },
@@ -779,12 +777,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             app.vault.getFileByPath(created)!,
             { indexedKey: itemKey, scope: "full" },
           );
-          return String(
-            JSON.stringify({
-              bodyUpdated: result.bodyUpdated,
-              diagnostic: result.diagnostic ?? null,
-            }),
-          );
+          return JSON.stringify({
+            bodyUpdated: result.bodyUpdated,
+            diagnostic: result.diagnostic ?? null,
+          });
         },
         { created, itemKey: item.key },
       ),
@@ -959,11 +955,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { edited }) => {
           return String(
-            String(
-              (
-                app.workspace.getActiveFileView() as import("obsidian").MarkdownView
-              )?.getViewData() === edited,
-            ),
+            (
+              app.workspace.getActiveFileView() as import("obsidian").MarkdownView
+            )?.getViewData() === edited,
           );
         },
         { edited },
@@ -1085,9 +1079,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const summary = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          activeDocument.querySelector<HTMLElement>(".modal")!.textContent,
-        );
+        return activeDocument.querySelector<HTMLElement>(".modal")!.textContent;
       },
       undefined,
     );
@@ -1149,21 +1141,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           var file = app.vault.getFileByPath(booksNotePath)!;
           var frontmatter =
             file && app.metadataCache.getFileCache(file)?.frontmatter;
-          return String(
-            JSON.stringify({
-              title: frontmatter?.["fixture-title"],
-              kind: frontmatter?.["fixture-kind"],
-              spreadTitle: frontmatter?.["fixture-spread-title"],
-              spreadKind: frontmatter?.["fixture-spread-kind"],
-              manual: frontmatter?.["fixture-manual"],
-              obsolete: frontmatter
-                ? Object.prototype.hasOwnProperty.call(
-                    frontmatter,
-                    "fixture-obsolete",
-                  )
-                : false,
-            }),
-          );
+          return JSON.stringify({
+            title: frontmatter?.["fixture-title"],
+            kind: frontmatter?.["fixture-kind"],
+            spreadTitle: frontmatter?.["fixture-spread-title"],
+            spreadKind: frontmatter?.["fixture-spread-kind"],
+            manual: frontmatter?.["fixture-manual"],
+            obsolete: frontmatter
+              ? Object.prototype.hasOwnProperty.call(
+                  frontmatter,
+                  "fixture-obsolete",
+                )
+              : false,
+          });
         },
         { booksNotePath: run.booksNotePath },
       ).catch(() => "");
@@ -1249,9 +1239,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(
-            String(!!activeDocument.querySelector<HTMLElement>(".prompt")),
-          );
+          return String(!!activeDocument.querySelector<HTMLElement>(".prompt"));
         },
         undefined,
       ),
@@ -1312,9 +1300,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(
-            String(!!activeDocument.querySelector<HTMLElement>(".prompt")),
-          );
+          return String(!!activeDocument.querySelector<HTMLElement>(".prompt"));
         },
         undefined,
       ),
@@ -1373,11 +1359,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const result = view.contentEl.querySelector<HTMLElement>(
               '[data-part="result"]',
             );
-            return String(
-              result?.getAttribute("data-state") === "loading"
-                ? "loading"
-                : (result?.textContent ?? "loading"),
-            );
+            return result?.getAttribute("data-state") === "loading"
+              ? "loading"
+              : (result?.textContent ?? "loading");
           },
           { key },
         );
@@ -1404,19 +1388,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ page }) => {
-              return String(
-                JSON.stringify(
-                  Array.from(
-                    page
-                      .workbench()
-                      ?.contentEl?.querySelectorAll<HTMLElement>(
-                        "[data-condition-row]",
-                      ) ?? [],
-                  ).map(
-                    (row) =>
-                      row.querySelector<HTMLElement>("[role=alert]")
-                        ?.textContent ?? null,
-                  ),
+              return JSON.stringify(
+                Array.from(
+                  page
+                    .workbench()
+                    ?.contentEl?.querySelectorAll<HTMLElement>(
+                      "[data-condition-row]",
+                    ) ?? [],
+                ).map(
+                  (row) =>
+                    row.querySelector<HTMLElement>("[role=alert]")
+                      ?.textContent ?? null,
                 ),
               );
             },
@@ -1440,19 +1422,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ page }) => {
-              return String(
-                JSON.stringify(
+              return JSON.stringify(
+                Array.from(
+                  page
+                    .workbench()
+                    ?.contentEl?.querySelectorAll<HTMLElement>(
+                      "[data-condition-row]",
+                    ) ?? [],
+                ).map((row) =>
                   Array.from(
-                    page
-                      .workbench()
-                      ?.contentEl?.querySelectorAll<HTMLElement>(
-                        "[data-condition-row]",
-                      ) ?? [],
-                  ).map((row) =>
-                    Array.from(
-                      row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
-                    ).map((n) => n.textContent),
-                  ),
+                    row.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
+                  ).map((n) => n.textContent),
                 ),
               );
             },
@@ -1534,7 +1514,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const kept = view.controller.source === before;
           await input.key("Escape");
-          return String(String(kept));
+          return String(kept);
         },
         undefined,
       ),
@@ -1595,13 +1575,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }) => {
           var services = zotlit.services;
           var settings = services.bridge.runSync(services.settings.current);
-          return String(
-            JSON.stringify({
-              hostname: settings["server.hostname"],
-              port: services.bridge.runSync(services.localServer.effectivePort),
-              sourceId: services.zoteroPref.sourceId,
-            }),
-          );
+          return JSON.stringify({
+            hostname: settings["server.hostname"],
+            port: services.bridge.runSync(services.localServer.effectivePort),
+            sourceId: services.zoteroPref.sourceId,
+          });
         },
         undefined,
       ),
@@ -1642,11 +1620,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const confirmation = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
-            -1,
-          )!.textContent,
-        );
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -1741,11 +1717,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const chosen = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
-            -1,
-          )!.textContent,
-        );
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -1778,11 +1752,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const summary = await obRun(
       run.vaultId,
       async (_context) => {
-        return String(
-          Array.from(activeDocument.querySelectorAll<HTMLElement>(".modal")).at(
-            -1,
-          )!.textContent,
-        );
+        return Array.from(
+          activeDocument.querySelectorAll<HTMLElement>(".modal"),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -1960,17 +1932,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app }, { profileLabelPrefix }) => {
           return String(
-            String(
-              app.vault
-                .getMarkdownFiles()
-                .filter((file) =>
-                  String(
-                    app.metadataCache.getFileCache(file)?.frontmatter?.[
-                      "zotlit-profile"
-                    ] ?? "",
-                  ).startsWith(profileLabelPrefix),
-                ).length,
-            ),
+            app.vault
+              .getMarkdownFiles()
+              .filter((file) =>
+                String(
+                  app.metadataCache.getFileCache(file)?.frontmatter?.[
+                    "zotlit-profile"
+                  ] ?? "",
+                ).startsWith(profileLabelPrefix),
+              ).length,
           );
         },
         { profileLabelPrefix: `${booksProfile.label} (` },
@@ -2043,13 +2013,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const target = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(
-          app.setting.containerEl.ownerDocument
-            .querySelector<HTMLInputElement>(
-              'input[name="zotlit-delete-profile-target"]:checked',
-            )!
-            .closest("label")!.textContent,
-        );
+        return app.setting.containerEl.ownerDocument
+          .querySelector<HTMLInputElement>(
+            'input[name="zotlit-delete-profile-target"]:checked',
+          )!
+          .closest("label")!.textContent;
       },
       undefined,
     );
@@ -2082,13 +2050,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const deletionDialog = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(
-          Array.from(
-            app.setting.containerEl.ownerDocument.querySelectorAll<HTMLElement>(
-              ".modal",
-            ),
-          ).at(-1)!.textContent,
-        );
+        return Array.from(
+          app.setting.containerEl.ownerDocument.querySelectorAll<HTMLElement>(
+            ".modal",
+          ),
+        ).at(-1)!.textContent;
       },
       undefined,
     );
@@ -2276,15 +2242,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ zotlit }) => {
             var services = zotlit.services;
             var settings = services.bridge.runSync(services.settings.current);
-            return String(
-              JSON.stringify({
-                port: services.bridge.runSync(
-                  services.localServer.effectivePort,
-                ),
-                sourceId: services.zoteroPref.sourceId,
-                workbench: settings["server.workbench"],
-              }),
-            );
+            return JSON.stringify({
+              port: services.bridge.runSync(services.localServer.effectivePort),
+              sourceId: services.zoteroPref.sourceId,
+              workbench: settings["server.workbench"],
+            });
           },
           undefined,
         ),
@@ -2325,12 +2287,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               (el) => el.textContent,
             );
             return String(
-              String(
-                names.includes(localServerSettingName) &&
-                  !names.includes(workbenchSettingName) &&
-                  !names.includes(templateSettingName) &&
-                  !app.commands.commands["zotlit:open-profile-web-workbench"],
-              ),
+              names.includes(localServerSettingName) &&
+                !names.includes(workbenchSettingName) &&
+                !names.includes(templateSettingName) &&
+                !app.commands.commands["zotlit:open-profile-web-workbench"],
             );
           },
           {
@@ -2355,10 +2315,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               (el) => el.textContent,
             );
             return String(
-              String(
-                names.includes(liveUpdatesSettingName) &&
-                  names.includes(advancedHeadingText),
-              ),
+              names.includes(liveUpdatesSettingName) &&
+                names.includes(advancedHeadingText),
             );
           },
           {

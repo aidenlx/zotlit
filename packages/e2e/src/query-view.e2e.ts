@@ -23,7 +23,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -148,7 +148,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .width > 0,
             };
           }
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { hookNames: Object.keys(names) },
       ),
@@ -202,7 +202,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .width > 0,
             };
           }
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { hookNames: Object.keys(names) },
       ),
@@ -235,15 +235,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
         }
         el!.dispatchEvent(new PointerEvent("pointerover", at));
-        return String(
-          (
-            await until(
-              "tooltip shows",
-              () => activeDocument.querySelector<HTMLElement>(".tooltip")!,
-              3000,
-            )
-          ).textContent,
-        );
+        return (
+          await until(
+            "tooltip shows",
+            () => activeDocument.querySelector<HTMLElement>(".tooltip")!,
+            3000,
+          )
+        ).textContent;
       },
       undefined,
     );
@@ -256,7 +254,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const layout = await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(JSON.stringify(app.workspace.getLayout()));
+          return JSON.stringify(app.workspace.getLayout());
         },
         undefined,
       );
@@ -336,12 +334,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               r.left + 20,
               r.top + 20,
             );
-            return String(
-              JSON.stringify({
-                past: r.top >= edge - 1,
-                shown: hit === box,
-              }),
-            );
+            return JSON.stringify({
+              past: r.top >= edge - 1,
+              shown: hit === box,
+            });
           },
           { selector },
         );
@@ -362,7 +358,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const layout = await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(JSON.stringify(app.workspace.getLayout()));
+          return JSON.stringify(app.workspace.getLayout());
         },
         undefined,
       );
@@ -573,7 +569,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
                 5000,
               );
-              return String(JSON.stringify(out));
+              return JSON.stringify(out);
             } finally {
               popover.hidePopover();
             }
@@ -707,7 +703,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 () => !doc.querySelector<HTMLElement>(".zt-signature-hint")!,
                 5000,
               );
-              return String(JSON.stringify(out));
+              return JSON.stringify(out);
             } finally {
               popup.hidePopover();
             }
@@ -1036,7 +1032,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               popup.hidePopover();
               return { offered: { ...offered, list: undefined }, apart, after };
             })();
-            return String(JSON.stringify({ formula, filter }));
+            return JSON.stringify({ formula, filter });
           },
           {
             path,
@@ -1181,7 +1177,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               () => !popup.querySelector<HTMLElement>("[data-chooser-page]")!,
             );
             const second = { open: popup.matches(":popover-open") };
-            return String(JSON.stringify({ first, second }));
+            return JSON.stringify({ first, second });
           },
           { isPopout: host === "popout" },
         ),
@@ -1287,7 +1283,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ].map((n) => n.textContent);
           }
           popup.hidePopover();
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { path, source, texts },
       ),
@@ -1319,7 +1315,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1455,7 +1451,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             scale: 1,
             open: false,
           });
-          return String(JSON.stringify(page));
+          return JSON.stringify(page);
         },
         { notePath, note, pdfPath },
         { timeoutMs: 180000 },
@@ -1490,7 +1486,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1543,41 +1539,39 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+                cards: [
+                  ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+                filterError:
+                  el.querySelector<HTMLElement>(
+                    "[data-query-filter-error]",
+                  )! !== null,
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                rowIssues: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    '[data-filter-section="view"] [data-condition-row]',
                   ),
-                  cards: [
-                    ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
-                  ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
-                  filterError:
-                    el.querySelector<HTMLElement>(
-                      "[data-query-filter-error]",
-                    )! !== null,
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  rowIssues: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[data-filter-section="view"] [data-condition-row]',
-                    ),
-                  ].map(
-                    (n) =>
-                      n.querySelector<HTMLElement>('[role="alert"]')
-                        ?.textContent ?? null,
-                  ),
-                  diagnostic:
-                    el.querySelector<HTMLElement>("[data-query-diagnostic] pre")
+                ].map(
+                  (n) =>
+                    n.querySelector<HTMLElement>('[role="alert"]')
                       ?.textContent ?? null,
-                }),
-              );
+                ),
+                diagnostic:
+                  el.querySelector<HTMLElement>("[data-query-diagnostic] pre")
+                    ?.textContent ?? null,
+              });
             },
             { expectedPath: path },
           ),
@@ -1642,23 +1636,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `[data-filter-section="${name}"]`,
             )!;
 
-          return String(
-            JSON.stringify({
-              open: popover.matches(":popover-open"),
-              all: section("all").querySelector<HTMLElement>(
-                "[data-filter-heading]",
-              )!.textContent,
-              allRows: section("all").querySelectorAll<HTMLElement>(
-                "[data-condition-row]",
-              ).length,
-              view: section("view").querySelector<HTMLElement>(
-                "[data-filter-heading]",
-              )!.textContent,
-              tag: section("view").querySelector<HTMLInputElement>(
-                `[data-condition-row] input[aria-label="${filterLabel}"]`,
-              )!.value,
-            }),
-          );
+          return JSON.stringify({
+            open: popover.matches(":popover-open"),
+            all: section("all").querySelector<HTMLElement>(
+              "[data-filter-heading]",
+            )!.textContent,
+            allRows: section("all").querySelectorAll<HTMLElement>(
+              "[data-condition-row]",
+            ).length,
+            view: section("view").querySelector<HTMLElement>(
+              "[data-filter-heading]",
+            )!.textContent,
+            tag: section("view").querySelector<HTMLInputElement>(
+              `[data-condition-row] input[aria-label="${filterLabel}"]`,
+            )!.value,
+          });
         },
         { filterLabel: run.m.workbench_filter_value() },
       ),
@@ -1871,7 +1863,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             await until("underlines", () => read() === expectedJson).catch(
               () => {},
             );
-            return String(read());
+            return read();
           },
           { expectedJson: JSON.stringify(expected) },
         ),
@@ -1914,14 +1906,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }),
           );
           await new Promise((r) => setTimeout(r, 800));
-          return String(
-            JSON.stringify(
-              [
-                ...mark.ownerDocument.querySelectorAll<HTMLElement>(
-                  ".cm-tooltip-hover, .cm-tooltip-lint",
-                ),
-              ].map((n) => n.className),
-            ),
+          return JSON.stringify(
+            [
+              ...mark.ownerDocument.querySelectorAll<HTMLElement>(
+                ".cm-tooltip-hover, .cm-tooltip-lint",
+              ),
+            ].map((n) => n.className),
           );
         },
         undefined,
@@ -2008,7 +1998,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             theme(false);
             const light = read();
             theme(true);
-            return String(JSON.stringify({ light, dark: read() }));
+            return JSON.stringify({ light, dark: read() });
           } finally {
             theme(wasDark);
           }
@@ -2100,15 +2090,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const wrapped = await measure(
             `${'title.contains("fig") || '.repeat(12)}true`,
           );
-          return String(
-            JSON.stringify({
-              one,
-              wrapped,
-              input: Number.parseFloat(
-                getComputedStyle(field).getPropertyValue("--input-height"),
-              ),
-            }),
-          );
+          return JSON.stringify({
+            one,
+            wrapped,
+            input: Number.parseFloat(
+              getComputedStyle(field).getPropertyValue("--input-height"),
+            ),
+          });
         },
         undefined,
       ),
@@ -2502,16 +2490,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               cancelable: true,
             }),
           );
-          return String(
-            (
-              await until("focus follows", () => {
-                const path = document.activeElement?.getAttribute(
-                  "data-reorder-handle",
-                );
-                return path && path !== (enabled ? "0" : "1") ? path : null;
-              })
-            ).toString(),
-          );
+          return (
+            await until("focus follows", () => {
+              const path = document.activeElement?.getAttribute(
+                "data-reorder-handle",
+              );
+              return path && path !== (enabled ? "0" : "1") ? path : null;
+            })
+          ).toString();
         },
         { enabled: true },
       ),
@@ -2543,16 +2529,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               cancelable: true,
             }),
           );
-          return String(
-            (
-              await until("focus follows", () => {
-                const path = document.activeElement?.getAttribute(
-                  "data-reorder-handle",
-                );
-                return path && path !== (enabled ? "0" : "1") ? path : null;
-              })
-            ).toString(),
-          );
+          return (
+            await until("focus follows", () => {
+              const path = document.activeElement?.getAttribute(
+                "data-reorder-handle",
+              );
+              return path && path !== (enabled ? "0" : "1") ? path : null;
+            })
+          ).toString();
         },
         { enabled: false },
       ),
@@ -2935,14 +2919,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 `[data-filter-section="${name}"]`,
               )!;
 
-            return String(
-              JSON.stringify(
-                [
-                  ...section("view").querySelectorAll<HTMLElement>(
-                    '[data-part="group"][data-state="nested"] [data-part="conjunction"]',
-                  ),
-                ].map((label) => label.textContent),
-              ),
+            return JSON.stringify(
+              [
+                ...section("view").querySelectorAll<HTMLElement>(
+                  '[data-part="group"][data-state="nested"] [data-part="conjunction"]',
+                ),
+              ].map((label) => label.textContent),
             );
           },
           undefined,
@@ -3161,7 +3143,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -3251,14 +3233,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const error = getComputedStyle(probe).color;
           probe.remove();
           const style = getComputedStyle(mark);
-          return String(
-            JSON.stringify({
-              popout: doc !== document,
-              text: mark.textContent,
-              line: style.textDecorationStyle,
-              color: style.textDecorationColor === error,
-            }),
-          );
+          return JSON.stringify({
+            popout: doc !== document,
+            text: mark.textContent,
+            line: style.textDecorationStyle,
+            color: style.textDecorationColor === error,
+          });
         },
         { notePath: path },
       ),
@@ -3278,7 +3258,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -3412,7 +3392,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             });
             popover!.hidePopover();
             leaf.detach();
-            return String(JSON.stringify(rows));
+            return JSON.stringify(rows);
           },
           {
             path,
@@ -3468,14 +3448,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const original = await obRun(
       run.vaultId,
       async ({ app }, { notePath }) => {
-        return String(await app.vault.read(app.vault.getFileByPath(notePath)!));
+        return await app.vault.read(app.vault.getFileByPath(notePath)!);
       },
       { notePath },
     );
@@ -3668,9 +3648,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           (await obRun(
             run.vaultId,
             async ({ app }, { notePath }) => {
-              return String(
-                await app.vault.read(app.vault.getFileByPath(notePath)!),
-              );
+              return await app.vault.read(app.vault.getFileByPath(notePath)!);
             },
             { notePath },
           )) === written,
@@ -3769,9 +3747,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           (await obRun(
             run.vaultId,
             async ({ app }, { notePath }) => {
-              return String(
-                await app.vault.read(app.vault.getFileByPath(notePath)!),
-              );
+              return await app.vault.read(app.vault.getFileByPath(notePath)!);
             },
             { notePath },
           )) === fromEmbed,
@@ -3781,11 +3757,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { embedPath }) => {
-          return String(
-            await app.vault
-              .read(app.vault.getFileByPath(embedPath)!)
-              .then(JSON.stringify),
-          );
+          return await app.vault
+            .read(app.vault.getFileByPath(embedPath)!)
+            .then(JSON.stringify);
         },
         { embedPath },
       ),
@@ -3822,14 +3796,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const original = await obRun(
       run.vaultId,
       async ({ app }, { notePath }) => {
-        return String(await app.vault.read(app.vault.getFileByPath(notePath)!));
+        return await app.vault.read(app.vault.getFileByPath(notePath)!);
       },
       { notePath },
     );
@@ -3851,9 +3825,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       obRun(
         run.vaultId,
         async ({ app }, { notePath }) => {
-          return String(
-            await app.vault.read(app.vault.getFileByPath(notePath)!),
-          );
+          return await app.vault.read(app.vault.getFileByPath(notePath)!);
         },
         { notePath },
       );
@@ -3957,14 +3929,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const original = await obRun(
       run.vaultId,
       async ({ app }, { path }) => {
-        return String(await app.vault.read(app.vault.getFileByPath(path)!));
+        return await app.vault.read(app.vault.getFileByPath(path)!);
       },
       { path },
     );
@@ -4031,19 +4003,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(
-            JSON.stringify(
-              [
-                ...(
-                  app.workspace.getMostRecentLeaf()!
-                    .view as import("obsidian").ItemView
-                ).contentEl.querySelectorAll<HTMLElement>(
-                  ".zt-annot-page-chip",
-                ),
-              ]
-                .map((n) => n.textContent)
-                .filter(Boolean),
-            ),
+          return JSON.stringify(
+            [
+              ...(
+                app.workspace.getMostRecentLeaf()!
+                  .view as import("obsidian").ItemView
+              ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+            ]
+              .map((n) => n.textContent)
+              .filter(Boolean),
           );
         },
         undefined,
@@ -4168,14 +4136,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async (_context) => {
-          return String(
-            JSON.stringify(
-              [
-                ...activeDocument.querySelectorAll<HTMLOptionElement>(
-                  "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout] option",
-                ),
-              ].map((n) => n.textContent),
-            ),
+          return JSON.stringify(
+            [
+              ...activeDocument.querySelectorAll<HTMLOptionElement>(
+                "[data-query-view-list]:popover-open [data-chooser-page] [data-query-view-layout] option",
+              ),
+            ].map((n) => n.textContent),
           );
         },
         undefined,
@@ -4210,19 +4176,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getMostRecentLeaf()!
-                      .view as import("obsidian").ItemView
-                  ).contentEl.querySelectorAll<HTMLElement>(
-                    ".zt-annot-page-chip",
-                  ),
-                ]
-                  .map((n) => n.textContent)
-                  .filter(Boolean),
-              ),
+            return JSON.stringify(
+              [
+                ...(
+                  app.workspace.getMostRecentLeaf()!
+                    .view as import("obsidian").ItemView
+                ).contentEl.querySelectorAll<HTMLElement>(
+                  ".zt-annot-page-chip",
+                ),
+              ]
+                .map((n) => n.textContent)
+                .filter(Boolean),
             );
           },
           undefined,
@@ -4388,19 +4352,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }) => {
-          return String(
-            JSON.stringify(
-              [
-                ...(
-                  app.workspace.getMostRecentLeaf()!
-                    .view as import("obsidian").ItemView
-                ).contentEl.querySelectorAll<HTMLElement>(
-                  ".zt-annot-page-chip",
-                ),
-              ]
-                .map((n) => n.textContent)
-                .filter(Boolean),
-            ),
+          return JSON.stringify(
+            [
+              ...(
+                app.workspace.getMostRecentLeaf()!
+                  .view as import("obsidian").ItemView
+              ).contentEl.querySelectorAll<HTMLElement>(".zt-annot-page-chip"),
+            ]
+              .map((n) => n.textContent)
+              .filter(Boolean),
           );
         },
         undefined,
@@ -4495,14 +4455,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const original = await obRun(
       run.vaultId,
       async ({ app }, { path }) => {
-        return String(await app.vault.read(app.vault.getFileByPath(path)!));
+        return await app.vault.read(app.vault.getFileByPath(path)!);
       },
       { path },
     );
@@ -4555,36 +4515,33 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             run.vaultId,
             async ({ app }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
-              if (view.getViewType() !== "zotlit-query-file")
-                return String("null");
+              if (view.getViewType() !== "zotlit-query-file") return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  layout:
-                    el
-                      .querySelector<HTMLElement>("[data-query-layout]")
-                      ?.getAttribute("data-query-layout") ?? "annotations",
-                  cards: [
-                    ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
-                  ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
-                  rows: [
-                    ...el.querySelectorAll<HTMLElement>("[data-query-row]"),
-                  ].map((n) => n.getAttribute("data-query-row")),
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
-                  ].map((n) => n.textContent),
-                  markers:
-                    el
-                      .querySelector<HTMLElement>("[data-query-markers]")
-                      ?.getAttribute("data-query-markers") ?? null,
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                layout:
+                  el
+                    .querySelector<HTMLElement>("[data-query-layout]")
+                    ?.getAttribute("data-query-layout") ?? "annotations",
+                cards: [
+                  ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
+                ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
+                rows: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-row]"),
+                ].map((n) => n.getAttribute("data-query-row")),
+                headings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
+                ].map((n) => n.textContent),
+                markers:
+                  el
+                    .querySelector<HTMLElement>("[data-query-markers]")
+                    ?.getAttribute("data-query-markers") ?? null,
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             undefined,
           ),
@@ -4685,7 +4642,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -4743,8 +4700,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             run.vaultId,
             async ({ app }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
-              if (view.getViewType() !== "zotlit-query-file")
-                return String("null");
+              if (view.getViewType() !== "zotlit-query-file") return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -4794,7 +4750,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                     ]
                       .slice(1)
                       .map((part) => part.children[0]?.textContent);
-              return String(JSON.stringify({ layout, rows, labels }));
+              return JSON.stringify({ layout, rows, labels });
             },
             undefined,
           ),
@@ -4964,19 +4920,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           await (view as import("@/views/query-view/file-view").QueryFileView)
             .query.settled;
-          return String(
-            JSON.stringify({
-              header: [
-                ...el.querySelectorAll<HTMLTableCellElement>(
-                  "[data-query-table] thead th",
-                ),
-              ].map((n) => n.textContent.trim()),
-              rows: el.querySelectorAll<HTMLTableRowElement>(
-                'tr[data-query-table-row="item"]',
-              ).length,
-              ticks,
-            }),
-          );
+          return JSON.stringify({
+            header: [
+              ...el.querySelectorAll<HTMLTableCellElement>(
+                "[data-query-table] thead th",
+              ),
+            ].map((n) => n.textContent.trim()),
+            rows: el.querySelectorAll<HTMLTableRowElement>(
+              'tr[data-query-table-row="item"]',
+            ).length,
+            ticks,
+          });
         },
         undefined,
       ),
@@ -4998,7 +4952,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -5060,28 +5014,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== filePath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  headings: [
-                    ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
-                  ].map((n) => n.textContent),
-                  order: [
-                    ...el.querySelectorAll<HTMLElement>("[data-group-row]"),
-                  ].map((n) => [
-                    n.getAttribute("data-group-row"),
-                    n.querySelector<HTMLInputElement>("input")!.checked,
-                  ]),
-                }),
-              );
+              return JSON.stringify({
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                headings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-group]"),
+                ].map((n) => n.textContent),
+                order: [
+                  ...el.querySelectorAll<HTMLElement>("[data-group-row]"),
+                ].map((n) => [
+                  n.getAttribute("data-group-row"),
+                  n.querySelector<HTMLInputElement>("input")!.checked,
+                ]),
+              });
             },
             { filePath: path },
           ),
@@ -5197,7 +5149,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       text = await obRun(
         run.vaultId,
         async ({ app }, { path }) => {
-          return String(await app.vault.read(app.vault.getFileByPath(path)!));
+          return await app.vault.read(app.vault.getFileByPath(path)!);
         },
         { path },
       );
@@ -5229,7 +5181,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -5290,32 +5242,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== filePath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const grid = (
                 view as import("obsidian").ItemView
               ).contentEl.querySelector<HTMLElement>('[role="grid"]')!;
-              return String(
-                JSON.stringify({
-                  cards: [
-                    ...(grid?.querySelectorAll<HTMLElement>(".zt-annot-card") ??
-                      []),
-                  ].map((n) => ({
-                    key: n.getAttribute("data-zotero-annotation-key"),
-                    place: n.getAttribute("data-card-place"),
-                  })),
-                  headings: [
-                    ...(grid?.querySelectorAll<HTMLElement>(
-                      "[data-query-group]",
-                    ) ?? []),
-                  ].map((n) => ({
-                    key: n.getAttribute("data-query-group"),
-                    collapsed: n.hasAttribute("data-collapsed"),
-                  })),
-                }),
-              );
+              return JSON.stringify({
+                cards: [
+                  ...(grid?.querySelectorAll<HTMLElement>(".zt-annot-card") ??
+                    []),
+                ].map((n) => ({
+                  key: n.getAttribute("data-zotero-annotation-key"),
+                  place: n.getAttribute("data-card-place"),
+                })),
+                headings: [
+                  ...(grid?.querySelectorAll<HTMLElement>(
+                    "[data-query-group]",
+                  ) ?? []),
+                ].map((n) => ({
+                  key: n.getAttribute("data-query-group"),
+                  collapsed: n.hasAttribute("data-collapsed"),
+                })),
+              });
             },
             { filePath: path },
           ),
@@ -5349,20 +5299,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const at = [
               ...el.querySelectorAll<HTMLElement>(".zt-annot-card"),
             ].find((n) => n.getAttribute("data-card-place") === sel.focus);
-            return String(
-              JSON.stringify({
-                focus: sel.focus,
-                selected: sel.selected,
-                drawn:
-                  !!at &&
-                  at.getClientRects().length > 0 &&
-                  at.hasAttribute("data-selected"),
-                active:
-                  el.ownerDocument.activeElement
-                    ?.closest?.(".zt-annot-card")
-                    ?.getAttribute("data-card-place") ?? null,
-              }),
-            );
+            return JSON.stringify({
+              focus: sel.focus,
+              selected: sel.selected,
+              drawn:
+                !!at &&
+                at.getClientRects().length > 0 &&
+                at.hasAttribute("data-selected"),
+              active:
+                el.ownerDocument.activeElement
+                  ?.closest?.(".zt-annot-card")
+                  ?.getAttribute("data-card-place") ?? null,
+            });
           },
           undefined,
         ),
@@ -5409,20 +5357,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           });
           Object.defineProperty(event, "target", { value: target });
           return String(
-            String(
-              (
-                view.scope as import("obsidian").Scope & {
-                  handleKey(
-                    event: KeyboardEvent,
-                    key: { modifiers: string; key: string; vkey: string },
-                  ): boolean;
-                }
-              ).handleKey(event, {
-                modifiers: "",
-                key: entryKey,
-                vkey: entryKey,
-              }) === false,
-            ),
+            (
+              view.scope as import("obsidian").Scope & {
+                handleKey(
+                  event: KeyboardEvent,
+                  key: { modifiers: string; key: string; vkey: string },
+                ): boolean;
+              }
+            ).handleKey(event, {
+              modifiers: "",
+              key: entryKey,
+              vkey: entryKey,
+            }) === false,
           );
         },
         { entryKey: key },
@@ -5570,16 +5516,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
     const original = await obRun(
       run.vaultId,
       async ({ app }, { queryPath }) => {
-        return String(
-          await app.vault.read(app.vault.getFileByPath(queryPath)!),
-        );
+        return await app.vault.read(app.vault.getFileByPath(queryPath)!);
       },
       { queryPath },
     );
@@ -5814,9 +5758,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { queryPath }) => {
-          return String(
-            await app.vault.read(app.vault.getFileByPath(queryPath)!),
-          );
+          return await app.vault.read(app.vault.getFileByPath(queryPath)!);
         },
         { queryPath },
       ),
@@ -5860,7 +5802,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .querySelectorAll<HTMLElement>(":popover-open")
               .forEach((p) => p.hidePopover());
           }
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { labEmbed, overviewEmbed },
       ),
@@ -5901,7 +5843,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await new Promise((r) => setTimeout(r, 400));
 
           const { from, to } = cm.state.selection.main;
-          return String(JSON.stringify({ from, to }));
+          return JSON.stringify({ from, to });
         },
         { overview, overviewEmbed },
       ),
@@ -5950,7 +5892,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ].find((el) => el.zotlitQueryView),
             10000,
           ).catch(() => null);
-          if (!el) return String("null");
+          if (!el) return "null";
           await el.zotlitQueryView!.settled;
           const out = {
             view:
@@ -5978,7 +5920,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               )!,
             5000,
           );
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { labNote, queryPath },
       ),
@@ -6016,10 +5958,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await obRun(
             run.vaultId,
             async ({ app }) => {
-              return String(
-                JSON.stringify(
-                  app.workspace.getMostRecentLeaf()!.getViewState(),
-                ),
+              return JSON.stringify(
+                app.workspace.getMostRecentLeaf()!.getViewState(),
               );
             },
             undefined,
@@ -6042,7 +5982,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -6143,7 +6083,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           activeDocument
             .querySelectorAll<HTMLElement>(":popover-open")
             .forEach((p) => p.hidePopover());
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { first, second },
       ),

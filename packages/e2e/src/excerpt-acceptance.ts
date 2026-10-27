@@ -125,22 +125,20 @@ async function importState(vaultId: string): Promise<string> {
   return obRun(
     vaultId,
     async ({ app, page: helpers }) => {
-      return String(
-        await JSON.stringify({
-          settled: helpers.scratch.__zotlitExcerptImport?.settled ?? null,
-          error: helpers.scratch.__zotlitExcerptImport?.error ?? null,
-          modals: Array.from(
-            document.querySelectorAll(".modal-container .modal"),
-          ).map((element) => (element.textContent ?? "").slice(0, 300)),
-          notices: Array.from(document.querySelectorAll(".notice")).map(
-            (element) => (element.textContent ?? "").slice(0, 200),
-          ),
-          imported: app.vault
-            .getFiles()
-            .map((file) => file.path)
-            .filter((path) => path.includes("zotlit")),
-        }),
-      );
+      return await JSON.stringify({
+        settled: helpers.scratch.__zotlitExcerptImport?.settled ?? null,
+        error: helpers.scratch.__zotlitExcerptImport?.error ?? null,
+        modals: Array.from(
+          document.querySelectorAll(".modal-container .modal"),
+        ).map((element) => (element.textContent ?? "").slice(0, 300)),
+        notices: Array.from(document.querySelectorAll(".notice")).map(
+          (element) => (element.textContent ?? "").slice(0, 200),
+        ),
+        imported: app.vault
+          .getFiles()
+          .map((file) => file.path)
+          .filter((path) => path.includes("zotlit")),
+      });
     },
     undefined,
   ).catch((error: unknown) => `import state unavailable: ${String(error)}`);
@@ -275,16 +273,14 @@ export async function verifyReaderBackedExcerpts(
   const layout = await obRun(
     vaultId,
     async ({ app }) => {
-      return String(await JSON.stringify(app.workspace.getLayout()));
+      return await JSON.stringify(app.workspace.getLayout());
     },
     undefined,
   );
   const basePath = await obRun(
     vaultId,
     async ({ app }) => {
-      return String(
-        await (app.vault.adapter as FileSystemAdapter).getBasePath(),
-      );
+      return await (app.vault.adapter as FileSystemAdapter).getBasePath();
     },
     undefined,
   );
@@ -319,9 +315,7 @@ export async function verifyReaderBackedExcerpts(
   const savedFilter = await obRun(
     vaultId,
     async ({ app }, { storageKey }) => {
-      return String(
-        await JSON.stringify(app.loadLocalStorage(storageKey) ?? null),
-      );
+      return await JSON.stringify(app.loadLocalStorage(storageKey) ?? null);
     },
     { storageKey: JSON.parse(filterKey) },
   );
@@ -991,7 +985,7 @@ export async function verifyReaderBackedExcerpts(
           const leaf = app.workspace.getLeavesOfType(
             "zotero-annotation-view",
           )[0];
-          if (!leaf) return String(await JSON.stringify("no view"));
+          if (!leaf) return await JSON.stringify("no view");
           const state = (leaf.view as AnnotationView).snapshot;
           if (state.followMode !== "pinned" || state.pinnedItemKey !== itemKey)
             await leaf.setViewState({
@@ -1015,8 +1009,7 @@ export async function verifyReaderBackedExcerpts(
                   .getAttribute("aria-label")!
                   .startsWith(activeTriggerPrefix),
             );
-            if (!trigger)
-              return String(await JSON.stringify("no colour Chooser"));
+            if (!trigger) return await JSON.stringify("no colour Chooser");
             press(trigger, "colour Chooser");
             const list = await until("colour list opens", () => {
               const list = Array.from(
@@ -1041,7 +1034,7 @@ export async function verifyReaderBackedExcerpts(
                   .trim()
                   .toLowerCase() === expectedColor,
             );
-            if (!row) return String(await JSON.stringify("no swatch"));
+            if (!row) return await JSON.stringify("no swatch");
             if (row.getAttribute("aria-selected") !== "true") {
               press(row, "colour row");
               await until(
@@ -1054,12 +1047,10 @@ export async function verifyReaderBackedExcerpts(
             ).dispatchEvent(
               new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
             );
-            return String(await JSON.stringify("demanded"));
+            return await JSON.stringify("demanded");
           } catch (error) {
-            return String(
-              await JSON.stringify(
-                String(error instanceof Error ? error.message : error),
-              ),
+            return await JSON.stringify(
+              String(error instanceof Error ? error.message : error),
             );
           }
         },
@@ -1099,7 +1090,7 @@ export async function verifyReaderBackedExcerpts(
               ).map((card) => card.getAttribute("data-zotero-annotation-key")),
             ),
           );
-          return String(await JSON.stringify(cards));
+          return await JSON.stringify(cards);
         },
         undefined,
         {

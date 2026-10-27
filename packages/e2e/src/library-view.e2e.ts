@@ -50,7 +50,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -205,30 +205,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app }, { value }) => {
-          return String(
-            JSON.stringify(
-              [
-                document.querySelector<HTMLElement>(value),
+          return JSON.stringify(
+            [
+              document.querySelector<HTMLElement>(value),
+              (
                 (
-                  (
-                    app.workspace.getLeavesOfType(
-                      "zotlit-library",
-                    ) as (WorkspaceLeaf & { view: LibraryView })[]
-                  )[0]! as LibraryLeaf & { view: LibraryView }
-                ).tabHeaderInnerIconEl.querySelector<HTMLElement>("svg"),
-              ].map((svg) => {
-                const g = svg?.querySelector<HTMLElement>("g");
-                return (
-                  g && {
-                    transform: g.getAttribute("transform"),
-                    fill: g.getAttribute("fill"),
-                    paths: [...g.querySelectorAll<HTMLElement>("path")].map(
-                      (p) => p.getAttribute("d"),
-                    ),
-                  }
-                );
-              }),
-            ),
+                  app.workspace.getLeavesOfType(
+                    "zotlit-library",
+                  ) as (WorkspaceLeaf & { view: LibraryView })[]
+                )[0]! as LibraryLeaf & { view: LibraryView }
+              ).tabHeaderInnerIconEl.querySelector<HTMLElement>("svg"),
+            ].map((svg) => {
+              const g = svg?.querySelector<HTMLElement>("g");
+              return (
+                g && {
+                  transform: g.getAttribute("transform"),
+                  fill: g.getAttribute("fill"),
+                  paths: [...g.querySelectorAll<HTMLElement>("path")].map((p) =>
+                    p.getAttribute("d"),
+                  ),
+                }
+              );
+            }),
           );
         },
         {
@@ -564,11 +562,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return String(
-          JSON.stringify(
-            (await zotlit.services.itemLookup.search("", { limit: 1 })).map(
-              (hit) => hit.item.indexedKey,
-            ),
+        return JSON.stringify(
+          (await zotlit.services.itemLookup.search("", { limit: 1 })).map(
+            (hit) => hit.item.indexedKey,
           ),
         );
       },
@@ -623,19 +619,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -884,11 +878,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            JSON.stringify(
-              (await zotlit.services.itemLookup.search("", { limit: 500 })).map(
-                (hit) => hit.item.indexedKey,
-              ),
+          return JSON.stringify(
+            (await zotlit.services.itemLookup.search("", { limit: 500 })).map(
+              (hit) => hit.item.indexedKey,
             ),
           );
         },
@@ -919,13 +911,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             );
             const t = toggle!.getBoundingClientRect();
             const i = input!.getBoundingClientRect();
-            return String(
-              JSON.stringify({
-                toggle: toggle!.checkVisibility(),
-                beside:
-                  t.top < i.bottom && t.bottom > i.top && t.right <= i.left,
-              }),
-            );
+            return JSON.stringify({
+              toggle: toggle!.checkVisibility(),
+              beside: t.top < i.bottom && t.bottom > i.top && t.right <= i.left,
+            });
           } finally {
             el.style.width = width;
           }
@@ -1295,22 +1284,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         obRunUntil(
           run.vaultId,
           async ({ zotlit }) => {
-            return String(
-              JSON.stringify(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["library.document"],
-                [
-                  "node",
-                  "kind",
-                  "library",
-                  "type",
-                  "path",
-                  "sort",
-                  "property",
-                  "direction",
-                ],
-              ),
+            return JSON.stringify(
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ],
+              [
+                "node",
+                "kind",
+                "library",
+                "type",
+                "path",
+                "sort",
+                "property",
+                "direction",
+              ],
             );
           },
           undefined,
@@ -1461,22 +1448,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         obRunUntil(
           run.vaultId,
           async ({ zotlit }) => {
-            return String(
-              JSON.stringify(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["library.document"],
-                [
-                  "node",
-                  "kind",
-                  "library",
-                  "type",
-                  "path",
-                  "sort",
-                  "property",
-                  "direction",
-                ],
-              ),
+            return JSON.stringify(
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ],
+              [
+                "node",
+                "kind",
+                "library",
+                "type",
+                "path",
+                "sort",
+                "property",
+                "direction",
+              ],
             );
           },
           undefined,
@@ -1771,22 +1756,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         obRunUntil(
           run.vaultId,
           async ({ zotlit }) => {
-            return String(
-              JSON.stringify(
-                zotlit.services.bridge.runSync(
-                  zotlit.services.settings.current,
-                )["library.document"],
-                [
-                  "node",
-                  "kind",
-                  "library",
-                  "type",
-                  "path",
-                  "sort",
-                  "property",
-                  "direction",
-                ],
-              ),
+            return JSON.stringify(
+              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+                "library.document"
+              ],
+              [
+                "node",
+                "kind",
+                "library",
+                "type",
+                "path",
+                "sort",
+                "property",
+                "direction",
+              ],
             );
           },
           undefined,
@@ -1819,15 +1802,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -1909,7 +1890,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "[data-sort-property]",
           ).length;
           popover.hidePopover();
-          return String(JSON.stringify({ triggers }));
+          return JSON.stringify({ triggers });
         },
         undefined,
       ),
@@ -1937,19 +1918,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -2731,25 +2710,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            scope:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                libraryScopeSettingKey
-              ] ?? null,
-            dismissed: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.dismissed"],
-            requested: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.requested"],
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          scope:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              libraryScopeSettingKey
+            ] ?? null,
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
       },
       { libraryScopeSettingKey: LIBRARY_SCOPE_SETTING_KEY },
     );
@@ -2933,9 +2910,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await until("banner", () =>
             el.querySelector<HTMLElement>("[data-welcome-banner]"),
           );
-          return String(
-            JSON.stringify(row!.getAttribute("data-query-item-row")!),
-          );
+          return JSON.stringify(row!.getAttribute("data-query-item-row")!);
         },
         {
           parentkey: parentKey,
@@ -3082,8 +3057,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "[data-query-item-row][data-selected]",
           );
           for (; n && n !== el; n = n.parentElement)
-            if (n.scrollTop > 0) return String("scrolled");
-          return String("top");
+            if (n.scrollTop > 0) return "scrolled";
+          return "top";
         },
         undefined,
       ),
@@ -3171,17 +3146,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            dismissed: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.dismissed"],
-            requested: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.requested"],
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
       },
       undefined,
     );
@@ -3312,21 +3285,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ app, zotlit }, { value }) => {
-          return String(
-            JSON.stringify({
-              dismissed: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.dismissed"],
-              requested: zotlit.services.bridge.runSync(
-                zotlit.services.settings.current,
-              )["welcome.requested"],
-              action: !!(
-                app.workspace.getLeavesOfType(
-                  "zotlit-library",
-                ) as (WorkspaceLeaf & { view: LibraryView })[]
-              )[0]!.view.containerEl.querySelector<HTMLElement>(value),
-            }),
-          );
+          return JSON.stringify({
+            dismissed: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.dismissed"],
+            requested: zotlit.services.bridge.runSync(
+              zotlit.services.settings.current,
+            )["welcome.requested"],
+            action: !!(
+              app.workspace.getLeavesOfType(
+                "zotlit-library",
+              ) as (WorkspaceLeaf & { view: LibraryView })[]
+            )[0]!.view.containerEl.querySelector<HTMLElement>(value),
+          });
         },
         { value: `.view-actions .view-action[aria-label="${help}"]` },
       ),
@@ -3337,21 +3308,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            dismissed: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.dismissed"],
-            requested: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.requested"],
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
       },
       undefined,
     );
@@ -4319,21 +4288,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-            dismissed: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.dismissed"],
-            requested: zotlit.services.bridge.runSync(
-              zotlit.services.settings.current,
-            )["welcome.requested"],
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+          dismissed: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.dismissed"],
+          requested: zotlit.services.bridge.runSync(
+            zotlit.services.settings.current,
+          )["welcome.requested"],
+        });
       },
       undefined,
     );
@@ -4376,18 +4343,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ app }, { index }) => {
-            return String(
-              JSON.stringify(
-                [
-                  ...(
-                    app.workspace.getLeavesOfType(
-                      "zotlit-library",
-                    ) as (WorkspaceLeaf & { view: LibraryView })[]
-                  )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
-                    "[data-query-item-row]",
-                  )!,
-                ][index]!.getAttribute("data-query-item-row")!,
-              ),
+            return JSON.stringify(
+              [
+                ...(
+                  app.workspace.getLeavesOfType(
+                    "zotlit-library",
+                  ) as (WorkspaceLeaf & { view: LibraryView })[]
+                )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
+                  "[data-query-item-row]",
+                )!,
+              ][index]!.getAttribute("data-query-item-row")!,
             );
           },
           { index: index },
@@ -5182,7 +5147,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -5518,7 +5483,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toEqual(
       attachmentsOf(paper)
         .map(({ key }) => key)
-        .toSorted((a, b) => String(a).localeCompare(String(b))),
+        .toSorted((a, b) => a.localeCompare(b)),
     );
     expect(
       childrenOf(expanded!)
@@ -5631,7 +5596,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toEqual(
       pdfAnnotations
         .map(({ key }) => key)
-        .toSorted((a, b) => String(a).localeCompare(String(b))),
+        .toSorted((a, b) => a.localeCompare(b)),
     );
 
     // The PDF opens in Obsidian's reader, an Annotation at its page, and the
@@ -5657,18 +5622,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "PDF link",
           );
           return String(
-            String(
-              !!(await until(
-                "the PDF opens",
-                () =>
-                  (
-                    app.workspace.getLeavesOfType("pdf") as (WorkspaceLeaf & {
-                      view: PDFFileView;
-                    })[]
-                  ).find((l) => l.view.file?.name === pdfname),
-                10000,
-              )),
-            ),
+            !!(await until(
+              "the PDF opens",
+              () =>
+                (
+                  app.workspace.getLeavesOfType("pdf") as (WorkspaceLeaf & {
+                    view: PDFFileView;
+                  })[]
+                ).find((l) => l.view.file?.name === pdfname),
+              10000,
+            )),
           );
         },
         {
@@ -5737,18 +5700,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(link, "Literature Note link");
           const path = link!.getAttribute("data-query-note");
           return String(
-            String(
-              !!(await until(
-                "the Literature Note opens",
-                () =>
-                  (
-                    app.workspace.getLeavesOfType(
-                      "markdown",
-                    ) as (WorkspaceLeaf & { view: MarkdownView })[]
-                  ).find((l) => l.view.file?.path === path),
-                10000,
-              )),
-            ),
+            !!(await until(
+              "the Literature Note opens",
+              () =>
+                (
+                  app.workspace.getLeavesOfType(
+                    "markdown",
+                  ) as (WorkspaceLeaf & { view: MarkdownView })[]
+                ).find((l) => l.view.file?.path === path),
+              10000,
+            )),
           );
         },
         { paperKey: paper.key },
@@ -5890,9 +5851,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ),
               "Child Note link",
             );
-            return String(
-              await until("Zotero shows the note", () => opened, 10000),
-            );
+            return await until("Zotero shows the note", () => opened, 10000);
           } finally {
             window.open = native;
           }
@@ -5906,15 +5865,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -6087,23 +6044,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 key: null,
                 card: false,
               });
-              return String(
-                JSON.stringify({
-                  overflows: list!.scrollHeight > list!.clientHeight,
-                  scrolled,
-                  tops: { before, after },
-                  icon: {
-                    toClient: clientRight - iconRight,
-                    toEdge: box.right - iconRight,
-                  },
-                  scrollbar: Number.parseFloat(
-                    getComputedStyle(document.body).getPropertyValue(
-                      "--scrollbar-width",
-                    ),
+              return JSON.stringify({
+                overflows: list!.scrollHeight > list!.clientHeight,
+                scrolled,
+                tops: { before, after },
+                icon: {
+                  toClient: clientRight - iconRight,
+                  toEdge: box.right - iconRight,
+                },
+                scrollbar: Number.parseFloat(
+                  getComputedStyle(document.body).getPropertyValue(
+                    "--scrollbar-width",
                   ),
-                  moved: { down, up },
-                }),
-              );
+                ),
+                moved: { down, up },
+              });
             } finally {
               el.style.width = width;
             }
@@ -6138,15 +6093,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
-        return String(
-          JSON.stringify({
-            layout: app.workspace.getLayout(),
-            document:
-              zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-                "library.document"
-              ] ?? null,
-          }),
-        );
+        return JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        });
       },
       undefined,
     );
@@ -6354,9 +6307,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               observer.disconnect();
             }
             press(button, "collapse");
-            return String(
-              JSON.stringify({ expanded, frames, removed, delayedReads }),
-            );
+            return JSON.stringify({ expanded, frames, removed, delayedReads });
           },
           {
             viewInput: view,

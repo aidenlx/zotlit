@@ -20,15 +20,13 @@ export async function verifyPdfReads(
   const saved = await obRun(
     vaultId,
     async ({ app, zotlit }) => {
-      return String(
-        JSON.stringify({
-          layout: app.workspace.getLayout(),
-          settings: zotlit.services.bridge.runSync(
-            zotlit.services.settings.current,
-          ),
-          ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
-        }),
-      );
+      return JSON.stringify({
+        layout: app.workspace.getLayout(),
+        settings: zotlit.services.bridge.runSync(
+          zotlit.services.settings.current,
+        ),
+        ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
+      });
     },
     undefined,
   );
@@ -53,7 +51,7 @@ export async function verifyPdfReads(
           throw new Error("The ZotLit services did not close");
         app.saveLocalStorage("zotlit-use-ledger", JSON.parse(saved).ledger);
         await app.plugins.enablePlugin("zotlit");
-        return String(JSON.stringify(zotlit.services.useLedger.current));
+        return JSON.stringify(zotlit.services.useLedger.current);
       },
       { saved },
     );

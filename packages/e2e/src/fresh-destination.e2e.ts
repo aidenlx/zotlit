@@ -155,7 +155,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          return String(String(zotlit.services.profile.profiles.length));
+          return String(zotlit.services.profile.profiles.length);
         },
         undefined,
       ),
@@ -182,13 +182,11 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
             .find((el) => el.textContent === folderLabel)
             ?.querySelector("input");
           return String(
-            String(
-              !!name &&
-                !!folder &&
-                name.tabIndex === 0 &&
-                folder.tabIndex === 0 &&
-                name === name.ownerDocument.activeElement,
-            ),
+            !!name &&
+              !!folder &&
+              name.tabIndex === 0 &&
+              folder.tabIndex === 0 &&
+              name === name.ownerDocument.activeElement,
           );
         },
         {
@@ -252,10 +250,8 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          return String(
-            JSON.stringify(
-              zotlit.services.profile.profiles.find((p) => p.label === "Books"),
-            ),
+          return JSON.stringify(
+            zotlit.services.profile.profiles.find((p) => p.label === "Books"),
           );
         },
         undefined,

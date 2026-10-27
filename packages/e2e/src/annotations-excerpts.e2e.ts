@@ -80,9 +80,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ page }) => {
-            return String(
-              JSON.stringify(page.scratch.__zotlitCapabilitySubjects),
-            );
+            return JSON.stringify(page.scratch.__zotlitCapabilitySubjects);
           },
           undefined,
         ),
@@ -355,7 +353,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             () => (text = clipboard.readText()) === citation,
             5000,
           ).catch(() => {});
-          return String(text);
+          return text;
         },
         {
           annotationItemKey: annotationItem.key,
@@ -405,7 +403,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ app }) => {
           for (const leaf of app.workspace.getLeavesOfType("pdf"))
             leaf.detach();
-          return String(String(app.workspace.getLeavesOfType("pdf").length));
+          return String(app.workspace.getLeavesOfType("pdf").length);
         },
         undefined,
       ),
@@ -422,13 +420,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         id,
         async ({ app }) => {
-          return String(
-            JSON.stringify(
-              app.vault
-                .getFiles()
-                .filter((f) => f.name.startsWith("zotlit-excerpt-"))
-                .map((f) => f.path),
-            ),
+          return JSON.stringify(
+            app.vault
+              .getFiles()
+              .filter((f) => f.name.startsWith("zotlit-excerpt-"))
+              .map((f) => f.path),
           );
         },
         undefined,
@@ -468,9 +464,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               file,
               indexedKey,
             );
-            return String(
-              JSON.stringify({ diagnostic: updated.diagnostic ?? null }),
-            );
+            return JSON.stringify({ diagnostic: updated.diagnostic ?? null });
           },
           { resultPath: result.path, indexedKey: result.indexedKey },
         ),
@@ -489,7 +483,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "note",
             [13],
           );
-          return String(JSON.stringify(result));
+          return JSON.stringify(result);
         },
         undefined,
       ),
@@ -510,10 +504,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const importedPath = await obRun(
       id,
       async ({ zotlit }) => {
-        return String(
-          zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")[0]!
-            .path,
-        );
+        return zotlit.services.noteIndex.getImportedNoteByNoteKey(
+          "NNNNAAAA",
+        )[0]!.path;
       },
       undefined,
     );
@@ -541,10 +534,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           const file = app.vault.getFileByPath(importedPath)!;
           if (!file) throw new Error("Imported Note missing");
-          return String(
-            JSON.stringify(
-              await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
-            ),
+          return JSON.stringify(
+            await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
           );
         },
         { importedPath },
@@ -580,13 +571,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             async ({ app, zotlit }, { importedPath }) => {
               const services = zotlit.services;
               const file = app.vault.getFileByPath(importedPath)!;
-              return String(
-                JSON.stringify(
-                  await services.batchImport.reimportNoteByKey(
-                    "NNNNAAAA",
-                    file,
-                  ),
-                ),
+              return JSON.stringify(
+                await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
               );
             },
             { importedPath },
@@ -624,15 +610,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         id,
         async ({ page }) => {
-          return String(
-            JSON.stringify(
-              [...page.windowDocuments()]
-                .flatMap((doc) => [
-                  ...doc.querySelectorAll<HTMLElement>(".notice"),
-                ])
-                .map((node) => node.textContent)
-                .filter((text) => text.includes("Excerpt images:")),
-            ),
+          return JSON.stringify(
+            [...page.windowDocuments()]
+              .flatMap((doc) => [
+                ...doc.querySelectorAll<HTMLElement>(".notice"),
+              ])
+              .map((node) => node.textContent)
+              .filter((text) => text.includes("Excerpt images:")),
           );
         },
         undefined,
@@ -645,10 +629,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ app, zotlit }, { importedPath }) => {
             const services = zotlit.services;
             const file = app.vault.getFileByPath(importedPath)!;
-            return String(
-              JSON.stringify(
-                await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
-              ),
+            return JSON.stringify(
+              await services.batchImport.reimportNoteByKey("NNNNAAAA", file),
             );
           },
           { importedPath },
@@ -660,7 +642,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         id,
         async ({ app }) => {
-          return String(String(app.workspace.getLeavesOfType("pdf").length));
+          return String(app.workspace.getLeavesOfType("pdf").length);
         },
         undefined,
       ),

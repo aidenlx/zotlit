@@ -18,12 +18,10 @@ async function wideWindow(cleanup: AsyncDisposableStack): Promise<void> {
   const size = await obRun(
     run.vaultId,
     async (_context) => {
-      return String(
-        JSON.stringify(
-          (require("@electron/remote") as typeof import("@electron/remote"))
-            .getCurrentWindow()
-            .getSize(),
-        ),
+      return JSON.stringify(
+        (require("@electron/remote") as typeof import("@electron/remote"))
+          .getCurrentWindow()
+          .getSize(),
       );
     },
     undefined,
@@ -293,9 +291,7 @@ async function mainSettings() {
         obRun(
           run.vaultId,
           async (_context) => {
-            return String(
-              String(activeWindow === window && document.hasFocus()),
-            );
+            return String(activeWindow === window && document.hasFocus());
           },
           undefined,
         ),
@@ -453,12 +449,10 @@ async function quickSwitchCreate(
           targetVaultId,
           async ({ app }) => {
             return String(
-              String(
-                app.workspace.getLeavesOfType("zotlit-template-workbench")
-                  .length === 0 &&
-                  activeWindow === window &&
-                  document.hasFocus(),
-              ),
+              app.workspace.getLeavesOfType("zotlit-template-workbench")
+                .length === 0 &&
+                activeWindow === window &&
+                document.hasFocus(),
             );
           },
           undefined,

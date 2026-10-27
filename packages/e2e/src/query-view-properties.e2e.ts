@@ -22,7 +22,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -76,7 +76,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -84,26 +84,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 view as import("@/views/query-view/file-view").QueryFileView
               ).save();
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  matched:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-matched") ?? null,
-                  countText:
-                    el.querySelector<HTMLElement>("[data-query-count]")
-                      ?.textContent ?? null,
-                  cards:
-                    el.querySelectorAll<HTMLElement>(".zt-annot-card").length,
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                matched:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-matched") ?? null,
+                countText:
+                  el.querySelector<HTMLElement>("[data-query-count]")
+                    ?.textContent ?? null,
+                cards:
+                  el.querySelectorAll<HTMLElement>(".zt-annot-card").length,
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -220,9 +218,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               n.getAttribute("aria-selected"),
             ]);
           popup()!.hidePopover();
-          return String(
-            JSON.stringify({ defaults, leading, untouched, kept, shown }),
-          );
+          return JSON.stringify({ defaults, leading, untouched, kept, shown });
         },
         undefined,
       ),
@@ -312,17 +308,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             URL.createObjectURL = create;
             HTMLAnchorElement.prototype.click = click;
           }
-          return String(
-            JSON.stringify({
-              name,
-              type: (blob as Blob | null)?.type ?? null,
-              text: blob
-                ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-                    await (blob as Blob).arrayBuffer(),
-                  )
-                : null,
-            }),
-          );
+          return JSON.stringify({
+            name,
+            type: (blob as Blob | null)?.type ?? null,
+            text: blob
+              ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+                  await (blob as Blob).arrayBuffer(),
+                )
+              : null,
+          });
         },
         undefined,
       ),
@@ -492,7 +486,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -551,7 +545,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -564,36 +558,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "[data-query-table] thead th",
                 ),
               ].map((n) => n.getAttribute("data-query-column"));
-              return String(
-                JSON.stringify({
-                  columns,
-                  headerIssue:
-                    el
-                      .querySelector<HTMLElement>(
-                        "[data-query-table] thead [data-query-formula-issue]",
-                      )
-                      ?.getAttribute("data-query-formula-issue") ?? null,
-                  rows: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      '[data-query-table-row="item"]',
-                    ),
-                  ].map((tr) => [
-                    tr.getAttribute("data-query-key"),
-                    ...[...tr.children].map((td) => td.textContent),
-                  ]),
-                  list: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[data-query-layout="list"] [data-query-row]',
-                    ),
-                  ].map((li) => [
-                    li.getAttribute("data-query-row"),
-                    li.textContent,
-                  ]),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                columns,
+                headerIssue:
+                  el
+                    .querySelector<HTMLElement>(
+                      "[data-query-table] thead [data-query-formula-issue]",
+                    )
+                    ?.getAttribute("data-query-formula-issue") ?? null,
+                rows: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-table-row="item"]',
                   ),
-                }),
-              );
+                ].map((tr) => [
+                  tr.getAttribute("data-query-key"),
+                  ...[...tr.children].map((td) => td.textContent),
+                ]),
+                list: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    '[data-query-layout="list"] [data-query-row]',
+                  ),
+                ].map((li) => [
+                  li.getAttribute("data-query-row"),
+                  li.textContent,
+                ]),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -715,15 +707,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const save = page!.querySelector<HTMLButtonElement>(
               "[data-query-formula-save]",
             )!;
-            return String(
-              JSON.stringify({
-                syntax:
-                  page!
-                    .querySelector<HTMLElement>("[data-query-formula-syntax]")
-                    ?.getAttribute("data-query-formula-syntax") ?? null,
-                save: save ? !save.disabled : null,
-              }),
-            );
+            return JSON.stringify({
+              syntax:
+                page!
+                  .querySelector<HTMLElement>("[data-query-formula-syntax]")
+                  ?.getAttribute("data-query-formula-syntax") ?? null,
+              save: save ? !save.disabled : null,
+            });
           },
           { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
         ),
@@ -794,16 +784,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 `${error.message}: ${texts()}, aria-invalid ${content.getAttribute("aria-invalid")}`,
               );
             });
-            return String(
-              JSON.stringify({
-                marks: marks().map((n) => n.textContent),
-                styles: marks().map(
-                  (n) => getComputedStyle(n).textDecorationStyle,
-                ),
-                gutter:
-                  field!.querySelector<HTMLElement>(".cm-gutters")! != null,
-              }),
-            );
+            return JSON.stringify({
+              marks: marks().map((n) => n.textContent),
+              styles: marks().map(
+                (n) => getComputedStyle(n).textDecorationStyle,
+              ),
+              gutter: field!.querySelector<HTMLElement>(".cm-gutters")! != null,
+            });
           },
           {
             popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
@@ -894,17 +881,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await until("focus in the Formula field", () =>
             editor!.classList.contains("cm-focused"),
           );
-          return String(
-            JSON.stringify({
-              rest,
-              focused: { input: inputFocused, field: look(field) },
-              inset,
-              editor: {
-                focused: editor!.classList.contains("cm-focused"),
-                outline: getComputedStyle(editor!).outlineStyle,
-              },
-            }),
-          );
+          return JSON.stringify({
+            rest,
+            focused: { input: inputFocused, field: look(field) },
+            inset,
+            editor: {
+              focused: editor!.classList.contains("cm-focused"),
+              outline: getComputedStyle(editor!).outlineStyle,
+            },
+          });
         },
         { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
       ),
@@ -1093,7 +1078,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )
             ?.getAttribute("data-query-formula-issue") ?? null;
         popup!.hidePopover();
-        return String(String(issue));
+        return String(issue);
       },
       { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
@@ -1124,14 +1109,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             }),
           );
           await new Promise((r) => setTimeout(r, 800));
-          return String(
-            JSON.stringify(
-              [
-                ...mark!.ownerDocument.querySelectorAll<HTMLElement>(
-                  ".cm-tooltip-hover, .cm-tooltip-lint",
-                ),
-              ].map((n) => n.className),
-            ),
+          return JSON.stringify(
+            [
+              ...mark!.ownerDocument.querySelectorAll<HTMLElement>(
+                ".cm-tooltip-hover, .cm-tooltip-lint",
+              ),
+            ].map((n) => n.className),
           );
         },
         { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
@@ -1184,7 +1167,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1261,49 +1244,47 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  runs: zotlit.services.query.viewRuns,
-                  warnings: [
-                    ...el.querySelectorAll<HTMLElement>("[data-query-warning]"),
-                  ].map((n) => n.getAttribute("data-query-warning")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                runs: zotlit.services.query.viewRuns,
+                warnings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-warning]"),
+                ].map((n) => n.getAttribute("data-query-warning")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] thead th",
                   ),
-                  columns: [
+                ].map((n) => n.getAttribute("data-query-column")),
+                headerIssues: Object.fromEntries(
+                  [
                     ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] thead th",
+                      "[data-query-table] thead [data-query-column]",
                     ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  headerIssues: Object.fromEntries(
-                    [
-                      ...el.querySelectorAll<HTMLTableCellElement>(
-                        "[data-query-table] thead [data-query-column]",
-                      ),
-                    ].map((n) => [
-                      n.getAttribute("data-query-column"),
-                      n.getAttribute("data-query-formula-issue"),
-                    ]),
-                  ),
-                  rows: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      '[data-query-table-row="item"]',
-                    ),
-                  ].map((tr) => [
-                    tr.getAttribute("data-query-key"),
-                    ...[...tr.children].map((td) => td.textContent),
+                  ].map((n) => [
+                    n.getAttribute("data-query-column"),
+                    n.getAttribute("data-query-formula-issue"),
                   ]),
-                  diagnostic:
-                    el
-                      .querySelector<HTMLElement>("[data-query-diagnostic]")
-                      ?.getAttribute("data-query-diagnostic") ?? null,
-                }),
-              );
+                ),
+                rows: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-table-row="item"]',
+                  ),
+                ].map((tr) => [
+                  tr.getAttribute("data-query-key"),
+                  ...[...tr.children].map((td) => td.textContent),
+                ]),
+                diagnostic:
+                  el
+                    .querySelector<HTMLElement>("[data-query-diagnostic]")
+                    ?.getAttribute("data-query-diagnostic") ?? null,
+              });
             },
             { targetPath: path },
           ),
@@ -1335,7 +1316,7 @@ views:
         await obRun(
           run.vaultId,
           async ({ zotlit }) => {
-            return String(String(zotlit.services.query.viewRuns));
+            return String(zotlit.services.query.viewRuns);
           },
           undefined,
         ),
@@ -1366,7 +1347,7 @@ views:
               ]),
             );
             popup!.hidePopover();
-            return String(JSON.stringify(issues));
+            return JSON.stringify(issues);
           },
           { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
         ),
@@ -1396,7 +1377,7 @@ views:
                 null,
             );
             popover!.hidePopover();
-            return String(JSON.stringify(issues));
+            return JSON.stringify(issues);
           },
           {
             filterPopoverSelector: `${'[data-query-popover="filter"]'}:popover-open`,
@@ -1519,7 +1500,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1606,7 +1587,7 @@ views:
                 (leaf!.view as import("obsidian").FileView).file?.path !==
                   notePath
               )
-                return String("null");
+                return "null";
               if (leaf!.getViewState().state!.view !== name)
                 await leaf!.setViewState({
                   ...leaf!.getViewState(),
@@ -1617,26 +1598,20 @@ views:
                   .view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (leaf!.view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify(
-                  [...el.querySelectorAll<HTMLElement>(selector)].map(
-                    (row) => ({
-                      key:
-                        row.getAttribute("data-query-key") ??
-                        row.getAttribute("data-query-row"),
-                      text: row.textContent,
-                      errors: [
-                        ...row.querySelectorAll<HTMLElement>(
-                          "[data-query-error]",
-                        ),
-                      ].map((n) => [
-                        n.getAttribute("data-query-error"),
-                        n.getAttribute("aria-label"),
-                        !!n.querySelector<SVGSVGElement>("svg")!,
-                      ]),
-                    }),
-                  ),
-                ),
+              return JSON.stringify(
+                [...el.querySelectorAll<HTMLElement>(selector)].map((row) => ({
+                  key:
+                    row.getAttribute("data-query-key") ??
+                    row.getAttribute("data-query-row"),
+                  text: row.textContent,
+                  errors: [
+                    ...row.querySelectorAll<HTMLElement>("[data-query-error]"),
+                  ].map((n) => [
+                    n.getAttribute("data-query-error"),
+                    n.getAttribute("aria-label"),
+                    !!n.querySelector<SVGSVGElement>("svg")!,
+                  ]),
+                })),
               );
             },
             { notePath: path, name, selector },
@@ -1727,7 +1702,7 @@ views:
           }
           if (copied === null)
             throw new Error('"Copy to clipboard" wrote nothing');
-          return String(JSON.stringify(copied));
+          return JSON.stringify(copied);
         },
         {
           resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
@@ -1764,17 +1739,15 @@ views:
             URL.createObjectURL = create;
             HTMLAnchorElement.prototype.click = click;
           }
-          return String(
-            JSON.stringify({
-              name,
-              type: (blob as Blob | null)?.type ?? null,
-              text: blob
-                ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-                    await (blob as Blob).arrayBuffer(),
-                  )
-                : null,
-            }),
-          );
+          return JSON.stringify({
+            name,
+            type: (blob as Blob | null)?.type ?? null,
+            text: blob
+              ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+                  await (blob as Blob).arrayBuffer(),
+                )
+              : null,
+          });
         },
         {
           resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
@@ -1803,7 +1776,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1859,7 +1832,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -1877,7 +1850,7 @@ views:
               ]);
               const popup =
                 activeDocument.querySelector<HTMLElement>(popupSelector)!;
-              if (!popup) return String("null");
+              if (!popup) return "null";
               const names = ["title", "formula.year"]
                 .map((property) =>
                   popup.querySelector<HTMLElement>(
@@ -1893,18 +1866,16 @@ views:
                     .textContent,
                 ]);
               popup.hidePopover();
-              return String(
-                JSON.stringify({
-                  header,
-                  names,
-                  rows: el.querySelectorAll<HTMLTableRowElement>(
-                    '[data-query-table-row="item"]',
-                  ).length,
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                header,
+                names,
+                rows: el.querySelectorAll<HTMLTableRowElement>(
+                  '[data-query-table-row="item"]',
+                ).length,
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             {
               targetPath: path,
@@ -2045,7 +2016,7 @@ views:
             ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
           ].map((n) => n.dataset.queryProperty);
           popup!.hidePopover();
-          return String(JSON.stringify(rows));
+          return JSON.stringify(rows);
         },
         { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
       ),
@@ -2112,15 +2083,13 @@ views:
             URL.createObjectURL = create;
             HTMLAnchorElement.prototype.click = click;
           }
-          return String(
-            JSON.stringify({
-              text: blob
-                ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-                    await (blob as Blob).arrayBuffer(),
-                  )
-                : null,
-            }),
-          );
+          return JSON.stringify({
+            text: blob
+              ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+                  await (blob as Blob).arrayBuffer(),
+                )
+              : null,
+          });
         },
         {
           resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
@@ -2169,7 +2138,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -2228,7 +2197,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2243,7 +2212,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -2291,19 +2260,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -2344,7 +2311,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2359,7 +2326,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2415,19 +2382,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -2470,7 +2435,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2485,7 +2450,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2535,19 +2500,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -2582,7 +2545,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2597,7 +2560,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2621,19 +2584,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -2667,7 +2628,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2682,7 +2643,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2745,19 +2706,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -2798,7 +2757,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2813,7 +2772,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const width = (p: string) =>
                 Math.round(th(p)!.getBoundingClientRect().width);
@@ -2880,19 +2839,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -2936,7 +2893,7 @@ views:
                 view.getViewType() !== "zotlit-query-file" ||
                 (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2951,7 +2908,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -3001,19 +2958,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { targetPath: path },
           ),
@@ -3050,7 +3005,7 @@ views:
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3065,7 +3020,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -3105,19 +3060,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { expectedPath: path },
           ),
@@ -3154,7 +3107,7 @@ views:
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3169,7 +3122,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -3230,19 +3183,17 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { expectedPath: path },
           ),
@@ -3319,13 +3270,11 @@ views:
           };
           fire(activeDocument.body, "dragover", 10);
           fire(activeDocument.body, "drop", 10);
-          return String(
-            JSON.stringify({
-              during,
-              after,
-              same: (await app.vault.read(file!)) === before,
-            }),
-          );
+          return JSON.stringify({
+            during,
+            after,
+            same: (await app.vault.read(file!)) === before,
+          });
         },
         undefined,
       ),
@@ -3344,7 +3293,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -3408,7 +3357,7 @@ views:
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3423,7 +3372,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -3474,15 +3423,13 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { expectedPath: path, note },
           ),
@@ -3517,7 +3464,7 @@ views:
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3532,7 +3479,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -3579,15 +3526,13 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { expectedPath: path, note },
           ),
@@ -3623,7 +3568,7 @@ views:
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3638,7 +3583,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const popup = () =>
                 activeDocument.querySelector<HTMLElement>(
@@ -3683,15 +3628,13 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { expectedPath: path, note },
           ),
@@ -3732,7 +3675,7 @@ views:
                 (view as import("obsidian").FileView).file?.path !==
                   expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3747,7 +3690,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const columns = () =>
                 [
@@ -3781,15 +3724,13 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             { expectedPath: path, note },
           ),

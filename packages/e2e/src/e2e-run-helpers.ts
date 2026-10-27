@@ -155,22 +155,20 @@ export async function activeTab(vaultId: string): Promise<ActiveTab> {
           | import("obsidian").FileView
           | undefined;
         const file = view?.file ?? null;
-        return String(
-          JSON.stringify({
-            type: view?.getViewType() ?? null,
-            path: file?.path ?? null,
-            key: file
-              ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
-                  "zotero-key"
-                ] ?? null)
-              : null,
-            opening: !!(
-              app.workspace.activeLeaf as
-                | (import("obsidian").WorkspaceLeaf & { working?: boolean })
-                | null
-            )?.working,
-          }),
-        );
+        return JSON.stringify({
+          type: view?.getViewType() ?? null,
+          path: file?.path ?? null,
+          key: file
+            ? (app.metadataCache.getFileCache(file)?.frontmatter?.[
+                "zotero-key"
+              ] ?? null)
+            : null,
+          opening: !!(
+            app.workspace.activeLeaf as
+              | (import("obsidian").WorkspaceLeaf & { working?: boolean })
+              | null
+          )?.working,
+        });
       },
       undefined,
     ),

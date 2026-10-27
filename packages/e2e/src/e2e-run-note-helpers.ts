@@ -91,14 +91,12 @@ async function recordFrames(vaultId: string): Promise<
           vaultId,
           async ({ page }) => {
             var r = page.scratch.frames!;
-            return String(
-              JSON.stringify({
-                frames: r.frames,
-                maxFrameGapMs: Math.round(r.maxFrameGapMs),
-                longTasks: r.longTasks,
-                longestTaskMs: Math.round(r.longestTaskMs),
-              }),
-            );
+            return JSON.stringify({
+              frames: r.frames,
+              maxFrameGapMs: Math.round(r.maxFrameGapMs),
+              longTasks: r.longTasks,
+              longestTaskMs: Math.round(r.longestTaskMs),
+            });
           },
           undefined,
         ),
@@ -383,9 +381,7 @@ async function observeNotices(vaultId: string) {
         await obRun(
           vaultId,
           async ({ page }) => {
-            return String(
-              JSON.stringify([...page.scratch.notices!.values.values()]),
-            );
+            return JSON.stringify([...page.scratch.notices!.values.values()]);
           },
           undefined,
         ),
@@ -567,13 +563,11 @@ async function signalDatabaseUpdated(vaultId: string): Promise<void> {
       async ({ zotlit }) => {
         var services = zotlit.services;
         var settings = services.bridge.runSync(services.settings.current);
-        return String(
-          JSON.stringify({
-            hostname: settings["server.hostname"],
-            port: services.bridge.runSync(services.localServer.effectivePort),
-            sourceId: services.zoteroPref.sourceId,
-          }),
-        );
+        return JSON.stringify({
+          hostname: settings["server.hostname"],
+          port: services.bridge.runSync(services.localServer.effectivePort),
+          sourceId: services.zoteroPref.sourceId,
+        });
       },
       undefined,
     ),
@@ -608,7 +602,7 @@ async function rendererHeap(vaultId: string): Promise<number> {
         ) as () => void;
         gc();
         gc();
-        return String(String(process.memoryUsage().heapUsed));
+        return String(process.memoryUsage().heapUsed);
       },
       undefined,
     ),

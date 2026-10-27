@@ -193,11 +193,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           async ({ page: pageHelpers }) => {
             var record = pageHelpers.scratch.zotlitE2EWorkers;
             return String(
-              String(
-                record!.spawned.filter(function (entry) {
-                  return entry.name === "zotlit-zotero-reads";
-                }).length,
-              ),
+              record!.spawned.filter(function (entry) {
+                return entry.name === "zotlit-zotero-reads";
+              }).length,
             );
           },
           undefined,
@@ -284,11 +282,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ zotlit }, { targetItemTitle }) => {
-            return String(
-              await zotlit.services.itemLookup
-                .search(targetItemTitle, { limit: 1 })
-                .then(JSON.stringify),
-            );
+            return await zotlit.services.itemLookup
+              .search(targetItemTitle, { limit: 1 })
+              .then(JSON.stringify);
           },
           { targetItemTitle: targetItem.title },
         ),
@@ -411,15 +407,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ page: pageHelpers }) => {
             var record = pageHelpers.scratch.zotlitE2EWorkers;
-            return String(
-              JSON.stringify(
-                record!.spawned.map(function (entry) {
-                  return {
-                    name: entry.name,
-                    ended: record!.ended.has(entry.worker),
-                  };
-                }),
-              ),
+            return JSON.stringify(
+              record!.spawned.map(function (entry) {
+                return {
+                  name: entry.name,
+                  ended: record!.ended.has(entry.worker),
+                };
+              }),
             );
           },
           undefined,

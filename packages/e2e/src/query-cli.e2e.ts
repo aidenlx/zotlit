@@ -1122,7 +1122,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const version = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(app.plugins.plugins.zotlit!.manifest.version);
+        return app.plugins.plugins.zotlit!.manifest.version;
       },
       undefined,
     );
@@ -1551,11 +1551,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }) => {
         return String(
-          String(
-            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-              "zotero.auto-refresh"
-            ],
-          ),
+          zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+            "zotero.auto-refresh"
+          ],
         );
       },
       undefined,
@@ -1660,7 +1658,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             cleanup: cleanup.move(),
           };
           pageHelpers.scratch.zotlitE2ESidebar = watch;
-          return String(String(watch.before));
+          return String(watch.before);
         },
         { annotationItemKey: annotationItem.key },
       ),
@@ -1722,16 +1720,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ page: pageHelpers }) => {
-          return String(
-            JSON.stringify({
-              least: pageHelpers.scratch.zotlitE2ESidebar!.least,
-              now:
-                pageHelpers.scratch.zotlitE2ESidebar!.observer &&
-                document.querySelectorAll<HTMLElement>(
-                  ".workspace-leaf .zt-annot-card",
-                ).length > 0,
-            }),
-          );
+          return JSON.stringify({
+            least: pageHelpers.scratch.zotlitE2ESidebar!.least,
+            now:
+              pageHelpers.scratch.zotlitE2ESidebar!.observer &&
+              document.querySelectorAll<HTMLElement>(
+                ".workspace-leaf .zt-annot-card",
+              ).length > 0,
+          });
         },
         undefined,
       ),
@@ -1746,11 +1742,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }, { searchQuery, annotationItemId }) => {
           var hits = await zotlit.services.itemLookup.search(searchQuery);
           return String(
-            String(
-              hits.some(function (hit) {
-                return hit.item.itemID === annotationItemId;
-              }),
-            ),
+            hits.some(function (hit) {
+              return hit.item.itemID === annotationItemId;
+            }),
           );
         },
         {
@@ -1812,17 +1806,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           var staleMisses = 0;
           while (performance.now() - start < 60000) {
             if (has(await lookup.search(lastTitleQuery), lastItemID))
-              return String(
-                JSON.stringify({
-                  builtMs: Math.round(performance.now() - start),
-                  polls: waits.length,
-                  staleMisses: staleMisses,
-                  waitMedianMs: waits.sort(function (a, b) {
-                    return a - b;
-                  })[waits.length >> 1],
-                  waitMaxMs: waits.at(-1),
-                }),
-              );
+              return JSON.stringify({
+                builtMs: Math.round(performance.now() - start),
+                polls: waits.length,
+                staleMisses: staleMisses,
+                waitMedianMs: waits.sort(function (a, b) {
+                  return a - b;
+                })[waits.length >> 1],
+                waitMaxMs: waits.at(-1),
+              });
             var t0 = performance.now();
             if (!has(await lookup.search("simple rules"), annotationItemId))
               staleMisses++;
@@ -1831,7 +1823,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               setTimeout(resolve, 10);
             });
           }
-          return String(JSON.stringify({ builtMs: null }));
+          return JSON.stringify({ builtMs: null });
         },
         { lastTitleQuery, lastItemID, annotationItemId: annotationItem.itemID },
         { timeoutMs: 90000 },
@@ -1899,7 +1891,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               p95Ms: Math.round(times[19]! * 10) / 10,
             };
           }
-          return String(JSON.stringify(out));
+          return JSON.stringify(out);
         },
         { queries },
         { timeoutMs: 90000 },
@@ -1963,10 +1955,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await obRun(
           run.vaultId,
           async ({ page: pageHelpers }) => {
-            return String(
-              JSON.stringify(
-                pageHelpers.scratch.zotlitE2EClassifyRequests!.requests,
-              ),
+            return JSON.stringify(
+              pageHelpers.scratch.zotlitE2EClassifyRequests!.requests,
             );
           },
           undefined,
@@ -2068,7 +2058,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           } finally {
             observer.disconnect();
           }
-          return String(JSON.stringify(watch));
+          return JSON.stringify(watch);
         },
         { source, typedKeys: "[@ten simple" },
       ),
@@ -2253,11 +2243,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }, { searchTerm, firstItemID }) => {
           var hits = await zotlit.services.itemLookup.search(searchTerm);
           return String(
-            String(
-              hits.some(function (hit) {
-                return hit.item.itemID === firstItemID;
-              }),
-            ),
+            hits.some(function (hit) {
+              return hit.item.itemID === firstItemID;
+            }),
           );
         },
         { searchTerm: "流域", firstItemID: added.firstItemID },
@@ -2286,15 +2274,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return String(
-            await zotlit.services.chineseSegmenter
-              .runPromise(zotlit.services.chineseSegmenter.binary.install)
-              .then(function () {
-                return zotlit.services.chineseSegmenter.runSync(
-                  zotlit.services.chineseSegmenter.binary.getStatus,
-                ).kind;
-              }),
-          );
+          return await zotlit.services.chineseSegmenter
+            .runPromise(zotlit.services.chineseSegmenter.binary.install)
+            .then(function () {
+              return zotlit.services.chineseSegmenter.runSync(
+                zotlit.services.chineseSegmenter.binary.getStatus,
+              ).kind;
+            });
         },
         undefined,
         { timeoutMs: 120000 },
@@ -2347,11 +2333,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         async ({ zotlit }, { searchTerm, firstItemID }) => {
           var hits = await zotlit.services.itemLookup.search(searchTerm);
           return String(
-            String(
-              hits.some(function (hit) {
-                return hit.item.itemID === firstItemID;
-              }),
-            ),
+            hits.some(function (hit) {
+              return hit.item.itemID === firstItemID;
+            }),
           );
         },
         { searchTerm: "长江流域", firstItemID: added.firstItemID },
@@ -2362,10 +2346,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app, page: pageHelpers }) => {
           return String(
-            String(
-              pageHelpers.scratch.zotlitE2EPlugin ===
-                app.plugins.plugins.zotlit,
-            ),
+            pageHelpers.scratch.zotlitE2EPlugin === app.plugins.plugins.zotlit,
           );
         },
         undefined,
@@ -2418,18 +2399,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 return record.message === "Opened Zotero database";
               })
             )
-              return String("pending");
+              return "pending";
             return String(
-              String(
-                added.filter(function (record) {
-                  return (
-                    record.level === "DEBUG" &&
-                    /^zotlit\.(db|item-lookup|obsidian\.database)\./.test(
-                      record.logger,
-                    )
-                  );
-                }).length,
-              ),
+              added.filter(function (record) {
+                return (
+                  record.level === "DEBUG" &&
+                  /^zotlit\.(db|item-lookup|obsidian\.database)\./.test(
+                    record.logger,
+                  )
+                );
+              }).length,
             );
           },
           undefined,
