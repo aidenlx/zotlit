@@ -56,7 +56,7 @@ import {
   editingCapabilityCommand,
   makeLibraryTagNamesCommand,
   makeExcerptRequestCommand,
-  makePrepareInsertCommand,
+  makeInsertCommand,
   copyCitationCommand,
   openExcerptDemandCommand,
   refreshExcerptDisplayCommand,
@@ -259,7 +259,7 @@ export class AnnotationsLayout extends Component {
   readonly #reads = new Map<string, Disposable>();
   readonly #holdAttachmentsCommand = makeHoldAttachmentsCommand();
   readonly #refreshCommand = makeRefreshCommand();
-  readonly #insertCommand = makePrepareInsertCommand();
+  readonly #insertCommand = makeInsertCommand();
   readonly #excerptCommand = makeExcerptRequestCommand();
   readonly #tagNamesCommand = makeLibraryTagNamesCommand();
   #reading: Promise<void> = Promise.resolve();
@@ -314,12 +314,15 @@ export class AnnotationsLayout extends Component {
 
     const insertDeps: Parameters<typeof createInsertHandler>[0] = {
       app: deps.app,
-      noteFeature: {
-        prepareAnnotationInsert: (input) =>
-          new Promise((resolve, reject) =>
-            deps.registry.set(this.#insertCommand, { input, resolve, reject }),
-          ),
-      },
+      execute: (input, signal) =>
+        new Promise((resolve, reject) =>
+          deps.registry.set(this.#insertCommand, {
+            input,
+            signal,
+            resolve,
+            reject,
+          }),
+        ),
       notify: (message) => void new BaseNotice(message),
       snapshot: (annotation) => {
         const state = this.store.getState();

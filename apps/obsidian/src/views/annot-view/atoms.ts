@@ -26,8 +26,10 @@ import { savedExcerptRequestFor } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { readerTargetAtom } from "@/services/local-server/atoms";
 import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
-import type { AnnotationInsertRequest } from "@/services/note-feature/citations-handle";
-import type { AnnotationInsert } from "@/services/note-feature/insert-annotation";
+import type {
+  AnnotationInsertRequest,
+  AnnotationInsertOutcome,
+} from "@/services/note-feature/insert-action";
 import { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { PluginSettings } from "@/services/settings/service";
 import { plainTemplateError } from "@/services/template/errors";
@@ -397,16 +399,17 @@ export const copyCitationCommand = viewRuntime.fn(
   { concurrent: true },
 );
 
-/** The menu and a drag each own their captured editor and cancellation signal. */
-export const makePrepareInsertCommand = () =>
+/** Each editor gesture runs the shared insertion on the view's lifetime. */
+export const makeInsertCommand = () =>
   viewRuntime.fn(
     (request: {
       input: AnnotationInsertRequest;
-      resolve: (insert: AnnotationInsert | null) => void;
+      signal: AbortSignal;
+      resolve: (outcome: AnnotationInsertOutcome | undefined) => void;
       reject: (error: unknown) => void;
     }) =>
       Effect.gen(function* () {
-        const { signal, ...options } = request.input;
+        const { signal } = request;
         if (signal.aborted) return yield* Effect.interrupt;
         const cancelled = Effect.callback<never>((resume) => {
           const interrupt = () => resume(Effect.interrupt);
@@ -420,19 +423,14 @@ export const makePrepareInsertCommand = () =>
           );
         });
         const notes = yield* AnnotationNoteActions;
-        return yield* Effect.raceFirst(notes.prepare(options), cancelled);
+        return yield* Effect.raceFirst(notes.insert(request.input), cancelled);
       }).pipe(
         Effect.onExit((exit) =>
           Effect.sync(() => {
             if (exit._tag === "Success") request.resolve(exit.value);
-            else
-              request.reject(
-                request.input.signal.aborted
-                  ? request.input.signal.reason
-                  : Cause.hasInterruptsOnly(exit.cause)
-                    ? new AbortError()
-                    : plainTemplateError(Cause.squash(exit.cause)),
-              );
+            else if (Cause.hasInterruptsOnly(exit.cause))
+              request.resolve(undefined);
+            else request.reject(Cause.squash(exit.cause));
           }),
         ),
       ),

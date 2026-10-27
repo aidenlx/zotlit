@@ -82,7 +82,7 @@ export function layerAnnotServices<R = never>(
     ),
     Layer.mock(AnnotationNoteActions, {
       citation: () => Effect.succeed({ kind: "not-in-database" }),
-      prepare: () => Effect.succeed(null),
+      insert: () => Effect.succeed({ kind: "cancelled" }),
       ...options.notes,
     }),
     Layer.mock(CapabilityNotices, {

@@ -9,7 +9,6 @@ import type {
   TFile,
 } from "obsidian";
 
-import { passAborted } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
@@ -175,12 +174,7 @@ export class AnnotationEditorSuggest extends EditorSuggest<AnnotationHit> {
       info,
       isCurrent: () => this.#deps.app.workspace.activeEditor?.editor === editor,
       range: { from: editor.posToOffset(start), to: editor.posToOffset(end) },
-    })
-      .then((outcome) => {
-        if (outcome.kind === "unavailable")
-          this.#deps.notify(m.annotation_suggest_unavailable());
-      })
-      .catch(passAborted);
+    });
   }
 }
 

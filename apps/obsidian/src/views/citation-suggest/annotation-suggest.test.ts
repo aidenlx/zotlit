@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -11,7 +11,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { defaults } from "@/services/settings/schema";
@@ -136,7 +135,10 @@ describe("AnnotationEditorSuggest", () => {
       stubService<AnnotationSuggestDeps>("AnnotationSuggestDeps", {
         app: stubService<App>("App", {}),
         settings: { current: Effect.succeed({ ...defaults, ...settings }) },
-        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+        bridge: {
+          runSync: Effect.runSync,
+          runPromiseExit: Effect.runPromiseExit,
+        },
         query: { run },
         commentRenderer: commentRenderer ?? (() => () => () => {}),
       }),
@@ -341,16 +343,19 @@ describe("AnnotationEditorSuggest", () => {
             offref: (ref) => workspace.offref(ref),
           }),
         }),
+        workspace: stubService<App["workspace"]>("Workspace", {
+          on: (name: string, callback: (...data: never[]) => unknown) =>
+            workspace.on(name, (...data: unknown[]) =>
+              Reflect.apply(callback, undefined, data),
+            ),
+          offref: (ref) => workspace.offref(ref),
+        }),
         // Unload ends the run that reads the annotation.
         bridge: {
           runSync: Effect.runSync,
-          runPromise: () =>
-            Promise.reject(
-              new AbortError("The plugin unloaded during the run."),
-            ),
+          runPromiseExit: () => Promise.resolve(Exit.interrupt()),
         },
-        annotations: { read: () => Effect.never },
-        zoteroPref: { dataDir: "/zotero" },
+        annotationNotes: { insert: () => Effect.never },
         notify,
       }),
     );
