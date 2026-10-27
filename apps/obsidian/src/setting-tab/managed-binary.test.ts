@@ -2,7 +2,7 @@
 import { expect, it } from "@effect/vitest";
 import { ButtonComponent, renderRow } from "@mock/obsidian";
 import type { Setting } from "@mock/obsidian";
-import { Context, Effect, Layer, Stream } from "effect";
+import { Context, Effect, Exit, Layer, Stream } from "effect";
 import { describe, vi } from "vitest";
 
 import { eventually } from "@/lib/__fixtures__/eventually";
@@ -20,7 +20,7 @@ import { PandocEngine } from "@/services/pandoc/service";
 import { scopedSettingTab, testSettingTab } from "./__fixtures__";
 import { chineseSegmenterDefinition } from "./chinese-segmenter";
 import type { SettingTabContext } from "./context";
-import { managedBinaryDefinition } from "./managed-binary";
+import { installBinary, managedBinaryDefinition } from "./managed-binary";
 import type { ManagedBinaryCopy } from "./managed-binary";
 import { pandocEngineDefinition } from "./pandoc-engine";
 
@@ -114,24 +114,32 @@ describe("managedBinaryDefinition", () => {
     ),
   );
 
-  it.effect("runs the install once when it fails", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { tab } = yield* notifiedTab;
-        const fake = binary(
-          { kind: "absent" },
-          Effect.fail(new ManagedBinaryError({ message: "offline" })),
-        );
-        const row = managedBinaryDefinition(
-          tab,
-          Effect.succeed(fake.api),
-          COPY,
-        );
+  it.effect("fails the install with the install's own error", () =>
+    Effect.gen(function* () {
+      const failure = new ManagedBinaryError({ message: "offline" });
+      const fake = binary({ kind: "absent" }, Effect.fail(failure));
 
-        button(renderRow(row)).click();
-        yield* eventually(() => expect(fake.install).toHaveBeenCalledOnce());
-      }),
-    ),
+      const error = yield* installBinary(Effect.succeed(fake.api), COPY).pipe(
+        Effect.provide(testNotifier().layer),
+        Effect.flip,
+      );
+
+      expect(error).toBe(failure);
+      expect(fake.install).toHaveBeenCalledOnce();
+    }),
+  );
+
+  it.effect("ends the install with no failure once it is done", () =>
+    Effect.gen(function* () {
+      const fake = binary({ kind: "absent" });
+
+      const exit = yield* installBinary(Effect.succeed(fake.api), COPY).pipe(
+        Effect.provide(testNotifier().layer),
+        Effect.exit,
+      );
+
+      expect(Exit.isSuccess(exit)).toBe(true);
+    }),
   );
 
   it.effect("offers the removal once installed", () =>

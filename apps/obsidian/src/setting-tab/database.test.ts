@@ -5,7 +5,16 @@ import {
   ExtraButtonComponent,
   renderRow,
 } from "@mock/obsidian";
-import { Effect, Layer, PubSub, Queue, Stream, SubscriptionRef } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Layer,
+  PubSub,
+  Queue,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 import { TestClock } from "effect/testing";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
@@ -29,9 +38,13 @@ import type {
 } from "@/services/zotero-reads/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { scopedSettingTab } from "./__fixtures__";
+import { failureOf, recordingRuns, scopedSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
-import { databaseFileItem, databaseLocationItems } from "./database";
+import {
+  databaseFileItem,
+  databaseLocationItems,
+  refreshReads,
+} from "./database";
 
 const SNAPSHOT: ZoteroPrefSnapshot = {
   state: "ready",
@@ -108,10 +121,9 @@ const setup = Effect.fn("setup")(function* (
       }),
     ),
   );
-  const ctx = stubService<SettingTabContext>("SettingTabContext", {
-    tab: (yield* scopedSettingTab(services)).tab,
-  });
-  return { ctx, pref, reads, events, writes };
+  const { tab, runs } = recordingRuns((yield* scopedSettingTab(services)).tab);
+  const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
+  return { ctx, pref, reads, events, writes, runs };
 });
 
 /**
@@ -302,19 +314,16 @@ it.effect("refreshes the reads from the database row", () =>
   }),
 );
 
-it.effect("asks to save the read mode when the save fails", () =>
+it.effect("fails the read mode save under its label", () =>
   Effect.gen(function* () {
     const patches: unknown[] = [];
-    const { ctx } = yield* setup(Effect.void, (patch) =>
+    const failure = new SettingsMutationError({
+      message: "Settings are read-only",
+      cause: null,
+    });
+    const { ctx, runs } = yield* setup(Effect.void, (patch) =>
       Effect.sync(() => patches.push(patch)).pipe(
-        Effect.andThen(
-          Effect.fail(
-            new SettingsMutationError({
-              message: "Settings are read-only",
-              cause: null,
-            }),
-          ),
-        ),
+        Effect.andThen(Effect.fail(failure)),
       ),
     );
     const row = yield* render(ctx, "settings_db_read_mode");
@@ -323,6 +332,9 @@ it.effect("asks to save the read mode when the save fails", () =>
     row.dropdown!.choose("immutable");
     yield* settle;
     expect(patches).toEqual([{ "zotero.read-mode": "immutable" }]);
+    expect(runs.map((run) => [failureOf(run), run.label])).toEqual([
+      [failure, m.settings_failed_save()],
+    ]);
   }),
 );
 
@@ -339,5 +351,23 @@ it.effect("runs one refresh when the refresh fails", () =>
     row.button!.click();
     yield* settle;
     expect(refresh.runs()).toBe(1);
+  }),
+);
+
+/** How `refreshReads` ends over `refresh`, with a recording Notifier. */
+const refreshExit = <E>(refresh: Effect.Effect<void, E>) =>
+  refreshReads(refresh).pipe(Effect.provide(testNotifier().layer), Effect.exit);
+
+it.effect("fails a refresh with the database's error", () =>
+  Effect.gen(function* () {
+    const failure = new DbUnavailable({ message: "zotero.sqlite is locked" });
+    const exit = yield* refreshExit(Effect.fail(failure));
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure);
+  }),
+);
+
+it.effect("ends a done refresh with no failure", () =>
+  Effect.gen(function* () {
+    expect(Exit.isSuccess(yield* refreshExit(Effect.void))).toBe(true);
   }),
 );

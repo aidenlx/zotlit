@@ -35,7 +35,9 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 
 import {
+  failureOf,
   profileRowServices,
+  recordingRuns,
   scopedSettingTab,
   testSettingTab,
 } from "./__fixtures__";
@@ -322,9 +324,10 @@ describe("References style row", () => {
         }),
       ),
     );
-    const ctx = stubService<SettingTabContext>("SettingTabContext", {
-      tab: (yield* scopedSettingTab(services)).tab,
-    });
+    const { tab, runs } = recordingRuns(
+      (yield* scopedSettingTab(services)).tab,
+    );
+    const ctx = stubService<SettingTabContext>("SettingTabContext", { tab });
     const setting = renderRow(referencesStyleDefinition(ctx));
     yield* Effect.addFinalizer(() => Effect.sync(() => setting.cleanup?.()));
     const dropdown = setting.components.find(
@@ -338,6 +341,8 @@ describe("References style row", () => {
     return {
       dropdown,
       refresh,
+      /** The handler Effects the row started, with how each ended. */
+      runs,
       /** The styles folder reads, which a case holds or refuses. */
       reads,
       /** The data folder the Zotero preferences resolve to. */
@@ -468,23 +473,24 @@ describe("References style row", () => {
     }),
   );
 
-  it.live("asks to save the chosen style when the save fails", () =>
+  it.live("fails the style save under its label when the save fails", () =>
     Effect.gen(function* () {
       const dir = yield* dataFolder;
-      const write = vi.fn(() =>
-        Effect.fail(
-          new SettingsMutationError({ message: "disk full", cause: null }),
-        ),
-      );
+      const failure = new SettingsMutationError({
+        message: "disk full",
+        cause: null,
+      });
+      const write = vi.fn(() => Effect.fail(failure));
       const row = yield* setup(dir, { write });
 
       row.dropdown.choose(STYLE_DEFAULT);
 
-      yield* eventually(() =>
-        expect(write.mock.calls).toEqual([
-          [{ "citation.references-style": null }],
-        ]),
-      );
+      yield* eventually(() => expect(row.runs).toHaveLength(1));
+      expect(write.mock.calls).toEqual([
+        [{ "citation.references-style": null }],
+      ]);
+      expect(failureOf(row.runs[0]!)).toBe(failure);
+      expect(row.runs[0]!.label).toBe(m.settings_failed_save());
     }),
   );
 });
