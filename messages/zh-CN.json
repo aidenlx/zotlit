@@ -1565,6 +1565,7 @@
   "workbench_field_related_items": "相关条目",
   "workbench_field_notes": "Zotero 笔记",
   "workbench_field_weblink": "Zotero 网页链接",
+  "workbench_field_librarylink": "在 Zotero 文库中显示的链接",
   "workbench_field_indexed_key": "跨文库 Zotero 标识符",
   "workbench_field_library_id": "文库 ID",
   "workbench_field_group_id": "群组 ID",

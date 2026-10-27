@@ -2435,6 +2435,7 @@
   "workbench_field_related_items": "Related items",
   "workbench_field_notes": "Zotero notes",
   "workbench_field_weblink": "Zotero web link",
+  "workbench_field_librarylink": "Link to show in Zotero library",
   "workbench_field_indexed_key": "Cross-library Zotero key",
   "workbench_field_library_id": "Library ID",
   "workbench_field_group_id": "Group ID",

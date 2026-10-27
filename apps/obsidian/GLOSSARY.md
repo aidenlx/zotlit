@@ -551,7 +551,7 @@ What the researcher has done with an Item: whether it was read and when, its Ann
 _Avoid_: progress, status, read status
 
 **Show in Library**:
-The action that opens the Library View on an Item's first Collection with its row selected. It is offered wherever an Item stands outside the Library View: the quick switcher (Alt+Enter), a References Sidebar row, the Cited By Sidebar toolbar for the active Literature Note, a Citation Popover entry, and the Literature Note's command and file menu.
+The action that opens the Library View on an Item's first Collection with its row selected. It is offered wherever an Item stands outside the Library View: the quick switcher (Alt+Enter), a References Sidebar row, the Cited By Sidebar toolbar for the active Literature Note, a Citation Popover entry, the Literature Note's command and file menu, and the Library Link a template writes with `zt.librarylink`.
 _Avoid_: reveal in library, locate
 
 **Recent**:
@@ -985,4 +985,4 @@ release locations, consent copy, notices, and settings UI.
 ### Protocol
 
 **Protocol Action**:
-A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Attachment action: `open-attachment` (open an Obsidian-Openable Attachment in Obsidian's PDF view). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.
+A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Attachment action: `open-attachment` (open an Obsidian-Openable Attachment in Obsidian's PDF view). Library action: `show-in-library` (Show in Library for the Item an Indexed Key names; the Library Link that `zt.librarylink` writes into a note, so it carries no `source-id`). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.

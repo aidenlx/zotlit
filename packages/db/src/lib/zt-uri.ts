@@ -1,12 +1,14 @@
 /**
  * Zotero deep-link (`zotero://`) builders, the persistent `http://zotero.org/`
- * Item URI, and the browsable web library URL. `select` navigates the library
+ * Item URI, the browsable web library URL, and the Obsidian link that shows an
+ * Item in ZotLit's Library View. `select` navigates the library
  * to an item; the format-agnostic `open` scheme navigates to an annotation
  * within its attachment (PDF / EPUB / snapshot).
  */
 import type { ZoteroUserIdentity } from "@/queries/account";
 
 import { isItemKey } from "./zt-item-key";
+import { formatIndexedKey } from "./zt-key";
 
 function libraryPath(groupID: number | null): string {
   return groupID == null ? "library" : `groups/${groupID}`;
@@ -15,6 +17,19 @@ function libraryPath(groupID: number | null): string {
 /** `zotero://select` deep link to a library item. */
 export function itemSelectUri(key: string, groupID: number | null): string {
   return `zotero://select/${libraryPath(groupID)}/items/${key}`;
+}
+
+/**
+ * `obsidian://zotlit/show-in-library` link that opens ZotLit's Library View on
+ * an item. It names the item by its Indexed Key, which is the same on every
+ * device that syncs the library, so a link written into a note keeps working.
+ * `@zotlit/protocol` decodes it (`parseShowInLibraryProtocolQuery`).
+ */
+export function libraryViewUri(key: string, groupID: number | null): string {
+  const params = new URLSearchParams({
+    "item-key": formatIndexedKey(key, groupID),
+  });
+  return `obsidian://zotlit/show-in-library?${params}`;
 }
 
 /**

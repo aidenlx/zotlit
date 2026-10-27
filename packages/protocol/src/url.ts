@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import { isItemKey } from "@zotlit/db";
+import { isItemKey, parseIndexedKey } from "@zotlit/db";
 
 /**
  * Obsidian protocol namespace ZotLit owns. Each action is registered as
@@ -429,6 +429,43 @@ export function parseExploreProtocolQuery(
   data: Record<string, unknown>,
 ): ExploreProtocolQuery {
   return v.parse(exploreProtocolQuerySchema, data);
+}
+
+const PROTOCOL_SHOW_IN_LIBRARY_ACTION = "show-in-library";
+
+/**
+ * Open the Library View on one Item. The link names the Item by its Indexed
+ * Key, which every synced device shares, so a link written into a note keeps
+ * working on each of them; it carries no `source-id`. `libraryViewUri` in
+ * `@zotlit/db` builds it, for the `zt.librarylink` template variable.
+ */
+export const showInLibraryProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_SHOW_IN_LIBRARY_ACTION}` as const;
+
+export const showInLibraryProtocolQuerySchema = v.pipe(
+  v.object({
+    "item-key": v.pipe(
+      v.string(),
+      v.check((key) => parseIndexedKey(key) !== null),
+    ),
+  }),
+  v.transform(({ "item-key": indexedKey }) => ({ indexedKey })),
+);
+
+type ShowInLibraryProtocolQuery = v.InferOutput<
+  typeof showInLibraryProtocolQuerySchema
+>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/show-in-library`
+ * link.
+ *
+ * @throws {v.ValiError} when `item-key` is missing or not an Indexed Key
+ */
+export function parseShowInLibraryProtocolQuery(
+  data: Record<string, unknown>,
+): ShowInLibraryProtocolQuery {
+  return v.parse(showInLibraryProtocolQuerySchema, data);
 }
 
 const PROTOCOL_UPDATE_ALL_ACTION = "update-all";
