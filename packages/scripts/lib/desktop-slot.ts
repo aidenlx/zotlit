@@ -19,6 +19,7 @@
 // evicts a holder that outlives its Lease by the grace period.
 
 import { regex } from "arkregex";
+import { Effect } from "effect";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
@@ -384,12 +385,14 @@ export async function acquireDesktopSlot(
 
   let gateAdmitted: boolean;
   try {
-    gateAdmitted = await passMemoryGate({
-      dir,
-      deadline: epochMs() + (deadline - now()),
-      pollMs: Math.max(pollMs, 100),
-      log,
-    });
+    gateAdmitted = await Effect.runPromise(
+      passMemoryGate({
+        dir,
+        deadline: epochMs() + (deadline - now()),
+        pollMs: Math.max(pollMs, 100),
+        log,
+      }),
+    );
   } catch (error) {
     releaseIfHeld(dir, owner.token);
     if (!(error instanceof MemoryGateClosedError)) throw error;

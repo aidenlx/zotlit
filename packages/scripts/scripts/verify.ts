@@ -9,6 +9,7 @@
 //               `release.yml` before it publishes (desktop checks skip there).
 // A branch that changes only agent docs (lib/agent-docs.ts) runs Format only.
 // Format, lint and the generated-artifact checks always cover the whole tree.
+import { Effect } from "effect";
 import { $ } from "zx";
 
 import {
@@ -98,7 +99,7 @@ await step(
 // runner has 4 vCPU: one package at a time there.
 // The step passes the Memory Gate once; each package's Vitest then skips it.
 await step("Test", async () => {
-  const admitted = await passMemoryGateOrExit();
+  const admitted = await Effect.runPromise(passMemoryGateOrExit());
   const gated = sh({
     env: admitted ? { ...env, [MEMORY_GATE_ADMITTED_ENV]: "1" } : env,
   });

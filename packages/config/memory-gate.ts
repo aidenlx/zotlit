@@ -15,6 +15,7 @@
 // `scripts/memory-gate.ts`.
 
 import { regex } from "arkregex";
+import { Clock, Config, Effect, Schema } from "effect";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -28,8 +29,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
 /** The per-user state directory of desktop admission. */
 export const DESKTOP_DIR_ENV = "ZOTLIT_DESKTOP_DIR";
@@ -65,6 +64,10 @@ interface MemoryWaiter {
 export function desktopStateDir(): string {
   const override = process.env[DESKTOP_DIR_ENV];
   if (override) return override;
+  return defaultDesktopStateDir();
+}
+
+function defaultDesktopStateDir(): string {
   return process.platform === "win32"
     ? join(tmpdir(), "zotlit-desktop")
     : `/tmp/zotlit-desktop-${process.getuid?.()}`;
@@ -137,33 +140,56 @@ export function linuxVerdict(meminfo: string): string | undefined {
   );
 }
 
-async function memoryVerdict(): Promise<string | undefined> {
-  const run = async (command: string, args: string[]) =>
-    (await promisify(execFile)(command, args, { encoding: "utf8" })).stdout;
+class MemoryGateIoError extends Schema.TaggedError<
+  MemoryGateIoError,
+  { readonly brand: unique symbol }
+>()("MemoryGateIoError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+function io<A>(operation: string, body: () => A) {
+  return Effect.try({
+    try: body,
+    catch: (cause) => new MemoryGateIoError({ operation, cause }),
+  });
+}
+
+function run(command: string, args: string[]) {
+  return Effect.callback<string, MemoryGateIoError>((resume, signal) => {
+    execFile(command, args, { encoding: "utf8", signal }, (cause, stdout) => {
+      resume(
+        cause
+          ? Effect.fail(new MemoryGateIoError({ operation: command, cause }))
+          : Effect.succeed(stdout),
+      );
+    });
+  });
+}
+
+const memoryVerdict = Effect.fnUntraced(function* () {
   if (process.platform === "darwin")
     return macosVerdict(
       Number(
-        await run("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"]),
+        yield* run("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"]),
       ),
     );
-  if (process.platform === "win32")
+  if (process.platform === "win32") {
     // -NoProfile: a profile's own output would precede the JSON.
-    return windowsVerdict(
-      JSON.parse(
-        await run("powershell.exe", [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          "Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,TotalVirtualMemorySize,FreeVirtualMemory | ConvertTo-Json",
-        ]),
-      ),
+    const output = yield* run("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,TotalVirtualMemorySize,FreeVirtualMemory | ConvertTo-Json",
+    ]);
+    return yield* io("read Windows memory", () =>
+      windowsVerdict(JSON.parse(output)),
     );
-  return linuxVerdict(readFileSync("/proc/meminfo", "utf8"));
-}
-
-function epochMs(): number {
-  return Temporal.Now.instant().epochMilliseconds;
-}
+  }
+  return yield* io("read Linux memory", () =>
+    linuxVerdict(readFileSync("/proc/meminfo", "utf8")),
+  );
+});
 
 /** When the gate last admitted a run, from any clone on the machine. */
 export function lastGateStart(
@@ -178,75 +204,100 @@ export function lastGateStart(
   }
 }
 
+/** Runs under the start lock, so ticket allocation and ordering are atomic. */
+function queueVerdict(dir: string, waiter: MemoryWaiter, now: number) {
+  const queue = join(dir, MEMORY_QUEUE);
+  mkdirSync(queue, { recursive: true });
+  if (!waiter.path) {
+    const sequence = join(dir, `${MEMORY_QUEUE}.seq`);
+    const last =
+      Number(readFileSync(sequence, { encoding: "utf8", flag: "a+" })) || 0;
+    const seq = last + 1;
+    writeFileSync(`${sequence}.tmp`, String(seq));
+    renameSync(`${sequence}.tmp`, sequence);
+    waiter.path = join(queue, `${seq}-${waiter.token}.json`);
+    const draft = `${waiter.path}.tmp`;
+    writeFileSync(draft, JSON.stringify(waiter));
+    renameSync(draft, waiter.path);
+  }
+  const tickets = readdirSync(queue)
+    .filter((name) => name.endsWith(".json"))
+    .toSorted((a, b) => Number(a.split("-")[0]) - Number(b.split("-")[0]));
+  for (const name of tickets) {
+    const path = join(queue, name);
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch (error) {
+      // A waiter can reach its deadline and remove its ticket during this scan.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    const ticket = JSON.parse(text) as MemoryWaiter;
+    if (ticket.token === waiter.token) break;
+    let alive = true;
+    try {
+      process.kill(ticket.pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false;
+    }
+    if (!alive || now >= ticket.deadline) {
+      rmSync(path, { force: true });
+      continue;
+    }
+    return `waiting behind pid ${ticket.pid} at the Memory Gate`;
+  }
+  return undefined;
+}
+
 /** Record this start if the gate is open; one caller at a time. */
-async function tryStart(
+const tryStart = Effect.fnUntraced(function* (
   dir: string,
   waiter: MemoryWaiter,
-): Promise<string | undefined> {
+) {
   const lock = join(dir, `${LAST_START}.lock`);
-  try {
-    mkdirSync(lock);
-  } catch {
-    // A run killed while holding the lock leaves it behind.
-    const changed = statSync(lock, { throwIfNoEntry: false })?.mtimeMs;
-    if (changed !== undefined && epochMs() - changed > STALE_LOCK_MS)
-      rmSync(lock, { recursive: true, force: true });
-    return "another run is starting";
-  }
-  try {
-    const queue = join(dir, MEMORY_QUEUE);
-    mkdirSync(queue, { recursive: true });
-    if (!waiter.path) {
-      const sequence = join(dir, `${MEMORY_QUEUE}.seq`);
-      const last =
-        Number(readFileSync(sequence, { encoding: "utf8", flag: "a+" })) || 0;
-      const seq = last + 1;
-      writeFileSync(`${sequence}.tmp`, String(seq));
-      renameSync(`${sequence}.tmp`, sequence);
-      waiter.path = join(queue, `${seq}-${waiter.token}.json`);
-      const draft = `${waiter.path}.tmp`;
-      writeFileSync(draft, JSON.stringify(waiter));
-      renameSync(draft, waiter.path);
-    }
-    const tickets = readdirSync(queue)
-      .filter((name) => name.endsWith(".json"))
-      .toSorted((a, b) => Number(a.split("-")[0]) - Number(b.split("-")[0]));
-    for (const name of tickets) {
-      const path = join(queue, name);
-      let text: string;
+  const now = yield* Clock.currentTimeMillis;
+  return yield* Effect.acquireUseRelease(
+    io("claim start lock", () => {
       try {
-        text = readFileSync(path, "utf8");
-      } catch (error) {
-        // A waiter can reach its deadline and remove its ticket during this scan.
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw error;
+        mkdirSync(lock);
+        return true;
+      } catch {
+        // A run killed while holding the lock leaves it behind.
+        const changed = statSync(lock, { throwIfNoEntry: false })?.mtimeMs;
+        if (changed !== undefined && now - changed > STALE_LOCK_MS)
+          rmSync(lock, { recursive: true, force: true });
+        return false;
       }
-      const ticket = JSON.parse(text) as MemoryWaiter;
-      if (ticket.token === waiter.token) break;
-      let alive = true;
-      try {
-        process.kill(ticket.pid, 0);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ESRCH") alive = false;
-      }
-      if (!alive || epochMs() >= ticket.deadline) {
-        rmSync(path, { force: true });
-        continue;
-      }
-      return `waiting behind pid ${ticket.pid} at the Memory Gate`;
-    }
-    const verdict = await memoryVerdict();
-    if (verdict) return verdict;
-    writeFileSync(join(dir, LAST_START), Temporal.Now.instant().toString());
-    rmSync(waiter.path, { force: true });
-    return undefined;
-  } finally {
-    rmSync(lock, { recursive: true, force: true });
-  }
-}
+    }),
+    Effect.fnUntraced(function* (claimed) {
+      if (!claimed) return "another run is starting";
+      const queued = yield* io("read memory queue", () =>
+        queueVerdict(dir, waiter, now),
+      );
+      if (queued) return queued;
+      const verdict = yield* memoryVerdict();
+      if (verdict) return verdict;
+      const started = yield* Clock.currentTimeMillis;
+      yield* io("record admitted start", () => {
+        writeFileSync(
+          join(dir, LAST_START),
+          Temporal.Instant.fromEpochMilliseconds(started).toString(),
+        );
+        rmSync(waiter.path!, { force: true });
+      });
+      return undefined;
+    }),
+    (claimed) =>
+      Effect.sync(() => {
+        if (claimed) rmSync(lock, { recursive: true, force: true });
+      }),
+  );
+});
 
 /** The gate stayed shut until the Admission Deadline. */
 export class MemoryGateClosedError extends Error {
+  readonly _tag = "MemoryGateClosedError";
   readonly reason: string;
   constructor(reason: string) {
     super(`Memory Gate: still closed at the Admission Deadline: ${reason}.`);
@@ -269,57 +320,78 @@ export interface MemoryGateOptions {
  * or an enclosing run was admitted; the caller marks what it starts with
  * MEMORY_GATE_ADMITTED_ENV.
  *
- * @returns whether the gate admitted this run (false when it was skipped).
- * @throws {MemoryGateClosedError} when `deadline` passes first.
+ * @returns an Effect that succeeds with true on admission, false when skipped,
+ * and reports typed failures for deadlines, configuration, and OS I/O.
  */
-export async function passMemoryGate(
+export const passMemoryGate = Effect.fnUntraced(function* (
   options: MemoryGateOptions = {},
-): Promise<boolean> {
-  if (process.env[MEMORY_GATE_ENV] === "off") return false;
-  if (process.env[MEMORY_GATE_ADMITTED_ENV]) return false;
-  const dir = options.dir ?? desktopStateDir();
+) {
+  const gate = yield* Config.String(MEMORY_GATE_ENV).pipe(
+    Config.withDefault(""),
+  );
+  if (gate === "off") return false;
+  const admitted = yield* Config.String(MEMORY_GATE_ADMITTED_ENV).pipe(
+    Config.withDefault(""),
+  );
+  if (admitted) return false;
+  const configuredDir = yield* Config.String(DESKTOP_DIR_ENV).pipe(
+    Config.withDefault(""),
+  );
+  const dir = options.dir ?? (configuredDir || defaultDesktopStateDir());
   const log = options.log ?? ((message: string) => console.error(message));
-  const deadline = options.deadline ?? epochMs() + admissionWaitMs();
-  mkdirSync(dir, { recursive: true });
-  const waiter: MemoryWaiter = {
-    token: randomUUID(),
-    pid: process.pid,
-    deadline,
-  };
-  using _ticket = {
-    [Symbol.dispose]() {
-      if (waiter.path) rmSync(waiter.path, { force: true });
-    },
-  };
-  let reported: string | undefined;
-  let wait: string | undefined;
-  for (;;) {
-    if (epochMs() >= deadline)
-      throw new MemoryGateClosedError(wait ?? "Admission Deadline passed");
-    wait = await tryStart(dir, waiter);
-    if (!wait) return true;
-    // Report each kind of wait once, not every poll.
-    const kind = wait.replace(/[\d.]+x physical/, "");
-    if (kind !== reported) log(`Memory Gate: waiting: ${wait}`);
-    reported = kind;
-    await delay(options.pollMs ?? 100);
-  }
-}
+  const waitText = yield* Config.String(DESKTOP_WAIT_ENV).pipe(
+    Config.withDefault(""),
+  );
+  const deadline =
+    options.deadline ??
+    (yield* Clock.currentTimeMillis) +
+      (waitText ? parseDuration(waitText) : ADMISSION_DEADLINE_MS);
+  return yield* Effect.acquireUseRelease(
+    io("create memory waiter", () => {
+      mkdirSync(dir, { recursive: true });
+      const waiter: MemoryWaiter = {
+        token: randomUUID(),
+        pid: process.pid,
+        deadline,
+      };
+      return waiter;
+    }),
+    Effect.fnUntraced(function* (waiter) {
+      let reported: string | undefined;
+      let wait: string | undefined;
+      for (;;) {
+        if ((yield* Clock.currentTimeMillis) >= deadline)
+          return yield* Effect.fail(
+            new MemoryGateClosedError(wait ?? "Admission Deadline passed"),
+          );
+        wait = yield* tryStart(dir, waiter);
+        if (!wait) return true;
+        // Report each kind of wait once, not every poll.
+        const kind = wait.replace(/[\d.]+x physical/, "");
+        if (kind !== reported) log(`Memory Gate: waiting: ${wait}`);
+        reported = kind;
+        yield* Effect.sleep(options.pollMs ?? 100);
+      }
+    }),
+    (waiter) =>
+      Effect.sync(() => {
+        if (waiter.path) rmSync(waiter.path, { force: true });
+      }),
+  );
+});
 
 /**
  * {@link passMemoryGate} for a top-level run: at the Admission Deadline it
  * prints why and exits with EXIT_ADMISSION_BLOCKED.
  */
-export async function passMemoryGateOrExit(
-  options: MemoryGateOptions = {},
-): Promise<boolean> {
-  try {
-    return await passMemoryGate(options);
-  } catch (error) {
-    if (!(error instanceof MemoryGateClosedError)) throw error;
-    console.error(
-      `${error.message}\nReport this as blocked by the Memory Gate, not as a test failure. Exit ${EXIT_ADMISSION_BLOCKED}.`,
-    );
-    process.exit(EXIT_ADMISSION_BLOCKED);
-  }
-}
+export const passMemoryGateOrExit = (options: MemoryGateOptions = {}) =>
+  passMemoryGate(options).pipe(
+    Effect.catchTag("MemoryGateClosedError", (error) =>
+      Effect.sync(() => {
+        console.error(
+          `${error.message}\nReport this as blocked by the Memory Gate, not as a test failure. Exit ${EXIT_ADMISSION_BLOCKED}.`,
+        );
+        process.exit(EXIT_ADMISSION_BLOCKED);
+      }),
+    ),
+  );

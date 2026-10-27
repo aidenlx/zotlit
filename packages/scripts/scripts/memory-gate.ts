@@ -4,6 +4,7 @@
 // `turbo run test` through it, so the whole run passes the gate once and each
 // package's Vitest skips it. `--help` prints the contract.
 
+import { Effect } from "effect";
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import yargs from "yargs";
@@ -65,7 +66,7 @@ const [command, ...args] = ((argv["--"] as unknown[] | undefined) ?? []).map(
 );
 if (!command) usage("name the command after: -- <command> [args...]");
 
-const admitted = await passMemoryGateOrExit();
+const admitted = await Effect.runPromise(passMemoryGateOrExit());
 const options = {
   stdio: "inherit",
   env: admitted
