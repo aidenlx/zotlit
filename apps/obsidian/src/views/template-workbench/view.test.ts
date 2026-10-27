@@ -31,6 +31,7 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -221,10 +222,11 @@ describe("TemplateWorkbenchView", () => {
     const waitUntilSettled = vi.fn(async () => "settled" as const);
     const profileOf: NonNullable<
       NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]
-    > = () => ({
-      ok: true,
-      profile: bindProfile(defaults, { selector: "default" }),
-    });
+    > = () =>
+      Effect.succeed({
+        ok: true,
+        profile: bindProfile(defaults, { selector: "default" }),
+      });
     const h = setup({
       runtime: testRuntime(),
       noteFeature: stubService<
@@ -975,7 +977,7 @@ An annotation.
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: path,
+          defaultDocumentPath: Effect.succeed(path),
         },
       ),
     });
@@ -1037,16 +1039,20 @@ An annotation.
     const file = new TFile();
     file.path = "templates/zotlit-profile.default.md";
     const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
-    const materializeDefault = vi.fn(() => pending.promise);
+    const materializeDefault = vi.fn(() =>
+      Effect.promise(() => pending.promise),
+    );
     const { view, requestSave } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1087,17 +1093,28 @@ An annotation.
     const file = new TFile();
     const materializeDefault = vi
       .fn()
-      .mockRejectedValueOnce(new Error("Disk full"))
-      .mockResolvedValue({ file, created: true });
+      .mockReturnValueOnce(
+        Effect.fail(
+          new VaultError({
+            operation: "create",
+            path: "templates/zotlit-profile.default.md",
+            message: "Disk full",
+            cause: null,
+          }),
+        ),
+      )
+      .mockReturnValue(Effect.succeed({ file, created: true }));
     const { view, requestSave } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1122,10 +1139,12 @@ An annotation.
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault: async () => ({ file, created: false }),
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.succeed({ file, created: false }),
         },
       ),
     });
@@ -1142,18 +1161,27 @@ An annotation.
   });
 
   it("shows read-only source and one inline retry after the Customize action fails", async () => {
-    const materializeDefault = vi
-      .fn()
-      .mockRejectedValue(new Error("Disk full"));
+    const materializeDefault = vi.fn().mockReturnValue(
+      Effect.fail(
+        new VaultError({
+          operation: "create",
+          path: "templates/zotlit-profile.default.md",
+          message: "Disk full",
+          cause: null,
+        }),
+      ),
+    );
     const { view } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1193,10 +1221,12 @@ An annotation.
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault: () => pending.promise,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.promise(() => pending.promise),
         },
       ),
     });
@@ -1956,7 +1986,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
       "Profile",
       {
-        getBuiltInSource: () => builtin,
+        getBuiltInSource: Effect.succeed(builtin),
       },
     ),
   });
@@ -2405,12 +2435,15 @@ language: liquid
     "restores the built-in Default once the reader confirms: %s",
     async (confirmed) => {
       using _answer = answerConfirmation(confirmed);
-      const restoreDefault = vi.fn(async () => {});
+      const restoreDefault = vi.fn(() => Effect.void);
       const { view, leaf } = setup({
         runtime: testRuntime(),
         profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
           "Profile",
-          { restoreDefault, getSource: async () => "Built-in Default" },
+          {
+            restoreDefault: Effect.suspend(restoreDefault),
+            getSource: () => Effect.succeed("Built-in Default"),
+          },
         ),
       });
 

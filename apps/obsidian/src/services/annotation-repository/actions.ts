@@ -5,6 +5,7 @@ import type { Plugin } from "obsidian";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 
+import type { CopyInstant } from "./capability-copy";
 import type { HistoryDirection, HistoryOutcome } from "./history";
 import { lockReasonText } from "./lock-copy";
 import type { AnnotationRepository } from "./service";
@@ -54,7 +55,7 @@ export interface AnnotationHistoryActionDeps {
  */
 export function historyOutcomeNotice(
   outcome: HistoryOutcome,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): string | null {
   switch (outcome.kind) {
     case "changed":

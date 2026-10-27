@@ -18,9 +18,9 @@ export async function useListingProfile(
     vaultId,
     async ({ app, zotlit, page }, { restore }) => {
       const { bridge, profileService: profile } = zotlit.services;
-      if (restore) await bridge.runPromise(profile.restoreDefault());
+      if (restore) await bridge.runPromise(profile.restoreDefault);
       const listed = page.listAnnotations(
-        bridge.runSync(profile.getBuiltInSource()),
+        bridge.runSync(profile.getBuiltInSource),
       );
       const path = bridge.runSync(profile.defaultDocumentPath);
       const folder = path.slice(0, path.lastIndexOf("/"));

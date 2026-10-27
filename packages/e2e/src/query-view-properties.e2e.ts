@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { reachable } from "./e2e-run-fixture.ts";
@@ -21,7 +22,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -30,28 +31,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          const file = app.vault.getFileByPath(__typedArg1)!;
+        async ({ app }, { layout, path }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: path },
+        { layout, path },
       );
     });
     const filter = 'tags.contains("figure")';
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, noteContent }) => {
+        const file = await app.vault.create(path, noteContent);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
       {
-        __typedArg0: path,
-        __typedArg1: `views:\n  - type: annotations\n    name: Shared figures\n    from: annotations\n    filters: ${filter}\n    limit: 100\n`,
+        path,
+        noteContent: `views:\n  - type: annotations\n    name: Shared figures\n    from: annotations\n    filters: ${filter}\n    limit: 100\n`,
       },
     );
     /** What the tab shows once its query settled, and the file's saved text. */
@@ -69,13 +68,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tab = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0 }) => {
+            async ({ app }, { targetPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -83,28 +82,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 view as import("@/views/query-view/file-view").QueryFileView
               ).save();
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  count:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-count") ?? null,
-                  matched:
-                    el
-                      .querySelector<HTMLElement>("[data-query-count]")
-                      ?.getAttribute("data-query-matched") ?? null,
-                  countText:
-                    el.querySelector<HTMLElement>("[data-query-count]")
-                      ?.textContent ?? null,
-                  cards:
-                    el.querySelectorAll<HTMLElement>(".zt-annot-card").length,
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                count:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-count") ?? null,
+                matched:
+                  el
+                    .querySelector<HTMLElement>("[data-query-count]")
+                    ?.getAttribute("data-query-matched") ?? null,
+                countText:
+                  el.querySelector<HTMLElement>("[data-query-count]")
+                    ?.textContent ?? null,
+                cards:
+                  el.querySelectorAll<HTMLElement>(".zt-annot-card").length,
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as Tab | null;
         return tab !== null && ready(tab);
@@ -145,87 +142,79 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "item.title",
       "item.citationKey",
     ];
-    const ticked = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }) => {
-          const { press, until } = pageHelpers;
-          const el = (
-            app.workspace.getMostRecentLeaf()!
-              .view as import("obsidian").ItemView
-          ).contentEl;
-          press(
-            el.querySelector<HTMLElement>("[data-query-properties]")!,
-            "Properties",
-          );
-          const popup = () =>
-            activeDocument.querySelector<HTMLElement>(
-              "[data-query-properties-popup]",
-            )!;
-          const rows = () => [
-            ...popup()!.querySelectorAll<HTMLElement>("[data-query-property]"),
-          ];
-          const selected = () =>
-            rows()
-              .filter((n) => n.getAttribute("aria-selected") === "true")
-              .map((n) => n.dataset.queryProperty);
-          await until(
-            "Properties popover opens",
-            () => popup()?.matches(":popover-open") && rows().length > 0,
-          );
-          const defaults = selected();
-          const leading = rows()
-            .slice(0, defaults.length)
+    const ticked = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { press, until } = pageHelpers;
+        const el = (
+          app.workspace.getMostRecentLeaf()!.view as import("obsidian").ItemView
+        ).contentEl;
+        press(
+          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          "Properties",
+        );
+        const popup = () =>
+          activeDocument.querySelector<HTMLElement>(
+            "[data-query-properties-popup]",
+          )!;
+        const rows = () => [
+          ...popup()!.querySelectorAll<HTMLElement>("[data-query-property]"),
+        ];
+        const selected = () =>
+          rows()
+            .filter((n) => n.getAttribute("aria-selected") === "true")
             .map((n) => n.dataset.queryProperty);
+        await until(
+          "Properties popover opens",
+          () => popup()?.matches(":popover-open") && rows().length > 0,
+        );
+        const defaults = selected();
+        const leading = rows()
+          .slice(0, defaults.length)
+          .map((n) => n.dataset.queryProperty);
+        press(
+          popup()!.querySelector<HTMLElement>(
+            '[data-query-properties-action="hide-all"]',
+          )!,
+          "Hide all",
+        );
+        await until("Hide all clears the ticks", () => selected().length === 0);
+        const paths = () => rows().map((n) => n.dataset.queryProperty);
+        const untouched = paths();
+        for (const name of ["pageLabel", "colorName"]) {
           press(
             popup()!.querySelector<HTMLElement>(
-              '[data-query-properties-action="hide-all"]',
+              `[data-query-property="${name}"]`,
             )!,
-            "Hide all",
+            `property ${name}`,
           );
-          await until(
-            "Hide all clears the ticks",
-            () => selected().length === 0,
-          );
-          const paths = () => rows().map((n) => n.dataset.queryProperty);
-          const untouched = paths();
-          for (const name of ["pageLabel", "colorName"]) {
-            press(
-              popup()!.querySelector<HTMLElement>(
-                `[data-query-property="${name}"]`,
-              )!,
-              `property ${name}`,
-            );
-            await until(`ticks ${name}`, () => selected().includes(name));
-          }
-          const kept = paths();
-          popup()!.hidePopover();
-          await until(
-            "Properties popover closes",
-            () => !popup()?.matches(":popover-open"),
-          );
-          press(
-            el.querySelector<HTMLElement>("[data-query-properties]")!,
-            "Properties",
-          );
-          await until(
-            "Properties popover opens again",
-            () => popup()?.matches(":popover-open") && rows().length > 0,
-          );
-          const shown = rows()
-            .slice(0, 3)
-            .map((n) => [
-              n.dataset.queryProperty,
-              n.getAttribute("aria-selected"),
-            ]);
-          popup()!.hidePopover();
-          return String(
-            JSON.stringify({ defaults, leading, untouched, kept, shown }),
-          );
-        },
-        undefined,
-      ),
-    ) as {
+          await until(`ticks ${name}`, () => selected().includes(name));
+        }
+        const kept = paths();
+        popup()!.hidePopover();
+        await until(
+          "Properties popover closes",
+          () => !popup()?.matches(":popover-open"),
+        );
+        press(
+          el.querySelector<HTMLElement>("[data-query-properties]")!,
+          "Properties",
+        );
+        await until(
+          "Properties popover opens again",
+          () => popup()?.matches(":popover-open") && rows().length > 0,
+        );
+        const shown = rows()
+          .slice(0, 3)
+          .map((n) => [
+            n.dataset.queryProperty,
+            n.getAttribute("aria-selected"),
+          ]);
+        popup()!.hidePopover();
+        return { defaults, leading, untouched, kept, shown };
+      },
+      undefined,
+    )) as {
       defaults: string[];
       leading: string[];
       untouched: string[];
@@ -267,7 +256,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         input.value = "2";
         input.dispatchEvent(new Event("input", { bubbles: true }));
-        return String(true);
       },
       undefined,
     );
@@ -282,50 +270,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // "Export CSV…" writes the rows on screen with the two columns in the
     // order they were ticked.
-    const exported = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }) => {
-          const { press } = pageHelpers;
-          const create = URL.createObjectURL;
-          const click = HTMLAnchorElement.prototype.click;
-          let blob: Blob | null = null,
-            name: string | null = null;
-          URL.createObjectURL = (b) => {
-            blob = b as Blob;
-            return create.call(URL, b);
-          };
-          HTMLAnchorElement.prototype.click = new Proxy(click, {
-            apply(_target, receiver: HTMLAnchorElement) {
-              name = receiver.download;
-            },
-          });
-          try {
-            press(
-              activeDocument.querySelector<HTMLElement>(
-                "[data-query-results-popup] [data-query-export]",
-              )!,
-              "Export CSV",
-            );
-          } finally {
-            URL.createObjectURL = create;
-            HTMLAnchorElement.prototype.click = click;
-          }
-          return String(
-            JSON.stringify({
-              name,
-              type: (blob as Blob | null)?.type ?? null,
-              text: blob
-                ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-                    await (blob as Blob).arrayBuffer(),
-                  )
-                : null,
-            }),
+    const exported = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }) => {
+        const { press } = pageHelpers;
+        const create = URL.createObjectURL;
+        const click = HTMLAnchorElement.prototype.click;
+        let blob: Blob | null = null,
+          name: string | null = null;
+        URL.createObjectURL = (b) => {
+          blob = b as Blob;
+          return create.call(URL, b);
+        };
+        HTMLAnchorElement.prototype.click = new Proxy(click, {
+          apply(_target, receiver: HTMLAnchorElement) {
+            name = receiver.download;
+          },
+        });
+        try {
+          press(
+            activeDocument.querySelector<HTMLElement>(
+              "[data-query-results-popup] [data-query-export]",
+            )!,
+            "Export CSV",
           );
-        },
-        undefined,
-      ),
-    ) as { name: string | null; type: string | null; text: string | null };
+        } finally {
+          URL.createObjectURL = create;
+          HTMLAnchorElement.prototype.click = click;
+        }
+        return {
+          name,
+          type: (blob as Blob | null)?.type ?? null,
+          text: blob
+            ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+                await (blob as Blob).arrayBuffer(),
+              )
+            : null,
+        };
+      },
+      undefined,
+    )) as { name: string | null; type: string | null; text: string | null };
     const rows = await queryRows("pageLabel,colorName", "2");
     const cell = (value: unknown) => {
       const text =
@@ -369,31 +353,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     popup: string;
     ready: string;
   }): Promise<void> {
-    expect(
-      await obRunUntil(
-        run.vaultId,
-        ({ app, page }, { button, popup: selector, ready }) => {
-          const popup = activeDocument.querySelector<HTMLElement>(
-            `${selector}:popover-open`,
-          )!;
-          if (popup?.querySelector<HTMLElement>(ready)!) return true;
-          if (!popup)
-            page.press(
-              (
-                app.workspace.getMostRecentLeaf()!
-                  .view as import("obsidian").ItemView
-              ).contentEl.querySelector<HTMLElement>(button)!,
-              button,
-            );
-          return false;
-        },
-        { button, popup, ready },
-        { what: "Query View toolbar popover" },
-      ).then(
-        () => true,
-        () => false,
-      ),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      ({ app, page }, { button, popup: selector, ready }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(
+          `${selector}:popover-open`,
+        )!;
+        if (popup?.querySelector<HTMLElement>(ready)!) return true;
+        if (!popup)
+          page.press(
+            (
+              app.workspace.getMostRecentLeaf()!
+                .view as import("obsidian").ItemView
+            ).contentEl.querySelector<HTMLElement>(button)!,
+            button,
+          );
+        return false;
+      },
+      { button, popup, ready },
+      { what: "Query View toolbar popover" },
+    );
   }
   /** The open Properties popover. */
 
@@ -413,80 +392,69 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   const openPropertyPage = (property: string) =>
     obRun(
       run.vaultId,
-      async (
-        { page: pageHelpers },
-        { __typedArg0, __typedArg1, __typedArg2, __typedArg3, __typedArg4 },
-      ) => {
+      async ({ page: pageHelpers }, { popupSelector, property }) => {
         const { press, until } = pageHelpers;
-        const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         press(
           popup!.querySelector<HTMLElement>(
-            `[data-query-property-more="${__typedArg1}"]`,
+            `[data-query-property-more="${property}"]`,
           )!,
-          `page of property ${__typedArg2}`,
+          `page of property ${property}`,
         );
-        await until(`page of property ${__typedArg3}`, () =>
+        await until(`page of property ${property}`, () =>
           popup!.querySelector<HTMLElement>(
-            `[data-query-property-page="${__typedArg4}"]`,
+            `[data-query-property-page="${property}"]`,
           )!,
         );
         return String(true);
       },
       {
-        __typedArg0: `${"[data-query-properties-popup]"}:popover-open`,
-        __typedArg1: property,
-        __typedArg2: property,
-        __typedArg3: property,
-        __typedArg4: property,
+        popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+        property,
       },
     );
   /** Runs an item of the "…" menu of the open property page. */
   const runPageMenuItem = (hook: string) =>
     obRun(
       run.vaultId,
-      async (
-        { page: pageHelpers },
-        { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-      ) => {
+      async ({ page: pageHelpers }, { popupSelector, hook }) => {
         const { press, until } = pageHelpers;
         const page = activeDocument
-          .querySelector<HTMLElement>(__typedArg0)
+          .querySelector<HTMLElement>(popupSelector)
           ?.querySelector<HTMLElement>("[data-chooser-page]")!;
         press(
           page!.querySelector<HTMLElement>("[data-chooser-page-menu]")!,
           "More options",
         );
-        const item = await until(`menu item ${__typedArg1}`, () =>
+        const item = await until(`menu item ${hook}`, () =>
           page!.querySelector<HTMLElement>(
-            `[role="menu"]:popover-open [data-chooser-page-menu-item="${__typedArg2}"]`,
+            `[role="menu"]:popover-open [data-chooser-page-menu-item="${hook}"]`,
           )!,
         );
-        press(item, `menu item ${__typedArg3}`);
+        press(item, `menu item ${hook}`);
         return String(true);
       },
       {
-        __typedArg0: `${"[data-query-properties-popup]"}:popover-open`,
-        __typedArg1: hook,
-        __typedArg2: hook,
-        __typedArg3: hook,
+        popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+        hook,
       },
     );
   /** Closes the open Properties popover from its page's close button. */
   const closePropertyPage = () =>
     obRun(
       run.vaultId,
-      async ({ page: pageHelpers }, { __typedArg0 }) => {
+      async ({ page: pageHelpers }, { popupSelector }) => {
         const { press } = pageHelpers;
         press(
           activeDocument
-            .querySelector<HTMLElement>(__typedArg0)
+            .querySelector<HTMLElement>(popupSelector)
             ?.querySelector<HTMLElement>("[data-chooser-page]")!
             .querySelector<HTMLElement>("[data-chooser-page-close]")!,
           "Close",
         );
         return String(true);
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
   /** Opens the results popover and waits for its "Export CSV…" action. */
   const openResults = () =>
@@ -502,7 +470,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -511,32 +479,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       // Teardown closes a popover a failed step left open; not a reader's press.
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { layout, notePaths }) => {
           for (const popup of activeDocument.querySelectorAll<HTMLElement>(
             "[popover]:popover-open",
           ))
             popup.hidePopover();
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          for (const path of __typedArg1) {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          for (const path of notePaths) {
             const file = app.vault.getFileByPath(path)!;
             if (file) await app.vault.delete(file);
           }
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: [path, notePath] },
+        { layout, notePaths: [path, notePath] },
       );
     });
     const source = `views:\n  - type: table\n    name: Items\n    from: items\n    order:\n      - title\n    limit: 5\n`;
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, source }) => {
+        const file = await app.vault.create(path, source);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path, __typedArg1: source },
+      { path, source },
     );
 
     /** What the tab shows once its query settled, and the file's saved text. */
@@ -555,13 +521,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tab = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0 }) => {
+            async ({ app }, { targetPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -574,38 +540,36 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   "[data-query-table] thead th",
                 ),
               ].map((n) => n.getAttribute("data-query-column"));
-              return String(
-                JSON.stringify({
-                  columns,
-                  headerIssue:
-                    el
-                      .querySelector<HTMLElement>(
-                        "[data-query-table] thead [data-query-formula-issue]",
-                      )
-                      ?.getAttribute("data-query-formula-issue") ?? null,
-                  rows: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      '[data-query-table-row="item"]',
-                    ),
-                  ].map((tr) => [
-                    tr.getAttribute("data-query-key"),
-                    ...[...tr.children].map((td) => td.textContent),
-                  ]),
-                  list: [
-                    ...el.querySelectorAll<HTMLElement>(
-                      '[data-query-layout="list"] [data-query-row]',
-                    ),
-                  ].map((li) => [
-                    li.getAttribute("data-query-row"),
-                    li.textContent,
-                  ]),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                columns,
+                headerIssue:
+                  el
+                    .querySelector<HTMLElement>(
+                      "[data-query-table] thead [data-query-formula-issue]",
+                    )
+                    ?.getAttribute("data-query-formula-issue") ?? null,
+                rows: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-table-row="item"]',
                   ),
-                }),
-              );
+                ].map((tr) => [
+                  tr.getAttribute("data-query-key"),
+                  ...[...tr.children].map((td) => td.textContent),
+                ]),
+                list: [
+                  ...el.querySelectorAll<HTMLElement>(
+                    '[data-query-layout="list"] [data-query-row]',
+                  ),
+                ].map((li) => [
+                  li.getAttribute("data-query-row"),
+                  li.textContent,
+                ]),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as Tab | null;
         return tab !== null && ready(tab);
@@ -646,21 +610,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await openProperties();
     await obRun(
       run.vaultId,
-      async ({ page: pageHelpers }, { __typedArg0, __typedArg1 }) => {
+      async ({ page: pageHelpers }, { popupSelector, menuItemLabel }) => {
         const { press } = pageHelpers;
         press(
           [
             ...activeDocument
-              .querySelector<HTMLElement>(__typedArg0)!
+              .querySelector<HTMLElement>(popupSelector)!
               .querySelectorAll<HTMLElement>('[role="option"]'),
-          ].find((n) => n.textContent === __typedArg1),
+          ].find((n) => n.textContent === menuItemLabel),
           "Add formula",
         );
-        return String(true);
       },
       {
-        __typedArg0: `${"[data-query-properties-popup]"}:popover-open`,
-        __typedArg1: run.m.query_view_formula_add(),
+        popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+        menuItemLabel: run.m.query_view_formula_add(),
       },
     );
     /**
@@ -677,22 +640,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async (
           _context,
-          { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
+          { popupSelector, isNameMissing, fieldsName, expression },
         ) => {
           const page = activeDocument
-            .querySelector<HTMLElement>(__typedArg0)
+            .querySelector<HTMLElement>(popupSelector)
             ?.querySelector<HTMLElement>("[data-chooser-page]")!;
           const set = (el: HTMLInputElement, value: string) => {
             el.value = value;
             el.dispatchEvent(new InputEvent("input", { bubbles: true }));
           };
-          if (__typedArg1) {
+          if (isNameMissing) {
           } else {
             set(
               page!.querySelector<HTMLInputElement>(
                 "[data-query-formula-name]",
               )!,
-              __typedArg2!,
+              fieldsName!,
             );
           }
           const view = page!.querySelector<CodeMirrorContent>(
@@ -702,42 +665,37 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             changes: {
               from: 0,
               to: view.state.doc.length,
-              insert: __typedArg3,
+              insert: expression,
             },
             userEvent: "input.type",
           });
-          return String(true);
         },
         {
-          __typedArg0: `${"[data-query-properties-popup]"}:popover-open`,
-          __typedArg1: fields.name === undefined,
-          __typedArg2: fields.name,
-          __typedArg3: fields.expression,
+          popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+          isNameMissing: fields.name === undefined,
+          fieldsName: fields.name,
+          expression: fields.expression,
         },
       );
-      return JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const page = activeDocument
-              .querySelector<HTMLElement>(__typedArg0)
-              ?.querySelector<HTMLElement>("[data-chooser-page]")!;
-            const save = page!.querySelector<HTMLButtonElement>(
-              "[data-query-formula-save]",
-            )!;
-            return String(
-              JSON.stringify({
-                syntax:
-                  page!
-                    .querySelector<HTMLElement>("[data-query-formula-syntax]")
-                    ?.getAttribute("data-query-formula-syntax") ?? null,
-                save: save ? !save.disabled : null,
-              }),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-        ),
-      ) as { syntax: string; save: boolean | null };
+      return (await obRun(
+        run.vaultId,
+        async (_context, { popupSelector }) => {
+          const page = activeDocument
+            .querySelector<HTMLElement>(popupSelector)
+            ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+          const save = page!.querySelector<HTMLButtonElement>(
+            "[data-query-formula-save]",
+          )!;
+          return {
+            syntax:
+              page!
+                .querySelector<HTMLElement>("[data-query-formula-syntax]")
+                ?.getAttribute("data-query-formula-syntax") ?? null,
+            save: save ? !save.disabled : null,
+          };
+        },
+        { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      )) as { syntax: string; save: boolean | null };
     };
     /**
      * Saves the formula's page: "Add formula" by its Save button, which
@@ -747,9 +705,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const saveFormula = () =>
       obRun(
         run.vaultId,
-        async ({ page: pageHelpers }, { __typedArg0 }) => {
+        async ({ page: pageHelpers }, { popupSelector }) => {
           const { press, until } = pageHelpers;
-          const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+          const popup =
+            activeDocument.querySelector<HTMLElement>(popupSelector)!;
           const save = popup!.querySelector<HTMLButtonElement>(
             "[data-chooser-page] [data-query-formula-save]",
           )!;
@@ -765,7 +724,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           return String(true);
         },
-        { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+        { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
       );
     /**
      * The text the Formula field underlines, once the field shows
@@ -777,76 +736,51 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
      * of the text can come after that.
      */
     const formulaUnderlines = async (expected: string[]) =>
-      JSON.parse(
-        await obRun(
-          run.vaultId,
-          async ({ page: pageHelpers }, { __typedArg0, __typedArg1 }) => {
-            const { until } = pageHelpers;
-            const field = activeDocument
-              .querySelector<HTMLElement>(__typedArg0)
-              ?.querySelector<HTMLElement>("[data-chooser-page]")
-              ?.querySelector<HTMLElement>("[data-query-formula-expression]")!;
-            const content =
-              field?.querySelector<CodeMirrorContent>(".cm-content")!;
-            if (!content) throw new Error("Missing: the Formula field");
-            const marks = () => [
-              ...field!.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
-            ];
-            const texts = () =>
-              JSON.stringify(marks().map((n) => n.textContent));
-            const expected = __typedArg1;
-            await until("underlines", () =>
-              expected === "[]"
-                ? content.getAttribute("aria-invalid") === "false"
-                : texts() === expected,
-            ).catch((error) => {
-              throw new Error(
-                `${error.message}: ${texts()}, aria-invalid ${content.getAttribute("aria-invalid")}`,
-              );
-            });
-            return String(
-              JSON.stringify({
-                marks: marks().map((n) => n.textContent),
-                styles: marks().map(
-                  (n) => getComputedStyle(n).textDecorationStyle,
-                ),
-                gutter:
-                  field!.querySelector<HTMLElement>(".cm-gutters")! != null,
-              }),
+      (await obRun(
+        run.vaultId,
+        async ({ page: pageHelpers }, { popupSelector, expected }) => {
+          const { until } = pageHelpers;
+          const field = activeDocument
+            .querySelector<HTMLElement>(popupSelector)
+            ?.querySelector<HTMLElement>("[data-chooser-page]")
+            ?.querySelector<HTMLElement>("[data-query-formula-expression]")!;
+          const content =
+            field?.querySelector<CodeMirrorContent>(".cm-content")!;
+          if (!content) throw new Error("Missing: the Formula field");
+          const marks = () => [
+            ...field!.querySelectorAll<HTMLElement>(".cm-lintRange-error"),
+          ];
+          const texts = () => JSON.stringify(marks().map((n) => n.textContent));
+          await until("underlines", () =>
+            expected === "[]"
+              ? content.getAttribute("aria-invalid") === "false"
+              : texts() === expected,
+          ).catch((error) => {
+            throw new Error(
+              `${error.message}: ${texts()}, aria-invalid ${content.getAttribute("aria-invalid")}`,
             );
-          },
-          {
-            __typedArg0: `${"[data-query-properties-popup]"}:popover-open`,
-            __typedArg1: JSON.stringify(expected),
-          },
-        ),
-      ) as { marks: string[]; styles: string[]; gutter: boolean };
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            return String(
-              String(
-                !!activeDocument
-                  .querySelector<HTMLElement>(__typedArg0)
-                  ?.querySelector<HTMLElement>("[data-chooser-page]")!,
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:348",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: "true",
-      }),
-    ).toBe(true);
+          });
+          return {
+            marks: marks().map((n) => n.textContent),
+            styles: marks().map((n) => getComputedStyle(n).textDecorationStyle),
+            gutter: field!.querySelector<HTMLElement>(".cm-gutters")! != null,
+          };
+        },
+        {
+          popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
+          expected: JSON.stringify(expected),
+        },
+      )) as { marks: string[]; styles: string[]; gutter: boolean };
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        return !!activeDocument
+          .querySelector<HTMLElement>(popupSelector)
+          ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      { what: "the property chooser page to open in the Properties popover" },
+    );
     // The Formula field looks and focuses as the text input above it: the
     // same border, radius, fill and focus ring, its text at the same inset,
     // and no focus outline of the editor's own.
@@ -856,85 +790,79 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       fill: string;
       ring: string;
     }
-    const fieldLook = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { __typedArg0 }) => {
-          const { until } = pageHelpers;
-          const page = activeDocument
-            .querySelector<HTMLElement>(__typedArg0)
-            ?.querySelector<HTMLElement>("[data-chooser-page]")!;
-          const input = page!.querySelector<HTMLInputElement>(
-            "[data-query-formula-name]",
-          )!;
-          const field = page!.querySelector<HTMLElement>(
-            "[data-query-formula-expression]",
-          )!;
-          const editor = field!.querySelector<HTMLElement>(".cm-editor")!;
-          const line = field!.querySelector<HTMLElement>(".cm-line")!;
-          // The box and focus ring that show: the shadows that have a spread.
-          const ringOf = (shadow: string) =>
-            shadow
-              .split(/,\s*(?![^(]*\))/)
-              .filter((one: string) => !one.endsWith("0px 0px 0px 0px"))
-              .join(", ");
-          const look = (el: HTMLElement) => {
-            const c = getComputedStyle(el);
-            return {
-              border: [
-                c.borderTopWidth,
-                c.borderTopStyle,
-                c.borderTopColor,
-              ].join(" "),
-              radius: c.borderTopLeftRadius,
-              fill: c.backgroundColor,
-              ring: ringOf(c.boxShadow),
-            };
+    const fieldLook = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { popupSelector }) => {
+        const { until } = pageHelpers;
+        const page = activeDocument
+          .querySelector<HTMLElement>(popupSelector)
+          ?.querySelector<HTMLElement>("[data-chooser-page]")!;
+        const input = page!.querySelector<HTMLInputElement>(
+          "[data-query-formula-name]",
+        )!;
+        const field = page!.querySelector<HTMLElement>(
+          "[data-query-formula-expression]",
+        )!;
+        const editor = field!.querySelector<HTMLElement>(".cm-editor")!;
+        const line = field!.querySelector<HTMLElement>(".cm-line")!;
+        // The box and focus ring that show: the shadows that have a spread.
+        const ringOf = (shadow: string) =>
+          shadow
+            .split(/,\s*(?![^(]*\))/)
+            .filter((one: string) => !one.endsWith("0px 0px 0px 0px"))
+            .join(", ");
+        const look = (el: HTMLElement) => {
+          const c = getComputedStyle(el);
+          return {
+            border: [c.borderTopWidth, c.borderTopStyle, c.borderTopColor].join(
+              " ",
+            ),
+            radius: c.borderTopLeftRadius,
+            fill: c.backgroundColor,
+            ring: ringOf(c.boxShadow),
           };
-          const inputStyle = getComputedStyle(input!);
-          const inset = {
-            input:
-              Number.parseFloat(inputStyle.borderLeftWidth) +
-              Number.parseFloat(inputStyle.paddingLeft),
-            field:
-              line!.getBoundingClientRect().left +
-              Number.parseFloat(getComputedStyle(line!).paddingLeft) -
-              field!.getBoundingClientRect().left,
-          };
-          // The page focuses the Name input when it opens; rest is the look with no focus.
-          (activeDocument.activeElement as HTMLElement | null)?.blur();
-          await until(
-            "no focus on the page",
-            () =>
-              !editor!.classList.contains("cm-focused") &&
-              activeDocument.activeElement !== input,
-          );
-          const rest = { input: look(input), field: look(field) };
-          input!.focus();
-          await until(
-            "focus on the Name input",
-            () => activeDocument.activeElement === input,
-          );
-          const inputFocused = look(input);
-          field!.querySelector<CodeMirrorContent>(".cm-content")!.focus();
-          await until("focus in the Formula field", () =>
-            editor!.classList.contains("cm-focused"),
-          );
-          return String(
-            JSON.stringify({
-              rest,
-              focused: { input: inputFocused, field: look(field) },
-              inset,
-              editor: {
-                focused: editor!.classList.contains("cm-focused"),
-                outline: getComputedStyle(editor!).outlineStyle,
-              },
-            }),
-          );
-        },
-        { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-      ),
-    ) as {
+        };
+        const inputStyle = getComputedStyle(input!);
+        const inset = {
+          input:
+            Number.parseFloat(inputStyle.borderLeftWidth) +
+            Number.parseFloat(inputStyle.paddingLeft),
+          field:
+            line!.getBoundingClientRect().left +
+            Number.parseFloat(getComputedStyle(line!).paddingLeft) -
+            field!.getBoundingClientRect().left,
+        };
+        // The page focuses the Name input when it opens; rest is the look with no focus.
+        (activeDocument.activeElement as HTMLElement | null)?.blur();
+        await until(
+          "no focus on the page",
+          () =>
+            !editor!.classList.contains("cm-focused") &&
+            activeDocument.activeElement !== input,
+        );
+        const rest = { input: look(input), field: look(field) };
+        input!.focus();
+        await until(
+          "focus on the Name input",
+          () => activeDocument.activeElement === input,
+        );
+        const inputFocused = look(input);
+        field!.querySelector<CodeMirrorContent>(".cm-content")!.focus();
+        await until("focus in the Formula field", () =>
+          editor!.classList.contains("cm-focused"),
+        );
+        return {
+          rest,
+          focused: { input: inputFocused, field: look(field) },
+          inset,
+          editor: {
+            focused: editor!.classList.contains("cm-focused"),
+            outline: getComputedStyle(editor!).outlineStyle,
+          },
+        };
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+    )) as {
       rest: { input: InputLook; field: InputLook };
       focused: { input: InputLook; field: InputLook };
       inset: { input: number; field: number };
@@ -980,19 +908,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // An embed and a Query Block of the same text show the same column.
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+      async ({ app }, { notePath, contentPrefix, addedText }) => {
         const file = await app.vault.create(
-          __typedArg0,
-          `${__typedArg1 + __typedArg2}\`\`\`\n`,
+          notePath,
+          `${contentPrefix + addedText}\`\`\`\n`,
         );
         const leaf = app.workspace.getLeaf("split");
         await leaf.openFile(file, { state: { mode: "preview" } });
-        return String(true);
       },
       {
-        __typedArg0: notePath,
-        __typedArg1: `![[Formula items.zotquery]]\n\n\`\`\`zotquery\n`,
-        __typedArg2: added.text,
+        notePath,
+        contentPrefix: `![[Formula items.zotquery]]\n\n\`\`\`zotquery\n`,
+        addedText: added.text,
       },
     );
     const formulaEmbed = await revealQueryView(run.vaultId, notePath, {
@@ -1004,9 +931,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     await readQueryViewUntil(
       run.vaultId,
-      async ({ page: pageHelpers }, { __typedArg0, __typedArg1 }) => {
-        const embed = await pageHelpers.revealQueryView(__typedArg0);
-        const block = await pageHelpers.revealQueryView(__typedArg1);
+      async ({ page: pageHelpers }, { formulaEmbed, formulaBlock }) => {
+        const embed = await pageHelpers.revealQueryView(formulaEmbed);
+        const block = await pageHelpers.revealQueryView(formulaBlock);
         const read = (root: HTMLElement) => {
           const columns = [
             ...root.querySelectorAll<HTMLTableCellElement>(
@@ -1025,7 +952,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         };
         return { embed: read(embed), block: read(block) };
       },
-      { __typedArg0: formulaEmbed, __typedArg1: formulaBlock },
+      { formulaEmbed, formulaBlock },
       {
         ready: (columns) =>
           JSON.stringify(columns) ===
@@ -1036,18 +963,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0 }) => {
+      async ({ app }, { notePath }) => {
         const leaf = app.workspace
           .getLeavesOfType("zotlit-query-file")
           .find(
             (l) =>
-              (l.view as import("obsidian").FileView).file?.path ===
-              __typedArg0,
+              (l.view as import("obsidian").FileView).file?.path === notePath,
           );
         app.workspace.setActiveLeaf(leaf!, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path },
+      { notePath: path },
     );
 
     // The List shows the same values.
@@ -1058,7 +983,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.workspace.getMostRecentLeaf()!
             .view as import("@/views/query-view/file-view").QueryFileView
         ).query.document.setViewLayout(0, "list");
-        return String(true);
       },
       undefined,
     );
@@ -1073,7 +997,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.workspace.getMostRecentLeaf()!
             .view as import("@/views/query-view/file-view").QueryFileView
         ).query.document.setViewLayout(0, "table");
-        return String(true);
       },
       undefined,
     );
@@ -1111,8 +1034,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await openProperties();
     const rowIssue = await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
-        const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
+      async (_context, { popupSelector }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
         const issue =
           popup!
             .querySelector<HTMLElement>(
@@ -1120,9 +1043,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             )
             ?.getAttribute("data-query-formula-issue") ?? null;
         popup!.hidePopover();
-        return String(String(issue));
+        return String(issue);
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
     expect(rowIssue).toBe(wrong.headerIssue);
 
@@ -1131,39 +1054,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // hover delay.
     await editFormula();
     expect((await formulaUnderlines(["nope"])).marks).toEqual(["nope"]);
-    const hovered = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async (_context, { __typedArg0 }) => {
-          const field = activeDocument
-            .querySelector<HTMLElement>(__typedArg0)
-            ?.querySelector<HTMLElement>("[data-chooser-page]")!
-            .querySelector<HTMLElement>("[data-query-formula-expression]")!;
-          const mark = field!.querySelector<HTMLElement>(
-            ".cm-lintRange-error",
-          )!;
-          const r = mark!.getBoundingClientRect();
-          mark!.dispatchEvent(
-            new MouseEvent("mousemove", {
-              bubbles: true,
-              clientX: r.left + r.width / 2,
-              clientY: r.top + r.height / 2,
-            }),
-          );
-          await new Promise((r) => setTimeout(r, 800));
-          return String(
-            JSON.stringify(
-              [
-                ...mark!.ownerDocument.querySelectorAll<HTMLElement>(
-                  ".cm-tooltip-hover, .cm-tooltip-lint",
-                ),
-              ].map((n) => n.className),
-            ),
-          );
-        },
-        { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-      ),
-    ) as string[];
+    const hovered = (await obRun(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        const field = activeDocument
+          .querySelector<HTMLElement>(popupSelector)
+          ?.querySelector<HTMLElement>("[data-chooser-page]")!
+          .querySelector<HTMLElement>("[data-query-formula-expression]")!;
+        const mark = field!.querySelector<HTMLElement>(".cm-lintRange-error")!;
+        const r = mark!.getBoundingClientRect();
+        mark!.dispatchEvent(
+          new MouseEvent("mousemove", {
+            bubbles: true,
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+          }),
+        );
+        await new Promise((r) => setTimeout(r, 800));
+        return [
+          ...mark!.ownerDocument.querySelectorAll<HTMLElement>(
+            ".cm-tooltip-hover, .cm-tooltip-lint",
+          ),
+        ].map((n) => n.className);
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+    )) as string[];
     expect(hovered).toEqual([]);
     // A text other than the saved one shows no underline of the run's Fault.
     await typeFormula({ expression: "title.nope( )" });
@@ -1175,39 +1090,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // its property, and steps back to the rows.
     await editFormula();
     await runPageMenuItem("remove-formula");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            return String(
-              String(
-                !!popup &&
-                  !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
-                  !!popup.querySelector<HTMLElement>("[data-query-property]")!,
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:535",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
+        return (
+          !!popup &&
+          !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
+          !!popup.querySelector<HTMLElement>("[data-query-property]")!
+        );
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      {
+        what: "the Properties popover to return to its property list after the Formula is added",
+      },
+    );
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
-        activeDocument.querySelector<HTMLElement>(__typedArg0)!.hidePopover();
-        return String(true);
+      async (_context, { popupSelector }) => {
+        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
     const removed = await tabWhen(
       (tab) =>
@@ -1222,7 +1125,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1230,13 +1133,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          const file = app.vault.getFileByPath(__typedArg1)!;
+        async ({ app }, { layout, path }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: path },
+        { layout, path },
       );
     });
     const formulas = {
@@ -1266,14 +1168,13 @@ views:
 `;
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, noteContent }) => {
+        const file = await app.vault.create(path, noteContent);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path, __typedArg1: source() },
+      { path, noteContent: source() },
     );
 
     interface Tab {
@@ -1293,57 +1194,55 @@ views:
         shown = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, zotlit }, { __typedArg0 }) => {
+            async ({ app, zotlit }, { targetPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify({
-                  runs: zotlit.services.query.viewRuns,
-                  warnings: [
-                    ...el.querySelectorAll<HTMLElement>("[data-query-warning]"),
-                  ].map((n) => n.getAttribute("data-query-warning")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                runs: zotlit.services.query.viewRuns,
+                warnings: [
+                  ...el.querySelectorAll<HTMLElement>("[data-query-warning]"),
+                ].map((n) => n.getAttribute("data-query-warning")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] thead th",
                   ),
-                  columns: [
+                ].map((n) => n.getAttribute("data-query-column")),
+                headerIssues: Object.fromEntries(
+                  [
                     ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] thead th",
+                      "[data-query-table] thead [data-query-column]",
                     ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  headerIssues: Object.fromEntries(
-                    [
-                      ...el.querySelectorAll<HTMLTableCellElement>(
-                        "[data-query-table] thead [data-query-column]",
-                      ),
-                    ].map((n) => [
-                      n.getAttribute("data-query-column"),
-                      n.getAttribute("data-query-formula-issue"),
-                    ]),
-                  ),
-                  rows: [
-                    ...el.querySelectorAll<HTMLTableRowElement>(
-                      '[data-query-table-row="item"]',
-                    ),
-                  ].map((tr) => [
-                    tr.getAttribute("data-query-key"),
-                    ...[...tr.children].map((td) => td.textContent),
+                  ].map((n) => [
+                    n.getAttribute("data-query-column"),
+                    n.getAttribute("data-query-formula-issue"),
                   ]),
-                  diagnostic:
-                    el
-                      .querySelector<HTMLElement>("[data-query-diagnostic]")
-                      ?.getAttribute("data-query-diagnostic") ?? null,
-                }),
-              );
+                ),
+                rows: [
+                  ...el.querySelectorAll<HTMLTableRowElement>(
+                    '[data-query-table-row="item"]',
+                  ),
+                ].map((tr) => [
+                  tr.getAttribute("data-query-key"),
+                  ...[...tr.children].map((td) => td.textContent),
+                ]),
+                diagnostic:
+                  el
+                    .querySelector<HTMLElement>("[data-query-diagnostic]")
+                    ?.getAttribute("data-query-diagnostic") ?? null,
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as Tab | null;
         return shown !== null && ready(shown);
@@ -1355,28 +1254,26 @@ views:
     const write = (text: string) =>
       obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0 }) => {
+        async ({ app }, { text }) => {
           const view = app.workspace.getMostRecentLeaf()!.view;
           (
             view as import("@/views/query-view/file-view").QueryFileView
-          ).setViewData(__typedArg0);
+          ).setViewData(text);
           await (
             view as import("@/views/query-view/file-view").QueryFileView
           ).save();
           return String(true);
         },
-        { __typedArg0: text },
+        { text },
       );
     /** The Query View runs of ZotLit Query so far, as the dev build counts them. */
     const countRuns = async () =>
-      Number(
-        await obRun(
-          run.vaultId,
-          async ({ zotlit }) => {
-            return String(String(zotlit.services.query.viewRuns));
-          },
-          undefined,
-        ),
+      await obRun(
+        run.vaultId,
+        async ({ zotlit }) => {
+          return zotlit.services.query.viewRuns;
+        },
+        undefined,
       );
     /** The key and the cell of one column of each Table row. */
     const column = (shown: Tab, property: string) => {
@@ -1387,28 +1284,26 @@ views:
     /** The issue at each Formula's row in the Properties popover. */
     const rowIssues = async () => {
       await openProperties();
-      return JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            const issues = Object.fromEntries(
-              ["year", "next", "recent"].map((name) => [
-                name,
-                popup!
-                  .querySelector<HTMLElement>(
-                    `[data-query-property="formula.${name}"] [data-query-formula-issue]`,
-                  )
-                  ?.getAttribute("data-query-formula-issue") ?? null,
-              ]),
-            );
-            popup!.hidePopover();
-            return String(JSON.stringify(issues));
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-        ),
-      ) as Record<string, string | null>;
+      return (await obRun(
+        run.vaultId,
+        async (_context, { popupSelector }) => {
+          const popup =
+            activeDocument.querySelector<HTMLElement>(popupSelector)!;
+          const issues = Object.fromEntries(
+            ["year", "next", "recent"].map((name) => [
+              name,
+              popup!
+                .querySelector<HTMLElement>(
+                  `[data-query-property="formula.${name}"] [data-query-formula-issue]`,
+                )
+                ?.getAttribute("data-query-formula-issue") ?? null,
+            ]),
+          );
+          popup!.hidePopover();
+          return issues;
+        },
+        { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      )) as Record<string, string | null>;
     };
     /** The issue at each condition of the view's filters, in the Filter popover. */
     const conditionIssues = async () => {
@@ -1417,27 +1312,28 @@ views:
         popup: '[data-query-popover="filter"]',
         ready: '[data-filter-section="view"] [data-condition-row]',
       });
-      return JSON.parse(
-        await obRun(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popover =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            const issues = [
-              ...popover!.querySelectorAll<HTMLElement>(
-                '[data-filter-section="view"] [data-condition-row]',
-              ),
-            ].map(
-              (n) =>
-                n.querySelector<HTMLElement>('[role="alert"]')?.textContent ??
-                null,
-            );
-            popover!.hidePopover();
-            return String(JSON.stringify(issues));
-          },
-          { __typedArg0: `${'[data-query-popover="filter"]'}:popover-open` },
-        ),
-      ) as (string | null)[];
+      return (await obRun(
+        run.vaultId,
+        async (_context, { filterPopoverSelector }) => {
+          const popover = activeDocument.querySelector<HTMLElement>(
+            filterPopoverSelector,
+          )!;
+          const issues = [
+            ...popover!.querySelectorAll<HTMLElement>(
+              '[data-filter-section="view"] [data-condition-row]',
+            ),
+          ].map(
+            (n) =>
+              n.querySelector<HTMLElement>('[role="alert"]')?.textContent ??
+              null,
+          );
+          popover!.hidePopover();
+          return issues;
+        },
+        {
+          filterPopoverSelector: `${'[data-query-popover="filter"]'}:popover-open`,
+        },
+      )) as (string | null)[];
     };
 
     // The view shows the rows ZotLit Query gives for the same filter, and a
@@ -1532,7 +1428,6 @@ views:
           app.workspace.getMostRecentLeaf()!
             .view as import("@/views/query-view/file-view").QueryFileView
         ).query.document.removeFormula("next");
-        return String(true);
       },
       undefined,
     );
@@ -1554,7 +1449,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1562,13 +1457,12 @@ views:
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          const file = app.vault.getFileByPath(__typedArg1)!;
+        async ({ app }, { layout, path }) => {
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: path },
+        { layout, path },
       );
     });
     // The Formula cannot read the title of one Item as a number; the other
@@ -1580,14 +1474,13 @@ views:
     const source = `formulas:\n  n: ${JSON.stringify(formula)}\nviews:\n${view("table", "Table")}${view("list", "List")}${view("cards", "Cards")}`;
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, source }) => {
+        const file = await app.vault.create(path, source);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path, __typedArg1: source },
+      { path, source },
     );
 
     const report = JSON.parse(
@@ -1634,55 +1527,41 @@ views:
         shown = JSON.parse(
           await obRun(
             run.vaultId,
-            async (
-              { app },
-              { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-            ) => {
+            async ({ app }, { notePath, name, selector }) => {
               const leaf = app.workspace.getMostRecentLeaf()!;
               if (
                 leaf!.view.getViewType() !== "zotlit-query-file" ||
                 (leaf!.view as import("obsidian").FileView).file?.path !==
-                  __typedArg0
+                  notePath
               )
-                return String("null");
-              if (leaf!.getViewState().state!.view !== __typedArg1)
+                return "null";
+              if (leaf!.getViewState().state!.view !== name)
                 await leaf!.setViewState({
                   ...leaf!.getViewState(),
-                  state: { ...leaf!.getViewState().state, view: __typedArg2 },
+                  state: { ...leaf!.getViewState().state, view: name },
                 });
               await (
                 leaf!
                   .view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
               const el = (leaf!.view as import("obsidian").ItemView).contentEl;
-              return String(
-                JSON.stringify(
-                  [...el.querySelectorAll<HTMLElement>(__typedArg3)].map(
-                    (row) => ({
-                      key:
-                        row.getAttribute("data-query-key") ??
-                        row.getAttribute("data-query-row"),
-                      text: row.textContent,
-                      errors: [
-                        ...row.querySelectorAll<HTMLElement>(
-                          "[data-query-error]",
-                        ),
-                      ].map((n) => [
-                        n.getAttribute("data-query-error"),
-                        n.getAttribute("aria-label"),
-                        !!n.querySelector<SVGSVGElement>("svg")!,
-                      ]),
-                    }),
-                  ),
-                ),
+              return JSON.stringify(
+                [...el.querySelectorAll<HTMLElement>(selector)].map((row) => ({
+                  key:
+                    row.getAttribute("data-query-key") ??
+                    row.getAttribute("data-query-row"),
+                  text: row.textContent,
+                  errors: [
+                    ...row.querySelectorAll<HTMLElement>("[data-query-error]"),
+                  ].map((n) => [
+                    n.getAttribute("data-query-error"),
+                    n.getAttribute("aria-label"),
+                    !!n.querySelector<SVGSVGElement>("svg")!,
+                  ]),
+                })),
               );
             },
-            {
-              __typedArg0: path,
-              __typedArg1: name,
-              __typedArg2: name,
-              __typedArg3: selector,
-            },
+            { notePath: path, name, selector },
           ),
         ) as Shown[] | null;
         return shown !== null && shown.length === rows.length;
@@ -1745,81 +1624,79 @@ views:
     // The clipboard write has no time the test can name: poll for it, and
     // fail when it does not come.
     // JSON keeps the final newline, which the CLI reply would trim.
-    const copied = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { __typedArg0 }) => {
-          const { press, until } = pageHelpers;
-          let copied: string | null = null;
-          const write = navigator.clipboard.write;
-          navigator.clipboard.write = async (items) => {
-            copied = await (await items[0]!.getType("text/plain")).text();
-          };
-          try {
-            press(
-              activeDocument
-                .querySelector<HTMLElement>(__typedArg0)!
-                .querySelector<HTMLElement>("[data-query-copy]")!,
-              "Copy to clipboard",
-            );
-            await until("clipboard write", () => copied !== null, 5000).catch(
-              () => {},
-            );
-          } finally {
-            navigator.clipboard.write = write;
-          }
-          if (copied === null)
-            throw new Error('"Copy to clipboard" wrote nothing');
-          return String(JSON.stringify(copied));
-        },
-        { __typedArg0: `${"[data-query-results-popup]"}:popover-open` },
-      ),
-    ) as string;
-    await openResults();
-    const exportedCsv = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { __typedArg0 }) => {
-          const { press } = pageHelpers;
-          const create = URL.createObjectURL;
-          const click = HTMLAnchorElement.prototype.click;
-          let blob: Blob | null = null,
-            name: string | null = null;
-          URL.createObjectURL = (b) => {
-            blob = b as Blob;
-            return create.call(URL, b);
-          };
-          HTMLAnchorElement.prototype.click = new Proxy(click, {
-            apply(_target, receiver: HTMLAnchorElement) {
-              name = receiver.download;
-            },
-          });
-          try {
-            press(
-              activeDocument
-                .querySelector<HTMLElement>(__typedArg0)!
-                .querySelector<HTMLElement>("[data-query-export]")!,
-              "Export CSV",
-            );
-          } finally {
-            URL.createObjectURL = create;
-            HTMLAnchorElement.prototype.click = click;
-          }
-          return String(
-            JSON.stringify({
-              name,
-              type: (blob as Blob | null)?.type ?? null,
-              text: blob
-                ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-                    await (blob as Blob).arrayBuffer(),
-                  )
-                : null,
-            }),
+    const copied = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { resultsPopupSelector }) => {
+        const { press, until } = pageHelpers;
+        let copied: string | null = null;
+        const write = navigator.clipboard.write;
+        navigator.clipboard.write = async (items) => {
+          copied = await (await items[0]!.getType("text/plain")).text();
+        };
+        try {
+          press(
+            activeDocument
+              .querySelector<HTMLElement>(resultsPopupSelector)!
+              .querySelector<HTMLElement>("[data-query-copy]")!,
+            "Copy to clipboard",
           );
-        },
-        { __typedArg0: `${"[data-query-results-popup]"}:popover-open` },
-      ),
-    ) as { name: string | null; type: string | null; text: string | null };
+          await until("clipboard write", () => copied !== null, 5000).catch(
+            () => {},
+          );
+        } finally {
+          navigator.clipboard.write = write;
+        }
+        if (copied === null)
+          throw new Error('"Copy to clipboard" wrote nothing');
+        return copied;
+      },
+      {
+        resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
+      },
+    )) as string;
+    await openResults();
+    const exportedCsv = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { resultsPopupSelector }) => {
+        const { press } = pageHelpers;
+        const create = URL.createObjectURL;
+        const click = HTMLAnchorElement.prototype.click;
+        let blob: Blob | null = null,
+          name: string | null = null;
+        URL.createObjectURL = (b) => {
+          blob = b as Blob;
+          return create.call(URL, b);
+        };
+        HTMLAnchorElement.prototype.click = new Proxy(click, {
+          apply(_target, receiver: HTMLAnchorElement) {
+            name = receiver.download;
+          },
+        });
+        try {
+          press(
+            activeDocument
+              .querySelector<HTMLElement>(resultsPopupSelector)!
+              .querySelector<HTMLElement>("[data-query-export]")!,
+            "Export CSV",
+          );
+        } finally {
+          URL.createObjectURL = create;
+          HTMLAnchorElement.prototype.click = click;
+        }
+        return {
+          name,
+          type: (blob as Blob | null)?.type ?? null,
+          text: blob
+            ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+                await (blob as Blob).arrayBuffer(),
+              )
+            : null,
+        };
+      },
+      {
+        resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
+      },
+    )) as { name: string | null; type: string | null; text: string | null };
     const written = { copied, ...exportedCsv } as {
       copied: string | null;
       name: string | null;
@@ -1842,7 +1719,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -1851,30 +1728,28 @@ views:
       // Teardown closes a popover a failed step left open; not a reader's press.
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { layout, path }) => {
           for (const popup of activeDocument.querySelectorAll<HTMLElement>(
             "[popover]:popover-open",
           ))
             popup.hidePopover();
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          const file = app.vault.getFileByPath(__typedArg1)!;
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: path },
+        { layout, path },
       );
     });
     const source = `formulas:\n  year: date.year\nviews:\n  - type: table\n    name: Named columns\n    from: items\n    order:\n      - title\n      - formula.year\n    limit: 3\n`;
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, source }) => {
+        const file = await app.vault.create(path, source);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path, __typedArg1: source },
+      { path, source },
     );
 
     /** The Table header, each popover row's Display Name, and the file's saved text. */
@@ -1892,13 +1767,13 @@ views:
         tab = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0, __typedArg1 }) => {
+            async ({ app }, { targetPath, popupSelector }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -1915,8 +1790,8 @@ views:
                 n.textContent,
               ]);
               const popup =
-                activeDocument.querySelector<HTMLElement>(__typedArg1)!;
-              if (!popup) return String("null");
+                activeDocument.querySelector<HTMLElement>(popupSelector)!;
+              if (!popup) return "null";
               const names = ["title", "formula.year"]
                 .map((property) =>
                   popup.querySelector<HTMLElement>(
@@ -1932,22 +1807,20 @@ views:
                     .textContent,
                 ]);
               popup.hidePopover();
-              return String(
-                JSON.stringify({
-                  header,
-                  names,
-                  rows: el.querySelectorAll<HTMLTableRowElement>(
-                    '[data-query-table-row="item"]',
-                  ).length,
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                header,
+                names,
+                rows: el.querySelectorAll<HTMLTableRowElement>(
+                  '[data-query-table-row="item"]',
+                ).length,
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
             {
-              __typedArg0: path,
-              __typedArg1: `${"[data-query-properties-popup]"}:popover-open`,
+              targetPath: path,
+              popupSelector: `${"[data-query-properties-popup]"}:popover-open`,
             },
           ),
         ) as Tab | null;
@@ -1974,9 +1847,9 @@ views:
     await openPropertyPage("title");
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { popupSelector }) => {
         const input = activeDocument
-          .querySelector<HTMLElement>(__typedArg0)
+          .querySelector<HTMLElement>(popupSelector)
           ?.querySelector<HTMLElement>("[data-chooser-page]")!
           .querySelector<HTMLInputElement>("[data-query-display-name]")!;
         input!.value = "Work";
@@ -1988,44 +1861,30 @@ views:
             cancelable: true,
           }),
         );
-        return String(true);
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            return String(
-              String(
-                !!popup &&
-                  !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
-                  popup.ownerDocument.activeElement?.getAttribute("role") ===
-                    "combobox",
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:987",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
+        return (
+          !!popup &&
+          !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
+          popup.ownerDocument.activeElement?.getAttribute("role") === "combobox"
+        );
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      {
+        what: "the Properties popover rename field to take focus as a combobox",
+      },
+    );
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
-        activeDocument.querySelector<HTMLElement>(__typedArg0)!.hidePopover();
-        return String(true);
+      async (_context, { popupSelector }) => {
+        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
     const field = await tabWhen((tab) => tab.text.includes("displayName"));
     expect(field.text).toBe(
@@ -2044,16 +1903,15 @@ views:
     await editYear();
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { popupSelector }) => {
         const input = activeDocument
-          .querySelector<HTMLElement>(__typedArg0)
+          .querySelector<HTMLElement>(popupSelector)
           ?.querySelector<HTMLElement>("[data-chooser-page]")!
           .querySelector<HTMLInputElement>("[data-query-display-name]")!;
         input!.value = "Year of source";
         input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        return String(true);
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
     await closePropertyPage();
     const named = await tabWhen((tab) => tab.text.includes("Year of source"));
@@ -2076,116 +1934,99 @@ views:
     await openProperties();
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
+      async (_context, { popupSelector }) => {
         const input = activeDocument
-          .querySelector<HTMLElement>(__typedArg0)!
+          .querySelector<HTMLElement>(popupSelector)!
           .querySelector<HTMLInputElement>('input[role="combobox"]')!;
         input!.value = "Year of source";
         input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        return String(true);
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
-    const found = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async (_context, { __typedArg0 }) => {
-          const popup = activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-          const rows = [
-            ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
-          ].map((n) => n.dataset.queryProperty);
-          popup!.hidePopover();
-          return String(JSON.stringify(rows));
-        },
-        { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-      ),
-    ) as string[];
+    const found = (await obRun(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
+        const rows = [
+          ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
+        ].map((n) => n.dataset.queryProperty);
+        popup!.hidePopover();
+        return rows;
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+    )) as string[];
     expect(found).toContain("formula.year");
     expect(found).not.toContain("title");
     // The popover opens again with an empty search and every property, so
     // the next typed text replaces the last search instead of adding to it.
     await openProperties();
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            const rows = [
-              ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
-            ].map((n) => n.dataset.queryProperty);
-            return String(
-              JSON.stringify({
-                search: popup!.querySelector<HTMLInputElement>(
-                  'input[role="combobox"]',
-                )!.value,
-                title: rows.includes("title"),
-                year: rows.includes("formula.year"),
-              }),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:1051",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({
-        expected: JSON.stringify({ search: "", title: true, year: true }),
-      }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
+        const rows = [
+          ...popup!.querySelectorAll<HTMLElement>("[data-query-property]"),
+        ].map((n) => n.dataset.queryProperty);
+        return {
+          search: popup!.querySelector<HTMLInputElement>(
+            'input[role="combobox"]',
+          )!.value,
+          title: rows.includes("title"),
+          year: rows.includes("formula.year"),
+        };
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      {
+        ready: (value) =>
+          isDeepStrictEqual(value, { search: "", title: true, year: true }),
+        what: "the Properties popover to list the title and year Formula with an empty search",
+      },
+    );
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
-        activeDocument.querySelector<HTMLElement>(__typedArg0)!.hidePopover();
-        return String(true);
+      async (_context, { popupSelector }) => {
+        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
 
     // "Export CSV…" names the columns by their Display Names.
     await openResults();
-    const exported = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ page: pageHelpers }, { __typedArg0 }) => {
-          const { press } = pageHelpers;
-          const create = URL.createObjectURL;
-          const click = HTMLAnchorElement.prototype.click;
-          let blob: Blob | null = null;
-          URL.createObjectURL = (b) => {
-            blob = b as Blob;
-            return create.call(URL, b);
-          };
-          HTMLAnchorElement.prototype.click = function () {};
-          try {
-            press(
-              activeDocument
-                .querySelector<HTMLElement>(__typedArg0)!
-                .querySelector<HTMLElement>("[data-query-export]")!,
-              "Export CSV",
-            );
-          } finally {
-            URL.createObjectURL = create;
-            HTMLAnchorElement.prototype.click = click;
-          }
-          return String(
-            JSON.stringify({
-              text: blob
-                ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
-                    await (blob as Blob).arrayBuffer(),
-                  )
-                : null,
-            }),
+    const exported = (await obRun(
+      run.vaultId,
+      async ({ page: pageHelpers }, { resultsPopupSelector }) => {
+        const { press } = pageHelpers;
+        const create = URL.createObjectURL;
+        const click = HTMLAnchorElement.prototype.click;
+        let blob: Blob | null = null;
+        URL.createObjectURL = (b) => {
+          blob = b as Blob;
+          return create.call(URL, b);
+        };
+        HTMLAnchorElement.prototype.click = function () {};
+        try {
+          press(
+            activeDocument
+              .querySelector<HTMLElement>(resultsPopupSelector)!
+              .querySelector<HTMLElement>("[data-query-export]")!,
+            "Export CSV",
           );
-        },
-        { __typedArg0: `${"[data-query-results-popup]"}:popover-open` },
-      ),
-    ) as { text: string | null };
+        } finally {
+          URL.createObjectURL = create;
+          HTMLAnchorElement.prototype.click = click;
+        }
+        return {
+          text: blob
+            ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+                await (blob as Blob).arrayBuffer(),
+              )
+            : null,
+        };
+      },
+      {
+        resultsPopupSelector: `${"[data-query-results-popup]"}:popover-open`,
+      },
+    )) as { text: string | null };
     expect(exported.text?.split("\r\n")[0]).toBe(
       `${BYTE_ORDER_MARK}Work,Year of source`,
     );
@@ -2193,39 +2034,27 @@ views:
     // Removing the Formula also removes its Display Name; the field keeps its own.
     await editYear();
     await runPageMenuItem("remove-formula");
-    expect(
-      await ((options: { expected: string; tries?: number }) =>
-        obRunUntil(
-          run.vaultId,
-          async (_context, { __typedArg0 }) => {
-            const popup =
-              activeDocument.querySelector<HTMLElement>(__typedArg0)!;
-            return String(
-              String(
-                !!popup &&
-                  !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
-                  !!popup.querySelector<HTMLElement>("[data-query-property]")!,
-              ),
-            );
-          },
-          { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
-          {
-            ready: (value) => value === options.expected,
-            tries: options.tries,
-            what: "query-view-properties.e2e.ts:1078",
-          },
-        ).then(
-          () => true,
-          () => false,
-        ))({ expected: "true" }),
-    ).toBe(true);
+    await obRunUntil(
+      run.vaultId,
+      async (_context, { popupSelector }) => {
+        const popup = activeDocument.querySelector<HTMLElement>(popupSelector)!;
+        return (
+          !!popup &&
+          !popup.querySelector<HTMLElement>("[data-chooser-page]")! &&
+          !!popup.querySelector<HTMLElement>("[data-query-property]")!
+        );
+      },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
+      {
+        what: "the Properties popover to return to its property list after the Formula edit",
+      },
+    );
     await obRun(
       run.vaultId,
-      async (_context, { __typedArg0 }) => {
-        activeDocument.querySelector<HTMLElement>(__typedArg0)!.hidePopover();
-        return String(true);
+      async (_context, { popupSelector }) => {
+        activeDocument.querySelector<HTMLElement>(popupSelector)!.hidePopover();
       },
-      { __typedArg0: `${"[data-query-properties-popup]"}:popover-open` },
+      { popupSelector: `${"[data-query-properties-popup]"}:popover-open` },
     );
     const removed = await tabWhen((tab) => !tab.text.includes("formula"));
     expect(removed.text).toBe(
@@ -2239,7 +2068,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -2247,30 +2076,28 @@ views:
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { layout, path }) => {
           document.body.classList.remove(
             "is-grabbing",
             "zt-is-resizing-column",
           );
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          const file = app.vault.getFileByPath(__typedArg1)!;
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: path },
+        { layout, path },
       );
     });
     const source = `views:\n  - type: table\n    name: Column widths\n    from: items\n    order:\n      - title\n      - firstAuthor\n      - date\n    limit: 3\n`;
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, source }) => {
+        const file = await app.vault.create(path, source);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path, __typedArg1: source },
+      { path, source },
     );
     /**
      * Runs `steps` against the open Query File tab once its Table shows, with
@@ -2292,13 +2119,13 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0 }) => {
+            async ({ app }, { targetPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2313,7 +2140,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -2361,21 +2188,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -2407,14 +2232,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { targetPath }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2429,7 +2254,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2485,21 +2310,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -2533,14 +2356,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { targetPath }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2555,7 +2378,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2605,21 +2428,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -2645,14 +2466,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { targetPath }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2667,7 +2488,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2691,21 +2512,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -2730,14 +2549,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { targetPath }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2752,7 +2571,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -2815,21 +2634,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -2861,14 +2678,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { targetPath }) => {
               const { press, until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -2883,7 +2700,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const width = (p: string) =>
                 Math.round(th(p)!.getBoundingClientRect().width);
@@ -2950,21 +2767,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -2999,14 +2814,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { targetPath }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !== targetPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3021,7 +2836,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -3071,21 +2886,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { targetPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -3113,13 +2926,14 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app }, { __typedArg0 }) => {
+            async ({ app }, { expectedPath }) => {
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3134,7 +2948,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -3174,21 +2988,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { expectedPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -3215,14 +3027,15 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async ({ app, page: pageHelpers }, { __typedArg0 }) => {
+            async ({ app, page: pageHelpers }, { expectedPath }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3237,7 +3050,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -3298,21 +3111,19 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: [
-                    ...el.querySelectorAll<HTMLTableCellElement>(
-                      "[data-query-table] th[data-query-column]",
-                    ),
-                  ].map((n) => n.getAttribute("data-query-column")),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
+              return JSON.stringify({
+                ...out,
+                columns: [
+                  ...el.querySelectorAll<HTMLTableCellElement>(
+                    "[data-query-table] th[data-query-column]",
                   ),
-                }),
-              );
+                ].map((n) => n.getAttribute("data-query-column")),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path },
+            { expectedPath: path },
           ),
         ) as T | null;
         return out !== null;
@@ -3327,77 +3138,73 @@ views:
 
     // A tab that closes mid-drag ends the drag: no drop line, no grabbing
     // cursor, the width as it was, and a later drop saves nothing.
-    const closed = JSON.parse(
-      await obRun(
-        run.vaultId,
-        async ({ app, page: pageHelpers }) => {
-          const { until } = pageHelpers;
-          const leaf = app.workspace.getMostRecentLeaf()!;
-          const view = leaf!.view;
-          const el = (view as import("obsidian").ItemView).contentEl;
-          const th = (p: string) =>
-            el.querySelector<HTMLTableCellElement>(
-              `[data-query-table] th[data-query-column="${p}"]`,
-            )!;
-          const transfer = new DataTransfer();
-          const fire = (target: HTMLElement, type: string, x: number) => {
-            const r = target.getBoundingClientRect();
-            const event = new DragEvent(type, {
-              bubbles: true,
-              cancelable: true,
-              dataTransfer: transfer,
-              clientX: x,
-              clientY: r.top + r.height / 2,
-            });
-            target.dispatchEvent(event);
-            return event.defaultPrevented;
-          };
-          const before = await app.vault.read(
-            (view as import("obsidian").FileView).file!,
-          );
-          const file = (view as import("obsidian").FileView).file;
-          const date = th("date")!.getBoundingClientRect();
-          fire(
-            th("title"),
-            "dragstart",
-            th("title")!.getBoundingClientRect().left + 5,
-          );
-          fire(th("date"), "dragover", date.left + 5);
-          const during = {
-            line: !!activeDocument.querySelector<HTMLElement>(
-              ".table-drag-target",
-            )!,
-            grabbing: activeDocument.body.classList.contains("is-grabbing"),
-          };
-          const layout = (
-            view as import("@/views/query-view/file-view").QueryFileView
-          ).query.layout;
-          const left = () =>
-            !activeDocument.querySelector<HTMLElement>(".table-drag-target")! &&
-            !activeDocument.body.classList.contains("is-grabbing");
-          leaf!.detach();
-          if ((layout as typeof layout & { _loaded: boolean })._loaded)
-            throw new Error("the Table stays mounted");
-          await until("drag ends", left).catch(() => {});
-          const after = {
-            line: !!activeDocument.querySelector<HTMLElement>(
-              ".table-drag-target",
-            )!,
-            grabbing: activeDocument.body.classList.contains("is-grabbing"),
-          };
-          fire(activeDocument.body, "dragover", 10);
-          fire(activeDocument.body, "drop", 10);
-          return String(
-            JSON.stringify({
-              during,
-              after,
-              same: (await app.vault.read(file!)) === before,
-            }),
-          );
-        },
-        undefined,
-      ),
-    ) as {
+    const closed = (await obRun(
+      run.vaultId,
+      async ({ app, page: pageHelpers }) => {
+        const { until } = pageHelpers;
+        const leaf = app.workspace.getMostRecentLeaf()!;
+        const view = leaf!.view;
+        const el = (view as import("obsidian").ItemView).contentEl;
+        const th = (p: string) =>
+          el.querySelector<HTMLTableCellElement>(
+            `[data-query-table] th[data-query-column="${p}"]`,
+          )!;
+        const transfer = new DataTransfer();
+        const fire = (target: HTMLElement, type: string, x: number) => {
+          const r = target.getBoundingClientRect();
+          const event = new DragEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            dataTransfer: transfer,
+            clientX: x,
+            clientY: r.top + r.height / 2,
+          });
+          target.dispatchEvent(event);
+          return event.defaultPrevented;
+        };
+        const before = await app.vault.read(
+          (view as import("obsidian").FileView).file!,
+        );
+        const file = (view as import("obsidian").FileView).file;
+        const date = th("date")!.getBoundingClientRect();
+        fire(
+          th("title"),
+          "dragstart",
+          th("title")!.getBoundingClientRect().left + 5,
+        );
+        fire(th("date"), "dragover", date.left + 5);
+        const during = {
+          line: !!activeDocument.querySelector<HTMLElement>(
+            ".table-drag-target",
+          )!,
+          grabbing: activeDocument.body.classList.contains("is-grabbing"),
+        };
+        const layout = (
+          view as import("@/views/query-view/file-view").QueryFileView
+        ).query.layout;
+        const left = () =>
+          !activeDocument.querySelector<HTMLElement>(".table-drag-target")! &&
+          !activeDocument.body.classList.contains("is-grabbing");
+        leaf!.detach();
+        if ((layout as typeof layout & { _loaded: boolean })._loaded)
+          throw new Error("the Table stays mounted");
+        await until("drag ends", left).catch(() => {});
+        const after = {
+          line: !!activeDocument.querySelector<HTMLElement>(
+            ".table-drag-target",
+          )!,
+          grabbing: activeDocument.body.classList.contains("is-grabbing"),
+        };
+        fire(activeDocument.body, "dragover", 10);
+        fire(activeDocument.body, "drop", 10);
+        return {
+          during,
+          after,
+          same: (await app.vault.read(file!)) === before,
+        };
+      },
+      undefined,
+    )) as {
       during: { line: boolean; grabbing: boolean };
       after: { line: boolean; grabbing: boolean };
       same: boolean;
@@ -3412,7 +3219,7 @@ views:
     const layout = await obRun(
       run.vaultId,
       async ({ app }) => {
-        return String(JSON.stringify(app.workspace.getLayout()));
+        return JSON.stringify(app.workspace.getLayout());
       },
       undefined,
     );
@@ -3420,32 +3227,30 @@ views:
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
-        async ({ app }, { __typedArg0, __typedArg1 }) => {
+        async ({ app }, { layout, path }) => {
           for (const popup of activeDocument.querySelectorAll<HTMLElement>(
             "[popover]:popover-open",
           ))
             popup.hidePopover();
           document.body.classList.remove("is-grabbing");
-          await app.workspace.changeLayout(JSON.parse(__typedArg0));
-          const file = app.vault.getFileByPath(__typedArg1)!;
+          await app.workspace.changeLayout(JSON.parse(layout));
+          const file = app.vault.getFileByPath(path)!;
           if (file) await app.vault.delete(file);
-          return String(true);
         },
-        { __typedArg0: layout, __typedArg1: path },
+        { layout, path },
       );
     });
     const note = "vault.literatureNote";
     const source = `views:\n  - type: table\n    name: Note column\n    from: items\n    order:\n      - title\n      - date\n      - ${note}\n    limit: 3\n`;
     await obRun(
       run.vaultId,
-      async ({ app }, { __typedArg0, __typedArg1 }) => {
-        const file = await app.vault.create(__typedArg0, __typedArg1);
+      async ({ app }, { path, source }) => {
+        const file = await app.vault.create(path, source);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(file);
         app.workspace.setActiveLeaf(leaf, { focus: true });
-        return String(true);
       },
-      { __typedArg0: path, __typedArg1: source },
+      { path, source },
     );
     /**
      * Runs `steps` against the open Query File tab once its Table shows, with
@@ -3468,24 +3273,15 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async (
-              { app, page: pageHelpers },
-              {
-                __typedArg0,
-                __typedArg1,
-                __typedArg2,
-                __typedArg3,
-                __typedArg4,
-                __typedArg5,
-              },
-            ) => {
+            async ({ app, page: pageHelpers }, { expectedPath, note }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3500,7 +3296,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const transfer = new DataTransfer();
               const fire = (target: HTMLElement, type: string, x: number) => {
@@ -3526,15 +3322,15 @@ views:
               const out = await (async () => {
                 const title = th("title")!.getBoundingClientRect();
                 fire(
-                  th(__typedArg1),
+                  th(note),
                   "dragstart",
-                  th(__typedArg2)!.getBoundingClientRect().left + 5,
+                  th(note)!.getBoundingClientRect().left + 5,
                 );
                 fire(th("title"), "dragover", title.left + 5);
                 fire(th("title"), "drop", title.left + 5);
-                fire(th(__typedArg3), "dragend", 0);
-                await until("moved", () => columns()[0] === __typedArg4);
-                const at = th(__typedArg5)!.cellIndex;
+                fire(th(note), "dragend", 0);
+                await until("moved", () => columns()[0] === note);
+                const at = th(note)!.cellIndex;
                 return {
                   cells: [
                     ...el.querySelectorAll<HTMLTableRowElement>(
@@ -3551,24 +3347,15 @@ views:
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            {
-              __typedArg0: path,
-              __typedArg1: note,
-              __typedArg2: note,
-              __typedArg3: note,
-              __typedArg4: note,
-              __typedArg5: note,
-            },
+            { expectedPath: path, note },
           ),
         ) as T | null;
         return out !== null;
@@ -3593,26 +3380,15 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async (
-              { app, page: pageHelpers },
-              {
-                __typedArg0,
-                __typedArg1,
-                __typedArg2,
-                __typedArg3,
-                __typedArg4,
-                __typedArg5,
-                __typedArg6,
-                __typedArg7,
-              },
-            ) => {
+            async ({ app, page: pageHelpers }, { expectedPath, note }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3627,7 +3403,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
               const edge = (p: string) =>
                 th(p)!.querySelector<HTMLElement>(
                   "[data-query-column-resizer]",
@@ -3662,41 +3438,27 @@ views:
               const width = (p: string) =>
                 Math.round(th(p)!.getBoundingClientRect().width);
               const out = await (async () => {
-                const before = width(__typedArg1);
-                const x = edge(__typedArg2)!.getBoundingClientRect().left + 2;
-                pointer(edge(__typedArg3), "pointerdown", x);
+                const before = width(note);
+                const x = edge(note)!.getBoundingClientRect().left + 2;
+                pointer(edge(note), "pointerdown", x);
                 pointer(el, "pointermove", x + 80);
-                await until("live width", () => width(__typedArg4) !== before);
-                pointer(th(__typedArg5), "pointerup", x + 80);
-                await until(
-                  "saved width",
-                  () => "sized" in th(__typedArg6)!.dataset,
-                );
-                return { before, after: width(__typedArg7) };
+                await until("live width", () => width(note) !== before);
+                pointer(th(note), "pointerup", x + 80);
+                await until("saved width", () => "sized" in th(note)!.dataset);
+                return { before, after: width(note) };
               })();
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            {
-              __typedArg0: path,
-              __typedArg1: note,
-              __typedArg2: note,
-              __typedArg3: note,
-              __typedArg4: note,
-              __typedArg5: note,
-              __typedArg6: note,
-              __typedArg7: note,
-            },
+            { expectedPath: path, note },
           ),
         ) as T | null;
         return out !== null;
@@ -3722,17 +3484,15 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async (
-              { app, page: pageHelpers },
-              { __typedArg0, __typedArg1, __typedArg2, __typedArg3 },
-            ) => {
+            async ({ app, page: pageHelpers }, { expectedPath, note }) => {
               const { press, until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3747,7 +3507,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const popup = () =>
                 activeDocument.querySelector<HTMLElement>(
@@ -3771,11 +3531,11 @@ views:
                 );
                 const row = () =>
                   popup()!.querySelector<HTMLElement>(
-                    `[data-query-property=${JSON.stringify(__typedArg1)}]`,
+                    `[data-query-property=${JSON.stringify(note)}]`,
                   )!;
                 const label = row()!.textContent;
                 press(row(), "Literature Note Property row");
-                await until("hidden", () => !columns().includes(__typedArg2));
+                await until("hidden", () => !columns().includes(note));
                 await (
                   view as import("@/views/query-view/file-view").QueryFileView
                 ).query.flush();
@@ -3785,29 +3545,22 @@ views:
                 );
                 const kept = row()?.getAttribute("aria-selected") === "false";
                 press(row(), "Literature Note Property row");
-                await until("shown", () => columns().includes(__typedArg3));
+                await until("shown", () => columns().includes(note));
                 popup()!.hidePopover();
                 return { label, hidden, hiddenText, kept };
               })();
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            {
-              __typedArg0: path,
-              __typedArg1: note,
-              __typedArg2: note,
-              __typedArg3: note,
-            },
+            { expectedPath: path, note },
           ),
         ) as T | null;
         return out !== null;
@@ -3838,17 +3591,15 @@ views:
         out = JSON.parse(
           await obRun(
             run.vaultId,
-            async (
-              { app, page: pageHelpers },
-              { __typedArg0, __typedArg1 },
-            ) => {
+            async ({ app, page: pageHelpers }, { expectedPath, note }) => {
               const { until } = pageHelpers;
               const view = app.workspace.getMostRecentLeaf()!.view;
               if (
                 view.getViewType() !== "zotlit-query-file" ||
-                (view as import("obsidian").FileView).file?.path !== __typedArg0
+                (view as import("obsidian").FileView).file?.path !==
+                  expectedPath
               )
-                return String("null");
+                return "null";
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.settled;
@@ -3863,7 +3614,7 @@ views:
                   '[data-query-table-row="item"]',
                 )!
               )
-                return String("null");
+                return "null";
 
               const columns = () =>
                 [
@@ -3891,23 +3642,21 @@ views:
                 (
                   view as import("@/views/query-view/file-view").QueryFileView
                 ).query.document.setViewLayout(0, "table");
-                await until("table", () => th(__typedArg1));
+                await until("table", () => th(note));
                 return { card, unused };
               })();
               await (
                 view as import("@/views/query-view/file-view").QueryFileView
               ).query.flush();
-              return String(
-                JSON.stringify({
-                  ...out,
-                  columns: columns(),
-                  text: await app.vault.read(
-                    (view as import("obsidian").FileView).file!,
-                  ),
-                }),
-              );
+              return JSON.stringify({
+                ...out,
+                columns: columns(),
+                text: await app.vault.read(
+                  (view as import("obsidian").FileView).file!,
+                ),
+              });
             },
-            { __typedArg0: path, __typedArg1: note },
+            { expectedPath: path, note },
           ),
         ) as T | null;
         return out !== null;

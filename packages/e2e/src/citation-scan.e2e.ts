@@ -32,12 +32,12 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         async (
           { app, zotlit, page },
           {
-            __typedArg0,
-            __typedArg1,
-            __typedArg2,
-            __typedArg3,
-            __typedArg4,
-            __typedArg5,
+            templateText,
+            literaturePath,
+            literatureContent,
+            note,
+            draftContent,
+            body,
           },
         ) => {
           const cleanup = new AsyncDisposableStack();
@@ -75,15 +75,13 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           const existing = app.vault.getFileByPath(profilePath);
           const original = existing
             ? await app.vault.read(existing)
-            : services.bridge.runSync(
-                services.profileService.getBuiltInSource(),
-              );
+            : services.bridge.runSync(services.profileService.getBuiltInSource);
           const header = "--- zotlit:annotation ---";
           if (!original.includes(header))
             throw Error("Default profile has no annotation section");
           const source =
             original.slice(0, original.indexOf(header) + header.length) +
-            __typedArg0;
+            templateText;
           if (existing) {
             cleanup.defer(async () => {
               await app.vault.modify(existing, original);
@@ -118,9 +116,12 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             state: { followMode: "pinned", pinnedItemKey: "RUGIER24" },
           });
           await s.annotations!.view.read;
-          const literature = await app.vault.create(__typedArg1, __typedArg2);
+          const literature = await app.vault.create(
+            literaturePath,
+            literatureContent,
+          );
           cleanup.defer(() => app.vault.delete(literature));
-          s.file = await app.vault.create(__typedArg3, __typedArg4);
+          s.file = await app.vault.create(note, draftContent);
           cleanup.defer(() => app.vault.delete(s.file!));
           s.leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
             leaf.detach(),
@@ -132,41 +133,30 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           });
           cleanup.defer(() => s.leaf!.view.save());
           s.editor = s.leaf!.view.editor;
-          s.editor!.setValue(__typedArg5);
+          s.editor!.setValue(body);
           await s.leaf!.view.save();
-          return String(true);
         },
         {
-          __typedArg0: "\n![]({{ zt.backlink }})\n",
-          __typedArg1: literature,
-          __typedArg2: "---\nzotero-key: RUGIER24\n---\n",
-          __typedArg3: note,
-          __typedArg4: "An empty draft.\n",
-          __typedArg5: body,
+          templateText: "\n![]({{ zt.backlink }})\n",
+          literaturePath: literature,
+          literatureContent: "---\nzotero-key: RUGIER24\n---\n",
+          note,
+          draftContent: "An empty draft.\n",
+          body,
         },
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }) => {
-              return String(
-                !!page.scratch.citationScan!.annotations!.view.contentEl.querySelector(
-                  '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
-                ),
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "citation-scan.e2e.ts:73",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return !!page.scratch.citationScan!.annotations!.view.contentEl.querySelector(
+            '[data-zotero-annotation-key="FDRFQ7C2"] [draggable]',
+          );
+        },
+        undefined,
+        {
+          what: "the annotation card FDRFQ7C2 drag handle in the citation scan annotations view",
+        },
+      );
       await obRun(
         vaultId,
         async ({ app, page }) => {
@@ -201,32 +191,21 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           app.workspace.trigger("editor-drop", drop, s.editor, s.leaf!.view);
           if (!drop.defaultPrevented)
             throw Error("ZotLit did not accept the annotation drag");
-          return String(true);
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }, { __typedArg0 }) => {
-              return String(
-                page.scratch
-                  .citationScan!.editor!.getValue()
-                  .includes(__typedArg0),
-              );
-            },
-            { __typedArg0: `![](${uri})` },
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "citation-scan.e2e.ts:98",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }, { expectedEmbed }) => {
+          return page.scratch
+            .citationScan!.editor!.getValue()
+            .includes(expectedEmbed);
+        },
+        { expectedEmbed: `![](${uri})` },
+        {
+          what: "the citation scan editor to contain the expected annotation embed",
+        },
+      );
       await obRun(
         vaultId,
         async ({ app, page }) => {
@@ -238,7 +217,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           ) as WorkspaceLeaf & { view: ReferencesView };
           await s.references!.setViewState({ type: "zotlit-references" });
           app.workspace.setActiveLeaf(s.leaf!, { focus: true });
-          return String(true);
         },
         undefined,
       );
@@ -289,38 +267,28 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
         expect(group?.occurrences.map((occurrence) => occurrence.form)).toEqual(
           ["citation", "embed"],
         );
-        expect(
-          await ((options: { expected: string; tries?: number }) =>
-            obRunUntil(
-              vaultId,
-              async ({ page }) => {
-                return String(
-                  Array.from(
-                    page.scratch.citationScan!.references!.view.contentEl.querySelectorAll(
-                      "li",
-                    ),
-                  ).some(
-                    (row) =>
-                      row.textContent.includes(
-                        "Ten Simple Rules for Better Figures",
-                      ) &&
-                      Array.from(row.querySelectorAll("[aria-hidden]")).some(
-                        (badge) => badge.textContent === "3",
-                      ),
-                  ),
-                );
-              },
-              undefined,
-              {
-                ready: (value) => value === options.expected,
-                tries: options.tries,
-                what: "citation-scan.e2e.ts:162",
-              },
-            ).then(
-              () => true,
-              () => false,
-            ))({ expected: "true" }),
-        ).toBe(true);
+        await obRunUntil(
+          vaultId,
+          async ({ page }) => {
+            return Array.from(
+              page.scratch.citationScan!.references!.view.contentEl.querySelectorAll(
+                "li",
+              ),
+            ).some(
+              (row) =>
+                row.textContent.includes(
+                  "Ten Simple Rules for Better Figures",
+                ) &&
+                Array.from(row.querySelectorAll("[aria-hidden]")).some(
+                  (badge) => badge.textContent === "3",
+                ),
+            );
+          },
+          undefined,
+          {
+            what: "the Ten Simple Rules reference row to show a count badge of 3",
+          },
+        );
         return { references: references.entries, uses: group!.occurrences };
       };
       await expect
@@ -401,43 +369,31 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
             },
             s.sessions[0],
           );
-          return String(true);
         },
         undefined,
       );
-      expect(
-        await ((options: { expected: string; tries?: number }) =>
-          obRunUntil(
-            vaultId,
-            async ({ page }) => {
-              return String(
-                page.scratch.citationScan!.sessions.length === 2 &&
-                  page.scratch.citationScan!.sessions[0] !==
-                    page.scratch.citationScan!.sessions[1],
-              );
-            },
-            undefined,
-            {
-              ready: (value) => value === options.expected,
-              tries: options.tries,
-              what: "citation-scan.e2e.ts:212",
-            },
-          ).then(
-            () => true,
-            () => false,
-          ))({ expected: "true" }),
-      ).toBe(true);
+      await obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return (
+            page.scratch.citationScan!.sessions.length === 2 &&
+            page.scratch.citationScan!.sessions[0] !==
+              page.scratch.citationScan!.sessions[1]
+          );
+        },
+        undefined,
+        { what: "the citation scan to record two distinct parse sessions" },
+      );
       expect(await readAnswers()).toEqual(before);
       // New offsets prove the replacement worker parsed a new edit, rather than serving held records alone.
       await obRun(
         vaultId,
-        async ({ page }, { __typedArg0 }) => {
+        async ({ page }, { prependText }) => {
           const s = page.scratch.citationScan!;
-          s.editor!.setValue(__typedArg0 + s.editor!.getValue());
+          s.editor!.setValue(prependText + s.editor!.getValue());
           await s.leaf!.view.save();
-          return String(true);
         },
-        { __typedArg0: "After restart.\n\n" },
+        { prependText: "After restart.\n\n" },
       );
       await expect
         .poll(
@@ -482,7 +438,6 @@ describe.skipIf(!reachable)("Citation scan pipeline", () => {
           } finally {
             delete page.scratch.citationScan;
           }
-          return String(true);
         },
         undefined,
       );

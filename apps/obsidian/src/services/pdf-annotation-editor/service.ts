@@ -14,6 +14,7 @@ import { scopedBridge, valueOr } from "@/lib/effect-bridge";
 import { fromInstant, instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
+import { Notifier } from "@/lib/notifier";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
@@ -97,6 +98,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       const zoteroReads = yield* ZoteroReads;
       const api = yield* ZoteroLocalApi;
       const notices = yield* CapabilityNotices;
+      const notifier = yield* Notifier;
       const bridge = yield* scopedBridge;
       const now = instantClock(yield* Clock.Clock);
       const events = yield* PubSub.unbounded<string>();
@@ -166,6 +168,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             attachments,
             annotations,
             bridge,
+            notifier,
             capabilityGestures: {
               reportBlockedGesture: (key) =>
                 bridge.runAndForget(notices.reportBlockedGesture(key)),

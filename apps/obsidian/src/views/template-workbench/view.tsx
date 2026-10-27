@@ -1901,7 +1901,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           }),
         );
         const profile = yield* Profile;
-        yield* profile.restoreDefault();
+        yield* profile.restoreDefault;
         this.setViewData(yield* profile.getSource("default"), true);
       }),
     );

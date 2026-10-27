@@ -109,7 +109,7 @@ it.effect(
       expect(yield* profile.loaded).toBe(false);
       yield* Effect.promise(() =>
         expect(
-          profile.bridge.runPromise(profile.restoreDefault()),
+          profile.bridge.runPromise(profile.restoreDefault),
         ).rejects.toThrow(),
       );
       expect(host.vault.contents.get(path)).toBe(source);
@@ -131,10 +131,10 @@ it.effect(
       const { profile, profileService } = yield* profileRuntimeOf(host);
       yield* Effect.promise(() =>
         expect(
-          profile.bridge.runPromise(profile.materializeDefault()),
+          profile.bridge.runPromise(profile.materializeDefault),
         ).rejects.toThrow(),
       );
-      expect(yield* Effect.flip(profileService.ejectDefault())).toBeInstanceOf(
+      expect(yield* Effect.flip(profileService.ejectDefault)).toBeInstanceOf(
         TemplateOperationError,
       );
       expect([...host.vault.contents.keys()]).toEqual([]);
@@ -207,7 +207,7 @@ it.effect(
       };
       // Unload stops the waiting caller; the write itself finishes.
       const writing = expect(
-        profile.bridge.runPromise(profile.materializeDefault()),
+        profile.bridge.runPromise(profile.materializeDefault),
       ).rejects.toMatchObject({ name: "AbortError" });
       yield* Effect.promise(() => started.promise);
       let closed = false;
@@ -233,7 +233,7 @@ it.effect.each(["read", "create", "duplicate", "save"] as const)(
       const host = createTemplateHost();
       const { runtime, profile, profileService } =
         yield* profileRuntimeOf(host);
-      const creating = profile.bridge.runPromise(profile.materializeDefault());
+      const creating = profile.bridge.runPromise(profile.materializeDefault);
       yield* TestClock.adjust(500);
       yield* Effect.promise(() => creating);
       const started = Promise.withResolvers<void>();
@@ -272,7 +272,7 @@ it.effect.each(["read", "create", "duplicate", "save"] as const)(
       yield* Effect.promise(() => started.promise);
       yield* Effect.promise(() => runtime.dispose());
       expect(String(yield* reading)).not.toContain("ManagedRuntime disposed");
-      release.resolve(profile.bridge.runSync(profile.getBuiltInSource()));
+      release.resolve(profile.bridge.runSync(profile.getBuiltInSource));
       yield* TestClock.adjust(500);
       expect([...host.vault.contents.keys()]).toEqual([
         "templates/zotlit-profile.default.md",
@@ -331,7 +331,7 @@ it.effect("#1792: a Profile create preserves the FileExists error type", () =>
     const { profileService } = yield* profileRuntimeOf(host);
     const path = "templates/zotlit-profile.default.md";
     yield* Effect.promise(() => host.vault.createFolder(path));
-    const error = yield* Effect.flip(profileService.materializeDefault());
+    const error = yield* Effect.flip(profileService.materializeDefault);
     expect(error).toBeInstanceOf(FileExists);
     expect(error).toMatchObject({ path });
     expect(host.vault.contents.has(path)).toBe(false);

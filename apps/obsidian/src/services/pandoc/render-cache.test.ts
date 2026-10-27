@@ -162,7 +162,7 @@ it.effect.each(["share", "import"] as const)(
       if (operation === "share") yield* profileService.prepareShare("default");
       else
         yield* profileService.prepareImport(
-          (yield* profile.getBuiltInSource()).replace(
+          (yield* profile.getBuiltInSource).replace(
             "id: default",
             "id: Bk3Qn7XvT2Lp",
           ),
