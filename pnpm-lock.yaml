@@ -1015,12 +1015,18 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../config
+      '@zotlit/obsidian':
+        specifier: workspace:*
+        version: link:../../apps/obsidian
       '@zotlit/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../scripts
+      obsidian:
+        specifier: workspace:*
+        version: link:../obsidian-api
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

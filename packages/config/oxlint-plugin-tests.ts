@@ -416,9 +416,115 @@ export const noInternalMock: Rule = {
   },
 };
 
+/** A page callback is shipped as source, so its values come from args or the page. */
+export const noEvalCapture: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Keep serialized page callbacks self-contained (policies/testing-strategy.md).",
+    },
+    schema: [],
+    messages: {
+      capture:
+        "Pass '{{name}}' through args; a serialized page callback cannot capture host bindings.",
+      callback:
+        "Use an arrow or function expression for a serialized page callback.",
+      thisValue:
+        "Use the callback context instead of this in serialized page code.",
+    },
+  },
+  create(context) {
+    const callbacks = new Set<AnyNode>();
+    const thisNodes: AnyNode[] = [];
+    function resolve(node: AnyNode, seen = new Set<AnyNode>()): AnyNode {
+      if (node.type !== "Identifier" || seen.has(node)) return node;
+      seen.add(node);
+      for (
+        let scope = context.sourceCode.getScope(node);
+        scope;
+        scope = scope.upper!
+      ) {
+        const variable = scope.set.get(node.name);
+        if (!variable) continue;
+        const declaration = variable.defs[0]?.node;
+        if (declaration?.type === "VariableDeclarator" && declaration.init)
+          return resolve(declaration.init, seen);
+        return declaration ?? node;
+      }
+      return node;
+    }
+    return {
+      CallExpression(node) {
+        const name =
+          node.callee.type === "Identifier"
+            ? node.callee.name
+            : node.callee.type === "MemberExpression"
+              ? staticName(node.callee)
+              : undefined;
+        if (name !== "obRun" && name !== "obRunUntil") return;
+        const argument = node.arguments[1];
+        if (!argument) return;
+        const callback = resolve(argument);
+        if (
+          callback.type !== "ArrowFunctionExpression" &&
+          callback.type !== "FunctionExpression"
+        ) {
+          context.report({ node: argument, messageId: "callback" });
+          return;
+        }
+        callbacks.add(callback);
+      },
+      ThisExpression(node) {
+        thisNodes.push(node);
+      },
+      "Program:exit"() {
+        for (const callback of callbacks) {
+          const scope = context.sourceCode.getScope(callback);
+          for (const reference of scope.through) {
+            // Oxlint exposes the TS scope manager's runtime flag; its public
+            // Reference interface has not yet declared the TS-only members.
+            if ("isValueReference" in reference && !reference.isValueReference)
+              continue;
+            if (!reference.resolved || reference.resolved.defs.length === 0)
+              continue;
+            if (
+              reference.resolved.defs.some(
+                (definition) => definition.node === callback,
+              )
+            )
+              continue;
+            context.report({
+              node: reference.identifier,
+              messageId: "capture",
+              data: { name: reference.identifier.name },
+            });
+          }
+          for (const node of thisNodes) {
+            for (let at: AnyNode | null = node; at; at = at.parent) {
+              if (at === callback) {
+                context.report({ node, messageId: "thisValue" });
+                break;
+              }
+              // A nested normal function or class method owns its receiver.
+              // An arrow inherits this from the serialized callback.
+              if (
+                at.type === "FunctionExpression" ||
+                at.type === "FunctionDeclaration"
+              )
+                break;
+            }
+          }
+        }
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-tests" },
   rules: {
+    "no-eval-capture": noEvalCapture,
     "no-class-assertion": noClassAssertion,
     "no-markup-assertion": noMarkupAssertion,
     "no-source-text": noSourceText,
