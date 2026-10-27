@@ -3,7 +3,7 @@
 
 import { hashKey } from "@tanstack/query-core";
 import type { QueryKey } from "@tanstack/query-core";
-import { Context, Effect, Fiber, Layer, Scope } from "effect";
+import { Context, Effect, Fiber, FiberSet, Layer, Ref, Schema } from "effect";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log-category";
@@ -80,35 +80,40 @@ export interface ExcerptDisplayDemand {
 
 /** One live display read per Annotation, shared by every card that shows it. */
 interface Slot {
-  /** Hashed display key, which is what the slot map is keyed by. */
   readonly hash: string;
   readonly key: QueryKey;
-  /** The latest saved request: what the next read resolves. */
-  latest: ExcerptRequest;
-  /** The excerpt key of the read in flight, with its settlement. */
-  read: { excerpt: string; fiber: Fiber.Fiber<void> } | null;
-  readonly cards: Set<Card>;
+  readonly state: Ref.Ref<SlotState>;
 }
 
-/** One card's demand, and the listeners its snapshot moves for. */
-interface Card {
-  slot: Slot | null;
-  /** The request the card demands now, `null` where it demands nothing. */
-  demand: ExcerptRequest | null;
-  /** Whether the card has stated a demand yet; an unstated one is still loading. */
-  stated: boolean;
-  /** The snapshot last answered, so a render sees the same object until it moves. */
-  held: ExcerptImageDisplay | null;
-  readonly listeners: Set<() => void>;
+interface SlotState {
+  /** The latest saved request: what the next read resolves. */
+  readonly latest: ExcerptRequest;
+  readonly read: {
+    readonly excerpt: string;
+    readonly fiber: Fiber.Fiber<void>;
+  } | null;
+  readonly cards: ReadonlySet<Card>;
 }
+
+/** One card's demand, cached snapshot, and subscribed view callbacks. */
+interface CardState {
+  readonly slot: Slot | null;
+  readonly demand: ExcerptRequest | null;
+  /** An unstated demand is still loading. */
+  readonly stated: boolean;
+  /** One object until publication moves the snapshot. */
+  readonly held: ExcerptImageDisplay | null;
+  readonly listeners: ReadonlySet<() => void>;
+}
+type Card = Ref.Ref<CardState>;
 
 /** An Annotation whose pixels have no available image. */
-export class ExcerptUnavailable extends Error {
-  readonly _tag = "ExcerptUnavailable";
-
-  constructor(annotationKey: string) {
-    super(`No excerpt image is available for ${annotationKey}`);
-    this.name = "ExcerptUnavailable";
+export class ExcerptUnavailable extends Schema.TaggedError<
+  ExcerptUnavailable,
+  { readonly brand: unique symbol }
+>()("ExcerptUnavailable", { annotationKey: Schema.String }) {
+  override get message() {
+    return `No excerpt image is available for ${this.annotationKey}`;
   }
 }
 
@@ -128,15 +133,17 @@ export const layerExcerptDisplays = Layer.effect(
   Effect.gen(function* () {
     const images = yield* ExcerptImageService;
     const queries = yield* QueryClients;
-    const scope = yield* Scope.Scope;
+    const jobs = yield* FiberSet.make<void, never>();
     // Card callbacks and Query Core's Promise query function are execution edges.
     const bridge = yield* scopedBridge;
-    const slots = new Map<string, Slot>();
-    const refreshes = new Map<string, Fiber.Fiber<void>>();
+    const slots = yield* Ref.make<ReadonlyMap<string, Slot>>(new Map());
+    const refreshes = yield* Ref.make<ReadonlyMap<string, Fiber.Fiber<void>>>(
+      new Map(),
+    );
 
     const peek = (slot: Slot) => queries.peek<AvailableExcerpt>(slot.key);
     const snapshot = Effect.fnUntraced(function* (
-      card: Card,
+      card: CardState,
     ): Effect.fn.Return<ExcerptImageDisplay> {
       const slot = card.slot;
       if (!slot || !card.demand)
@@ -150,7 +157,8 @@ export const layerExcerptDisplays = Layer.effect(
         return {
           image: null,
           current: false,
-          status: slot.read === null ? "failed" : "reading",
+          status:
+            (yield* Ref.get(slot.state)).read === null ? "failed" : "reading",
         };
       return {
         image: held.value,
@@ -163,36 +171,56 @@ export const layerExcerptDisplays = Layer.effect(
               : "settled",
       };
     });
-    const publish = (card: Card) =>
-      Effect.sync(() => {
-        card.held = null;
-        for (const listener of card.listeners) listener();
-      });
+    const current = Effect.fnUntraced(function* (card: Card) {
+      const state = yield* Ref.get(card);
+      if (state.held) return state.held;
+      const held = yield* snapshot(state);
+      yield* Ref.update(card, (value) => ({ ...value, held }));
+      return held;
+    });
+    const publish = Effect.fnUntraced(function* (card: Card) {
+      const listeners = yield* Ref.modify(card, (state) => [
+        state.listeners,
+        { ...state, held: null },
+      ]);
+      for (const listener of listeners) listener();
+    });
     const notify = Effect.fnUntraced(function* (slot: Slot) {
-      for (const card of slot.cards) yield* publish(card);
+      for (const card of (yield* Ref.get(slot.state)).cards)
+        yield* publish(card);
     });
     const drop = Effect.fnUntraced(function* (slot: Slot) {
-      const reading = slot.read;
-      slot.read = null;
+      const reading = yield* Ref.modify(slot.state, (state) => [
+        state.read,
+        { ...state, read: null },
+      ]);
       // Query Core cancels publication before interruption waits for finalizers.
       queries.client.removeQueries({ queryKey: slot.key });
       if (reading) yield* Fiber.interrupt(reading.fiber);
     });
     const leave = Effect.fnUntraced(function* (card: Card) {
-      const slot = card.slot;
+      const slot = (yield* Ref.get(card)).slot;
       if (!slot) return;
-      card.slot = null;
-      slot.cards.delete(card);
-      if (slot.cards.size > 0) return;
-      slots.delete(slot.hash);
+      yield* Ref.update(card, (state) => ({ ...state, slot: null }));
+      const remaining = yield* Ref.modify(slot.state, (state) => {
+        const cards = new Set(state.cards);
+        cards.delete(card);
+        return [cards.size, { ...state, cards }];
+      });
+      if (remaining > 0) return;
+      yield* Ref.update(slots, (held) => {
+        const next = new Map(held);
+        next.delete(slot.hash);
+        return next;
+      });
       yield* drop(slot);
     });
     const seed = Effect.fnUntraced(function* (slot: Slot) {
       if ((yield* peek(slot)) !== null) return;
-      const stored = yield* images.stored(slot.latest);
+      const stored = yield* images.stored((yield* Ref.get(slot.state)).latest);
       if (
         !stored ||
-        slots.get(slot.hash) !== slot ||
+        (yield* Ref.get(slots)).get(slot.hash) !== slot ||
         (yield* peek(slot)) !== null
       )
         return;
@@ -205,22 +233,24 @@ export const layerExcerptDisplays = Layer.effect(
         yield* Effect.logDebug("Excerpt display has no image", {
           annotationKey: request.annotation.key,
         });
-        return yield* Effect.fail(
-          new ExcerptUnavailable(request.annotation.key),
-        );
+        return yield* new ExcerptUnavailable({
+          annotationKey: request.annotation.key,
+        });
       }
       return outcome;
     });
     const start = Effect.fnUntraced(function* (slot: Slot) {
-      const request = slot.latest;
-      const previous = slot.read;
-      slot.read = null;
+      const previous = yield* Ref.modify(slot.state, (state) => [
+        state,
+        { ...state, read: null },
+      ]);
+      const request = previous.latest;
       yield* queries.invalidate(slot.key);
-      if (previous) yield* Fiber.interrupt(previous.fiber);
+      if (previous.read) yield* Fiber.interrupt(previous.read.fiber);
 
       // The read owns both jobs. A stored fallback can arrive after the
       // fresh resolution fails, so both finish before this work settles.
-      const work = Effect.all(
+      const work: Effect.Effect<void> = Effect.all(
         [
           seed(slot),
           queries.read<AvailableExcerpt>(slot.key, ({ signal }) =>
@@ -231,21 +261,23 @@ export const layerExcerptDisplays = Layer.effect(
       ).pipe(
         Effect.ensuring(
           Effect.gen(function* () {
-            if (slot.read !== reading) return;
-            slot.read = null;
-            yield* notify(slot);
+            const finished = yield* Ref.modify(slot.state, (state) =>
+              state.read === reading
+                ? [true, { ...state, read: null }]
+                : [false, state],
+            );
+            if (finished) yield* notify(slot);
           }),
         ),
       );
-      const fiber = yield* Effect.forkIn(work, scope, {
-        startImmediately: true,
-      });
+      const fiber = yield* FiberSet.run(jobs, work);
       const reading = { excerpt: excerptKey(request), fiber };
-      slot.read = reading;
+      yield* Ref.update(slot.state, (state) => ({ ...state, read: reading }));
     });
     const read = Effect.fnUntraced(function* (slot: Slot) {
-      const wanted = excerptKey(slot.latest);
-      const running = slot.read?.excerpt ?? null;
+      const state = yield* Ref.get(slot.state);
+      const wanted = excerptKey(state.latest);
+      const running = state.read?.excerpt ?? null;
       if (running === wanted) return;
       if (
         running === null &&
@@ -254,31 +286,48 @@ export const layerExcerptDisplays = Layer.effect(
         return;
       yield* start(slot);
     });
+    const advance = (slot: Slot, request: ExcerptRequest) =>
+      Ref.update(slot.state, (state) =>
+        supersedes(request.annotation.version, state.latest.annotation.version)
+          ? { ...state, latest: request }
+          : state,
+      );
     const demand = Effect.fnUntraced(function* (
       card: Card,
       request: ExcerptRequest | null,
     ) {
       const key = request ? excerptDisplayKey(request) : null;
       const hash = key ? hashKey(key) : null;
-      if (card.slot && card.slot.hash !== hash) yield* leave(card);
-      card.demand = request;
-      card.stated = true;
+      const previous = (yield* Ref.get(card)).slot;
+      if (previous && previous.hash !== hash) yield* leave(card);
+      yield* Ref.update(card, (state) => ({
+        ...state,
+        demand: request,
+        stated: true,
+      }));
       if (request && key && hash) {
-        let slot = slots.get(hash);
+        let slot = (yield* Ref.get(slots)).get(hash);
         if (slot) {
-          if (
-            supersedes(
-              request.annotation.version,
-              slot.latest.annotation.version,
-            )
-          )
-            slot.latest = request;
+          yield* advance(slot, request);
         } else {
-          slot = { hash, key, latest: request, read: null, cards: new Set() };
-          slots.set(hash, slot);
+          slot = {
+            hash,
+            key,
+            state: yield* Ref.make<SlotState>({
+              latest: request,
+              read: null,
+              cards: new Set(),
+            }),
+          };
+          const opened = slot;
+          yield* Ref.update(slots, (held) => new Map(held).set(hash, opened));
         }
-        slot.cards.add(card);
-        card.slot = slot;
+        yield* Ref.update(slot.state, (state) => ({
+          ...state,
+          cards: new Set(state.cards).add(card),
+        }));
+        const joined = slot;
+        yield* Ref.update(card, (state) => ({ ...state, slot: joined }));
         yield* read(slot);
         yield* notify(slot);
         return;
@@ -289,9 +338,9 @@ export const layerExcerptDisplays = Layer.effect(
       request: ExcerptRequest,
     ) {
       const annotation = excerptAnnotationRecord(request);
-      const previous = refreshes.get(annotation);
+      const previous = (yield* Ref.get(refreshes)).get(annotation);
       if (previous) yield* Fiber.interrupt(previous);
-      const work = Effect.gen(function* () {
+      const work: Effect.Effect<void> = Effect.gen(function* () {
         const stored = yield* images.stored(request);
         if (!stored || stored.identity.key === excerptKey(request)) return;
         yield* images.resolve(request);
@@ -303,77 +352,100 @@ export const layerExcerptDisplays = Layer.effect(
           }),
         ),
         Effect.ensuring(
-          Effect.sync(() => {
-            if (refreshes.get(annotation) === fiber)
-              refreshes.delete(annotation);
+          Ref.update(refreshes, (held) => {
+            if (held.get(annotation) !== fiber) return held;
+            const next = new Map(held);
+            next.delete(annotation);
+            return next;
           }),
         ),
       );
-      const fiber = yield* Effect.forkIn(work, scope);
-      refreshes.set(annotation, fiber);
+      const fiber = yield* FiberSet.run(jobs, work, {
+        startImmediately: false,
+      });
+      yield* Ref.update(refreshes, (held) =>
+        new Map(held).set(annotation, fiber),
+      );
     });
     const clear = Effect.gen(function* () {
-      const cleared = Array.from(slots.values());
-      slots.clear();
-      for (const slot of cleared) {
+      const cleared = yield* Ref.getAndSet(slots, new Map());
+      for (const slot of cleared.values()) {
         yield* drop(slot);
-        for (const card of slot.cards) card.slot = null;
+        for (const card of (yield* Ref.get(slot.state)).cards)
+          yield* Ref.update(card, (state) => ({ ...state, slot: null }));
         yield* notify(slot);
       }
-      yield* Fiber.interruptAll(refreshes.values());
-      refreshes.clear();
+      yield* Fiber.interruptAll((yield* Ref.get(refreshes)).values());
+      yield* Ref.set(refreshes, new Map());
     }).pipe(Effect.withSpan("ExcerptDisplays.clear"));
     yield* Effect.acquireRelease(
       queries.watch([EXCERPT_DISPLAY], {
-        settled: (key) => {
-          const slot = slots.get(hashKey(key));
-          if (slot) bridge.runSync(notify(slot));
-        },
+        settled: (key) =>
+          bridge.runSync(
+            Effect.gen(function* () {
+              const slot = (yield* Ref.get(slots)).get(hashKey(key));
+              if (slot) yield* notify(slot);
+            }),
+          ),
       }),
       (unsubscribe) => Effect.sync(unsubscribe),
     );
     yield* Effect.addFinalizer(() => clear);
     return ExcerptDisplays.of({
-      open: Effect.sync((): ExcerptDisplayDemand => {
-        const card: Card = {
+      open: Effect.gen(function* (): Effect.fn.Return<ExcerptDisplayDemand> {
+        const card = yield* Ref.make<CardState>({
           slot: null,
           demand: null,
           stated: false,
           held: null,
           listeners: new Set(),
-        };
+        });
         return {
           demand: (request) => bridge.runAndForget(demand(card, request)),
           release: () =>
             bridge.runAndForget(
               Effect.gen(function* () {
                 yield* leave(card);
-                card.demand = null;
-                card.stated = false;
+                yield* Ref.update(card, (state) => ({
+                  ...state,
+                  demand: null,
+                  stated: false,
+                }));
                 yield* publish(card);
               }),
             ),
           subscribe: (onChange) => {
-            card.listeners.add(onChange);
-            return () => card.listeners.delete(onChange);
+            bridge.runSync(
+              Ref.update(card, (state) => ({
+                ...state,
+                listeners: new Set(state.listeners).add(onChange),
+              })),
+            );
+            return () =>
+              bridge.runSync(
+                Ref.update(card, (state) => {
+                  const listeners = new Set(state.listeners);
+                  listeners.delete(onChange);
+                  return { ...state, listeners };
+                }),
+              );
           },
-          snapshot: () => (card.held ??= bridge.runSync(snapshot(card))),
+          snapshot: () => bridge.runSync(current(card)),
         };
       }).pipe(Effect.withSpan("ExcerptDisplays.open")),
       clear,
       refresh: Effect.gen(function* () {
-        for (const slot of slots.values()) {
+        for (const slot of (yield* Ref.get(slots)).values()) {
           yield* start(slot);
           yield* notify(slot);
         }
       }).pipe(Effect.withSpan("ExcerptDisplays.refresh")),
       revalidate: Effect.fn("ExcerptDisplays.revalidate")(function* (request) {
-        const slot = slots.get(hashKey(excerptDisplayKey(request)));
+        const slot = (yield* Ref.get(slots)).get(
+          hashKey(excerptDisplayKey(request)),
+        );
         if (!slot) return yield* replaceStored(request);
-        if (
-          supersedes(request.annotation.version, slot.latest.annotation.version)
-        )
-          slot.latest = request;
+        yield* advance(slot, request);
         yield* read(slot);
         yield* notify(slot);
       }),
