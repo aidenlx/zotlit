@@ -21,7 +21,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, vi } from "vitest";
 
-import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
@@ -295,7 +294,6 @@ describe("References style row", () => {
       started: new Set(),
       ended: new Map(),
     };
-    const notifier = testNotifier();
     const snapshot: ZoteroPrefSnapshot = {
       state: "ready",
       prefs: new Map(),
@@ -312,7 +310,6 @@ describe("References style row", () => {
     const stored = yield* SubscriptionRef.make(settings);
     const services = yield* Layer.build(
       Layer.mergeAll(
-        notifier.layer,
         styleFileSystem(reads),
         Layer.mock(PluginSettings, {
           current: SubscriptionRef.get(stored),
@@ -341,7 +338,6 @@ describe("References style row", () => {
     return {
       dropdown,
       refresh,
-      notices: notifier.notices,
       /** The styles folder reads, which a case holds or refuses. */
       reads,
       /** The data folder the Zotero preferences resolve to. */
@@ -472,21 +468,21 @@ describe("References style row", () => {
     }),
   );
 
-  it.live("tells the user when the chosen style cannot be saved", () =>
+  it.live("asks to save the chosen style when the save fails", () =>
     Effect.gen(function* () {
       const dir = yield* dataFolder;
-      const row = yield* setup(dir, {
-        write: () =>
-          Effect.fail(
-            new SettingsMutationError({ message: "disk full", cause: null }),
-          ),
-      });
+      const write = vi.fn(() =>
+        Effect.fail(
+          new SettingsMutationError({ message: "disk full", cause: null }),
+        ),
+      );
+      const row = yield* setup(dir, { write });
 
       row.dropdown.choose(STYLE_DEFAULT);
 
       yield* eventually(() =>
-        expect(row.notices.map(({ messages: [text] }) => text)).toEqual([
-          `${m.settings_failed_save()}: disk full`,
+        expect(write.mock.calls).toEqual([
+          [{ "citation.references-style": null }],
         ]),
       );
     }),

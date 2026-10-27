@@ -231,57 +231,63 @@ export function advancedPageItems(
 }
 
 /**
- * Open the log file at the vault path `path` in the system's default app. A
- * failure is logged and a notice tells the user.
+ * Open the log file at the vault path `path` in the system's default app. It
+ * fails with a `LegacyPortError` when the system names a reason it cannot.
  */
-export const openLogFile = Effect.fn("SettingTab.openLogFile")(
+export const openLogFileInSystem = Effect.fnUntraced(function* (path: string) {
+  const fullPath = yield* (yield* Vault).fullPath(path);
+  // Desktop-only plugin: the vault is always on a file system.
+  if (fullPath === null)
+    return yield* Effect.die(new Error("The vault is not on disk"));
+  const refused = yield* portCall("open-log-file", () =>
+    requireElectron().shell.openPath(fullPath),
+  );
+  if (refused)
+    return yield* new LegacyPortError({
+      step: "open-log-file",
+      cause: new Error(refused),
+    });
+});
+
+/**
+ * {@link openLogFileInSystem} for the settings row. A failure is logged and a
+ * notice tells the user.
+ */
+const openLogFile = Effect.fn("SettingTab.openLogFile")(
   function* (path: string) {
-    yield* reportOutcome(
-      Effect.gen(function* () {
-        const fullPath = yield* (yield* Vault).fullPath(path);
-        // Desktop-only plugin: the vault is always on a file system.
-        if (fullPath === null)
-          return yield* Effect.die(new Error("The vault is not on disk"));
-        const refused = yield* portCall("open-log-file", () =>
-          requireElectron().shell.openPath(fullPath),
-        );
-        if (refused)
-          return yield* new LegacyPortError({
-            step: "open-log-file",
-            cause: new Error(refused),
-          });
-      }),
-      {
-        success: () => undefined,
-        error: () => m.notice_open_log_file_failed(),
-      },
-    ).pipe(Effect.annotateLogs({ path }));
+    yield* reportOutcome(openLogFileInSystem(path), {
+      success: () => undefined,
+      error: () => m.notice_open_log_file_failed(),
+    }).pipe(Effect.annotateLogs({ path }));
   },
   withLogCategory("setting-tab", "advanced"),
 );
 
 /**
- * Save the log file at the vault path `path` as a zip the user downloads. A
- * failure is logged and a notice tells the user.
+ * Save the log file at the vault path `path` as a zip the user downloads. It
+ * fails with the Vault's read error when the log file cannot be read.
  */
-export const exportLogArchive = Effect.fn("SettingTab.exportLogArchive")(
+export const saveLogArchive = Effect.fnUntraced(function* (path: string) {
+  const text = yield* (yield* Vault).readPath(path);
+  yield* Effect.sync(() => {
+    const zipBytes = zipSync({ [LOG_FILENAME]: strToU8(text) });
+    const blob = new Blob([zipBytes as BlobPart], {
+      type: "application/zip",
+    });
+    saveFile(blob, `zotlit-logs-${exportTimestamp()}.zip`);
+  });
+});
+
+/**
+ * {@link saveLogArchive} for the settings row. A failure is logged and a
+ * notice tells the user.
+ */
+const exportLogArchive = Effect.fn("SettingTab.exportLogArchive")(
   function* (path: string) {
-    yield* reportOutcome(
-      Effect.gen(function* () {
-        const text = yield* (yield* Vault).readPath(path);
-        yield* Effect.sync(() => {
-          const zipBytes = zipSync({ [LOG_FILENAME]: strToU8(text) });
-          const blob = new Blob([zipBytes as BlobPart], {
-            type: "application/zip",
-          });
-          saveFile(blob, `zotlit-logs-${exportTimestamp()}.zip`);
-        });
-      }),
-      {
-        success: () => undefined,
-        error: () => m.notice_export_log_file_failed(),
-      },
-    ).pipe(Effect.annotateLogs({ path }));
+    yield* reportOutcome(saveLogArchive(path), {
+      success: () => undefined,
+      error: () => m.notice_export_log_file_failed(),
+    }).pipe(Effect.annotateLogs({ path }));
   },
   withLogCategory("setting-tab", "advanced"),
 );

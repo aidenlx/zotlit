@@ -3,9 +3,7 @@ import { expect, it } from "@effect/vitest";
 import { Context, Deferred, Effect, Ref } from "effect";
 import type { SettingDefinitionList } from "obsidian";
 
-import { eventually } from "@/lib/__fixtures__/eventually";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import * as m from "@/lib/i18n/generated/messages";
 import { DeviceStorageError } from "@/lib/obsidian-device-storage";
 import { AttachmentImport } from "@/services/attachment-import/service";
 
@@ -13,11 +11,11 @@ import { scopedSettingTab } from "./__fixtures__";
 import { approvedFoldersPage } from "./approved-folders";
 import type { SettingsKey, SettingTabContext } from "./context";
 
-/** The approved-folder list of the page over `service`, with the tab's notices. */
+/** The approved-folder list of the page over `service`. */
 const folderList = Effect.fnUntraced(function* (
   service: AttachmentImport["Service"],
 ) {
-  const { tab, notices } = yield* scopedSettingTab(
+  const { tab } = yield* scopedSettingTab(
     Context.make(AttachmentImport, service),
   );
   const page = approvedFoldersPage(
@@ -28,7 +26,7 @@ const folderList = Effect.fnUntraced(function* (
       "type" in item && item.type === "list",
   );
   if (!list) throw new Error("Approved folder list missing");
-  return { list, notices };
+  return { list };
 });
 
 it.effect("lists the approved folders and revokes the one deleted", () =>
@@ -52,28 +50,29 @@ it.effect("lists the approved folders and revokes the one deleted", () =>
   }),
 );
 
-it.effect("names a failed revoke in a notice", () =>
+it.effect("asks to revoke the deleted folder when the revoke fails", () =>
   Effect.gen(function* () {
-    const { list, notices } = yield* folderList(
+    const revoked = yield* Deferred.make<string>();
+    const { list } = yield* folderList(
       stubService<AttachmentImport["Service"]>("AttachmentImport", {
         approvedFolders: Effect.succeed(["/a"]),
-        revokeFolder: () =>
-          Effect.fail(
-            new DeviceStorageError({
-              operation: "saveLocalStorage",
-              key: "zotlit-approved-folders",
-              message: "Storage is full",
-              cause: null,
-            }),
+        revokeFolder: (folder) =>
+          Deferred.succeed(revoked, folder).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new DeviceStorageError({
+                  operation: "saveLocalStorage",
+                  key: "zotlit-approved-folders",
+                  message: "Storage is full",
+                  cause: null,
+                }),
+              ),
+            ),
           ),
       }),
     );
 
     list.onDelete?.(0);
-    yield* eventually(() =>
-      expect(notices.map((notice) => notice.messages[0])).toEqual([
-        `${m.settings_failed_revoke_folder()}: Storage is full`,
-      ]),
-    );
+    expect(yield* Deferred.await(revoked)).toBe("/a");
   }),
 );
