@@ -41,7 +41,7 @@ export interface CompanionLinkOptions {
  * Open the Companion link's existing note, updating it when the link asks, or
  * create one through the Profile selection. Returns how it ended.
  */
-export const followCompanionLink = Effect.fn("NoteFeature.followCompanionLink")(
+export const followCompanionLink = Effect.fn("CompanionLink.follow")(
   (
     deps: InteractiveCreationPorts,
     ref: ItemRef,

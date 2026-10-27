@@ -1,14 +1,24 @@
 // Shared Literature Note navigation for Quick Switch, Library rows and Companion links.
 import { Effect } from "effect";
+import type { Cause } from "effect";
+import type { RpcClientError } from "effect/rpc";
 import { MarkdownView } from "obsidian";
 import type { PaneType, TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
 import { Workspace } from "@/lib/obsidian-workspace";
+import type { OpenLinkFailed } from "@/lib/obsidian-workspace";
+import type { ItemQueryError } from "@/services/item-query/service";
 import { NoteIndex } from "@/services/note-index/service";
+import type { ProfileOperationError } from "@/services/profile/service";
+import type { TemplateFailure } from "@/services/template/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { readActionItem } from "@/services/zotero-reads/read-item";
+import type {
+  DbUnavailable,
+  SnapshotExpired,
+} from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 
@@ -52,14 +62,21 @@ type LiteratureNoteOptions =
     };
 
 /** Open an existing Literature Note or create one through Profile selection. */
-export const openLiteratureNote = Effect.fn("NoteFeature.openLiteratureNote")(
+export const openLiteratureNote = Effect.fn("LiteratureNoteNavigation.open")(
   function* (
     deps: InteractiveCreationPorts,
     indexedKey: string,
     options: LiteratureNoteOptions,
   ): Effect.fn.Return<
     LiteratureNoteOutcome,
-    unknown,
+    | ProfileOperationError
+    | DbUnavailable
+    | SnapshotExpired
+    | RpcClientError.RpcClientError
+    | ItemQueryError
+    | TemplateFailure
+    | OpenLinkFailed
+    | Cause.UnknownError,
     Workspace | NoteIndex | UseLedger | ZoteroReads | ProfileDialogServices
   > {
     const workspace = yield* Workspace;
