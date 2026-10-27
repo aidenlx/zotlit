@@ -1688,16 +1688,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           what: "the target item to appear in item lookup results after the database refresh",
         },
-      ).then(
-        () => true,
-        () => false,
       );
 
     edit("Freshness signal probe zqxv", "2031-01-01 00:00:00");
     cleanup.defer(async () => {
       edit(targetItem.title, original.dateModified);
       await signal();
-      expect(await finds(targetItem.title)).toBe(true);
+      await finds(targetItem.title);
     });
     await signal();
     await obRunUntil(
@@ -1708,7 +1705,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       undefined,
       { what: "the Freshness Signal to be counted in the page scratch" },
     );
-    expect(await finds("zqxv")).toBe(true);
+    await finds("zqxv");
     expect(
       await obRun(
         run.vaultId,

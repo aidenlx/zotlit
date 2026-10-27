@@ -91,11 +91,10 @@ async function waitForPlugin(vaultId: string): Promise<void> {
   await obRunUntil(
     vaultId,
     async ({ zotlit }) => {
-      return await String(!!zotlit.services.excerptImage);
+      return !!zotlit.services.excerptImage;
     },
     undefined,
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the excerptImage service to be registered on the plugin",
     },
@@ -208,15 +207,13 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
   await obRunUntil(
     vaultId,
     async ({ page: helpers }) => {
-      return await String(
+      return (
         helpers.scratch.__zotlitExcerptProbe?.settled &&
-          !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-            .jobActive,
+        !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().jobActive
       );
     },
     undefined,
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the excerpt render probe to settle with no job active",
     },
@@ -398,14 +395,13 @@ async function startRenderProbe(
   await obRunUntil(
     vaultId,
     async ({ page: helpers }, { renderPhase }) => {
-      return await String(
+      return (
         helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot().phase ===
-          renderPhase,
+        renderPhase
       );
     },
     { renderPhase: phase },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the excerpt renderer to report the expected render phase",
     },
@@ -473,15 +469,14 @@ async function startRenderProbe(
       await obRunUntil(
         vaultId,
         async ({ page: helpers }) => {
-          return await String(
+          return (
             helpers.scratch.__zotlitExcerptProbe?.settled &&
-              !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
-                .jobActive,
+            !helpers.scratch.__zotlitExcerptProbe?.diagnostics.snapshot()
+              .jobActive
           );
         },
         undefined,
         {
-          ready: (value) => value === "true",
           tries: 80,
           what: "the excerpt render probe to settle again with no job active",
         },
@@ -808,11 +803,10 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
   await obRunUntil(
     vaultId,
     async ({ page: helpers }) => {
-      return await String(!!helpers.scratch.__zotlitExcerptAcceptance?.settled);
+      return !!helpers.scratch.__zotlitExcerptAcceptance?.settled;
     },
     undefined,
     {
-      ready: (value) => value === "true",
       tries: 120,
       what: "the excerpt acceptance run to settle",
     },

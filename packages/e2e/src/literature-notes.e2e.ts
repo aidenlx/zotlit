@@ -37,8 +37,8 @@ import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import {
   clickModalButton,
   createFixtureNote,
-  hasIndexedNotes,
-  hasOneIndexedNote,
+  waitForIndexedNotes,
+  waitForOneIndexedNote,
   indexedNote,
   managedRegion,
   noteBody,
@@ -659,8 +659,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     });
 
-    const oneNote = await hasOneIndexedNote(run.vaultId, createTargetItem.key);
-    expect(oneNote).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, createTargetItem.key);
   });
 
   it("creates a default note whose body renders once and imports no Child Note", async () => {
@@ -710,7 +709,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { createdNotePath: created, seeded },
       );
     });
-    expect(await hasIndexedNotes(run.vaultId, item.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, item.key, 0);
     const markdownFiles = () =>
       obRun(
         run.vaultId,
@@ -879,9 +878,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(managedRegion(booksContent)).toContain(
       `Citation key: ${booksProfileTargetItem.citationKey}`,
     );
-    expect(await hasOneIndexedNote(run.vaultId, defaultResult.indexedKey)).toBe(
-      true,
-    );
+    await waitForOneIndexedNote(run.vaultId, defaultResult.indexedKey);
     const booksIndexedKey = await obRun(
       run.vaultId,
       async ({ app }, { booksNotePath }) => {
@@ -893,7 +890,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { booksNotePath: run.booksNotePath },
     );
-    expect(await hasOneIndexedNote(run.vaultId, booksIndexedKey)).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, booksIndexedKey);
   });
 
   it("refuses an update whose open note switched its Profile in unsaved text", async () => {
@@ -1037,9 +1034,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // immediate write — the same modal a person clicking the command would
     // see. Confirming it is an ordinary user action, not a bypass; the modal
     // classifies items asynchronously, so this polls for the button first.
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_confirm_button()),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_confirm_button());
     await obRunUntil(
       run.vaultId,
       async (_context, { closeButtonText }) => {
@@ -1086,9 +1081,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         profile: booksProfile.label,
       }),
     );
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_close()),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_close());
     // The batch's database reads run in the worker: the window kept painting
     // from the command to the summary.
     const painted = await frames.read();
@@ -1161,9 +1154,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       obsolete: false,
     });
 
-    expect(await hasOneIndexedNote(run.vaultId, createTargetItem.key)).toBe(
-      true,
-    );
+    await waitForOneIndexedNote(run.vaultId, createTargetItem.key);
   });
 
   it("creates under a document match and reports the matched Profile and path", async () => {
@@ -1171,7 +1162,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const seededPath = `literatures/${bookItem.literatureNoteName ?? bookItem.key}.md`;
     const notePath = `books/books-${bookItem.citationKey}.md`;
     await cli([`vault=${run.vaultId}`, "delete", `path=${seededPath}`]);
-    expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, bookItem.key, 0);
     await suite.openMatchEditor();
     // A Profile with no Match shows one placeholder row.
     await suite.shapeCondition(0, "item-type", "book");
@@ -1237,10 +1228,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await readFile(join(e2eVaultPath, notePath), "utf-8")).toContain(
       `zotlit-profile: Books (${booksProfile.id})`,
     );
-    expect(await hasOneIndexedNote(run.vaultId, bookItem.key)).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, bookItem.key);
 
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
-    expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, bookItem.key, 0);
     await obRun(
       run.vaultId,
       async ({ app, zotlit }, { fileContent }) => {
@@ -1294,9 +1285,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           path: notePath,
         }),
       );
-    expect(await hasOneIndexedNote(run.vaultId, bookItem.key)).toBe(true);
+    await waitForOneIndexedNote(run.vaultId, bookItem.key);
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
-    expect(await hasIndexedNotes(run.vaultId, bookItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, bookItem.key, 0);
   });
 
   it("checks a Profile Match against a chosen Item and marks a mistake on its row", async () => {
@@ -1512,7 +1503,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const note = await indexedNote(run.vaultId, item.itemID);
       if (note.path)
         await cli([`vault=${run.vaultId}`, "delete", `path=${note.path!}`]);
-      expect(await hasIndexedNotes(run.vaultId, note.indexedKey, 0)).toBe(true);
+      await waitForIndexedNotes(run.vaultId, note.indexedKey, 0);
     }
     const articlesSource = (
       await readFile(
@@ -1700,9 +1691,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ])
       expect(chosen).toContain(text);
     await using notices = await observeNotices(run.vaultId);
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_confirm_button()),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_confirm_button());
     await obRunUntil(
       run.vaultId,
       async (_context, { closeButtonText }) => {
@@ -1741,9 +1730,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(summary).toContain(text);
       expect((await notices.read()).join("\n")).toContain(text);
     }
-    expect(
-      await clickModalButton(run.vaultId, run.m.batch_update_close()),
-    ).toBe(true);
+    await clickModalButton(run.vaultId, run.m.batch_update_close());
     for (const [item, path, label, id] of [
       [bookItem, bookPath, booksProfile.label, booksProfile.id],
       [preprintItem, preprintPath, booksProfile.label, booksProfile.id],
@@ -1758,9 +1745,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const content = await readFile(join(e2eVaultPath, path), "utf-8");
       expect(content).toContain(`zotlit-profile: ${label} (${id})`);
       const note = await indexedNote(run.vaultId, item.itemID);
-      expect(await hasOneIndexedNote(run.vaultId, note.indexedKey)).toBe(true);
+      await waitForOneIndexedNote(run.vaultId, note.indexedKey);
       await cli([`vault=${run.vaultId}`, "delete", `path=${path}`]);
-      expect(await hasIndexedNotes(run.vaultId, note.indexedKey, 0)).toBe(true);
+      await waitForIndexedNotes(run.vaultId, note.indexedKey, 0);
     }
     await cli([
       `vault=${run.vaultId}`,
@@ -1790,7 +1777,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const seededPath = `literatures/${childItem.literatureNoteName ?? childItem.key}.md`;
     const notePath = `books/books-${childItem.citationKey}.md`;
     await cli([`vault=${run.vaultId}`, "delete", `path=${seededPath}`]);
-    expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, childItem.key, 0);
     await suite.writeMatch(
       booksProfile,
       `collections.within(${JSON.stringify(parent.name)})`,
@@ -1807,15 +1794,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       `zotlit-profile: Books (${booksProfile.id})`,
     );
     await cli([`vault=${run.vaultId}`, "delete", `path=${notePath}`]);
-    expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, childItem.key, 0);
     await suite.openMatchEditor();
-    expect(
-      await suite.conditionReady({
-        kind: "collection",
-        operator: "within",
-        value: parent.name,
-      }),
-    ).toBe(true);
+    await suite.conditionReady({
+      kind: "collection",
+      operator: "within",
+      value: parent.name,
+    });
     await obRun(
       run.vaultId,
       async ({ page }, { filterOperator }) => {
@@ -1833,13 +1818,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { filterOperator: run.m.workbench_filter_operator() },
     );
-    expect(
-      await suite.conditionReady({
-        kind: "collection",
-        operator: "contains",
-        value: parent.name,
-      }),
-    ).toBe(true);
+    await suite.conditionReady({
+      kind: "collection",
+      operator: "contains",
+      value: parent.name,
+    });
     await suite.saveMatch({
       and: [`collections.contains(${JSON.stringify(parent.name)})`],
     });
@@ -1868,7 +1851,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         what: "the suggestion prompt to close after the Collection path match",
       },
     );
-    expect(await hasIndexedNotes(run.vaultId, childItem.key, 0)).toBe(true);
+    await waitForIndexedNotes(run.vaultId, childItem.key, 0);
     await suite.writeMatch(booksProfile, suite.bookMatch);
   });
 
@@ -2028,14 +2011,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(deletionDialog).toContain(
       run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
     );
-    expect(
-      await clickModalButton(
-        run.vaultId,
-        run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
-        "settings",
-      ),
-      deletionDialog,
-    ).toBe(true);
+    await clickModalButton(
+      run.vaultId,
+      run.m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
+      "settings",
+    );
     expect(
       await waitFor(async () =>
         readFile(join(e2eVaultPath, movedPath), "utf-8")
@@ -2280,7 +2260,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).toBe(true);
 
       await suite.mainSettings();
-      expect(await suite.clickTemplateCustomize()).toBe(true);
+      await suite.clickTemplateCustomize();
       await obRunUntil(
         run.vaultId,
         async ({ app }) => {

@@ -1691,9 +1691,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ready: (value) => value === "pressed",
               what: "the Mark Popup to offer a Tags verb that can be pressed",
             },
-          ).then(
-            () => true,
-            () => false,
           );
         /** The read-only chips under the comment, by name, while no editor is open. */
         const popupTags = () =>
@@ -1813,7 +1810,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // The tags show read-only under the comment.
         await expect.poll(popupTags, poll).toEqual([removed, kept].toSorted());
 
-        expect(await pressVerb()).toBe(true);
+        await pressVerb();
         expect(await editorReady()).toBe(true);
         // Each chip is the signal that the gesture landed.
         await type(added, { enter: true });
@@ -1822,7 +1819,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await expect.poll(editorChips, poll).not.toContain(removed);
         // Nothing reaches Zotero while the session stands.
         expect(await storedTags()).toStrictEqual([`${removed}:0`, `${kept}:0`]);
-        expect(await pressVerb()).toBe(true);
+        await pressVerb();
 
         await expect
           .poll(storedTags, poll)
@@ -4448,9 +4445,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 ready: (value) => value === 0,
                 what: "the font size menu to close before the next click",
               },
-            ).then(
-              () => true,
-              () => false,
             );
           await using restore = new AsyncDisposableStack();
           const [nativeMenus, size] = (
@@ -4506,7 +4500,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await reopenPdfView(vaultId!, attachmentPath);
           await armText(CLEAR);
           expect(await textMenu()).toBe(String(picked));
-          expect(await closeMenu()).toBe(true);
+          await closeMenu();
           const before = await annotationKeys();
 
           expect((await click(CLEAR)).draft).toBe(true);
@@ -7759,9 +7753,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
             { fragment },
             { what: "the ZotLit notice carrying the expected text to appear" },
-          ).then(
-            () => true,
-            () => false,
           );
 
         /** One field, written in Zotero itself, and read back into ZotLit. */
@@ -7983,11 +7974,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await storedColor()).toBe(inZotero);
           // The whole of `annot_history_changed_in_zotero`, because the
           // fragment "changed in Zotero" belongs to two other notices as well.
-          expect(
-            await noticeShows(
-              "This annotation changed in Zotero, so ZotLit left it as it is.",
-            ),
-          ).toBe(true);
+          await noticeShows(
+            "This annotation changed in Zotero, so ZotLit left it as it is.",
+          );
         }, 120000);
 
         it("undoes a colour pick Zotero only commented on", async () => {
@@ -8653,9 +8642,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                   {
                     what: "the PUPR5FG5 mutation to go idle with no tag draft left",
                   },
-                ).then(
-                  () => true,
-                  () => false,
                 );
               const before = spelledTags([...seededTags, autoTag]);
 
@@ -8693,7 +8679,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { tag: first },
               ]);
               await expect.poll(storedTags, poll).toEqual(once);
-              expect(await tagsSettled()).toBe(true);
+              await tagsSettled();
               // The editor stayed open through the save.
               expect(
                 await obRun(
@@ -8765,7 +8751,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 { historyKey },
                 { what: "the card tag input for PUPR5FG5 to close" },
               );
-              expect(await tagsSettled()).toBe(true);
+              await tagsSettled();
 
               // One History Step for each session: the first undo takes back
               // the second name alone, the next one the first.
@@ -13277,9 +13263,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             {
               what: "the created annotation's card to show the external comment",
             },
-          ).then(
-            () => true,
-            () => false,
           );
 
         const focused = "Changed while Companion disabled";
@@ -13291,7 +13274,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           },
           undefined,
         );
-        expect(await cardHas(focused)).toBe(true);
+        await cardHas(focused);
 
         const manual = "Changed before manual Refresh";
         await saveInZotero(manual);
@@ -13305,7 +13288,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           },
           undefined,
         );
-        expect(await cardHas(manual)).toBe(true);
+        await cardHas(manual);
       }, 120000);
 
       it("keeps confirmed surfaces after a committed write loses its response and reread", async () => {
@@ -14094,9 +14077,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
             { title },
             { what: "the read-only notice with its title text to appear" },
-          ).then(
-            () => true,
-            () => false,
           );
         const notAllowed =
           "To edit annotations, choose Always Allow in Zotero.";
@@ -14190,7 +14170,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           },
         );
 
-        expect(await noticeShows(notAllowed)).toBe(true);
+        await noticeShows(notAllowed);
         expect(
           await obRun(
             vaultId!,
@@ -14253,7 +14233,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ),
         ).toBe("true");
 
-        expect(await noticeShows("Zotero editing is enabled.")).toBe(true);
+        await noticeShows("Zotero editing is enabled.");
         expect(
           await obRun(
             vaultId!,
@@ -16319,9 +16299,6 @@ function cardTagEditor(annotationKey: string) {
           ready: (value) => value === "pressed",
           what: "the control matching the selector inside the annotation card to press",
         },
-      ).then(
-        () => true,
-        () => false,
       ),
     /** The tag toggle in the card's action bar. */
     toggle: ".clickable-icon:has(svg.lucide-tag)",
@@ -16389,9 +16366,6 @@ function tagEditorIn(
         {
           what: "the editable tag input in the PDF mark popup or annotation card",
         },
-      ).then(
-        () => true,
-        () => false,
       ),
     /** The names the open editor draws as chips. */
     editorChips: () =>

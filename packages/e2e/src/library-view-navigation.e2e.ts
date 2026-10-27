@@ -3271,7 +3271,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { readingKey: reading.key },
     );
-    expect(await pdfOpened(run.vaultId, annotationAttachment.path!)).toBe(true);
+    await pdfOpened(run.vaultId, annotationAttachment.path!);
 
     // On an Item with no Literature Note, Enter writes one through the
     // Profile selection, as the quick switcher does.

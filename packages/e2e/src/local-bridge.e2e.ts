@@ -91,7 +91,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { defaultPath },
       );
       await suite.mainSettings();
-      expect(await suite.clickTemplateCustomize()).toBe(true);
+      await suite.clickTemplateCustomize();
       await obRunUntil(
         run.vaultId,
         async ({ page }, { rememberLabel }) => {
@@ -118,12 +118,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           what: "the Native destination radio and Remember toggle in the Customize modal",
         },
       );
-      expect(
-        await clickModalButton(
-          run.vaultId,
-          run.m.modal_workbench_launch_open(),
-        ),
-      ).toBe(true);
+      await clickModalButton(run.vaultId, run.m.modal_workbench_launch_open());
       await obRunUntil(
         run.vaultId,
         async ({ app }) => {
@@ -158,7 +153,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ).toBe(true);
       await suite.mainSettings();
-      expect(await suite.clickTemplateCustomize()).toBe(true);
+      await suite.clickTemplateCustomize();
       await obRunUntil(
         run.vaultId,
         async ({ app }) => {
@@ -215,7 +210,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       );
       await suite.mainSettings();
-      expect(await suite.clickTemplateCustomize()).toBe(true);
+      await suite.clickTemplateCustomize();
       await obRunUntil(
         run.vaultId,
         async (_context, { modalTitleText }) => {
@@ -226,12 +221,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { modalTitleText: run.m.modal_workbench_launch_title() },
         { what: "a modal title element with the expected text to appear" },
       );
-      expect(
-        await clickModalButton(
-          run.vaultId,
-          run.m.modal_workbench_launch_open(),
-        ),
-      ).toBe(true);
+      await clickModalButton(run.vaultId, run.m.modal_workbench_launch_open());
       await obRunUntil(
         run.vaultId,
         async ({ page }) => {
@@ -496,7 +486,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         );
         await using notices = await observeNotices(run.vaultId);
         await suite.mainSettings();
-        expect(await suite.clickTemplateCustomize()).toBe(true);
+        await suite.clickTemplateCustomize();
         expect(
           await waitFor(async () =>
             (await notices.read()).some((text) =>

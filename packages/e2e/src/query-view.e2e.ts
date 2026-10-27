@@ -3873,9 +3873,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ready: (value) => value === `${view}:true`,
           what: "the Query File view menu label with annotation cards rendered",
         },
-      ).then(
-        () => true,
-        () => false,
       );
 
     /** The view rows the open view menu shows. */
@@ -3891,7 +3888,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { path },
     );
-    expect(await shown("All annotations")).toBe(true);
+    await shown("All annotations");
     // A page number takes "p."; a named page label reads as it is.
     const shownPages: string[] = await obRun(
       run.vaultId,
@@ -4053,7 +4050,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(await shown("Methods")).toBe(true);
+    await shown("Methods");
 
     // "Show page" off takes the page labels off the cards at once.
     expect(
@@ -4222,7 +4219,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       { path },
     );
-    expect(await shown("Methods")).toBe(true);
+    await shown("Methods");
     expect(
       await obRun(
         run.vaultId,
@@ -4306,7 +4303,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         what: "the view name input in the Query File view chooser to show Figures",
       },
     );
-    expect(await shown("Methods")).toBe(true);
+    await shown("Methods");
     await obRun(
       run.vaultId,
       async ({ page: pageHelpers }) => {

@@ -147,7 +147,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       );
     };
     await openAdd();
-    expect(await clickModalButton(vaultId, m.modal_cancel())).toBe(true);
+    await clickModalButton(vaultId, m.modal_cancel());
     expect(
       await obRun(
         vaultId,
@@ -229,9 +229,7 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       },
     );
     await fill("Books", "books");
-    expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
-      true,
-    );
+    await clickModalButton(vaultId, m.settings_profile_add());
     await obRunUntil(
       vaultId,
       async ({ zotlit }) => {

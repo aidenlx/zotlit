@@ -193,11 +193,10 @@ async function settleImport(vaultId: string): Promise<void> {
       // Answers the overwrite confirm the import may raise: setup the phase
       // waits through, not the press it measures.
       if (button) button.click();
-      return await String(!!helpers.scratch.__zotlitExcerptImport?.settled);
+      return !!helpers.scratch.__zotlitExcerptImport?.settled;
     },
     undefined,
     {
-      ready: (value) => value === "true",
       tries: 240,
       what: "the excerpt import to settle after any overwrite confirm",
     },
@@ -397,11 +396,10 @@ export async function verifyReaderBackedExcerpts(
           });
         })(),
       );
-      return await String(state.page && state.canvas && state.borrowed);
+      return state.page && state.canvas && state.borrowed;
     },
     { vaultPath, pageNumber: target.position.pageIndex + 1 },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the PDF page to render with a sized canvas and a borrowed document",
     },
@@ -1098,27 +1096,24 @@ export async function verifyReaderBackedExcerpts(
   await obRunUntil(
     vaultId,
     async ({ app }, { cardSelector }) => {
-      return await String(
-        !!(() => {
-          const image = app.workspace
-            .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
-            .find(Boolean)
-            ?.querySelector("img");
-          return (
-            image &&
-            image.complete &&
-            image.naturalWidth > 0 &&
-            image.src.startsWith("blob:")
-          );
-        })(),
-      );
+      return !!(() => {
+        const image = app.workspace
+          .getLeavesOfType("zotero-annotation-view")
+          .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
+          .find(Boolean)
+          ?.querySelector("img");
+        return (
+          image &&
+          image.complete &&
+          image.naturalWidth > 0 &&
+          image.src.startsWith("blob:")
+        );
+      })();
     },
     {
       cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the card image to finish loading as a blob URL",
     },
@@ -1204,16 +1199,15 @@ export async function verifyReaderBackedExcerpts(
   await obRunUntil(
     vaultId,
     async ({ app, zotlit }, { vaultPath }) => {
-      return await String(
+      return (
         app.workspace.getLeavesOfType("pdf").length === 0 &&
-          !zotlit.services.pdfAnnotationEditor.borrowDocument(
-            (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
-          ),
+        !zotlit.services.pdfAnnotationEditor.borrowDocument(
+          (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+        )
       );
     },
     { vaultPath },
     {
-      ready: (value) => value === "true",
       tries: 40,
       what: "the PDF tabs to close and release the borrowed PDF document",
     },
@@ -1246,13 +1240,10 @@ export async function verifyReaderBackedExcerpts(
           renderTaskActive: snapshot.renderTaskActive,
         };
       })();
-      return await String(
-        state.phase === "document-loading" && state.jobActive,
-      );
+      return state.phase === "document-loading" && state.jobActive;
     },
     undefined,
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the excerpt renderer to start loading the document",
     },
@@ -1924,27 +1915,24 @@ export async function verifySavedEditDisplay(
   await obRunUntil(
     vaultId,
     async ({ app }, { cardSelector }) => {
-      return await String(
-        !!(() => {
-          const image = app.workspace
-            .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
-            .find(Boolean)
-            ?.querySelector("img");
-          return (
-            image &&
-            image.complete &&
-            image.naturalWidth > 0 &&
-            image.src.startsWith("blob:")
-          );
-        })(),
-      );
+      return !!(() => {
+        const image = app.workspace
+          .getLeavesOfType("zotero-annotation-view")
+          .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
+          .find(Boolean)
+          ?.querySelector("img");
+        return (
+          image &&
+          image.complete &&
+          image.naturalWidth > 0 &&
+          image.src.startsWith("blob:")
+        );
+      })();
     },
     {
       cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the card image to finish loading as a blob URL on the later check",
     },
@@ -2178,11 +2166,10 @@ export async function verifySavedEditDisplay(
           renderTaskActive: snapshot.renderTaskActive,
         };
       })();
-      return await String(state.phase === "page-rendering" && state.jobActive);
+      return state.phase === "page-rendering" && state.jobActive;
     },
     undefined,
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the excerpt renderer to reach the page-rendering phase",
     },
@@ -2236,7 +2223,7 @@ export async function verifySavedEditDisplay(
   await obRunUntil(
     vaultId,
     async ({ app }, { cardSelector, beforeImageSrc }) => {
-      return await String(
+      return (
         !!(() => {
           const image = app.workspace
             .getLeavesOfType("zotero-annotation-view")
@@ -2250,11 +2237,11 @@ export async function verifySavedEditDisplay(
             image.src.startsWith("blob:")
           );
         })() &&
-          app.workspace
-            .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
-            .find(Boolean)
-            ?.querySelector("img")!.src !== beforeImageSrc,
+        app.workspace
+          .getLeavesOfType("zotero-annotation-view")
+          .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
+          .find(Boolean)
+          ?.querySelector("img")!.src !== beforeImageSrc
       );
     },
     {
@@ -2262,7 +2249,6 @@ export async function verifySavedEditDisplay(
       beforeImageSrc: before.src,
     },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the card image to load a new blob URL instead of the one before",
     },
@@ -2490,17 +2476,14 @@ export async function verifySavedEditDisplay(
   await obRunUntil(
     vaultId,
     async ({ app }, { editedComment }) => {
-      return await String(
-        app.workspace
-          .getLeavesOfType("zotero-annotation-view")
-          .some((leaf) =>
-            leaf.view.containerEl.textContent?.includes(editedComment),
-          ),
-      );
+      return app.workspace
+        .getLeavesOfType("zotero-annotation-view")
+        .some((leaf) =>
+          leaf.view.containerEl.textContent?.includes(editedComment),
+        );
     },
     { editedComment },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the Annotation View to show the edited comment text",
     },
@@ -2764,27 +2747,24 @@ export async function verifySavedEditDisplay(
   await obRunUntil(
     vaultId,
     async ({ app }, { cardSelector }) => {
-      return await String(
-        !!(() => {
-          const image = app.workspace
-            .getLeavesOfType("zotero-annotation-view")
-            .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
-            .find(Boolean)
-            ?.querySelector("img");
-          return (
-            image &&
-            image.complete &&
-            image.naturalWidth > 0 &&
-            image.src.startsWith("blob:")
-          );
-        })(),
-      );
+      return !!(() => {
+        const image = app.workspace
+          .getLeavesOfType("zotero-annotation-view")
+          .map((leaf) => leaf.view.containerEl.querySelector(cardSelector))
+          .find(Boolean)
+          ?.querySelector("img");
+        return (
+          image &&
+          image.complete &&
+          image.naturalWidth > 0 &&
+          image.src.startsWith("blob:")
+        );
+      })();
     },
     {
       cardSelector: `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(target.key)}]`,
     },
     {
-      ready: (value) => value === "true",
       tries: 80,
       what: "the card image to finish loading as a blob URL on the final check",
     },

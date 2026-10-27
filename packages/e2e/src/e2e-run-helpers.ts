@@ -186,8 +186,5 @@ export function pdfOpened(vaultId: string, path: string): Promise<boolean> {
       tries: 120,
       what: "the expected PDF to be the active leaf with pages loaded",
     },
-  ).then(
-    () => true,
-    () => false,
   );
 }

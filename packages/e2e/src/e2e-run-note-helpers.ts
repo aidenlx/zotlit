@@ -119,19 +119,19 @@ async function recordFrames(vaultId: string): Promise<
   };
 }
 
-function hasOneIndexedNote(
+async function waitForOneIndexedNote(
   vaultId: string,
   indexedKey: string,
-): Promise<boolean> {
-  return hasIndexedNotes(vaultId, indexedKey, 1);
+): Promise<void> {
+  await waitForIndexedNotes(vaultId, indexedKey, 1);
 }
 
-function hasIndexedNotes(
+async function waitForIndexedNotes(
   vaultId: string,
   indexedKey: string,
   count: number,
-): Promise<boolean> {
-  return obRunUntil(
+): Promise<void> {
+  await obRunUntil(
     vaultId,
     async ({ zotlit }, { indexedKey }) => {
       return zotlit.services.noteIndex.getNotesByItemKey(indexedKey).length;
@@ -141,9 +141,6 @@ function hasIndexedNotes(
       ready: (value) => value === count,
       what: "notes indexed under the item key to match the expected count",
     },
-  ).then(
-    () => true,
-    () => false,
   );
 }
 
@@ -337,9 +334,6 @@ function clickModalButton(
     },
     { label, documentTarget },
     { what: `modal button ${label}` },
-  ).then(
-    () => true,
-    () => false,
   );
 }
 
@@ -601,8 +595,8 @@ export {
   SYNTHETIC_MARKER,
   createFixtureNote,
   recordFrames,
-  hasOneIndexedNote,
-  hasIndexedNotes,
+  waitForOneIndexedNote,
+  waitForIndexedNotes,
   indexedNote,
   expectedLibraryIDs,
   managedRegion,

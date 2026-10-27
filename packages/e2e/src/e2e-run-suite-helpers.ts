@@ -144,9 +144,6 @@ function conditionReady({
       },
     },
     { what: "condition value" },
-  ).then(
-    () => true,
-    () => false,
   );
 }
 
@@ -198,7 +195,7 @@ async function shapeCondition(
     },
     { row, value, labels },
   );
-  expect(await conditionReady({ row, kind, operator: "is", value })).toBe(true);
+  await conditionReady({ row, kind, operator: "is", value });
 }
 
 /** "Add condition" adds a placeholder row; it becomes a Library row. */
@@ -327,9 +324,6 @@ function clickTemplateCustomize() {
       editButtonLabel: run.m.settings_profile_edit(),
     },
     { what: "the enabled Edit button on the setting row in the settings tab" },
-  ).then(
-    () => true,
-    () => false,
   );
 }
 

@@ -517,7 +517,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
       undefined,
     );
-    expect(await pdfOpened(run.vaultId, annotationAttachment.path!)).toBe(true);
+    await pdfOpened(run.vaultId, annotationAttachment.path!);
 
     // "Open in the annotation view" pins the paper in the sidebar Annotation View, which
     // lists its cards.
@@ -925,7 +925,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { paperKey: paper.key },
       ),
     ).toBe("double-clicked");
-    expect(await pdfOpened(run.vaultId, annotationAttachment.path!)).toBe(true);
+    await pdfOpened(run.vaultId, annotationAttachment.path!);
     // The keyboard that enters the list at its first row selects it, with
     // no card, so Space opens its card. Selecting the node again lets go of
     // the selection.
