@@ -462,9 +462,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const citationPresentationDeps = {
+      workspace: services.workspace,
+      metadataCache: services.metadataCache,
       fileSystem: services.fileSystem,
       app: this.app,
-      zoteroPref: services.zoteroPref,
+      zoteroPref: services.zoteroPrefService,
+      notifier: services.notifier,
       settings: services.settings,
       bridge: services.bridge,
     };

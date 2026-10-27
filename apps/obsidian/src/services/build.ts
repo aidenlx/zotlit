@@ -8,6 +8,9 @@ import { DisposableAbortController } from "@/lib/disposables";
 import { effectBridge, exitOver, valueOr } from "@/lib/effect-bridge";
 import { fromInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
+import { Notifier } from "@/lib/notifier";
+import { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { revealSetting } from "@/lib/open-settings";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
@@ -103,6 +106,7 @@ import { UseLedger } from "./use-ledger/service";
 import { writeReadUse } from "./zotero-local-api/last-read";
 import { ZoteroLocalApi } from "./zotero-local-api/service";
 import { plainZoteroPref } from "./zotero-pref/plain";
+import { ZoteroPref } from "./zotero-pref/service";
 import { plainZoteroReads } from "./zotero-reads/plain";
 import { ZoteroReads } from "./zotero-reads/service";
 
@@ -238,6 +242,10 @@ export async function buildServices(
   return container
     .useValue({ runtime: () => runtime })
     .useValue({ bridge: () => bridge })
+    .useValue({ workspace: () => runtime.runSync(Workspace) })
+    .useValue({ metadataCache: () => runtime.runSync(MetadataCache) })
+    .useValue({ notifier: () => runtime.runSync(Notifier) })
+    .useValue({ zoteroPrefService: () => runtime.runSync(ZoteroPref) })
     .useValue({ fileSystem: () => runtime.runSync(FileSystem.FileSystem) })
     .useValue({
       settings: () => runtime.runSync(PluginSettings),
