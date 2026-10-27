@@ -10,8 +10,14 @@ export async function serializationProbe() {
       read() { return this.#value; }
     }
     const counter = new Counter(increment(value));
-    await Promise.resolve();
-    return { value: counter?.read() };
+    let disposed = false;
+    {
+      await using resource = {
+        [Symbol.asyncDispose]: async () => { disposed = true; },
+      };
+      void resource;
+    }
+    return { value: counter?.read(), disposed };
   };
   return await runInNewContext(`(${callback.toString()})(context)`, { context: { value: 41 } });
 }

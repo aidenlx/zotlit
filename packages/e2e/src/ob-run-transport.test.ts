@@ -1,9 +1,15 @@
 import { EventEmitter } from "node:events";
 import { createContext, runInContext } from "node:vm";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const socketBoundary = vi.hoisted(() => ({
   answer: async (_code: string): Promise<string> => "",
+}));
+// Node's promise timer retains its original timer even when globals are faked.
+// Keep this OS boundary on the test clock too.
+vi.mock("node:timers/promises", () => ({
+  setTimeout: (milliseconds: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
 }));
 vi.mock("node:net", () => ({
   createConnection() {
@@ -38,6 +44,10 @@ beforeEach(() => {
   });
   socketBoundary.answer = async (code) =>
     `=> ${String(await runInContext(code, page))}`;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 it("installs missing helpers and carries JSON args, inferred results, and void", async () => {
@@ -80,27 +90,33 @@ it("keeps the page stack on a thrown error", async () => {
 });
 
 it("polls past a throw and a missing reply, returning the value accepted by ready", async () => {
+  vi.useFakeTimers();
   const answer = socketBoundary.answer;
   const responses = ['=> __zotlitEvalError__{"message":"loading"}', ""];
   socketBoundary.answer = (code) =>
     responses.length ? Promise.resolve(responses.shift()!) : answer(code);
-  expect(
-    await obRunUntil("vault", () => ({ count: 2 }), undefined, {
+  const accepted = expect(
+    obRunUntil("vault", () => ({ count: 2 }), undefined, {
       ready: (value) => value.count === 2,
       what: "rows",
       tries: 3,
     }),
-  ).toEqual({ count: 2 });
+  ).resolves.toEqual({ count: 2 });
+  await vi.advanceTimersByTimeAsync(500);
+  await accepted;
 });
 
 it("defaults to true and names the last rejected value on exhaustion", async () => {
+  vi.useFakeTimers();
   expect(
     await obRunUntil("vault", () => true, undefined, { what: "ready" }),
   ).toBe(true);
-  await expect(
+  const rejected = expect(
     obRunUntil("vault", () => false, undefined, {
       what: "query ready",
       tries: 1,
     }),
   ).rejects.toThrow("query ready: false");
+  await vi.advanceTimersByTimeAsync(250);
+  await rejected;
 });

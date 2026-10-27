@@ -416,7 +416,12 @@ export const noInternalMock: Rule = {
   },
 };
 
-/** A page callback is shipped as source, so its values come from args or the page. */
+/**
+ * Reject host captures, method-shorthand callbacks, and callback-owned `this`.
+ * An arrow or function expression taking context and args can execute as source
+ * in another window without the test module's bindings or receiver.
+ * @see policies/testing-strategy.md — static authoring constraints use lint.
+ */
 export const noEvalCapture: Rule = {
   meta: {
     type: "problem",
