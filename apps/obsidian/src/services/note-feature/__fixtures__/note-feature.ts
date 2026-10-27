@@ -1,3 +1,5 @@
+import { effectImageResolver } from "@/services/excerpt-image/__fixtures__/service";
+import type { ExcerptImageFixture } from "@/services/excerpt-image/__fixtures__/service";
 // The Note Feature's layer over a test's plain deps, and the edge handle a test drives.
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Context, Effect, Layer } from "effect";
@@ -21,7 +23,7 @@ import type { VaultSource } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
 import type { Workspace, WorkspaceSource } from "@/lib/obsidian-workspace";
 import { AttachmentImport } from "@/services/attachment-import/service";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import {
   ExcerptPreparation,
   layerExcerptPreparation,
@@ -73,7 +75,7 @@ export interface NoteFeatureSources extends Omit<
    * `app`'s vault on disk. Without it or `excerptImages`, a note write
    * prepares no excerpt and its image helpers give `null`.
    */
-  excerptResolver?: Pick<ExcerptImages["Service"], "operation" | "resolve">;
+  excerptResolver?: Pick<ExcerptImageFixture, "operation" | "resolve">;
 }
 
 /** A note write's excerpts when the test gives no preparation: none. */
@@ -104,11 +106,12 @@ function layerExcerptPreparationOver(
         NodeFileSystem.layer,
         Layer.succeedContext(pref),
         Layer.succeed(
-          ExcerptImages,
-          stubService<ExcerptImages["Service"]>("ExcerptImages", {
-            operation: (options) => sources.excerptResolver!.operation(options),
-            resolve: (request, signal) =>
-              sources.excerptResolver!.resolve(request, signal),
+          ExcerptImageService,
+          stubService<ExcerptImageService["Service"]>("ExcerptImages", {
+            ...effectImageResolver({
+              resolve: (request, signal) => sources.excerptResolver!.resolve(request, signal),
+              operation: (options) => sources.excerptResolver!.operation(options),
+            }),
           }),
         ),
       ),

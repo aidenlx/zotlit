@@ -13,9 +13,8 @@ import {
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { filterTag, forkEach } from "@/lib/effect-stream";
-import { portCall } from "@/lib/legacy-port";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
 import { savedExcerptRequestFor } from "@/services/excerpt-image/request";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
@@ -484,12 +483,12 @@ export function layerAnnotationRepository(options: {
 }): Layer.Layer<
   AnnotationRepository,
   never,
-  ExcerptImages | ZoteroReads | QueryClients | ZoteroLocalApi | ZoteroPref
+  ExcerptImageService | ZoteroReads | QueryClients | ZoteroLocalApi | ZoteroPref
 > {
   return Layer.effect(
     AnnotationRepository,
     Effect.gen(function* () {
-      const images = yield* ExcerptImages;
+      const images = yield* ExcerptImageService;
       const reads = yield* ZoteroReads;
       const queries = yield* QueryClients;
       const api = yield* ZoteroLocalApi;
@@ -513,11 +512,7 @@ export function layerAnnotationRepository(options: {
             Effect.provideService(ZoteroPref, pref),
           );
           if (!request) return null;
-          // The Excerpt Image service is legacy until #1790: its stored read
-          // is the one Promise port left here.
-          const stored = yield* portCall("excerpt-stored", () =>
-            images.stored(request),
-          );
+          const stored = yield* images.stored(request);
           return stored?.identity.fingerprint ?? null;
         });
       const fibers = yield* FiberSet.make();

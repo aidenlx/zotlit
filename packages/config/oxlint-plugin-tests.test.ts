@@ -175,6 +175,8 @@ tester.run("no-internal-mock", noInternalMock, {
 // Serialized page callbacks can use page globals and types, but no host bindings.
 tester.run("no-eval-capture", noEvalCapture, {
   valid: [
+    "readQueryViewUntil(id, 'JSON.stringify(1)', {ready: Boolean})",
+    "readQueryViewUntil(id, ({page}, args) => page.revealQueryView(args.handle), {handle}, {ready: value => value !== null})",
     "obRun(id, ({app}, args) => app.vault.getFileByPath(args.path), {path})",
     "obRunUntil(id, () => document.readyState === 'complete', undefined, {what:'ready'})",
     "type Result = {value: string}; obRun(id, (): Result => ({value:'ok'}))",
@@ -186,6 +188,10 @@ tester.run("no-eval-capture", noEvalCapture, {
     "obRun(id, function recur(_, n) { return n > 0 ? recur(_, n - 1) : n; }, 2)",
   ],
   invalid: [
+    {
+      code: "const handle = {}; readQueryViewUntil(id, ({page}) => page.revealQueryView(handle), undefined, {ready: Boolean})",
+      errors: [{ messageId: "capture" }],
+    },
     {
       code: "const path = 'note'; obRun(id, ({app}) => app.vault.getFileByPath(path))",
       errors: [{ messageId: "capture" }],

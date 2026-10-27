@@ -4,11 +4,11 @@ import { Effect } from "effect";
 
 import { withLogCategory } from "@/lib/effect-log-category";
 import * as m from "@/lib/i18n/generated/messages";
-import { LegacyPortError, portCall } from "@/lib/legacy-port";
+import { LegacyPortError } from "@/lib/legacy-port";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import { CitationIndex } from "@/services/citation-index/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
-import { ExcerptImages } from "@/services/excerpt-image/layer";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import { LanguagePack } from "@/services/language-pack/service";
 
 /**
@@ -19,7 +19,7 @@ import { LanguagePack } from "@/services/language-pack/service";
 export const resetCitationIndex = Effect.fn("SettingTab.resetCitationIndex")(
   function* (confirm: Effect.Effect<boolean>) {
     if (!(yield* confirm)) return "cancelled" as const;
-    yield* CitationIndex.use((index) => index.reset());
+    yield* CitationIndex.use((index) => index.reset);
     return "completed" as const;
   },
   withLogCategory("setting-tab", "advanced"),
@@ -30,7 +30,7 @@ export const clearExcerptCache = Effect.fn("SettingTab.clearExcerptCache")(
   function* (confirm: Effect.Effect<boolean>) {
     if (!(yield* confirm)) return "cancelled" as const;
     const displays = yield* ExcerptDisplays;
-    const images = yield* ExcerptImages;
+    const images = yield* ExcerptImageService;
     // The Held Reads go first: a card that repainted from the store while
     // it emptied would hold an image the clear removed.
     yield* Effect.try({
@@ -38,7 +38,7 @@ export const clearExcerptCache = Effect.fn("SettingTab.clearExcerptCache")(
       catch: (cause) =>
         new LegacyPortError({ step: "clear-excerpt-displays", cause }),
     });
-    yield* portCall("clear-excerpt-images", () => images.clear());
+    yield* images.clear;
     return "completed" as const;
   },
   withLogCategory("setting-tab", "advanced"),

@@ -5,10 +5,12 @@ import { expect, vi } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { FileExists } from "@/lib/vault-errors";
 import { createTemplateHost } from "@/services/template/__fixtures__";
+import { TemplateOperationError } from "@/services/template/errors";
 
 import { profileOver, profileRuntimeOf } from "./__fixtures__";
-import { Profile, ProfileOperationError } from "./service";
+import { Profile } from "./service";
 
 it.effect("#1705: a built Profile exposes and replays its first registry", () =>
   Effect.gen(function* () {
@@ -129,7 +131,7 @@ it.effect(
         expect(profile.materializeDefault()).rejects.toThrow(),
       );
       expect(yield* Effect.flip(profileService.ejectDefault())).toBeInstanceOf(
-        ProfileOperationError,
+        TemplateOperationError,
       );
       expect([...host.vault.contents.keys()]).toEqual([]);
     }),
@@ -207,8 +209,8 @@ it.effect(
     }),
 );
 
-it.effect.each(["read", "create", "duplicate"] as const)(
-  "#1705: a stalled Profile source %s does not hold runtime disposal",
+it.effect.each(["read", "create", "duplicate", "save"] as const)(
+  "#1705, #1792: a stalled Profile source %s does not hold runtime disposal",
   (operation) =>
     Effect.gen(function* () {
       const host = createTemplateHost();
@@ -230,14 +232,20 @@ it.effect.each(["read", "create", "duplicate"] as const)(
       const reading: Effect.Effect<unknown> =
         operation === "read"
           ? settled(profile.getSource("default"))
-          : operation === "create"
-            ? settled(profile.create({ label: "Late creation" }))
-            : Fiber.join(
-                yield* Effect.forkChild(
-                  Effect.exit(profileService.duplicate("default")),
-                  { startImmediately: true },
-                ),
-              );
+          : operation === "save"
+            ? settled(
+                profile.saveSource("default", "Unwritten replacement", {
+                  state: "absent",
+                }),
+              )
+            : operation === "create"
+              ? settled(profile.create({ label: "Late creation" }))
+              : Fiber.join(
+                  yield* Effect.forkChild(
+                    Effect.exit(profileService.duplicate("default")),
+                    { startImmediately: true },
+                  ),
+                );
       yield* Effect.promise(() => started.promise);
       yield* Effect.promise(() => runtime.dispose());
       expect(String(yield* reading)).not.toContain("ManagedRuntime disposed");
@@ -250,7 +258,7 @@ it.effect.each(["read", "create", "duplicate"] as const)(
 );
 
 it.effect(
-  "#1705: disposal cancels deletion waiting for the first note index",
+  "#1792: disposal interrupts a Profile write waiting for the first note index",
   () =>
     Effect.gen(function* () {
       const host = createTemplateHost({
@@ -283,11 +291,26 @@ Annotation`,
       // Release the old implementation too, so a failing case can close cleanly.
       for (const callback of layouts) callback();
       yield* TestClock.adjust(500);
-      yield* Effect.promise(() => deleting);
+      expect(yield* Effect.promise(() => deleting)).toMatchObject({
+        name: "AbortError",
+      });
       yield* Effect.promise(() => closing);
       expect(closedBeforeLayout).toBe(true);
       expect(host.vault.contents.has("templates/zotlit-profile.books.md")).toBe(
         true,
       );
     }),
+);
+
+it.effect("#1792: a Profile create preserves the FileExists error type", () =>
+  Effect.gen(function* () {
+    const host = createTemplateHost();
+    const { profileService } = yield* profileRuntimeOf(host);
+    const path = "templates/zotlit-profile.default.md";
+    yield* Effect.promise(() => host.vault.createFolder(path));
+    const error = yield* Effect.flip(profileService.materializeDefault());
+    expect(error).toBeInstanceOf(FileExists);
+    expect(error).toMatchObject({ path });
+    expect(host.vault.contents.has(path)).toBe(false);
+  }),
 );

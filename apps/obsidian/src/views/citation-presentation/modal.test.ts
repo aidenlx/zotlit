@@ -6,11 +6,13 @@ import {
   settingsOf,
   TextComponent,
 } from "@mock/obsidian";
+import { Effect } from "effect";
 import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 
 import { openCitationPresentationModal } from "./modal";
@@ -20,9 +22,8 @@ import type { CitationPresentationChoice } from "./presentation";
 /** The styles Zotero has installed while one dialog is open. */
 const zotero = vi.hoisted(() => ({ styles: [] as InstalledCslStyle[] }));
 
-vi.mock("@/services/pandoc/styles", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/services/pandoc/styles")>()),
-  listInstalledStylesOrNone: () => Promise.resolve(zotero.styles),
+vi.mock("@/services/pandoc/installed-styles", () => ({
+  listInstalledStylesOrNone: () => Effect.succeed(zotero.styles),
 }));
 
 const APA = { id: "http://www.zotero.org/styles/apa", title: "APA 7th" };
@@ -32,6 +33,8 @@ const UNINSTALLED = "http://www.zotero.org/styles/gone";
 /** One dialog on screen, read and driven the way the user reads and drives it. */
 async function openDialog(options: Partial<CitationPresentationModalOptions>) {
   const choice = openCitationPresentationModal(stubService<App>("App", {}), {
+    fileSystem: nodeFileSystem,
+    bridge: { runPromiseExit: Effect.runPromiseExit },
     dataDir: "/zotero",
     vaultStyleId: null,
     vaultLocale: "",

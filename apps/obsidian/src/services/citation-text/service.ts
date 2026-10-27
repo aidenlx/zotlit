@@ -1,11 +1,9 @@
-import { abortable } from "@std/async/abortable";
 import { QueryObserver } from "@tanstack/query-core";
 import {
   Cause,
   Context,
   Duration,
   Effect,
-  Exit,
   Layer,
   PubSub,
   Scope,
@@ -22,6 +20,7 @@ import {
 } from "@zotlit/templates/pandoc-citation";
 import type { ScannedPandocCitation } from "@zotlit/templates/pandoc-citation";
 
+import { FIELD_ZOTERO_NOTE_KEY } from "@/lib/constants";
 import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { obsidianEvents } from "@/lib/effect-obsidian-events";
@@ -31,7 +30,7 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { OpenDocuments } from "@/lib/open-documents";
-import { settleAtEdge } from "@/lib/signal-edge";
+import { FileNotFound } from "@/lib/vault-errors";
 import {
   citationOfRun,
   citationRuns,
@@ -50,7 +49,6 @@ import { NoteIndex } from "@/services/note-index/service";
 import {
   documentCitationPresentation,
   documentPresentation,
-  profileReaderOf,
 } from "@/services/pandoc/document-presentation";
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type { RenderPresentation } from "@/services/pandoc/render-cache";
@@ -58,6 +56,7 @@ import { BibliographyRender } from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
 import { QueryClients } from "@/services/query-client/service";
 import type { Held } from "@/services/query-client/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 import { citationKey, presentedCitationEqual } from "./present";
 import type {
@@ -134,9 +133,7 @@ export class CitationText extends Context.Service<
     readonly changes: Stream.Stream<CitationTextState>;
     readonly events: Stream.Stream<CitationTextEvent>;
     peek(path: string): Effect.Effect<Held<DocumentCitations> | null>;
-    read(
-      path: string,
-    ): Effect.Effect<DocumentCitations | null, Cause.UnknownError>;
+    read(path: string): Effect.Effect<DocumentCitations | null>;
   }
 >()("zotlit/citation-text/CitationText") {}
 
@@ -154,52 +151,20 @@ export const layerCitationText = (open?: OpenDocuments) =>
       const profiles = yield* Profile;
       const queries = yield* QueryClients;
       const scope = yield* Scope.fork(yield* Scope.Scope);
-      const { runSync: run, runPromiseExit: runExit } = yield* scopedBridge;
-      /**
-       * Runs a sibling service's read from the Promise code TanStack queries
-       * call. `signal` interrupts the read and rejects with its reason. Any
-       * other interruption means this layer is closing, so the read answers
-       * `released`; any other failure rethrows its cause.
-       */
-      const settle = async <A>(
-        effect: Effect.Effect<A, unknown>,
-        released: () => A,
-        signal?: AbortSignal,
-      ): Promise<A> => {
-        const exit = await runExit(
-          effect,
-          signal === undefined ? undefined : { signal },
-        );
-        return settleAtEdge(exit, signal, released);
-      };
-      const releasedRead = (): never => {
-        throw new DOMException("Citation text released", "AbortError");
-      };
-      /** The Literature Note Profiles a document's presentation property names. */
-      const profile = profileReaderOf(profiles, run);
-      /** The file at `path` now, `null` when the vault has none. */
-      const fileAt = (path: string) => run(vault.getFileByPath(path));
-      /**
-       * Vault paths shown in at least one Markdown leaf. A deferred background
-       * tab counts once its view loads, which is also when it first asks for
-       * anything.
-       */
-      const openPaths = (): ReadonlySet<string> =>
+      const bridge = yield* scopedBridge.pipe(Scope.provide(scope));
+      const fileAt = (path: string) => vault.getFileByPath(path);
+      const openPaths = Effect.suspend(() =>
         open
-          ? open.paths()
-          : new Set(
-              run(workspace.markdownViews).flatMap(({ file }) =>
-                file ? [file.path] : [],
-              ),
-            );
+          ? Effect.sync(() => open.paths())
+          : Effect.map(
+              workspace.markdownViews,
+              (views) =>
+                new Set(views.flatMap(({ file }) => (file ? [file.path] : []))),
+            ),
+      );
       /** Releases for the pins that keep each open document's text held. */
       const pins = new Map<string, () => void>();
       let stopped = false;
-      // Aborted as the layer stops, before the child scope closes.
-      const lifetimeScope = yield* Scope.fork(yield* Scope.Scope);
-      const lifetime = yield* Effect.abortSignal.pipe(
-        Scope.provide(lifetimeScope),
-      );
       const state = yield* SubscriptionRef.make<CitationTextState>({
         startup: "ready",
         stopped: false,
@@ -216,18 +181,15 @@ export const layerCitationText = (open?: OpenDocuments) =>
         message: string,
         fields: Record<string, unknown> = {},
       ) =>
-        run(
-          (level === "debug"
-            ? Effect.logDebug(message)
-            : Effect.logWarning(message)
-          ).pipe(Effect.annotateLogs(fields), withLogCategory("citation-text")),
-        );
+        (level === "debug"
+          ? Effect.logDebug(message)
+          : Effect.logWarning(message)
+        ).pipe(Effect.annotateLogs(fields), withLogCategory("citation-text"));
       // Stop work before the child scope removes subscriptions and releases pins.
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           stopped = true;
         }).pipe(
-          Effect.andThen(Scope.close(lifetimeScope, Exit.void)),
           Effect.andThen(
             Effect.sync(() =>
               queries.client.removeQueries({ queryKey: [CITATION_TEXT] }),
@@ -251,20 +213,21 @@ export const layerCitationText = (open?: OpenDocuments) =>
        *
        * @returns null while the first read is pending.
        */
-      function peek(path: string): Held<DocumentCitations> | null {
+      const peek = Effect.fn("CitationText.peek")(function* (path: string) {
         if (stopped) return null;
-        if (fileAt(path) === null) {
+        if ((yield* fileAt(path)) === null) {
           drop(path);
           return null;
         }
-        void settle(
+        yield* Effect.forkIn(
           queries.ask(documentKey(path), ({ signal }) =>
-            readPath(path, signal),
+            bridge.runPromise(readPath(path), { signal }),
           ),
-          () => null,
+          scope,
+          { startImmediately: true },
         );
-        return run(queries.peek<DocumentCitations>(documentKey(path)));
-      }
+        return yield* queries.peek<DocumentCitations>(documentKey(path));
+      });
 
       /**
        * The citations of one document once the read behind them stands, for a
@@ -275,31 +238,26 @@ export const layerCitationText = (open?: OpenDocuments) =>
        *   surface that joined it.
        * @returns null where the document is gone or its read failed.
        */
-      async function read(
-        path: string,
-        { signal }: { signal?: AbortSignal } = {},
-      ): Promise<DocumentCitations | null> {
+      const read = Effect.fn("CitationText.read")(function* (path: string) {
         if (stopped) return null;
-        const text = await settle(
-          queries.read(documentKey(path), ({ signal }) =>
-            readPath(path, signal),
-          ),
-          () => null,
-          signal,
+        const text = yield* queries.read(documentKey(path), ({ signal }) =>
+          bridge.runPromise(readPath(path), { signal }),
         );
         // A file deleted while its read ran holds nothing: the path is resolved
         // again here, because the read may have started before the file went.
         if (stopped) return null;
-        if (fileAt(path) !== null) return text;
+        if ((yield* fileAt(path)) !== null) return text;
         drop(path);
         return null;
-      }
+      });
 
       /**
        * Marks one document's text stale, or every document's where no path names
        * one, and announces the scope the drop reached.
        */
-      function invalidate(path?: string): void {
+      const invalidate = Effect.fn("CitationText.invalidate")(function* (
+        path?: string,
+      ) {
         if (stopped) return;
         const queryKey =
           path === undefined ? [CITATION_TEXT] : documentKey(path);
@@ -311,10 +269,10 @@ export const layerCitationText = (open?: OpenDocuments) =>
         ) {
           return;
         }
-        run(queries.invalidate(queryKey));
+        yield* queries.invalidate(queryKey);
         if (path === undefined) emit({ type: "invalidated" });
         else emit({ type: "changed", path });
-      }
+      });
 
       /** Releases what one vault path holds, which a file no longer there must. */
       function drop(path: string): void {
@@ -330,54 +288,50 @@ export const layerCitationText = (open?: OpenDocuments) =>
        * closed one expire. A pin is a disabled observer: it holds the query
        * without reading, and every read still starts from a surface's ask.
        */
-      function pinOpenDocuments(): void {
-        if (stopped) return;
-        const open = openPaths();
-        for (const [path, release] of pins) {
-          if (open.has(path)) continue;
-          release();
-          pins.delete(path);
-        }
-        for (const path of open) {
-          if (pins.has(path)) continue;
-          const observer = new QueryObserver(queries.client, {
-            queryKey: documentKey(path),
-            enabled: false,
-          });
-          const unsubscribe = observer.subscribe(() => undefined);
-          pins.set(path, () => {
-            unsubscribe();
-            observer.destroy();
-          });
-        }
-      }
+      const pinOpenDocuments = Effect.fn("CitationText.pinOpenDocuments")(
+        function* () {
+          if (stopped) return;
+          const open = yield* openPaths;
+          for (const [path, release] of pins) {
+            if (open.has(path)) continue;
+            release();
+            pins.delete(path);
+          }
+          for (const path of open) {
+            if (pins.has(path)) continue;
+            const observer = new QueryObserver(queries.client, {
+              queryKey: documentKey(path),
+              enabled: false,
+            });
+            const unsubscribe = observer.subscribe(() => undefined);
+            pins.set(path, () => {
+              unsubscribe();
+              observer.destroy();
+            });
+          }
+        },
+      );
 
       /**
        * The document read, as the query behind one vault path runs it. The path is
        * resolved on every run, so a read asked again after a cancellation reads the
        * file the path names now — and reads nothing where it names none.
        */
-      async function readPath(
+      const readPath = Effect.fn("CitationText.readPath")(function* (
         path: string,
-        querySignal: AbortSignal,
-      ): Promise<DocumentCitations> {
-        const signal = AbortSignal.any([querySignal, lifetime]);
-        signal.throwIfAborted();
-        const file = fileAt(path);
-        if (file === null) {
-          throw new Error(`No document to read the citations of at ${path}`);
-        }
-        try {
-          return await readDocument(file, signal);
-        } catch (error) {
-          if (!signal.aborted)
+      ) {
+        const file = yield* fileAt(path);
+        if (file === null)
+          return yield* new FileNotFound({ path, cause: undefined });
+        return yield* readDocument(file).pipe(
+          Effect.tapError((error) =>
             log("warn", "Cannot read the citations of a document", {
               path,
               error,
-            });
-          throw error;
-        }
-      }
+            }),
+          ),
+        );
+      });
 
       /**
        * A style that numbers counts citations across the whole document, so every
@@ -392,26 +346,18 @@ export const layerCitationText = (open?: OpenDocuments) =>
        * resolves nothing. That wait is what lets the drops below listen for moved
        * mappings alone rather than for every rescan.
        */
-      async function readDocument(
+      const readDocument = Effect.fn("CitationText.readDocument")(function* (
         file: TFile,
-        signal: AbortSignal,
-      ): Promise<DocumentCitations> {
-        await abortable(
-          settle(notes.whenIndexed, () => undefined),
-          signal,
-        );
-        signal.throwIfAborted();
-        const { facts, set } = await settle(
-          index.getParsedDocument(file),
-          releasedRead,
-          signal,
-        );
-        signal.throwIfAborted();
+      ) {
+        yield* notes.whenIndexed;
+        const { facts, set } = yield* index.getParsedDocument(file);
         const { source: body, record } = facts;
-        const wikilinks = wikilinkCitations(file, body, set);
+        const wikilinks = yield* wikilinkCitations(file, body, set);
         const literal = worksByCitekey(set.citations);
         if (set.database === "unreadable")
-          throw new Error("The Zotero database cannot be read");
+          return yield* new DbUnavailable({
+            message: "The Zotero database cannot be read",
+          });
         const works = new Map(
           set.citations.flatMap(({ indexedKey }) => {
             const source =
@@ -486,13 +432,18 @@ export const layerCitationText = (open?: OpenDocuments) =>
         // A document whose own presentation property names nothing at all renders
         // nothing: its citations keep the source the author wrote, rather than
         // reading as though a vault selection were what the note declared.
+        const cache = yield* metadata.fileCache(file);
+        const loaded = yield* profiles.loaded;
+        const resolved =
+          loaded && cache?.frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined
+            ? yield* profiles.profileOf(file)
+            : null;
         const presented = documentCitationPresentation(
-          documentPresentation(
-            { getFileCache: (file) => run(metadata.fileCache(file)) },
-            file,
-            profile,
-          ),
-          run(renders.state).vaultPresentation,
+          documentPresentation({ getFileCache: () => cache }, file, {
+            loaded,
+            profileOf: () => resolved!,
+          }),
+          (yield* renders.state).vaultPresentation,
           { citations: set.citations, works },
         );
         const presentation =
@@ -500,12 +451,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
         const rendered =
           presentation === null
             ? null
-            : await settle(
-                renders.readCitations(sources, items, { presentation }),
-                releasedRead,
-                signal,
-              );
-        signal.throwIfAborted();
+            : yield* renders.readCitations(sources, items, { presentation });
         // A style whose citations are footnotes leaves a note in the rendered
         // content, which no surface can show. That output — not the style — is
         // what puts the whole document on Entry Serials.
@@ -513,9 +459,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
           rendered?.some(({ content }) => holdsNote(content)) ?? false;
         const serials =
           presented.kind === "read" && entrySerials
-            ? await readSerials(presented.items, works, {
+            ? yield* readSerials(presented.items, works, {
                 presentation: presented.presentation,
-                signal,
               })
             : null;
 
@@ -545,7 +490,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
             else occurrences.push(occurrence);
           });
         }
-        log("debug", "Document citations read", {
+        yield* log("debug", "Document citations read", {
           path: file.path,
           citations: sources.length,
           wikilinks: wikilinks.length,
@@ -571,7 +516,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
           literalWorks: literal,
           lookup: set.lookup,
         };
-      }
+      });
 
       /**
        * The Entry Serial of each cited work, by the Indexed Key its citations name
@@ -589,23 +534,17 @@ export const layerCitationText = (open?: OpenDocuments) =>
        *   entry for is absent, and every work is absent when no bibliography could
        *   be rendered at all, which shows the citation a ⚠ in each slot.
        */
-      async function readSerials(
+      const readSerials = Effect.fn("CitationText.readSerials")(function* (
         items: readonly CslItemData[],
         works: ReadonlyMap<string, CitedItem>,
-        {
-          presentation,
-          signal,
-        }: { presentation: RenderPresentation; signal: AbortSignal },
-      ): Promise<ReadonlyMap<string, number>> {
+        { presentation }: { presentation: RenderPresentation },
+      ) {
         const serials = new Map<string, number>();
-        const rendered = await settle(
-          renders.readBibliography(items, { presentation }),
-          releasedRead,
-          signal,
-        );
-        signal.throwIfAborted();
+        const rendered = yield* renders.readBibliography(items, {
+          presentation,
+        });
         if (rendered === null) {
-          log("debug", "Cannot number the cited entries");
+          yield* log("debug", "Cannot number the cited entries");
           return serials;
         }
         const places = new Map(
@@ -616,7 +555,7 @@ export const layerCitationText = (open?: OpenDocuments) =>
           if (serial !== undefined) serials.set(indexedKey, serial);
         }
         return serials;
-      }
+      });
 
       /**
        * The Citations one document's Literature Note wikilinks write, each as the
@@ -625,66 +564,64 @@ export const layerCitationText = (open?: OpenDocuments) =>
        * Membership and resolved works come from the Document Citation Set;
        * the body supplies the separators between admitted links.
        */
-      function wikilinkCitations(
-        file: TFile,
-        body: string,
-        { occurrences, lookup, citations: grouped }: DocumentCitationSet,
-      ): PlacedCitation[] {
-        const notes = new Map(
-          grouped.flatMap((citation) =>
-            citation.indexedKey === null
-              ? []
-              : citation.occurrences.flatMap((occurrence) => {
-                  if (occurrence.kind !== "wikilink") return [];
-                  const note = run(
-                    metadata.firstLinkpathDest(occurrence.raw, file.path),
-                  );
-                  return note
-                    ? [
-                        [
-                          occurrence.raw,
-                          {
-                            path: note.path,
-                            indexedKey: citation.indexedKey!,
-                            citationKey: lookup.citekeyOf(citation.indexedKey!),
-                          },
-                        ] as const,
-                      ]
-                    : [];
-                }),
-          ),
-        );
-        const context = {
-          literatureNote: (linkpath: string) => notes.get(linkpath) ?? null,
-          enabled: true,
-        };
+      const wikilinkCitations = Effect.fn("CitationText.wikilinkCitations")(
+        function* (
+          file: TFile,
+          body: string,
+          { occurrences, lookup, citations: grouped }: DocumentCitationSet,
+        ) {
+          const notes = new Map<
+            string,
+            { path: string; indexedKey: string; citationKey: string | null }
+          >();
+          for (const citation of grouped) {
+            if (citation.indexedKey === null) continue;
+            for (const occurrence of citation.occurrences) {
+              if (occurrence.kind !== "wikilink") continue;
+              const note = yield* metadata.firstLinkpathDest(
+                occurrence.raw,
+                file.path,
+              );
+              if (note)
+                notes.set(occurrence.raw, {
+                  path: note.path,
+                  indexedKey: citation.indexedKey,
+                  citationKey: lookup.citekeyOf(citation.indexedKey),
+                });
+            }
+          }
+          const context = {
+            literatureNote: (linkpath: string) => notes.get(linkpath) ?? null,
+            enabled: true,
+          };
 
-        const runs = citationRuns(
-          occurrences.filter((occurrence) => occurrence.kind === "wikilink"),
-          ({ raw, fragment }) =>
-            wikilinkCitation(
-              fragment === undefined ? raw : `${raw}#cite:${fragment}`,
-              context,
-            ),
-          (previous, next) =>
-            body.slice(
-              previous.position.end.offset,
-              next.position.start.offset,
-            ),
-        );
+          const runs = citationRuns(
+            occurrences.filter((occurrence) => occurrence.kind === "wikilink"),
+            ({ raw, fragment }) =>
+              wikilinkCitation(
+                fragment === undefined ? raw : `${raw}#cite:${fragment}`,
+                context,
+              ),
+            (previous, next) =>
+              body.slice(
+                previous.position.end.offset,
+                next.position.start.offset,
+              ),
+          );
 
-        const citations: PlacedCitation[] = [];
-        for (const run of runs) {
-          const citation = citationOfRun(run);
-          citations.push({
-            start: run[0]!.source.position.start.offset,
-            ...citation,
-            parsed: scanPandocCitations(citation.source)[0]!,
-            identity: citationKey(citation),
-          });
-        }
-        return citations;
-      }
+          const citations: PlacedCitation[] = [];
+          for (const run of runs) {
+            const citation = citationOfRun(run);
+            citations.push({
+              start: run[0]!.source.position.start.offset,
+              ...citation,
+              parsed: scanPandocCitations(citation.source)[0]!,
+              identity: citationKey(citation),
+            });
+          }
+          return citations;
+        },
+      );
       yield* Effect.gen(function* () {
         queries.client.setQueryDefaults([CITATION_TEXT], {
           gcTime: TEXT_GC_TIME,
@@ -707,12 +644,12 @@ export const layerCitationText = (open?: OpenDocuments) =>
         );
         const intake = yield* obsidianEvents<{ open: [] }>();
         yield* intake
-          .consume(() => Effect.sync(pinOpenDocuments))
+          .consume(() => pinOpenDocuments())
           .pipe(Effect.forkScoped({ startImmediately: true }));
         // A locator or prefix can change without moving the indexed citekeys.
         // Metadata changes therefore invalidate this document's render too.
         yield* forkEach(metadata.changes, (event) => {
-          if (event._tag === "changed") invalidate(event.file.path);
+          if (event._tag === "changed") return invalidate(event.file.path);
           else if (event._tag === "deleted") drop(event.file.path);
         });
         const reopen = intake.callback("open");
@@ -740,14 +677,14 @@ export const layerCitationText = (open?: OpenDocuments) =>
           });
         });
         yield* forkEach(index.events, (event) => {
-          if (event.type === "membership-changed") invalidate();
-          else if (event.type === "changed") invalidate(event.path);
+          if (event.type === "membership-changed") return invalidate();
+          else if (event.type === "changed") return invalidate(event.path);
         });
         // A moved Literature Note or the first Full Scan can change the Item
         // a wikilink resolves to across every document.
         yield* forkEach(notes.changes, (event) => {
           if (event.type === "changed" || event.type === "indexed")
-            invalidate();
+            return invalidate();
         });
         // A rebuilt lookup snapshot can change literal keys and the native
         // citation key carried by a wikilink's Literature Note.
@@ -755,14 +692,14 @@ export const layerCitationText = (open?: OpenDocuments) =>
         yield* forkEach(lookup.changes, (next) => {
           if (revision === next.revision) return;
           revision = next.revision;
-          invalidate();
+          return invalidate();
         });
         yield* forkEach(renders.events, (event) => {
-          if (event._tag === "invalidated") invalidate();
+          if (event._tag === "invalidated") return invalidate();
         });
         // Install every subscription before this fallible host read. A later
         // workspace event can retry the pins if the initial read fails.
-        pinOpenDocuments();
+        yield* pinOpenDocuments();
       }).pipe(
         Scope.provide(scope),
         Effect.catchCause((cause) =>
@@ -786,12 +723,8 @@ export const layerCitationText = (open?: OpenDocuments) =>
           Stream.takeUntil((value) => value.stopped),
         ),
         events: Stream.fromPubSub(bus),
-        peek: Effect.fn("CitationText.peek")(function* (path: string) {
-          return yield* Effect.sync(() => peek(path));
-        }),
-        read: Effect.fn("CitationText.read")(function* (path: string) {
-          return yield* Effect.tryPromise((signal) => read(path, { signal }));
-        }),
+        peek,
+        read,
       };
     }),
   );

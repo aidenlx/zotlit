@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import type { FileSystemAdapter } from "obsidian";
 
 import { passAborted } from "@/lib/abort-error";
@@ -51,8 +51,8 @@ import { CitationPopover } from "./citation-popover/service";
 import { plainCitationText } from "./citation-text/plain";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { ExcerptDisplays } from "./excerpt-image/display";
-import { ExcerptImages } from "./excerpt-image/layer";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { bindItemLookup } from "./item-lookup/handle";
@@ -235,6 +235,7 @@ export async function buildServices(
   return container
     .useValue({ runtime: () => runtime })
     .useValue({ bridge: () => bridge })
+    .useValue({ fileSystem: () => runtime.runSync(FileSystem.FileSystem) })
     .useValue({
       settings: () => runtime.runSync(PluginSettings),
     })
@@ -272,7 +273,7 @@ export async function buildServices(
     .useValue({
       libraryTagNames: () => libraryTagNamesOf(runtime),
     })
-    .useValue({ excerptImage: () => runtime.runSync(ExcerptImages) })
+    .useValue({ excerptImage: () => runtime.runSync(ExcerptImageService) })
     .useValue({ excerptDisplay: () => runtime.runSync(ExcerptDisplays) })
     .useValue({
       attachmentResolver: () => runtime.runSync(AttachmentResolver),

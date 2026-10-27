@@ -1,5 +1,4 @@
 import { it } from "@effect/vitest";
-import { abortable } from "@std/async/abortable";
 import { Context } from "effect";
 import { Effect, Stream } from "effect";
 import { TestClock } from "effect/testing";
@@ -55,6 +54,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   citedWorkSeed,
   inProcessReadsService,
@@ -280,7 +280,9 @@ async function makeHarness({
           ),
           set: {
             ...set,
-            ...(await readReferenceSources(reads, set.citations)),
+            ...(await reads.runtime.runPromise(
+              ZoteroReads.use((db) => readReferenceSources(db, set.citations)),
+            )),
             syntaxes: {
               citekey: "included" as const,
               wikilink: "excluded" as const,
@@ -1839,7 +1841,10 @@ it.effect(
         formatCitations: async (_citations, signal) => {
           entered.resolve(signal!);
           try {
-            return await abortable(render.promise, signal!);
+            return await Effect.runPromise(
+              Effect.tryPromise(() => render.promise),
+              { signal },
+            );
           } finally {
             aborted.resolve();
           }

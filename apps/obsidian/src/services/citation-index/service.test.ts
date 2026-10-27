@@ -8,6 +8,7 @@ import { afterEach, describe, expect } from "vitest";
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
 import { subscribe } from "@/lib/effect-stream";
 import type { PlainCitationIndex } from "@/services/citation-index/plain";
+import { ParseFailed } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 
@@ -56,7 +57,7 @@ async function citationsOf(
 
 /** Clears the stored scans and starts a new pass, through the CitationIndex service. */
 function resetIndex(runtime: CitationIndexHarness["runtime"]): Promise<void> {
-  return runtime.runPromise(CitationIndex.use((index) => index.reset()));
+  return runtime.runPromise(CitationIndex.use((index) => index.reset));
 }
 
 describe("CitationIndex", () => {
@@ -2029,6 +2030,76 @@ describe("CitationIndex one-shot reads", () => {
 });
 
 describe("CitationIndex parsed notes", () => {
+  it.effect("#1789 keeps the VaultError of a parsed-document read", () =>
+    Effect.gen(function* () {
+      const { runtime, draft, vault } = yield* Effect.promise(() =>
+        makeHarness({ "draft.md": "See @doe2024." }),
+      );
+      vault.fail(draft.path);
+      const index = runtime.runSync(CitationIndex);
+      const failure = yield* Effect.flip(index.getParsedDocument(draft));
+      expect(failure).toMatchObject({
+        _tag: "VaultError",
+        operation: "cachedRead",
+        path: draft.path,
+      });
+    }),
+  );
+
+  it.effect("#1789 keeps the parser failure of a parsed-document read", () =>
+    Effect.gen(function* () {
+      const refused = new ParseFailed({
+        message: "The scanner rejected this note",
+      });
+      const { runtime, draft } = yield* Effect.promise(() =>
+        makeHarness(
+          { "draft.md": "See @doe2024." },
+          {
+            parseClient: { parse: () => Effect.fail(refused) },
+          },
+        ),
+      );
+      const index = runtime.runSync(CitationIndex);
+      expect(yield* Effect.flip(index.getParsedDocument(draft))).toBe(refused);
+    }),
+  );
+
+  it.effect(
+    "#1789 unload interrupts a scan read in flight before parsing",
+    () =>
+      Effect.promise(async () => {
+        const parsed: string[] = [];
+        const h = await makeHarness(
+          { "draft.md": "See @doe2024." },
+          {
+            parseClient: {
+              parse: (request) =>
+                Effect.gen(function* () {
+                  parsed.push(request.path);
+                  return yield* inProcessParseClient.parse(request);
+                }),
+            },
+          },
+        );
+        const entered = Promise.withResolvers<void>();
+        const release = h.vault.hold(h.draft.path);
+        const cachedRead = h.vault.cachedRead.bind(h.vault);
+        h.vault.cachedRead = (file) => {
+          const reading = cachedRead(file);
+          if (file.path === h.draft.path) entered.resolve();
+          return reading;
+        };
+        const reading = h.index
+          .getFileScan(h.draft)
+          .catch((error: unknown) => error);
+        await entered.promise;
+        await h.closeIndex();
+        release();
+        expect(await reading).toMatchObject({ name: "AbortError" });
+        expect(parsed).not.toContain(h.draft.path);
+      }),
+  );
+
   it.effect("parses a note's current source", () =>
     Effect.promise(async () => {
       const { index, draft } = await makeHarness({

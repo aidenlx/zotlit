@@ -14,6 +14,7 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
@@ -35,7 +36,7 @@ import {
   savedExcerptRequestFor,
   savedExcerptRequestOver,
 } from "./request";
-import { ExcerptImageService, excerptKey, excerptRequest } from "./service";
+import { excerptKey, excerptRequest } from "./service";
 import type { ExcerptEntry } from "./service";
 
 const SERVER_ID = "A8sf5Zsz8ySw";

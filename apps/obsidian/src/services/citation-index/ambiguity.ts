@@ -12,7 +12,7 @@ import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
-import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { SnapshotItem } from "./snapshot";
 
@@ -61,7 +61,7 @@ export type AmbiguousCandidatesOf = (
 
 /** Where a candidate description reads its summary and its Library from. */
 export interface CandidateDeps {
-  db: { readonly reads: ZoteroReadsApi };
+  db: Pick<ZoteroReads["Service"], "snapshot">;
   /** Names the Library each candidate lives in. */
   libraryScope: { readonly current: ResolvedLibraryScope | null };
 }
@@ -79,23 +79,26 @@ export const describeCandidatesEffect = Effect.fnUntraced(function* (
   deps: CandidateDeps,
   candidates: readonly SnapshotItem[],
 ) {
-  const items = yield* deps.db.reads
-    .ItemsByIndexedKeys({
-      indexedKeys: candidates.map((candidate) => candidate.indexedKey),
-    })
-    .pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.logWarning(
-              "Ambiguous citekey candidates read without summaries",
-              cause,
-            ).pipe(
-              withLogCategory("citation-index"),
-              Effect.as(new Map<string, Item>()),
-            ),
-      ),
-    );
+  const items = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const reads = yield* deps.db.snapshot;
+      return yield* reads.ItemsByIndexedKeys({
+        indexedKeys: candidates.map((candidate) => candidate.indexedKey),
+      });
+    }),
+  ).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning(
+            "Ambiguous citekey candidates read without summaries",
+            cause,
+          ).pipe(
+            withLogCategory("citation-index"),
+            Effect.as(new Map<string, Item>()),
+          ),
+    ),
+  );
   return describeWith(deps, items, candidates);
 });
 

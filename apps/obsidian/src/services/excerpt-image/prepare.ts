@@ -13,7 +13,6 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
-import { portCall } from "@/lib/legacy-port";
 import { markdownLinker } from "@/lib/obsidian-file-manager";
 import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -27,7 +26,6 @@ import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { createExcerptLink, summarizeExcerpts } from "./helper";
 import type { ExcerptSummary } from "./helper";
-import { ExcerptImages } from "./layer";
 import {
   makePublicationGate,
   materializeExcerpt,
@@ -37,6 +35,7 @@ import type { MaterializedExcerpt, PublicationGate } from "./materialize";
 import type { ExcerptOutcomeScope } from "./outcome-scope";
 import { referencedExcerptPaths } from "./references";
 import { annotationRecordOf } from "./request";
+import { ExcerptImageService } from "./service";
 import type { ExcerptRequest } from "./service";
 export type { ExcerptSummary } from "./helper";
 
@@ -146,7 +145,7 @@ export interface PreparedCardExcerpt {
 
 /**
  * The Excerpt Image preparation of note writes and captured cards: it
- * resolves each excerpt through {@link ExcerptImages} and writes it into the
+ * resolves each excerpt through {@link ExcerptImageService} and writes it into the
  * vault before the template renders its link.
  */
 export class ExcerptPreparation extends Context.Service<
@@ -164,7 +163,7 @@ export class ExcerptPreparation extends Context.Service<
 
 /** The services the preparation reads through their tags. */
 export type ExcerptPreparationServices =
-  | ExcerptImages
+  | ExcerptImageService
   | FileManager
   | FileSystem.FileSystem
   | MetadataCache
@@ -250,10 +249,8 @@ function noteExcerpts(
     const attachments = new Map(
       attachmentLists.flat().map((a) => [a.itemID, a]),
     );
-    const images = yield* ExcerptImages;
-    const operation = yield* Effect.acquireDisposable(
-      Effect.sync(() => images.operation({ outcomes })),
-    );
+    const images = yield* ExcerptImageService;
+    const operation = yield* images.operation({ outcomes });
     const previousPaths = previousNote
       ? yield* referencedExcerptPaths(previousNote)
       : [];
@@ -290,9 +287,7 @@ function noteExcerpts(
             candidate.result = { kind: "unavailable", reason: "disabled" };
             return;
           }
-          const outcome = yield* portCall("excerpt-resolve", (signal) =>
-            operation.resolve(request, signal),
-          );
+          const outcome = yield* operation.resolve(request);
           candidate.result = yield* materializeExcerpt({
             gate: deps.gate,
             notePath,
@@ -349,11 +344,9 @@ const cardExcerpt = Effect.fnUntraced(function* (
     settings["attachment.import"] &&
     (yield* options.valid)
   ) {
-    const images = yield* ExcerptImages;
+    const images = yield* ExcerptImageService;
     yield* Effect.gen(function* () {
-      const outcome = yield* portCall("excerpt-resolve", (signal) =>
-        images.resolve(request, signal),
-      );
+      const outcome = yield* images.resolve(request);
       if (yield* options.valid)
         result = yield* materializeExcerpt({
           gate,

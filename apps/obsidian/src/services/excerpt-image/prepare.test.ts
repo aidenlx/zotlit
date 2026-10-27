@@ -20,9 +20,11 @@ import {
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
 
+import { effectImageResolver } from "./__fixtures__/service";
+import type { ExcerptImageFixture } from "./__fixtures__/service";
 import type { ExcerptRequest } from "./contract";
-import { ExcerptImages } from "./layer";
 import { ExcerptPreparation, layerExcerptPreparation } from "./prepare";
+import { ExcerptImageService } from "./service";
 
 const SEED = `
   insert into version (schema, version) values ('userdata', 129);
@@ -49,7 +51,7 @@ const READ_OPERATIONS = [
 
 const settings = { ...defaults, "attachment.import": true };
 
-type Images = Partial<Pick<ExcerptImages["Service"], "operation" | "resolve">>;
+type Images = Partial<Pick<ExcerptImageFixture, "operation" | "resolve">>;
 
 /** The seeded database's reads and its image annotation, closed with the case's Scope. */
 const seeded = Effect.gen(function* () {
@@ -88,8 +90,11 @@ const preparationOver = (vault: MemoryVault, images: Images) =>
               ),
             }),
             Layer.succeed(
-              ExcerptImages,
-              stubService<ExcerptImages["Service"]>("ExcerptImages", images),
+              ExcerptImageService,
+              stubService<ExcerptImageService["Service"]>(
+                "ExcerptImages",
+                effectImageResolver(images),
+              ),
             ),
           ),
         ),

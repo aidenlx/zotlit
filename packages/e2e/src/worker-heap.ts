@@ -59,7 +59,10 @@ export async function measureWorkerHeap<T>(
     [...sessions].map(async (sessionID) => {
       const reply = await session.send(
         "Runtime.evaluate",
-        { expression: "self.name", returnByValue: true },
+        {
+          expression: `(${(() => self.name).toString()})()`,
+          returnByValue: true,
+        },
         { sessionId: sessionID, timeoutMs: 3_000 },
       );
       const name = (reply.result as { value?: string }).value;

@@ -49,7 +49,7 @@ export class InsertCitationModal extends ItemSearchModal {
   override onOpen(): void {
     this.#documentController = new AbortController();
     this.#cited = readDocumentCitedKeys(
-      this.#deps.citationIndex,
+      this.#deps,
       this.#file,
       this.#documentController.signal,
     );

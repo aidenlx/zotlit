@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, FileSystem } from "effect";
 import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
@@ -16,7 +16,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
-import type { ZoteroHttp } from "@/lib/zotero-http";
+import { ZoteroHttp } from "@/lib/zotero-http";
 import type { PlainCitationLookup } from "@/services/citation-index/plain";
 import { CitationParse } from "@/services/citation-parse/service";
 import type { ManagedBinaryHandle } from "@/services/managed-binary/handle";
@@ -51,6 +51,7 @@ const logger = getLogger(["views", "pandoc-export"]);
 export interface PandocExportDeps {
   citationParse: Pick<CitationParse["Service"], "parse">;
   app: App;
+  fileSystem: FileSystem.FileSystem;
   db: Pick<PlainZoteroReads, "reads">;
   /** Resolves the literal citation keys of the exported document. */
   citationLookup: Pick<PlainCitationLookup, "read">;
@@ -128,7 +129,7 @@ export async function exportWithCitations(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<PandocExportOutcome> {
-  const { app, bridge, pandocEngine, zoteroPref, settings } = deps;
+  const { app, bridge, fileSystem, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.runSync(pandocEngine.binary.getStatus).kind !== "installed")
     return { kind: "engine-missing" };
   // A note whose own presentation property names nothing stops here: a vault
@@ -171,6 +172,8 @@ export async function exportWithCitations(
 
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
+    fileSystem,
+    bridge,
     referencesStyleId: effective.styleId,
     styleSource: styleSourceOf(declared),
     notePath: absolutePath(app, file),
@@ -179,10 +182,11 @@ export async function exportWithCitations(
 
   // A style Zotero cannot supply stops the run, whichever place selected it:
   // the run never falls back to another style.
-  const style = await exportPresentation(zoteroPref.dataDir, {
+  const style = await exportPresentation(deps, zoteroPref.dataDir, {
     styleId: choices.styleId,
     locale: effective.locale,
   });
+  if (style === "released") return { kind: "stopped" };
   if (style === null) {
     const noteStyle = choices.styleId === declared.presentation.styleId;
     return {
@@ -268,10 +272,21 @@ export async function exportWithCitations(
  *   in another style.
  */
 async function exportPresentation(
+  deps: PandocExportDeps,
   dataDir: string,
   request: CslStyleRequest,
-): Promise<{ styleXml?: string; locale?: string; title: string } | null> {
-  const style = await resolveInstalledStyle(dataDir, request);
+): Promise<
+  { styleXml?: string; locale?: string; title: string } | null | "released"
+> {
+  const style = valueOr(
+    await deps.bridge.runPromiseExit(
+      resolveInstalledStyle(dataDir, request).pipe(
+        Effect.provideService(FileSystem.FileSystem, deps.fileSystem),
+      ),
+    ),
+    null,
+  );
+  if (style === null) return "released";
   if (style.kind === "installed")
     return { styleXml: style.xml, title: style.title };
   if (style.kind === "failed") {
@@ -298,12 +313,21 @@ function exportPorts(
     readLookup: (request) => citationLookup.read(request),
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
-      fetchBibliography(refs, {
-        http: deps.zoteroHttp,
-        run: deps.bridge,
-        httpPort: zoteroPref.httpPort,
-        localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
-      }),
+      deps.bridge
+        .runPromiseExit(
+          fetchBibliography(refs, {
+            httpPort: zoteroPref.httpPort,
+            localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
+          }).pipe(Effect.provideService(ZoteroHttp, deps.zoteroHttp)),
+        )
+        .then((exit) => {
+          const result = valueOr(exit, null);
+          if (result === null)
+            throw new AbortError(
+              "The plugin unloaded during the bibliography read.",
+            );
+          return result;
+        }),
   };
 }
 

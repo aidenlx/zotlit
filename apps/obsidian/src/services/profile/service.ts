@@ -2,21 +2,20 @@
 import {
   Cause,
   Context,
-  Deferred,
   Effect,
-  Exit,
   Fiber,
   Layer,
   PubSub,
+  Ref,
   Schema,
   Scope,
+  Semaphore,
   Stream,
   SubscriptionRef,
 } from "effect";
 import { customAlphabet } from "nanoid";
 import { join } from "node:path/posix";
-import type { App, TFile } from "obsidian";
-import PQueue from "p-queue";
+import type { TFile } from "obsidian";
 import { parseDocument } from "yaml";
 
 import {
@@ -36,18 +35,17 @@ import {
 import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { forkedBridge } from "@/lib/effect-bridge";
+import { processLiveText, readLiveText } from "@/lib/effect-live-text";
+import type { LiveTextRewriteFailed } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
-import { ensureParentFolder, normalizeFolderPath } from "@/lib/ensure-folder";
+import { isScopeClosed } from "@/lib/effect-scope";
+import { normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import {
-  processLiveFrontMatter,
-  processLiveText,
-  readLiveText,
-} from "@/lib/live-text";
+import { parseFrontMatter, spliceFrontMatter } from "@/lib/live-text";
 import { ObsidianApp } from "@/lib/obsidian-app";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { profileRevision } from "@/lib/profile-revision";
 import {
   DEFAULT_PROFILE,
@@ -57,6 +55,12 @@ import {
   readProfileStamp,
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import type {
+  VaultError,
+  FileExists,
+  VaultFolderBlockedError,
+} from "@/lib/vault-errors";
+import { ensureVaultParentFolder } from "@/lib/vault-folder";
 import { NoteIndex } from "@/services/note-index/service";
 import { compileProfileMatch } from "@/services/profile-selection";
 import type { ProfileMatch } from "@/services/profile-selection";
@@ -74,14 +78,12 @@ import {
   DEFAULT_TEMPLATES,
   RESERVED_PARTIAL_NAMES,
 } from "@/services/template/defaults";
-import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import type {
   LiteratureNoteTemplateStatus,
-  TemplateOperations,
+  TemplateFailure,
   TemplateStatus,
 } from "@/services/template/service";
-
 const mintId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
   PROFILE_ID_LENGTH,
@@ -246,124 +248,118 @@ export interface ProfileDeletionResult {
   movedFiles: number;
 }
 
-interface ProfileEngineDeps {
-  readText(file: TFile): Promise<string>;
-  /** Creates each Profile document; a taken path fails as `FileExists`. */
-  vault: Pick<Vault["Service"], "create">;
-  /** Moves a note on Profile delete; a taken path fails as `FileExists`. */
-  fileManager: Pick<FileManager["Service"], "renameFile">;
-  /** Runs an Effect on the layer's context; a failure rejects with its error. */
-  runPromise<A, E>(effect: Effect.Effect<A, E>): Promise<A>;
-  changed(): void;
-  log(message: string, fields: Record<string, unknown>): void;
-  app: App;
-  settings: { readonly current: Readonly<Settings> };
-  template: Pick<
-    TemplateOperations,
-    | "exportLiteratureNotePackSource"
-    | "getPartialEntries"
-    | "planPartialUnpack"
-    | "unpackPartials"
-    | "getLiteratureNoteTemplateStatuses"
-    | "waitUntilSettled"
-  > & { readonly status: TemplateStatus };
-  noteIndex: {
-    whenIndexed(): Promise<void>;
-    getNotesByProfile(selector: ProfileSelector): {
-      literatureNotes: TFile[];
-      importedNotes: TFile[];
-    };
-  };
-}
-
 export type ProfileReader = Pick<
   ProfileOperations,
   "loaded" | "profiles" | "resolveProfile" | "profileOf"
-> & { readonly changed: Stream.Stream<void> };
-
-class ProfileEngine {
-  readonly #mutate = new PQueue({ concurrency: 1 });
-  readonly #deps: ProfileEngineDeps;
-  #profiles: LiteratureNoteProfile[] = [];
-  #diagnostics: ProfileDiagnostic[] = [];
-  #defaultDocument: string | undefined;
-  #defaultExcluded = false;
-  #loaded = false;
-  #scannedTemplateStatus: TemplateStatus | undefined;
-
-  constructor(deps: ProfileEngineDeps) {
-    this.#deps = deps;
-  }
-
-  get loaded(): boolean {
-    return this.#loaded;
-  }
-  get profiles(): readonly LiteratureNoteProfile[] {
-    return this.#profiles;
-  }
-  get diagnostics(): readonly ProfileDiagnostic[] {
-    return this.#diagnostics;
-  }
-  get defaultDocumentPath(): string {
-    return this.documentPathIn(
-      this.#deps.settings.current?.["template.folder"] ?? "templates",
+> & {
+  readonly changed: Stream.Stream<void>;
+};
+const makeProfileEngine = Effect.fnUntraced(function* (
+  changed: () => Effect.Effect<void>,
+) {
+  const app = yield* ObsidianApp;
+  const vault = yield* Vault;
+  const fileManager = yield* FileManager;
+  const settings = yield* PluginSettings;
+  const template = yield* Template;
+  const noteIndex = yield* NoteIndex;
+  const workspace = yield* Workspace;
+  const semaphore = yield* Semaphore.make(1);
+  const mutate = semaphore.withPermits(1);
+  const readText = (file: TFile) =>
+    readLiveText(file).pipe(
+      Effect.provideService(Vault, vault),
+      Effect.provideService(Workspace, workspace),
     );
-  }
-  documentPathIn(folder: string): string {
-    return join(folder, this.#defaultDocument ?? DEFAULT_PROFILE_DOCUMENT);
-  }
-
-  resolveProfile(selector: ProfileSelector): ResolvedProfile | undefined {
-    if (!this.#loaded) throw new Error("ProfileService is not ready");
-    const settings = this.#deps.settings.current!;
+  const rewrite = (file: TFile, fn: (text: string) => string) =>
+    processLiveText(file, fn).pipe(
+      Effect.provideService(Vault, vault),
+      Effect.provideService(Workspace, workspace),
+    );
+  const ensureParent = (path: string) =>
+    ensureVaultParentFolder(path).pipe(Effect.provideService(Vault, vault));
+  const log = (message: string, fields: Record<string, unknown>) =>
+    Effect.logDebug(message).pipe(
+      Effect.annotateLogs(fields),
+      withLogCategory("profile"),
+    );
+  const registry = yield* Ref.make({
+    profiles: [] as LiteratureNoteProfile[],
+    diagnostics: [] as ProfileDiagnostic[],
+    defaultDocument: undefined as string | undefined,
+    defaultExcluded: false,
+    loaded: false,
+    scannedTemplateStatus: undefined as TemplateStatus | undefined,
+  });
+  const defaultDocumentPath = Effect.fnUntraced(function* () {
+    return yield* documentPathIn((yield* settings.current)["template.folder"]);
+  });
+  const documentPathIn = Effect.fnUntraced(function* (folder: string) {
+    return join(
+      folder,
+      (yield* Ref.get(registry)).defaultDocument ?? DEFAULT_PROFILE_DOCUMENT,
+    );
+  });
+  const resolveProfile = Effect.fn("Profile.resolveProfile")(function* (
+    selector: ProfileSelector,
+  ): Effect.fn.Return<ResolvedProfile | undefined, ProfileOperationError> {
+    if (!(yield* Ref.get(registry)).loaded)
+      return yield* operationError(new Error("ProfileService is not ready"));
+    const saved = (yield* settings.current)!;
     if (selector === DEFAULT_PROFILE) {
-      return this.#defaultExcluded
+      return (yield* Ref.get(registry)).defaultExcluded
         ? undefined
-        : bindProfile(settings, { selector, document: this.#defaultDocument });
+        : bindProfile(saved, {
+            selector,
+            document: (yield* Ref.get(registry)).defaultDocument,
+          });
     }
-    const entry = this.#profiles.find(({ id }) => id === selector);
-    return (
-      entry &&
-      bindProfile(settings, { selector, document: entry.document, entry })
+    const entry = (yield* Ref.get(registry)).profiles.find(
+      ({ id }) => id === selector,
     );
-  }
-
-  profileOf(file?: TFile): NoteProfile {
-    const stamped =
-      file && readProfileStamp(this.#deps.app.metadataCache, file);
+    return (
+      entry && bindProfile(saved, { selector, document: entry.document, entry })
+    );
+  });
+  const profileOf = Effect.fn("Profile.profileOf")(function* (
+    file?: TFile,
+  ): Effect.fn.Return<NoteProfile, ProfileOperationError> {
+    const stamped = file && readProfileStamp(app.metadataCache, file);
     const profile =
       stamped === undefined
-        ? this.resolveProfile(DEFAULT_PROFILE)
+        ? yield* resolveProfile(DEFAULT_PROFILE)
         : stamped.id === undefined
           ? undefined
-          : this.resolveProfile(stamped.id);
+          : yield* resolveProfile(stamped.id);
     return profile
       ? { ok: true, profile }
       : {
           ok: false,
           stamped: stamped ?? { stamp: DEFAULT_PROFILE, id: undefined },
         };
-  }
-
-  async prepareCreate(
+  });
+  const prepareCreate = Effect.fn("Profile.prepareCreate")(function* (
     options: ProfileCreateOptions,
-  ): Promise<PreparedProfileCreation> {
+  ): Effect.fn.Return<ProfileCreation, ProfileOperationError | VaultError> {
     const requestedLabel = options.label.trim();
     const label = requestedLabel || m.settings_profile_new_name();
-    const base = this.resolveProfile(DEFAULT_PROFILE);
-    if (!base) throw new Error(m.notice_profile_action_failed());
-    const baseline = await this.getSource(DEFAULT_PROFILE);
+    const base = yield* resolveProfile(DEFAULT_PROFILE);
+    if (!base)
+      return yield* operationError(new Error(m.notice_profile_action_failed()));
+    const baseline = yield* getSource(DEFAULT_PROFILE);
     const source =
       options.source ??
       (options.look === undefined || options.look === DEFAULT_PROFILE
         ? baseline
-        : await this.getSource(options.look));
+        : yield* getSource(options.look));
     const facade = new TemplateFacade();
-    const defaultLook = facade.parseLiteratureNoteTemplate(baseline);
+    const defaultLook = yield* attempt(() =>
+      facade.parseLiteratureNoteTemplate(baseline),
+    );
     const look =
       source === baseline
         ? defaultLook
-        : facade.parseLiteratureNoteTemplate(source);
+        : yield* attempt(() => facade.parseLiteratureNoteTemplate(source));
     const differs =
       look.body !== defaultLook.body ||
       look.annotationSection.source !== defaultLook.annotationSection.source ||
@@ -387,24 +383,23 @@ class ProfileEngine {
       )
         delete bindings[name];
     }
-    let constraint: PreparedProfileCreation["constraint"];
-    try {
-      this.#validateLabel(requestedLabel);
-    } catch (error) {
-      constraint = {
-        kind: "invalid-name",
-        message: Error.isError(error)
-          ? error.message
-          : m.settings_profile_name_invalid(),
-      };
-    }
+    const constraint = yield* validateLabel(requestedLabel).pipe(
+      Effect.catch((error) =>
+        Effect.succeed({
+          kind: "invalid-name" as const,
+          message: error.message,
+        }),
+      ),
+    );
     const id = mintId() as ProfileId;
-    const content = profileSource(source, { id, label, bindings });
-    const folder = this.#deps.settings.current!["template.folder"];
+    const content = yield* attempt(() =>
+      profileSource(source, { id, label, bindings }),
+    );
+    const folder = (yield* settings.current)!["template.folder"];
     const plainDocument = `zotlit-profile.${profileSlug(label)}.md`;
-    const document = this.#deps.app.vault.getAbstractFileByPath(
+    const document = (yield* vault.getAbstractFileByPath(
       join(folder, plainDocument),
-    )
+    ))
       ? `zotlit-profile.${profileSlug(label)}-${id}.md`
       : plainDocument;
     const entry: LiteratureNoteProfile = {
@@ -424,49 +419,60 @@ class ProfileEngine {
     if (bindings.folder === undefined) inherited.push("folder");
     if (bindings.citationStyle === undefined) inherited.push("citationStyle");
     if (!differs) inherited.push("look");
-    const profile = bindProfile(this.#deps.settings.current!, {
+    const profile = bindProfile((yield* settings.current)!, {
       selector: id,
       document: entry.document,
       entry,
     });
-    this.#deps.log("Prepared Profile creation", { id, label, inherited });
+    yield* log("Prepared Profile creation", { id, label, inherited });
     return {
       profile,
       source: content,
       inherited,
       constraint,
       create: () =>
-        this.#mutate.add(() => {
-          if (constraint) throw new Error(constraint.message);
-          return this.#persist(label, id, content);
-        }),
+        mutate(
+          Effect.gen(function* () {
+            if (constraint)
+              return yield* operationError(new Error(constraint.message));
+            return yield* persist(label, id, content);
+          }),
+        ),
     };
-  }
-
-  async create(options: ProfileCreateOptions): Promise<LiteratureNoteProfile> {
-    return (await this.prepareCreate(options)).create();
-  }
-
+  });
+  const create = Effect.fn("Profile.create")(function* (
+    options: ProfileCreateOptions,
+  ): Effect.fn.Return<
+    LiteratureNoteProfile,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure
+  > {
+    return yield* (yield* prepareCreate(options)).create();
+  });
   /** Read the effective look without ejecting the built-in Default document. */
-  async getSource(selector: ProfileSelector): Promise<string> {
-    const profile = this.resolveProfile(selector);
+  const getSource = Effect.fn("Profile.getSource")(function* (
+    selector: ProfileSelector,
+  ): Effect.fn.Return<string, ProfileOperationError | VaultError> {
+    const profile = yield* resolveProfile(selector);
     if (!profile)
-      throw new Error(
-        m.settings_profile_source_unavailable({ profile: selector }),
+      return yield* operationError(
+        new Error(m.settings_profile_source_unavailable({ profile: selector })),
       );
     if (profile.document) {
-      const file = this.#deps.app.vault.getFileByPath(
-        this.#documentPath(profile),
-      );
+      const file = yield* vault.getFileByPath(yield* documentPath(profile));
       if (!file)
-        throw new Error(
-          m.settings_profile_source_missing({ document: profile.document }),
+        return yield* operationError(
+          new Error(
+            m.settings_profile_source_missing({ document: profile.document }),
+          ),
         );
-      return this.#deps.readText(file);
+      return yield* readText(file);
     }
-    return this.getBuiltInSource();
-  }
-
+    return yield* getBuiltInSource();
+  });
   /**
    * Write `source` as this Profile's document, byte for byte, when its live
    * text still has the revision the caller read. A built-in Default whose
@@ -479,179 +485,242 @@ class ProfileEngine {
    * @param expected The document the caller edited: `absent` for a Default that
    *   had none, otherwise the revision it loaded.
    */
-  async saveSource(
+  const saveSource = Effect.fn("Profile.saveSource")(function* (
     selector: ProfileSelector,
     source: string,
     expected: ProfileDocumentExpectation,
-  ): Promise<ProfileDocumentWrite> {
-    return this.#mutate.add(async () => {
-      await this.#settle();
-      const profile = this.resolveProfile(selector);
-      if (!profile)
-        throw new Error(
-          m.settings_profile_source_unavailable({ profile: selector }),
-        );
-      const write = await this.#writeDocument(
-        this.#documentPath(profile),
-        source,
-        expected,
-      );
-      if (write.state === "saved") {
-        await this.#settle();
-        this.#deps.log("Saved a Profile document", { selector });
-      }
-      return write;
-    });
-  }
-
+  ): Effect.fn.Return<
+    ProfileDocumentWrite,
+    | ProfileOperationError
+    | VaultError
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure
+  > {
+    return yield* mutate(
+      Effect.gen(function* () {
+        yield* settle();
+        const profile = yield* resolveProfile(selector);
+        if (!profile)
+          return yield* operationError(
+            new Error(
+              m.settings_profile_source_unavailable({ profile: selector }),
+            ),
+          );
+        return yield* Effect.gen(function* () {
+          const write = yield* writeDocument(
+            yield* documentPath(profile),
+            source,
+            expected,
+          );
+          if (write.state === "saved") {
+            yield* settle();
+            yield* log("Saved a Profile document", { selector });
+          }
+          return write;
+        }).pipe(Effect.uninterruptible);
+      }),
+    );
+  });
   /** The vault path a Profile's document has, or would have once ejected. */
-  #documentPath(profile: ResolvedProfile): string {
+  const documentPath = Effect.fn("Profile.documentPath")(function* (
+    profile: ResolvedProfile,
+  ): Effect.fn.Return<string, never> {
     return profile.document
-      ? join(this.#deps.settings.current!["template.folder"], profile.document)
-      : this.defaultDocumentPath;
-  }
-
+      ? join((yield* settings.current)!["template.folder"], profile.document)
+      : yield* defaultDocumentPath();
+  });
   /**
    * The compare-and-write itself. The comparison runs inside the vault's own
    * read-modify-write, so a document that changed between the two is refused
    * rather than replaced, and every refusal leaves the file untouched.
    */
-  async #writeDocument(
+  const writeDocument = Effect.fn("Profile.writeDocument")(function* (
     path: string,
     source: string,
     expected: ProfileDocumentExpectation,
-  ): Promise<ProfileDocumentWrite> {
-    const file = this.#deps.app.vault.getFileByPath(path);
+  ): Effect.fn.Return<
+    ProfileDocumentWrite,
+    VaultError | VaultFolderBlockedError | LiveTextRewriteFailed
+  > {
+    const file = yield* vault.getFileByPath(path);
     if (!file) {
       // The document the caller edited is gone; only a Default that never had
       // one is created here.
       if (expected.state === "revision")
         return { state: "refused", reason: "revision-conflict" };
-      await ensureParentFolder(this.#deps.app, path);
-      const created = await this.#create(path, source);
-      if (!created) return await this.#documentExists(path);
+      yield* ensureParent(path);
+      const created = yield* createDocument(path, source);
+      if (!created) return yield* documentExists(path);
       return { state: "saved", revision: profileRevision(source) };
     }
-    if (expected.state === "absent") return await this.#documentExists(path);
-    try {
-      await processLiveText(this.#deps.app, file, (current) => {
-        if (profileRevision(current) !== expected.revision)
-          throw new ProfileDocumentConflict(current);
-        return source;
-      });
-    } catch (error) {
-      if (!(error instanceof ProfileDocumentConflict)) throw error;
+    if (expected.state === "absent") return yield* documentExists(path);
+    const conflict = yield* rewrite(file, (current) => {
+      if (profileRevision(current) !== expected.revision)
+        throw new ProfileDocumentConflict(current);
+      return source;
+    }).pipe(
+      Effect.as(undefined as string | undefined),
+      Effect.catchTag("LiveTextRewriteFailed", (error) =>
+        error.cause instanceof ProfileDocumentConflict
+          ? Effect.succeed(error.cause.current)
+          : Effect.fail(error),
+      ),
+    );
+    if (conflict !== undefined)
       return {
         state: "refused",
         reason: "revision-conflict",
-        currentRevision: profileRevision(error.current),
+        currentRevision: profileRevision(conflict),
       };
-    }
     return { state: "saved", revision: profileRevision(source) };
-  }
-
+  });
   /** Create `path` with `data`; false when the vault already holds the path. */
-  async #create(path: string, data: string): Promise<boolean> {
-    return await this.#deps.runPromise(
-      this.#deps.vault.create(path, data).pipe(
-        Effect.as(true),
-        Effect.catchTag("FileExists", () => Effect.succeed(false)),
-      ),
+  const createDocument = Effect.fn("Profile.createDocument")(function* (
+    path: string,
+    data: string,
+  ): Effect.fn.Return<boolean, VaultError> {
+    return yield* vault.create(path, data).pipe(
+      Effect.as(true),
+      Effect.catchTag("FileExists", () => Effect.succeed(false)),
     );
-  }
-
+  });
   /** The refusal a document standing where the caller expected none earns. */
-  async #documentExists(path: string): Promise<ProfileDocumentWrite> {
-    const file = this.#deps.app.vault.getFileByPath(path);
+  const documentExists = Effect.fn("Profile.documentExists")(function* (
+    path: string,
+  ): Effect.fn.Return<ProfileDocumentWrite, VaultError> {
+    const file = yield* vault.getFileByPath(path);
     return {
       state: "refused",
       reason: "document-exists",
       ...(file
         ? {
-            currentRevision: profileRevision(await this.#deps.readText(file)),
+            currentRevision: profileRevision(
+              yield* readText(file).pipe(Effect.interruptible),
+            ),
           }
         : {}),
     };
-  }
-
-  async setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void> {
-    return this.#mutate.add(async () => {
-      await this.#settle();
-      const profile = this.#profiles.find((entry) => entry.id === id);
-      if (!profile) throw new Error(m.profile_import_changed());
-      const file = this.#deps.app.vault.getFileByPath(profile.path);
-      if (!file) throw new Error(m.profile_import_changed());
-      await processLiveText(this.#deps.app, file, (source) => {
-        if (parseLiteratureNoteTemplate(source).manifest.id !== id)
-          throw new Error(m.profile_import_changed());
-        return updateLiteratureNoteTemplateMatch(source, match);
-      });
-      await this.#settle();
-      this.#deps.log("Updated Profile match", {
-        id,
-        removed: match === undefined,
-      });
-    });
-  }
-
+  });
+  const setMatch = Effect.fn("Profile.setMatch")(function* (
+    id: ProfileId,
+    match: MatchTree | undefined,
+  ): Effect.fn.Return<
+    void,
+    ProfileOperationError | VaultError | TemplateFailure
+  > {
+    return yield* mutate(
+      Effect.gen(function* () {
+        yield* settle();
+        const profile = (yield* Ref.get(registry)).profiles.find(
+          (entry) => entry.id === id,
+        );
+        if (!profile)
+          return yield* operationError(new Error(m.profile_import_changed()));
+        const file = yield* vault.getFileByPath(profile.path);
+        if (!file)
+          return yield* operationError(new Error(m.profile_import_changed()));
+        return yield* Effect.gen(function* () {
+          yield* rewrite(file, (source) => {
+            if (parseLiteratureNoteTemplate(source).manifest.id !== id)
+              throw new Error(m.profile_import_changed());
+            return updateLiteratureNoteTemplateMatch(source, match);
+          }).pipe(
+            Effect.catchTag("LiveTextRewriteFailed", (error) =>
+              Effect.fail(operationError(error.cause)),
+            ),
+          );
+          yield* settle();
+          yield* log("Updated Profile match", {
+            id,
+            removed: match === undefined,
+          });
+        }).pipe(Effect.uninterruptible);
+      }),
+    );
+  });
   /**
    * The built-in Default look as a Profile document: the embedded templates
    * with the Managed Frontmatter the settings tab configured, so an eject or a
    * duplicate carries the user's properties instead of the shipped defaults.
    */
-  getBuiltInSource(): string {
-    return synthesizeLegacyLiteratureNoteTemplate(
-      {
-        note: { source: DEFAULT_TEMPLATES.note, language: "liquid" },
-        content: { source: DEFAULT_TEMPLATES.content, language: "liquid" },
-        filename: { source: DEFAULT_TEMPLATES.filename, language: "liquid" },
-      },
-      {
-        id: DEFAULT_PROFILE,
-        name: m.settings_profile_default_name(),
-        managed: false,
-        frontmatter:
-          this.#deps.settings.current?.["note.frontmatter-fields"] ??
-          DEFAULT_FRONTMATTER_FIELDS,
-      },
-    );
-  }
-
-  /** Copy a Profile's document under `label`, or under "<source> copy". */
-  async duplicate(
-    selector: ProfileSelector,
-    options: { label?: string } = {},
-  ): Promise<LiteratureNoteProfile> {
-    return this.#mutate.add(async () => {
-      const profile = this.resolveProfile(selector);
-      if (!profile) throw new Error(`Unknown Profile: ${selector}`);
-      const label = profile.label ?? m.settings_profile_default_name();
-      const base = options.label ?? m.settings_profile_copy_name({ label });
-      let copyLabel = base;
-      let number = 2;
-      while (
-        this.#profiles.some(
-          (entry) =>
-            entry.label.toLocaleLowerCase() === copyLabel.toLocaleLowerCase(),
-        )
-      )
-        copyLabel = `${base} ${number++}`;
-      const id = mintId() as ProfileId;
-      return this.#persist(
-        copyLabel,
-        id,
-        profileSource(await this.getSource(selector), { id, label: copyLabel }),
+  const getBuiltInSource = Effect.fn("Profile.getBuiltInSource")(
+    function* (): Effect.fn.Return<string, ProfileOperationError> {
+      const fields = (yield* settings.current)["note.frontmatter-fields"];
+      return yield* attempt(() =>
+        synthesizeLegacyLiteratureNoteTemplate(
+          {
+            note: { source: DEFAULT_TEMPLATES.note, language: "liquid" },
+            content: { source: DEFAULT_TEMPLATES.content, language: "liquid" },
+            filename: {
+              source: DEFAULT_TEMPLATES.filename,
+              language: "liquid",
+            },
+          },
+          {
+            id: DEFAULT_PROFILE,
+            name: m.settings_profile_default_name(),
+            managed: false,
+            frontmatter: fields ?? DEFAULT_FRONTMATTER_FIELDS,
+          },
+        ),
       );
-    });
-  }
-
+    },
+  );
+  /** Copy a Profile's document under `label`, or under "<source> copy". */
+  const duplicate = Effect.fn("Profile.duplicate")(function* (
+    selector: ProfileSelector,
+    options: {
+      label?: string;
+    } = {},
+  ): Effect.fn.Return<
+    LiteratureNoteProfile,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure
+  > {
+    return yield* mutate(
+      Effect.gen(function* () {
+        const profile = yield* resolveProfile(selector);
+        if (!profile)
+          return yield* operationError(
+            new Error(`Unknown Profile: ${selector}`),
+          );
+        const label = profile.label ?? m.settings_profile_default_name();
+        const base = options.label ?? m.settings_profile_copy_name({ label });
+        let copyLabel = base;
+        let number = 2;
+        while (
+          (yield* Ref.get(registry)).profiles.some(
+            (entry) =>
+              entry.label.toLocaleLowerCase() === copyLabel.toLocaleLowerCase(),
+          )
+        )
+          copyLabel = `${base} ${number++}`;
+        const id = mintId() as ProfileId;
+        const source = yield* getSource(selector);
+        return yield* persist(
+          copyLabel,
+          id,
+          yield* attempt(() => profileSource(source, { id, label: copyLabel })),
+        );
+      }),
+    );
+  });
   /** Freeze one export identity, effective bindings and partials for a Share sheet. */
-  async prepareShare(selector: ProfileSelector): Promise<PreparedProfileShare> {
-    await this.#settle();
-    const profile = this.resolveProfile(selector);
+  const prepareShare = Effect.fn("Profile.prepareShare")(function* (
+    selector: ProfileSelector,
+  ): Effect.fn.Return<
+    ProfileShare,
+    ProfileOperationError | VaultError | TemplateFailure
+  > {
+    yield* settle();
+    const profile = yield* resolveProfile(selector);
     if (!profile)
-      throw new Error(
-        m.settings_profile_source_unavailable({ profile: selector }),
+      return yield* operationError(
+        new Error(m.settings_profile_source_unavailable({ profile: selector })),
       );
     const id =
       selector === DEFAULT_PROFILE ? (mintId() as ProfileId) : selector;
@@ -666,24 +735,29 @@ class ProfileEngine {
     // after a rename, and what a quoted name in prose looks like. Neither can
     // block the sheet: the name simply is not among the ones offered.
     const missingPartials = new Set<string>();
-    const source = await this.#deps.template.exportLiteratureNotePackSource(
-      updateProfilePackMetadata(await this.getSource(selector), {
-        id,
-        name: label,
-        ...bindings,
-      }),
+    const effectiveSource = yield* getSource(selector);
+    const source = yield* template.exportLiteratureNotePackSource(
+      yield* attempt(() =>
+        updateProfilePackMetadata(effectiveSource, {
+          id,
+          name: label,
+          ...bindings,
+        }),
+      ),
       {
         includeFolders: true,
         onMissingPartial: (name) => missingPartials.add(name),
       },
     );
     const facade = new TemplateFacade();
-    const { manifest } = facade.parseLiteratureNoteTemplate(source);
+    const { manifest } = yield* attempt(() =>
+      facade.parseLiteratureNoteTemplate(source),
+    );
     const bundled = manifest.partials ?? [];
     // The document's own copy of a name stands ahead of the vault's, the way
     // the export itself resolves the two.
     const entries = new Map(
-      [...this.#deps.template.getPartialEntries(), ...bundled].map(
+      [...(yield* template.getPartialEntries), ...bundled].map(
         (partial) => [partial.name, partial] as const,
       ),
     );
@@ -702,7 +776,7 @@ class ProfileEngine {
       RESERVED_PARTIAL_NAMES.has(name),
     );
     const missing = offered(missingPartials);
-    this.#deps.log("Prepared Profile sharing", {
+    yield* log("Prepared Profile sharing", {
       selector,
       id,
       partials,
@@ -715,83 +789,99 @@ class ProfileEngine {
       reachable,
       missing,
       filename: `zotlit-profile.${profileSlug(label)}${selector === DEFAULT_PROFILE ? `-${id}` : ""}.md`,
-      render: (options) => {
-        const version = options.version.trim();
-        if (!version) throw new Error(m.profile_share_version_required());
-        const checked = [
-          ...carried,
-          ...(options.partials ?? reachable).flatMap((name) => {
-            const entry = entries.get(name);
-            return entry ? [entry] : [];
-          }),
-        ].sort((left, right) => left.name.localeCompare(right.name));
-        return updateProfilePackMetadata(
-          source,
-          {
-            version,
-            author: options.author.trim() || undefined,
-            description: options.description.trim() || undefined,
-            ...(!options.includeFolders
-              ? { folder: undefined, importFolder: undefined }
-              : {}),
-            partials: checked.length > 0 ? checked : undefined,
-          },
-          { includeMatch: options.includeMatch },
-        );
-      },
+      render: (options) =>
+        attempt(() => {
+          const version = options.version.trim();
+          if (!version) throw new Error(m.profile_share_version_required());
+          const checked = [
+            ...carried,
+            ...(options.partials ?? reachable).flatMap((name) => {
+              const entry = entries.get(name);
+              return entry ? [entry] : [];
+            }),
+          ].sort((left, right) => left.name.localeCompare(right.name));
+          return updateProfilePackMetadata(
+            source,
+            {
+              version,
+              author: options.author.trim() || undefined,
+              description: options.description.trim() || undefined,
+              ...(!options.includeFolders
+                ? { folder: undefined, importFolder: undefined }
+                : {}),
+              partials: checked.length > 0 ? checked : undefined,
+            },
+            { includeMatch: options.includeMatch },
+          );
+        }),
     };
-  }
-
-  #validateLabel(label: string): void {
+  });
+  const validateLabel = Effect.fnUntraced(function* (label: string) {
     const slug = profileSlug(label);
     if (
       !slug ||
       slug === DEFAULT_PROFILE ||
-      this.#profiles.some(
+      (yield* Ref.get(registry)).profiles.some(
         (profile) =>
           profile.label.toLocaleLowerCase() === label.toLocaleLowerCase(),
       )
     )
-      throw new Error(m.settings_profile_name_invalid());
-  }
-
-  async #persist(
-    label: string,
-    id: ProfileId,
-    content: string,
-  ): Promise<LiteratureNoteProfile> {
-    this.#validateLabel(label);
-    const folder = this.#deps.settings.current!["template.folder"];
-    let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
-    await ensureParentFolder(this.#deps.app, path);
-    if (!(await this.#create(path, content))) {
-      path = join(folder, `zotlit-profile.${profileSlug(label)}-${id}.md`);
-      await this.#deps.runPromise(this.#deps.vault.create(path, content));
-    }
-    await this.#settle();
-    const entry = this.#profiles.find((profile) => profile.id === id);
-    if (!entry)
-      throw new Error(`Profile document could not be registered: ${path}`);
-    return entry;
-  }
-
-  async prepareImport(
+      return yield* operationError(
+        new Error(m.settings_profile_name_invalid()),
+      );
+  });
+  const persist = Effect.fn("Profile.persist")(
+    function* (
+      label: string,
+      id: ProfileId,
+      content: string,
+    ): Effect.fn.Return<
+      LiteratureNoteProfile,
+      | ProfileOperationError
+      | VaultError
+      | FileExists
+      | VaultFolderBlockedError
+      | TemplateFailure
+    > {
+      yield* validateLabel(label);
+      const folder = (yield* settings.current)!["template.folder"];
+      let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
+      yield* ensureParent(path);
+      if (!(yield* createDocument(path, content))) {
+        path = join(folder, `zotlit-profile.${profileSlug(label)}-${id}.md`);
+        yield* vault.create(path, content);
+      }
+      yield* settle();
+      const entry = (yield* Ref.get(registry)).profiles.find(
+        (profile) => profile.id === id,
+      );
+      if (!entry)
+        return yield* operationError(
+          new Error(`Profile document could not be registered: ${path}`),
+        );
+      return entry;
+    },
+    (effect) => Effect.uninterruptible(effect),
+  );
+  const prepareImport = Effect.fn("Profile.prepareImport")(function* (
     source: string,
     options: ProfileImportOptions = {},
-  ): Promise<PreparedProfileImport> {
-    await this.#settle();
-    let parsed;
-    try {
-      parsed = new TemplateFacade().parseLiteratureNoteTemplate(source);
-    } catch (error) {
-      throw new Error(m.profile_import_invalid(), { cause: error });
-    }
+  ): Effect.fn.Return<
+    ProfileImport,
+    ProfileOperationError | VaultError | TemplateFailure
+  > {
+    yield* settle();
+    const parsed = yield* Effect.try({
+      try: () => new TemplateFacade().parseLiteratureNoteTemplate(source),
+      catch: (cause) =>
+        operationError(new Error(m.profile_import_invalid(), { cause })),
+    });
     if (parsed.manifest.id === DEFAULT_PROFILE)
-      throw new Error(m.profile_import_default());
+      return yield* operationError(new Error(m.profile_import_default()));
     if (!isProfileId(parsed.manifest.id))
-      throw new Error(m.settings_profile_id_invalid());
+      return yield* operationError(new Error(m.settings_profile_id_invalid()));
     const id = parsed.manifest.id;
-    const held = this.#importTarget(id);
+    const held = yield* importTarget(id);
     const includeMatch = options.includeMatch !== false;
     const metadata = {
       ...(options.stripFolders
@@ -808,18 +898,18 @@ class ProfileEngine {
     };
     const render = (include: boolean) =>
       updateProfilePackMetadata(source, metadata, { includeMatch: include });
-    const content = render(includeMatch);
-    const { manifest } = new TemplateFacade().parseLiteratureNoteTemplate(
-      content,
+    const content = yield* attempt(() => render(includeMatch));
+    const { manifest } = yield* attempt(() =>
+      new TemplateFacade().parseLiteratureNoteTemplate(content),
     );
-    const folder = this.#deps.settings.current!["template.folder"];
+    const folder = (yield* settings.current)!["template.folder"];
     const slug = profileSlug(manifest.name);
     const plain = `zotlit-profile.${slug}.md`;
     const document =
       held?.document ??
       (!slug ||
       slug === DEFAULT_PROFILE ||
-      this.#deps.app.vault.getAbstractFileByPath(join(folder, plain))
+      (yield* vault.getAbstractFileByPath(join(folder, plain)))
         ? `zotlit-profile.${slug || "profile"}-${id}.md`
         : plain);
     const path = held?.path ?? join(folder, document);
@@ -837,19 +927,26 @@ class ProfileEngine {
         ),
       ),
     };
-    const heldSource = held ? await this.getSource(id) : undefined;
+    const heldSource = held ? yield* getSource(id) : undefined;
     let decision:
       | Pick<
-          Extract<PreparedProfileImport, { kind: "replace" }>,
+          Extract<
+            PreparedProfileImport,
+            {
+              kind: "replace";
+            }
+          >,
           "kind" | "held"
         >
-      | { kind: "fresh" } = { kind: "fresh" };
+      | {
+          kind: "fresh";
+        } = { kind: "fresh" };
     if (held) {
-      await this.#deps.noteIndex.whenIndexed();
-      const notes = this.#deps.noteIndex.getNotesByProfile(id);
-      const heldManifest = new TemplateFacade().parseLiteratureNoteTemplate(
-        heldSource!,
-      ).manifest;
+      yield* noteIndex.whenIndexed;
+      const notes = yield* noteIndex.getNotesByProfile(id);
+      const heldManifest = (yield* attempt(() =>
+        new TemplateFacade().parseLiteratureNoteTemplate(heldSource!),
+      )).manifest;
       decision = {
         kind: "replace",
         held: {
@@ -862,10 +959,8 @@ class ProfileEngine {
     }
     // The manifest's partials are a transport: import unpacks each into the
     // Shared Partial file it belongs in, then drops the entry it came from.
-    const partials = this.#deps.template.planPartialUnpack(
-      manifest.partials ?? [],
-    );
-    this.#deps.log("Prepared Profile import", {
+    const partials = yield* template.planPartialUnpack(manifest.partials ?? []);
+    yield* log("Prepared Profile import", {
       id,
       path,
       kind: decision.kind,
@@ -877,230 +972,312 @@ class ProfileEngine {
       source: content,
       path,
       partials,
-      profile: bindProfile(this.#deps.settings.current!, {
+      profile: bindProfile((yield* settings.current)!, {
         selector: id,
         document,
         entry,
       }),
-      previewSource: ({ replacePartials = [] } = {}) => {
-        const replace = new Set(replacePartials);
-        return withoutBundledPartials(
-          content,
-          partials.flatMap(({ name, verdict }) =>
-            verdict === "unchanged" ||
-            (verdict === "conflict" && !replace.has(name))
-              ? [name]
-              : [],
-          ),
-        );
-      },
+      previewSource: ({ replacePartials = [] } = {}) =>
+        attempt(() => {
+          const replace = new Set(replacePartials);
+          return withoutBundledPartials(
+            content,
+            partials.flatMap(({ name, verdict }) =>
+              verdict === "unchanged" ||
+              (verdict === "conflict" && !replace.has(name))
+                ? [name]
+                : [],
+            ),
+          );
+        }),
       import: ({
         includeMatch: approvedMatch = includeMatch,
         replacePartials,
       } = {}) =>
-        this.#mutate.add(async () => {
-          await this.#settle();
-          const current = this.#importTarget(id);
-          if (current?.path !== held?.path)
-            throw new Error(m.profile_import_changed());
-          const { dropped } = await this.#deps.template.unpackPartials(
-            partials,
-            { replace: replacePartials },
-          );
-          const importedContent = withoutBundledPartials(
-            approvedMatch === includeMatch ? content : render(approvedMatch),
-            dropped,
-          );
-          if (held) {
-            const file = this.#deps.app.vault.getFileByPath(path);
-            if (!file) throw new Error(m.profile_import_changed());
-            await processLiveText(this.#deps.app, file, (currentSource) => {
-              if (currentSource !== heldSource)
-                throw new Error(m.profile_import_changed());
-              return importedContent;
-            });
-          } else {
-            await ensureParentFolder(this.#deps.app, path);
-            await this.#deps.runPromise(
-              this.#deps.vault.create(path, importedContent).pipe(
-                Effect.catchTag("FileExists", (error) =>
-                  Effect.fail(
-                    new ProfileImportChanged({
-                      message: m.profile_import_changed(),
-                      cause: error,
-                    }),
-                  ),
+        mutate(
+          Effect.gen(function* () {
+            yield* settle();
+            const current = yield* importTarget(id);
+            if (current?.path !== held?.path)
+              return yield* operationError(
+                new Error(m.profile_import_changed()),
+              );
+            return yield* Effect.gen(function* () {
+              const { dropped } = yield* template.unpackPartials(partials, {
+                replace: replacePartials,
+              });
+              const importedContent = yield* attempt(() =>
+                withoutBundledPartials(
+                  approvedMatch === includeMatch
+                    ? content
+                    : render(approvedMatch),
+                  dropped,
                 ),
-              ),
-            );
-          }
-          await this.#settle();
-          const imported = this.#profiles.find((profile) => profile.id === id);
-          if (!imported) throw new Error(m.profile_import_excluded());
-          this.#deps.log("Imported Profile document", {
-            id,
-            path,
-            replaced: !!held,
-          });
-          return imported;
-        }),
+              );
+              if (held) {
+                const file = yield* vault.getFileByPath(path);
+                if (!file)
+                  return yield* operationError(
+                    new Error(m.profile_import_changed()),
+                  );
+                yield* rewrite(file, (currentSource) => {
+                  if (currentSource !== heldSource)
+                    throw new Error(m.profile_import_changed());
+                  return importedContent;
+                }).pipe(
+                  Effect.catchTag("LiveTextRewriteFailed", (error) =>
+                    Effect.fail(operationError(error.cause)),
+                  ),
+                );
+              } else {
+                yield* ensureParent(path);
+                yield* vault.create(path, importedContent).pipe(
+                  Effect.catchTag("FileExists", (error) =>
+                    Effect.fail(
+                      new ProfileImportChanged({
+                        message: m.profile_import_changed(),
+                        cause: error,
+                      }),
+                    ),
+                  ),
+                );
+              }
+              yield* settle();
+              const imported = (yield* Ref.get(registry)).profiles.find(
+                (profile) => profile.id === id,
+              );
+              if (!imported)
+                return yield* operationError(
+                  new Error(m.profile_import_excluded()),
+                );
+              yield* log("Imported Profile document", {
+                id,
+                path,
+                replaced: !!held,
+              });
+              return imported;
+            }).pipe(Effect.uninterruptible);
+          }),
+        ),
     };
-  }
-
-  #importTarget(id: ProfileId): LiteratureNoteProfile | undefined {
-    const matches = this.#deps.template
-      .getLiteratureNoteTemplateStatuses()
-      .filter(
-        (status) =>
-          status.reference.startsWith("zotlit-profile.") &&
-          documentId(status) === id,
-      );
-    const held = this.#profiles.find((profile) => profile.id === id);
-    if (matches.length > 1 || (matches.length && !held))
-      throw new Error(m.profile_import_excluded());
-    return held;
-  }
-
-  async ejectDefault(): Promise<TFile> {
-    return (await this.materializeDefault()).file;
-  }
-
-  /** Atomically create Default or open the current document without changing it. */
-  async materializeDefault(): Promise<{ file: TFile; created: boolean }> {
-    const path = this.defaultDocumentPath;
-    await ensureParentFolder(this.#deps.app, path);
-    const { file, created } = await this.#deps.runPromise(
-      this.#deps.vault.create(path, this.getBuiltInSource()).pipe(
-        Effect.map((file) => ({ file, created: true })),
-        Effect.catchTag("FileExists", (error) => {
-          // A folder at the path is no document to open.
-          const existing = this.#deps.app.vault.getFileByPath(path);
-          return existing
-            ? Effect.succeed({ file: existing, created: false })
-            : Effect.fail(error);
-        }),
-      ),
+  });
+  const importTarget = Effect.fn("Profile.importTarget")(function* (
+    id: ProfileId,
+  ): Effect.fn.Return<
+    LiteratureNoteProfile | undefined,
+    ProfileOperationError | TemplateFailure
+  > {
+    const matches = (yield* template.getLiteratureNoteTemplateStatuses).filter(
+      (status) =>
+        status.reference.startsWith("zotlit-profile.") &&
+        documentId(status) === id,
     );
-    await this.#settle();
-    return { file, created };
-  }
-
-  async restoreDefault(): Promise<void> {
-    const path = this.defaultDocumentPath;
-    const file = this.#deps.app.vault.getFileByPath(path);
-    if (file) await this.#deps.app.fileManager.trashFile(file);
-    await this.#settle();
-  }
-
-  async prepareDelete(id: ProfileId): Promise<ProfileDeletionPlan> {
-    const source = this.#profiles.find((profile) => profile.id === id);
-    if (!source) throw new Error("The Profile is unavailable");
-    await this.#deps.noteIndex.whenIndexed();
+    const held = (yield* Ref.get(registry)).profiles.find(
+      (profile) => profile.id === id,
+    );
+    if (matches.length > 1 || (matches.length && !held))
+      return yield* operationError(new Error(m.profile_import_excluded()));
+    return held;
+  });
+  const ejectDefault = Effect.fn("Profile.ejectDefault")(
+    function* (): Effect.fn.Return<
+      TFile,
+      | ProfileOperationError
+      | VaultError
+      | FileExists
+      | VaultFolderBlockedError
+      | TemplateFailure
+    > {
+      return (yield* materializeDefault()).file;
+    },
+  );
+  /** Atomically create Default or open the current document without changing it. */
+  const materializeDefault = Effect.fn("Profile.materializeDefault")(
+    function* (): Effect.fn.Return<
+      {
+        file: TFile;
+        created: boolean;
+      },
+      | ProfileOperationError
+      | VaultError
+      | FileExists
+      | VaultFolderBlockedError
+      | TemplateFailure
+    > {
+      const path = yield* defaultDocumentPath();
+      yield* ensureParent(path);
+      const { file, created } = yield* vault
+        .create(path, yield* getBuiltInSource())
+        .pipe(
+          Effect.map((file) => ({ file, created: true })),
+          Effect.catchTag(
+            "FileExists",
+            Effect.fnUntraced(function* (error) {
+              // A folder at the path is no document to open.
+              const existing = yield* vault.getFileByPath(path);
+              return existing
+                ? { file: existing, created: false }
+                : yield* error;
+            }),
+          ),
+        );
+      yield* settle();
+      return { file, created };
+    },
+    (effect) => mutate(Effect.uninterruptible(effect)),
+  );
+  const restoreDefault = Effect.fn("Profile.restoreDefault")(
+    function* (): Effect.fn.Return<
+      void,
+      ProfileOperationError | VaultError | TemplateFailure
+    > {
+      const path = yield* defaultDocumentPath();
+      const file = yield* vault.getFileByPath(path);
+      if (file) yield* fileManager.trashFile(file);
+      yield* settle();
+    },
+    (effect) => mutate(Effect.uninterruptible(effect)),
+  );
+  const prepareDelete = Effect.fn("Profile.prepareDelete")(function* (
+    id: ProfileId,
+  ): Effect.fn.Return<ProfileDeletionPlan, ProfileOperationError> {
+    const source = (yield* Ref.get(registry)).profiles.find(
+      (profile) => profile.id === id,
+    );
+    if (!source)
+      return yield* operationError(new Error("The Profile is unavailable"));
+    yield* noteIndex.whenIndexed;
     const { literatureNotes, importedNotes } =
-      this.#deps.noteIndex.getNotesByProfile(id);
+      yield* noteIndex.getNotesByProfile(id);
     const selectors: ProfileSelector[] = [
       DEFAULT_PROFILE,
-      ...this.#profiles
+      ...(yield* Ref.get(registry)).profiles
         .filter((profile) => profile.id !== id)
         .map(({ id }) => id),
     ];
-    const current = this.resolveProfile(id);
-    const targets = selectors.flatMap((selector) => {
-      const profile = this.resolveProfile(selector);
-      if (!profile) return [];
-      const files = [
-        ...literatureNotes.map((file) => ({
-          file,
-          path: relocatedNotePath(file, {
-            from: current,
-            to: profile,
-            imported: false,
-          }),
-        })),
-        ...importedNotes.map((file) => ({
-          file,
-          path: relocatedNotePath(file, {
-            from: current,
-            to: profile,
-            imported: true,
-          }),
-        })),
-      ];
-      return [{ profile, files }];
-    });
-    this.#deps.log("Prepared Profile deletion", {
+    const current = yield* resolveProfile(id);
+    const targets = yield* Effect.forEach(
+      selectors,
+      Effect.fnUntraced(function* (selector) {
+        const profile = yield* resolveProfile(selector);
+        if (!profile) return [];
+        const files = [
+          ...literatureNotes.map((file) => ({
+            file,
+            path: relocatedNotePath(file, {
+              from: current,
+              to: profile,
+              imported: false,
+            }),
+          })),
+          ...importedNotes.map((file) => ({
+            file,
+            path: relocatedNotePath(file, {
+              from: current,
+              to: profile,
+              imported: true,
+            }),
+          })),
+        ];
+        return [{ profile, files }];
+      }),
+    ).pipe(Effect.map((entries) => entries.flat()));
+    yield* log("Prepared Profile deletion", {
       id,
       literatureNotes: literatureNotes.length,
       importedNotes: importedNotes.length,
     });
     return { source, literatureNotes, importedNotes, targets };
-  }
-
-  async delete(
+  });
+  const deleteProfile = Effect.fn("Profile.delete")(function* (
     id: ProfileId,
     target: ProfileSelector,
-    options: { move?: boolean } = {},
-  ): Promise<ProfileDeletionResult> {
-    const plan = await this.prepareDelete(id);
-    const destination = plan.targets.find(
-      ({ profile }) => profile.selector === target,
-    );
-    if (
-      !destination &&
-      (plan.literatureNotes.length || plan.importedNotes.length)
-    )
-      throw new Error("Select an available target Profile before deleting");
-    const { app } = this.#deps;
-    let movedFiles = 0;
-    const stamp = destination?.profile.stamp;
-    for (const { file, path } of destination?.files ?? []) {
-      if (options.move && path !== file.path) {
-        await ensureParentFolder(app, path);
-        await this.#deps.runPromise(
-          this.#deps.fileManager.renameFile(file, path),
+    options: {
+      move?: boolean;
+    } = {},
+  ): Effect.fn.Return<
+    ProfileDeletionResult,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure
+  > {
+    return yield* mutate(
+      Effect.gen(function* () {
+        const plan = yield* prepareDelete(id);
+        const destination = plan.targets.find(
+          ({ profile }) => profile.selector === target,
         );
-        movedFiles++;
-      }
-      await processLiveFrontMatter(app, file, (frontmatter) => {
-        if (stamp === undefined)
-          delete frontmatter[FIELD_LITERATURE_NOTE_PROFILE];
-        else frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
-      });
-    }
-    const file = app.vault.getFileByPath(plan.source.path);
-    if (file) await app.fileManager.trashFile(file);
-    await this.#settle();
-    const result = {
-      literatureNotes: plan.literatureNotes.length,
-      importedNotes: plan.importedNotes.length,
-      movedFiles,
-    };
-    this.#deps.log("Deleted Profile after moving its notes", {
-      id,
-      target,
-      ...result,
-    });
-    return result;
-  }
-
-  async #settle(): Promise<void> {
-    if ((await this.#deps.template.waitUntilSettled(5000)) !== "settled")
-      throw new Error("Profile documents did not finish scanning");
-    this.scan();
-  }
-
-  scan(): void {
-    const templateStatus = this.#deps.template.status;
+        if (
+          !destination &&
+          (plan.literatureNotes.length || plan.importedNotes.length)
+        )
+          return yield* operationError(
+            new Error("Select an available target Profile before deleting"),
+          );
+        return yield* Effect.gen(function* () {
+          let movedFiles = 0;
+          const stamp = destination?.profile.stamp;
+          for (const { file, path } of destination?.files ?? []) {
+            if (options.move && path !== file.path) {
+              yield* ensureParent(path);
+              yield* fileManager.renameFile(file, path);
+              movedFiles++;
+            }
+            yield* rewrite(file, (text) => {
+              const frontmatter = parseFrontMatter(text);
+              if (stamp === undefined)
+                delete frontmatter[FIELD_LITERATURE_NOTE_PROFILE];
+              else frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
+              return spliceFrontMatter(text, frontmatter);
+            });
+          }
+          const file = yield* vault.getFileByPath(plan.source.path);
+          if (file) yield* fileManager.trashFile(file);
+          yield* settle();
+          const result = {
+            literatureNotes: plan.literatureNotes.length,
+            importedNotes: plan.importedNotes.length,
+            movedFiles,
+          };
+          yield* log("Deleted Profile after moving its notes", {
+            id,
+            target,
+            ...result,
+          });
+          return result;
+        }).pipe(Effect.uninterruptible);
+      }),
+    );
+  });
+  const settle = Effect.fn("Profile.settle")(function* (): Effect.fn.Return<
+    void,
+    ProfileOperationError | TemplateFailure
+  > {
+    if ((yield* template.waitUntilSettled(5000)) !== "settled")
+      return yield* operationError(
+        new Error("Profile documents did not finish scanning"),
+      );
+    yield* scan();
+  });
+  const scan = Effect.fn("Profile.scan")(function* (): Effect.fn.Return<
+    void,
+    TemplateFailure
+  > {
+    const templateStatus = yield* template.status;
     // Template publishes a new snapshot when its inputs change, including
     // template bodies and partials that the Profile manifest does not carry.
-    if (templateStatus === this.#scannedTemplateStatus) return;
-    this.#profiles = [];
-    this.#diagnostics = [];
-    this.#defaultDocument = undefined;
-    this.#defaultExcluded = false;
-    const statuses = this.#deps.template
-      .getLiteratureNoteTemplateStatuses()
-      .filter(({ reference }) => reference.startsWith("zotlit-profile."));
+    if (templateStatus === (yield* Ref.get(registry)).scannedTemplateStatus)
+      return;
+    const profiles: LiteratureNoteProfile[] = [];
+    const diagnostics: ProfileDiagnostic[] = [];
+    let defaultDocument: string | undefined;
+    let defaultExcluded = false;
+    const statuses = (yield* template.getLiteratureNoteTemplateStatuses).filter(
+      ({ reference }) => reference.startsWith("zotlit-profile."),
+    );
     for (const status of statuses) {
       const validation = status.validation;
       const id = documentId(status);
@@ -1108,7 +1285,7 @@ class ProfileEngine {
         validation.state === "invalid" ||
         (id !== DEFAULT_PROFILE && !isProfileId(id!))
       ) {
-        this.#diagnostics.push({
+        diagnostics.push({
           code: "invalid-profile-document",
           path: status.path,
           ...(validation.state === "valid"
@@ -1119,7 +1296,7 @@ class ProfileEngine {
               ? validation.error.message
               : PROFILE_ID_RULE,
         });
-        this.#deps.log("Excluded invalid Profile document {path}", {
+        yield* log("Excluded invalid Profile document {path}", {
           path: status.path,
           id,
         });
@@ -1127,8 +1304,8 @@ class ProfileEngine {
           id === DEFAULT_PROFILE ||
           status.reference === DEFAULT_PROFILE_DOCUMENT
         ) {
-          this.#defaultExcluded = true;
-          this.#defaultDocument = status.reference;
+          defaultExcluded = true;
+          defaultDocument = status.reference;
         }
       }
     }
@@ -1142,48 +1319,83 @@ class ProfileEngine {
     for (const [id, group] of groups) {
       if (group.length > 1) {
         const paths = group.map(({ path }) => path);
-        this.#deps.log("Excluded duplicate Profile ID {id} in {paths}", {
+        yield* log("Excluded duplicate Profile ID {id} in {paths}", {
           id,
           paths,
         });
         for (const { path } of group)
-          this.#diagnostics.push({
+          diagnostics.push({
             code: "duplicate-profile-id",
             path,
             paths,
             message: `Profile ID '${id}' is shared by ${paths.join(", ")}.`,
           });
-        if (id === DEFAULT_PROFILE) this.#defaultExcluded = true;
+        if (id === DEFAULT_PROFILE) defaultExcluded = true;
         continue;
       }
       const status = group[0]!;
       if (status.validation.state !== "valid") continue;
       if (id === DEFAULT_PROFILE) {
-        this.#defaultDocument = status.reference;
+        defaultDocument = status.reference;
         continue;
       }
-      this.#profiles.push(
-        seedProfileEntry(status.validation.manifest, {
-          document: status.reference,
-          path: status.path,
-        }),
-      );
+      const entry = seedProfileEntry(status.validation.manifest, {
+        document: status.reference,
+        path: status.path,
+      });
+      if (entry.match.state === "unevaluable")
+        yield* log("Profile match cannot be evaluated", {
+          id: entry.id,
+          problem: entry.match.problem,
+        });
+      profiles.push(entry);
     }
-    this.#deps.log(
+    yield* log(
       "Profile scan completed with {profiles} Profiles and {diagnostics} diagnostics",
       {
-        profiles: this.#profiles.length,
-        diagnostics: this.#diagnostics.length,
-        defaultDocument: this.#defaultDocument,
-        defaultExcluded: this.#defaultExcluded,
+        profiles: profiles.length,
+        diagnostics: diagnostics.length,
+        defaultDocument: defaultDocument,
+        defaultExcluded: defaultExcluded,
       },
     );
-    this.#loaded = true;
-    this.#scannedTemplateStatus = templateStatus;
-    this.#deps.changed();
-  }
-}
-
+    yield* Ref.set(registry, {
+      profiles,
+      diagnostics,
+      defaultDocument,
+      defaultExcluded,
+      loaded: true,
+      scannedTemplateStatus: templateStatus,
+    });
+    yield* changed();
+  });
+  return {
+    documentPathIn,
+    resolveProfile,
+    profileOf,
+    prepareCreate,
+    getSource,
+    saveSource,
+    setMatch,
+    getBuiltInSource,
+    duplicate,
+    prepareShare,
+    prepareImport,
+    ejectDefault,
+    materializeDefault,
+    restoreDefault,
+    prepareDelete,
+    delete: deleteProfile,
+    scan,
+    create,
+    defaultDocumentPath,
+    loaded: Ref.get(registry).pipe(Effect.map((value) => value.loaded)),
+    profiles: Ref.get(registry).pipe(Effect.map((value) => value.profiles)),
+    diagnostics: Ref.get(registry).pipe(
+      Effect.map((value) => value.diagnostics),
+    ),
+  };
+});
 /**
  * Resolve a draft from its manifest and current Default settings, without
  * installing it. `selector` is the draft's identity after it passed the Profile
@@ -1237,13 +1449,6 @@ export function seedProfileEntry(
   },
 ): LiteratureNoteProfile {
   const match = compileProfileMatch(manifest.match);
-  if (match.state === "unevaluable")
-    Effect.runSync(
-      Effect.logDebug("Profile match cannot be evaluated").pipe(
-        Effect.annotateLogs({ id: manifest.id, problem: match.problem }),
-        withLogCategory("profile"),
-      ),
-    );
   return {
     id: manifest.id as ProfileId,
     label: manifest.name,
@@ -1356,30 +1561,51 @@ function updateProfilePackMetadata(
 }
 
 /** The original values and Promise surface, implemented by the plain adapter. */
-export type ProfileOperations = Pick<
-  ProfileEngine,
-  | "loaded"
-  | "profiles"
-  | "diagnostics"
-  | "defaultDocumentPath"
-  | "resolveProfile"
-  | "profileOf"
-  | "getBuiltInSource"
-  | "prepareCreate"
-  | "create"
-  | "getSource"
-  | "saveSource"
-  | "setMatch"
-  | "duplicate"
-  | "prepareShare"
-  | "prepareImport"
-  | "ejectDefault"
-  | "materializeDefault"
-  | "restoreDefault"
-  | "prepareDelete"
-  | "delete"
->;
-
+export interface ProfileOperations {
+  readonly loaded: boolean;
+  readonly profiles: readonly LiteratureNoteProfile[];
+  readonly diagnostics: readonly ProfileDiagnostic[];
+  readonly defaultDocumentPath: string;
+  resolveProfile(selector: ProfileSelector): ResolvedProfile | undefined;
+  profileOf(file?: TFile): NoteProfile;
+  prepareCreate(
+    options: ProfileCreateOptions,
+  ): Promise<PreparedProfileCreation>;
+  create(options: ProfileCreateOptions): Promise<LiteratureNoteProfile>;
+  getSource(selector: ProfileSelector): Promise<string>;
+  saveSource(
+    selector: ProfileSelector,
+    source: string,
+    expected: ProfileDocumentExpectation,
+  ): Promise<ProfileDocumentWrite>;
+  setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void>;
+  getBuiltInSource(): string;
+  duplicate(
+    selector: ProfileSelector,
+    options?: {
+      label?: string;
+    },
+  ): Promise<LiteratureNoteProfile>;
+  prepareShare(selector: ProfileSelector): Promise<PreparedProfileShare>;
+  prepareImport(
+    source: string,
+    options?: ProfileImportOptions,
+  ): Promise<PreparedProfileImport>;
+  ejectDefault(): Promise<TFile>;
+  materializeDefault(): Promise<{
+    file: TFile;
+    created: boolean;
+  }>;
+  restoreDefault(): Promise<void>;
+  prepareDelete(id: ProfileId): Promise<ProfileDeletionPlan>;
+  delete(
+    id: ProfileId,
+    target: ProfileSelector,
+    options?: {
+      move?: boolean;
+    },
+  ): Promise<ProfileDeletionResult>;
+}
 /**
  * The import target changed after the plan was made: another file took its
  * path. `message` is the notice text; `cause` holds the vault's refusal.
@@ -1400,30 +1626,103 @@ export class ProfileOperationError extends Schema.TaggedError<
   cause: Schema.Defect(),
 }) {}
 
+export type ProfileError =
+  | ProfileOperationError
+  | ProfileImportChanged
+  | VaultError
+  | FileExists
+  | VaultFolderBlockedError
+  | LiveTextRewriteFailed
+  | TemplateFailure;
 export interface ProfileState {
   readonly loaded: boolean;
   readonly profiles: readonly LiteratureNoteProfile[];
   readonly diagnostics: readonly ProfileDiagnostic[];
   readonly defaultDocumentPath: string;
   readonly templateStatus: import("@/services/template/service").TemplateStatus;
-  readonly failure?: Cause.Cause<ProfileOperationError>;
+  readonly failure?: Cause.Cause<TemplateFailure>;
 }
-
-type EffectOperations<T> = {
-  [K in keyof T]: T[K] extends (...args: infer P) => infer A
-    ? (...args: P) => Effect.Effect<Awaited<A>, ProfileOperationError>
-    : Effect.Effect<T[K]>;
+type ProfileOperationErrors = {
+  resolveProfile: ProfileOperationError;
+  profileOf: ProfileOperationError;
+  getBuiltInSource: ProfileOperationError;
+  create:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  getSource: ProfileOperationError | VaultError | TemplateFailure;
+  saveSource:
+    | ProfileOperationError
+    | VaultError
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure;
+  setMatch: ProfileOperationError | VaultError | TemplateFailure;
+  duplicate:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  ejectDefault:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  materializeDefault:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure;
+  restoreDefault: ProfileOperationError | VaultError | TemplateFailure;
+  prepareDelete: ProfileOperationError | TemplateFailure;
+  delete:
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | LiveTextRewriteFailed
+    | TemplateFailure;
 };
-
+type EffectOperations = {
+  [K in keyof ProfileOperations]: ProfileOperations[K] extends (
+    ...args: infer P
+  ) => infer A
+    ? (
+        ...args: P
+      ) => Effect.Effect<
+        Awaited<A>,
+        ProfileOperationErrors[K & keyof ProfileOperationErrors]
+      >
+    : Effect.Effect<ProfileOperations[K]>;
+};
 export type ProfileCreation = Omit<PreparedProfileCreation, "create"> & {
-  create(): Effect.Effect<LiteratureNoteProfile, ProfileOperationError>;
+  create(): Effect.Effect<
+    LiteratureNoteProfile,
+    | ProfileOperationError
+    | VaultError
+    | FileExists
+    | VaultFolderBlockedError
+    | TemplateFailure
+  >;
 };
 export type ProfileImport = PreparedProfileImport extends infer P
   ? P extends PreparedProfileImport
     ? Omit<P, "import" | "previewSource"> & {
         import(
           options?: Parameters<P["import"]>[0],
-        ): Effect.Effect<LiteratureNoteProfile, ProfileOperationError>;
+        ): Effect.Effect<
+          LiteratureNoteProfile,
+          | ProfileOperationError
+          | ProfileImportChanged
+          | VaultError
+          | VaultFolderBlockedError
+          | TemplateFailure
+        >;
         previewSource(
           options?: Parameters<P["previewSource"]>[0],
         ): Effect.Effect<string, ProfileOperationError>;
@@ -1435,28 +1734,32 @@ export type ProfileShare = Omit<PreparedProfileShare, "render"> & {
     options: ProfileShareOptions,
   ): Effect.Effect<string, ProfileOperationError>;
 };
-
 export class Profile extends Context.Service<
   Profile,
-  Omit<
-    EffectOperations<ProfileOperations>,
-    "prepareCreate" | "prepareImport" | "prepareShare"
-  > & {
+  Omit<EffectOperations, "prepareCreate" | "prepareImport" | "prepareShare"> & {
     readonly state: Effect.Effect<ProfileState>;
     readonly changes: Stream.Stream<ProfileState>;
     prepareCreate(
       options: ProfileCreateOptions,
-    ): Effect.Effect<ProfileCreation, ProfileOperationError>;
+    ): Effect.Effect<
+      ProfileCreation,
+      ProfileOperationError | VaultError | TemplateFailure
+    >;
     prepareImport(
       source: string,
       options?: ProfileImportOptions,
-    ): Effect.Effect<ProfileImport, ProfileOperationError>;
+    ): Effect.Effect<
+      ProfileImport,
+      ProfileOperationError | VaultError | TemplateFailure
+    >;
     prepareShare(
       selector: ProfileSelector,
-    ): Effect.Effect<ProfileShare, ProfileOperationError>;
+    ): Effect.Effect<
+      ProfileShare,
+      ProfileOperationError | VaultError | TemplateFailure
+    >;
   }
 >()("zotlit/profile/Profile") {}
-
 const operationError = (cause: unknown) =>
   cause instanceof ProfileOperationError
     ? cause
@@ -1466,314 +1769,126 @@ const operationError = (cause: unknown) =>
       });
 const attempt = <A>(read: () => A) =>
   Effect.try({ try: read, catch: operationError });
-const attemptPromise = <A>(read: () => Promise<A>) =>
-  Effect.tryPromise({ try: read, catch: operationError });
-
 export const layerProfile = Layer.effect(
   Profile,
   Effect.gen(function* () {
-    const app = yield* ObsidianApp;
-    const vault = yield* Vault;
-    const fileManager = yield* FileManager;
     const settings = yield* PluginSettings;
     const template = yield* Template;
-    const noteIndex = yield* NoteIndex;
-    // Forked before `operations`: a close waits for a write already started.
-    const bridge = yield* forkedBridge;
-    const runSync = bridge.runSync;
-    const read = <A, E>(effect: Effect.Effect<A, E>): A => {
-      const exit = runSync(Effect.exit(effect));
-      if (Exit.isFailure(exit))
-        throw plainTemplateError(Cause.squash(exit.cause));
-      return exit.value;
-    };
-    const runPromise = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
-      bridge.runPromise(effect).catch((error: unknown) => {
-        throw plainTemplateError(error);
-      });
-    const stopped = yield* Deferred.make<void>();
-    let released = false;
-    // Reads before a mutation can wait on another layer or the host. Cancel
-    // those waits on close so they cannot hold a protected write open forever.
-    // Calls after release keep the legacy service's callable read surface.
-    const preflight = <A, E>(effect: Effect.Effect<A, E>) =>
-      runPromise(
-        released
-          ? effect
-          : Effect.raceFirst(
-              effect,
-              Deferred.await(stopped).pipe(
-                Effect.andThen(
-                  Effect.fail(
-                    operationError(
-                      new Error("Profile service has been released"),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-      );
-    const engine = new ProfileEngine({
-      app,
-      vault,
-      fileManager,
-      runPromise: bridge.runPromise,
-      readText: (file) =>
-        preflight(attemptPromise(() => readLiveText(app, file))),
-      changed: () =>
-        runSync(SubscriptionRef.set(state, snapshot(runSync(template.status)))),
-      settings: {
-        get current() {
-          return runSync(settings.current);
-        },
-      },
-      template: {
-        get status() {
-          return runSync(template.status);
-        },
-        exportLiteratureNotePackSource: (...args) =>
-          runPromise(template.exportLiteratureNotePackSource(...args)),
-        getPartialEntries: () => read(template.getPartialEntries),
-        planPartialUnpack: (...args) =>
-          read(template.planPartialUnpack(...args)),
-        unpackPartials: (...args) =>
-          runPromise(template.unpackPartials(...args)),
-        getLiteratureNoteTemplateStatuses: () =>
-          read(template.getLiteratureNoteTemplateStatuses),
-        waitUntilSettled: (...args) =>
-          runPromise(template.waitUntilSettled(...args)),
-      },
-      noteIndex: {
-        whenIndexed: () => preflight(noteIndex.whenIndexed),
-        getNotesByProfile: (selector) =>
-          runSync(noteIndex.getNotesByProfile(selector)),
-      },
-      log: (message, fields) =>
-        runSync(
-          Effect.logDebug(message).pipe(
-            Effect.annotateLogs(fields),
-            withLogCategory("profile"),
-          ),
-        ),
-    });
-    const snapshot = (
-      templateStatus: ProfileState["templateStatus"],
+    const scope = yield* Scope.Scope;
+    const engine = yield* makeProfileEngine((): Effect.Effect<void> =>
+      publish(),
+    );
+    const snapshot = Effect.fnUntraced(function* (
       failure?: ProfileState["failure"],
-    ): ProfileState => ({
-      loaded: engine.loaded,
-      profiles: engine.profiles,
-      diagnostics: engine.diagnostics,
-      defaultDocumentPath: engine.defaultDocumentPath,
-      templateStatus,
-      ...(failure ? { failure } : {}),
+    ): Effect.fn.Return<ProfileState> {
+      return {
+        loaded: yield* engine.loaded,
+        profiles: yield* engine.profiles,
+        diagnostics: yield* engine.diagnostics,
+        defaultDocumentPath: yield* engine.defaultDocumentPath(),
+        templateStatus: yield* template.status,
+        ...(failure ? { failure } : {}),
+      } satisfies ProfileState;
     });
-    const state = yield* SubscriptionRef.make(snapshot(yield* template.status));
-    const scan = Effect.fn("Profile.scan")(
-      function* () {
-        yield* attempt(() => engine.scan());
-      },
+    const state = yield* SubscriptionRef.make(yield* snapshot());
+    const publish = Effect.fnUntraced(function* (): Effect.fn.Return<void> {
+      yield* SubscriptionRef.set(state, yield* snapshot());
+    });
+    const scan = engine.scan().pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
           ? Effect.interrupt
           : Effect.gen(function* () {
-              yield* SubscriptionRef.set(
-                state,
-                snapshot(yield* template.status, cause),
-              );
+              yield* SubscriptionRef.set(state, yield* snapshot(cause));
               yield* Effect.logWarning("Profile scan failed", cause);
             }),
       ),
     );
-    // Legacy ready covered this registry scan only. Template's own layer owns
-    // its first read; NoteIndex's layout-ready indexing is not part of this barrier.
-    yield* scan();
-    // Legacy ready kept its initial failure for the service's whole lifetime.
+    yield* scan;
     const startupFailure = (yield* SubscriptionRef.get(state)).failure;
-    yield* Stream.runForEach(template.changes, () => scan()).pipe(
+    yield* Stream.runForEach(template.changes, () => scan).pipe(
       Effect.forkScoped({ startImmediately: true }),
     );
-    yield* Stream.runForEach(settings.changes, (saved) =>
-      SubscriptionRef.update(state, (previous) => ({
-        ...previous,
-        defaultDocumentPath: engine.documentPathIn(saved["template.folder"]),
-      })),
+    yield* Stream.runForEach(
+      settings.changes,
+      Effect.fnUntraced(function* (saved) {
+        const path = yield* engine.documentPathIn(saved["template.folder"]);
+        yield* SubscriptionRef.update(state, (previous) => ({
+          ...previous,
+          defaultDocumentPath: path,
+        }));
+      }),
     ).pipe(Effect.forkScoped({ startImmediately: true }));
-    // Operations close before dependency subscriptions. A write already started
-    // completes its vault work and registry scan before the layer releases them.
-    yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        released = true;
-      }),
-    );
-    const operations = yield* Scope.fork(yield* Scope.Scope);
-    let closed = false;
-    const owned = <A>(
-      effect: Effect.Effect<A, ProfileOperationError>,
-      write = false,
-    ) =>
-      startupFailure
-        ? Effect.failCause(startupFailure)
-        : closed
-          ? effect
-          : Effect.forkIn(effect, operations, {
-              startImmediately: true,
-              uninterruptible: write,
-            }).pipe(Effect.flatMap((fiber) => Fiber.join(fiber)));
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        closed = true;
-        yield* Deferred.succeed(stopped, undefined);
-        yield* PubSub.shutdown(state.pubsub);
-      }),
-    );
+    yield* Effect.addFinalizer(() => PubSub.shutdown(state.pubsub));
+    const owned = <A, E>(effect: Effect.Effect<A, E>) =>
+      Effect.suspend((): Effect.Effect<A, E | TemplateFailure> =>
+        startupFailure
+          ? Effect.failCause(startupFailure)
+          : isScopeClosed(scope)
+            ? Effect.interrupt
+            : Effect.forkIn(effect, scope, { startImmediately: true }).pipe(
+                Effect.flatMap((fiber) => Fiber.join(fiber)),
+              ),
+      );
     return Profile.of({
       state: SubscriptionRef.get(state),
       changes: SubscriptionRef.changes(state),
-      loaded: Effect.sync(() => engine.loaded),
-      profiles: Effect.sync(() => engine.profiles),
-      diagnostics: Effect.sync(() => engine.diagnostics),
-      defaultDocumentPath: Effect.sync(() => engine.defaultDocumentPath),
-      resolveProfile: Effect.fn("Profile.resolveProfile")(function* (
-        ...args: Parameters<ProfileOperations["resolveProfile"]>
-      ) {
-        return yield* attempt(() => engine.resolveProfile(...args));
-      }),
-      profileOf: Effect.fn("Profile.profileOf")(function* (
-        ...args: Parameters<ProfileOperations["profileOf"]>
-      ) {
-        return yield* attempt(() => engine.profileOf(...args));
-      }),
-      getBuiltInSource: Effect.fn("Profile.getBuiltInSource")(function* (
-        ...args: Parameters<ProfileOperations["getBuiltInSource"]>
-      ) {
-        return yield* attempt(() => engine.getBuiltInSource(...args));
-      }),
-      create: Effect.fn("Profile.create")(function* (
-        ...args: Parameters<ProfileOperations["create"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.create(...args)),
-          true,
-        );
-      }),
-      getSource: Effect.fn("Profile.getSource")(function* (
-        ...args: Parameters<ProfileOperations["getSource"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.getSource(...args)),
-          false,
-        );
-      }),
-      saveSource: Effect.fn("Profile.saveSource")(function* (
-        ...args: Parameters<ProfileOperations["saveSource"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.saveSource(...args)),
-          true,
-        );
-      }),
-      setMatch: Effect.fn("Profile.setMatch")(function* (
-        ...args: Parameters<ProfileOperations["setMatch"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.setMatch(...args)),
-          true,
-        );
-      }),
-      duplicate: Effect.fn("Profile.duplicate")(function* (
-        ...args: Parameters<ProfileOperations["duplicate"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.duplicate(...args)),
-          true,
-        );
-      }),
-      ejectDefault: Effect.fn("Profile.ejectDefault")(function* (
-        ...args: Parameters<ProfileOperations["ejectDefault"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.ejectDefault(...args)),
-          true,
-        );
-      }),
-      materializeDefault: Effect.fn("Profile.materializeDefault")(function* (
-        ...args: Parameters<ProfileOperations["materializeDefault"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.materializeDefault(...args)),
-          true,
-        );
-      }),
-      restoreDefault: Effect.fn("Profile.restoreDefault")(function* (
-        ...args: Parameters<ProfileOperations["restoreDefault"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.restoreDefault(...args)),
-          true,
-        );
-      }),
-      prepareDelete: Effect.fn("Profile.prepareDelete")(function* (
-        ...args: Parameters<ProfileOperations["prepareDelete"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.prepareDelete(...args)),
-          false,
-        );
-      }),
-      delete: Effect.fn("Profile.delete")(function* (
-        ...args: Parameters<ProfileOperations["delete"]>
-      ) {
-        return yield* owned(
-          attemptPromise(() => engine.delete(...args)),
-          true,
-        );
-      }),
-
+      loaded: engine.loaded,
+      profiles: engine.profiles,
+      diagnostics: engine.diagnostics,
+      defaultDocumentPath: engine.defaultDocumentPath(),
+      resolveProfile: engine.resolveProfile,
+      profileOf: engine.profileOf,
+      getBuiltInSource: engine.getBuiltInSource,
+      create: Effect.fn("Profile.create")(
+        (...args: Parameters<ProfileOperations["create"]>) =>
+          owned(engine.create(...args)),
+      ),
+      getSource: Effect.fn("Profile.getSource")(
+        (...args: Parameters<ProfileOperations["getSource"]>) =>
+          owned(engine.getSource(...args)),
+      ),
+      saveSource: Effect.fn("Profile.saveSource")(
+        (...args: Parameters<ProfileOperations["saveSource"]>) =>
+          owned(engine.saveSource(...args)),
+      ),
+      setMatch: Effect.fn("Profile.setMatch")(
+        (...args: Parameters<ProfileOperations["setMatch"]>) =>
+          owned(engine.setMatch(...args)),
+      ),
+      duplicate: Effect.fn("Profile.duplicate")(
+        (...args: Parameters<ProfileOperations["duplicate"]>) =>
+          owned(engine.duplicate(...args)),
+      ),
+      ejectDefault: Effect.fn("Profile.ejectDefault")(() =>
+        owned(engine.ejectDefault()),
+      ),
+      materializeDefault: Effect.fn("Profile.materializeDefault")(() =>
+        owned(engine.materializeDefault()),
+      ),
+      restoreDefault: Effect.fn("Profile.restoreDefault")(() =>
+        owned(engine.restoreDefault()),
+      ),
+      prepareDelete: Effect.fn("Profile.prepareDelete")(
+        (...args: Parameters<ProfileOperations["prepareDelete"]>) =>
+          owned(engine.prepareDelete(...args)),
+      ),
+      delete: Effect.fn("Profile.delete")(
+        (...args: Parameters<ProfileOperations["delete"]>) =>
+          owned(engine.delete(...args)),
+      ),
       prepareCreate: Effect.fn("Profile.prepareCreate")(function* (options) {
-        const plan = yield* owned(
-          attemptPromise(() => engine.prepareCreate(options)),
-        );
-        return {
-          ...plan,
-          create: Effect.fn("Profile.createPrepared")(function* () {
-            return yield* owned(
-              attemptPromise(() => plan.create()),
-              true,
-            );
-          }),
-        };
-      }),
-      prepareShare: Effect.fn("Profile.prepareShare")(function* (selector) {
-        const plan = yield* owned(
-          attemptPromise(() => engine.prepareShare(selector)),
-        );
-        return {
-          ...plan,
-          render: Effect.fn("Profile.renderShare")(function* (options) {
-            return yield* attempt(() => plan.render(options));
-          }),
-        };
+        const plan = yield* owned(engine.prepareCreate(options));
+        return { ...plan, create: () => owned(plan.create()) };
       }),
       prepareImport: Effect.fn("Profile.prepareImport")(
         function* (source, options) {
-          const plan = yield* owned(
-            attemptPromise(() => engine.prepareImport(source, options)),
-          );
-          return {
-            ...plan,
-            previewSource: Effect.fn("Profile.previewImport")(
-              function* (options) {
-                return yield* attempt(() => plan.previewSource(options));
-              },
-            ),
-            import: Effect.fn("Profile.importPrepared")(function* (options) {
-              return yield* owned(
-                attemptPromise(() => plan.import(options)),
-                true,
-              );
-            }),
-          };
+          const plan = yield* owned(engine.prepareImport(source, options));
+          return { ...plan, import: (options) => owned(plan.import(options)) };
         },
+      ),
+      prepareShare: Effect.fn("Profile.prepareShare")((selector) =>
+        owned(engine.prepareShare(selector)),
       ),
     });
   }).pipe(withLogCategory("profile")),

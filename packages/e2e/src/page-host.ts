@@ -27,6 +27,7 @@ export type PageApp = App & {
     plugins: App["plugins"]["plugins"] & {
       zotlit?: import("obsidian").Plugin & { _loaded: boolean };
     };
+    manifests: Record<string, import("obsidian").PluginManifest>;
     disablePlugin(id: string): Promise<void>;
     enablePlugin(id: string): Promise<void>;
   };
