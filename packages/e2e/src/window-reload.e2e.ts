@@ -18,7 +18,7 @@ const recordRename = async (
   let from: string;
   let to: string;
   if (listenerSources === null) {
-    await app.vault.create("startup-order.md", "# Startup order\\n");
+    await app.vault.create("startup-order.md", "# Startup order\n");
     await app.plugins.disablePlugin("zotlit");
     const unloaded = new Set(listed());
     await app.plugins.enablePlugin("zotlit");

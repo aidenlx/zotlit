@@ -18,4 +18,5 @@
   });
   ```
 
+- **Obsidian callback migrations:** Compare Zotero RDP program strings with the base revision and preserve their JavaScript byte-for-byte. TypeScript assertions inside raw strings reach Zotero unchanged.
 - **Static rules:** Prefer a type or lint rule for a static authoring constraint.

@@ -130,17 +130,17 @@ export async function verifyExternalAnnotationLock({
       return {
         count: attachment.getAnnotations().length,
         annotation: {
-          isExternal: item!.annotationIsExternal,
-          version: item!.version,
-          dateModified: item!.dateModified,
-          deleted: item!.deleted,
-          text: item!.annotationText,
-          comment: item!.annotationComment,
-          color: item!.annotationColor,
-          position: item!.annotationPosition,
-          sortIndex: item!.annotationSortIndex,
-          pageLabel: item!.annotationPageLabel,
-          tags: item!.getTags(),
+          isExternal: item.annotationIsExternal,
+          version: item.version,
+          dateModified: item.dateModified,
+          deleted: item.deleted,
+          text: item.annotationText,
+          comment: item.annotationComment,
+          color: item.annotationColor,
+          position: item.annotationPosition,
+          sortIndex: item.annotationSortIndex,
+          pageLabel: item.annotationPageLabel,
+          tags: item.getTags(),
         },
       };
     })()`);
