@@ -348,10 +348,6 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/views/template-data-explorer/store.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
-  ],
   "apps/obsidian/src/views/template-data-explorer/view.test.ts": [
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"

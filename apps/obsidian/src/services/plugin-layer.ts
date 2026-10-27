@@ -23,8 +23,11 @@ import type { Workspace } from "@/lib/obsidian-workspace";
 import { layerWorkspace } from "@/lib/obsidian-workspace";
 import { openSettingsTab } from "@/lib/open-settings";
 import { layerPluginHost } from "@/lib/plugin-host";
+import { layerViewRegistry } from "@/lib/view-atoms";
+import type { ViewRegistry } from "@/lib/view-atoms";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
+import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
 import { layerSettingTab } from "@/setting-tab/layer";
 import { openLibraryView } from "@/views/library/register";
 
@@ -227,6 +230,7 @@ export function pluginLayer(
   | ZoteroHttp
   | Template
   | TemplateMigration
+  | ViewRegistry
   | Vault
   | FileManager
   | Workspace
@@ -409,6 +413,10 @@ export function pluginLayer(
       startingAs("SettingTab"),
     ),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
+    layerViewRegistry.pipe(
+      Layer.provide(layerTemplateDataReads),
+      startingAs("ViewRegistry"),
+    ),
     layerWikilinkEditor.pipe(startingAs("WikilinkEditor")),
     layerWikilinkReading.pipe(startingAs("WikilinkReading")),
   ).pipe(

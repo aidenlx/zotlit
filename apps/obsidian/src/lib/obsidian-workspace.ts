@@ -50,6 +50,7 @@ export type WorkspaceSource = Pick<
   | "updateOptions"
   | "openLinkText"
   | "getLeaf"
+  | "setActiveLeaf"
   | "trigger"
   | "requestActiveLeafEvents"
   | "readWorkspaceFile"
@@ -138,6 +139,11 @@ export interface WorkspaceShape {
    * open in.
    */
   getLeaf(newLeaf?: PaneType | boolean): Effect.Effect<WorkspaceLeaf>;
+  /** Obsidian's `setActiveLeaf`: make `leaf` the active leaf, focused when `focus`. */
+  setActiveLeaf(
+    leaf: WorkspaceLeaf,
+    options?: { readonly focus?: boolean },
+  ): Effect.Effect<void>;
   /** Obsidian's `trigger`: raise the workspace event `name` with `data`. */
   trigger(name: string, ...data: unknown[]): Effect.Effect<void>;
   /**
@@ -262,6 +268,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     ),
     getLeaf: Effect.fn("Workspace.getLeaf")((newLeaf) =>
       Effect.sync(() => source.getLeaf(newLeaf)),
+    ),
+    setActiveLeaf: Effect.fn("Workspace.setActiveLeaf")((leaf, options = {}) =>
+      Effect.sync(() => source.setActiveLeaf(leaf, options)),
     ),
     // Untraced: a citation raises its menus from a pointer handler.
     trigger: Effect.fnUntraced(function* (name, ...data) {

@@ -59,6 +59,23 @@ const commonImports = {
   paths: [...obsidianImportPaths, ...itemQuerySchemaPaths],
 };
 
+/**
+ * What a view gives up when it moves onto view atoms
+ * (docs/adr/0082-obsidian-views-read-effect-services-through-view-atoms.md).
+ */
+const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
+  (name) => ({
+    name,
+    message:
+      "A view on view atoms keeps its state in a per-leaf model of atoms (ADR 0082).",
+  }),
+);
+const plainAdapterPattern = {
+  group: ["@/services/*/plain"],
+  message:
+    "A view on view atoms reads the service tag through an atom (ADR 0082).",
+};
+
 const runtimeImports = {
   ...commonImports,
   paths: [
@@ -494,6 +511,38 @@ export default defineConfig({
       // The wrappers that hand Obsidian's control classes to everything else.
       files: ["src/components/obsidian/**"],
       rules: { "zotlit-css/no-obsidian-class": "off" },
+    },
+    {
+      // Views on view atoms. A view joins when it migrates (ADR 0082).
+      files: [
+        "src/views/cited-by/**",
+        "src/views/template-data-explorer/**",
+        "src/views/annot-view/model.ts",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: [...runtimeImports.paths, ...viewStorePaths],
+          },
+        ],
+      },
+    },
+    {
+      // Views on view atoms with no Plain dependency left. The Template Data
+      // Explorer joins when the Template service converts.
+      files: ["src/views/cited-by/**"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: [...runtimeImports.paths, ...viewStorePaths],
+            patterns: [...runtimeImports.patterns, plainAdapterPattern],
+          },
+        ],
+      },
     },
     {
       // Tests can inspect the schema; the plugin's other import rules remain.

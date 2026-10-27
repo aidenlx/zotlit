@@ -594,6 +594,9 @@ importers:
       '@bjorn3/browser_wasi_shim':
         specifier: ^0.4.2
         version: 0.4.2
+      '@effect/atom-react':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)(react@19.2.7)(scheduler@0.27.0)
       '@effect/platform-browser':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)
@@ -702,6 +705,9 @@ importers:
       react-textarea-autosize:
         specifier: ^8.5.9
         version: 8.5.9(@types/react@19.2.17)(react@19.2.7)
+      scheduler:
+        specifier: 0.27.0
+        version: 0.27.0
       semver:
         specifier: ^7.8.0
         version: 7.8.5
@@ -1949,6 +1955,13 @@ packages:
 
   '@drizzle-team/brocli@0.12.0':
     resolution: {integrity: sha512-mlUE+rZ8CatQekLhnaiN91Iemdd+e2gFKooGlnRB3oPTL3VghLfX24dx7HrzMNeC1JrIB/0kpsfyty3f5HNfxQ==}
+
+  '@effect/atom-react@4.0.5':
+    resolution: {integrity: sha512-tqTSiy0rWBitej7kPfvTSw29q4ipof52+txDg6bIBJx0ksHVzVXaFTsssDa+AZBeImafK0xmjm9m1XzPfE6k2A==}
+    peerDependencies:
+      effect: ^4.0.5
+      react: '>=19.0.0 <20.0.0'
+      scheduler: '>=0.25.0 <0.29.0'
 
   '@effect/platform-browser@4.0.5':
     resolution: {integrity: sha512-o3H75xA91nkgIWOcp0XouIxxWxJEOFkTf7gG4qkQtZfy0tq46hJBI0U8jrUqsPruo2vCCNfM0yCoj5AG7F5BMQ==}
@@ -9713,6 +9726,12 @@ snapshots:
   '@dotenvx/primitives@0.8.0': {}
 
   '@drizzle-team/brocli@0.12.0': {}
+
+  '@effect/atom-react@4.0.5(effect@4.0.5)(react@19.2.7)(scheduler@0.27.0)':
+    dependencies:
+      effect: 4.0.5
+      react: 19.2.7
+      scheduler: 0.27.0
 
   '@effect/platform-browser@4.0.5(effect@4.0.5)':
     dependencies:

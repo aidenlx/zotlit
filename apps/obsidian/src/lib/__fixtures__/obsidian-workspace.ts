@@ -44,6 +44,8 @@ export class MemoryWorkspace implements WorkspaceSource {
   }[] = [];
   /** What `readWorkspaceFile` answers: the layout Obsidian restored the leaves from. */
   savedLayout: unknown = {};
+  /** Each leaf `setActiveLeaf` activated, in order. */
+  readonly activated: WorkspaceLeaf[] = [];
   /** The pane of each `getLeaf` call, in order. */
   readonly leafRequests: (PaneType | boolean | undefined)[] = [];
   /**
@@ -146,6 +148,11 @@ export class MemoryWorkspace implements WorkspaceSource {
   getLeaf(newLeaf?: PaneType | boolean): WorkspaceLeaf {
     this.leafRequests.push(newLeaf);
     return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  }
+
+  /** Records the leaf; the active file stays. */
+  setActiveLeaf(leaf: WorkspaceLeaf): void {
+    this.activated.push(leaf);
   }
 
   /** The active file becomes `file`, then `file-open`. */

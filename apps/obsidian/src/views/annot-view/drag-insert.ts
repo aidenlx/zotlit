@@ -6,6 +6,7 @@ import type { DragEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
@@ -100,7 +101,8 @@ export async function commitAnnotation(
       return { kind: "cancelled" };
     return { kind: "inserted", summary: result.summary };
   } catch (error) {
-    if (target.signal.aborted || !target.valid()) return { kind: "cancelled" };
+    if (target.signal.aborted || !target.valid() || AbortError.test(error))
+      return { kind: "cancelled" };
     if (error instanceof ProfileAnnotationError)
       return {
         kind: "profile-error",

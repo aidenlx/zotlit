@@ -14,6 +14,7 @@ import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { NoteFeatureHandle } from "@/services/note-feature";
@@ -206,6 +207,14 @@ it("leaves the note unchanged, and the error to the log, where the insertion fai
   const operation = f.insert(card);
   f.pending[0]!.reject(new Error("private failure detail"));
   expect(await operation).toEqual({ kind: "failed" });
+  expect(f.cm.state.doc.toString()).toBe("one two");
+});
+
+it("stays silent and inserts nothing when unload ends the insert", async () => {
+  using f = fixture();
+  const operation = f.insert(card);
+  f.pending[0]!.reject(new AbortError("The plugin unloaded during the run."));
+  expect(await operation).toEqual({ kind: "cancelled" });
   expect(f.cm.state.doc.toString()).toBe("one two");
 });
 

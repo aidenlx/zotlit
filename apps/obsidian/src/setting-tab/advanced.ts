@@ -22,8 +22,8 @@ import {
 import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
 import {
-  clearExcerptCache,
-  resetCitationIndex,
+  reportClearExcerptCache,
+  reportResetCitationIndex,
   resetLanguagePacks,
 } from "./recovery";
 import { templateEngineItems } from "./templates";
@@ -173,7 +173,7 @@ export function advancedPageItems(
           desc: m.settings_excerpt_cache_clear_desc(),
           action: () =>
             void ctx.tab.run(
-              clearExcerptCache(
+              reportClearExcerptCache(
                 awaitConfirm(
                   {
                     title: m.settings_excerpt_cache_clear_name(),
@@ -192,7 +192,7 @@ export function advancedPageItems(
           desc: m.settings_citation_index_reset_desc(),
           action: () =>
             void ctx.tab.run(
-              resetCitationIndex(
+              reportResetCitationIndex(
                 awaitConfirm(
                   {
                     title: m.settings_citation_index_reset_confirm_title(),

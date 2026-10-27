@@ -101,6 +101,7 @@ import { AbortError } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { subscribe } from "@/lib/effect-stream";
+import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
@@ -119,9 +120,11 @@ import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
+import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { openCitationTemplate } from "@/services/template/actions";
 import type { PlainTemplate } from "@/services/template/plain";
 import type { PlainZoteroPref } from "@/services/zotero-pref/plain";
+import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
 import { openWorkbenchLayout } from "@/views/note-preview/register";
@@ -209,41 +212,59 @@ export function originatingNoteUpdateNotice(
   }
 }
 
-export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
-  zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  noteFeature?: Pick<NoteFeatureHandle, "updateNote">;
-  /**
-   * ZotLit Query, which tests the Match of a Profile on a real Item and names
-   * the custom fields a condition reads.
-   */
-  query?: Pick<QueryHandle, "run" | "customFieldNames">;
-  render?: WorkbenchHost["render"];
-  nativePreview?: NativeRenderDeps;
-  pluginVersion?: string;
-  templates: ExplorerViewDeps["templates"] &
-    Pick<
-      PlainTemplate,
-      | "waitUntilSettled"
-      | "loaded"
-      | "compile-status-changed"
-      | "materializeCitationTemplate"
-      | "getPartialDocument"
-      | "getPartialDocuments"
-      | "getPartialNames"
-      | "createPartial"
-      | "planPartialUnpack"
-      | "unpackPartials"
+export type TemplateWorkbenchDeps = Omit<
+  ExplorerViewDeps,
+  "pluginVersion" | "registry"
+> &
+  TemplateDataDeps & {
+    runtime: SubscriptionRuntime;
+    zoteroReads: Pick<
+      PlainZoteroReads,
+      | "state"
+      | "reads"
+      | "changed"
+      | "degraded"
+      | "refresh-failed"
+      | "refreshing"
+      | "db-file-missing"
+      | "refresh-requested"
+      | "acquireRead"
     >;
-  profile?: Pick<
-    PlainProfile,
-    | "getSource"
-    | "profileOf"
-    | "getBuiltInSource"
-    | "materializeDefault"
-    | "restoreDefault"
-    | "defaultDocumentPath"
-  >;
-};
+  } & {
+    zoteroPref: Pick<PlainZoteroPref, "dataDir">;
+    noteFeature?: Pick<NoteFeatureHandle, "updateNote">;
+    /**
+     * ZotLit Query, which tests the Match of a Profile on a real Item and names
+     * the custom fields a condition reads.
+     */
+    query?: Pick<QueryHandle, "run" | "customFieldNames">;
+    render?: WorkbenchHost["render"];
+    nativePreview?: NativeRenderDeps;
+    pluginVersion?: string;
+    templates: ExplorerViewDeps["templates"] &
+      Pick<
+        PlainTemplate,
+        | "waitUntilSettled"
+        | "loaded"
+        | "compile-status-changed"
+        | "materializeCitationTemplate"
+        | "getPartialDocument"
+        | "getPartialDocuments"
+        | "getPartialNames"
+        | "createPartial"
+        | "planPartialUnpack"
+        | "unpackPartials"
+      >;
+    profile?: Pick<
+      PlainProfile,
+      | "getSource"
+      | "profileOf"
+      | "getBuiltInSource"
+      | "materializeDefault"
+      | "restoreDefault"
+      | "defaultDocumentPath"
+    >;
+  };
 
 export interface TemplateAuthoringContext {
   readonly leaf: WorkspaceLeaf;

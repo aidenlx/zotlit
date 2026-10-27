@@ -9,6 +9,7 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { ViewRegistry } from "@/lib/view-atoms";
 
 import { passAborted } from "./lib/abort-error";
 import { startI18n } from "./lib/i18n";
@@ -361,6 +362,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteIndex: services.noteIndex,
       itemLookup: services.itemLookup,
       settings: services.settings,
+      registry: services.runtime.runSync(ViewRegistry),
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
@@ -453,14 +455,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
 
     registerTemplateDataExplorer(this, {
-      runtime: services.runtime,
       bridge: services.bridge,
       app: this.app,
-      zoteroReads: services.zoteroReads,
+      registry: services.runtime.runSync(ViewRegistry),
       itemLookup: services.itemLookup,
       settings: services.settings,
       templates: services.template,
-      templateData: services.templateData,
     });
 
     registerNotePreview(this, {
@@ -503,7 +503,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerCitedByView(this, {
       app: this.app,
-      citationIndex: services.citationIndex,
+      registry: services.runtime.runSync(ViewRegistry),
     });
 
     registerPandocExport(this, {

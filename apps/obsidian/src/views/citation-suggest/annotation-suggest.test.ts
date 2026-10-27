@@ -1,13 +1,24 @@
 // @vitest-environment happy-dom
 import { Effect } from "effect";
-import type { App, Editor, EditorSuggestContext } from "obsidian";
-import { describe, expect, it } from "vitest";
+import { TFile } from "obsidian";
+import type {
+  App,
+  Editor,
+  EditorSuggestContext,
+  MarkdownFileInfo,
+} from "obsidian";
+import { describe, expect, it, vi } from "vitest";
 
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { yieldToMain } from "@/lib/yield-to-main";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
+import type { AnnotationHit } from "./annotation-search";
 import { AnnotationEditorSuggest } from "./annotation-suggest";
 import type { AnnotationSuggestDeps } from "./annotation-suggest";
 import {
@@ -16,6 +27,20 @@ import {
   resolveAnnotationTrigger,
 } from "./annotation-trigger";
 import { resolveCitationTrigger } from "./editor-suggest";
+
+/** The Fixture's highlight on the Rougier PDF, as the search finds it. */
+const hit: AnnotationHit = {
+  key: "PUPR5FG5",
+  attachmentKey: "RGRPDF24",
+  itemKey: "RUGIER24",
+  type: "highlight",
+  text: "Identify Your Message",
+  comment: null,
+  color: "#2ea8e5",
+  pageLabel: "1",
+  title: "Ten Simple Rules for Better Figures",
+  citationKey: "rougier2014",
+};
 
 const at = (line: string, ch = line.length, trigger = "[>") =>
   resolveAnnotationTrigger(line, ch, { trigger });
@@ -288,6 +313,71 @@ describe("AnnotationEditorSuggest", () => {
     h.suggest.close();
 
     expect([...h.live]).toEqual([]);
+  });
+
+  it("stays silent when unload ends the insert of a chosen result", async () => {
+    const cm = stateEditor({ doc: "[>fig" });
+    const workspace = new MemoryWorkspace();
+    const editor = stubService<Editor>("Editor", {
+      cm,
+      posToOffset: ({ ch }) => ch,
+    });
+    const file = new TFile();
+    file.path = "Draft.md";
+    const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+      editor,
+      file,
+    });
+    const notify = vi.fn();
+    const suggest = new AnnotationEditorSuggest(
+      stubService<AnnotationSuggestDeps>("AnnotationSuggestDeps", {
+        app: stubService<App>("App", {
+          workspace: stubService<App["workspace"]>("Workspace", {
+            activeEditor: info,
+            on: (name: string, callback: (...data: never[]) => unknown) =>
+              workspace.on(name, (...data: unknown[]) =>
+                Reflect.apply(callback, undefined, data),
+              ),
+            offref: (ref) => workspace.offref(ref),
+          }),
+        }),
+        // Unload ends the run that reads the annotation.
+        bridge: {
+          runSync: Effect.runSync,
+          runPromise: () =>
+            Promise.reject(
+              new AbortError("The plugin unloaded during the run."),
+            ),
+        },
+        annotations: { read: () => Effect.never },
+        zoteroPref: { dataDir: "/zotero" },
+        notify,
+      }),
+    );
+    suggest.context = stubService<EditorSuggestContext>(
+      "EditorSuggestContext",
+      {
+        editor,
+        file,
+        start: { line: 0, ch: 0 },
+        end: { line: 0, ch: 5 },
+        query: "fig",
+      },
+    );
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      suggest.selectSuggestion(hit, new MouseEvent("click"));
+      // Node reports an unhandled rejection before the next task runs.
+      await yieldToMain();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      cm.destroy();
+    }
+
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(cm.state.doc.toString()).toBe("[>fig");
   });
 });
 

@@ -18,6 +18,9 @@ import { layerLocalServer, LocalServer } from "./service";
 export async function buildLocalServer(
   overrides: SettingsOverrides,
   stack: AsyncDisposableStack,
+  noteIndex: Partial<
+    Pick<NoteIndex["Service"], "whenIndexed" | "getIndexedItemKeys">
+  > = {},
 ) {
   const settingsLayer = layerPluginSettings({
     loadData: () => Promise.resolve(null),
@@ -37,6 +40,7 @@ export async function buildLocalServer(
     stubService<NoteIndex["Service"]>("NoteIndex", {
       whenIndexed: Effect.void,
       getIndexedItemKeys: Effect.succeed(["ABCD2345"]),
+      ...noteIndex,
     }),
   );
   const runtime = buildRuntime(

@@ -1,22 +1,27 @@
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { Command } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import { makeAnnotViewModel } from "./model";
 import { addFollowModeCommands } from "./register";
 import type { FollowModeCommandTarget } from "./register";
 import type { FollowMode } from "./store";
+import { DEFAULT_FOLLOW_MODE } from "./view-state";
 
 function view(
-  snapshot: Partial<FollowModeCommandTarget["snapshot"]> = {},
+  state: { followMode?: FollowMode; pinnable?: string | null } = {},
   gestures: Partial<NonNullable<FollowModeCommandTarget["gestures"]>> = {},
 ) {
+  const { followMode = "active-tab", pinnable = "ABCD2345" } = state;
   return {
-    snapshot: {
-      followMode: "active-tab" as FollowMode,
-      pinnable: "ABCD2345",
-      ...snapshot,
-    },
+    model: makeAnnotViewModel({
+      followMode,
+      previousMode: DEFAULT_FOLLOW_MODE,
+      pinnedItemKey: followMode === "pinned" ? "ABCD2345" : null,
+    }),
+    snapshot: { pinnable },
     gestures: {
       onSetFollowMode: vi.fn(),
       onPinCurrentItem: vi.fn(),
@@ -27,10 +32,14 @@ function view(
   };
 }
 
-function register(target: FollowModeCommandTarget | null) {
+function register(
+  target: FollowModeCommandTarget | null,
+  registry = AtomRegistry.make(),
+) {
   const commands: Command[] = [];
   addFollowModeCommands(
     { addCommand: (command) => (commands.push(command), command) },
+    registry,
     () => target,
   );
   const byName = (name: string) => {
@@ -105,6 +114,27 @@ describe("the five Follow Mode commands", () => {
     expect(byName(m.command_annot_view_unpin_name()).offered).toBe(true);
     byName(m.command_annot_view_unpin_name()).run();
     expect(pinned.gestures.onUnpin).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the Follow Mode the registry holds for the view", () => {
+    const target = view();
+    const registry = AtomRegistry.make();
+    const release = registry.mount(target.model.state);
+    const { byName } = register(target, registry);
+    const followActiveTab = byName(
+      m.command_annot_view_follow_active_tab_name(),
+    );
+    expect(followActiveTab.offered).toBe(false);
+
+    registry.set(target.model.state, {
+      followMode: "zotero-reader",
+      previousMode: DEFAULT_FOLLOW_MODE,
+      pinnedItemKey: null,
+    });
+
+    expect(followActiveTab.offered).toBe(true);
+    release();
+    registry.dispose();
   });
 
   it("keeps the item picker offered in every mode", () => {

@@ -1,4 +1,5 @@
 // Presentational root for the Template Data Explorer: db-not-ready, no-item, and tree states.
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useContext } from "react";
 
 import {
@@ -29,7 +30,13 @@ import {
 } from "@/views/template-workbench/theme";
 
 import { ExplorerActionsContext } from "./actions";
-import { useExplorerStore, useExplorerStoreApi } from "./store";
+import {
+  clearRestore,
+  setCollapsedSections,
+  setNavigation,
+  setPresentation,
+  useExplorerModel,
+} from "./model";
 
 const sidebarBar = selectionBar({ placement: "sidebar" });
 
@@ -56,8 +63,9 @@ export function Explorer({
     | "onNavigationChange"
   >;
 }): React.ReactElement {
-  const store = useExplorerStoreApi();
-  const state = useExplorerStore((s) => s);
+  const model = useExplorerModel();
+  const update = useAtomSet(model.session);
+  const state = useAtomValue(model.state);
   const { root, status, error, data, context, navigation, collapsedSections } =
     state;
   const host = useWorkbenchHost();
@@ -228,17 +236,21 @@ export function Explorer({
             <DataExplorer
               {...explorer}
               restore={state.restore}
-              onRestored={() => store.setState({ restore: null })}
+              onRestored={() => update(clearRestore)}
               onPresentationChange={(presentation) =>
-                store.setState({ presentation })
+                update(setPresentation(presentation))
               }
               data={data}
               root={root}
               disabled={!context?.canInsertField}
               navigation={navigation}
               collapsedSections={collapsedSections}
-              onCollapsedSectionsChange={state.setCollapsedSections}
-              onNavigationChange={state.setNavigation}
+              onCollapsedSectionsChange={(collapsed) =>
+                update(setCollapsedSections(collapsed))
+              }
+              onNavigationChange={(navigation) =>
+                update(setNavigation(navigation))
+              }
             />
           )}
         </>
