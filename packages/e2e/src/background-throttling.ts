@@ -24,7 +24,7 @@
 // once its move has applied, not when it is asked for: until then Chromium
 // holds back the focus events of the elements focused in it, and CodeMirror
 // takes the caret the browser puts at the start of a field for the user's. A popout opens with
-// {@link showBehind} in place of Obsidian's `show`, and `window.focus()` and
+// `page.showBehind` in place of Obsidian's `show`, and `window.focus()` and
 // `electronWindow.focus()` move only the emulation: each would take the OS
 // focus and put the window in front. A walk that needs a new popout active calls
 // its `window.focus()`. The run thus leaves the OS focus to the developer and to
@@ -37,28 +37,18 @@
 // Every vault window the run sets up passes through here, after each reload
 // too, so this also gives the window its in-memory clipboard.
 
-import { MEMORY_CLIPBOARD } from "./memory-clipboard.ts";
-import { obEval } from "./obsidian-cli.ts";
+type RunWindow = Window &
+  typeof globalThis & {
+    electronWindow: import("electron").BrowserWindow;
+  };
 
-/**
- * Eval code that shows the Electron window `win` names and leaves the OS focus
- * and the developer's windows alone. `showInactive` keeps the focus but puts the
- * window in front of every other app's windows on macOS; `blur` there orders it
- * behind them. A minimized window comes back from the Dock in front for the
- * length of the animation, so it stays transparent until it is restored and
- * ordered back. Restore a minimized window with this, not `restore()`.
- * `prepareRunWindow` keeps a covered window rendering.
- */
-export const showBehind = (win: string): string =>
-  `((w)=>{if(process.platform!=='darwin'){w.showInactive();return;}if(!w.isMinimized()){w.showInactive();w.blur();return;}const opacity=w.getOpacity();w.setOpacity(0);w.once('restore',()=>{w.blur();setTimeout(()=>w.setOpacity(opacity),100);});w.showInactive();})(${win});`;
-
-/** Global the restore function lives on in the vault window between calls. */
-const RESTORE = "__ztRestoreBackgroundThrottling";
+import { installMemoryClipboard } from "./memory-clipboard.ts";
+import { obRun } from "./obsidian-cli.ts";
 
 /**
  * Prepares the vault window `vaultId` for a run, after it opens and after each
  * reload. It installs the window's in-memory clipboard
- * ({@link MEMORY_CLIPBOARD}), which stays for the life of the window. It turns
+ * ({@link installMemoryClipboard}), which stays for the life of the window. It turns
  * background throttling off for the main window and every popout it has or
  * opens, shows each popout it opens behind other apps' windows and without the
  * OS focus, and moves focus emulation to the window `window.focus()` or
@@ -66,75 +56,140 @@ const RESTORE = "__ztRestoreBackgroundThrottling";
  * it again replaces the earlier call's hooks.
  */
 export async function prepareRunWindow(vaultId: string): Promise<void> {
-  const reply = await obEval(
-    vaultId,
-    `(async()=>{
-      ${MEMORY_CLIPBOARD};
-      window.${RESTORE}?.();
-      const remote=require('@electron/remote');
-      const main=remote.getCurrentWebContents();
-      const vaultContents=()=>[main,...remote.webContents.getAllWebContents().filter((contents)=>contents.opener?.top?.processId===main.mainFrame.processId&&contents.opener?.top?.routingId===main.mainFrame.routingId)];
-      const previous=main.getBackgroundThrottling();
-      const apply=()=>{for(const contents of vaultContents())contents.setBackgroundThrottling(false);};
-      let focused;
-      let focusedWin;
-      let appliedWin;
-      let switching=Promise.resolve();
-      const open=(win)=>!win.closed&&raised.has(win);
-      const emulateFocus=(win)=>{
-        if(!open(win))return switching;
-        focusedWin=win;
-        const run=switching.then(async()=>{
-          if(win!==focusedWin||!open(win))return;
-          const next=win.require('@electron/remote').getCurrentWebContents();
-          if(focused!==next){
-            const last=focused;focused=next;
-            appliedWin=undefined;
-            if(last&&!last.isDestroyed())await last.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:false}).catch(()=>{});
-            if(!open(win))return;
-            if(!next.debugger.isAttached())next.debugger.attach('1.3');
-            await next.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
-          }
-          if(!open(win))return;
-          if(activeWindow!==win)win.dispatchEvent(new win.FocusEvent('focus'));
-          if(win===focusedWin)appliedWin=win;
-        });
-        switching=run.catch(()=>{});
-        return run;
+  await installMemoryClipboard(vaultId);
+  const reply = await obRun(vaultId, async ({ app, page }) => {
+    window.__ztRestoreBackgroundThrottling?.();
+    const remote =
+      require("@electron/remote") as typeof import("@electron/remote");
+    const main = remote.getCurrentWebContents();
+    const vaultContents = () => [
+      main,
+      ...remote.webContents
+        .getAllWebContents()
+        .filter(
+          (contents) =>
+            contents.opener?.top?.processId === main.mainFrame.processId &&
+            contents.opener?.top?.routingId === main.mainFrame.routingId,
+        ),
+    ];
+    const previous = main.getBackgroundThrottling();
+    const apply = () => {
+      for (const contents of vaultContents())
+        contents.setBackgroundThrottling(false);
+    };
+    let focused: import("electron").WebContents | undefined;
+    let focusedWin: RunWindow | undefined;
+    let appliedWin: RunWindow | undefined;
+    let switching = Promise.resolve();
+    const open = (win: RunWindow) => !win.closed && raised.has(win);
+    const emulateFocus = (win: RunWindow): Promise<void> => {
+      if (!open(win)) return switching;
+      focusedWin = win;
+      const run = switching.then(async () => {
+        if (win !== focusedWin || !open(win)) return;
+        const next = (
+          win.require("@electron/remote") as typeof import("@electron/remote")
+        ).getCurrentWebContents();
+        if (focused !== next) {
+          const last = focused;
+          focused = next;
+          appliedWin = undefined;
+          if (last && !last.isDestroyed())
+            await last.debugger
+              .sendCommand("Emulation.setFocusEmulationEnabled", {
+                enabled: false,
+              })
+              .catch(() => {});
+          if (!open(win)) return;
+          if (!next.debugger.isAttached()) next.debugger.attach("1.3");
+          await next.debugger.sendCommand(
+            "Emulation.setFocusEmulationEnabled",
+            { enabled: true },
+          );
+        }
+        if (!open(win)) return;
+        if (activeWindow !== win)
+          win.dispatchEvent(new win.FocusEvent("focus"));
+        if (win === focusedWin) appliedWin = win;
+      });
+      switching = run.catch(() => {});
+      return run;
+    };
+    const raised = new Map<
+      RunWindow,
+      {
+        focus: () => void;
+        shown: RunWindow["electronWindow"];
+        osFocus: () => void;
+        strayFocus: () => void;
+      }
+    >();
+    const followFocus = (win: RunWindow) => {
+      if (raised.has(win)) return;
+      const focus = win.focus;
+      const shown = (win as RunWindow).electronWindow;
+      const strayFocus = () => {
+        if (!raised.has(win) && activeWindow === win)
+          window.dispatchEvent(new FocusEvent("focus"));
       };
-      const raised=new Map();
-      const followFocus=(win)=>{
-        if(raised.has(win))return;
-        const focus=win.focus;const shown=win.electronWindow;
-        const strayFocus=()=>{if(!raised.has(win)&&activeWindow===win)window.dispatchEvent(new FocusEvent('focus'));};
-        raised.set(win,{focus,shown,osFocus:shown?.focus,strayFocus});
-        if(win!==window)win.addEventListener('focus',strayFocus);
-        win.focus=()=>void emulateFocus(win);
-        if(shown)shown.focus=()=>void emulateFocus(win);
-        win.document.hasFocus=()=>win===appliedWin;
-      };
-      const refs=[
-        app.workspace.on('window-open',(_workspaceWindow,win)=>{apply();followFocus(win);const shown=win.electronWindow;if(shown)shown.show=()=>{${showBehind("shown")}};}),
-        app.workspace.on('window-close',(_workspaceWindow,win)=>{raised.delete(win);if(win===focusedWin||win===activeWindow)void emulateFocus(window);}),
-      ];
-      apply();
-      followFocus(window);
-      app.workspace.iterateAllLeaves((leaf)=>followFocus(leaf.getContainer().win));
-      await emulateFocus(window);
-      // Obsidian can request popout focus from a focus handler. Wait for the
-      // last request, including requests queued while the previous one ran.
-      let settled;
-      do{settled=switching;await settled;}while(settled!==switching);
-      window.${RESTORE}=()=>{
-        for(const ref of refs)app.workspace.offref(ref);
-        for(const [win,{focus,shown,osFocus,strayFocus}] of raised){win.focus=focus;if(shown)shown.focus=osFocus;win.removeEventListener('focus',strayFocus);delete win.document.hasFocus;}
-        for(const contents of vaultContents()){contents.setBackgroundThrottling(true);if(contents.debugger.isAttached())contents.debugger.detach();}
-        main.setBackgroundThrottling(previous);
-        delete window.${RESTORE};
-      };
-      return String(vaultContents().every((contents)=>!contents.getBackgroundThrottling())&&focusedWin.document.hasFocus()&&activeWindow===focusedWin);
-    })()`,
-  );
+      raised.set(win, { focus, shown, osFocus: shown?.focus, strayFocus });
+      if (win !== window) win.addEventListener("focus", strayFocus);
+      win.focus = () => void emulateFocus(win);
+      if (shown) shown.focus = () => void emulateFocus(win);
+      win.document.hasFocus = () => win === appliedWin;
+    };
+    const refs = [
+      app.workspace.on("window-open", (_workspaceWindow, win) => {
+        apply();
+        followFocus(win as RunWindow);
+        const shown = (win as RunWindow).electronWindow;
+        if (shown)
+          shown.show = () => {
+            page.showBehind(shown);
+          };
+      }),
+      app.workspace.on("window-close", (_workspaceWindow, win) => {
+        raised.delete(win as RunWindow);
+        if (win === focusedWin || win === activeWindow)
+          void emulateFocus(window as RunWindow);
+      }),
+    ];
+    apply();
+    followFocus(window as RunWindow);
+    app.workspace.iterateAllLeaves((leaf) =>
+      followFocus(leaf.getContainer().win as RunWindow),
+    );
+    await emulateFocus(window as RunWindow);
+    // Obsidian can request popout focus from a focus handler. Wait for the
+    // last request, including requests queued while the previous one ran.
+    let settled;
+    do {
+      settled = switching;
+      await settled;
+    } while (settled !== switching);
+    window.__ztRestoreBackgroundThrottling = () => {
+      for (const ref of refs) app.workspace.offref(ref);
+      for (const [win, { focus, shown, osFocus, strayFocus }] of raised) {
+        win.focus = focus;
+        if (shown) shown.focus = osFocus;
+        win.removeEventListener("focus", strayFocus);
+        Reflect.deleteProperty(win.document, "hasFocus");
+      }
+      for (const contents of vaultContents()) {
+        contents.setBackgroundThrottling(true);
+        if (contents.debugger.isAttached()) contents.debugger.detach();
+      }
+      main.setBackgroundThrottling(previous);
+      delete window.__ztRestoreBackgroundThrottling;
+    };
+    return String(
+      vaultContents().every(
+        (contents) => !contents.getBackgroundThrottling(),
+      ) &&
+        focusedWin!.document.hasFocus() &&
+        activeWindow === focusedWin,
+    );
+  });
   if (reply !== "true") {
     throw new Error(
       `background throttling or focus emulation failed in ${vaultId}: ${reply}`,

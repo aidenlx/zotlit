@@ -15,6 +15,42 @@ The End-to-end Run suite — the plugin running in a real desktop Obsidian windo
 
 The End-to-end Run and the measurement drive a real Electron app. The `test` script runs the unit tests alone. `pnpm verify --release` requires the full End-to-end Run, including the Paired Run, followed by worker responsiveness on the desktop. GitHub Actions skips the desktop checks; `pnpm release` runs them before the version commit.
 
+## Page callbacks
+
+Use `obRun` from `src/obsidian-cli.ts` to run page code. It serializes a
+self-contained arrow or function expression and returns its inferred JSON result
+(`undefined` for a callback that returns nothing). Pass host values in the JSON
+`args` parameter; the callback's second parameter determines their type:
+
+```ts
+const name = await obRun(
+  run.vaultId,
+  ({ app }, { path }) => app.vault.getFileByPath(path)?.basename ?? null,
+  { path: notePath },
+);
+```
+
+The first parameter is `{ app, zotlit, page }`: the typed Obsidian app, the
+current plugin's `zotlit.services`, and the helpers in `src/page-helpers.ts`.
+Use `page.press`, `page.pick`, `page.trusted`, `page.menuReady`, and
+`page.windowDocuments` for page interactions. Helpers install on demand in each
+receiving window, including after reload. Keep state between calls in
+`page.scratch`; extend `PageScratch` with the case's types in its page-type module.
+The memory clipboard remains installed by `prepareRunWindow`.
+
+Use `obRunUntil(vaultId, callback, args, { what, ready?, tries? })` to poll a
+callback. It returns the value accepted by `ready` (default: `true`). Throws and
+missing replies count as not ready; exhaustion names `what` and the last value.
+For a single long call, pass `{ timeoutMs }` as `obRun`'s fourth argument.
+For embedded Query Views, use `revealQueryView` and the typed callback form of
+`readQueryViewUntil` in `src/note-query-view.ts`.
+
+The [`zotlit-tests/no-eval-capture` rule](../config/oxlint-plugin-tests.ts) checks serialized callbacks.
+
+The type and serialization proofs are in `src/ob-run.types.ts` and
+`src/ob-run*.test.ts`. The eval wrapper is private;
+`cliCommand` continues to dispatch registered commands.
+
 ## End-to-end Run layout
 
 Shared Fixture setup, vault bootstrap, and helpers live in `src/e2e-run-*.ts` (`e2e-run-fixture.ts`, `e2e-run-lifecycle.ts`, `e2e-run-suite-helpers.ts`, and related modules). Every area file calls `registerEndToEndRunHooks()` so the Fixture vault opens once per run across files.

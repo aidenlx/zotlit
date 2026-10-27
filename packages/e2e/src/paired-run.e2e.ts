@@ -12,9 +12,11 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import type { FileSystemAdapter, MarkdownView, FileView } from "obsidian";
 import {
   afterAll,
   afterEach,
@@ -28,10 +30,14 @@ import {
 
 import { ANNOTATIONS, ATTACHMENTS, ITEMS } from "@zotlit/scripts/fixture";
 
+import type { AnnotationDraft } from "@/services/annotation-repository/write";
+import type { Settings } from "@/services/settings/schema";
+import type { AnnotationView } from "@/views/annot-view/view";
+import type { QueryFileView } from "@/views/query-view/file-view";
+
 import { verifyExternalAnnotationLock } from "./annotation-lock.ts";
 import { prepareRunWindow } from "./background-throttling.ts";
 import { noteBody } from "./e2e-run-note-helpers.ts";
-import { EFFECT_MODULE } from "./effect-module.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
@@ -43,13 +49,18 @@ import {
   clearNotices,
   cli,
   cliCommand,
-  obEval,
-  obEvalUntil,
-  obJson,
+  obRun,
+  obRunUntil,
   waitFor,
-  WINDOW_DOCUMENTS,
 } from "./obsidian-cli.ts";
-import { PAGE, pickQueryView } from "./page-gestures.ts";
+import type { NoteQueryView } from "./page-helpers.ts";
+import type { LibraryWorkerMessage } from "./page-library-types.ts";
+import type { PagePdfView } from "./page-notes-types.ts";
+import type {
+  PairedWriteProbe,
+  PairedScope,
+  PairedEditorContent,
+} from "./page-paired-types.ts";
 import type {} from "./paired-setup.ts";
 import {
   authorizationCount,
@@ -76,23 +87,27 @@ import type { ZoteroRdp } from "./paired-zotero.ts";
 import { verifyPdfReadSource } from "./pdf-read-source.ts";
 import {
   armToolOnFirstPage,
-  capabilityOf,
-  clientOfFirstPage,
   disarmTool,
   expectEditorKeepsSelections,
-  FIRE,
   openPdfWithAnnotationView,
-  pageContainerOf,
-  pdfViewOf,
-  POPUP_EDITOR,
   raiseWindow,
   recomputedSortIndex,
   reopenPdfView,
   settledGesture,
-  TAP,
-  toolButtonOf,
   watchExcerptPixels,
 } from "./reader-gestures.ts";
+
+const effectPath = createRequire(
+  join(
+    import.meta.dirname,
+    "..",
+    "..",
+    "..",
+    "apps",
+    "obsidian",
+    "package.json",
+  ),
+).resolve("effect");
 
 /** The Fixture Attachment this scenario reads, writes and never rewrites. */
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
@@ -132,9 +147,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     authorizationFixture = {
       // The vault half of the seeded Write Authorization. Each tier that
       // clears Zotero's keys puts a new key into it afterward.
-      secret: await obJson<string>(
+      secret: await obRun(
         vaultId!,
-        `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization'))`,
+        async ({ app }) => {
+          return app.secretStorage.getSecret(
+            "zotlit-zotero-write-authorization",
+          )!;
+        },
+        undefined,
       ),
       rdp: await openZoteroRdp(debuggerPort!),
     };
@@ -154,9 +174,24 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       serverID,
       appName: "ZotLit Fixture",
     });
-    await obEval(
+    await obRun(
       vaultId!,
-      `(function(){const record=JSON.parse(${JSON.stringify(secret)});record.key=${JSON.stringify(key)};app.secretStorage.setSecret('zotlit-zotero-write-authorization',JSON.stringify(record));return true;})()`,
+      async (
+        { app },
+        {
+          __typedArg0,
+          __typedArg1,
+        }: { __typedArg0: string; __typedArg1: string },
+      ) => {
+        const record = JSON.parse(__typedArg0);
+        record.key = __typedArg1;
+        app.secretStorage.setSecret(
+          "zotlit-zotero-write-authorization",
+          JSON.stringify(record),
+        );
+        return String(true);
+      },
+      { __typedArg0: secret, __typedArg1: key },
     );
   };
 
@@ -175,39 +210,88 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     };
     const before = await readItem("RUGIER24");
     const attachmentBefore = await readItem(attachment.key);
-    const saved = await obEval(
+    const saved = await obRun(
       vaultId!,
-      `JSON.stringify({layout:app.workspace.getLayout(),ledger:app.loadLocalStorage('zotlit-use-ledger')??null})`,
+      async ({ app }) => {
+        return String(
+          JSON.stringify({
+            layout: app.workspace.getLayout(),
+            ledger: app.loadLocalStorage("zotlit-use-ledger") ?? null,
+          }),
+        );
+      },
+      undefined,
     );
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
-      await obEval(
+      await obRun(
         vaultId!,
-        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(saved)}).layout);app.workspace.requestActiveLeafEvents.run();const oldServices=app.plugins.plugins.zotlit.services;await app.plugins.disablePlugin('zotlit');for(let i=0;i<200&&(!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));if((!oldServices.bridge.closed()||oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');return true;})()`,
+        async ({ app, zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+          await app.workspace.changeLayout(JSON.parse(__typedArg0).layout);
+          app.workspace.requestActiveLeafEvents.run();
+          const oldServices = zotlit.services;
+          await app.plugins.disablePlugin("zotlit");
+          const stillOpen = () =>
+            !oldServices.bridge.closed() ||
+            oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings)
+              .length > 0;
+          for (let i = 0; i < 200 && stillOpen(); i++)
+            await new Promise((r) => setTimeout(r, 25));
+          if (stillOpen()) throw new Error("The ZotLit services did not close");
+          return String(true);
+        },
+        { __typedArg0: saved },
       );
       try {
         await authorizationFixture!.rdp.json(
           `(async()=>{const item=Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID,${JSON.stringify(attachment.key)});item.attachmentLastRead=${JSON.stringify(attachmentBefore.data.lastRead ?? null)};await item.saveTx({skipDateModifiedUpdate:true});return true;})()`,
         );
       } finally {
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{app.saveLocalStorage('zotlit-use-ledger',JSON.parse(${JSON.stringify(saved)}).ledger);await app.plugins.enablePlugin('zotlit');return true;})()`,
+          async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+            app.saveLocalStorage(
+              "zotlit-use-ledger",
+              JSON.parse(__typedArg0).ledger,
+            );
+            await app.plugins.enablePlugin("zotlit");
+            return String(true);
+          },
+          { __typedArg0: saved },
         );
       }
     });
-    await obEval(
+    await obRun(
       vaultId!,
-      `(async()=>{app.workspace.getLeavesOfType('pdf').forEach(l=>l.detach());await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroLocalApi.probe);return true;})()`,
+      async ({ app, zotlit }) => {
+        app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
+        await zotlit.services.bridge.runPromise(
+          zotlit.services.zoteroLocalApi.probe,
+        );
+        return String(true);
+      },
+      undefined,
     );
     await clearNotices(vaultId!);
     await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
-    let recorded: { instant: string } | undefined;
+    let recorded: { instant: string } | null;
     expect(
       await waitFor(async () => {
-        recorded = await obJson<{ instant: string } | undefined>(
+        recorded = await obRun(
           vaultId!,
-          "JSON.stringify(Object.fromEntries(Object.entries(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.useLedger.current)).map(([key,use])=>[key,{kind:use.kind,instant:Temporal.Instant.fromEpochMilliseconds(use.instant.epochMilliseconds).toString()}])).RUGIER24??null)",
+          async ({ zotlit }) => {
+            const use = zotlit.services.bridge.runSync(
+              zotlit.services.useLedger.current,
+            ).RUGIER24;
+            return use
+              ? {
+                  instant: Temporal.Instant.fromEpochMilliseconds(
+                    use.instant.epochMilliseconds,
+                  ).toString(),
+                }
+              : null;
+          },
+          undefined,
         );
         if (!recorded) return false;
         const item = await readItem(attachment.key);
@@ -865,9 +949,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // `pending`.
         let resolution: { kind: string; attachmentKey?: string } | undefined;
         await waitFor(async () => {
-          resolution = await obJson<{ kind: string; attachmentKey?: string }>(
+          resolution = await obRun(
             vaultId!,
-            `JSON.stringify(((z)=>z.bridge.runSync(z.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(attachmentPath)}))))(app.plugins.plugins.zotlit.services))`,
+            async (
+              { app, zotlit },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              return ((z) =>
+                z.bridge.runSync(
+                  z.attachmentResolver.resolve(
+                    (app.vault.adapter as FileSystemAdapter).getFullPath(
+                      __typedArg0,
+                    ),
+                  ),
+                ))(zotlit.services);
+            },
+            { __typedArg0: attachmentPath },
           ).catch(() => resolution);
           return resolution !== undefined && resolution.kind !== "pending";
         });
@@ -876,9 +973,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           "the Fixture PDF does not resolve inside the run's vault",
         ).toMatchObject({ kind: "resolved", attachmentKey: attachment.key });
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.available))",
+            async ({ zotlit }) => {
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.localServer.available,
+                  ),
+                ),
+              );
+            },
+            undefined,
           ),
           "Live Updates is not listening; a Zotero-side edit cannot reach Obsidian",
         ).toBe("true");
@@ -886,11 +992,28 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // The Annotation Source must be the Local API before any write: a
         // database-backed list refuses writes before it sends anything.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
-            { expected: "zotero-local-api" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                const list = await bridge.runPromise(
+                  repository.read(__typedArg0),
+                );
+                return String(String(list?.source.kind));
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:889",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "zotero-local-api" }),
         ).toBe(true);
       }, 120000);
 
@@ -902,8 +1025,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await cleanup.disposeAsync();
       }, 120000);
 
-      /** The Obsidian PDF view on the Fixture Attachment, as an eval expression. */
-      const pdfView = pdfViewOf(attachmentPath);
       /** The Attachment's Annotations as Zotero holds them, by key. */
       const annotationKeys = () => heldAnnotationKeys(rdp, ATTACHMENT_ITEM);
       /** The Attachment's Annotations beyond `held`, by key. */
@@ -972,9 +1093,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 current.data[field as keyof StoredMark["data"]] !== value,
             );
             if (drifted) {
-              const apiKey = await obJson<string>(
+              const apiKey = await obRun(
                 vaultId!,
-                "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+                async ({ app }) => {
+                  return JSON.parse(
+                    app.secretStorage.getSecret(
+                      "zotlit-zotero-write-authorization",
+                    )!,
+                  ).key;
+                },
+                undefined,
               );
               const restored = await zoteroFetch(api, path, {
                 method: "PATCH",
@@ -990,9 +1118,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await settled();
             }
             expect((await stored()).data).toMatchObject(seed);
-            await obEval(
+            await obRun(
               vaultId!,
-              `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)}));return true;})()`,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                await zotlit.services.bridge.runPromise(
+                  zotlit.services.annotationRepository.refresh(__typedArg0),
+                );
+                return String(true);
+              },
+              { __typedArg0: attachment.key },
             );
           },
         };
@@ -1000,9 +1134,34 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       /** Presses one key with modifiers on the reader, as Obsidian delivers it. */
       const pressKey = (key: string, modifiers: Record<string, boolean>) =>
-        obJson<{ prevented: boolean }>(
+        obRun(
           vaultId!,
-          `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: string;
+              __typedArg1: Record<string, boolean>;
+              __typedArg2: string;
+            },
+          ) => {
+            const event = new KeyboardEvent("keydown", {
+              key: __typedArg0,
+              ...__typedArg1,
+              bubbles: true,
+              cancelable: true,
+            });
+            pageHelpers.pdfView(__typedArg2)!.containerEl.dispatchEvent(event);
+            return { prevented: event.defaultPrevented };
+          },
+          {
+            __typedArg0: key,
+            __typedArg1: modifiers,
+            __typedArg2: attachmentPath,
+          },
         );
 
       /**
@@ -1021,9 +1180,51 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           shiftKey?: boolean;
         },
       ) =>
-        obJson<{ handled: boolean }>(
+        obRun(
           vaultId!,
-          `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=${pdfView}.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: string;
+              __typedArg1: {
+                ctrlKey?: boolean;
+                metaKey?: boolean;
+                shiftKey?: boolean;
+              };
+              __typedArg2: string;
+            },
+          ) => {
+            const event = new KeyboardEvent("keydown", {
+              key: __typedArg0,
+              ...__typedArg1,
+              bubbles: true,
+              cancelable: true,
+            });
+            const names = [];
+            if (event.ctrlKey) names.push("Ctrl");
+            if (event.metaKey) names.push("Meta");
+            if (event.altKey) names.push("Alt");
+            if (event.shiftKey) names.push("Shift");
+            const context = {
+              modifiers: names.sort().join(","),
+              key: event.key,
+              vkey: `Key${event.key.toUpperCase()}`,
+            };
+            const handled =
+              (
+                pageHelpers.pdfView(__typedArg2)!.scope! as PairedScope
+              ).handleKey(event, context) === false;
+            return { handled };
+          },
+          {
+            __typedArg0: key,
+            __typedArg1: modifiers,
+            __typedArg2: attachmentPath,
+          },
         );
 
       /** This host's own undo and redo chords. */
@@ -1034,9 +1235,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       /** Settles when every open PDF view has answered its last history key. */
       const stepSettled = () =>
-        obEval(
+        obRun(
           vaultId!,
-          "(async()=>{const services=app.plugins.plugins.zotlit.services;await Promise.all(services.bridge.runSync(services.pdfAnnotationEditor.bindings).map((binding)=>binding.stepped));return 'stepped';})()",
+          async ({ zotlit }) => {
+            const services = zotlit.services;
+            await Promise.all(
+              services.bridge
+                .runSync(services.pdfAnnotationEditor.bindings)
+                .map((binding) => binding.stepped),
+            );
+            return String("stepped");
+          },
+          undefined,
         );
 
       /**
@@ -1047,9 +1257,58 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         from: { x: number; y: number },
         to: { x: number; y: number },
       ): Promise<void> {
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){${FIRE}const container=${pdfView}.containerEl;fire('pointerdown',${from.x},${from.y});fire('pointermove',${(from.x + to.x) / 2},${(from.y + to.y) / 2},container);fire('pointermove',${to.x},${to.y},container);fire('pointerup',${to.x},${to.y},container);fire('click',${to.x},${to.y},container);return true;})()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+              __typedArg3,
+              __typedArg4,
+              __typedArg5,
+              __typedArg6,
+              __typedArg7,
+              __typedArg8,
+              __typedArg9,
+              __typedArg10,
+            }: {
+              __typedArg0: string;
+              __typedArg1: number;
+              __typedArg2: number;
+              __typedArg3: number;
+              __typedArg4: number;
+              __typedArg5: number;
+              __typedArg6: number;
+              __typedArg7: number;
+              __typedArg8: number;
+              __typedArg9: number;
+              __typedArg10: number;
+            },
+          ) => {
+            const { fire } = pageHelpers;
+            const container = pageHelpers.pdfView(__typedArg0)!.containerEl;
+            fire("pointerdown", __typedArg1, __typedArg2);
+            fire("pointermove", __typedArg3, __typedArg4, container);
+            fire("pointermove", __typedArg5, __typedArg6, container);
+            fire("pointerup", __typedArg7, __typedArg8, container);
+            fire("click", __typedArg9, __typedArg10, container);
+            return String(true);
+          },
+          {
+            __typedArg0: attachmentPath,
+            __typedArg1: from.x,
+            __typedArg2: from.y,
+            __typedArg3: (from.x + to.x) / 2,
+            __typedArg4: (from.y + to.y) / 2,
+            __typedArg5: to.x,
+            __typedArg6: to.y,
+            __typedArg7: to.x,
+            __typedArg8: to.y,
+            __typedArg9: to.x,
+            __typedArg10: to.y,
+          },
         );
       }
 
@@ -1078,20 +1337,85 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // come only from the Annotation Repository's live list: the sidebar
         // shows a new Annotation before its query runs again, as it did
         // before it ran a query.
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){const post=Worker.prototype.postMessage;const pending=[];window.__ztQueryGateHits=0;Worker.prototype.postMessage=function(...args){const request=args[0]?.[1];if(request?.tag!=='ItemQuery'||request.payload.job.view.from!=='annotations')return post.apply(this,args);window.__ztQueryGateHits++;const worker=this;pending.push(()=>post.apply(worker,args));};window.__ztQueryGate=()=>{Worker.prototype.postMessage=post;for(const send of pending.splice(0))send();};return true;})()`,
+          async ({ page: pageHelpers }) => {
+            // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
+            const post = Worker.prototype.postMessage;
+            const pending: (() => void)[] = [];
+            pageHelpers.scratch.__ztQueryGateHits = 0;
+            Worker.prototype.postMessage = new Proxy(post, {
+              apply: (
+                postTarget,
+                receiver: Worker,
+                args: Parameters<Worker["postMessage"]>,
+              ) => {
+                const request = (args[0] as LibraryWorkerMessage)?.[1];
+                if (
+                  request?.tag !== "ItemQuery" ||
+                  !("view" in request.payload.job) ||
+                  request.payload.job.view.from !== "annotations"
+                )
+                  return Reflect.apply(postTarget, receiver, args);
+                pageHelpers.scratch.__ztQueryGateHits!++;
+                pending.push(() => Reflect.apply(postTarget, receiver, args));
+              },
+            });
+            pageHelpers.scratch.__ztQueryGate = () => {
+              Worker.prototype.postMessage = post;
+              for (const send of pending.splice(0)) send();
+            };
+            return String(true);
+          },
+          undefined,
         );
         cleanup.defer(async () => {
-          await obEval(
+          await obRun(
             vaultId!,
-            "(function(){window.__ztQueryGate?.();delete window.__ztQueryGate;delete window.__ztQueryGateHits;return true;})()",
+            async ({ page: pageHelpers }) => {
+              pageHelpers.scratch.__ztQueryGate?.();
+              delete pageHelpers.scratch.__ztQueryGate;
+              delete pageHelpers.scratch.__ztQueryGateHits;
+              return String(true);
+            },
+            undefined,
           );
         });
-        const created = await obJson<{ kind: string; annotationKey?: string }>(
+        const created = await obRun(
           vaultId!,
-          `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(
+          async (
+            { zotlit },
             {
+              __typedArg0,
+              __typedArg1,
+            }: {
+              __typedArg0: string;
+              __typedArg1: {
+                type: "highlight";
+                color: "#5fb236";
+                comment: "End-to-end Run create";
+                text: "End-to-end Run";
+                pageLabel: "1";
+                sortIndex: "00000|000100|00100";
+                position: { pageIndex: 0; rects: [[100, 600, 300, 620]] };
+              };
+            },
+          ) => {
+            const outcome = await zotlit.services.bridge.runPromise(
+              zotlit.services.annotationRepository.createAnnotation(
+                __typedArg0,
+                __typedArg1,
+              ),
+            );
+            return {
+              kind: outcome.kind,
+              annotationKey:
+                "annotationKey" in outcome ? outcome.annotationKey : undefined,
+            };
+          },
+          {
+            __typedArg0: attachment.key,
+            __typedArg1: {
               type: "highlight",
               color: "#5fb236",
               comment: "End-to-end Run create",
@@ -1104,27 +1428,61 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 rects: [[100, 600, 300, 620]],
               },
             },
-          )}));return JSON.stringify(outcome);})()`,
+          },
         );
         expect(created.kind).toBe("created");
         createdKey = created.annotationKey!;
         // The Annotation Card, in the Annotation View, while the query waits.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(app.workspace.getLeavesOfType('zotero-annotation-view').some(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .some(({ view }) =>
+                        view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      ),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1113",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         expect(
-          await obEvalUntil(vaultId!, "String(window.__ztQueryGateHits>0)", {
-            expected: "true",
-          }),
+          await obRunUntil(
+            vaultId!,
+            ({ page: pageHelpers }) =>
+              (pageHelpers.scratch.__ztQueryGateHits ?? 0) > 0,
+            undefined,
+            { what: "the creation query reaches the held worker boundary" },
+          ).then(
+            () => true,
+            () => false,
+          ),
           "the creation query reaches the held worker boundary",
         ).toBe(true);
-        await obEval(
+        await obRun(
           vaultId!,
-          "(function(){window.__ztQueryGate();delete window.__ztQueryGate;delete window.__ztQueryGateHits;return true;})()",
+          async ({ page: pageHelpers }) => {
+            pageHelpers.scratch.__ztQueryGate!();
+            delete pageHelpers.scratch.__ztQueryGate;
+            delete pageHelpers.scratch.__ztQueryGateHits;
+            return String(true);
+          },
+          undefined,
         );
         cleanup.defer(async () => {
           await rdp.json(`(async () => {
@@ -1160,20 +1518,62 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         // The Obsidian page: an overlay mark carrying the Annotation's key.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(app.workspace.getLeavesOfType('pdf').some(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    app.workspace
+                      .getLeavesOfType("pdf")
+                      .some(({ view }) =>
+                        view.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      ),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1157",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
 
         // The Annotation Card, in the Annotation View.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(app.workspace.getLeavesOfType('zotero-annotation-view').some(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .some(({ view }) =>
+                        view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      ),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1166",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
       }, 120000);
 
@@ -1184,9 +1584,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // — a mark paints colour and geometry, never text. Colour is the one
         // edit all three surfaces can show.
         const edited = "#a28ae5";
-        const state = await obJson<{ kind: string }>(
+        const state = await obRun(
           vaultId!,
-          `(async()=>{const state=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(edited)}));return JSON.stringify(state);})()`,
+          async (
+            { zotlit },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: { __typedArg0: string; __typedArg1: "#a28ae5" },
+          ) => {
+            const state = await zotlit.services.bridge.runPromise(
+              zotlit.services.annotationRepository.patchColor(
+                __typedArg0,
+                __typedArg1,
+              ),
+            );
+            return state.kind === "failed"
+              ? { kind: state.kind, failure: { kind: state.failure.kind } }
+              : { kind: state.kind };
+          },
+          { __typedArg0: createdKey, __typedArg1: edited },
         );
         expect(state.kind).toBe("idle");
 
@@ -1203,19 +1620,70 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
         // The Obsidian page's overlay mark paints it.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(app.workspace.getLeavesOfType('pdf').map(leaf=>leaf.view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.getAttribute('fill'))`,
-            { expected: edited },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    app.workspace
+                      .getLeavesOfType("pdf")
+                      .map((leaf) =>
+                        leaf.view.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      )
+                      .find(Boolean)
+                      ?.getAttribute("fill"),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1200",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: edited }),
         ).toBe(true);
         // The Annotation Card's swatch carries it.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){var card=app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean);if(!card)return 'no card';return String(card.getAttribute('data-annot-color')===${JSON.stringify(edited)});})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "#a28ae5" },
+              ) => {
+                var card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    ),
+                  )
+                  .find(Boolean);
+                if (!card) return String("no card");
+                return String(
+                  String(card.getAttribute("data-annot-color") === __typedArg1),
+                );
+              },
+              { __typedArg0: createdKey, __typedArg1: edited },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1208",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
       }, 120000);
 
@@ -1292,9 +1760,62 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // session until ZotLit has read its write back, recorded in one turn.
         // The old, empty row drawn between the closed editor and the new chip
         // is the flicker this guards.
-        const shown = await obJson<string[]>(
+        const shown = await obRun(
           vaultId!,
-          `(async()=>{${PAGE}const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const key=${JSON.stringify(createdKey)};const card=()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean);const row=()=>card()?.querySelector('.zt-annot-tag-input')?'editor':'chips:'+[...(card()?.querySelectorAll('[aria-pressed]')??[])].map((chip)=>chip.textContent).join('|');const shown=[row()];const record=()=>{const state=row();if(state!==shown.at(-1))shown.push(state);};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});press(card().querySelector(${JSON.stringify(toggle)}),'tag toggle');await until('tag save settles',()=>bridge.runSync(repository.mutationFor(key)).kind==='idle'&&!bridge.runSync(repository.tagDraftFor(key)),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
+          async (
+            { app, zotlit, page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: { __typedArg0: string; __typedArg1: string },
+          ) => {
+            const { press, until } = pageHelpers;
+            const { annotationRepository: repository, bridge } =
+              zotlit.services;
+            const key = __typedArg0;
+            const card = () =>
+              app.workspace
+                .getLeavesOfType("zotero-annotation-view")
+                .map((leaf) =>
+                  leaf.view.containerEl.querySelector<HTMLElement>(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]`,
+                  ),
+                )
+                .find(Boolean);
+            const row = () =>
+              card()?.querySelector<HTMLInputElement>(".zt-annot-tag-input")
+                ? "editor"
+                : `chips:${[...(card()?.querySelectorAll<HTMLElement>("[aria-pressed]") ?? [])].map((chip) => chip.textContent).join("|")}`;
+            const shown = [row()];
+            const record = () => {
+              const state = row();
+              if (state !== shown.at(-1)) shown.push(state);
+            };
+            const observer = new MutationObserver(record);
+            observer.observe(document.body, {
+              subtree: true,
+              childList: true,
+              characterData: true,
+            });
+            press(
+              card()!.querySelector<HTMLElement>(__typedArg1),
+              "tag toggle",
+            );
+            await until(
+              "tag save settles",
+              () =>
+                bridge.runSync(repository.mutationFor(key)).kind === "idle" &&
+                !bridge.runSync(repository.tagDraftFor(key)),
+              10000,
+            ).catch(
+              () => {},
+            ); /* 300 ms after the save is the window a late flicker would show in. */
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            observer.disconnect();
+            record();
+            return shown;
+          },
+          { __typedArg0: createdKey, __typedArg1: toggle },
         );
         expect(shown).toEqual(["editor", `chips:${added}`]);
         expect(await annotationTags(api, serverID, createdKey)).toEqual([
@@ -1307,21 +1828,54 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // comment; its second press ends the session with its one write. As on
         // the card, the session ends through the verb: a window without the
         // system focus sends no focus events.
-        const mark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')`;
-        const popup = "document.querySelector('.zt-pdf-mark-popup')";
-        const section = `${popup}?.querySelector('[data-zt-section=tags]')`;
-        const { editorReady, editorChips, type, remove } = tagEditorIn(section);
+
+        const { editorReady, editorChips, type, remove } = tagEditorIn({
+          kind: "popup",
+        });
         const pressVerb = () =>
-          obEvalUntil(
-            vaultId!,
-            `(function(){${PAGE}const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';press(verb,'Tags');return 'pressed';})()`,
-            { expected: "pressed" },
-          );
+          ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ page: pageHelpers }) => {
+                const { press } = pageHelpers;
+                const verb = document
+                  .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                  ?.querySelector<HTMLElement>("[data-zt-verb=tags]");
+                if (!verb) return String("absent");
+                press(verb, "Tags");
+                return String("pressed");
+              },
+              undefined,
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1309",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "pressed" });
         /** The read-only chips under the comment, by name, while no editor is open. */
         const popupTags = () =>
-          obJson<string[] | null>(
+          obRun(
             vaultId!,
-            `JSON.stringify((${section})?.querySelector('.zt-annot-tag-input')?null:[...((${section})?.querySelectorAll(':scope > div > span')??[])].map(chip=>chip.textContent).sort())`,
+            async (_context) => {
+              return document
+                .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                ?.querySelector<HTMLElement>("[data-zt-section=tags]")
+                ?.querySelector<HTMLInputElement>(".zt-annot-tag-input")
+                ? null
+                : [
+                    ...(document
+                      .querySelector<HTMLElement>(".zt-pdf-mark-popup")
+                      ?.querySelector<HTMLElement>("[data-zt-section=tags]")
+                      ?.querySelectorAll<HTMLElement>(":scope > div > span") ??
+                      []),
+                  ]
+                    .map((chip) => chip.textContent)
+                    .sort();
+            },
+            undefined,
           );
         const storedTags = () => annotationTags(api, serverID, createdKey);
         const poll = { timeout: 10_000, interval: 250 };
@@ -1338,22 +1892,108 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // seeded underline lies under the same point, so the popup's stepper
         // walks the stack to the created mark.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=(${mark})?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: string;
+                  __typedArg2: string;
+                },
+              ) => {
+                const view = pageHelpers.pdfView(__typedArg0)!;
+                if (!view) return String("no view");
+                view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                const rect = pageHelpers
+                  .pdfView(__typedArg1)
+                  ?.containerEl.querySelector<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                  )
+                  ?.getBoundingClientRect();
+                return String(String(!!rect && rect.width > 0));
+              },
+              {
+                __typedArg0: attachmentPath,
+                __typedArg1: attachmentPath,
+                __typedArg2: createdKey,
+              },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1335",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){${FIRE}${TAP}const rect=(${mark}).getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return true;})()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: { __typedArg0: string; __typedArg1: string },
+          ) => {
+            const { tap } = pageHelpers;
+            const rect = (pageHelpers
+              .pdfView(__typedArg0)
+              ?.containerEl.querySelector<SVGGraphicsElement>(
+                `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+              ))!.getBoundingClientRect();
+            tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return String(true);
+          },
+          { __typedArg0: attachmentPath, __typedArg1: createdKey },
         );
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){${PAGE}if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';press(${popup}.querySelector('[data-zt-verb=stack]'),'Stack');return 'stepped';})()`,
-            { expected: "selected" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                const { press } = pageHelpers;
+                if (!document.querySelector<HTMLElement>(".zt-pdf-mark-popup"))
+                  return String("no popup");
+                if (
+                  pageHelpers
+                    .pdfView(__typedArg0)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    )
+                    ?.classList.contains("is-selected")
+                )
+                  return String("selected");
+                press(
+                  document
+                    .querySelector<HTMLElement>(".zt-pdf-mark-popup")!
+                    .querySelector<HTMLElement>("[data-zt-verb=stack]"),
+                  "Stack",
+                );
+                return String("stepped");
+              },
+              { __typedArg0: attachmentPath, __typedArg1: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:1346",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "selected" }),
         ).toBe(true);
         // The tags show read-only under the comment.
         await expect.poll(popupTags, poll).toEqual([removed, kept].toSorted());
@@ -1375,18 +2015,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // The popup closes onto the confirmed tags, and the selection stays.
         await expect.poll(popupTags, poll).toEqual([added, kept].toSorted());
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            `String(!!(${mark})?.classList.contains('is-selected'))`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              return String(
+                String(
+                  !!pageHelpers
+                    .pdfView(__typedArg0)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    )
+                    ?.classList.contains("is-selected"),
+                ),
+              );
+            },
+            { __typedArg0: attachmentPath, __typedArg1: createdKey },
           ),
         ).toBe("true");
       }, 120000);
 
       describe("the image tool on the first page", () => {
-        const tool = toolButtonOf(pdfView, "image");
-        const clientOf = clientOfFirstPage(pdfView);
-
-        afterEach(() => disarmTool(vaultId!, { pdfView, tool: "image" }));
+        afterEach(() =>
+          disarmTool(vaultId!, { attachmentPath, tool: "image" }),
+        );
 
         /**
          * Brings page one on screen in a window that lays it out, with the
@@ -1395,7 +2052,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * nothing, and how much of page one shows depends on the window.
          */
         const armOnFirstPage = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "image", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "image", at });
 
         /**
          * Drags a rectangle between two PDF points on page one, clear of every
@@ -1405,9 +2062,70 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           [x1, y1]: readonly [number, number],
           [x2, y2]: readonly [number, number],
         ) =>
-          obJson<{ preview: string | null }>(
+          obRun(
             vaultId!,
-            `(function(){${FIRE}${clientOf}const from=clientOf(${x1},${y1}),to=clientOf(${x2},${y2});const container=${pdfView}.containerEl;const node=fire('pointerdown',from.x,from.y);fire('pointermove',(from.x+to.x)/2,(from.y+to.y)/2,container);fire('pointermove',to.x,to.y,container);const preview=container.querySelector('.zt-pdf-capture-rect')?.getAttribute('opacity')??null;fire('pointerup',to.x,to.y,container);fire('click',to.x,to.y,node);return JSON.stringify({preview});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+                __typedArg5,
+              }: {
+                __typedArg0: string;
+                __typedArg1: number;
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: number;
+                __typedArg5: string;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const clientOf = (x: number, y: number) => {
+                const overlay = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!
+                  .div.querySelector<SVGSVGElement>(
+                    ".zt-pdf-annotation-overlay",
+                  );
+                const box = overlay!.getBoundingClientRect();
+                const view = overlay!.viewBox.baseVal;
+                return {
+                  x: box.left + ((x - view.x) * box.width) / view.width,
+                  y:
+                    box.top +
+                    ((view.y + view.height - y) * box.height) / view.height,
+                };
+              };
+              const from = clientOf(__typedArg1, __typedArg2),
+                to = clientOf(__typedArg3, __typedArg4);
+              const container = pageHelpers.pdfView(__typedArg5)!.containerEl;
+              const node = fire("pointerdown", from.x, from.y);
+              fire(
+                "pointermove",
+                (from.x + to.x) / 2,
+                (from.y + to.y) / 2,
+                container,
+              );
+              fire("pointermove", to.x, to.y, container);
+              const preview =
+                container
+                  .querySelector<HTMLElement>(".zt-pdf-capture-rect")
+                  ?.getAttribute("opacity") ?? null;
+              fire("pointerup", to.x, to.y, container);
+              fire("click", to.x, to.y, node);
+              return { preview };
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: x1,
+              __typedArg2: y1,
+              __typedArg3: x2,
+              __typedArg4: y2,
+              __typedArg5: attachmentPath,
+            },
           );
 
         it("creates an image Annotation from a rectangle dragged on the page", async () => {
@@ -1471,28 +2189,103 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
           // The page draws its mark, and the tool stood down after one capture.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(capturedKey)}]'))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: capturedKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1468",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `${tool}.getAttribute('aria-pressed')`,
-              {
-                expected: "false",
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "image" },
+                ) => {
+                  return String(
+                    pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelector<HTMLElement>(
+                        `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                      )!
+                      .getAttribute("aria-pressed"),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: "image" },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1475",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: "false",
+            }),
           ).toBe(true);
           // The card shows the Excerpt Image, decoded.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(capturedKey)}]')).find(Boolean);const img=card?.querySelector('img');return String(!!img&&img.complete&&img.naturalWidth>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map(({ view }) =>
+                      view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean);
+                  const img = card?.querySelector<HTMLElement>("img");
+                  return String(
+                    String(
+                      !!img &&
+                        (img as HTMLImageElement).complete &&
+                        (img as HTMLImageElement).naturalWidth > 0,
+                    ),
+                  );
+                },
+                { __typedArg0: capturedKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1485",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
@@ -1503,34 +2296,101 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Nine points wide: drawn faint, and released to nothing. Clear of
           // the image the create above may have left until the block ends.
           expect(await drag([80, 400], [89, 300])).toEqual({ preview: "0.2" });
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).settled;return true;})()`,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+              await zotlit.services.bridge
+                .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+                .find((candidate) => candidate.filePath === __typedArg0)!
+                .settled;
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
 
           expect(await annotationKeys()).toEqual(before);
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `JSON.stringify({armed:${tool}.getAttribute('aria-pressed'),preview:!!${pdfView}.containerEl.querySelector('.zt-pdf-capture-rect')})`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: "image";
+                  __typedArg2: string;
+                },
+              ) => {
+                return String(
+                  JSON.stringify({
+                    armed: pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelector<HTMLElement>(
+                        `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                      )!
+                      .getAttribute("aria-pressed"),
+                    preview: !!pageHelpers
+                      .pdfView(__typedArg2)!
+                      .containerEl.querySelector<HTMLElement>(
+                        ".zt-pdf-capture-rect",
+                      ),
+                  }),
+                );
+              },
+              {
+                __typedArg0: attachmentPath,
+                __typedArg1: "image",
+                __typedArg2: attachmentPath,
+              },
             ),
           ).toBe(JSON.stringify({ armed: "true", preview: false }));
           // Escape stands the tool down, so the block goes on unarmed.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${pdfView}.containerEl.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              pageHelpers.pdfView(__typedArg0)!.containerEl.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "Escape",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
           expect(
-            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "image" },
+              ) => {
+                return String(
+                  pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<HTMLElement>(
+                      `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                    )!
+                    .getAttribute("aria-pressed"),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: "image" },
+            ),
           ).toBe("false");
         }, 120000);
       });
 
       describe("the ink tool on the first page", () => {
-        const tool = toolButtonOf(pdfView, "ink");
-        const liveStroke = `${pdfView}.containerEl.querySelector('.zt-pdf-live-stroke')`;
-        const clientOf = clientOfFirstPage(pdfView);
-
         /**
          * Half an ellipse of thirteen PDF points on page one, from (100, 340)
          * over (150, 370) to (200, 340): the left column's body text, which
@@ -1568,13 +2428,41 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The next case presses where these strokes began, and a mark still
           // drawn there takes the press from the tool it arms.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${JSON.stringify(keys)}.every((key)=>!${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="'+key+'"]')))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string[]; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      __typedArg0.every(
+                        (key) =>
+                          !pageHelpers
+                            .pdfView(__typedArg1)!
+                            .containerEl.querySelector<SVGGraphicsElement>(
+                              `.zt-pdf-annotation-mark[data-zotero-annotation-key="${key}"]`,
+                            ),
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: keys, __typedArg1: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1565",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          await disarmTool(vaultId!, { pdfView, tool: "ink" });
+          await disarmTool(vaultId!, { attachmentPath, tool: "ink" });
         });
 
         /**
@@ -1583,16 +2471,61 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * from the Creation Toolbar.
          */
         const armInk = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "ink", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "ink", at });
 
         /**
          * Presses on the first PDF point and moves through the rest, with
          * the pointer held; the press's node is kept for the click.
          */
         const press = (points: readonly (readonly [number, number])[]) =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){${FIRE}${clientOf}const container=${pdfView}.containerEl;const [first,...rest]=${JSON.stringify(points)}.map(([x,y])=>clientOf(x,y));window.__ztInkNode=fire('pointerdown',first.x,first.y);for(const at of rest)fire('pointermove',at.x,at.y,container);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: readonly (readonly [number, number])[];
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const clientOf = (x: number, y: number) => {
+                const overlay = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!
+                  .div.querySelector<SVGSVGElement>(
+                    ".zt-pdf-annotation-overlay",
+                  );
+                const box = overlay!.getBoundingClientRect();
+                const view = overlay!.viewBox.baseVal;
+                return {
+                  x: box.left + ((x - view.x) * box.width) / view.width,
+                  y:
+                    box.top +
+                    ((view.y + view.height - y) * box.height) / view.height,
+                };
+              };
+              const container = pageHelpers.pdfView(__typedArg1)!.containerEl;
+              const [first, ...rest] = __typedArg2.map(([x, y]) =>
+                clientOf(x, y),
+              );
+              pageHelpers.scratch.__ztInkNode = fire(
+                "pointerdown",
+                first!.x,
+                first!.y,
+              );
+              for (const at of rest) fire("pointermove", at.x, at.y, container);
+              return String(true);
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: attachmentPath,
+              __typedArg2: points,
+            },
           );
 
         /**
@@ -1603,17 +2536,87 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * is a release that queued no create.
          */
         const release = ([x, y]: readonly [number, number]) =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){${FIRE}${clientOf}const at=clientOf(${x},${y});const container=${pdfView}.containerEl;fire('pointerup',at.x,at.y,container);fire('click',at.x,at.y,window.__ztInkNode);delete window.__ztInkNode;return JSON.stringify({pending:container.querySelectorAll('.zt-pdf-pending-stroke').length,live:!!${liveStroke}});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+              }: {
+                __typedArg0: string;
+                __typedArg1: number;
+                __typedArg2: number;
+                __typedArg3: string;
+                __typedArg4: string;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const clientOf = (x: number, y: number) => {
+                const overlay = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!
+                  .div.querySelector<SVGSVGElement>(
+                    ".zt-pdf-annotation-overlay",
+                  );
+                const box = overlay!.getBoundingClientRect();
+                const view = overlay!.viewBox.baseVal;
+                return {
+                  x: box.left + ((x - view.x) * box.width) / view.width,
+                  y:
+                    box.top +
+                    ((view.y + view.height - y) * box.height) / view.height,
+                };
+              };
+              const at = clientOf(__typedArg1, __typedArg2);
+              const container = pageHelpers.pdfView(__typedArg3)!.containerEl;
+              fire("pointerup", at.x, at.y, container);
+              fire("click", at.x, at.y, pageHelpers.scratch.__ztInkNode);
+              delete pageHelpers.scratch.__ztInkNode;
+              return String(
+                JSON.stringify({
+                  pending: container.querySelectorAll<SVGGraphicsElement>(
+                    ".zt-pdf-pending-stroke",
+                  ).length,
+                  live: !!pageHelpers
+                    .pdfView(__typedArg4)!
+                    .containerEl.querySelector<SVGGraphicsElement>(
+                      ".zt-pdf-live-stroke",
+                    ),
+                }),
+              );
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: x,
+              __typedArg2: y,
+              __typedArg3: attachmentPath,
+              __typedArg4: attachmentPath,
+            },
           );
         const DISCARDED = JSON.stringify({ pending: 0, live: false });
 
         /** Presses Escape on the reader, as Obsidian delivers it. */
         const escape = () =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){${pdfView}.containerEl.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              pageHelpers.pdfView(__typedArg0)!.containerEl.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "Escape",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
 
         /** The one Annotation Zotero holds beyond `before`, once it does. */
@@ -1656,11 +2659,78 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The live stroke starts at the press, and carries the moves once
           // a frame has published them.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){${clientOf}const stroke=${liveStroke};if(!stroke)return 'none';const [x,y]=stroke.getAttribute('d').split(' ').slice(1,3).map(Number);const at=new DOMPoint(x,y).matrixTransform(stroke.getScreenCTM());const press=clientOf(${CURVE[0]![0]},${CURVE[0]![1]});return JSON.stringify({start:Math.abs(at.x-press.x)<0.5&&Math.abs(at.y-press.y)<0.5,moved:stroke.getAttribute('d').split('L').length>3});})()`,
-              { expected: JSON.stringify({ start: true, moved: true }) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: number;
+                    __typedArg3: number;
+                  },
+                ) => {
+                  const clientOf = (x: number, y: number) => {
+                    const overlay = pageHelpers
+                      .pdfView(__typedArg0)!
+                      .viewer.child.getPage(1)!
+                      .div.querySelector<SVGSVGElement>(
+                        ".zt-pdf-annotation-overlay",
+                      );
+                    const box = overlay!.getBoundingClientRect();
+                    const view = overlay!.viewBox.baseVal;
+                    return {
+                      x: box.left + ((x - view.x) * box.width) / view.width,
+                      y:
+                        box.top +
+                        ((view.y + view.height - y) * box.height) / view.height,
+                    };
+                  };
+                  const stroke = pageHelpers
+                    .pdfView(__typedArg1)!
+                    .containerEl.querySelector<SVGGraphicsElement>(
+                      ".zt-pdf-live-stroke",
+                    );
+                  if (!stroke) return String("none");
+                  const [x, y] = stroke
+                    .getAttribute("d")!
+                    .split(" ")
+                    .slice(1, 3)
+                    .map(Number);
+                  const at = new DOMPoint(x, y).matrixTransform(
+                    stroke.getScreenCTM()!,
+                  );
+                  const press = clientOf(__typedArg2, __typedArg3);
+                  return String(
+                    JSON.stringify({
+                      start:
+                        Math.abs(at.x - press.x) < 0.5 &&
+                        Math.abs(at.y - press.y) < 0.5,
+                      moved: stroke.getAttribute("d")!.split("L").length > 3,
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: CURVE[0]![0],
+                  __typedArg3: CURVE[0]![1],
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1653",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: JSON.stringify({ start: true, moved: true }) }),
           ).toBe(true);
           await release(CURVE.at(-1)!);
 
@@ -1720,25 +2790,102 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The page draws its mark, the live stroke is gone, and the tool
           // stays armed for the next stroke.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `JSON.stringify({mark:!!${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(inkKey)}]'),live:!!${liveStroke},armed:${tool}.getAttribute('aria-pressed')})`,
-              {
-                expected: JSON.stringify({
-                  mark: true,
-                  live: false,
-                  armed: "true",
-                }),
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                    __typedArg4,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                    __typedArg3: string;
+                    __typedArg4: "ink";
+                  },
+                ) => {
+                  return String(
+                    JSON.stringify({
+                      mark: !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        ),
+                      live: !!pageHelpers
+                        .pdfView(__typedArg2)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          ".zt-pdf-live-stroke",
+                        ),
+                      armed: pageHelpers
+                        .pdfView(__typedArg3)!
+                        .containerEl.querySelector<HTMLElement>(
+                          `[data-zt-tool=${JSON.stringify(__typedArg4)}]`,
+                        )!
+                        .getAttribute("aria-pressed"),
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: inkKey,
+                  __typedArg2: attachmentPath,
+                  __typedArg3: attachmentPath,
+                  __typedArg4: "ink",
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1717",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: JSON.stringify({
+                mark: true,
+                live: false,
+                armed: "true",
+              }),
+            }),
           ).toBe(true);
           // The card shows the Excerpt Image, decoded.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(inkKey)}]')).find(Boolean);const img=card?.querySelector('img');return String(!!img&&img.complete&&img.naturalWidth>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map(({ view }) =>
+                      view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean);
+                  const img = card?.querySelector<HTMLElement>("img");
+                  return String(
+                    String(
+                      !!img &&
+                        (img as HTMLImageElement).complete &&
+                        (img as HTMLImageElement).naturalWidth > 0,
+                    ),
+                  );
+                },
+                { __typedArg0: inkKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1731",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
@@ -1759,16 +2906,43 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // A move-to and a line-to on the one point, which round caps draw
           // as a dot.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(/^M \\S+ \\S+ L \\S+ \\S+$/.test(${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(dotKey)}]')?.getAttribute('d')??''))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      /^M \S+ \S+ L \S+ \S+$/.test(
+                        pageHelpers
+                          .pdfView(__typedArg0)!
+                          .containerEl.querySelector<SVGGraphicsElement>(
+                            `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                          )
+                          ?.getAttribute("d") ?? "",
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: dotKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1756",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
         it("draws at the width picked from the ink seat's menu, and keeps the pick over a reopen of the PDF", async () => {
-          const inkWidth = `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['reader.ink-width']`;
           /**
            * Opens the ink seat's chevron menu and answers the first word of
            * the checked width item; with `pick`, selects the width item that
@@ -1776,26 +2950,99 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            * is DOM only with Obsidian's native menus off.
            */
           const inkMenu = (pick?: number) =>
-            obEval(
+            obRun(
               vaultId!,
-              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="ink-color"]'),'Ink color');const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : `press(items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}),${JSON.stringify(`colour ${pick}`)});`}return checked?word(checked):'none';})()`,
+              (
+                { page: pageHelpers },
+                {
+                  attachmentPath,
+                  pick,
+                }: { attachmentPath: string; pick: number | null },
+              ) => {
+                pageHelpers.press(
+                  pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      '[data-zt-tool="ink-color"]',
+                    ),
+                  "Ink color",
+                );
+                const items = [
+                  ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ];
+                const label = items.findIndex((item) =>
+                  item.classList.contains("is-label"),
+                );
+                const word = (item: HTMLElement) =>
+                  item.textContent.trim().split(/\s/)[0];
+                const checked = items
+                  .slice(label + 1)
+                  .find((item) => item.querySelector(".mod-checked"));
+                if (pick !== null)
+                  pageHelpers.press(
+                    items
+                      .slice(label + 1)
+                      .find((item) => word(item) === String(pick)),
+                    `colour ${pick}`,
+                  );
+                else
+                  window.dispatchEvent(
+                    new KeyboardEvent("keydown", {
+                      key: "Escape",
+                      bubbles: true,
+                    }),
+                  );
+                return checked ? word(checked) : "none";
+              },
+              { attachmentPath, pick: pick ?? null },
             );
           await using restore = new AsyncDisposableStack();
           const [nativeMenus, width] = (
-            await obEval(
+            await obRun(
               vaultId!,
-              `JSON.stringify([app.vault.getConfig('nativeMenus'),${inkWidth}])`,
+              async ({ app, zotlit }) => {
+                return String(
+                  JSON.stringify([
+                    app.vault.getConfig("nativeMenus"),
+                    zotlit.services.bridge.runSync(
+                      zotlit.services.settings.current,
+                    )["reader.ink-width"],
+                  ]),
+                );
+              },
+              undefined,
             ).then((reply) => JSON.parse(reply) as [boolean, number])
           ).map(String);
           restore.defer(async () => {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'reader.ink-width':${width}}));app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+              async (
+                { app, zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string | undefined; __typedArg1: boolean },
+              ) => {
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.update({
+                    "reader.ink-width": Number(
+                      __typedArg0,
+                    ) as Settings["reader.ink-width"],
+                  }),
+                );
+                app.vault.setConfig("nativeMenus", __typedArg1!);
+                return String(true);
+              },
+              { __typedArg0: width, __typedArg1: nativeMenus === "true" },
             );
           });
-          await obEval(
+          await obRun(
             vaultId!,
-            `app.vault.setConfig('nativeMenus',false);true`,
+            async ({ app }) => {
+              app.vault.setConfig("nativeMenus", false);
+              return String(true);
+            },
+            undefined,
           );
           const picked = width === "5" ? 8 : 5;
           await armInk([150, 355]);
@@ -1815,11 +3062,37 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect((await storedInk(inkKey)).position.width).toBe(picked);
           // The page draws the new mark at that width, against the seed's 2.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const mark=(key)=>${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="'+key+'"]')?.getAttribute('stroke-width');return JSON.stringify([mark(${JSON.stringify(inkKey)}),mark('4PE492KU')]);})()`,
-              { expected: JSON.stringify([String(picked), "2"]) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  const mark = (key: string) =>
+                    pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelector<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key="${key}"]`,
+                      )
+                      ?.getAttribute("stroke-width");
+                  return String(
+                    JSON.stringify([mark(__typedArg1), mark("4PE492KU")]),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: inkKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1812",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: JSON.stringify([String(picked), "2"]) }),
           ).toBe(true);
         }, 120000);
 
@@ -1829,7 +3102,33 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           await press(CURVE.slice(0, 7));
           expect(
-            await obEvalUntil(vaultId!, `String(!!${liveStroke})`, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          ".zt-pdf-live-stroke",
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1826",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: "true",
             }),
           ).toBe(true);
@@ -1838,77 +3137,392 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           expect(await annotationKeys()).toEqual(before);
           expect(
-            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "ink" },
+              ) => {
+                return String(
+                  pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<HTMLElement>(
+                      `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                    )!
+                    .getAttribute("aria-pressed"),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: "ink" },
+            ),
           ).toBe("true");
           await escape();
           expect(
-            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "ink" },
+              ) => {
+                return String(
+                  pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<HTMLElement>(
+                      `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                    )!
+                    .getAttribute("aria-pressed"),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: "ink" },
+            ),
           ).toBe("false");
         }, 120000);
 
         it("takes touch panning off the page container and shows the crosshair only while armed", async () => {
           await armInk([150, 355]);
-          const touchAction = `getComputedStyle(${pageContainerOf(pdfView)}).touchAction`;
-          // Over the text layer, whose own rule shows the text cursor.
-          const cursor = `getComputedStyle(${pdfView}.viewer.child.getPage(1).div.querySelector('.textLayer span')).cursor`;
 
-          expect(await obEval(vaultId!, touchAction)).toBe("none");
-          expect(await obEval(vaultId!, cursor)).toBe("crosshair");
+          // Over the text layer, whose own rule shows the text cursor.
+
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers.pdfView(__typedArg0)!.viewer.child.pdfViewer
+                      .pdfViewer.container,
+                  ).touchAction,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("none");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers
+                      .pdfView(__typedArg0)!
+                      .viewer.child.getPage(1)!
+                      .div.querySelector<HTMLElement>(".textLayer span")!,
+                  ).cursor,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("crosshair");
           // A held stroke captures the pointer on the reader, whose own
           // cursor then shows.
-          const readerCursor = `getComputedStyle(${pdfView}.containerEl).cursor`;
+
           await press([[150, 355]]);
-          expect(await obEval(vaultId!, readerCursor)).toBe("crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers.pdfView(__typedArg0)!.containerEl,
+                  ).cursor,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("crosshair");
           await escape();
-          expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
-          await obEval(
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers.pdfView(__typedArg0)!.containerEl,
+                  ).cursor,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).not.toBe("crosshair");
+          await obRun(
             vaultId!,
-            `(function(){${PAGE}press(${tool},'tool');return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "ink" },
+            ) => {
+              const { press } = pageHelpers;
+              press(
+                pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<HTMLElement>(
+                    `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                  ),
+                "tool",
+              );
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: "ink" },
           );
           expect(
-            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "ink" },
+              ) => {
+                return String(
+                  pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<HTMLElement>(
+                      `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                    )!
+                    .getAttribute("aria-pressed"),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: "ink" },
+            ),
           ).toBe("false");
-          expect(await obEval(vaultId!, touchAction)).not.toBe("none");
-          expect(await obEval(vaultId!, cursor)).not.toBe("crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers.pdfView(__typedArg0)!.viewer.child.pdfViewer
+                      .pdfViewer.container,
+                  ).touchAction,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).not.toBe("none");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers
+                      .pdfView(__typedArg0)!
+                      .viewer.child.getPage(1)!
+                      .div.querySelector<HTMLElement>(".textLayer span")!,
+                  ).cursor,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).not.toBe("crosshair");
         }, 120000);
 
         it("shows each armed tool's cursor over the page, and keeps it through a held capture or click", async () => {
           await armInk([150, 355]);
-          const toolOf = (id: string) =>
-            `${pdfView}.containerEl.querySelector('[data-zt-tool="${id}"]')`;
+
           // The page itself, and the text layer, whose own rule shows the
           // text cursor.
-          const cursors = `(function(){const page=${pdfView}.viewer.child.getPage(1).div;return [page,page.querySelector('.textLayer span')].map((node)=>getComputedStyle(node).cursor).join();})()`;
-          const readerCursor = `getComputedStyle(${pdfView}.containerEl).cursor`;
+
           const arm = (id: string) =>
-            obEval(
+            obRun(
               vaultId!,
-              `(function(){${PAGE}const tool=${toolOf(id)};press(tool,${JSON.stringify(id)});return tool.getAttribute('aria-pressed');})()`,
+              (
+                { page: pageHelpers },
+                { attachmentPath, id }: { attachmentPath: string; id: string },
+              ) => {
+                const tool = pageHelpers.toolButton(
+                  pageHelpers.pdfView(attachmentPath)!,
+                  id,
+                )!;
+                pageHelpers.press(tool, id);
+                return tool.getAttribute("aria-pressed");
+              },
+              { attachmentPath, id },
             );
 
-          expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const page = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!.div;
+                return String(
+                  [page, page.querySelector<HTMLElement>(".textLayer span")]
+                    .map((node) => getComputedStyle(node!).cursor)
+                    .join(),
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("crosshair,crosshair");
           expect(await arm("highlight")).toBe("true");
-          expect(await obEval(vaultId!, cursors)).toBe("text,text");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const page = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!.div;
+                return String(
+                  [page, page.querySelector<HTMLElement>(".textLayer span")]
+                    .map((node) => getComputedStyle(node!).cursor)
+                    .join(),
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("text,text");
           expect(await arm("underline")).toBe("true");
-          expect(await obEval(vaultId!, cursors)).toBe("text,text");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const page = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!.div;
+                return String(
+                  [page, page.querySelector<HTMLElement>(".textLayer span")]
+                    .map((node) => getComputedStyle(node!).cursor)
+                    .join(),
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("text,text");
           expect(await arm("image")).toBe("true");
-          expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const page = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!.div;
+                return String(
+                  [page, page.querySelector<HTMLElement>(".textLayer span")]
+                    .map((node) => getComputedStyle(node!).cursor)
+                    .join(),
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("crosshair,crosshair");
 
           // A held capture takes the pointer on the reader, whose own cursor
           // then shows. The rectangle is the proof the press began one.
           await press(CURVE.slice(0, 5));
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `String(!!${pdfView}.containerEl.querySelector('.zt-pdf-capture-rect'))`,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  String(
+                    !!pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelector<HTMLElement>(
+                        ".zt-pdf-capture-rect",
+                      ),
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath },
             ),
           ).toBe("true");
-          expect(await obEval(vaultId!, readerCursor)).toBe("crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers.pdfView(__typedArg0)!.containerEl,
+                  ).cursor,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("crosshair");
           await escape();
-          expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  getComputedStyle(
+                    pageHelpers.pdfView(__typedArg0)!.containerEl,
+                  ).cursor,
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).not.toBe("crosshair");
 
           expect(await arm("image")).toBe("false");
-          expect(await obEval(vaultId!, cursors)).not.toContain("crosshair");
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const page = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!.div;
+                return String(
+                  [page, page.querySelector<HTMLElement>(".textLayer span")]
+                    .map((node) => getComputedStyle(node!).cursor)
+                    .join(),
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).not.toContain("crosshair");
 
           // The note and text tools place at the press; a held click takes
           // the pointer on the reader too. Escape stands the tool down, which
@@ -1918,11 +3532,59 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ["text", "text"],
           ] as const) {
             expect(await arm(id)).toBe("true");
-            expect(await obEval(vaultId!, cursors)).toBe(`${cursor},${cursor}`);
+            expect(
+              await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  const page = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .viewer.child.getPage(1)!.div;
+                  return String(
+                    [page, page.querySelector<HTMLElement>(".textLayer span")]
+                      .map((node) => getComputedStyle(node!).cursor)
+                      .join(),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+              ),
+            ).toBe(`${cursor},${cursor}`);
             await press(CURVE.slice(0, 1));
-            expect(await obEval(vaultId!, readerCursor)).toBe(cursor);
+            expect(
+              await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    getComputedStyle(
+                      pageHelpers.pdfView(__typedArg0)!.containerEl,
+                    ).cursor,
+                  );
+                },
+                { __typedArg0: attachmentPath },
+              ),
+            ).toBe(cursor);
             await escape();
-            expect(await obEval(vaultId!, readerCursor)).not.toBe(cursor);
+            expect(
+              await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    getComputedStyle(
+                      pageHelpers.pdfView(__typedArg0)!.containerEl,
+                    ).cursor,
+                  );
+                },
+                { __typedArg0: attachmentPath },
+              ),
+            ).not.toBe(cursor);
           }
         }, 120000);
 
@@ -1932,18 +3594,108 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Where page one's top falls depends on the window's height, so the
           // page is scrolled until its top sits one toggle height above the
           // toggle's middle. The press below measures it in its own eval.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){const box=${tool}.getBoundingClientRect();const page=${pdfView}.viewer.child.getPage(1).div.getBoundingClientRect();${pageContainerOf(pdfView)}.scrollTop+=page.top-(box.top+box.height/2)+box.height;return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+              }: {
+                __typedArg0: string;
+                __typedArg1: "ink";
+                __typedArg2: string;
+                __typedArg3: string;
+              },
+            ) => {
+              const box = pageHelpers
+                .pdfView(__typedArg0)!
+                .containerEl.querySelector<HTMLElement>(
+                  `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                )!
+                .getBoundingClientRect();
+              const page = pageHelpers
+                .pdfView(__typedArg2)!
+                .viewer.child.getPage(1)!
+                .div.getBoundingClientRect();
+              pageHelpers.pdfView(
+                __typedArg3,
+              )!.viewer.child.pdfViewer.pdfViewer.container.scrollTop +=
+                page.top - (box.top + box.height / 2) + box.height;
+              return String(true);
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: "ink",
+              __typedArg2: attachmentPath,
+              __typedArg3: attachmentPath,
+            },
           );
 
           // The press lands on the ink toggle, inside the box of the page
           // scrolled up under it, and draws no stroke. A stroke would hold
           // the pointer, which keeps a real click from the toggle.
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${FIRE}const node=${tool};const box=node.getBoundingClientRect();const x=box.left+box.width/2,y=box.top+box.height/2;const page=${pdfView}.viewer.child.getPage(1).div.getBoundingClientRect();const container=${pdfView}.containerEl;fire('pointerdown',x,y,node);const underPage=page.top<y&&y<page.bottom;fire('pointerup',x,y,node);fire('click',x,y,node);return JSON.stringify({underPage,pending:container.querySelectorAll('.zt-pdf-pending-stroke').length,live:!!${liveStroke},armed:node.getAttribute('aria-pressed')});})()`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                  __typedArg3,
+                  __typedArg4,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: "ink";
+                  __typedArg2: string;
+                  __typedArg3: string;
+                  __typedArg4: string;
+                },
+              ) => {
+                const { fire } = pageHelpers;
+                const node = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<HTMLElement>(
+                    `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                  );
+                const box = node!.getBoundingClientRect();
+                const x = box.left + box.width / 2,
+                  y = box.top + box.height / 2;
+                const page = pageHelpers
+                  .pdfView(__typedArg2)!
+                  .viewer.child.getPage(1)!
+                  .div.getBoundingClientRect();
+                const container = pageHelpers.pdfView(__typedArg3)!.containerEl;
+                fire("pointerdown", x, y, node);
+                const underPage = page.top < y && y < page.bottom;
+                fire("pointerup", x, y, node);
+                fire("click", x, y, node);
+                return String(
+                  JSON.stringify({
+                    underPage,
+                    pending: container.querySelectorAll<SVGGraphicsElement>(
+                      ".zt-pdf-pending-stroke",
+                    ).length,
+                    live: !!pageHelpers
+                      .pdfView(__typedArg4)!
+                      .containerEl.querySelector<SVGGraphicsElement>(
+                        ".zt-pdf-live-stroke",
+                      ),
+                    armed: node!.getAttribute("aria-pressed"),
+                  }),
+                );
+              },
+              {
+                __typedArg0: attachmentPath,
+                __typedArg1: "ink",
+                __typedArg2: attachmentPath,
+                __typedArg3: attachmentPath,
+                __typedArg4: attachmentPath,
+              },
             ),
           ).toBe(
             JSON.stringify({
@@ -1961,9 +3713,63 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const before = await annotationKeys();
 
           await press(CURVE.slice(0, 5));
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${clientOf}const container=${pdfView}.containerEl;const second=clientOf(180,350);const node=fire('pointerdown',second.x,second.y,undefined,{pointerId:2});for(const [x,y] of ${JSON.stringify(CURVE.slice(5))}){const at=clientOf(x,y);fire('pointermove',at.x,at.y,container);fire('pointermove',at.x,second.y-(at.y-second.y),container,{pointerId:2});}fire('pointerup',second.x,second.y,container,{pointerId:2});return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: (readonly [number, number])[];
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const clientOf = (x: number, y: number) => {
+                const overlay = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!
+                  .div.querySelector<SVGSVGElement>(
+                    ".zt-pdf-annotation-overlay",
+                  );
+                const box = overlay!.getBoundingClientRect();
+                const view = overlay!.viewBox.baseVal;
+                return {
+                  x: box.left + ((x - view.x) * box.width) / view.width,
+                  y:
+                    box.top +
+                    ((view.y + view.height - y) * box.height) / view.height,
+                };
+              };
+              const container = pageHelpers.pdfView(__typedArg1)!.containerEl;
+              const second = clientOf(180, 350);
+              fire("pointerdown", second.x, second.y, undefined, {
+                pointerId: 2,
+              });
+              for (const [x, y] of __typedArg2) {
+                const at = clientOf(x, y);
+                fire("pointermove", at.x, at.y, container);
+                fire(
+                  "pointermove",
+                  at.x,
+                  second.y - (at.y - second.y),
+                  container,
+                  { pointerId: 2 },
+                );
+              }
+              fire("pointerup", second.x, second.y, container, {
+                pointerId: 2,
+              });
+              return String(true);
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: attachmentPath,
+              __typedArg2: CURVE.slice(5),
+            },
           );
           expect(await release(CURVE.at(-1)!)).toBe(DISCARDED);
 
@@ -1971,30 +3777,105 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         it("creates a new Annotation from a stroke pressed on the seeded ink, and leaves the seed unselected", async () => {
-          const seedMark = `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="4PE492KU"]')`;
           await armInk([220, 675]);
           const before = await annotationKeys();
 
           // Pressed halfway along the seed's own stroke, mapped to the client
           // by the overlay itself, and drawn down and to the right.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}const container=${pdfView}.containerEl;const mark=${seedMark};const at=mark.getPointAtLength(mark.getTotalLength()/2).matrixTransform(mark.getScreenCTM());window.__ztInkNode=fire('pointerdown',at.x,at.y);for(let step=1;step<=6;step++)fire('pointermove',at.x+step*6,at.y+step*4,container);fire('pointerup',at.x+36,at.y+24,container);fire('click',at.x+36,at.y+24,window.__ztInkNode);delete window.__ztInkNode;return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const { fire } = pageHelpers;
+              const container = pageHelpers.pdfView(__typedArg0)!.containerEl;
+              const mark = pageHelpers
+                .pdfView(__typedArg1)!
+                .containerEl.querySelector<SVGGraphicsElement>(
+                  '.zt-pdf-annotation-mark[data-zotero-annotation-key="4PE492KU"]',
+                );
+              const at = (mark! as SVGGeometryElement)
+                .getPointAtLength(
+                  (mark! as SVGGeometryElement).getTotalLength() / 2,
+                )
+                .matrixTransform(mark!.getScreenCTM()!);
+              pageHelpers.scratch.__ztInkNode = fire("pointerdown", at.x, at.y);
+              for (let step = 1; step <= 6; step++)
+                fire(
+                  "pointermove",
+                  at.x + step * 6,
+                  at.y + step * 4,
+                  container,
+                );
+              fire("pointerup", at.x + 36, at.y + 24, container);
+              fire(
+                "click",
+                at.x + 36,
+                at.y + 24,
+                pageHelpers.scratch.__ztInkNode,
+              );
+              delete pageHelpers.scratch.__ztInkNode;
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: attachmentPath },
           );
 
           const inkKey = await freshKey(before);
           expect((await storedInk(inkKey)).data.annotationType).toBe("ink");
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(inkKey)}]'))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: inkKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:1982",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected').length)`,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  String(
+                    pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelectorAll<SVGGraphicsElement>(
+                        ".zt-pdf-annotation-mark.is-selected",
+                      ).length,
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath },
             ),
           ).toBe("0");
         }, 120000);
@@ -2002,8 +3883,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("draws nothing and writes nothing while editing is not live", async () => {
           await armInk([150, 355]);
           const before = await annotationKeys();
-          const capability = (field: "kind" | "reason") =>
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).${field});})()`;
+
           {
             await using restoreLocalApi = new AsyncDisposableStack();
             restoreLocalApi.defer(async () => {
@@ -2011,20 +3891,95 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             });
             await setLocalApi(rdp, false);
             expect(
-              await obEvalUntil(vaultId!, capability("reason"), {
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { zotlit },
+                    { __typedArg0 }: { __typedArg0: string },
+                  ) => {
+                    const { annotationRepository: repository, bridge } =
+                      zotlit.services;
+                    await bridge.runPromise(repository.probe);
+                    return String(
+                      String(
+                        (() => {
+                          const capability = bridge.runSync(
+                            repository.capabilityFor(__typedArg0),
+                          );
+                          return "reason" in capability
+                            ? capability.reason
+                            : undefined;
+                        })(),
+                      ),
+                    );
+                  },
+                  { __typedArg0: attachment.key },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:2008",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({
                 expected: "local-api-disabled",
               }),
             ).toBe(true);
 
             await press(CURVE);
-            expect(await obEval(vaultId!, `String(!!${liveStroke})`)).toBe(
-              "false",
-            );
+            expect(
+              await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          ".zt-pdf-live-stroke",
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+              ),
+            ).toBe("false");
             expect(await release(CURVE.at(-1)!)).toBe(DISCARDED);
           }
 
           expect(
-            await obEvalUntil(vaultId!, capability("kind"), {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  await bridge.runPromise(repository.probe);
+                  return String(
+                    String(
+                      bridge.runSync(repository.capabilityFor(__typedArg0))
+                        .kind,
+                    ),
+                  );
+                },
+                { __typedArg0: attachment.key },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2021",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: "writable",
             }),
           ).toBe(true);
@@ -2044,28 +3999,76 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           });
           await setLocalApi(rdp, false);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              capabilityOf(attachment.key, "reason"),
-              {
-                expected: "local-api-disabled",
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  await bridge.runPromise(repository.probe);
+                  return String(
+                    String(
+                      (() => {
+                        const capability = bridge.runSync(
+                          repository.capabilityFor(__typedArg0),
+                        );
+                        return "reason" in capability
+                          ? capability.reason
+                          : undefined;
+                      })(),
+                    ),
+                  );
+                },
+                { __typedArg0: attachment.key },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2041",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: "local-api-disabled",
+            }),
           ).toBe(true);
 
           await gesture();
           await settledGesture(vaultId!, attachmentPath);
         }
         expect(
-          await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                return String(
+                  String(
+                    bridge.runSync(repository.capabilityFor(__typedArg0)).kind,
+                  ),
+                );
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:2054",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({
             expected: "writable",
           }),
         ).toBe(true);
       };
 
       describe("the note tool on the first page", () => {
-        const tool = toolButtonOf(pdfView, "note");
-        const clientOf = clientOfFirstPage(pdfView);
         /**
          * A PDF point on page one clear of every seeded mark and of the image
          * the image block may leave: the left column's body text.
@@ -2086,7 +4089,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         afterEach(async () => {
           await eraseAnnotations(rdp, await madeSince(held));
-          await disarmTool(vaultId!, { pdfView, tool: "note" });
+          await disarmTool(vaultId!, { attachmentPath, tool: "note" });
         });
 
         /**
@@ -2095,13 +4098,46 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * from the Creation Toolbar.
          */
         const armNote = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "note", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "note", at });
 
         /** A click at a PDF point on page one, as the browser delivers it. */
         const click = ([x, y]: readonly [number, number]) =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}${clientOf}const at=clientOf(${x},${y});tap(at.x,at.y);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: string;
+                __typedArg1: number;
+                __typedArg2: number;
+              },
+            ) => {
+              const { tap } = pageHelpers;
+              const clientOf = (x: number, y: number) => {
+                const overlay = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!
+                  .div.querySelector<SVGSVGElement>(
+                    ".zt-pdf-annotation-overlay",
+                  );
+                const box = overlay!.getBoundingClientRect();
+                const view = overlay!.viewBox.baseVal;
+                return {
+                  x: box.left + ((x - view.x) * box.width) / view.width,
+                  y:
+                    box.top +
+                    ((view.y + view.height - y) * box.height) / view.height,
+                };
+              };
+              const at = clientOf(__typedArg1, __typedArg2);
+              tap(at.x, at.y);
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: x, __typedArg2: y },
           );
 
         it("places a note centred on a click, opens its comment, and stands the tool down", async () => {
@@ -2158,18 +4194,69 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The page draws the note glyph, selected; the Mark Popup is open
           // with its comment sheet focused; the tool stood down.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(noteKey)}]');const focused=document.activeElement;return JSON.stringify({glyph:!!mark?.classList.contains('zt-pdf-annotation-note-icon'),selected:!!mark?.classList.contains('is-selected'),sheet:!!focused?.closest('.popover')&&!!focused?.closest('.cm-content'),armed:${tool}.getAttribute('aria-pressed')});})()`,
-              {
-                expected: JSON.stringify({
-                  glyph: true,
-                  selected: true,
-                  sheet: true,
-                  armed: "false",
-                }),
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                    __typedArg3: "note";
+                  },
+                ) => {
+                  const mark = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    );
+                  const focused = document.activeElement;
+                  return String(
+                    JSON.stringify({
+                      glyph: !!mark?.classList.contains(
+                        "zt-pdf-annotation-note-icon",
+                      ),
+                      selected: !!mark?.classList.contains("is-selected"),
+                      sheet:
+                        !!focused?.closest(".popover") &&
+                        !!focused?.closest(".cm-content"),
+                      armed: pageHelpers
+                        .pdfView(__typedArg2)!
+                        .containerEl.querySelector<HTMLElement>(
+                          `[data-zt-tool=${JSON.stringify(__typedArg3)}]`,
+                        )!
+                        .getAttribute("aria-pressed"),
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: noteKey,
+                  __typedArg2: attachmentPath,
+                  __typedArg3: "note",
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2155",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: JSON.stringify({
+                glyph: true,
+                selected: true,
+                sheet: true,
+                armed: "false",
+              }),
+            }),
           ).toBe(true);
         }, 120000);
 
@@ -2181,11 +4268,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await click(SEED_NOTE);
 
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))`,
-              { expected: JSON.stringify(["C94NJNYG"]) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    JSON.stringify(
+                      [
+                        ...pageHelpers
+                          .pdfView(__typedArg0)!
+                          .containerEl.querySelectorAll<SVGGraphicsElement>(
+                            ".zt-pdf-annotation-mark.is-selected",
+                          ),
+                      ].map((mark) => mark.dataset.zoteroAnnotationKey),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2178",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: JSON.stringify(["C94NJNYG"]) }),
           ).toBe(true);
           expect(await annotationKeys()).toEqual(before);
         }, 120000);
@@ -2203,10 +4314,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       });
 
       describe("the text tool on the first page", () => {
-        const tool = toolButtonOf(pdfView, "text");
-        const clientOf = clientOfFirstPage(pdfView);
-        /** The Text Draft's textarea, as an eval expression. */
-        const draftArea = `${pdfView}.containerEl.querySelector('.zt-pdf-text-draft')`;
         /**
          * A PDF point on page one clear of every seeded mark and of the image
          * the image block may leave: the left column's body text.
@@ -2228,15 +4335,42 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         afterEach(async () => {
           const erased = await madeSince(held);
           await eraseAnnotations(rdp, erased);
-          await disarmTool(vaultId!, { pdfView, tool: "text" });
+          await disarmTool(vaultId!, { attachmentPath, tool: "text" });
           // The next click on the same spot finds no mark once the page has
           // let go of the erased ones.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${JSON.stringify(erased)}.some((key)=>${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="'+key+'"]')))`,
-              { expected: "false" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string[]; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      __typedArg0.some((key) =>
+                        pageHelpers
+                          .pdfView(__typedArg1)
+                          ?.containerEl.querySelector<SVGGraphicsElement>(
+                            `.zt-pdf-annotation-mark[data-zotero-annotation-key="${key}"]`,
+                          ),
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: erased, __typedArg1: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2229",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "false" }),
           ).toBe(true);
         });
 
@@ -2246,7 +4380,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * from the Creation Toolbar.
          */
         const armText = (at: readonly [number, number]) =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "text", at });
+          armToolOnFirstPage(vaultId!, { attachmentPath, tool: "text", at });
 
         /**
          * A click at a PDF point on page one, as the browser delivers it,
@@ -2255,28 +4389,129 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          */
         const click = async ([x, y]: readonly [number, number]) =>
           JSON.parse(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${FIRE}${TAP}${clientOf}const at=clientOf(${x},${y});tap(at.x,at.y);const area=${draftArea};return JSON.stringify({draft:!!area,focused:!!area&&document.activeElement===area,armed:${tool}.getAttribute('aria-pressed')});})()`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                  __typedArg3,
+                  __typedArg4,
+                  __typedArg5,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: number;
+                  __typedArg2: number;
+                  __typedArg3: string;
+                  __typedArg4: string;
+                  __typedArg5: "text";
+                },
+              ) => {
+                const { tap } = pageHelpers;
+                const clientOf = (x: number, y: number) => {
+                  const overlay = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .viewer.child.getPage(1)!
+                    .div.querySelector<SVGSVGElement>(
+                      ".zt-pdf-annotation-overlay",
+                    );
+                  const box = overlay!.getBoundingClientRect();
+                  const view = overlay!.viewBox.baseVal;
+                  return {
+                    x: box.left + ((x - view.x) * box.width) / view.width,
+                    y:
+                      box.top +
+                      ((view.y + view.height - y) * box.height) / view.height,
+                  };
+                };
+                const at = clientOf(__typedArg1, __typedArg2);
+                tap(at.x, at.y);
+                const area = pageHelpers
+                  .pdfView(__typedArg3)!
+                  .containerEl.querySelector<HTMLElement>(".zt-pdf-text-draft");
+                return String(
+                  JSON.stringify({
+                    draft: !!area,
+                    focused: !!area && document.activeElement === area,
+                    armed: pageHelpers
+                      .pdfView(__typedArg4)!
+                      .containerEl.querySelector<HTMLElement>(
+                        `[data-zt-tool=${JSON.stringify(__typedArg5)}]`,
+                      )!
+                      .getAttribute("aria-pressed"),
+                  }),
+                );
+              },
+              {
+                __typedArg0: attachmentPath,
+                __typedArg1: x,
+                __typedArg2: y,
+                __typedArg3: attachmentPath,
+                __typedArg4: attachmentPath,
+                __typedArg5: "text",
+              },
             ),
           ) as { draft: boolean; focused: boolean; armed: string };
 
-        /** Declares `type()` in an eval: `text` typed into the Text Draft as an input does. */
-        const TYPE = (text: string) =>
-          `const type=()=>{const area=${draftArea};area.value=${JSON.stringify(text)};area.dispatchEvent(new InputEvent('input',{bubbles:true}));return area;};`;
-
         /** Types `text` into the Text Draft, and leaves the draft open. */
         const typeText = (text: string) =>
-          obEval(vaultId!, `(function(){${TYPE(text)}type();return true;})()`);
+          obRun(
+            vaultId!,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const type = () => {
+                const area = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<HTMLElement>(".zt-pdf-text-draft");
+                (area! as HTMLInputElement).value = __typedArg1;
+                area!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+                return area;
+              };
+              type();
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: text },
+          );
 
         /**
          * Types `text` into the Text Draft as an input does, then presses
          * Escape in it.
          */
         const typeAndEscape = (text: string) =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){${TYPE(text)}type().dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const type = () => {
+                const area = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<HTMLElement>(".zt-pdf-text-draft");
+                (area! as HTMLInputElement).value = __typedArg1;
+                area!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+                return area;
+              };
+              type()!.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "Escape",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: text },
           );
 
         /**
@@ -2288,6 +4523,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             item: ATTACHMENT_ITEM,
             before,
           });
+
           const { annotationType, annotationComment } = await storedAnnotation(
             api,
             serverID,
@@ -2365,16 +4601,58 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // The page draws it on the two lines typed, the draft gone.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]');return JSON.stringify({lines:mark?[...mark.children].map((line)=>line.textContent):null,draft:!!${draftArea}});})()`,
-              {
-                expected: JSON.stringify({
-                  lines: ["Two lines", "of text"],
-                  draft: false,
-                }),
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                  },
+                ) => {
+                  const mark = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    );
+                  return String(
+                    JSON.stringify({
+                      lines: mark
+                        ? [...mark.children].map((line) => line.textContent)
+                        : null,
+                      draft: !!pageHelpers
+                        .pdfView(__typedArg2)!
+                        .containerEl.querySelector<HTMLElement>(
+                          ".zt-pdf-text-draft",
+                        ),
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: textKey,
+                  __typedArg2: attachmentPath,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2362",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: JSON.stringify({
+                lines: ["Two lines", "of text"],
+                draft: false,
+              }),
+            }),
           ).toBe(true);
         }, 120000);
 
@@ -2388,9 +4666,58 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // press leaves the draft saving.
           const [x, y] = CLEAR;
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${FIRE}${clientOf}const at=clientOf(${x},${y - 60});const node=fire('pointerdown',at.x,at.y);const saving=!!${draftArea}?.readOnly;fire('pointerup',at.x,at.y,node);fire('click',at.x,at.y,node);return String(saving);})()`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                  __typedArg3,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: 150;
+                  __typedArg2: number;
+                  __typedArg3: string;
+                },
+              ) => {
+                const { fire } = pageHelpers;
+                const clientOf = (x: number, y: number) => {
+                  const overlay = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .viewer.child.getPage(1)!
+                    .div.querySelector<SVGSVGElement>(
+                      ".zt-pdf-annotation-overlay",
+                    );
+                  const box = overlay!.getBoundingClientRect();
+                  const view = overlay!.viewBox.baseVal;
+                  return {
+                    x: box.left + ((x - view.x) * box.width) / view.width,
+                    y:
+                      box.top +
+                      ((view.y + view.height - y) * box.height) / view.height,
+                  };
+                };
+                const at = clientOf(__typedArg1, __typedArg2);
+                const node = fire("pointerdown", at.x, at.y);
+                const saving = !!(
+                  pageHelpers
+                    .pdfView(__typedArg3)!
+                    .containerEl.querySelector<HTMLElement>(
+                      ".zt-pdf-text-draft",
+                    ) as HTMLTextAreaElement
+                )?.readOnly;
+                fire("pointerup", at.x, at.y, node);
+                fire("click", at.x, at.y, node);
+                return String(String(saving));
+              },
+              {
+                __typedArg0: attachmentPath,
+                __typedArg1: x,
+                __typedArg2: y - 60,
+                __typedArg3: attachmentPath,
+              },
             ),
           ).toBe("true");
 
@@ -2408,9 +4735,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await typeText("Blurred");
           // The blur as the window delivers it when the focus leaves: a
           // window without the system focus fires none for `blur()`.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${draftArea}.dispatchEvent(new FocusEvent('blur'));return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              pageHelpers
+                .pdfView(__typedArg0)!
+                .containerEl.querySelector<HTMLElement>(".zt-pdf-text-draft")!
+                .dispatchEvent(new FocusEvent("blur"));
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
 
           expect(await freshComment(before)).toMatchObject({
@@ -2422,16 +4759,34 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("creates the draft a tool change finishes", async () => {
           await using restore = new AsyncDisposableStack();
           restore.defer(async () => {
-            await disarmTool(vaultId!, { pdfView, tool: "note" });
+            await disarmTool(vaultId!, { attachmentPath, tool: "note" });
           });
           await armText(CLEAR);
           const before = await annotationKeys();
 
           expect((await click(CLEAR)).draft).toBe(true);
           await typeText("Tool changed");
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${PAGE}press(${toolButtonOf(pdfView, "note")},'Note tool');return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "note" },
+            ) => {
+              const { press } = pageHelpers;
+              press(
+                pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<HTMLElement>(
+                    `[data-zt-tool=${JSON.stringify(__typedArg1)}]`,
+                  ),
+                "Note tool",
+              );
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: "note" },
           );
 
           expect(await freshComment(before)).toMatchObject({
@@ -2466,9 +4821,58 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // The saved mark is selected under its popup, and the focus the
           // textarea held stays in the reader.
-          const reader = `(function(){const container=${pdfView}.containerEl;const mark=container.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]');return JSON.stringify({selected:!!mark?.classList.contains('is-selected'),popup:!!document.querySelector('.zt-pdf-mark-popup'),draft:!!${draftArea},focus:container.contains(document.activeElement)});})()`;
+
           expect(
-            await obEvalUntil(vaultId!, reader, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                  },
+                ) => {
+                  const container =
+                    pageHelpers.pdfView(__typedArg0)!.containerEl;
+                  const mark = container.querySelector<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                  );
+                  return String(
+                    JSON.stringify({
+                      selected: !!mark?.classList.contains("is-selected"),
+                      popup:
+                        !!document.querySelector<HTMLElement>(
+                          ".zt-pdf-mark-popup",
+                        ),
+                      draft: !!pageHelpers
+                        .pdfView(__typedArg2)!
+                        .containerEl.querySelector<HTMLElement>(
+                          ".zt-pdf-text-draft",
+                        ),
+                      focus: container.contains(document.activeElement),
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: textKey,
+                  __typedArg2: attachmentPath,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2465",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: JSON.stringify({
                 selected: true,
                 popup: true,
@@ -2479,12 +4883,71 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
 
           // Escape where the focus is, as the keyboard delivers it.
-          await obEval(
+          await obRun(
             vaultId!,
-            "(function(){document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()",
+            async (_context) => {
+              document.activeElement!.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "Escape",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+              return String(true);
+            },
+            undefined,
           );
           expect(
-            await obEvalUntil(vaultId!, reader, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                  },
+                ) => {
+                  const container =
+                    pageHelpers.pdfView(__typedArg0)!.containerEl;
+                  const mark = container.querySelector<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                  );
+                  return String(
+                    JSON.stringify({
+                      selected: !!mark?.classList.contains("is-selected"),
+                      popup:
+                        !!document.querySelector<HTMLElement>(
+                          ".zt-pdf-mark-popup",
+                        ),
+                      draft: !!pageHelpers
+                        .pdfView(__typedArg2)!
+                        .containerEl.querySelector<HTMLElement>(
+                          ".zt-pdf-text-draft",
+                        ),
+                      focus: container.contains(document.activeElement),
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: textKey,
+                  __typedArg2: attachmentPath,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2481",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: JSON.stringify({
                 selected: false,
                 popup: false,
@@ -2503,9 +4966,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect((await click(CLEAR)).draft).toBe(true);
           await typeAndEscape("");
 
-          expect(await obEval(vaultId!, `String(!!${draftArea})`)).toBe(
-            "false",
-          );
+          expect(
+            await obRun(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  String(
+                    !!pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelector<HTMLElement>(
+                        ".zt-pdf-text-draft",
+                      ),
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath },
+            ),
+          ).toBe("false");
           expect(await annotationKeys()).toEqual(before);
         }, 120000);
 
@@ -2519,11 +4999,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect((await click(SEED_TEXT)).draft).toBe(false);
 
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))`,
-              { expected: JSON.stringify(["HRK7BG32"]) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    JSON.stringify(
+                      [
+                        ...pageHelpers
+                          .pdfView(__typedArg0)!
+                          .containerEl.querySelectorAll<SVGGraphicsElement>(
+                            ".zt-pdf-annotation-mark.is-selected",
+                          ),
+                      ].map((mark) => mark.dataset.zoteroAnnotationKey),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2516",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: JSON.stringify(["HRK7BG32"]) }),
           ).toBe(true);
           expect(await annotationKeys()).toEqual(before);
         }, 120000);
@@ -2540,7 +5044,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         it("types at the font size picked from the text seat's menu, and keeps the pick over a reopen of the PDF", async () => {
-          const fontSize = `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['reader.text-font-size']`;
           /**
            * Opens the text seat's chevron menu and answers the first word of
            * the checked font-size item; with `pick`, selects the font-size
@@ -2548,9 +5051,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            * Obsidian's native menus off.
            */
           const textMenu = (pick?: number) =>
-            obEval(
+            obRun(
               vaultId!,
-              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]'),'Text color');const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "" : `press(items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}),${JSON.stringify(`colour ${pick}`)});`}return checked?word(checked):'none';})()`,
+              (
+                { page: pageHelpers },
+                {
+                  attachmentPath,
+                  pick,
+                }: { attachmentPath: string; pick: number | null },
+              ) => {
+                pageHelpers.press(
+                  pageHelpers
+                    .pdfView(attachmentPath)!
+                    .containerEl.querySelector<HTMLElement>(
+                      '[data-zt-tool="text-color"]',
+                    ),
+                  "Text color",
+                );
+                const items = [
+                  ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ];
+                const label = items.findIndex((item) =>
+                  item.classList.contains("is-label"),
+                );
+                const word = (item: HTMLElement) =>
+                  item.textContent.trim().split(/\s/)[0];
+                const checked = items
+                  .slice(label + 1)
+                  .find((item) => item.querySelector(".mod-checked"));
+                if (pick !== null)
+                  pageHelpers.press(
+                    items
+                      .slice(label + 1)
+                      .find((item) => word(item) === String(pick)),
+                    `colour ${pick}`,
+                  );
+                return checked ? word(checked) : "none";
+              },
+              { attachmentPath, pick: pick ?? null },
             );
           /**
            * Closes the menu with Escape, outside the reader so the reader's
@@ -2558,27 +5096,81 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            * has settled, and a click while it stands lands on it.
            */
           const closeMenu = () =>
-            obEvalUntil(
-              vaultId!,
-              "(function(){if(document.querySelector('.menu'))document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return String(document.querySelectorAll('.menu').length);})()",
-              { expected: "0" },
-            );
+            ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (_context) => {
+                  if (document.querySelector<HTMLElement>(".menu"))
+                    document.body.dispatchEvent(
+                      new KeyboardEvent("keydown", {
+                        key: "Escape",
+                        bubbles: true,
+                        cancelable: true,
+                      }),
+                    );
+                  return String(
+                    String(
+                      document.querySelectorAll<HTMLElement>(".menu").length,
+                    ),
+                  );
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2555",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "0" });
           await using restore = new AsyncDisposableStack();
           const [nativeMenus, size] = (
-            await obEval(
+            await obRun(
               vaultId!,
-              `JSON.stringify([app.vault.getConfig('nativeMenus'),${fontSize}])`,
+              async ({ app, zotlit }) => {
+                return String(
+                  JSON.stringify([
+                    app.vault.getConfig("nativeMenus"),
+                    zotlit.services.bridge.runSync(
+                      zotlit.services.settings.current,
+                    )["reader.text-font-size"],
+                  ]),
+                );
+              },
+              undefined,
             ).then((reply) => JSON.parse(reply) as [boolean, number])
           ).map(String);
           restore.defer(async () => {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'reader.text-font-size':${size}}));app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+              async (
+                { app, zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string | undefined; __typedArg1: boolean },
+              ) => {
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.update({
+                    "reader.text-font-size": Number(
+                      __typedArg0,
+                    ) as Settings["reader.text-font-size"],
+                  }),
+                );
+                app.vault.setConfig("nativeMenus", __typedArg1!);
+                return String(true);
+              },
+              { __typedArg0: size, __typedArg1: nativeMenus === "true" },
             );
           });
-          await obEval(
+          await obRun(
             vaultId!,
-            `app.vault.setConfig('nativeMenus',false);true`,
+            async ({ app }) => {
+              app.vault.setConfig("nativeMenus", false);
+              return String(true);
+            },
+            undefined,
           );
           const picked = size === "24" ? 18 : 24;
           await armText(CLEAR);
@@ -2608,22 +5200,88 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         it("creates text in the colour picked from the text seat's menu, and draws it that colour darkened five percent", async () => {
-          const setting = (key: string) =>
-            `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)[${JSON.stringify(key)}]`;
           await using restore = new AsyncDisposableStack();
-          const [nativeMenus, colors, recent] = await obEval(
+          const [nativeMenus, colors, recent] = await obRun(
             vaultId!,
-            `JSON.stringify([app.vault.getConfig('nativeMenus'),${setting("reader.annotation-colors")}??null,${setting("reader.recent-colors")}??null])`,
-          ).then((reply) => JSON.parse(reply) as [boolean, unknown, unknown]);
+            async (
+              { app, zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: {
+                __typedArg0: "reader.annotation-colors";
+                __typedArg1: "reader.recent-colors";
+              },
+            ) => {
+              return String(
+                JSON.stringify([
+                  app.vault.getConfig("nativeMenus"),
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )[__typedArg0] ?? null,
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )[__typedArg1] ?? null,
+                ]),
+              );
+            },
+            {
+              __typedArg0: "reader.annotation-colors",
+              __typedArg1: "reader.recent-colors",
+            },
+          ).then(
+            (reply) =>
+              JSON.parse(reply) as [
+                boolean,
+                Settings["reader.annotation-colors"] | null,
+                Settings["reader.recent-colors"] | null,
+              ],
+          );
           restore.defer(async () => {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'reader.annotation-colors':${JSON.stringify(colors)}??undefined,'reader.recent-colors':${JSON.stringify(recent)}??undefined}));app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+              async (
+                { app, zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg0: {
+                    highlight?: string | undefined;
+                    note?: string | undefined;
+                    image?: string | undefined;
+                    ink?: string | undefined;
+                    underline?: string | undefined;
+                    text?: string | undefined;
+                  } | null;
+                  __typedArg1: string[] | null;
+                  __typedArg2: boolean;
+                },
+              ) => {
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.update({
+                    "reader.annotation-colors": __typedArg0 ?? undefined,
+                    "reader.recent-colors": __typedArg1 ?? undefined,
+                  }),
+                );
+                app.vault.setConfig("nativeMenus", __typedArg2);
+                return String(true);
+              },
+              {
+                __typedArg0: colors,
+                __typedArg1: recent,
+                __typedArg2: nativeMenus,
+              },
             );
           });
-          await obEval(
+          await obRun(
             vaultId!,
-            `app.vault.setConfig('nativeMenus',false);true`,
+            async ({ app }) => {
+              app.vault.setConfig("nativeMenus", false);
+              return String(true);
+            },
+            undefined,
           );
           // Zotero's green swatch, which no tool starts on.
           const green = "#5fb236";
@@ -2632,17 +5290,58 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The swatch is picked from the text seat's chevron menu, which
           // closes on the pick.
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${PAGE}press(${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]'),'Text color');const item=[...document.querySelectorAll('.menu .menu-item')].find((one)=>one.querySelector('[style*=${JSON.stringify(green)}]'));press(item,'Green');return String(!!item);})()`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "#5fb236" },
+              ) => {
+                const { press } = pageHelpers;
+                press(
+                  pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<HTMLElement>(
+                      '[data-zt-tool="text-color"]',
+                    ),
+                  "Text color",
+                );
+                const item = [
+                  ...document.querySelectorAll<HTMLElement>(".menu .menu-item"),
+                ].find((one) =>
+                  one.querySelector<HTMLElement>(
+                    `[style*=${JSON.stringify(__typedArg1)}]`,
+                  ),
+                );
+                press(item, "Green");
+                return String(String(!!item));
+              },
+              { __typedArg0: attachmentPath, __typedArg1: green },
             ),
           ).toBe("true");
           expect(
-            await obEvalUntil(
-              vaultId!,
-              "String(document.querySelectorAll('.menu').length)",
-              { expected: "0" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (_context) => {
+                  return String(
+                    String(
+                      document.querySelectorAll<HTMLElement>(".menu").length,
+                    ),
+                  );
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2635",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "0" }),
           ).toBe(true);
           const before = await annotationKeys();
 
@@ -2659,20 +5358,42 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Zotero's `darkenHex(green, 5)`: each channel times 0.95, rounded —
           // 0x5f → 0x5a, 0xb2 → 0xa9, 0x36 → 0x33.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]')?.getAttribute('fill'))`,
-              { expected: "#5aa933" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.getAttribute("fill"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: textKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2656",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "#5aa933" }),
           ).toBe(true);
         }, 120000);
       });
 
       describe("free text on the first page", () => {
-        /** A text mark's lines, as the page draws them. */
-        const linesOf = (key: string) =>
-          `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]');if(!mark)return 'none';return JSON.stringify([...mark.children].map((line)=>[line.textContent,Number(line.getAttribute('y')).toFixed(3),Number(line.getComputedTextLength().toFixed(3))]));})()`;
-
         /**
          * What the Attachment held when this group began. Each test ends by
          * erasing everything beyond it, a create that landed after the test
@@ -2695,7 +5416,39 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           let lines: [string, string, number][] = [];
           expect(
             await waitFor(async () => {
-              const answer = await obEval(vaultId!, linesOf("HRK7BG32"));
+              const answer = await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "HRK7BG32" },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const mark =
+                    view.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    );
+                  if (!mark) return String("none");
+                  return String(
+                    JSON.stringify(
+                      [...mark.children].map((line) => [
+                        line.textContent,
+                        Number(line.getAttribute("y")).toFixed(3),
+                        Number(
+                          (line as SVGTextContentElement)
+                            .getComputedTextLength()
+                            .toFixed(3),
+                        ),
+                      ]),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: "HRK7BG32" },
+              );
               if (!answer.startsWith("[")) return false;
               lines = JSON.parse(answer) as typeof lines;
               // A page not yet laid out measures its text as nothing.
@@ -2713,9 +5466,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("draws a two-line text Annotation from Zotero as two lines", async () => {
           await raiseWindow(vaultId!);
           const before = await heldAnnotationKeys(rdp, ATTACHMENT_ITEM);
-          const apiKey = await obJson<string>(
+          const apiKey = await obRun(
             vaultId!,
-            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+            async ({ app }) => {
+              return JSON.parse(
+                app.secretStorage.getSecret(
+                  "zotlit-zotero-write-authorization",
+                )!,
+              ).key;
+            },
+            undefined,
           );
           // Written straight through the Local API, so the page draws a text
           // Annotation Zotero holds, not one ZotLit shaped. The box is 40
@@ -2750,16 +5510,54 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             item: ATTACHMENT_ITEM,
             before,
           });
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)}));return true;})()`,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+              await zotlit.services.bridge.runPromise(
+                zotlit.services.annotationRepository.refresh(__typedArg0),
+              );
+              return String(true);
+            },
+            { __typedArg0: attachment.key },
           );
 
           // Each line starts 1.2 font sizes, 16.8 points, below the last.
           let lines: [string, string, number][] = [];
           expect(
             await waitFor(async () => {
-              const answer = await obEval(vaultId!, linesOf(textKey));
+              const answer = await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const mark =
+                    view.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    );
+                  if (!mark) return String("none");
+                  return String(
+                    JSON.stringify(
+                      [...mark.children].map((line) => [
+                        line.textContent,
+                        Number(line.getAttribute("y")).toFixed(3),
+                        Number(
+                          (line as SVGTextContentElement)
+                            .getComputedTextLength()
+                            .toFixed(3),
+                        ),
+                      ]),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: textKey },
+              );
               if (!answer.startsWith("[")) return false;
               lines = JSON.parse(answer) as typeof lines;
               return lines.length > 0;
@@ -2787,15 +5585,54 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // points, which moves the Sort Index's distance from the page top.
         const edited = {
           pageIndex: 1,
-          rects: [[48.75, 395.509, 610, 703.723]],
+          rects: [[48.75, 395.509, 610, 703.723] as const],
         };
-        const outcome = await obJson<{
-          sortIndex: string | null;
-          state: { kind: string };
-          announced: string[];
-        }>(
+        const outcome = await obRun(
           vaultId!,
-          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.bridge.runSync(s.pdfAnnotationEditor.bindings).find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.bridge.subscribe(s.annotationRepository.excerptPixelsChanged,({record})=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.bridge.runPromise(s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer'));return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+          async (
+            { zotlit },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: string;
+              __typedArg1: {
+                pageIndex: number;
+                rects: (readonly [48.75, 395.509, 610, 703.723])[];
+              };
+              __typedArg2: "FDRFQ7C2";
+            },
+          ) => {
+            const s = zotlit.services;
+            const binding = s.bridge
+              .runSync(s.pdfAnnotationEditor.bindings)
+              .find((b) => b.filePath === __typedArg0);
+            const announced: string[] = [];
+            const off = s.bridge.subscribe(
+              s.annotationRepository.excerptPixelsChanged,
+              ({ record }) => announced.push(record.key),
+            );
+            try {
+              const position = __typedArg1;
+              const sortIndex = await binding!.sortIndex(position);
+              const state = await s.bridge.runPromise(
+                s.annotationRepository.patchGeometry(
+                  __typedArg2,
+                  { position, sortIndex: sortIndex! },
+                  "pointer",
+                ),
+              );
+              return { sortIndex, state: { kind: state.kind }, announced };
+            } finally {
+              off();
+            }
+          },
+          {
+            __typedArg0: attachmentPath,
+            __typedArg1: edited,
+            __typedArg2: imageKey,
+          },
         );
         expect(outcome.state.kind).toBe("idle");
         expect(outcome.announced).toEqual([imageKey]);
@@ -2822,24 +5659,59 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         // The Obsidian overlay draws the mark in PDF points: 610 - 48.75 wide,
         // 703.723 - 395.509 high.
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){const leaf=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(attachmentPath)});const viewer=leaf?.view.viewer.child?.pdfViewer?.pdfViewer;if(viewer)viewer.currentPageNumber=2;return true;})()`,
+          async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+            const leaf = app.workspace
+              .getLeavesOfType("pdf")
+              .find(
+                ({ view }) => (view as FileView).file?.path === __typedArg0,
+              );
+            const viewer = (leaf?.view as PagePdfView).viewer.child?.pdfViewer
+              ?.pdfViewer;
+            if (viewer) viewer.currentPageNumber = 2;
+            return String(true);
+          },
+          { __typedArg0: attachmentPath },
         );
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){const mark=app.workspace.getLeavesOfType('pdf').map(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]')).find(Boolean);return mark?[mark.getAttribute('width'),Number(mark.getAttribute('height')).toFixed(3)].join(' '):'none';})()`,
-            { expected: "561.25 308.214" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: "FDRFQ7C2" }) => {
+                const mark = app.workspace
+                  .getLeavesOfType("pdf")
+                  .map(({ view }) =>
+                    view.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    ),
+                  )
+                  .find(Boolean);
+                return String(
+                  mark
+                    ? [
+                        mark.getAttribute("width"),
+                        Number(mark.getAttribute("height")).toFixed(3),
+                      ].join(" ")
+                    : "none",
+                );
+              },
+              { __typedArg0: imageKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:2824",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "561.25 308.214" }),
         ).toBe(true);
       }, 120000);
 
       describe("Mark Handles on the seeded image", () => {
         const imageKey = "FDRFQ7C2";
         const image = seededMark(imageKey, { image: true });
-        const imageMark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]')`;
-        const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(imageKey)}]')).find(Boolean)`;
 
         /**
          * Brings page two on screen and selects the image by a click on its
@@ -2855,22 +5727,100 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }> {
           await image.settled();
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=2;const rect=${imageMark}?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "FDRFQ7C2";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 2;
+                  const rect = pageHelpers
+                    .pdfView(__typedArg1)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    )
+                    ?.getBoundingClientRect();
+                  return String(String(!!rect && rect.width > 0));
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: imageKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2852",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}const mark=${imageMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;tap(x,y);return 'clicked';})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "FDRFQ7C2" },
+            ) => {
+              const { tap } = pageHelpers;
+              const mark = pageHelpers
+                .pdfView(__typedArg0)
+                ?.containerEl.querySelector<SVGGraphicsElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                );
+              if (mark!.classList.contains("is-selected"))
+                return String("selected");
+              const rect = mark!.getBoundingClientRect();
+              const x = rect.left + rect.width / 2,
+                y = rect.top + rect.height / 2;
+              tap(x, y);
+              return String("clicked");
+            },
+            { __typedArg0: attachmentPath, __typedArg1: imageKey },
           );
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-handle').length)`,
-              { expected: "8" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelectorAll<HTMLElement>(
+                          ".zt-pdf-annotation-handle",
+                        ).length,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2863",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "8" }),
           ).toBe(true);
           // Measured in its own eval: the one that acts reads the nodes as
           // they stood before its own events re-drew them. The page jump can
@@ -2878,11 +5828,57 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The handle is brought on screen, and counts only once it is the
           // node under its own centre: that is what proves it takes the
           // pointer.
-          const measure = `(function(){const view=${pdfView};const node=view.containerEl.querySelector('.zt-pdf-annotation-handle[data-zt-grip="br"]');node.scrollIntoView({block:'nearest',inline:'nearest'});const handle=node.getBoundingClientRect();const x=handle.left+handle.width/2,y=handle.top+handle.height/2;const overlay=${imageMark}.ownerSVGElement;return JSON.stringify({x,y,perX:overlay.getBoundingClientRect().width/overlay.viewBox.baseVal.width,perY:overlay.getBoundingClientRect().height/overlay.viewBox.baseVal.height,onTop:document.elementFromPoint(x,y)===node});})()`;
+
           let last = "";
           expect(
             await waitFor(async () => {
-              const next = await obEval(vaultId!, measure);
+              const next = await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "FDRFQ7C2";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  const node = view.containerEl.querySelector<HTMLElement>(
+                    '.zt-pdf-annotation-handle[data-zt-grip="br"]',
+                  );
+                  node!.scrollIntoView({ block: "nearest", inline: "nearest" });
+                  const handle = node!.getBoundingClientRect();
+                  const x = handle.left + handle.width / 2,
+                    y = handle.top + handle.height / 2;
+                  const overlay = pageHelpers
+                    .pdfView(__typedArg1)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    )!.ownerSVGElement;
+                  return String(
+                    JSON.stringify({
+                      x,
+                      y,
+                      perX:
+                        overlay!.getBoundingClientRect().width /
+                        overlay!.viewBox.baseVal.width,
+                      perY:
+                        overlay!.getBoundingClientRect().height /
+                        overlay!.viewBox.baseVal.height,
+                      onTop: document.elementFromPoint(x, y) === node,
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: imageKey,
+                },
+              );
               const still =
                 next === last && (JSON.parse(next) as { onTop: boolean }).onTop;
               last = next;
@@ -2903,9 +5899,32 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * Edit left, with its prompt and its "Apply again" button.
          */
         const conflictShown = async () =>
-          (await obEval(
+          (await obRun(
             vaultId!,
-            `(function(){const panel=(${card})?.querySelector('.zt-annot-conflict');if(!panel||panel.getBoundingClientRect().width===0)return 'none';return String(panel.textContent.includes("The annotation's position changed in Zotero.")&&[...panel.querySelectorAll('button')].some((node)=>node.textContent==='Apply again'));})()`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: "FDRFQ7C2" }) => {
+              const panel = app.workspace
+                .getLeavesOfType("zotero-annotation-view")
+                .map(({ view }) =>
+                  view.containerEl.querySelector<HTMLElement>(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  ),
+                )
+                .find(Boolean)
+                ?.querySelector<HTMLElement>(".zt-annot-conflict");
+              if (!panel || panel.getBoundingClientRect().width === 0)
+                return String("none");
+              return String(
+                String(
+                  panel.textContent.includes(
+                    "The annotation's position changed in Zotero.",
+                  ) &&
+                    [...panel.querySelectorAll<HTMLElement>("button")].some(
+                      (node) => node.textContent === "Apply again",
+                    ),
+                ),
+              );
+            },
+            { __typedArg0: imageKey },
           )) === "true";
 
         beforeAll(async () => {
@@ -2925,41 +5944,118 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // its placeholder, and a click on it opens the editor; the row has
           // no comment verb.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const popup=document.querySelector('.zt-pdf-mark-popup');return String(popup?.querySelector('.zt-annot-comment-field')?.textContent===${JSON.stringify(m.annot_view_card_comment_placeholder())}&&!popup.querySelector('[data-zt-verb="comment"]'));})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (_context, { __typedArg0 }: { __typedArg0: string }) => {
+                  const popup =
+                    document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
+                  return String(
+                    String(
+                      popup?.querySelector<HTMLElement>(
+                        ".zt-annot-comment-field",
+                      )?.textContent === __typedArg0 &&
+                        !popup.querySelector<HTMLElement>(
+                          '[data-zt-verb="comment"]',
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: m.annot_view_card_comment_placeholder() },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2922",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           // A press collapses the page's selection before its click, and a
           // click over selected text only reads.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');return true;})()`,
+            async ({ page: pageHelpers }) => {
+              const { press } = pageHelpers;
+              getSelection()!.removeAllRanges();
+              press(
+                document.querySelector<HTMLElement>(
+                  ".zt-pdf-mark-popup .zt-annot-comment-field",
+                ),
+                "comment field",
+              );
+              return String(true);
+            },
+            undefined,
           );
           expect(
-            await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(String(!!pageHelpers.popupEditor()));
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2935",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: "true",
             }),
           ).toBe(true);
-          const key = await obJson<string>(
+          const key = await obRun(
             vaultId!,
-            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+            async ({ app }) => {
+              return JSON.parse(
+                app.secretStorage.getSecret(
+                  "zotlit-zotero-write-authorization",
+                )!,
+              ).key;
+            },
+            undefined,
           );
           try {
             await expectEditorKeepsSelections(vaultId!);
           } finally {
             // A press outside closes the editor, which saves what it holds;
             // the seed carries no comment, so it is put back either way.
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);return true;})()`,
+              async ({ page: pageHelpers }) => {
+                const { fire } = pageHelpers;
+                const box = document
+                  .querySelector<HTMLElement>(".workspace-ribbon")!
+                  .getBoundingClientRect();
+                fire("pointerdown", box.left + 2, box.top + 2);
+                return String(true);
+              },
+              undefined,
             );
-            const closed = await obEvalUntil(
-              vaultId!,
-              `String(!!${POPUP_EDITOR})`,
-              { expected: "false" },
-            );
+            const closed = await ((options: {
+              expected: string;
+              tries?: number;
+            }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(String(!!pageHelpers.popupEditor()));
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:2952",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "false" });
             await image.settled();
             await restoreAnnotationComment(api, {
               serverID,
@@ -2981,18 +6077,85 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             x: handle.x + 20 * handle.perX,
             y: handle.y + 30 * handle.perY,
           };
-          const pressed = await obJson<{ grip: string; popup: boolean }>(
+          const pressed = await obRun(
             vaultId!,
-            `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',${(handle.x + to.x) / 2},${(handle.y + to.y) / 2},container);fire('pointermove',${to.x},${to.y},container);return JSON.stringify({grip:node.dataset.ztGrip,popup:!!document.querySelector('.zt-pdf-mark-popup')});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+                __typedArg5,
+                __typedArg6,
+              }: {
+                __typedArg0: number;
+                __typedArg1: number;
+                __typedArg2: string;
+                __typedArg3: number;
+                __typedArg4: number;
+                __typedArg5: number;
+                __typedArg6: number;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const node = fire("pointerdown", __typedArg0, __typedArg1);
+              const container = pageHelpers.pdfView(__typedArg2)!.containerEl;
+              fire("pointermove", __typedArg3, __typedArg4, container);
+              fire("pointermove", __typedArg5, __typedArg6, container);
+              return {
+                grip: (node as HTMLElement | SVGElement).dataset.ztGrip,
+                popup:
+                  !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
+              };
+            },
+            {
+              __typedArg0: handle.x,
+              __typedArg1: handle.y,
+              __typedArg2: attachmentPath,
+              __typedArg3: (handle.x + to.x) / 2,
+              __typedArg4: (handle.y + to.y) / 2,
+              __typedArg5: to.x,
+              __typedArg6: to.y,
+            },
           );
           // The press landed on the drawn handle, and the popup stood aside.
           expect(pressed).toEqual({ grip: "br", popup: false });
           // Nothing is written while the pointer is down.
           expect((await image.stored()).version).toBe(version);
 
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}const container=${pdfView}.containerEl;fire('pointerup',${to.x},${to.y},container);fire('click',${to.x},${to.y},container);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+              }: {
+                __typedArg0: string;
+                __typedArg1: number;
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: number;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const container = pageHelpers.pdfView(__typedArg0)!.containerEl;
+              fire("pointerup", __typedArg1, __typedArg2, container);
+              fire("click", __typedArg3, __typedArg4, container);
+              return String(true);
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: to.x,
+              __typedArg2: to.y,
+              __typedArg3: to.x,
+              __typedArg4: to.y,
+            },
           );
 
           // Zotero holds the predicted rect, read straight off the Local API.
@@ -3044,11 +6207,52 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The overlay draws the saved rect, 590 - 48.75 points wide, and the
           // Excerpt Image was told its pixels changed.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(Math.abs(Number(${imageMark}?.getAttribute('width'))-${(position.rects[0]![2]! - position.rects[0]![0]!).toFixed(3)})<0.001)`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: "FDRFQ7C2";
+                    __typedArg2: string;
+                  },
+                ) => {
+                  return String(
+                    String(
+                      Math.abs(
+                        Number(
+                          pageHelpers
+                            .pdfView(__typedArg0)
+                            ?.containerEl.querySelector<SVGGraphicsElement>(
+                              `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                            )
+                            ?.getAttribute("width"),
+                        ) - Number(__typedArg2),
+                      ) < 0.001,
+                    ),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: imageKey,
+                  __typedArg2: (
+                    position.rects[0]![2]! - position.rects[0]![0]!
+                  ).toFixed(3),
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3041",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           await expect
             .poll(() => pixels.keys(), { timeout: 10_000 })
@@ -3104,11 +6308,37 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
           // The reader landed on the Annotation the step changed.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${imageMark}?.classList.contains('is-selected'))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "FDRFQ7C2" },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)
+                        ?.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.classList.contains("is-selected"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: imageKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3101",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
 
           expect(await redoKey()).toEqual({ handled: true });
@@ -3130,9 +6360,48 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const handle = await selectImage();
           const { version } = await image.stored();
 
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});fire('pointerup',${handle.x},${handle.y},${pdfView}.containerEl);fire('click',${handle.x},${handle.y},node);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+                __typedArg5,
+                __typedArg6,
+              }: {
+                __typedArg0: number;
+                __typedArg1: number;
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: string;
+                __typedArg5: number;
+                __typedArg6: number;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const node = fire("pointerdown", __typedArg0, __typedArg1);
+              fire(
+                "pointerup",
+                __typedArg2,
+                __typedArg3,
+                pageHelpers.pdfView(__typedArg4)!.containerEl,
+              );
+              fire("click", __typedArg5, __typedArg6, node);
+              return String(true);
+            },
+            {
+              __typedArg0: handle.x,
+              __typedArg1: handle.y,
+              __typedArg2: handle.x,
+              __typedArg3: handle.y,
+              __typedArg4: attachmentPath,
+              __typedArg5: handle.x,
+              __typedArg6: handle.y,
+            },
           );
 
           // Read once the Reader has held one version across two polls, so a
@@ -3146,9 +6415,27 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
           // The mark stays selected, with its handles.
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `String(${imageMark}.classList.contains('is-selected'))`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: "FDRFQ7C2" },
+              ) => {
+                return String(
+                  String(
+                    pageHelpers
+                      .pdfView(__typedArg0)
+                      ?.containerEl.querySelector<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                      )!
+                      .classList.contains("is-selected"),
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: imageKey },
             ),
           ).toBe("true");
         }, 120000);
@@ -3160,27 +6447,99 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           restoreLocalApi.defer(async () => {
             await setLocalApi(rdp, true);
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).kind);})()`,
-                { expected: "writable" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { zotlit },
+                    { __typedArg0 }: { __typedArg0: string },
+                  ) => {
+                    const { annotationRepository: repository, bridge } =
+                      zotlit.services;
+                    await bridge.runPromise(repository.probe);
+                    return String(
+                      String(
+                        bridge.runSync(repository.capabilityFor(__typedArg0))
+                          .kind,
+                      ),
+                    );
+                  },
+                  { __typedArg0: attachment.key },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:3157",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "writable" }),
             ).toBe(true);
           });
           await setLocalApi(rdp, false);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).reason);})()`,
-              { expected: "local-api-disabled" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  await bridge.runPromise(repository.probe);
+                  return String(
+                    String(
+                      (() => {
+                        const capability = bridge.runSync(
+                          repository.capabilityFor(__typedArg0),
+                        );
+                        return "reason" in capability
+                          ? capability.reason
+                          : undefined;
+                      })(),
+                    ),
+                  );
+                },
+                { __typedArg0: attachment.key },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3166",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "local-api-disabled" }),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-handle').length)`,
-              { expected: "0" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelectorAll<HTMLElement>(
+                          ".zt-pdf-annotation-handle",
+                        ).length,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3173",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "0" }),
           ).toBe(true);
 
           // A drag from where the bottom-right handle stood is an ordinary
@@ -3189,9 +6548,75 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             x: before.x + 20 * before.perX,
             y: before.y + 30 * before.perY,
           };
-          const outcome = await obJson<{ width: string; body: boolean }>(
+          const outcome = await obRun(
             vaultId!,
-            `(function(){${FIRE}const width=${imageMark}.getAttribute('width');const node=fire('pointerdown',${before.x},${before.y});const container=${pdfView}.containerEl;fire('pointermove',${to.x},${to.y},container);fire('pointerup',${to.x},${to.y},container);return JSON.stringify({width:String(Number(${imageMark}.getAttribute('width'))===Number(width)),body:node.dataset?.ztGrip==='body'});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+                __typedArg5,
+                __typedArg6,
+                __typedArg7,
+                __typedArg8,
+                __typedArg9,
+                __typedArg10,
+              }: {
+                __typedArg0: string;
+                __typedArg1: "FDRFQ7C2";
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: string;
+                __typedArg5: number;
+                __typedArg6: number;
+                __typedArg7: number;
+                __typedArg8: number;
+                __typedArg9: string;
+                __typedArg10: "FDRFQ7C2";
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const width = pageHelpers
+                .pdfView(__typedArg0)
+                ?.containerEl.querySelector<SVGGraphicsElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                )!
+                .getAttribute("width");
+              const node = fire("pointerdown", __typedArg2, __typedArg3);
+              const container = pageHelpers.pdfView(__typedArg4)!.containerEl;
+              fire("pointermove", __typedArg5, __typedArg6, container);
+              fire("pointerup", __typedArg7, __typedArg8, container);
+              return {
+                width: String(
+                  Number(
+                    pageHelpers
+                      .pdfView(__typedArg9)
+                      ?.containerEl.querySelector<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg10)}]`,
+                      )!
+                      .getAttribute("width"),
+                  ) === Number(width),
+                ),
+                body:
+                  (node as HTMLElement | SVGElement).dataset?.ztGrip === "body",
+              };
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: imageKey,
+              __typedArg2: before.x,
+              __typedArg3: before.y,
+              __typedArg4: attachmentPath,
+              __typedArg5: to.x,
+              __typedArg6: to.y,
+              __typedArg7: to.x,
+              __typedArg8: to.y,
+              __typedArg9: attachmentPath,
+              __typedArg10: imageKey,
+            },
           );
           expect(outcome).toEqual({ width: "true", body: false });
 
@@ -3232,11 +6657,41 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(Math.abs(Number(${imageMark}?.getAttribute('width'))-526.25)<0.001)`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "FDRFQ7C2" },
+                ) => {
+                  return String(
+                    String(
+                      Math.abs(
+                        Number(
+                          pageHelpers
+                            .pdfView(__typedArg0)
+                            ?.containerEl.querySelector<SVGGraphicsElement>(
+                              `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                            )
+                            ?.getAttribute("width"),
+                        ) - 526.25,
+                      ) < 0.001,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: imageKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3229",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
@@ -3272,9 +6727,25 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // A conflict left standing by a failed assertion is ended before
           // the seed goes back.
           teardown.defer(async () => {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;if(bridge.runSync(repository.mutationFor(${JSON.stringify(imageKey)})).kind==='conflict')bridge.runSync(repository.discardConflict(${JSON.stringify(imageKey)}));return true;})()`,
+              async (
+                { zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: "FDRFQ7C2"; __typedArg1: "FDRFQ7C2" },
+              ) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                if (
+                  bridge.runSync(repository.mutationFor(__typedArg0)).kind ===
+                  "conflict"
+                )
+                  bridge.runSync(repository.discardConflict(__typedArg1));
+                return String(true);
+              },
+              { __typedArg0: imageKey, __typedArg1: imageKey },
             );
           });
           const handle = await selectImage();
@@ -3282,9 +6753,43 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // is to move out from 570 to 590.
           const to = { x: handle.x + 20 * handle.perX, y: handle.y };
           const attempted = [48.75, 395.509, 590, 743.723];
-          const pressed = await obJson<{ grip: string }>(
+          const pressed = await obRun(
             vaultId!,
-            `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});fire('pointermove',${to.x},${to.y},${pdfView}.containerEl);return JSON.stringify({grip:node.dataset.ztGrip});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+              }: {
+                __typedArg0: number;
+                __typedArg1: number;
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: string;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const node = fire("pointerdown", __typedArg0, __typedArg1);
+              fire(
+                "pointermove",
+                __typedArg2,
+                __typedArg3,
+                pageHelpers.pdfView(__typedArg4)!.containerEl,
+              );
+              return {
+                grip: (node as HTMLElement | SVGElement).dataset.ztGrip,
+              };
+            },
+            {
+              __typedArg0: handle.x,
+              __typedArg1: handle.y,
+              __typedArg2: to.x,
+              __typedArg3: to.y,
+              __typedArg4: attachmentPath,
+            },
           );
           expect(pressed).toEqual({ grip: "br" });
 
@@ -3301,9 +6806,37 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await item.saveTx();
             return true;
           })()`);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}const container=${pdfView}.containerEl;fire('pointerup',${to.x},${to.y},container);fire('click',${to.x},${to.y},container);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+              }: {
+                __typedArg0: string;
+                __typedArg1: number;
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: number;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const container = pageHelpers.pdfView(__typedArg0)!.containerEl;
+              fire("pointerup", __typedArg1, __typedArg2, container);
+              fire("click", __typedArg3, __typedArg4, container);
+              return String(true);
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: to.x,
+              __typedArg2: to.y,
+              __typedArg3: to.x,
+              __typedArg4: to.y,
+            },
           );
           // Read after the release, so no read of ours stands between
           // Zotero's change and the write that meets it.
@@ -3316,7 +6849,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             rectIs((await image.stored()).data.annotationPosition, fresh),
           ).toBe(true);
-          const applyAgain = `(function(){${PAGE}const button=[...(${card})?.querySelectorAll('.zt-annot-conflict button')??[]].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';press(button,'Apply again');return 'applied';})()`;
 
           // Zotero's open Reader saves the image it renders after a position
           // change; a retry sent before that save meets a newer version once
@@ -3326,7 +6858,38 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           for (let attempt = 0; attempt < 3 && !landed; attempt++) {
             await image.settled();
             const before = (await image.stored()).version;
-            expect(await obEval(vaultId!, applyAgain)).toBe("applied");
+            expect(
+              await obRun(
+                vaultId!,
+                async (
+                  { app, page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: "FDRFQ7C2" },
+                ) => {
+                  const { press } = pageHelpers;
+                  const button = [
+                    ...(app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .map(({ view }) =>
+                        view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      )
+                      .find(Boolean)
+                      ?.querySelectorAll<HTMLElement>(
+                        ".zt-annot-conflict button",
+                      ) ?? []),
+                  ].find(
+                    (node) =>
+                      node.getBoundingClientRect().width > 0 &&
+                      node.textContent === "Apply again",
+                  );
+                  if (!button) return String("no button");
+                  press(button, "Apply again");
+                  return String("applied");
+                },
+                { __typedArg0: imageKey },
+              ),
+            ).toBe("applied");
             // Settled once Zotero holds the attempted rect at a newer
             // version, or once a newer version refused it and the card asks
             // again.
@@ -3352,33 +6915,136 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       it("keeps the create popup's comment sheet open through a selection and a menu pick inside it", async () => {
         await raiseWindow(vaultId!);
-        const layer = `${pdfView}?.containerEl.querySelector('.page[data-page-number="1"] .textLayer')`;
+
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return String((${layer})?.textContent.length>0);})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                const view = pageHelpers.pdfView(__typedArg0)!;
+                if (!view) return String("no view");
+                view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                return String(
+                  String(
+                    pageHelpers
+                      .pdfView(__typedArg1)
+                      ?.containerEl.querySelector<HTMLElement>(
+                        '.page[data-page-number="1"] .textLayer',
+                      )?.textContent.length! > 0,
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: attachmentPath },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:3351",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         // A drag on the page as the browser leaves it: the press, the text it
         // selected, then the release that settles it into the create popup.
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){${FIRE}const walker=document.createTreeWalker(${layer},NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())&&!(node.data.length>12&&node.parentElement.getBoundingClientRect().height>0));const range=document.createRange();range.setStart(node,0);range.setEnd(node,8);const box=range.getBoundingClientRect();const x=box.left+2,y=box.top+box.height/2;const pressed=fire('pointerdown',x,y);getSelection().removeAllRanges();getSelection().addRange(range);fire('pointerup',x,y,pressed);return true;})()`,
+          async (
+            { page: pageHelpers },
+            { __typedArg0 }: { __typedArg0: string },
+          ) => {
+            const { fire } = pageHelpers;
+            const walker = document.createTreeWalker(
+              pageHelpers
+                .pdfView(__typedArg0)
+                ?.containerEl.querySelector<HTMLElement>(
+                  '.page[data-page-number="1"] .textLayer',
+                )!,
+              NodeFilter.SHOW_TEXT,
+            );
+            let node;
+            while (
+              (node = walker.nextNode()) &&
+              !(
+                (node as Text).data.length > 12 &&
+                node.parentElement!.getBoundingClientRect().height > 0
+              )
+            );
+            const range = document.createRange();
+            range.setStart(node!, 0);
+            range.setEnd(node!, 8);
+            const box = range.getBoundingClientRect();
+            const x = box.left + 2,
+              y = box.top + box.height / 2;
+            const pressed = fire("pointerdown", x, y);
+            getSelection()!.removeAllRanges();
+            getSelection()!.addRange(range);
+            fire("pointerup", x, y, pressed);
+            return String(true);
+          },
+          { __typedArg0: attachmentPath },
         );
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(!!document.querySelector('.zt-pdf-mark-popup [data-zt-verb="highlight"]'))`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (_context) => {
+                return String(
+                  String(
+                    !!document.querySelector<HTMLElement>(
+                      '.zt-pdf-mark-popup [data-zt-verb="highlight"]',
+                    ),
+                  ),
+                );
+              },
+              undefined,
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:3364",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
-        await obEval(
+        await obRun(
           vaultId!,
-          `(()=>{${PAGE}press(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]'),'Comment');return true;})()`,
+          async ({ page: pageHelpers }) => {
+            const { press } = pageHelpers;
+            press(
+              document.querySelector<HTMLElement>(
+                '.zt-pdf-mark-popup [data-zt-verb="comment"]',
+              ),
+              "Comment",
+            );
+            return String(true);
+          },
+          undefined,
         );
         expect(
-          await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ page: pageHelpers }) => {
+                return String(String(!!pageHelpers.popupEditor()));
+              },
+              undefined,
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:3375",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({
             expected: "true",
           }),
         ).toBe(true);
@@ -3387,24 +7053,46 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         } finally {
           // A press outside drops the waiting selection and its draft; nothing
           // reaches Zotero.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);return true;})()`,
+            async ({ page: pageHelpers }) => {
+              const { fire } = pageHelpers;
+              const box = document
+                .querySelector<HTMLElement>(".workspace-ribbon")!
+                .getBoundingClientRect();
+              fire("pointerdown", box.left + 2, box.top + 2);
+              return String(true);
+            },
+            undefined,
           );
         }
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(!!document.querySelector('.zt-pdf-mark-popup'))`,
-            { expected: "false" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (_context) => {
+                return String(
+                  String(
+                    !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
+                  ),
+                );
+              },
+              undefined,
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:3390",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "false" }),
         ).toBe(true);
       });
 
       describe("Mark Handles on the seeded ink", () => {
         const inkKey = "4PE492KU";
         const ink = seededMark(inkKey, { image: true });
-        const inkMark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(inkKey)}]')`;
 
         interface InkPosition {
           pageIndex: number;
@@ -3427,31 +7115,171 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }> {
           await ink.settled();
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=${inkMark};if(!mark)return 'no mark';mark.scrollIntoView({block:'center',inline:'center'});return String(mark.getBoundingClientRect().width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "4PE492KU";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const mark = pageHelpers
+                    .pdfView(__typedArg1)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    );
+                  if (!mark) return String("no mark");
+                  mark.scrollIntoView({ block: "center", inline: "center" });
+                  return String(String(mark.getBoundingClientRect().width > 0));
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: inkKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3424",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}const mark=${inkMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;tap(x,y);return 'clicked';})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "4PE492KU" },
+            ) => {
+              const { tap } = pageHelpers;
+              const mark = pageHelpers
+                .pdfView(__typedArg0)
+                ?.containerEl.querySelector<SVGGraphicsElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                );
+              if (mark!.classList.contains("is-selected"))
+                return String("selected");
+              const rect = mark!.getBoundingClientRect();
+              const x = rect.left + rect.width / 2,
+                y = rect.top + rect.height / 2;
+              tap(x, y);
+              return String("clicked");
+            },
+            { __typedArg0: attachmentPath, __typedArg1: inkKey },
           );
           // Ink scales from its four corners only.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-handle').length)`,
-              { expected: "4" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelectorAll<HTMLElement>(
+                          ".zt-pdf-annotation-handle",
+                        ).length,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3436",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "4" }),
           ).toBe(true);
           // Measured in its own eval, and read until it stands still: the
           // page jump can still be scrolling.
-          const measure = `(function(){const view=${pdfView};const handle=view.containerEl.querySelector('.zt-pdf-annotation-handle[data-zt-grip="br"]').getBoundingClientRect();const box=${inkMark}.getBoundingClientRect();const overlay=${inkMark}.ownerSVGElement;return JSON.stringify({body:{x:box.left+box.width/2,y:box.top+box.height/2},corner:{x:handle.left+handle.width/2,y:handle.top+handle.height/2},perX:overlay.getBoundingClientRect().width/overlay.viewBox.baseVal.width,perY:overlay.getBoundingClientRect().height/overlay.viewBox.baseVal.height});})()`;
+
           let last = "";
           expect(
             await waitFor(async () => {
-              const next = await obEval(vaultId!, measure);
+              const next = await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                    __typedArg4,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "4PE492KU";
+                    __typedArg3: string;
+                    __typedArg4: "4PE492KU";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  const handle = view.containerEl
+                    .querySelector<HTMLElement>(
+                      '.zt-pdf-annotation-handle[data-zt-grip="br"]',
+                    )!
+                    .getBoundingClientRect();
+                  const box = pageHelpers
+                    .pdfView(__typedArg1)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    )!
+                    .getBoundingClientRect();
+                  const overlay = pageHelpers
+                    .pdfView(__typedArg3)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg4)}]`,
+                    )!.ownerSVGElement;
+                  return String(
+                    JSON.stringify({
+                      body: {
+                        x: box!.left + box!.width / 2,
+                        y: box!.top + box!.height / 2,
+                      },
+                      corner: {
+                        x: handle.left + handle.width / 2,
+                        y: handle.top + handle.height / 2,
+                      },
+                      perX:
+                        overlay!.getBoundingClientRect().width /
+                        overlay!.viewBox.baseVal.width,
+                      perY:
+                        overlay!.getBoundingClientRect().height /
+                        overlay!.viewBox.baseVal.height,
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: inkKey,
+                  __typedArg3: attachmentPath,
+                  __typedArg4: inkKey,
+                },
+              );
               const still = next === last;
               last = next;
               return still;
@@ -3552,50 +7380,235 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The overlay draws the saved stroke, whose page units are PDF
           // points counted from the page's left edge.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${inkMark}?.getAttribute('d').startsWith('M ${position.paths[0]![0]} '))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: "4PE492KU";
+                    __typedArg2: number | undefined;
+                  },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)
+                        ?.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.getAttribute("d")!
+                        .startsWith(`M ${__typedArg2} `),
+                    ),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: inkKey,
+                  __typedArg2: position.paths[0]![0],
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3549",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
         it("takes a click on the stroke and none inside the empty middle of the ink", async () => {
           await ink.settled();
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=${inkMark};if(!mark)return 'no mark';mark.scrollIntoView({block:'center',inline:'center'});return String(mark.getBoundingClientRect().width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "4PE492KU";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const mark = pageHelpers
+                    .pdfView(__typedArg1)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    );
+                  if (!mark) return String("no mark");
+                  mark.scrollIntoView({ block: "center", inline: "center" });
+                  return String(String(mark.getBoundingClientRect().width > 0));
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: inkKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3560",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          const selected = `String(${inkMark}?.classList.contains('is-selected'))`;
 
           // Halfway along the drawn stroke, mapped from page units to the
           // client by the overlay itself.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}const mark=${inkMark};const at=mark.getPointAtLength(mark.getTotalLength()/2).matrixTransform(mark.getScreenCTM());tap(at.x,at.y);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "4PE492KU" },
+            ) => {
+              const { tap } = pageHelpers;
+              const mark = pageHelpers
+                .pdfView(__typedArg0)
+                ?.containerEl.querySelector<SVGGraphicsElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                );
+              const at = (mark! as SVGGeometryElement)
+                .getPointAtLength(
+                  (mark! as SVGGeometryElement).getTotalLength() / 2,
+                )
+                .matrixTransform(mark!.getScreenCTM()!);
+              tap(at.x, at.y);
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: inkKey },
           );
           expect(
-            await obEvalUntil(vaultId!, selected, { expected: "true" }),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "4PE492KU" },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)
+                        ?.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.classList.contains("is-selected"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: inkKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3575",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
 
           // The seed is a tick: the top-left of its box, a fifth of the way
           // in and a tenth of the way down, lies inside the box and some
           // fifteen points from either arm. No other mark covers it, so the
           // click is a click-away and deselects.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}const box=${inkMark}.getBoundingClientRect();const x=box.left+box.width*0.2,y=box.top+box.height*0.1;tap(x,y);return true;})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "4PE492KU" },
+            ) => {
+              const { tap } = pageHelpers;
+              const box = pageHelpers
+                .pdfView(__typedArg0)
+                ?.containerEl.querySelector<SVGGraphicsElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                )!
+                .getBoundingClientRect();
+              const x = box!.left + box!.width * 0.2,
+                y = box!.top + box!.height * 0.1;
+              tap(x, y);
+              return String(true);
+            },
+            { __typedArg0: attachmentPath, __typedArg1: inkKey },
           );
           expect(
-            await obEvalUntil(vaultId!, selected, { expected: "false" }),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "4PE492KU" },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)
+                        ?.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.classList.contains("is-selected"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: inkKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3587",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "false" }),
           ).toBe(true);
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected').length)`,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  String(
+                    pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelectorAll<SVGGraphicsElement>(
+                        ".zt-pdf-annotation-mark.is-selected",
+                      ).length,
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath },
             ),
           ).toBe("0");
         }, 120000);
@@ -3622,11 +7635,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ]);
           expect(position.width).toBeCloseTo(seedPosition.width * scale, 2);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `${inkMark}?.getAttribute('stroke-width')`,
-              { expected: String(position.width) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "4PE492KU" },
+                ) => {
+                  return String(
+                    pageHelpers
+                      .pdfView(__typedArg0)
+                      ?.containerEl.querySelector<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                      )
+                      ?.getAttribute("stroke-width"),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: inkKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3619",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: String(position.width) }),
           ).toBe(true);
         }, 120000);
       });
@@ -3636,9 +7673,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const textKey = "HRK7BG32";
         const note = seededMark(noteKey, { image: false });
         const text = seededMark(textKey, { image: false });
-        const markOf = (key: string) =>
-          `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
-        const clientOf = clientOfFirstPage(pdfView);
 
         interface TextPosition {
           pageIndex: number;
@@ -3681,37 +7715,252 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const [cx, cy] = [(left + right) / 2, (bottom + top) / 2];
           await mark.settled();
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=${markOf(key)};if(!mark)return 'no mark';mark.scrollIntoView({block:'center',inline:'center'});return String(mark.getBoundingClientRect().width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const mark = pageHelpers
+                    .pdfView(__typedArg1)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    );
+                  if (!mark) return String("no mark");
+                  mark.scrollIntoView({ block: "center", inline: "center" });
+                  return String(String(mark.getBoundingClientRect().width > 0));
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: key,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3678",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}${clientOf}if(${markOf(key)}.classList.contains('is-selected'))return 'selected';const at=clientOf(${cx},${cy});tap(at.x,at.y);return 'clicked';})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: string;
+                __typedArg3: number;
+                __typedArg4: number;
+              },
+            ) => {
+              const { tap } = pageHelpers;
+              const clientOf = (x: number, y: number) => {
+                const overlay = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .viewer.child.getPage(1)!
+                  .div.querySelector<SVGSVGElement>(
+                    ".zt-pdf-annotation-overlay",
+                  );
+                const box = overlay!.getBoundingClientRect();
+                const view = overlay!.viewBox.baseVal;
+                return {
+                  x: box.left + ((x - view.x) * box.width) / view.width,
+                  y:
+                    box.top +
+                    ((view.y + view.height - y) * box.height) / view.height,
+                };
+              };
+              if (
+                pageHelpers
+                  .pdfView(__typedArg1)
+                  ?.containerEl.querySelector<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                  )!
+                  .classList.contains("is-selected")
+              )
+                return String("selected");
+              const at = clientOf(__typedArg3, __typedArg4);
+              tap(at.x, at.y);
+              return String("clicked");
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: attachmentPath,
+              __typedArg2: key,
+              __typedArg3: cx,
+              __typedArg4: cy,
+            },
           );
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${markOf(key)}.classList.contains('is-selected'))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)
+                        ?.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )!
+                        .classList.contains("is-selected"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: key },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3689",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-handle').length)`,
-              { expected: String(handles) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelectorAll<HTMLElement>(
+                          ".zt-pdf-annotation-handle",
+                        ).length,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3696",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: String(handles) }),
           ).toBe(true);
           // Measured in its own eval, and read until it stands still: the
           // page jump can still be scrolling.
-          const measure = `(function(){${clientOf}const view=${pdfView};const handles=Object.fromEntries([...view.containerEl.querySelectorAll('.zt-pdf-annotation-handle')].map((node)=>{const rect=node.getBoundingClientRect();return [node.dataset.ztGrip,{x:rect.left+rect.width/2,y:rect.top+rect.height/2}];}));const overlay=${markOf(key)}.ownerSVGElement;return JSON.stringify({body:clientOf(${cx},${cy}),handles,perX:overlay.getBoundingClientRect().width/overlay.viewBox.baseVal.width,perY:overlay.getBoundingClientRect().height/overlay.viewBox.baseVal.height});})()`;
+
           let last = "";
           expect(
             await waitFor(async () => {
-              const next = await obEval(vaultId!, measure);
+              const next = await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                    __typedArg4,
+                    __typedArg5,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                    __typedArg3: string;
+                    __typedArg4: number;
+                    __typedArg5: number;
+                  },
+                ) => {
+                  const clientOf = (x: number, y: number) => {
+                    const overlay = pageHelpers
+                      .pdfView(__typedArg0)!
+                      .viewer.child.getPage(1)!
+                      .div.querySelector<SVGSVGElement>(
+                        ".zt-pdf-annotation-overlay",
+                      );
+                    const box = overlay!.getBoundingClientRect();
+                    const view = overlay!.viewBox.baseVal;
+                    return {
+                      x: box.left + ((x - view.x) * box.width) / view.width,
+                      y:
+                        box.top +
+                        ((view.y + view.height - y) * box.height) / view.height,
+                    };
+                  };
+                  const view = pageHelpers.pdfView(__typedArg1)!;
+                  const handles = Object.fromEntries(
+                    [
+                      ...view.containerEl.querySelectorAll<HTMLElement>(
+                        ".zt-pdf-annotation-handle",
+                      ),
+                    ].map((node) => {
+                      const rect = node.getBoundingClientRect();
+                      return [
+                        (node as HTMLElement | SVGElement).dataset.ztGrip,
+                        {
+                          x: rect.left + rect.width / 2,
+                          y: rect.top + rect.height / 2,
+                        },
+                      ];
+                    }),
+                  );
+                  const overlay = pageHelpers
+                    .pdfView(__typedArg2)
+                    ?.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg3)}]`,
+                    )!.ownerSVGElement;
+                  return String(
+                    JSON.stringify({
+                      body: clientOf(__typedArg4, __typedArg5),
+                      handles,
+                      perX:
+                        overlay!.getBoundingClientRect().width /
+                        overlay!.viewBox.baseVal.width,
+                      perY:
+                        overlay!.getBoundingClientRect().height /
+                        overlay!.viewBox.baseVal.height,
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: attachmentPath,
+                  __typedArg3: key,
+                  __typedArg4: cx,
+                  __typedArg5: cy,
+                },
+              );
               const still = next === last;
               last = next;
               return still;
@@ -3767,11 +8016,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * Evaluates `body` with `context`, a canvas context set to the font
          * the page draws the free text in, measured independently of ZotLit.
          */
-        const inTextFont = (body: string) =>
-          obEval(
-            vaultId!,
-            `(function(){const context=document.createElement('canvas').getContext('2d');context.font=${JSON.stringify(`${textSeed.fontSize}px `)}+getComputedStyle(document.body).fontFamily;${body}})()`,
-          );
 
         it("moves the note by its body, with no handle drawn, and keeps its size", async () => {
           const { body, perX, perY } = await select(note, 0);
@@ -3858,8 +8102,43 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Zotero's render breaks them.
           const width = x2 - x1 - 80;
           const lines = Number(
-            await inTextFont(
-              `let lines=1,line='';for(const word of ${JSON.stringify(text.seeded.comment)}.split(' ')){const next=line?line+' '+word:word;if(context.measureText(next).width<=${width})line=next;else{lines++;line=word;}}return String(lines);`,
+            await obRun(
+              vaultId!,
+              async (
+                _context,
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg0: `${number}px `;
+                  __typedArg1: string | null;
+                  __typedArg2: number;
+                },
+              ) => {
+                const context = document
+                  .createElement("canvas")
+                  .getContext("2d");
+                context!.font =
+                  __typedArg0 + getComputedStyle(document.body).fontFamily;
+                let lines = 1,
+                  line = "";
+                for (const word of __typedArg1!.split(" ")) {
+                  const next = line ? `${line} ${word}` : word;
+                  if (context!.measureText(next).width <= __typedArg2)
+                    line = next;
+                  else {
+                    lines++;
+                    line = word;
+                  }
+                }
+                return String(String(lines));
+              },
+              {
+                __typedArg0: `${textSeed.fontSize}px `,
+                __typedArg1: text.seeded.comment,
+                __typedArg2: width,
+              },
             ),
           );
           expect(lines).toBeGreaterThan(1);
@@ -3874,11 +8153,36 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             saved,
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(${markOf(textKey)}?.children.length)`,
-              { expected: String(lines) },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "HRK7BG32" },
+                ) => {
+                  return String(
+                    String(
+                      pageHelpers
+                        .pdfView(__typedArg0)
+                        ?.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )?.children.length,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: textKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3865",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: String(lines) }),
           ).toBe(true);
         }, 120000);
 
@@ -3889,8 +8193,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             y: handles.r!.y,
           });
           const width = Number(
-            await inTextFont(
-              `return String(context.measureText(${JSON.stringify(text.seeded.comment)}).width);`,
+            await obRun(
+              vaultId!,
+              async (
+                _context,
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: `${number}px `; __typedArg1: string | null },
+              ) => {
+                const context = document
+                  .createElement("canvas")
+                  .getContext("2d");
+                context!.font =
+                  __typedArg0 + getComputedStyle(document.body).fontFamily;
+                return String(String(context!.measureText(__typedArg1!).width));
+              },
+              {
+                __typedArg0: `${textSeed.fontSize}px `,
+                __typedArg1: text.seeded.comment,
+              },
             ),
           );
 
@@ -3947,12 +8269,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       describe("Mark Handles on the seeded highlight", () => {
         const highlightKey = "Q8ZR4TDH";
         const highlight = seededMark(highlightKey, { image: false });
-        const highlightMarks = `[...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')]`;
-        /** The client box of the first run of `word` in page one's text layer. */
-        const wordRect = `const wordRect=(word)=>{const layer=${pdfView}.containerEl.querySelector('.page[data-page-number="1"] .textLayer');if(!layer)return null;const walker=document.createTreeWalker(layer,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const at=node.data.indexOf(word);if(at>=0){const range=document.createRange();range.setStart(node,at);range.setEnd(node,at+word.length);return range.getBoundingClientRect();}}return null;};`;
+
         /** Whether the highlight's Annotation Card quotes text `test` accepts. */
-        const cardQuotes = (test: string) =>
-          `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')).find(Boolean);if(!card)return 'no card';return String([...card.querySelectorAll('*')].some((node)=>node.childElementCount===0&&(${test})(node.textContent)));})()`;
+
         const seedText = highlight.seed.annotationText!;
         const seedRects = (
           highlight.seeded.position as { rects: readonly (readonly number[])[] }
@@ -3966,30 +8285,137 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         async function selectHighlight(): Promise<{ x: number; y: number }> {
           await highlight.settled();
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=${highlightMarks}[1]?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "Q8ZR4TDH";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const rect = [
+                    ...pageHelpers
+                      .pdfView(__typedArg1)!
+                      .containerEl.querySelectorAll<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                      ),
+                  ][1]?.getBoundingClientRect();
+                  return String(String(!!rect && rect.width > 0));
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: highlightKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3955",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}const mark=${highlightMarks}[1];if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;tap(x,y);return 'clicked';})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "Q8ZR4TDH" },
+            ) => {
+              const { tap } = pageHelpers;
+              const mark = [
+                ...pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelectorAll<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                  ),
+              ][1];
+              if (mark!.classList.contains("is-selected"))
+                return String("selected");
+              const rect = mark!.getBoundingClientRect();
+              const x = rect.left + rect.width / 2,
+                y = rect.top + rect.height / 2;
+              tap(x, y);
+              return String("clicked");
+            },
+            { __typedArg0: attachmentPath, __typedArg1: highlightKey },
           );
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-handle')].map((handle)=>handle.dataset.ztGrip))`,
-              { expected: '["start","end"]' },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  return String(
+                    JSON.stringify(
+                      [
+                        ...pageHelpers
+                          .pdfView(__typedArg0)!
+                          .containerEl.querySelectorAll<HTMLElement>(
+                            ".zt-pdf-annotation-handle",
+                          ),
+                      ].map((handle) => handle.dataset.ztGrip),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:3966",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: '["start","end"]' }),
           ).toBe(true);
           // Measured in its own eval, and read until it stands still and is
           // the node under its own centre, as the image's handle is.
-          const measure = `(function(){const node=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-handle[data-zt-grip="end"]');node.scrollIntoView({block:'nearest',inline:'nearest'});const handle=node.getBoundingClientRect();const x=handle.left+handle.width/2,y=handle.top+handle.height/2;return JSON.stringify({x,y,onTop:document.elementFromPoint(x,y)===node});})()`;
+
           let last = "";
           expect(
             await waitFor(async () => {
-              const next = await obEval(vaultId!, measure);
+              const next = await obRun(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  const node = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .containerEl.querySelector<HTMLElement>(
+                      '.zt-pdf-annotation-handle[data-zt-grip="end"]',
+                    );
+                  node!.scrollIntoView({ block: "nearest", inline: "nearest" });
+                  const handle = node!.getBoundingClientRect();
+                  const x = handle.left + handle.width / 2,
+                    y = handle.top + handle.height / 2;
+                  return String(
+                    JSON.stringify({
+                      x,
+                      y,
+                      onTop: document.elementFromPoint(x, y) === node,
+                    }),
+                  );
+                },
+                { __typedArg0: attachmentPath },
+              );
               const still =
                 next === last && (JSON.parse(next) as { onTop: boolean }).onTop;
               last = next;
@@ -4020,20 +8446,147 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Annotation overlays can appear before PDF.js finishes the text layer.
           // Wait for the word we will hit before sending the gesture once.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){${wordRect}const box=wordRect(${JSON.stringify(word)});return String(!!box&&box.width>0&&box.height>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  const wordRect = (word: string) => {
+                    const layer = pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelector<HTMLElement>(
+                        '.page[data-page-number="1"] .textLayer',
+                      );
+                    if (!layer) return null;
+                    const walker = document.createTreeWalker(
+                      layer,
+                      NodeFilter.SHOW_TEXT,
+                    );
+                    let node;
+                    while ((node = walker.nextNode())) {
+                      const at = (node as Text).data.indexOf(word);
+                      if (at >= 0) {
+                        const range = document.createRange();
+                        range.setStart(node, at);
+                        range.setEnd(node, at + word.length);
+                        return range.getBoundingClientRect();
+                      }
+                    }
+                    return null;
+                  };
+                  const box = wordRect(__typedArg1);
+                  return String(
+                    String(!!box && box.width > 0 && box.height > 0),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: word },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4009",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          const pressed = await obJson<{ grip: string; to: number[] }>(
+          const pressed = await obRun(
             vaultId!,
-            `(function(){${FIRE}${wordRect}const box=wordRect(${JSON.stringify(word)});const x=box.left+box.width*${at},y=box.top+box.height/2;const node=fire('pointerdown',${handle.x},${handle.y});const container=${pdfView}.containerEl;fire('pointermove',(${handle.x}+x)/2,(${handle.y}+y)/2,container);fire('pointermove',x,y,container);window.__ztTo=[x,y];return JSON.stringify({grip:node.dataset.ztGrip,to:[x,y]});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+                __typedArg5,
+                __typedArg6,
+                __typedArg7,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: number;
+                __typedArg3: number;
+                __typedArg4: number;
+                __typedArg5: string;
+                __typedArg6: number;
+                __typedArg7: number;
+              },
+            ) => {
+              const { fire } = pageHelpers;
+              const wordRect = (word: string) => {
+                const layer = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<HTMLElement>(
+                    '.page[data-page-number="1"] .textLayer',
+                  );
+                if (!layer) return null;
+                const walker = document.createTreeWalker(
+                  layer,
+                  NodeFilter.SHOW_TEXT,
+                );
+                let node;
+                while ((node = walker.nextNode())) {
+                  const at = (node as Text).data.indexOf(word);
+                  if (at >= 0) {
+                    const range = document.createRange();
+                    range.setStart(node, at);
+                    range.setEnd(node, at + word.length);
+                    return range.getBoundingClientRect();
+                  }
+                }
+                return null;
+              };
+              const box = wordRect(__typedArg1);
+              const x = box!.left + box!.width * __typedArg2,
+                y = box!.top + box!.height / 2;
+              const node = fire("pointerdown", __typedArg3, __typedArg4);
+              const container = pageHelpers.pdfView(__typedArg5)!.containerEl;
+              fire(
+                "pointermove",
+                (__typedArg6 + x) / 2,
+                (__typedArg7 + y) / 2,
+                container,
+              );
+              fire("pointermove", x, y, container);
+              pageHelpers.scratch.__ztTo = [x, y];
+              return {
+                grip: (node as HTMLElement | SVGElement).dataset.ztGrip,
+                to: [x, y],
+              };
+            },
+            {
+              __typedArg0: attachmentPath,
+              __typedArg1: word,
+              __typedArg2: at,
+              __typedArg3: handle.x,
+              __typedArg4: handle.y,
+              __typedArg5: attachmentPath,
+              __typedArg6: handle.x,
+              __typedArg7: handle.y,
+            },
           );
           expect(pressed.grip).toBe("end");
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}const [x,y]=window.__ztTo;const container=${pdfView}.containerEl;fire('pointerup',x,y,container);fire('click',x,y,container);return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              const { fire } = pageHelpers;
+              const [x, y] = pageHelpers.scratch.__ztTo!;
+              const container = pageHelpers.pdfView(__typedArg0)!.containerEl;
+              fire("pointerup", x, y, container);
+              fire("click", x, y, container);
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
           expect(
             await waitFor(
@@ -4102,18 +8655,93 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // The overlay draws the saved last line, and the Annotation Card
           // quotes the new text.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(Math.abs(Number(${highlightMarks}[3]?.getAttribute('width'))-${(position.rects[3]![2]! - position.rects[3]![0]!).toFixed(3)})<0.001)`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: "Q8ZR4TDH";
+                    __typedArg2: string;
+                  },
+                ) => {
+                  return String(
+                    String(
+                      Math.abs(
+                        Number(
+                          [
+                            ...pageHelpers
+                              .pdfView(__typedArg0)!
+                              .containerEl.querySelectorAll<SVGGraphicsElement>(
+                                `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                              ),
+                          ][3]?.getAttribute("width"),
+                        ) - Number(__typedArg2),
+                      ) < 0.001,
+                    ),
+                  );
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: highlightKey,
+                  __typedArg2: (
+                    position.rects[3]![2]! - position.rects[3]![0]!
+                  ).toFixed(3),
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4091",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              cardQuotes("(text)=>text.includes('just a few. Furthermore,')"),
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map(({ view }) =>
+                      view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean);
+                  if (!card) return String("no card");
+                  return String(
+                    String(
+                      [...card.querySelectorAll<HTMLElement>("*")].some(
+                        (node) =>
+                          node.childElementCount === 0 &&
+                          ((text) => text.includes("just a few. Furthermore,"))(
+                            node.textContent,
+                          ),
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: highlightKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4098",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
@@ -4159,20 +8787,79 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             }),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              cardQuotes("(text)=>text.trimEnd().endsWith('just a few.')"),
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map(({ view }) =>
+                      view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean);
+                  if (!card) return String("no card");
+                  return String(
+                    String(
+                      [...card.querySelectorAll<HTMLElement>("*")].some(
+                        (node) =>
+                          node.childElementCount === 0 &&
+                          ((text) => text.trimEnd().endsWith("just a few."))(
+                            node.textContent,
+                          ),
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: highlightKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4148",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
         it("takes the text of the new range over a Text Edit, as Zotero's reader does", async () => {
           // A Text Edit through the verb the card's editor saves with.
           const typed = "Corrected by hand";
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;bridge.runSync(repository.editTextField('text',${JSON.stringify(highlightKey)},${JSON.stringify(typed)}));await bridge.runPromise(repository.submitTextField('text',${JSON.stringify(highlightKey)}));return true;})()`,
+            async (
+              { zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: "Q8ZR4TDH";
+                __typedArg1: "Corrected by hand";
+                __typedArg2: "Q8ZR4TDH";
+              },
+            ) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              bridge.runSync(
+                repository.editTextField("text", __typedArg0, __typedArg1),
+              );
+              await bridge.runPromise(
+                repository.submitTextField("text", __typedArg2),
+              );
+              return String(true);
+            },
+            {
+              __typedArg0: highlightKey,
+              __typedArg1: typed,
+              __typedArg2: highlightKey,
+            },
           );
           expect(
             await waitFor(
@@ -4203,11 +8890,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              cardQuotes("(text)=>text.includes('just a few. Furthermore,')"),
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map(({ view }) =>
+                      view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean);
+                  if (!card) return String("no card");
+                  return String(
+                    String(
+                      [...card.querySelectorAll<HTMLElement>("*")].some(
+                        (node) =>
+                          node.childElementCount === 0 &&
+                          ((text) => text.includes("just a few. Furthermore,"))(
+                            node.textContent,
+                          ),
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: highlightKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4192",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
 
@@ -4226,9 +8946,24 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("extends the quote by one character for Shift+ArrowRight", async () => {
           await selectHighlight();
-          const prevented = await obJson<boolean>(
+          const prevented = await obRun(
             vaultId!,
-            `(function(){const event=new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify(event.defaultPrevented);})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              const event = new KeyboardEvent("keydown", {
+                key: "ArrowRight",
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true,
+              });
+              pageHelpers
+                .pdfView(__typedArg0)!
+                .containerEl.dispatchEvent(event);
+              return event.defaultPrevented;
+            },
+            { __typedArg0: attachmentPath },
           );
           expect(prevented).toBe(true);
           expect(
@@ -4264,11 +8999,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             }),
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              cardQuotes("(text)=>text.trimEnd().endsWith('just a few. F')"),
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map(({ view }) =>
+                      view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean);
+                  if (!card) return String("no card");
+                  return String(
+                    String(
+                      [...card.querySelectorAll<HTMLElement>("*")].some(
+                        (node) =>
+                          node.childElementCount === 0 &&
+                          ((text) => text.trimEnd().endsWith("just a few. F"))(
+                            node.textContent,
+                          ),
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: highlightKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4253",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }, 120000);
       });
@@ -4279,7 +9047,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const seedColor = seeded.color!;
         /** The swatch the number row's second key picks. */
         const picked = "#ff6666";
-        const historyMark = `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')`;
 
         /** What the Local API holds for the Annotation right now. */
         const storedColor = () => annotationColor(api, serverID, historyKey);
@@ -4292,21 +9059,65 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          */
         async function writeSettled(): Promise<void> {
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(historyKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(historyKey)})));})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: "PUPR5FG5"; __typedArg1: "PUPR5FG5" },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  return String(
+                    String(
+                      bridge.runSync(repository.mutationFor(__typedArg0))
+                        .kind === "idle" &&
+                        !bridge.runSync(
+                          repository.textDraftFor("comment", __typedArg1),
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: historyKey, __typedArg1: historyKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4281",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }
 
         /** Whether ZotLit is showing the notice that names one word of it. */
         const noticeShows = (fragment: string) =>
-          obEvalUntil(
-            vaultId!,
-            `String([...document.querySelectorAll('.zt-notice')].some((node)=>node.textContent.includes(${JSON.stringify(fragment)})))`,
-            { expected: "true" },
-          );
+          ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (_context, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    [
+                      ...document.querySelectorAll<HTMLElement>(".zt-notice"),
+                    ].some((node) => node.textContent.includes(__typedArg0)),
+                  ),
+                );
+              },
+              { __typedArg0: fragment },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:4291",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" });
 
         /** One field, written in Zotero itself, and read back into ZotLit. */
         async function saveInZotero(
@@ -4323,33 +9134,148 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return "saved";
           })()`);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const list=await bridge.runPromise(repository.refresh(${JSON.stringify(attachment.key)}));const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return String(record?.${field === "annotationColor" ? "color" : "comment"});})()`,
-              { expected: value },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: "PUPR5FG5";
+                    __typedArg2: "comment" | "color";
+                  },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  const list = await bridge.runPromise(
+                    repository.refresh(__typedArg0),
+                  );
+                  const record = list?.annotations.find(
+                    (annotation) => annotation.key === __typedArg1,
+                  );
+                  return String(String(record![__typedArg2]));
+                },
+                {
+                  __typedArg0: attachment.key,
+                  __typedArg1: historyKey,
+                  __typedArg2:
+                    field === "annotationColor" ? "color" : "comment",
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4312",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: value }),
           ).toBe(true);
         }
 
         /** Selects the highlight by a click on its body, as a researcher would. */
         async function selectMark(): Promise<void> {
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=${historyMark}?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: "PUPR5FG5";
+                  },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const rect = pageHelpers
+                    .pdfView(__typedArg1)!
+                    .containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    )
+                    ?.getBoundingClientRect();
+                  return String(String(!!rect && rect.width > 0));
+                },
+                {
+                  __typedArg0: attachmentPath,
+                  __typedArg1: attachmentPath,
+                  __typedArg2: historyKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4323",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${FIRE}${TAP}const mark=${historyMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return 'clicked';})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "PUPR5FG5" },
+            ) => {
+              const { tap } = pageHelpers;
+              const mark = pageHelpers
+                .pdfView(__typedArg0)!
+                .containerEl.querySelector<SVGGraphicsElement>(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                );
+              if (mark!.classList.contains("is-selected"))
+                return String("selected");
+              const rect = mark!.getBoundingClientRect();
+              tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
+              return String("clicked");
+            },
+            { __typedArg0: attachmentPath, __typedArg1: historyKey },
           );
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${historyMark}?.classList.contains('is-selected'))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "PUPR5FG5" },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.classList.contains("is-selected"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: historyKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4334",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         }
 
@@ -4370,9 +9296,33 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         });
 
         afterEach(async () => {
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.patchColor(${JSON.stringify(historyKey)},${JSON.stringify(seedColor)}));await bridge.runPromise(repository.patchComment(${JSON.stringify(historyKey)},''));return true;})()`,
+            async (
+              { zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: "PUPR5FG5";
+                __typedArg1: string;
+                __typedArg2: "PUPR5FG5";
+              },
+            ) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              await bridge.runPromise(
+                repository.patchColor(__typedArg0, __typedArg1),
+              );
+              await bridge.runPromise(repository.patchComment(__typedArg2, ""));
+              return String(true);
+            },
+            {
+              __typedArg0: historyKey,
+              __typedArg1: seedColor,
+              __typedArg2: historyKey,
+            },
           );
           expect(
             await waitFor(async () => (await storedColor()) === seedColor),
@@ -4397,11 +9347,37 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
           // The reader landed on the Annotation the step changed.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${historyMark}?.classList.contains('is-selected'))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "PUPR5FG5" },
+                ) => {
+                  return String(
+                    String(
+                      !!pageHelpers
+                        .pdfView(__typedArg0)!
+                        .containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.classList.contains("is-selected"),
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: historyKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4386",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
 
           expect(await redoKey()).toEqual({ handled: true });
@@ -4470,16 +9446,48 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            * active view, as the palette asks before it lists it.
            */
           const offered = (id: string) =>
-            obEval(
+            obRun(
               vaultId!,
-              `(function(){const view=${pdfView};app.workspace.setActiveLeaf(view.leaf,{focus:true});return String(app.commands.findCommand(${JSON.stringify(`zotlit:${id}`)}).checkCallback(true));})()`,
+              async (
+                { app, page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: `zotlit:${string}` },
+              ) => {
+                const view = pageHelpers.pdfView(__typedArg0)!;
+                app.workspace.setActiveLeaf(view.leaf, { focus: true });
+                return String(
+                  String(
+                    (
+                      app.commands as typeof app.commands & {
+                        findCommand(id: string): import("obsidian").Command;
+                      }
+                    ).findCommand(__typedArg1).checkCallback!(true),
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: `zotlit:${id}` },
             );
 
           /** Runs one command with the PDF view as the active view. */
           const run = (id: string) =>
-            obEval(
+            obRun(
               vaultId!,
-              `(function(){const view=${pdfView};app.workspace.setActiveLeaf(view.leaf,{focus:true});return String(app.commands.executeCommandById(${JSON.stringify(`zotlit:${id}`)}));})()`,
+              async (
+                { app, page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: `zotlit:${string}` },
+              ) => {
+                const view = pageHelpers.pdfView(__typedArg0)!;
+                app.workspace.setActiveLeaf(view.leaf, { focus: true });
+                return String(
+                  String(app.commands.executeCommandById(__typedArg1)),
+                );
+              },
+              { __typedArg0: attachmentPath, __typedArg1: `zotlit:${id}` },
             );
 
           it("offers redo only once an undo stands, and takes each step", async () => {
@@ -4516,12 +9524,38 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * reads.
          */
         async function openCommentEditor(): Promise<void> {
-          await obEval(
+          await obRun(
             vaultId!,
-            `(()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');return true;})()`,
+            async ({ page: pageHelpers }) => {
+              const { press } = pageHelpers;
+              getSelection()!.removeAllRanges();
+              press(
+                document.querySelector<HTMLElement>(
+                  ".zt-pdf-mark-popup .zt-annot-comment-field",
+                ),
+                "comment field",
+              );
+              return String(true);
+            },
+            undefined,
           );
           expect(
-            await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(String(!!pageHelpers.popupEditor()));
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4510",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: "true",
             }),
           ).toBe(true);
@@ -4529,19 +9563,53 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         /** Replaces what the open editor holds, as typing over a selection does. */
         const typeComment = (text: string) =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,${JSON.stringify(text)});return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              pageHelpers.popupEditor()!.focus();
+              document.execCommand("selectAll");
+              document.execCommand("insertText", false, __typedArg0);
+              return String(true);
+            },
+            { __typedArg0: text },
           );
 
         /** Escape, which stores the comment and takes the editor off screen. */
         async function closeCommentEditor(): Promise<void> {
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${POPUP_EDITOR}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+            async ({ page: pageHelpers }) => {
+              pageHelpers.popupEditor()!.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "Escape",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+              return String(true);
+            },
+            undefined,
           );
           expect(
-            await obEvalUntil(vaultId!, `String(!${POPUP_EDITOR})`, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(String(!pageHelpers.popupEditor()));
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4530",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: "true",
             }),
           ).toBe(true);
@@ -4594,12 +9662,45 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // no autosave can come due between them. The chord goes to the
           // view's own Scope first, as Obsidian sends it, and then to the
           // editor the focus sits in.
-          const { scoped, typed } = await obJson<{
-            scoped: boolean;
-            typed: string;
-          }>(
+          const { scoped, typed } = await obRun(
             vaultId!,
-            `(function(){const editor=${POPUP_EDITOR};editor.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'Typed once and twice');const typed=editor.textContent;const make=()=>new KeyboardEvent('keydown',{key:'z',${platformKey}:true,bubbles:true,cancelable:true});const probe=make();Object.defineProperty(probe,'target',{value:editor});const names=[];if(probe.ctrlKey)names.push('Ctrl');if(probe.metaKey)names.push('Meta');const context={modifiers:names.sort().join(','),key:probe.key,vkey:'KeyZ'};const scoped=${pdfView}.scope.handleKey(probe,context)===false;editor.dispatchEvent(make());return JSON.stringify({scoped,typed});})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "ctrlKey" | "metaKey"; __typedArg1: string },
+            ) => {
+              const editor = pageHelpers.popupEditor();
+              editor!.focus();
+              document.execCommand("selectAll");
+              document.execCommand("insertText", false, "Typed once and twice");
+              const typed = editor!.textContent;
+              const make = () =>
+                new KeyboardEvent("keydown", {
+                  key: "z",
+                  [__typedArg0]: true,
+                  bubbles: true,
+                  cancelable: true,
+                });
+              const probe = make();
+              Object.defineProperty(probe, "target", { value: editor });
+              const names = [];
+              if (probe.ctrlKey) names.push("Ctrl");
+              if (probe.metaKey) names.push("Meta");
+              const context = {
+                modifiers: names.sort().join(","),
+                key: probe.key,
+                vkey: "KeyZ",
+              };
+              const scoped =
+                (
+                  pageHelpers.pdfView(__typedArg1)!.scope! as PairedScope
+                ).handleKey(probe, context) === false;
+              editor!.dispatchEvent(make());
+              return { scoped, typed };
+            },
+            { __typedArg0: platformKey, __typedArg1: attachmentPath },
           );
           expect(typed).toBe("Typed once and twice");
           // The reader left the chord alone.
@@ -4607,7 +9708,22 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // The editor's own text undo took it back one run.
           expect(
-            await obEvalUntil(vaultId!, `${POPUP_EDITOR}.textContent`, {
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(pageHelpers.popupEditor()!.textContent);
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:4596",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
               expected: "Typed once",
             }),
           ).toBe(true);
@@ -4633,9 +9749,70 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Card, from the blur until ZotLit has read its write back, recorded
           // in one turn. The stored comment drawn for one frame between the
           // closed editor and the new text is the flicker this guards.
-          const shown = await obJson<{ popup: string[]; card: string[] }>(
+          const shown = await obRun(
             vaultId!,
-            `(async()=>{${PAGE}const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const key=${JSON.stringify(historyKey)};const slot=(root)=>{if(root?.querySelector('.cm-content'))return 'editor';const view=root?.querySelector('.zt-annot-comment');return view?'view:'+view.textContent:'none';};const roots={popup:()=>document.querySelector('.zt-pdf-mark-popup'),card:()=>app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(key)+']')).find(Boolean)};const shown={popup:[slot(roots.popup())],card:[slot(roots.card())]};const record=()=>{for(const name of ['popup','card']){const state=slot(roots[name]());if(state!==shown[name].at(-1))shown[name].push(state);}};const observer=new MutationObserver(record);observer.observe(document.body,{subtree:true,childList:true,characterData:true});${POPUP_EDITOR}.dispatchEvent(new FocusEvent('blur',{relatedTarget:null}));await until('comment save settles',()=>bridge.runSync(repository.mutationFor(key)).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',key)),10000).catch(()=>{});/* 300 ms after the save is the window a late flicker would show in. */await new Promise((resolve)=>setTimeout(resolve,300));observer.disconnect();record();return JSON.stringify(shown);})()`,
+            async (
+              { app, zotlit, page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+            ) => {
+              const { until } = pageHelpers;
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              const key = __typedArg0;
+              const slot = (root: HTMLElement | null | undefined) => {
+                if (root?.querySelector<HTMLElement>(".cm-content"))
+                  return "editor";
+                const view =
+                  root?.querySelector<HTMLElement>(".zt-annot-comment");
+                return view ? `view:${view.textContent}` : "none";
+              };
+              const roots = {
+                popup: () =>
+                  document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
+                card: () =>
+                  app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map((leaf) =>
+                      leaf.view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]`,
+                      ),
+                    )
+                    .find(Boolean),
+              };
+              const shown = {
+                popup: [slot(roots.popup())],
+                card: [slot(roots.card())],
+              };
+              const record = () => {
+                for (const name of ["popup", "card"] as const) {
+                  const state = slot(roots[name]());
+                  if (state !== shown[name].at(-1)) shown[name].push(state);
+                }
+              };
+              const observer = new MutationObserver(record);
+              observer.observe(document.body, {
+                subtree: true,
+                childList: true,
+                characterData: true,
+              });
+              pageHelpers
+                .popupEditor()!
+                .dispatchEvent(new FocusEvent("blur", { relatedTarget: null }));
+              await until(
+                "comment save settles",
+                () =>
+                  bridge.runSync(repository.mutationFor(key)).kind === "idle" &&
+                  !bridge.runSync(repository.textDraftFor("comment", key)),
+                10000,
+              ).catch(
+                () => {},
+              ); /* 300 ms after the save is the window a late flicker would show in. */
+              await new Promise((resolve) => setTimeout(resolve, 300));
+              observer.disconnect();
+              record();
+              return shown;
+            },
+            { __typedArg0: historyKey },
           );
           expect(shown.popup).toEqual(["editor", `view:${after}`]);
           // The card may show the stored comment up to the blur; from there it
@@ -4650,18 +9827,27 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // text stays a read. The click runs and renders in one task, so the
           // frame after it shows what it did.
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(async()=>{${PAGE}getSelection().removeAllRanges();press(document.querySelector('.zt-pdf-mark-popup .zt-annot-comment-field'),'comment field');await new Promise((resolve)=>requestAnimationFrame(resolve));return String(!!${POPUP_EDITOR});})()`,
+              async ({ page: pageHelpers }) => {
+                const { press } = pageHelpers;
+                getSelection()!.removeAllRanges();
+                press(
+                  document.querySelector<HTMLElement>(
+                    ".zt-pdf-mark-popup .zt-annot-comment-field",
+                  ),
+                  "comment field",
+                );
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+                return String(String(!!pageHelpers.popupEditor()));
+              },
+              undefined,
             ),
           ).toBe("true");
           await closeCommentEditor();
         }, 120000);
 
         describe("and the Annotation Card beside it", () => {
-          /** That Annotation's card, in whichever Annotation View holds it. */
-          const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')).find(Boolean)`;
-
           /**
            * The card's own colour pick: a click selects the card alone, and
            * the number row's second key, on the view's own Scope, picks
@@ -4669,11 +9855,36 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            */
           async function pickOnCard(): Promise<void> {
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){${PAGE}const card=${card};if(!card)return 'no card';press(card,'card');return String(card.hasAttribute('data-alone'));})()`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app, page: pageHelpers },
+                    { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+                  ) => {
+                    const { press } = pageHelpers;
+                    const card = app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .map((leaf) =>
+                        leaf.view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      )
+                      .find(Boolean);
+                    if (!card) return String("no card");
+                    press(card as HTMLElement, "card");
+                    return String(String(card.hasAttribute("data-alone")));
+                  },
+                  { __typedArg0: historyKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:4658",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
             expect(await pressOnCard("2", {})).toEqual({ handled: true });
             expect(
@@ -4696,9 +9907,66 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               shiftKey?: boolean;
             },
           ) =>
-            obJson<{ handled: boolean }>(
+            obRun(
               vaultId!,
-              `(function(){const card=${card};if(!card)return JSON.stringify({handled:false});const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.containerEl.contains(card));if(!view)return JSON.stringify({handled:false});card.focus();const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=view.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg0: "PUPR5FG5";
+                  __typedArg1: string;
+                  __typedArg2: {
+                    ctrlKey?: boolean;
+                    metaKey?: boolean;
+                    shiftKey?: boolean;
+                  };
+                },
+              ) => {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    ),
+                  )
+                  .find(Boolean);
+                if (!card) return { handled: false };
+                const view = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) => leaf.view)
+                  .find((candidate) => candidate.containerEl.contains(card));
+                if (!view) return { handled: false };
+                card.focus();
+                const event = new KeyboardEvent("keydown", {
+                  key: __typedArg1,
+                  ...__typedArg2,
+                  bubbles: true,
+                  cancelable: true,
+                });
+                Object.defineProperty(event, "target", { value: card });
+                const names = [];
+                if (event.ctrlKey) names.push("Ctrl");
+                if (event.metaKey) names.push("Meta");
+                if (event.altKey) names.push("Alt");
+                if (event.shiftKey) names.push("Shift");
+                const context = {
+                  modifiers: names.sort().join(","),
+                  key: event.key,
+                  vkey: `Key${event.key.toUpperCase()}`,
+                };
+                const handled =
+                  (view.scope! as PairedScope).handleKey(event, context) ===
+                  false;
+                return { handled };
+              },
+              {
+                __typedArg0: historyKey,
+                __typedArg1: key,
+                __typedArg2: modifiers,
+              },
             );
 
           /** This host's own undo chord, pressed on the card. */
@@ -4715,11 +9983,37 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ).toBe(true);
             // The card itself shows what the undo wrote.
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(${card}?.getAttribute('data-annot-color'))`,
-                { expected: seedColor },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+                  ) => {
+                    return String(
+                      String(
+                        app.workspace
+                          .getLeavesOfType("zotero-annotation-view")
+                          .map((leaf) =>
+                            leaf.view.containerEl.querySelector<HTMLElement>(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                            ),
+                          )
+                          .find(Boolean)
+                          ?.getAttribute("data-annot-color"),
+                      ),
+                    );
+                  },
+                  { __typedArg0: historyKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:4704",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: seedColor }),
             ).toBe(true);
           }, 120000);
 
@@ -4757,11 +10051,58 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             async function closeTagEditor(): Promise<void> {
               expect(await press(toggle)).toBe(true);
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(!(${card})?.querySelector('.zt-annot-tag-input')&&bridge.runSync(repository.mutationFor(${JSON.stringify(historyKey)})).kind==='idle'&&!bridge.runSync(repository.tagDraftFor(${JSON.stringify(historyKey)})));})()`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { app, zotlit },
+                      {
+                        __typedArg0,
+                        __typedArg1,
+                        __typedArg2,
+                      }: {
+                        __typedArg0: "PUPR5FG5";
+                        __typedArg1: "PUPR5FG5";
+                        __typedArg2: "PUPR5FG5";
+                      },
+                    ) => {
+                      const { annotationRepository: repository, bridge } =
+                        zotlit.services;
+                      return String(
+                        String(
+                          !app.workspace
+                            .getLeavesOfType("zotero-annotation-view")
+                            .map((leaf) =>
+                              leaf.view.containerEl.querySelector<HTMLElement>(
+                                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                              ),
+                            )
+                            .find(Boolean)
+                            ?.querySelector<HTMLInputElement>(
+                              ".zt-annot-tag-input",
+                            ) &&
+                            bridge.runSync(repository.mutationFor(__typedArg1))
+                              .kind === "idle" &&
+                            !bridge.runSync(
+                              repository.tagDraftFor(__typedArg2),
+                            ),
+                        ),
+                      );
+                    },
+                    {
+                      __typedArg0: historyKey,
+                      __typedArg1: historyKey,
+                      __typedArg2: historyKey,
+                    },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:4746",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
             }
 
@@ -4806,11 +10147,38 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               const second = "e2e-blur-second";
               /** Settles when no tag write or draft stands on the Annotation. */
               const tagsSettled = () =>
-                obEvalUntil(
-                  vaultId!,
-                  `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(historyKey)})).kind==='idle'&&!bridge.runSync(repository.tagDraftFor(${JSON.stringify(historyKey)})));})()`,
-                  { expected: "true" },
-                );
+                ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { zotlit },
+                      {
+                        __typedArg0,
+                        __typedArg1,
+                      }: { __typedArg0: "PUPR5FG5"; __typedArg1: "PUPR5FG5" },
+                    ) => {
+                      const { annotationRepository: repository, bridge } =
+                        zotlit.services;
+                      return String(
+                        String(
+                          bridge.runSync(repository.mutationFor(__typedArg0))
+                            .kind === "idle" &&
+                            !bridge.runSync(
+                              repository.tagDraftFor(__typedArg1),
+                            ),
+                        ),
+                      );
+                    },
+                    { __typedArg0: historyKey, __typedArg1: historyKey },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:4795",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" });
               const before = spelledTags([...seededTags, autoTag]);
 
               expect(await press(toggle)).toBe(true);
@@ -4820,9 +10188,30 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               // Focus leaves the field for the view around the card. The
               // event is sent rather than the focus moved: a window without
               // the system focus sends no focus events.
-              await obEval(
+              await obRun(
                 vaultId!,
-                `(function(){(${card}).querySelector('.zt-annot-tag-input').dispatchEvent(new FocusEvent('focusout',{bubbles:true,relatedTarget:null}));return true;})()`,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+                ) => {
+                  app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map((leaf) =>
+                      leaf.view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean)!
+                    .querySelector<HTMLInputElement>(".zt-annot-tag-input")!
+                    .dispatchEvent(
+                      new FocusEvent("focusout", {
+                        bubbles: true,
+                        relatedTarget: null,
+                      }),
+                    );
+                  return String(true);
+                },
+                { __typedArg0: historyKey },
               );
               const once = spelledTags([
                 ...seededTags,
@@ -4833,9 +10222,29 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expect(await tagsSettled()).toBe(true);
               // The editor stayed open through the save.
               expect(
-                await obEval(
+                await obRun(
                   vaultId!,
-                  `String(!!(${card})?.querySelector('.zt-annot-tag-input'))`,
+                  async (
+                    { app },
+                    { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+                  ) => {
+                    return String(
+                      String(
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")
+                          .map((leaf) =>
+                            leaf.view.containerEl.querySelector<HTMLElement>(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                            ),
+                          )
+                          .find(Boolean)
+                          ?.querySelector<HTMLInputElement>(
+                            ".zt-annot-tag-input",
+                          ),
+                      ),
+                    );
+                  },
+                  { __typedArg0: historyKey },
                 ),
               ).toBe("true");
 
@@ -4843,9 +10252,31 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               // saves as it closes the editor.
               await type(second, { enter: true });
               await expect.poll(editorChips, poll).toContain(second);
-              await obEval(
+              await obRun(
                 vaultId!,
-                `(function(){(${card}).querySelector('.zt-annot-tag-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+                ) => {
+                  app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map((leaf) =>
+                      leaf.view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean)!
+                    .querySelector<HTMLInputElement>(".zt-annot-tag-input")!
+                    .dispatchEvent(
+                      new KeyboardEvent("keydown", {
+                        key: "Escape",
+                        bubbles: true,
+                        cancelable: true,
+                      }),
+                    );
+                  return String(true);
+                },
+                { __typedArg0: historyKey },
               );
               const twice = spelledTags([
                 ...seededTags,
@@ -4855,11 +10286,39 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               ]);
               await expect.poll(storedTags, poll).toEqual(twice);
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `String(!(${card})?.querySelector('.zt-annot-tag-input'))`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { app },
+                      { __typedArg0 }: { __typedArg0: "PUPR5FG5" },
+                    ) => {
+                      return String(
+                        String(
+                          !app.workspace
+                            .getLeavesOfType("zotero-annotation-view")
+                            .map((leaf) =>
+                              leaf.view.containerEl.querySelector<HTMLElement>(
+                                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                              ),
+                            )
+                            .find(Boolean)
+                            ?.querySelector<HTMLInputElement>(
+                              ".zt-annot-tag-input",
+                            ),
+                        ),
+                      );
+                    },
+                    { __typedArg0: historyKey },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:4844",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
               expect(await tagsSettled()).toBe(true);
 
@@ -4881,8 +10340,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            * is erased here: a restore comes back under a key Zotero picks, so a
            * deleted seed could never be put back as the Fixture spells it.
            */
-          const draft = {
-            type: "highlight",
+          const draft: Omit<AnnotationDraft, "parentKey"> = {
+            type: "highlight" as const,
             color: "#a28ae5",
             comment: "Annotation History run",
             text: "Identify Your Message",
@@ -4892,15 +10351,49 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           };
 
           const createDraft = () =>
-            obJson<{ kind: string; annotationKey?: string }>(
+            obRun(
               vaultId!,
-              `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(draft)}));return JSON.stringify(outcome);})()`,
+              async (
+                { zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: Omit<AnnotationDraft, "parentKey">;
+                },
+              ) => {
+                const outcome = await zotlit.services.bridge.runPromise(
+                  zotlit.services.annotationRepository.createAnnotation(
+                    __typedArg0,
+                    __typedArg1,
+                  ),
+                );
+                return {
+                  kind: outcome.kind,
+                  annotationKey:
+                    "annotationKey" in outcome
+                      ? outcome.annotationKey
+                      : undefined,
+                };
+              },
+              { __typedArg0: attachment.key, __typedArg1: draft },
             );
 
           const eraseThrough = (annotationKey: string) =>
-            obJson<{ kind: string }>(
+            obRun(
               vaultId!,
-              `(async()=>{const state=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.deleteAnnotation(${JSON.stringify(annotationKey)}));return JSON.stringify(state);})()`,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const state = await zotlit.services.bridge.runPromise(
+                  zotlit.services.annotationRepository.deleteAnnotation(
+                    __typedArg0,
+                  ),
+                );
+                return state.kind === "failed"
+                  ? { kind: state.kind, failure: { kind: state.failure.kind } }
+                  : { kind: state.kind };
+              },
+              { __typedArg0: annotationKey },
             );
 
           /**
@@ -4959,21 +10452,82 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             /** Body text in the left column, clear of every seeded mark. */
             const CLEAR = [150, 250] as const;
             await armToolOnFirstPage(vaultId!, {
-              pdfView,
+              attachmentPath,
               tool: "note",
               at: CLEAR,
             });
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${FIRE}${TAP}${clientOfFirstPage(pdfView)}const at=clientOf(${CLEAR[0]},${CLEAR[1]});tap(at.x,at.y);return true;})()`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: { __typedArg0: string; __typedArg1: 150; __typedArg2: 250 },
+              ) => {
+                const { tap } = pageHelpers;
+                const clientOf = (x: number, y: number) => {
+                  const overlay = pageHelpers
+                    .pdfView(__typedArg0)!
+                    .viewer.child.getPage(1)!
+                    .div.querySelector<SVGSVGElement>(
+                      ".zt-pdf-annotation-overlay",
+                    );
+                  const box = overlay!.getBoundingClientRect();
+                  const view = overlay!.viewBox.baseVal;
+                  return {
+                    x: box.left + ((x - view.x) * box.width) / view.width,
+                    y:
+                      box.top +
+                      ((view.y + view.height - y) * box.height) / view.height,
+                  };
+                };
+                const at = clientOf(__typedArg1, __typedArg2);
+                tap(at.x, at.y);
+                return String(true);
+              },
+              {
+                __typedArg0: attachmentPath,
+                __typedArg1: CLEAR[0],
+                __typedArg2: CLEAR[1],
+              },
             );
             const noteKey = await freshAnnotationKey(rdp, {
               item: ATTACHMENT_ITEM,
               before: baseline,
             });
-            const selectedMarks = `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))`;
+
             expect(
-              await obEvalUntil(vaultId!, selectedMarks, {
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { page: pageHelpers },
+                    { __typedArg0 }: { __typedArg0: string },
+                  ) => {
+                    return String(
+                      JSON.stringify(
+                        [
+                          ...pageHelpers
+                            .pdfView(__typedArg0)!
+                            .containerEl.querySelectorAll<SVGGraphicsElement>(
+                              ".zt-pdf-annotation-mark.is-selected",
+                            ),
+                        ].map((mark) => mark.dataset.zoteroAnnotationKey),
+                      ),
+                    );
+                  },
+                  { __typedArg0: attachmentPath },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:4962",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({
                 expected: JSON.stringify([noteKey]),
               }),
               "the placed note's mark alone is selected",
@@ -4981,16 +10535,54 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
             // The note opens its comment sheet, and a sheet left open keeps
             // the undo key for its own text; Escape closes it.
-            await obEval(
+            await obRun(
               vaultId!,
-              "(function(){document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()",
+              async (_context) => {
+                document.activeElement!.dispatchEvent(
+                  new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    bubbles: true,
+                    cancelable: true,
+                  }),
+                );
+                return String(true);
+              },
+              undefined,
             );
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(!${POPUP_EDITOR}&&bridge.runSync(repository.mutationFor(${JSON.stringify(noteKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(noteKey)})));})()`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { zotlit, page: pageHelpers },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                    }: { __typedArg0: string; __typedArg1: string },
+                  ) => {
+                    const { annotationRepository: repository, bridge } =
+                      zotlit.services;
+                    return String(
+                      String(
+                        !pageHelpers.popupEditor() &&
+                          bridge.runSync(repository.mutationFor(__typedArg0))
+                            .kind === "idle" &&
+                          !bridge.runSync(
+                            repository.textDraftFor("comment", __typedArg1),
+                          ),
+                      ),
+                    );
+                  },
+                  { __typedArg0: noteKey, __typedArg1: noteKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:4975",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
               "Escape closed the comment sheet, and the note's write settled with no draft",
             ).toBe(true);
 
@@ -5004,11 +10596,56 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // The reader landed where the note was, with nothing selected
             // and no mark left for it.
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const selected=${selectedMarks};const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(noteKey)}]');return JSON.stringify({selected:JSON.parse(selected),mark:!!mark});})()`,
-                { expected: JSON.stringify({ selected: [], mark: false }) },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { page: pageHelpers },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                      __typedArg2,
+                    }: {
+                      __typedArg0: string;
+                      __typedArg1: string;
+                      __typedArg2: string;
+                    },
+                  ) => {
+                    const selected = JSON.stringify(
+                      [
+                        ...pageHelpers
+                          .pdfView(__typedArg0)!
+                          .containerEl.querySelectorAll<SVGGraphicsElement>(
+                            ".zt-pdf-annotation-mark.is-selected",
+                          ),
+                      ].map((mark) => mark.dataset.zoteroAnnotationKey),
+                    );
+                    const mark = pageHelpers
+                      .pdfView(__typedArg1)!
+                      .containerEl.querySelector<SVGGraphicsElement>(
+                        `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                      );
+                    return String(
+                      JSON.stringify({
+                        selected: JSON.parse(selected),
+                        mark: !!mark,
+                      }),
+                    );
+                  },
+                  {
+                    __typedArg0: attachmentPath,
+                    __typedArg1: attachmentPath,
+                    __typedArg2: noteKey,
+                  },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:4993",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: JSON.stringify({ selected: [], mark: false }) }),
               "after undo, no mark is selected and the note's mark is gone",
             ).toBe(true);
           }, 120000);
@@ -5060,10 +10697,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const cardKey = "Q8ZR4TDH";
         /** The highlight clicked in the PDF, as the history tests click it. */
         const markKey = "PUPR5FG5";
-        const annotView =
-          "app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view";
-        const cardOf = (key: string) =>
-          `${annotView}?.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
+
         const poll = { timeout: 10_000, interval: 250 };
 
         /**
@@ -5071,19 +10705,70 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * PDF paints `is-selected`, and whether a Mark Popup stands.
          */
         const shown = () =>
-          obJson<{ cards: string[]; marks: string[]; popup: boolean }>(
+          obRun(
             vaultId!,
-            `(function(){const cards=[...(${annotView}?.containerEl.querySelectorAll('.zt-annot-card[data-selected]')??[])].map((card)=>card.dataset.zoteroAnnotationKey);const marks=[...new Set([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))];return JSON.stringify({cards,marks,popup:!!document.querySelector('.zt-pdf-mark-popup')});})()`,
+            async (
+              { app, page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              const cards = [
+                ...(app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelectorAll<HTMLElement>(
+                    ".zt-annot-card[data-selected]",
+                  ) ?? []),
+              ].map((card) => card.dataset.zoteroAnnotationKey);
+              const marks = [
+                ...new Set(
+                  [
+                    ...pageHelpers
+                      .pdfView(__typedArg0)!
+                      .containerEl.querySelectorAll<SVGGraphicsElement>(
+                        ".zt-pdf-annotation-mark.is-selected",
+                      ),
+                  ].map((mark) => mark.dataset.zoteroAnnotationKey),
+                ),
+              ];
+              return {
+                cards,
+                marks,
+                popup:
+                  !!document.querySelector<HTMLElement>(".zt-pdf-mark-popup"),
+              };
+            },
+            { __typedArg0: attachmentPath },
           );
 
         /** A plain click on one card, as the browser delivers it. */
         async function clickCard(key: string): Promise<void> {
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){${PAGE}const card=${cardOf(key)};if(!card)return 'no card';press(card,'card');return 'clicked';})()`,
-              { expected: "clicked" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app, page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  const { press } = pageHelpers;
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    );
+                  if (!card) return String("no card");
+                  press(card as HTMLElement, "card");
+                  return String("clicked");
+                },
+                { __typedArg0: key },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5068",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "clicked" }),
           ).toBe(true);
         }
 
@@ -5092,29 +10777,82 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // test, and its first page is on screen for the marks.
           await reopenPdfView(vaultId!, attachmentPath);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(markKey)}]')?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "PUPR5FG5" },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  if (!view) return String("no view");
+                  view.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                  const rect = view.containerEl
+                    .querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    )
+                    ?.getBoundingClientRect();
+                  return String(String(!!rect && rect.width > 0));
+                },
+                { __typedArg0: attachmentPath, __typedArg1: markKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5081",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
         });
 
         /** A mark click in the PDF, at the mark's centre, as a researcher makes it. */
         async function tapMark(key: string): Promise<void> {
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${FIRE}${TAP}const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]');const rect=mark.getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return 'tapped';})()`,
+              async (
+                { page: pageHelpers },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                const { tap } = pageHelpers;
+                const mark = pageHelpers
+                  .pdfView(__typedArg0)!
+                  .containerEl.querySelector<SVGGraphicsElement>(
+                    `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                  );
+                const rect = mark!.getBoundingClientRect();
+                tap(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                return String("tapped");
+              },
+              { __typedArg0: attachmentPath, __typedArg1: key },
             ),
           ).toBe("tapped");
         }
 
         /** Runs one Annotation View command from the palette's own registry. */
         const command = (id: string) =>
-          obEval(
+          obRun(
             vaultId!,
-            `(function(){app.commands.executeCommandById(${JSON.stringify(id)});return String(${annotView}?.snapshot.followMode);})()`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+              app.commands.executeCommandById(__typedArg0);
+              return String(
+                String(
+                  (
+                    app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view as AnnotationView
+                  )?.snapshot.followMode,
+                ),
+              );
+            },
+            { __typedArg0: id },
           );
 
         it("selects a card in Pinned mode, and clears it for Escape", async () => {
@@ -5131,9 +10869,32 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // Escape on the focused card of the active view, which Obsidian's
             // keymap hands to that view's Scope.
             expect(
-              await obJson<{ prevented: boolean }>(
+              await obRun(
                 vaultId!,
-                `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];app.workspace.setActiveLeaf(leaf,{focus:true});const card=${cardOf(cardKey)};card.focus();const event=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true});card.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  const leaf = app.workspace.getLeavesOfType(
+                    "zotero-annotation-view",
+                  )[0];
+                  app.workspace.setActiveLeaf(leaf!, { focus: true });
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    );
+                  (card! as HTMLElement).focus();
+                  const event = new KeyboardEvent("keydown", {
+                    key: "Escape",
+                    code: "Escape",
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  card!.dispatchEvent(event);
+                  return { prevented: event.defaultPrevented };
+                },
+                { __typedArg0: cardKey },
               ),
             ).toEqual({ prevented: true });
             await expect
@@ -5142,31 +10903,95 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           } finally {
             await command("zotlit:annot-view-unpin");
             // The PDF is the active tab the view follows again.
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+              async (
+                { app, page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                app.workspace.setActiveLeaf(
+                  pageHelpers.pdfView(__typedArg0)!.leaf,
+                  { focus: true },
+                );
+                return String(true);
+              },
+              { __typedArg0: attachmentPath },
             );
           }
         }, 120000);
 
         it("lands quietly on a clicked card's mark, and selects the card of a clicked mark", async () => {
           expect(
-            await obEval(vaultId!, `String(${annotView}?.snapshot.followMode)`),
+            await obRun(
+              vaultId!,
+              async ({ app }) => {
+                return String(
+                  String(
+                    (
+                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view as AnnotationView
+                    )?.snapshot.followMode,
+                  ),
+                );
+              },
+              undefined,
+            ),
           ).toBe("active-tab");
           // The PDF stands pages away, so the mark in view is the Landing's
           // own scroll: the last step it takes.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber=4;return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              pageHelpers.pdfView(
+                __typedArg0,
+              )!.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 4;
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
 
           await clickCard(cardKey);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};const box=view.viewer.child.pdfViewer.pdfViewer.container.getBoundingClientRect();const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(cardKey)}]');const rect=mark?.getBoundingClientRect();return String(!!mark&&mark.classList.contains('is-selected')&&rect.top>=box.top&&rect.bottom<=box.bottom);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: "Q8ZR4TDH" },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  const box =
+                    view.viewer.child.pdfViewer.pdfViewer.container.getBoundingClientRect();
+                  const mark =
+                    view.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    );
+                  const rect = mark?.getBoundingClientRect();
+                  return String(
+                    String(
+                      !!mark &&
+                        mark.classList.contains("is-selected") &&
+                        rect!.top >= box.top &&
+                        rect!.bottom <= box.bottom,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: cardKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5151",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           // With the Landing done, no Mark Popup stands over the mark.
           expect(await shown()).toEqual({
@@ -5188,24 +11013,107 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await expect
             .poll(shown, poll)
             .toMatchObject({ cards: [cardKey], marks: [cardKey] });
-          const card = cardOf(cardKey);
-          const toggle = (icon: string) =>
-            `${card}?.querySelector('.clickable-icon:has(svg.lucide-${icon})')`;
-          /** The comment field, which stands on a card selected alone. */
-          const field = `${card}?.querySelector('.zt-annot-comment-field')`;
+
           /** Which of the card's two editors stand. */
           const editors = () =>
-            obJson<{ comment: boolean; tags: boolean }>(
+            obRun(
               vaultId!,
-              `JSON.stringify({comment:!!${card}?.querySelector('.cm-content'),tags:!!${card}?.querySelector('[data-slot=tags-input]')})`,
+              async (
+                { app },
+                {
+                  __typedArg2,
+                  __typedArg3,
+                }: { __typedArg2: "Q8ZR4TDH"; __typedArg3: "Q8ZR4TDH" },
+              ) => {
+                return {
+                  comment: !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(".cm-content"),
+                  tags: !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg3)}]`,
+                    )
+                    ?.querySelector<HTMLInputElement>("[data-slot=tags-input]"),
+                };
+              },
+              { __typedArg2: cardKey, __typedArg3: cardKey },
             );
 
           // A collected query leaves the published card on screen.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(() => { app.plugins.plugins.zotlit.services.queryClient.client.removeQueries({queryKey:['annotations']}); return true; })()`,
+            async ({ zotlit }) => {
+              zotlit.services.queryClient.client.removeQueries({
+                queryKey: ["annotations"],
+              });
+              return String(true);
+            },
+            undefined,
           );
-          await trustedClick(field);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg1,
+                __typedArg2,
+              }: { __typedArg1: []; __typedArg2: "Q8ZR4TDH" },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("zotero-annotation-view")[0]
+                ?.view?.containerEl.querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                )
+                ?.querySelector<HTMLElement>(".zt-annot-comment-field");
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg1: [], __typedArg2: cardKey },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
@@ -5214,57 +11122,225 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // editors: a refresh must preserve the card's editing capability.
           await using pendingRead = new AsyncDisposableStack();
           pendingRead.defer(async () => {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(() => { window.__zlPendingDatabaseRead?.restore(); delete window.__zlPendingDatabaseRead; return true; })()`,
+              async ({ page: pageHelpers }) => {
+                pageHelpers.scratch.__zlPendingDatabaseRead?.restore!();
+                delete pageHelpers.scratch.__zlPendingDatabaseRead;
+                return String(true);
+              },
+              undefined,
             );
           });
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async () => {
-              const services = app.plugins.plugins.zotlit.services;
+            async ({ zotlit, page: pageHelpers }) => {
+              const services = zotlit.services;
               const db = services.zoteroReads;
+              // oxlint-disable-next-line typescript/unbound-method -- Restored unchanged and called with the original worker receiver.
               const post = Worker.prototype.postMessage;
-              const pending = [];
-              const state = { changed: false, heldReads: 0, restore: null };
-              const off = services.bridge.subscribe(db.events, event => { if(event._tag==='changed')state.changed = true; });
-              state.restore = () => { Worker.prototype.postMessage = post; off(); for(const send of pending.splice(0))send(); };
-              window.__zlPendingDatabaseRead = state;
-              Worker.prototype.postMessage = function(...args) {
-                const request=args[0]?.[1];if(request?.tag!=='ItemQuery'||request.payload.job.view.from!=='annotations')return post.apply(this,args);
-                state.heldReads++;
-                const worker=this;
-                pending.push(()=>post.apply(worker,args));
+              const pending: (() => void)[] = [];
+              const state: {
+                changed: boolean;
+                heldReads: number;
+                restore: (() => void) | null;
+              } = { changed: false, heldReads: 0, restore: null };
+              const off = services.bridge.subscribe(db.events, (event) => {
+                if (event._tag === "changed") state.changed = true;
+              });
+              state.restore = () => {
+                Worker.prototype.postMessage = post;
+                off();
+                for (const send of pending.splice(0)) send();
               };
+              pageHelpers.scratch.__zlPendingDatabaseRead = state;
+              Worker.prototype.postMessage = new Proxy(post, {
+                apply: (
+                  postTarget,
+                  receiver: Worker,
+                  args: Parameters<Worker["postMessage"]>,
+                ) => {
+                  const request = (args[0] as LibraryWorkerMessage)?.[1];
+                  if (
+                    request?.tag !== "ItemQuery" ||
+                    !("view" in request.payload.job) ||
+                    request.payload.job.view.from !== "annotations"
+                  )
+                    return Reflect.apply(postTarget, receiver, args);
+                  state.heldReads++;
+                  pending.push(() => Reflect.apply(postTarget, receiver, args));
+                },
+              });
               await services.bridge.runPromise(db.refresh);
-              return true;
-            })()`,
+              return String(true);
+            },
+            undefined,
           );
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(window.__zlPendingDatabaseRead.changed&&window.__zlPendingDatabaseRead.heldReads>0)`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(
+                    pageHelpers.scratch.__zlPendingDatabaseRead!.changed &&
+                      pageHelpers.scratch.__zlPendingDatabaseRead!.heldReads >
+                        0,
+                  );
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5225",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
 
           // The tag toggle saves and closes the comment editor first.
-          await trustedClick(toggle("tag"));
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg1,
+                __typedArg2,
+              }: { __typedArg1: []; __typedArg2: "Q8ZR4TDH" },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("zotero-annotation-view")[0]
+                ?.view?.containerEl.querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                )
+                ?.querySelector(`.clickable-icon:has(svg.lucide-${"tag"})`);
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg1: [], __typedArg2: cardKey },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(editors, poll)
             .toEqual({ comment: false, tags: true });
 
           // A click on the comment field ends the tag session first.
-          await trustedClick(field);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg1,
+                __typedArg2,
+              }: { __typedArg1: []; __typedArg2: "Q8ZR4TDH" },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("zotero-annotation-view")[0]
+                ?.view?.containerEl.querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                )
+                ?.querySelector<HTMLElement>(".zt-annot-comment-field");
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg1: [], __typedArg2: cardKey },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(editors, poll)
             .toEqual({ comment: true, tags: false });
 
           // Escape in the editor closes it.
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:'Escape'});contents.sendInputEvent({type:'keyUp',keyCode:'Escape'});return 'pressed';})()`,
+              async (_context) => {
+                const contents =
+                  require("@electron/remote").getCurrentWebContents();
+                contents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+                contents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+                return String("pressed");
+              },
+              undefined,
             ),
           ).toBe("pressed");
           await expect
@@ -5274,46 +11350,247 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("saves a comment typed into the comment field of a card selected in Pinned mode", async () => {
           await raiseWindow(vaultId!);
-          const card = cardOf(cardKey);
-          const field = `${card}?.querySelector('.zt-annot-comment-field')`;
-          const editor = `${card}?.querySelector('.cm-content')`;
+
           const original =
             (await readAnnotationState(api, serverID, cardKey)).comment ?? "";
           const typed = "Saved through the comment field";
           /** The remembered write key the vault holds, for the restore. */
-          const key = await obJson<string>(
+          const key = await obRun(
             vaultId!,
-            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+            async ({ app }) => {
+              return JSON.parse(
+                app.secretStorage.getSecret(
+                  "zotlit-zotero-write-authorization",
+                )!,
+              ).key;
+            },
+            undefined,
           );
           expect(await command("zotlit:annot-view-pin-current-item")).toBe(
             "pinned",
           );
           try {
             // A card that is not selected alone offers no comment field.
-            expect(await obEval(vaultId!, `String(!!${field})`)).toBe("false");
+            expect(
+              await obRun(
+                vaultId!,
+                async (
+                  { app },
+                  { __typedArg1 }: { __typedArg1: "Q8ZR4TDH" },
+                ) => {
+                  return String(
+                    String(
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )
+                        ?.querySelector<HTMLElement>(".zt-annot-comment-field"),
+                    ),
+                  );
+                },
+                { __typedArg1: cardKey },
+              ),
+            ).toBe("false");
             await clickCard(cardKey);
             await expect.poll(shown, poll).toMatchObject({ cards: [cardKey] });
 
-            await trustedClick(field);
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg1,
+                  __typedArg2,
+                }: { __typedArg1: []; __typedArg2: "Q8ZR4TDH" },
+              ) => {
+                const target = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                  )
+                  ?.querySelector<HTMLElement>(".zt-annot-comment-field");
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg1: [], __typedArg2: cardKey },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             await expect
               .poll(
                 () =>
-                  obEval(
+                  obRun(
                     vaultId!,
-                    `String(!!${editor}?.contains(document.activeElement))`,
+                    async (
+                      { app },
+                      { __typedArg1 }: { __typedArg1: "Q8ZR4TDH" },
+                    ) => {
+                      return String(
+                        String(
+                          !!app.workspace
+                            .getLeavesOfType("zotero-annotation-view")[0]
+                            ?.view?.containerEl.querySelector(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                            )
+                            ?.querySelector<HTMLElement>(".cm-content")
+                            ?.contains(document.activeElement),
+                        ),
+                      );
+                    },
+                    { __typedArg1: cardKey },
                   ),
                 poll,
               )
               .toBe("true");
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const editor=${editor};editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(typed)});return true;})()`,
+              async (
+                { app },
+                {
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg1: "Saved through the comment field";
+                  __typedArg2: "Q8ZR4TDH";
+                },
+              ) => {
+                const editor = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                  )
+                  ?.querySelector<HTMLElement>(".cm-content");
+                editor!.doc.execCommand("selectAll");
+                editor!.doc.execCommand("insertText", false, __typedArg1);
+                return String(true);
+              },
+              { __typedArg1: typed, __typedArg2: cardKey },
             );
             // A click on the card away from the field, on its Quoted Text,
             // saves and closes.
-            await trustedClick(`${card}?.querySelector('blockquote')`);
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg1,
+                  __typedArg2,
+                }: { __typedArg1: []; __typedArg2: "Q8ZR4TDH" },
+              ) => {
+                const target = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                  )
+                  ?.querySelector("blockquote");
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg1: [], __typedArg2: cardKey },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             await expect
-              .poll(() => obEval(vaultId!, `String(!!${editor})`), poll)
+              .poll(
+                () =>
+                  obRun(
+                    vaultId!,
+                    async (
+                      { app },
+                      { __typedArg1 }: { __typedArg1: "Q8ZR4TDH" },
+                    ) => {
+                      return String(
+                        String(
+                          !!app.workspace
+                            .getLeavesOfType("zotero-annotation-view")[0]
+                            ?.view?.containerEl.querySelector(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                            )
+                            ?.querySelector<HTMLElement>(".cm-content"),
+                        ),
+                      );
+                    },
+                    { __typedArg1: cardKey },
+                  ),
+                poll,
+              )
               .toBe("false");
             expect(
               await waitFor(
@@ -5324,17 +11601,54 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ).toBe(true);
           } finally {
             await command("zotlit:annot-view-unpin");
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+              async (
+                { app, page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                app.workspace.setActiveLeaf(
+                  pageHelpers.pdfView(__typedArg0)!.leaf,
+                  { focus: true },
+                );
+                return String(true);
+              },
+              { __typedArg0: attachmentPath },
             );
             // Every write the edit asked for has landed, so the restore
             // writes against the version Zotero ends on.
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(cardKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(cardKey)})));})()`,
-              { expected: "true" },
-            );
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: "Q8ZR4TDH" },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  return String(
+                    String(
+                      bridge.runSync(repository.mutationFor(__typedArg0))
+                        .kind === "idle" &&
+                        !bridge.runSync(
+                          repository.textDraftFor("comment", __typedArg1),
+                        ),
+                    ),
+                  );
+                },
+                { __typedArg0: cardKey, __typedArg1: cardKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5314",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" });
             await restoreAnnotationComment(api, {
               serverID,
               key,
@@ -5351,18 +11665,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * @param modifiers the keys held through the click, as Electron names
          *   them: `shift`, `meta`, `control`.
          */
-        async function trustedClick(
-          target: string,
-          modifiers: readonly string[] = [],
-        ): Promise<void> {
-          const held = JSON.stringify(modifiers);
-          expect(
-            await obEval(
-              vaultId!,
-              `(function(){const target=${target};target.scrollIntoView({block:"center",inline:"nearest",behavior:"instant"});const rect=target.getBoundingClientRect();const zoom=require('electron').webFrame.getZoomFactor();const x=Math.round((rect.left+rect.width/2)*zoom),y=Math.round((rect.top+rect.height/2)*zoom);const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1,modifiers:${held}});contents.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1,modifiers:${held}});return 'clicked';})()`,
-            ),
-          ).toBe("clicked");
-        }
 
         it("keeps the card an editor is open on through a mark click, and takes the mark once it closes", async () => {
           await raiseWindow(vaultId!);
@@ -5370,77 +11672,491 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await expect
             .poll(shown, poll)
             .toMatchObject({ cards: [cardKey], marks: [cardKey] });
-          const editor = `${cardOf(cardKey)}?.querySelector('.cm-content')`;
+
           // A click on the comment field opens the editor. A press collapses
           // the page's selection before its click, and a click over selected
           // text only reads.
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){${PAGE}if(${editor})return 'open';getSelection().removeAllRanges();press(${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
-              { expected: "open" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app, page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: "Q8ZR4TDH";
+                    __typedArg1: "Q8ZR4TDH";
+                    __typedArg2: "Q8ZR4TDH";
+                  },
+                ) => {
+                  const { press } = pageHelpers;
+                  if (
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(".cm-content")
+                  )
+                    return String("open");
+                  getSelection()!.removeAllRanges();
+                  press(
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(".zt-annot-comment-field"),
+                    "comment field",
+                  );
+                  return String(
+                    String(
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                        )
+                        ?.querySelector<HTMLElement>(".cm-content") && "open",
+                    ),
+                  );
+                },
+                {
+                  __typedArg0: cardKey,
+                  __typedArg1: cardKey,
+                  __typedArg2: cardKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5359",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "open" }),
           ).toBe(true);
-          await trustedClick(editor);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: [] },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("zotero-annotation-view")[0]
+                ?.view?.containerEl.querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                )
+                ?.querySelector<HTMLElement>(".cm-content");
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: cardKey, __typedArg1: [] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!!${editor}?.contains(document.activeElement))`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { app },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  return String(
+                    String(
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        )
+                        ?.querySelector<HTMLElement>(".cm-content")
+                        ?.contains(document.activeElement),
+                    ),
+                  );
+                },
+                { __typedArg0: cardKey },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5367",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
 
           // The click in the PDF takes the focus out of the editor, which
           // saves and stays open; the card keeps the selection.
-          await trustedClick(
-            `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(markKey)}]')`,
-          );
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+              }: {
+                __typedArg1: [];
+                __typedArg2: string;
+                __typedArg3: "PUPR5FG5";
+              },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("pdf")
+                .map(({ view }) => view)
+                .find(
+                  (view) =>
+                    (view as FileView).file?.path === __typedArg2 &&
+                    view.containerEl.getBoundingClientRect().width > 0,
+                )!
+                .containerEl.querySelector(
+                  `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg3)}]`,
+                );
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            {
+              __typedArg1: [],
+              __typedArg2: attachmentPath,
+              __typedArg3: markKey,
+            },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(shown, poll)
             .toMatchObject({ cards: [cardKey], marks: [markKey] });
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `JSON.stringify({open:!!${editor},focused:!!${editor}?.contains(document.activeElement)})`,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: "Q8ZR4TDH" },
+              ) => {
+                return String(
+                  JSON.stringify({
+                    open: !!app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(".cm-content"),
+                    focused: !!app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(".cm-content")
+                      ?.contains(document.activeElement),
+                  }),
+                );
+              },
+              { __typedArg0: cardKey, __typedArg1: cardKey },
             ),
           ).toBe(JSON.stringify({ open: true, focused: false }));
 
           // Escape back in the editor closes it, and the PDF's selection
           // applies.
-          await trustedClick(editor);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: [] },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("zotero-annotation-view")[0]
+                ?.view?.containerEl.querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                )
+                ?.querySelector<HTMLElement>(".cm-content");
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: cardKey, __typedArg1: [] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:'Escape'});contents.sendInputEvent({type:'keyUp',keyCode:'Escape'});return 'pressed';})()`,
+              async (_context) => {
+                const contents =
+                  require("@electron/remote").getCurrentWebContents();
+                contents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+                contents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+                return String("pressed");
+              },
+              undefined,
             ),
           ).toBe("pressed");
           await expect
             .poll(shown, poll)
             .toMatchObject({ cards: [markKey], marks: [markKey] });
-          expect(await obEval(vaultId!, `String(!!${editor})`)).toBe("false");
+          expect(
+            await obRun(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" }) => {
+                return String(
+                  String(
+                    !!app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(".cm-content"),
+                  ),
+                );
+              },
+              { __typedArg0: cardKey },
+            ),
+          ).toBe("false");
         }, 120000);
 
         describe("a Text Edit", () => {
           const highlight = seededMark(cardKey, { image: false });
-          const editor = `${cardOf(cardKey)}?.querySelector('blockquote .cm-content')`;
 
           /**
            * Chooses "Edit quoted text", the first item of the card's "…"
            * menu, once it stands there enabled.
            */
           async function chooseEditQuotedText(): Promise<void> {
-            const more = `${cardOf(cardKey)}?.querySelector('.clickable-icon:has(svg.lucide-more-horizontal)')`;
-            await obEval(
+            await obRun(
               vaultId!,
-              `(${more}.scrollIntoView({block:'nearest'}),true)`,
+              async ({ app }, { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" }) => {
+                return String(
+                  (app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(
+                      ".clickable-icon:has(svg.lucide-more-horizontal)",
+                    )!
+                    .scrollIntoView({ block: "nearest" }),
+                  true),
+                );
+              },
+              { __typedArg0: cardKey },
             );
-            await trustedClick(more);
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: [] },
+              ) => {
+                const target = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  )
+                  ?.querySelector(
+                    ".clickable-icon:has(svg.lucide-more-horizontal)",
+                  );
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg0: cardKey, __typedArg1: [] },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){${PAGE}const item=document.querySelector('.menu .menu-item');if(!item)return 'no menu';if(item.textContent.trim()!==${JSON.stringify(m.annot_view_menu_edit_text())}||item.classList.contains('is-disabled'))return 'not offered';press(item,'Edit text');return 'chosen';})()`,
-                { expected: "chosen" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { page: pageHelpers },
+                    { __typedArg0 }: { __typedArg0: string },
+                  ) => {
+                    const { press } = pageHelpers;
+                    const item =
+                      document.querySelector<HTMLElement>(".menu .menu-item");
+                    if (!item) return String("no menu");
+                    if (
+                      item.textContent.trim() !== __typedArg0 ||
+                      item.classList.contains("is-disabled")
+                    )
+                      return String("not offered");
+                    press(item, "Edit text");
+                    return String("chosen");
+                  },
+                  { __typedArg0: m.annot_view_menu_edit_text() },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5420",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "chosen" }),
             ).toBe(true);
           }
 
@@ -5455,9 +12171,24 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               // Chosen on a card that is not selected yet, the item selects
               // the card alone.
               expect(
-                await obEval(
+                await obRun(
                   vaultId!,
-                  `String(!!${cardOf(cardKey)}?.hasAttribute('data-alone'))`,
+                  async (
+                    { app },
+                    { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                  ) => {
+                    return String(
+                      String(
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          )
+                          ?.hasAttribute("data-alone"),
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey },
                 ),
               ).toBe("false");
               await chooseEditQuotedText();
@@ -5466,16 +12197,48 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
                 .toMatchObject({ cards: [cardKey] });
               // The editor opens in the Excerpt Block with the caret in it.
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `String(!!${editor}?.contains(document.activeElement))`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { app },
+                      { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                    ) => {
+                      return String(
+                        String(
+                          !!app.workspace
+                            .getLeavesOfType("zotero-annotation-view")[0]
+                            ?.view?.containerEl.querySelector<HTMLElement>(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                            )
+                            ?.querySelector<HTMLElement>(
+                              "blockquote .cm-content",
+                            )
+                            ?.contains(document.activeElement),
+                        ),
+                      );
+                    },
+                    { __typedArg0: cardKey },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:5450",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
               // Typed where the caret stands: at the end of the text.
-              await obEval(
+              await obRun(
                 vaultId!,
-                "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Checked.');return true;})()",
+                async (_context) => {
+                  require("@electron/remote")
+                    .getCurrentWebContents()
+                    .insertText(" Checked.");
+                  return String(true);
+                },
+                undefined,
               );
               await press("Escape");
 
@@ -5493,31 +12256,91 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               });
               // Escape closed the editor, and the card quotes the correction.
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `String(!${editor}&&${cardOf(cardKey)}.querySelector('blockquote').textContent===${JSON.stringify(corrected)})`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { app },
+                      {
+                        __typedArg0,
+                        __typedArg1,
+                        __typedArg2,
+                      }: {
+                        __typedArg0: "Q8ZR4TDH";
+                        __typedArg1: "Q8ZR4TDH";
+                        __typedArg2: string;
+                      },
+                    ) => {
+                      return String(
+                        String(
+                          !app.workspace
+                            .getLeavesOfType("zotero-annotation-view")[0]
+                            ?.view?.containerEl.querySelector<HTMLElement>(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                            )
+                            ?.querySelector<HTMLElement>(
+                              "blockquote .cm-content",
+                            ) &&
+                            app.workspace
+                              .getLeavesOfType("zotero-annotation-view")[0]
+                              ?.view?.containerEl.querySelector<HTMLElement>(
+                                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                              )!
+                              .querySelector<HTMLElement>("blockquote")!
+                              .textContent === __typedArg2,
+                        ),
+                      );
+                    },
+                    {
+                      __typedArg0: cardKey,
+                      __typedArg1: cardKey,
+                      __typedArg2: corrected,
+                    },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:5477",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
             } finally {
               await command("zotlit:annot-view-unpin");
-              await obEval(
+              await obRun(
                 vaultId!,
-                `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+                async (
+                  { app, page: pageHelpers },
+                  { __typedArg0 }: { __typedArg0: string },
+                ) => {
+                  app.workspace.setActiveLeaf(
+                    pageHelpers.pdfView(__typedArg0)!.leaf,
+                    { focus: true },
+                  );
+                  return String(true);
+                },
+                { __typedArg0: attachmentPath },
               );
             }
           }, 120000);
 
           it("shows a Write Conflict on the Quoted Text in its Excerpt Block once another card is selected, and Discard keeps Zotero's text", async () => {
             await raiseWindow(vaultId!);
-            const conflict = `${cardOf(cardKey)}?.querySelector('blockquote .zt-annot-conflict')`;
+
             const inZotero = `${highlight.seed.annotationText} (edited in Zotero)`;
             const typed = `${highlight.seed.annotationText} Mine.`;
-            const repository =
-              "app.plugins.plugins.zotlit.services.annotationRepository";
-            const apiKey = await obJson<string>(
+
+            const apiKey = await obRun(
               vaultId!,
-              "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+              async ({ app }) => {
+                return JSON.parse(
+                  app.secretStorage.getSecret(
+                    "zotlit-zotero-write-authorization",
+                  )!,
+                ).key;
+              },
+              undefined,
             );
             const path = `users/0/items/${cardKey}`;
 
@@ -5526,9 +12349,23 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               // Every exit lets the held write go and leaves no text draft or
               // conflict behind; afterEach puts Zotero's text back.
               await restoreWriteOutcomeProbe(vaultId!);
-              await obEval(
+              await obRun(
                 vaultId!,
-                `(app.plugins.plugins.zotlit.services.bridge.runSync(${repository}.discardTextDraft('text',${JSON.stringify(cardKey)})),true)`,
+                async (
+                  { zotlit },
+                  { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                ) => {
+                  return String(
+                    (zotlit.services.bridge.runSync(
+                      zotlit.services.annotationRepository.discardTextDraft(
+                        "text",
+                        __typedArg0,
+                      ),
+                    ),
+                    true),
+                  );
+                },
+                { __typedArg0: cardKey },
               );
             });
             // The draft's save waits at the seam until Zotero has moved, so
@@ -5538,22 +12375,67 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await clickCard(cardKey);
             await chooseEditQuotedText();
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(!!${editor}?.contains(document.activeElement))`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                  ) => {
+                    return String(
+                      String(
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          )
+                          ?.querySelector<HTMLElement>("blockquote .cm-content")
+                          ?.contains(document.activeElement),
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5522",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
-            await obEval(
+            await obRun(
               vaultId!,
-              "(function(){require('@electron/remote').getCurrentWebContents().insertText(' Mine.');return true;})()",
+              async (_context) => {
+                require("@electron/remote")
+                  .getCurrentWebContents()
+                  .insertText(" Mine.");
+                return String(true);
+              },
+              undefined,
             );
             expect(
-              await obEvalUntil(
-                vaultId!,
-                "String(window.__zotlitWriteOutcomeProbe.reached)",
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async ({ page: pageHelpers }) => {
+                    return String(
+                      String(
+                        pageHelpers.scratch.__zotlitWriteOutcomeProbe!.reached,
+                      ),
+                    );
+                  },
+                  undefined,
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5533",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
 
             // Zotero's sidebar changes the text while the save waits.
@@ -5569,16 +12451,45 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               body: JSON.stringify({ annotationText: inZotero }),
             });
             expect(edited.status).toBe(204);
-            await obEval(
+            await obRun(
               vaultId!,
-              "(window.__zotlitWriteOutcomeProbe.release(),true)",
+              async ({ page: pageHelpers }) => {
+                return String(
+                  (pageHelpers.scratch.__zotlitWriteOutcomeProbe!.release!(),
+                  true),
+                );
+              },
+              undefined,
             );
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(app.plugins.plugins.zotlit.services.bridge.runSync(${repository}.textDraftFor('text',${JSON.stringify(cardKey)}))?.state.kind)`,
-                { expected: "conflict" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { zotlit },
+                    { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                  ) => {
+                    return String(
+                      String(
+                        zotlit.services.bridge.runSync(
+                          zotlit.services.annotationRepository.textDraftFor(
+                            "text",
+                            __typedArg0,
+                          ),
+                        )?.state.kind,
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5558",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "conflict" }),
             ).toBe(true);
 
             // Another card takes the selection; the conflicted card keeps its
@@ -5586,36 +12497,198 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await clickCard(markKey);
             await expect.poll(shown, poll).toMatchObject({ cards: [markKey] });
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const panel=${conflict};if(!panel||panel.getBoundingClientRect().width===0)return 'none';return JSON.stringify({zotero:panel.textContent.includes(${JSON.stringify(inZotero)}),mine:panel.textContent.includes(${JSON.stringify(typed)}),verbs:[...panel.querySelectorAll('button')].map((node)=>node.textContent)});})()`,
-                {
-                  expected: JSON.stringify({
-                    zotero: true,
-                    mine: true,
-                    verbs: ["Use my text", "Keep Zotero's text"],
-                  }),
-                },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                      __typedArg2,
+                    }: {
+                      __typedArg0: "Q8ZR4TDH";
+                      __typedArg1: string;
+                      __typedArg2: string;
+                    },
+                  ) => {
+                    const panel = app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      )
+                      ?.querySelector<HTMLElement>(
+                        "blockquote .zt-annot-conflict",
+                      );
+                    if (!panel || panel.getBoundingClientRect().width === 0)
+                      return String("none");
+                    return String(
+                      JSON.stringify({
+                        zotero: panel.textContent.includes(__typedArg1),
+                        mine: panel.textContent.includes(__typedArg2),
+                        verbs: [
+                          ...panel.querySelectorAll<HTMLElement>("button"),
+                        ].map((node) => node.textContent),
+                      }),
+                    );
+                  },
+                  {
+                    __typedArg0: cardKey,
+                    __typedArg1: inZotero,
+                    __typedArg2: typed,
+                  },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5570",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({
+                expected: JSON.stringify({
+                  zotero: true,
+                  mine: true,
+                  verbs: ["Use my text", "Keep Zotero's text"],
+                }),
+              }),
             ).toBe(true);
             expect((await highlight.stored()).data.annotationText).toBe(
               inZotero,
             );
 
             // The press lands where the panel stands on screen.
-            await obEval(
+            await obRun(
               vaultId!,
-              `(${conflict}.scrollIntoView({block:'center'}),true)`,
+              async ({ app }, { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" }) => {
+                return String(
+                  (app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(
+                      "blockquote .zt-annot-conflict",
+                    )!
+                    .scrollIntoView({ block: "center" }),
+                  true),
+                );
+              },
+              { __typedArg0: cardKey },
             );
-            await trustedClick(
-              `[...${conflict}.querySelectorAll('button')].find((button)=>button.textContent==="Keep Zotero's text")`,
-            );
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg1,
+                  __typedArg2,
+                }: { __typedArg1: []; __typedArg2: "Q8ZR4TDH" },
+              ) => {
+                const target = [
+                  ...app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                    )
+                    ?.querySelector("blockquote .zt-annot-conflict")!
+                    .querySelectorAll("button")!,
+                ].find((button) => button.textContent === "Keep Zotero's text");
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg1: [], __typedArg2: cardKey },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(!${conflict}&&${cardOf(cardKey)}.querySelector('blockquote').textContent===${JSON.stringify(inZotero)})`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                      __typedArg2,
+                    }: {
+                      __typedArg0: "Q8ZR4TDH";
+                      __typedArg1: "Q8ZR4TDH";
+                      __typedArg2: string;
+                    },
+                  ) => {
+                    return String(
+                      String(
+                        !app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          )
+                          ?.querySelector<HTMLElement>(
+                            "blockquote .zt-annot-conflict",
+                          ) &&
+                          app.workspace
+                            .getLeavesOfType("zotero-annotation-view")[0]
+                            ?.view?.containerEl.querySelector<HTMLElement>(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                            )!
+                            .querySelector<HTMLElement>("blockquote")!
+                            .textContent === __typedArg2,
+                      ),
+                    );
+                  },
+                  {
+                    __typedArg0: cardKey,
+                    __typedArg1: cardKey,
+                    __typedArg2: inZotero,
+                  },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5595",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
             expect((await highlight.stored()).data.annotationText).toBe(
               inZotero,
@@ -5629,19 +12702,49 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               (await highlight.stored()).data.annotationText;
             /** Typed where the caret stands, as the window's input types. */
             const type = (text: string) =>
-              obEval(
+              obRun(
                 vaultId!,
-                `(function(){require('@electron/remote').getCurrentWebContents().insertText(${JSON.stringify(text)});return true;})()`,
+                async (_context, { __typedArg0 }: { __typedArg0: string }) => {
+                  require("@electron/remote")
+                    .getCurrentWebContents()
+                    .insertText(__typedArg0);
+                  return String(true);
+                },
+                { __typedArg0: text },
               );
 
             await clickCard(cardKey);
             await chooseEditQuotedText();
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(!!${editor}?.contains(document.activeElement))`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                  ) => {
+                    return String(
+                      String(
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          )
+                          ?.querySelector<HTMLElement>("blockquote .cm-content")
+                          ?.contains(document.activeElement),
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5621",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
 
             /**
@@ -5650,11 +12753,38 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
              */
             const saveSettled = async () =>
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const draft=bridge.runSync(repository.textDraftFor('text',${JSON.stringify(cardKey)}));return String(bridge.runSync(repository.mutationFor(${JSON.stringify(cardKey)})).kind==='idle'&&draft?.state.kind!=='pending');})()`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { zotlit },
+                      {
+                        __typedArg0,
+                        __typedArg1,
+                      }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: "Q8ZR4TDH" },
+                    ) => {
+                      const { annotationRepository: repository, bridge } =
+                        zotlit.services;
+                      const draft = bridge.runSync(
+                        repository.textDraftFor("text", __typedArg0),
+                      );
+                      return String(
+                        String(
+                          bridge.runSync(repository.mutationFor(__typedArg1))
+                            .kind === "idle" && draft?.state.kind !== "pending",
+                        ),
+                      );
+                    },
+                    { __typedArg0: cardKey, __typedArg1: cardKey },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:5634",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
 
             // Two saves in one session: the first run's autosave lands and is
@@ -5675,11 +12805,38 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // ZotLit holds no write and no draft on the Annotation, which is
             // when an undo key is taken rather than turned away.
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(cardKey)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('text',${JSON.stringify(cardKey)})));})()`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { zotlit },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                    }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: "Q8ZR4TDH" },
+                  ) => {
+                    const { annotationRepository: repository, bridge } =
+                      zotlit.services;
+                    return String(
+                      String(
+                        bridge.runSync(repository.mutationFor(__typedArg0))
+                          .kind === "idle" &&
+                          !bridge.runSync(
+                            repository.textDraftFor("text", __typedArg1),
+                          ),
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey, __typedArg1: cardKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5659",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
 
             expect(await undoKey()).toEqual({ handled: true });
@@ -5694,11 +12851,38 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               annotationSortIndex: highlight.seed.annotationSortIndex,
             });
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(${cardOf(cardKey)}?.querySelector('blockquote')?.textContent===${JSON.stringify(seedText)})`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                    }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: string },
+                  ) => {
+                    return String(
+                      String(
+                        app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          )
+                          ?.querySelector<HTMLElement>("blockquote")
+                          ?.textContent === __typedArg1,
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey, __typedArg1: seedText },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5678",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
 
             expect(await redoKey()).toEqual({ handled: true });
@@ -5716,25 +12900,102 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               // The card has read the blocked capability: its comment field
               // says so.
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `String(${cardOf(cardKey)}?.querySelector('.zt-annot-comment-field')?.hasAttribute('data-blocked'))`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { app },
+                      { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                    ) => {
+                      return String(
+                        String(
+                          app.workspace
+                            .getLeavesOfType("zotero-annotation-view")[0]
+                            ?.view?.containerEl.querySelector<HTMLElement>(
+                              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                            )
+                            ?.querySelector<HTMLElement>(
+                              ".zt-annot-comment-field",
+                            )
+                            ?.hasAttribute("data-blocked"),
+                        ),
+                      );
+                    },
+                    { __typedArg0: cardKey },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:5700",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
 
               await chooseEditQuotedText();
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `String([...document.querySelectorAll('.zt-notice')].some((node)=>node.textContent.includes(${JSON.stringify("Allow other applications on this computer to communicate with Zotero")})))`,
-                  { expected: "true" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      _context,
+                      {
+                        __typedArg0,
+                      }: {
+                        __typedArg0: "Allow other applications on this computer to communicate with Zotero";
+                      },
+                    ) => {
+                      return String(
+                        String(
+                          [
+                            ...document.querySelectorAll<HTMLElement>(
+                              ".zt-notice",
+                            ),
+                          ].some((node) =>
+                            node.textContent.includes(__typedArg0),
+                          ),
+                        ),
+                      );
+                    },
+                    {
+                      __typedArg0:
+                        "Allow other applications on this computer to communicate with Zotero",
+                    },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:5709",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "true" }),
               ).toBe(true);
               // The choice opened no editor.
-              expect(await obEval(vaultId!, `String(!!${editor})`)).toBe(
-                "false",
-              );
+              expect(
+                await obRun(
+                  vaultId!,
+                  async (
+                    { app },
+                    { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" },
+                  ) => {
+                    return String(
+                      String(
+                        !!app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view?.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          )
+                          ?.querySelector<HTMLElement>(
+                            "blockquote .cm-content",
+                          ),
+                      ),
+                    );
+                  },
+                  { __typedArg0: cardKey },
+                ),
+              ).toBe("false");
             });
           }, 120000);
         });
@@ -5742,9 +13003,28 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         /** A key the window's own input delivers to whatever holds the focus. */
         async function press(keyCode: string): Promise<void> {
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:${JSON.stringify(keyCode)}});contents.sendInputEvent({type:'keyUp',keyCode:${JSON.stringify(keyCode)}});return 'pressed';})()`,
+              async (
+                _context,
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                const contents =
+                  require("@electron/remote").getCurrentWebContents();
+                contents.sendInputEvent({
+                  type: "keyDown",
+                  keyCode: __typedArg0,
+                });
+                contents.sendInputEvent({
+                  type: "keyUp",
+                  keyCode: __typedArg1,
+                });
+                return String("pressed");
+              },
+              { __typedArg0: keyCode, __typedArg1: keyCode },
             ),
           ).toBe("pressed");
         }
@@ -5752,40 +13032,174 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("moves to the next card in list order for ↓ on a focused card, and lands quietly on its mark; ↓ in a text field moves nothing", async () => {
           await raiseWindow(vaultId!);
           expect(
-            await obEval(vaultId!, `String(${annotView}?.snapshot.followMode)`),
+            await obRun(
+              vaultId!,
+              async ({ app }) => {
+                return String(
+                  String(
+                    (
+                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view as AnnotationView
+                    )?.snapshot.followMode,
+                  ),
+                );
+              },
+              undefined,
+            ),
           ).toBe("active-tab");
           // The card after the clicked one, in the order the grid holds its
           // rows.
-          const next = await obEval(
+          const next = await obRun(
             vaultId!,
-            `(function(){const rows=[...${annotView}.containerEl.querySelectorAll('[role="grid"] > [role="row"]')].map((row)=>row.dataset.zoteroAnnotationKey);return String(rows[rows.indexOf(${JSON.stringify(cardKey)})+1]);})()`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" }) => {
+              const rows = [
+                ...app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view.containerEl.querySelectorAll<HTMLElement>(
+                    '[role="grid"] > [role="row"]',
+                  )!,
+              ].map((row) => row.dataset.zoteroAnnotationKey);
+              return String(String(rows[rows.indexOf(__typedArg0) + 1]));
+            },
+            { __typedArg0: cardKey },
           );
           expect(next).toMatch(/^[A-Z0-9]{8}$/);
 
-          await trustedClick(cardOf(cardKey));
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: [] },
+            ) => {
+              const target = app.workspace
+                .getLeavesOfType("zotero-annotation-view")[0]
+                ?.view?.containerEl.querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                );
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: cardKey, __typedArg1: [] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(shown, poll)
             .toEqual({ cards: [cardKey], marks: [cardKey], popup: false });
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `String(document.activeElement===${cardOf(cardKey)})`,
+              async ({ app }, { __typedArg0 }: { __typedArg0: "Q8ZR4TDH" }) => {
+                return String(
+                  String(
+                    document.activeElement ===
+                      app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                  ),
+                );
+              },
+              { __typedArg0: cardKey },
             ),
           ).toBe("true");
           // The PDF stands pages away, so the next mark in view is the
           // Landing's own scroll.
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber=4;return true;})()`,
+            async (
+              { page: pageHelpers },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              pageHelpers.pdfView(
+                __typedArg0,
+              )!.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 4;
+              return String(true);
+            },
+            { __typedArg0: attachmentPath },
           );
 
           await press("Down");
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};const box=view.viewer.child.pdfViewer.pdfViewer.container.getBoundingClientRect();const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(next)}]');const rect=mark?.getBoundingClientRect();return String(!!mark&&mark.classList.contains('is-selected')&&rect.top>=box.top&&rect.bottom<=box.bottom);})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { page: pageHelpers },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                  }: { __typedArg0: string; __typedArg1: string },
+                ) => {
+                  const view = pageHelpers.pdfView(__typedArg0)!;
+                  const box =
+                    view.viewer.child.pdfViewer.pdfViewer.container.getBoundingClientRect();
+                  const mark =
+                    view.containerEl.querySelector<SVGGraphicsElement>(
+                      `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    );
+                  const rect = mark?.getBoundingClientRect();
+                  return String(
+                    String(
+                      !!mark &&
+                        mark.classList.contains("is-selected") &&
+                        rect!.top >= box.top &&
+                        rect!.bottom <= box.bottom,
+                    ),
+                  );
+                },
+                { __typedArg0: attachmentPath, __typedArg1: next },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5765",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
           ).toBe(true);
           expect(await shown()).toEqual({
             cards: [next],
@@ -5793,37 +13207,130 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             popup: false,
           });
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `String(document.activeElement===${cardOf(next)}&&${cardOf(next)}.tabIndex===0)`,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                return String(
+                  String(
+                    document.activeElement ===
+                      app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ) &&
+                      app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        )!.tabIndex === 0,
+                  ),
+                );
+              },
+              { __typedArg0: next, __typedArg1: next },
             ),
           ).toBe("true");
 
           // The search field holds the focus, and ↓ is the field's. Its own
           // keyup says the keydown before it has run its course.
-          const search = `${annotView}.containerEl.querySelector('input[placeholder^="Search annotations"]')`;
-          const toggleSearch = `press(${annotView}.containerEl.querySelector('[aria-label="Search annotations"]'),'Search annotations')`;
+
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){${PAGE}if(!${search})${toggleSearch};const input=${search};if(!input)return 'closed';input.focus();return String(document.activeElement===input&&'focused');})()`,
-              { expected: "focused" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ app, page: pageHelpers }) => {
+                  const { press } = pageHelpers;
+                  if (
+                    !app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view.containerEl.querySelector<HTMLInputElement>(
+                        'input[placeholder^="Search annotations"]',
+                      )
+                  )
+                    press(
+                      app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view.containerEl.querySelector<HTMLElement>(
+                          '[aria-label="Search annotations"]',
+                        ),
+                      "Search annotations",
+                    );
+                  const input = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view.containerEl.querySelector<HTMLInputElement>(
+                      'input[placeholder^="Search annotations"]',
+                    );
+                  if (!input) return String("closed");
+                  input.focus();
+                  return String(
+                    String(document.activeElement === input && "focused"),
+                  );
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:5788",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "focused" }),
           ).toBe(true);
           try {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const input=${search};input.dataset.ztKeyUp='';input.addEventListener('keyup',()=>{input.dataset.ztKeyUp='done';},{once:true});return true;})()`,
+              async ({ app }) => {
+                const input = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view.containerEl.querySelector<HTMLInputElement>(
+                    'input[placeholder^="Search annotations"]',
+                  );
+                input!.dataset.ztKeyUp = "";
+                input!.addEventListener(
+                  "keyup",
+                  () => {
+                    input!.dataset.ztKeyUp = "done";
+                  },
+                  { once: true },
+                );
+                return String(true);
+              },
+              undefined,
             );
             await press("Down");
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(${search}?.dataset.ztKeyUp)`,
-                {
-                  expected: "done",
-                },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async ({ app }) => {
+                    return String(
+                      String(
+                        app.workspace
+                          .getLeavesOfType("zotero-annotation-view")[0]
+                          ?.view.containerEl.querySelector<HTMLInputElement>(
+                            'input[placeholder^="Search annotations"]',
+                          )?.dataset.ztKeyUp,
+                      ),
+                    );
+                  },
+                  undefined,
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:5801",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({
+                expected: "done",
+              }),
             ).toBe(true);
             expect(await shown()).toEqual({
               cards: [next],
@@ -5831,23 +13338,45 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               popup: false,
             });
           } finally {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){${PAGE}if(${search})${toggleSearch};return true;})()`,
+              async ({ app, page: pageHelpers }) => {
+                const { press } = pageHelpers;
+                if (
+                  app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view.containerEl.querySelector<HTMLInputElement>(
+                      'input[placeholder^="Search annotations"]',
+                    )
+                )
+                  press(
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view.containerEl.querySelector<HTMLElement>(
+                        '[aria-label="Search annotations"]',
+                      ),
+                    "Search annotations",
+                  );
+                return String(true);
+              },
+              undefined,
             );
           }
         }, 120000);
 
         it("selects a card for a click on its comment text, toggles it for a Cmd/Ctrl-click, and opens no editor", async () => {
           await raiseWindow(vaultId!);
-          const mod = await obEval(
+          const mod = await obRun(
             vaultId!,
-            "process.platform==='darwin'?'meta':'control'",
+            async (_context) => {
+              return String(process.platform === "darwin" ? "meta" : "control");
+            },
+            undefined,
           );
           const baseline = await annotationKeys();
           /** Two commented highlights this test makes for itself. */
           const drafts = [1, 2].map((n) => ({
-            type: "highlight",
+            type: "highlight" as const,
             color: "#a28ae5",
             comment: `Comment click ${n}`,
             text: "Identify Your Message",
@@ -5859,11 +13388,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
           }));
           try {
-            const outcomes = await obJson<
-              { kind: string; annotationKey?: string }[]
-            >(
+            const outcomes = await obRun(
               vaultId!,
-              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await bridge.runPromise(repository.createAnnotation(${JSON.stringify(attachment.key)},draft)));return JSON.stringify(outcomes);})()`,
+              async (
+                { zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: {
+                  __typedArg0: {
+                    type: "highlight";
+                    color: string;
+                    comment: string;
+                    text: string;
+                    pageLabel: string;
+                    sortIndex: string;
+                    position: { pageIndex: number; rects: number[][] };
+                  }[];
+                  __typedArg1: string;
+                },
+              ) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                const outcomes = [];
+                for (const draft of __typedArg0)
+                  outcomes.push(
+                    await bridge.runPromise(
+                      repository.createAnnotation(__typedArg1, draft),
+                    ),
+                  );
+                return outcomes.map((outcome) => ({
+                  kind: outcome.kind,
+                  annotationKey:
+                    "annotationKey" in outcome
+                      ? outcome.annotationKey
+                      : undefined,
+                }));
+              },
+              { __typedArg0: drafts, __typedArg1: attachment.key },
             );
             expect(outcomes).toEqual([
               { kind: "created", annotationKey: expect.any(String) },
@@ -5872,32 +13434,231 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             const made = outcomes.map(({ annotationKey }) => annotationKey!);
             const [first, second] = made as [string, string];
             /** A card's rendered comment, scrolled into the list's view. */
-            const comment = (key: string) =>
-              `(function(){const el=${cardOf(key)}.querySelector('.zt-annot-comment');el.scrollIntoView({block:'center'});return el;})()`;
+
             const editorOpen = () =>
-              obEval(
+              obRun(
                 vaultId!,
-                `String(!!${annotView}?.containerEl.querySelector('.zt-annot-card .cm-content'))`,
+                async ({ app }) => {
+                  return String(
+                    String(
+                      !!app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          ".zt-annot-card .cm-content",
+                        ),
+                    ),
+                  );
+                },
+                undefined,
               );
             await clickCard(first);
             await expect.poll(shown, poll).toMatchObject({ cards: [first] });
 
             // Cmd/Ctrl-click on the comment text adds the card, as a click
             // on its excerpt does.
-            await trustedClick(comment(second), [mod]);
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: [string] },
+              ) => {
+                const target = (function () {
+                  const el = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    )!
+                    .querySelector(".zt-annot-comment");
+                  el!.scrollIntoView({ block: "center" });
+                  return el;
+                })();
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg0: second, __typedArg1: [mod] },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             await expect
               .poll(async () => (await shown()).cards.toSorted(), poll)
               .toEqual([first, second].toSorted());
             expect(await editorOpen()).toBe("false");
 
             // Again, and it leaves.
-            await trustedClick(comment(second), [mod]);
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: [string] },
+              ) => {
+                const target = (function () {
+                  const el = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    )!
+                    .querySelector(".zt-annot-comment");
+                  el!.scrollIntoView({ block: "center" });
+                  return el;
+                })();
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg0: second, __typedArg1: [mod] },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             await expect.poll(shown, poll).toMatchObject({ cards: [first] });
             expect(await editorOpen()).toBe("false");
 
             // A plain click on the comment text selects that card alone, and
             // leaves the text as it is.
-            await trustedClick(comment(second));
+            await obRun(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: [] },
+              ) => {
+                const target = (function () {
+                  const el = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    )!
+                    .querySelector(".zt-annot-comment");
+                  el!.scrollIntoView({ block: "center" });
+                  return el;
+                })();
+                target!.scrollIntoView({
+                  block: "center",
+                  inline: "nearest",
+                  behavior: "instant",
+                });
+                const rect = target!.getBoundingClientRect();
+                const zoom = (
+                  require("electron") as {
+                    webFrame: {
+                      getZoomFactor(): number;
+                    };
+                  }
+                ).webFrame.getZoomFactor();
+                const x = Math.round((rect.left + rect.width / 2) * zoom),
+                  y = Math.round((rect.top + rect.height / 2) * zoom);
+                const contents = (
+                  require("@electron/remote") as {
+                    getCurrentWebContents(): {
+                      sendInputEvent(event: object): void;
+                    };
+                  }
+                ).getCurrentWebContents();
+                const modifiers = __typedArg1;
+                contents.sendInputEvent({
+                  type: "mouseDown",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                contents.sendInputEvent({
+                  type: "mouseUp",
+                  x,
+                  y,
+                  button: "left",
+                  clickCount: 1,
+                  modifiers,
+                });
+                return String("clicked");
+              },
+              { __typedArg0: second, __typedArg1: [] },
+            ).then((value) => {
+              expect(value).toBe("clicked");
+            });
             await expect.poll(shown, poll).toMatchObject({ cards: [second] });
             expect(await editorOpen()).toBe("false");
           } finally {
@@ -5913,27 +13674,48 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             markKey,
             "FDRFQ7C2",
           ] as const;
-          const mod = await obEval(
+          const mod = await obRun(
             vaultId!,
-            "process.platform==='darwin'?'meta':'control'",
+            async (_context) => {
+              return String(process.platform === "darwin" ? "meta" : "control");
+            },
+            undefined,
           );
-          /** A card's excerpt, scrolled into the list's view: the card's own click. */
-          const excerpt = (key: string) =>
-            `(function(){const card=${cardOf(key)};const el=card.querySelector('blockquote')??card;el.scrollIntoView({block:'center'});return el;})()`;
+
           /** What `shown` answers, in a stable order for either surface. */
           const sorted = async () => {
             const { cards, marks, popup } = await shown();
             return { cards: cards.toSorted(), marks: marks.toSorted(), popup };
           };
           const page = () =>
-            obEval(
+            obRun(
               vaultId!,
-              `String(${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber)`,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                return String(
+                  String(
+                    pageHelpers.pdfView(__typedArg0)!.viewer.child.pdfViewer
+                      .pdfViewer.currentPageNumber,
+                  ),
+                );
+              },
+              { __typedArg0: attachmentPath },
             );
           const toTop = () =>
-            obEval(
+            obRun(
               vaultId!,
-              `(function(){${pdfView}.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return 'top';})()`,
+              async (
+                { page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                pageHelpers.pdfView(
+                  __typedArg0,
+                )!.viewer.child.pdfViewer.pdfViewer.currentPageNumber = 1;
+                return String("top");
+              },
+              { __typedArg0: attachmentPath },
             );
           /**
            * Every card from one to the other in the list's own order, read off
@@ -5941,9 +13723,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
            * between them.
            */
           const rangeOf = async (from: string, to: string) => {
-            const rows = await obJson<string[]>(
+            const rows = await obRun(
               vaultId!,
-              `JSON.stringify([...${annotView}.containerEl.querySelectorAll('[role="grid"] > [role="row"]')].map((row)=>row.dataset.zoteroAnnotationKey))`,
+              async ({ app }) => {
+                return [
+                  ...app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view.containerEl.querySelectorAll<HTMLElement>(
+                      '[role="grid"] > [role="row"]',
+                    )!,
+                ].map((row) => row.dataset.zoteroAnnotationKey);
+              },
+              undefined,
             );
             const [a, b] = [rows.indexOf(from), rows.indexOf(to)].toSorted(
               (x, y) => x - y,
@@ -5951,13 +13742,139 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return rows.slice(a, b! + 1).toSorted();
           };
 
-          await trustedClick(excerpt(underline));
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "K3JRFLFQ"; __typedArg1: [] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: underline, __typedArg1: [] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(sorted, poll)
             .toEqual({ cards: [underline], marks: [underline], popup: false });
 
           // Cmd/Ctrl-click adds a card: the PDF paints both marks, with no popup.
-          await trustedClick(excerpt(highlight), [mod]);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "PUPR5FG5"; __typedArg1: [string] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: highlight, __typedArg1: [mod] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect.poll(sorted, poll).toEqual({
             cards: [underline, highlight].toSorted(),
             marks: [underline, highlight].toSorted(),
@@ -5968,7 +13885,70 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // anchored, and drops the card outside it.
           const anchored = await rangeOf(highlight, cardKey);
           expect(anchored).not.toContain(underline);
-          await trustedClick(excerpt(cardKey), ["shift"]);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: ["shift"] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: cardKey, __typedArg1: ["shift"] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect.poll(sorted, poll).toEqual({
             cards: anchored,
             marks: anchored,
@@ -5977,15 +13957,51 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // Cmd/Ctrl+A takes every card the list shows.
           const every = JSON.parse(
-            await obEval(
+            await obRun(
               vaultId!,
-              `JSON.stringify([...${annotView}.containerEl.querySelectorAll('.zt-annot-card')].map((card)=>card.dataset.zoteroAnnotationKey).sort())`,
+              async ({ app }) => {
+                return String(
+                  JSON.stringify(
+                    [
+                      ...app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]!
+                        .view.containerEl.querySelectorAll<HTMLElement>(
+                          ".zt-annot-card",
+                        ),
+                    ]
+                      .map((card) => card.dataset.zoteroAnnotationKey)
+                      .sort(),
+                  ),
+                );
+              },
+              undefined,
             ),
           ) as string[];
           expect(
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){const contents=require('@electron/remote').getCurrentWebContents();contents.sendInputEvent({type:'keyDown',keyCode:'A',modifiers:['${mod}']});contents.sendInputEvent({type:'keyUp',keyCode:'A',modifiers:['${mod}']});return 'pressed';})()`,
+              async (
+                _context,
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                const contents =
+                  require("@electron/remote").getCurrentWebContents();
+                contents.sendInputEvent({
+                  type: "keyDown",
+                  keyCode: "A",
+                  modifiers: [`${__typedArg0}`],
+                });
+                contents.sendInputEvent({
+                  type: "keyUp",
+                  keyCode: "A",
+                  modifiers: [__typedArg1],
+                });
+                return String("pressed");
+              },
+              { __typedArg0: mod, __typedArg1: mod },
             ),
           ).toBe("pressed");
           await expect
@@ -5993,20 +14009,209 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             .toEqual(every);
 
           // A Cmd/Ctrl-click that adds a card on page 2 lands the PDF there.
-          await trustedClick(excerpt(underline));
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "K3JRFLFQ"; __typedArg1: [] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: underline, __typedArg1: [] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(sorted, poll)
             .toEqual({ cards: [underline], marks: [underline], popup: false });
           await toTop();
           await expect.poll(page, poll).toBe("1");
-          await trustedClick(excerpt(image), [mod]);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "FDRFQ7C2"; __typedArg1: [string] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: image, __typedArg1: [mod] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect.poll(page, poll).toBe("2");
           expect((await sorted()).cards).toEqual([underline, image].toSorted());
 
           // Removing it only repaints: the PDF stays where it was put.
           await toTop();
           await expect.poll(page, poll).toBe("1");
-          await trustedClick(excerpt(image), [mod]);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "FDRFQ7C2"; __typedArg1: [string] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: image, __typedArg1: [mod] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(sorted, poll)
             .toEqual({ cards: [underline], marks: [underline], popup: false });
@@ -6014,12 +14219,138 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // Removing the last card keeps its anchor through the PDF's echo, so
           // a Shift-click still measures from it.
-          await trustedClick(excerpt(underline), [mod]);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "K3JRFLFQ"; __typedArg1: [string] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: underline, __typedArg1: [mod] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect
             .poll(sorted, poll)
             .toEqual({ cards: [], marks: [], popup: false });
           const kept = await rangeOf(underline, cardKey);
-          await trustedClick(excerpt(cardKey), ["shift"]);
+          await obRun(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: "Q8ZR4TDH"; __typedArg1: ["shift"] },
+            ) => {
+              const target = (function () {
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")[0]
+                  ?.view?.containerEl.querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  );
+                const el = card!.querySelector("blockquote") ?? card;
+                el!.scrollIntoView({ block: "center" });
+                return el;
+              })();
+              target!.scrollIntoView({
+                block: "center",
+                inline: "nearest",
+                behavior: "instant",
+              });
+              const rect = target!.getBoundingClientRect();
+              const zoom = (
+                require("electron") as {
+                  webFrame: {
+                    getZoomFactor(): number;
+                  };
+                }
+              ).webFrame.getZoomFactor();
+              const x = Math.round((rect.left + rect.width / 2) * zoom),
+                y = Math.round((rect.top + rect.height / 2) * zoom);
+              const contents = (
+                require("@electron/remote") as {
+                  getCurrentWebContents(): {
+                    sendInputEvent(event: object): void;
+                  };
+                }
+              ).getCurrentWebContents();
+              const modifiers = __typedArg1;
+              contents.sendInputEvent({
+                type: "mouseDown",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              contents.sendInputEvent({
+                type: "mouseUp",
+                x,
+                y,
+                button: "left",
+                clickCount: 1,
+                modifiers,
+              });
+              return String("clicked");
+            },
+            { __typedArg0: cardKey, __typedArg1: ["shift"] },
+          ).then((value) => {
+            expect(value).toBe("clicked");
+          });
           await expect.poll(sorted, poll).toEqual({
             cards: kept,
             marks: kept,
@@ -6031,7 +14362,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const baseline = await annotationKeys();
           /** Two highlights this test makes for itself: no seed is erased. */
           const drafts = [1, 2].map((n) => ({
-            type: "highlight",
+            type: "highlight" as const,
             color: "#a28ae5",
             comment: `Group delete ${n}`,
             text: "Identify Your Message",
@@ -6042,9 +14373,40 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               rects: [[100, 560 - n * 30, 300, 580 - n * 30]],
             },
           }));
-          const made = await obJson<string[]>(
+          const made = await obRun(
             vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const keys=[];for(const draft of ${JSON.stringify(drafts)}){const outcome=await bridge.runPromise(repository.createAnnotation(${JSON.stringify(attachment.key)},draft));keys.push(outcome.annotationKey);}return JSON.stringify(keys);})()`,
+            async (
+              { zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: {
+                __typedArg0: {
+                  type: "highlight";
+                  color: string;
+                  comment: string;
+                  text: string;
+                  pageLabel: string;
+                  sortIndex: string;
+                  position: { pageIndex: number; rects: number[][] };
+                }[];
+                __typedArg1: string;
+              },
+            ) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              const keys = [];
+              for (const draft of __typedArg0) {
+                const outcome = await bridge.runPromise(
+                  repository.createAnnotation(__typedArg1, draft),
+                );
+                if (outcome.kind !== "created")
+                  throw new Error("Annotation creation failed");
+                keys.push(outcome.annotationKey);
+              }
+              return keys;
+            },
+            { __typedArg0: drafts, __typedArg1: attachment.key },
           );
           try {
             expect(made).toHaveLength(2);
@@ -6052,11 +14414,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await clickCard(first);
             // Cmd/Ctrl-click adds the second card to the Card Selection.
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const card=${cardOf(second)};if(!card)return 'no card';card.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,${platformKey}:true}));return 'clicked';})()`,
-                { expected: "clicked" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                    }: {
+                      __typedArg0: string;
+                      __typedArg1: "ctrlKey" | "metaKey";
+                    },
+                  ) => {
+                    const card = app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      );
+                    if (!card) return String("no card");
+                    card.dispatchEvent(
+                      new MouseEvent("click", {
+                        bubbles: true,
+                        cancelable: true,
+                        [__typedArg1]: true,
+                      }),
+                    );
+                    return String("clicked");
+                  },
+                  { __typedArg0: second, __typedArg1: platformKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:6036",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "clicked" }),
             ).toBe(true);
             await expect.poll(shown, poll).toMatchObject({
               cards: expect.arrayContaining(made),
@@ -6067,27 +14462,74 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // Delete on the focused card of the active view, which Obsidian's
             // keymap hands to that view's Scope.
             expect(
-              await obJson<{ prevented: boolean }>(
+              await obRun(
                 vaultId!,
-                `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];app.workspace.setActiveLeaf(leaf,{focus:true});const card=${cardOf(second)};card.focus();const event=new KeyboardEvent('keydown',{key:'Delete',code:'Delete',bubbles:true,cancelable:true});card.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+                async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                  const leaf = app.workspace.getLeavesOfType(
+                    "zotero-annotation-view",
+                  )[0];
+                  app.workspace.setActiveLeaf(leaf!, { focus: true });
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    );
+                  (card! as HTMLElement).focus();
+                  const event = new KeyboardEvent("keydown", {
+                    key: "Delete",
+                    code: "Delete",
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  card!.dispatchEvent(event);
+                  return { prevented: event.defaultPrevented };
+                },
+                { __typedArg0: second },
               ),
             ).toEqual({ prevented: true });
             // The confirmation names the count, and nothing is erased before
             // it is confirmed.
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `String(document.querySelector('.modal-container .modal-title')?.textContent)`,
-                { expected: "Delete 2 annotations?" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (_context) => {
+                    return String(
+                      String(
+                        document.querySelector<HTMLElement>(
+                          ".modal-container .modal-title",
+                        )?.textContent,
+                      ),
+                    );
+                  },
+                  undefined,
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:6059",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "Delete 2 annotations?" }),
             ).toBe(true);
             expect(await madeSince(baseline)).toEqual(
               expect.arrayContaining(made),
             );
             expect(
-              await obEval(
+              await obRun(
                 vaultId!,
-                `(function(){${PAGE}const button=[...document.querySelectorAll('.modal-container .modal-button-container button')].find((node)=>node.textContent==='Delete');press(button,'Delete');return 'confirmed';})()`,
+                async ({ page: pageHelpers }) => {
+                  const { press } = pageHelpers;
+                  const button = [
+                    ...document.querySelectorAll<HTMLElement>(
+                      ".modal-container .modal-button-container button",
+                    ),
+                  ].find((node) => node.textContent === "Delete");
+                  press(button, "Delete");
+                  return String("confirmed");
+                },
+                undefined,
               ),
             ).toBe("confirmed");
 
@@ -6101,11 +14543,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // ZotLit has read both deletes back, so the undo key finds no
             // write still on its way, which it would turn away.
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(${JSON.stringify(made)}.every((key)=>bridge.runSync(repository.mutationFor(key)).kind==='idle'));})()`,
-                { expected: "true" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { zotlit },
+                    { __typedArg0 }: { __typedArg0: string[] },
+                  ) => {
+                    const { annotationRepository: repository, bridge } =
+                      zotlit.services;
+                    return String(
+                      String(
+                        __typedArg0.every(
+                          (key) =>
+                            bridge.runSync(repository.mutationFor(key)).kind ===
+                            "idle",
+                        ),
+                      ),
+                    );
+                  },
+                  { __typedArg0: made },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:6085",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "true" }),
             ).toBe(true);
 
             // One press of the undo key restores both, each under a new key.
@@ -6136,14 +14602,31 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // A confirmation left open by a failed step would block every
             // later test; its close answers "cancel".
             // Teardown, not a reader's press.
-            await obEval(
+            await obRun(
               vaultId!,
-              "(function(){for(const modal of app.workspace.containerEl.doc.querySelectorAll('.modal-container .modal-close-button'))modal.click();return true;})()",
+              async ({ app }) => {
+                for (const modal of app.workspace.containerEl.doc.querySelectorAll<HTMLElement>(
+                  ".modal-container .modal-close-button",
+                ))
+                  modal.click();
+                return String(true);
+              },
+              undefined,
             );
             // The PDF is the active tab the view follows again.
-            await obEval(
+            await obRun(
               vaultId!,
-              `(function(){app.workspace.setActiveLeaf(${pdfView}.leaf,{focus:true});return true;})()`,
+              async (
+                { app, page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                app.workspace.setActiveLeaf(
+                  pageHelpers.pdfView(__typedArg0)!.leaf,
+                  { focus: true },
+                );
+                return String(true);
+              },
+              { __typedArg0: attachmentPath },
             );
             await eraseAnnotations(rdp, await madeSince(baseline));
           }
@@ -6163,7 +14646,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { n: 1, color: "#a28ae5", text: "Identify Your Message" },
             { n: 2, color: "#ff6666", text: "Know Your Audience" },
           ].map(({ n, color, text }) => ({
-            type: "highlight",
+            type: "highlight" as const,
             color,
             comment: `Group recolour ${n}`,
             text,
@@ -6175,11 +14658,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             },
           }));
           try {
-            const outcomes = await obJson<
-              { kind: string; annotationKey?: string }[]
-            >(
+            const outcomes = await obRun(
               vaultId!,
-              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const outcomes=[];for(const draft of ${JSON.stringify(drafts)})outcomes.push(await bridge.runPromise(repository.createAnnotation(${JSON.stringify(attachment.key)},draft)));return JSON.stringify(outcomes);})()`,
+              async (
+                { zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: {
+                  __typedArg0: {
+                    type: "highlight";
+                    color: string;
+                    comment: string;
+                    text: string;
+                    pageLabel: string;
+                    sortIndex: string;
+                    position: { pageIndex: number; rects: number[][] };
+                  }[];
+                  __typedArg1: string;
+                },
+              ) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                const outcomes = [];
+                for (const draft of __typedArg0)
+                  outcomes.push(
+                    await bridge.runPromise(
+                      repository.createAnnotation(__typedArg1, draft),
+                    ),
+                  );
+                return outcomes.map((outcome) => ({
+                  kind: outcome.kind,
+                  annotationKey:
+                    "annotationKey" in outcome
+                      ? outcome.annotationKey
+                      : undefined,
+                }));
+              },
+              { __typedArg0: drafts, __typedArg1: attachment.key },
             );
             expect(outcomes).toEqual([
               { kind: "created", annotationKey: expect.any(String) },
@@ -6189,11 +14705,44 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             const [first, second] = made as [string, string];
             await clickCard(first);
             expect(
-              await obEvalUntil(
-                vaultId!,
-                `(function(){const card=${cardOf(second)};if(!card)return 'no card';card.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,${platformKey}:true}));return 'clicked';})()`,
-                { expected: "clicked" },
-              ),
+              await ((options: { expected: string; tries?: number }) =>
+                obRunUntil(
+                  vaultId!,
+                  async (
+                    { app },
+                    {
+                      __typedArg0,
+                      __typedArg1,
+                    }: {
+                      __typedArg0: string;
+                      __typedArg1: "ctrlKey" | "metaKey";
+                    },
+                  ) => {
+                    const card = app.workspace
+                      .getLeavesOfType("zotero-annotation-view")[0]
+                      ?.view?.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      );
+                    if (!card) return String("no card");
+                    card.dispatchEvent(
+                      new MouseEvent("click", {
+                        bubbles: true,
+                        cancelable: true,
+                        [__typedArg1]: true,
+                      }),
+                    );
+                    return String("clicked");
+                  },
+                  { __typedArg0: second, __typedArg1: platformKey },
+                  {
+                    ready: (value) => value === options.expected,
+                    tries: options.tries,
+                    what: "paired-run.e2e.ts:6173",
+                  },
+                ).then(
+                  () => true,
+                  () => false,
+                ))({ expected: "clicked" }),
               "the second card is there to Cmd/Ctrl-click",
             ).toBe(true);
             await expect.poll(shown, poll).toMatchObject({
@@ -6226,11 +14775,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             "Zotero holds green on both Annotations",
           ).toBe(true);
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(${JSON.stringify(made)}.every((key)=>bridge.runSync(repository.mutationFor(key)).kind==='idle'));})()`,
-              { expected: "true" },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  { __typedArg0 }: { __typedArg0: readonly string[] },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  return String(
+                    String(
+                      __typedArg0.every(
+                        (key) =>
+                          bridge.runSync(repository.mutationFor(key)).kind ===
+                          "idle",
+                      ),
+                    ),
+                  );
+                },
+                { __typedArg0: made },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:6210",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({ expected: "true" }),
             "ZotLit read both recolour writes back",
           ).toBe(true);
           // The chord goes to the PDF view's own Scope, and no tab switches
@@ -6258,29 +14831,75 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("recolours a group from the palette of a card in it, and one undo returns both colours", async () => {
           // The menu is Obsidian's own DOM menu here, so its entry is found
           // and clicked as a researcher clicks it.
-          const nativeMenus = await obEval(
+          const nativeMenus = await obRun(
             vaultId!,
-            "String(app.vault.getConfig('nativeMenus'))",
+            async ({ app }) => {
+              return String(String(app.vault.getConfig("nativeMenus")));
+            },
+            undefined,
           );
-          await obEval(
+          await obRun(
             vaultId!,
-            "(app.vault.setConfig('nativeMenus',false),true)",
+            async ({ app }) => {
+              return String((app.vault.setConfig("nativeMenus", false), true));
+            },
+            undefined,
           );
           try {
             await withGroupOfTwo(async (made) => {
               expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `(function(){${PAGE}const button=${cardOf(made[1])}?.querySelector('[aria-label=${JSON.stringify("Change color")}]');if(!button)return 'no button';press(button,'Change color');const green=[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Green');if(!green)return 'no menu';press(green,'Green');return 'picked';})()`,
-                  { expected: "picked" },
-                ),
+                await ((options: { expected: string; tries?: number }) =>
+                  obRunUntil(
+                    vaultId!,
+                    async (
+                      { app, page: pageHelpers },
+                      {
+                        __typedArg0,
+                        __typedArg1,
+                      }: { __typedArg0: string; __typedArg1: "Change color" },
+                    ) => {
+                      const { press } = pageHelpers;
+                      const button = app.workspace
+                        .getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view?.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        )
+                        ?.querySelector<HTMLElement>(
+                          `[aria-label=${JSON.stringify(__typedArg1)}]`,
+                        );
+                      if (!button) return String("no button");
+                      press(button, "Change color");
+                      const green = [
+                        ...document.querySelectorAll<HTMLElement>(
+                          ".menu .menu-item",
+                        ),
+                      ].find((item) => item.textContent.trim() === "Green");
+                      if (!green) return String("no menu");
+                      press(green, "Green");
+                      return String("picked");
+                    },
+                    { __typedArg0: made[1], __typedArg1: "Change color" },
+                    {
+                      ready: (value) => value === options.expected,
+                      tries: options.tries,
+                      what: "paired-run.e2e.ts:6253",
+                    },
+                  ).then(
+                    () => true,
+                    () => false,
+                  ))({ expected: "picked" }),
               ).toBe(true);
               await expectOneUndoReturnsBoth(made);
             });
           } finally {
-            await obEval(
+            await obRun(
               vaultId!,
-              `(app.vault.setConfig('nativeMenus',${nativeMenus === "true"}),true)`,
+              async ({ app }, { __typedArg0 }: { __typedArg0: boolean }) => {
+                return String(
+                  (app.vault.setConfig("nativeMenus", __typedArg0), true),
+                );
+              },
+              { __typedArg0: nativeMenus === "true" },
             );
           }
         }, 120000);
@@ -6290,9 +14909,33 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // `3` on the focused card, through the view's own Scope, is the
             // palette's third swatch, green.
             expect(
-              await obJson<{ handled: boolean }>(
+              await obRun(
                 vaultId!,
-                `(function(){const card=${cardOf(made[1])};card.focus();const event=new KeyboardEvent('keydown',{key:'3',bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const handled=${annotView}.scope.handleKey(event,{modifiers:'',key:'3',vkey:'Digit3'})===false;return JSON.stringify({handled});})()`,
+                async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    );
+                  (card! as HTMLElement).focus();
+                  const event = new KeyboardEvent("keydown", {
+                    key: "3",
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  Object.defineProperty(event, "target", { value: card });
+                  const handled =
+                    (
+                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view.scope! as PairedScope
+                    ).handleKey(event, {
+                      modifiers: "",
+                      key: "3",
+                      vkey: "Digit3",
+                    }) === false;
+                  return { handled };
+                },
+                { __typedArg0: made[1] },
               ),
             ).toEqual({ handled: true });
             await expectOneUndoReturnsBoth(made);
@@ -6303,16 +14946,66 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await withGroupOfTwo(async (made) => {
             // The vault's in-memory clipboard (prepareRunWindow), not the OS one.
             const clipboard = (text: string | null) =>
-              obEval(
+              obRun(
                 vaultId!,
-                `(function(){const {clipboard}=require('electron');${text === null ? "" : `clipboard.writeText(${JSON.stringify(text)});`}return clipboard.readText();})()`,
+                (_context, { text }: { text: string | null }) => {
+                  const { clipboard } = require("electron") as {
+                    clipboard: {
+                      writeText(text: string): void;
+                      readText(): string;
+                    };
+                  };
+                  if (text !== null) clipboard.writeText(text);
+                  return clipboard.readText();
+                },
+                { text },
               );
             await clipboard("before");
             // Cmd/Ctrl+C on the focused card, through the view's own Scope.
             expect(
-              await obJson<{ handled: boolean }>(
+              await obRun(
                 vaultId!,
-                `(function(){const card=${cardOf(made[1])};card.focus();const event=new KeyboardEvent('keydown',{key:'c',${platformKey}:true,bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const handled=${annotView}.scope.handleKey(event,{modifiers:${JSON.stringify(platformKey === "metaKey" ? "Meta" : "Ctrl")},key:'c',vkey:'KeyC'})===false;return JSON.stringify({handled});})()`,
+                async (
+                  { app },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: "ctrlKey" | "metaKey";
+                    __typedArg2: "Ctrl" | "Meta";
+                  },
+                ) => {
+                  const card = app.workspace
+                    .getLeavesOfType("zotero-annotation-view")[0]
+                    ?.view?.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    );
+                  (card! as HTMLElement).focus();
+                  const event = new KeyboardEvent("keydown", {
+                    key: "c",
+                    [__typedArg1]: true,
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  Object.defineProperty(event, "target", { value: card });
+                  const handled =
+                    (
+                      app.workspace.getLeavesOfType("zotero-annotation-view")[0]
+                        ?.view.scope! as PairedScope
+                    ).handleKey(event, {
+                      modifiers: __typedArg2,
+                      key: "c",
+                      vkey: "KeyC",
+                    }) === false;
+                  return { handled };
+                },
+                {
+                  __typedArg0: made[1],
+                  __typedArg1: platformKey,
+                  __typedArg2: platformKey === "metaKey" ? "Meta" : "Ctrl",
+                },
               ),
             ).toEqual({ handled: true });
             expect(
@@ -6340,14 +15033,33 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               return [...reader._internalReader._state.selectedAnnotationIDs];
             })()`);
           const cards = () =>
-            obJson<{ mode: string; cards: string[] }>(
+            obRun(
               vaultId!,
-              `(function(){const view=${annotView};return JSON.stringify({mode:view.snapshot.followMode,cards:[...view.containerEl.querySelectorAll('.zt-annot-card[data-selected]')].map((card)=>card.dataset.zoteroAnnotationKey)});})()`,
+              async ({ app }) => {
+                const view = app.workspace.getLeavesOfType(
+                  "zotero-annotation-view",
+                )[0]?.view;
+                return {
+                  mode: (view! as AnnotationView).snapshot.followMode,
+                  cards: [
+                    ...view!.containerEl.querySelectorAll<HTMLElement>(
+                      ".zt-annot-card[data-selected]",
+                    ),
+                  ].map((card) => card.dataset.zoteroAnnotationKey),
+                };
+              },
+              undefined,
             );
 
-          await obEval(
+          await obRun(
             vaultId!,
-            "app.commands.executeCommandById('zotlit:annot-view-follow-zotero-reader');true",
+            async ({ app }) => {
+              app.commands.executeCommandById(
+                "zotlit:annot-view-follow-zotero-reader",
+              );
+              return String(true);
+            },
+            undefined,
           );
           try {
             expect(await selectInZotero([markKey, cardKey])).toEqual([
@@ -6367,9 +15079,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               .toEqual({ mode: "zotero-reader", cards: [] });
           } finally {
             await selectInZotero([]);
-            await obEval(
+            await obRun(
               vaultId!,
-              "app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');true",
+              async ({ app }) => {
+                app.commands.executeCommandById(
+                  "zotlit:annot-view-follow-active-tab",
+                );
+                return String(true);
+              },
+              undefined,
             );
           }
         }, 120000);
@@ -6383,55 +15101,244 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       }, 120000);
 
       it("saves a comment from a pop-out card's native Scope", async () => {
-        const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)`;
-        const readerPdf = `app.workspace.getLeavesOfType('pdf').find(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))?.view.containerEl`;
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];if(!leaf)return false;leaf.view.gestures.onPinCurrentItem();app.workspace.moveLeafToPopout(leaf);return true;})()`,
+          async ({ app }) => {
+            const leaf = app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            )[0];
+            if (!leaf) return String(false);
+            (leaf.view as AnnotationView).gestures!.onPinCurrentItem();
+            app.workspace.moveLeafToPopout(leaf);
+            return String(true);
+          },
+          undefined,
         );
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String((()=>{const cardWin=app.workspace.getLeavesOfType('zotero-annotation-view').find(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))?.view.containerEl.win;return !!cardWin&&cardWin!==(${readerPdf})?.win;})())`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                return String(
+                  String(
+                    (() => {
+                      const cardWin = app.workspace
+                        .getLeavesOfType("zotero-annotation-view")
+                        .find(({ view }) =>
+                          view.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          ),
+                        )?.view.containerEl.win;
+                      return (
+                        !!cardWin &&
+                        cardWin !==
+                          app.workspace
+                            .getLeavesOfType("pdf")
+                            .find(({ view }) =>
+                              view.containerEl.querySelector<SVGGraphicsElement>(
+                                `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                              ),
+                            )?.view.containerEl?.win
+                      );
+                    })(),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey, __typedArg1: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6374",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){${PAGE}const card=(${card});if(!card)return false;press(card,'card');return card.hasAttribute('data-alone');})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app, page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const { press } = pageHelpers;
+                const card = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    ),
+                  )
+                  .find(Boolean);
+                if (!card) return String(false);
+                press(card as HTMLElement, "card");
+                return String(card.hasAttribute("data-alone"));
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6381",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         // The card selected alone offers its comment as a field, and a click
         // on it opens the editor. A press collapses the page's selection
         // before its click, and a click over selected text only reads.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){${PAGE}const field=(${card})?.querySelector('.zt-annot-comment-field');if(!field)return false;field.doc.getSelection().removeAllRanges();press(field,'comment field');return true;})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app, page: pageHelpers },
+                { __typedArg0 }: { __typedArg0: string },
+              ) => {
+                const { press } = pageHelpers;
+                const field = app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                    ),
+                  )
+                  .find(Boolean)
+                  ?.querySelector<HTMLElement>(".zt-annot-comment-field");
+                if (!field) return String(false);
+                field.doc.getSelection()!.removeAllRanges();
+                press(field, "comment field");
+                return String(true);
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6391",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(!!(${card})?.querySelector('.cm-content'))`,
-            {
-              expected: "true",
-            },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    !!app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .map((leaf) =>
+                        leaf.view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      )
+                      .find(Boolean)
+                      ?.querySelector<HTMLElement>(".cm-content"),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6398",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({
+            expected: "true",
+          }),
         ).toBe(true);
 
         const shortcutComment = "Saved by pop-out card Mod+Enter";
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(shortcutComment)});return true;})()`,
+          async (
+            { app },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: {
+              __typedArg0: string;
+              __typedArg1: "Saved by pop-out card Mod+Enter";
+            },
+          ) => {
+            const editor = app.workspace
+              .getLeavesOfType("zotero-annotation-view")
+              .map((leaf) =>
+                leaf.view.containerEl.querySelector<HTMLElement>(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                ),
+              )
+              .find(Boolean)!
+              .querySelector<HTMLElement>(".cm-content");
+            editor!.focus();
+            editor!.doc.execCommand("selectAll");
+            editor!.doc.execCommand("insertText", false, __typedArg1);
+            return String(true);
+          },
+          { __typedArg0: createdKey, __typedArg1: shortcutComment },
         );
         const shortcut = JSON.parse(
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){const editor=(${card}).querySelector('.cm-content');const mac=editor.win.navigator.platform.startsWith('Mac');const event=new editor.win.KeyboardEvent('keydown',{key:'Enter',metaKey:mac,ctrlKey:!mac,bubbles:true,cancelable:true});editor.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented,open:editor.isConnected,owned:editor.win!==(${readerPdf}).win});})()`,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const editor = app.workspace
+                .getLeavesOfType("zotero-annotation-view")
+                .map((leaf) =>
+                  leaf.view.containerEl.querySelector<HTMLElement>(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                  ),
+                )
+                .find(Boolean)!
+                .querySelector<HTMLElement>(".cm-content");
+              const mac = editor!.win.navigator.platform.startsWith("Mac");
+              const event = new (
+                editor!.win as Window & typeof globalThis
+              ).KeyboardEvent("keydown", {
+                key: "Enter",
+                metaKey: mac,
+                ctrlKey: !mac,
+                bubbles: true,
+                cancelable: true,
+              });
+              editor!.dispatchEvent(event);
+              return String(
+                JSON.stringify({
+                  prevented: event.defaultPrevented,
+                  open: editor!.isConnected,
+                  owned:
+                    editor!.win !==
+                    (app.workspace
+                      .getLeavesOfType("pdf")
+                      .find(({ view }) =>
+                        view.containerEl.querySelector<SVGGraphicsElement>(
+                          `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        ),
+                      )?.view.containerEl)!.win,
+                }),
+              );
+            },
+            { __typedArg0: createdKey, __typedArg1: createdKey },
           ),
         ) as { prevented: boolean; open: boolean; owned: boolean };
         expect(shortcut).toEqual({ prevented: true, open: true, owned: true });
@@ -6443,17 +15350,62 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ),
         ).toBe(true);
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            `String(!!(${card})?.querySelector('.cm-content'))`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+              return String(
+                String(
+                  !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map((leaf) =>
+                      leaf.view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean)
+                    ?.querySelector<HTMLElement>(".cm-content"),
+                ),
+              );
+            },
+            { __typedArg0: createdKey },
           ),
         ).toBe("true");
 
         // Escape saves what was typed and closes the editor.
         const escapeComment = "Saved by pop-out card Escape";
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){const editor=(${card}).querySelector('.cm-content');editor.focus();editor.doc.execCommand('selectAll');editor.doc.execCommand('insertText',false,${JSON.stringify(escapeComment)});editor.dispatchEvent(new editor.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          async (
+            { app },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: {
+              __typedArg0: string;
+              __typedArg1: "Saved by pop-out card Escape";
+            },
+          ) => {
+            const editor = app.workspace
+              .getLeavesOfType("zotero-annotation-view")
+              .map((leaf) =>
+                leaf.view.containerEl.querySelector<HTMLElement>(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                ),
+              )
+              .find(Boolean)!
+              .querySelector<HTMLElement>(".cm-content");
+            editor!.focus();
+            editor!.doc.execCommand("selectAll");
+            editor!.doc.execCommand("insertText", false, __typedArg1);
+            editor!.dispatchEvent(
+              new (editor!.win as Window & typeof globalThis).KeyboardEvent(
+                "keydown",
+                { key: "Escape", bubbles: true, cancelable: true },
+              ),
+            );
+            return String(true);
+          },
+          { __typedArg0: createdKey, __typedArg1: escapeComment },
         );
         expect(
           await waitFor(
@@ -6463,14 +15415,40 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ),
         ).toBe(true);
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            `String(!!(${card})?.querySelector('.cm-content'))`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+              return String(
+                String(
+                  !!app.workspace
+                    .getLeavesOfType("zotero-annotation-view")
+                    .map((leaf) =>
+                      leaf.view.containerEl.querySelector<HTMLElement>(
+                        `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                      ),
+                    )
+                    .find(Boolean)
+                    ?.querySelector<HTMLElement>(".cm-content"),
+                ),
+              );
+            },
+            { __typedArg0: createdKey },
           ),
         ).toBe("false");
-        await obEval(
+        await obRun(
           vaultId!,
-          `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];leaf.detach();app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+          async ({ app }) => {
+            const leaf = app.workspace.getLeavesOfType(
+              "zotero-annotation-view",
+            )[0];
+            leaf!.detach();
+            app.commands.executeCommandById("zotlit:open-annot-view");
+            app.commands.executeCommandById(
+              "zotlit:annot-view-follow-active-tab",
+            );
+            return String(true);
+          },
+          undefined,
         );
       }, 120000);
 
@@ -6491,11 +15469,52 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         })()`);
 
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.textContent.includes(${JSON.stringify(fromZotero)}));})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app, zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                  __typedArg2,
+                }: {
+                  __typedArg0: string;
+                  __typedArg1: string;
+                  __typedArg2: "Edited in Zotero";
+                },
+              ) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.read(__typedArg0));
+                return String(
+                  String(
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .map((leaf) =>
+                        leaf.view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                        ),
+                      )
+                      .find(Boolean)
+                      ?.textContent.includes(__typedArg2),
+                  ),
+                );
+              },
+              {
+                __typedArg0: attachment.key,
+                __typedArg1: createdKey,
+                __typedArg2: fromZotero,
+              },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6475",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
       }, 120000);
 
@@ -6505,20 +15524,43 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       it("refreshes external comments by focus and manual action without the Companion", async () => {
         const liveUpdates =
-          (await obEval(
+          (await obRun(
             vaultId!,
-            "String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.live-update'])",
+            async ({ zotlit }) => {
+              return String(
+                String(
+                  zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )["server.live-update"],
+                ),
+              );
+            },
+            undefined,
           )) === "true";
         await using restoreLiveUpdates = new AsyncDisposableStack();
         restoreLiveUpdates.defer(async () => {
-          await obEval(
+          await obRun(
             vaultId!,
-            `app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.live-update':${String(liveUpdates)}}));true`,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: boolean }) => {
+              zotlit.services.bridge.runSync(
+                zotlit.services.settings.update({
+                  "server.live-update": __typedArg0,
+                }),
+              );
+              return String(true);
+            },
+            { __typedArg0: liveUpdates },
           );
         });
-        await obEval(
+        await obRun(
           vaultId!,
-          "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false}));true",
+          async ({ zotlit }) => {
+            zotlit.services.bridge.runSync(
+              zotlit.services.settings.update({ "server.live-update": false }),
+            );
+            return String(true);
+          },
+          undefined,
         );
 
         const saveInZotero = (comment: string) =>
@@ -6532,25 +15574,65 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             return "saved";
           })()`);
         const cardHas = (comment: string) =>
-          obEvalUntil(
-            vaultId!,
-            `String(app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.textContent.includes(${JSON.stringify(comment)}))`,
-            { expected: "true" },
-          );
+          ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                return String(
+                  String(
+                    app.workspace
+                      .getLeavesOfType("zotero-annotation-view")
+                      .map((leaf) =>
+                        leaf.view.containerEl.querySelector<HTMLElement>(
+                          `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                        ),
+                      )
+                      .find(Boolean)
+                      ?.textContent.includes(__typedArg1),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey, __typedArg1: comment },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6516",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" });
 
         const focused = "Changed while Companion disabled";
         await saveInZotero(focused);
-        await obEval(
+        await obRun(
           vaultId!,
-          "window.dispatchEvent(new FocusEvent('focus'));true",
+          async (_context) => {
+            window.dispatchEvent(new FocusEvent("focus"));
+            return String(true);
+          },
+          undefined,
         );
         expect(await cardHas(focused)).toBe(true);
 
         const manual = "Changed before manual Refresh";
         await saveInZotero(manual);
-        await obEval(
+        await obRun(
           vaultId!,
-          "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.gestures.onRefresh();true",
+          async ({ app }) => {
+            (
+              app.workspace.getLeavesOfType("zotero-annotation-view")[0]!
+                .view as AnnotationView
+            ).gestures!.onRefresh();
+            return String(true);
+          },
+          undefined,
         );
         expect(await cardHas(manual)).toBe(true);
       }, 120000);
@@ -6560,12 +15642,26 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const committed = "#e56b6f";
         await installLostWriteProbe(vaultId!);
 
-        const state = await obJson<{
-          kind: string;
-          failure?: { kind: string };
-        }>(
+        const state = await obRun(
           vaultId!,
-          `(async()=>{const state=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(committed)}));return JSON.stringify(state);})()`,
+          async (
+            { zotlit },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: { __typedArg0: string; __typedArg1: "#e56b6f" },
+          ) => {
+            const state = await zotlit.services.bridge.runPromise(
+              zotlit.services.annotationRepository.patchColor(
+                __typedArg0,
+                __typedArg1,
+              ),
+            );
+            return state.kind === "failed"
+              ? { kind: state.kind, failure: { kind: state.failure.kind } }
+              : { kind: state.kind };
+          },
+          { __typedArg0: createdKey, __typedArg1: committed },
         );
         expect(state).toEqual({
           kind: "failed",
@@ -6587,18 +15683,95 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         await restoreWriteOutcomeProbe(vaultId!);
         await cli([`vault=${vaultId!}`, "plugin:reload", "id=zotlit"]);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit?.services;if(!services)return 'loading';await services.bridge.runPromise(services.annotationRepository.probe);const list=await services.bridge.runPromise(services.annotationRepository.read(${JSON.stringify(attachment.key)}));return String(list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)})?.color);})()`,
-            { expected: committed },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app, zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                const services = app.plugins.plugins.zotlit
+                  ? zotlit.services
+                  : undefined;
+                if (!services) return String("loading");
+                await services.bridge.runPromise(
+                  services.annotationRepository.probe,
+                );
+                const list = await services.bridge.runPromise(
+                  services.annotationRepository.read(__typedArg0),
+                );
+                return String(
+                  String(
+                    list?.annotations.find(
+                      (annotation) => annotation.key === __typedArg1,
+                    )?.color,
+                  ),
+                );
+              },
+              { __typedArg0: attachment.key, __typedArg1: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6571",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: committed }),
         ).toBe(true);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `JSON.stringify((()=>{const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean);const mark=app.workspace.getLeavesOfType('pdf').map(leaf=>leaf.view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean);return {card:card?.getAttribute('data-annot-color')??null,mark:mark?.getAttribute('fill')??null}})())`,
-            { expected: JSON.stringify({ card: committed, mark: committed }) },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { app },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                return String(
+                  JSON.stringify(
+                    (() => {
+                      const card = app.workspace
+                        .getLeavesOfType("zotero-annotation-view")
+                        .map((leaf) =>
+                          leaf.view.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                          ),
+                        )
+                        .find(Boolean);
+                      const mark = app.workspace
+                        .getLeavesOfType("pdf")
+                        .map((leaf) =>
+                          leaf.view.containerEl.querySelector<SVGGraphicsElement>(
+                            `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                          ),
+                        )
+                        .find(Boolean);
+                      return {
+                        card: card?.getAttribute("data-annot-color") ?? null,
+                        mark: mark?.getAttribute("fill") ?? null,
+                      };
+                    })(),
+                  ),
+                );
+              },
+              { __typedArg0: createdKey, __typedArg1: createdKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6578",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({
+            expected: JSON.stringify({ card: committed, mark: committed }),
+          }),
         ).toBe(true);
         // Restart reads Zotero; it does not replay the session-only attempt.
         expect(await annotationState(api, serverID, createdKey)).toEqual(
@@ -6619,9 +15792,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await expect
             .poll(
               () =>
-                obJson(
+                obRun(
                   vaultId!,
-                  `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+                  async ({ page: pageHelpers }) => {
+                    return {
+                      reached:
+                        pageHelpers.scratch.__zotlitWriteOutcomeProbe?.reached,
+                      outcome:
+                        pageHelpers.scratch.__zotlitWriteOutcomeProbe?.outcome,
+                    };
+                  },
+                  undefined,
                 ),
               { timeout: 10_000 },
             )
@@ -6639,40 +15820,60 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // draft edit, before its idle timer can fire. The plugin's unload
           // starts asynchronous service disposal without awaiting it, so the
           // registry is the completion signal available to this consumer.
-          const unloading = await obJson<{
-            draft: string | null;
-            timers: number;
-            calls: number;
-            outcome: unknown;
-          }>(
+          const unloading = await obRun(
             vaultId!,
-            `(()=>{
-            const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;
-            let draft=null;
-            let timers=0;
-            if (${String(pending === "unsent draft")}) {
-              const schedule=window.setTimeout;
-              window.setTimeout=function(...args){timers++;return schedule.apply(this,args)};
-              try { draft=bridge.runSync(repository.editTextField('comment',${JSON.stringify(createdKey)},'Unsent comment discarded on reload'))?.text??null; }
-              finally { window.setTimeout=schedule; }
-            }
-            const probe=window.__zotlitWriteOutcomeProbe;
-            const calls=probe?.calls??0;
-            const outcome=probe?.outcome??null;
-            const lifecycle={disabled:false,enabled:false,error:null};
-            window.__zotlitReloadProbe=lifecycle;
-            void (async()=>{
-              try {
-                await app.plugins.disablePlugin('zotlit');
-                lifecycle.disabled=!app.plugins.plugins.zotlit;
-                await app.plugins.enablePlugin('zotlit');
-                lifecycle.enabled=!!app.plugins.plugins.zotlit?.services;
-              } catch(error) {
-                lifecycle.error=String(error);
+            (
+              { app, zotlit, page: pageHelpers },
+              { pending, createdKey }: { pending: string; createdKey: string },
+            ) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              let draft: string | null = null;
+              let timers = 0;
+              if (pending === "unsent draft") {
+                const pageWindow = window as Window;
+                const schedule = pageWindow.setTimeout;
+                pageWindow.setTimeout = (
+                  ...args: Parameters<Window["setTimeout"]>
+                ) => {
+                  timers++;
+                  return schedule.apply(pageWindow, args);
+                };
+                try {
+                  draft =
+                    bridge.runSync(
+                      repository.editTextField(
+                        "comment",
+                        createdKey,
+                        "Unsent comment discarded on reload",
+                      ),
+                    )?.text ?? null;
+                } finally {
+                  pageWindow.setTimeout = schedule;
+                }
               }
-            })();
-            return JSON.stringify({draft,timers,calls,outcome});
-          })()`,
+              const probe = pageHelpers.scratch.__zotlitWriteOutcomeProbe;
+              const calls = probe?.calls ?? 0;
+              const outcome = probe?.outcome ?? null;
+              const lifecycle: {
+                disabled: boolean;
+                enabled: boolean;
+                error: string | null;
+              } = { disabled: false, enabled: false, error: null };
+              pageHelpers.scratch.__zotlitReloadProbe = lifecycle;
+              void (async () => {
+                try {
+                  await app.plugins.disablePlugin("zotlit");
+                  lifecycle.disabled = !app.plugins.plugins.zotlit;
+                  await app.plugins.enablePlugin("zotlit");
+                  lifecycle.enabled = !!app.plugins.plugins.zotlit;
+                } catch (error) {
+                  lifecycle.error = String(error);
+                }
+              })();
+              return { draft, timers, calls, outcome };
+            },
+            { pending, createdKey },
           );
           expect(unloading).toEqual(
             pending === "unsent draft"
@@ -6685,41 +15886,134 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               : { draft: null, timers: 0, calls: 1, outcome: null },
           );
           expect(
-            await obEvalUntil(
-              vaultId!,
-              "JSON.stringify(window.__zotlitReloadProbe)",
-              {
-                expected: JSON.stringify({
-                  disabled: true,
-                  enabled: true,
-                  error: null,
-                }),
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async ({ page: pageHelpers }) => {
+                  return String(
+                    JSON.stringify(pageHelpers.scratch.__zotlitReloadProbe),
+                  );
+                },
+                undefined,
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:6669",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: JSON.stringify({
+                disabled: true,
+                enabled: true,
+                error: null,
+              }),
+            }),
           ).toBe(true);
 
           expect(
-            await obEvalUntil(
-              vaultId!,
-              `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(createdKey)})),mutation:bridge.runSync(repository.mutationFor(${JSON.stringify(createdKey)}))});})()`,
-              {
-                expected: JSON.stringify({
-                  color: stored.color,
-                  comment: baseline.comment,
-                  draft: null,
-                  mutation: { kind: "idle" },
-                }),
-              },
-            ),
+            await ((options: { expected: string; tries?: number }) =>
+              obRunUntil(
+                vaultId!,
+                async (
+                  { zotlit },
+                  {
+                    __typedArg0,
+                    __typedArg1,
+                    __typedArg2,
+                    __typedArg3,
+                  }: {
+                    __typedArg0: string;
+                    __typedArg1: string;
+                    __typedArg2: string;
+                    __typedArg3: string;
+                  },
+                ) => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  await bridge.runPromise(repository.probe);
+                  const list = await bridge.runPromise(
+                    repository.read(__typedArg0),
+                  );
+                  const record = list?.annotations.find(
+                    (annotation) => annotation.key === __typedArg1,
+                  );
+                  return String(
+                    JSON.stringify({
+                      color: record?.color,
+                      comment: record?.comment,
+                      draft: bridge.runSync(
+                        repository.textDraftFor("comment", __typedArg2),
+                      ),
+                      mutation: bridge.runSync(
+                        repository.mutationFor(__typedArg3),
+                      ),
+                    }),
+                  );
+                },
+                {
+                  __typedArg0: attachment.key,
+                  __typedArg1: createdKey,
+                  __typedArg2: createdKey,
+                  __typedArg3: createdKey,
+                },
+                {
+                  ready: (value) => value === options.expected,
+                  tries: options.tries,
+                  what: "paired-run.e2e.ts:6683",
+                },
+              ).then(
+                () => true,
+                () => false,
+              ))({
+              expected: JSON.stringify({
+                color: stored.color,
+                comment: baseline.comment,
+                draft: null,
+                mutation: { kind: "idle" },
+              }),
+            }),
           ).toBe(true);
           // Complete the old response only after the new repository read.
           // Its completion must not restore the old operation or send again.
           await restoreWriteOutcomeProbe(vaultId!);
-          await obEval(vaultId!, "delete window.__zotlitReloadProbe;true");
+          await obRun(
+            vaultId!,
+            async ({ page: pageHelpers }) => {
+              delete pageHelpers.scratch.__zotlitReloadProbe;
+              return String(true);
+            },
+            undefined,
+          );
           expect(
-            await obJson(
+            await obRun(
               vaultId!,
-              `JSON.stringify((()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return {draft:bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(createdKey)})),mutation:bridge.runSync(repository.mutationFor(${JSON.stringify(createdKey)}))}})())`,
+              async (
+                { zotlit },
+                {
+                  __typedArg0,
+                  __typedArg1,
+                }: { __typedArg0: string; __typedArg1: string },
+              ) => {
+                return (() => {
+                  const { annotationRepository: repository, bridge } =
+                    zotlit.services;
+                  const draft = bridge.runSync(
+                    repository.textDraftFor("comment", __typedArg0),
+                  );
+                  return {
+                    draft: draft
+                      ? { text: draft.text, state: { kind: draft.state.kind } }
+                      : null,
+                    mutation: {
+                      kind: bridge.runSync(repository.mutationFor(__typedArg1))
+                        .kind,
+                    },
+                  };
+                })();
+              },
+              { __typedArg0: createdKey, __typedArg1: createdKey },
             ),
           ).toEqual({ draft: null, mutation: { kind: "idle" } });
           expect(await annotationState(api, serverID, createdKey)).toEqual(
@@ -6739,24 +16033,43 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       it("finishes a repository write after both panes close", async () => {
         const committed = "#2ea8e5";
-        const savedLayout = await obEval(
+        const savedLayout = await obRun(
           vaultId!,
-          "JSON.stringify(app.workspace.getLayout())",
+          async ({ app }) => {
+            return String(JSON.stringify(app.workspace.getLayout()));
+          },
+          undefined,
         );
         try {
           await installClosingPaneProbe(vaultId!, createdKey, committed);
           const state = () =>
-            obJson(
+            obRun(
               vaultId!,
-              `JSON.stringify({reached:window.__zotlitWriteOutcomeProbe?.reached,outcome:window.__zotlitWriteOutcomeProbe?.outcome})`,
+              async ({ page: pageHelpers }) => {
+                return {
+                  reached:
+                    pageHelpers.scratch.__zotlitWriteOutcomeProbe?.reached,
+                  outcome:
+                    pageHelpers.scratch.__zotlitWriteOutcomeProbe?.outcome,
+                };
+              },
+              undefined,
             );
           await expect
             .poll(state, { timeout: 10_000 })
             .toEqual({ reached: true, outcome: null });
 
-          await obEval(
+          await obRun(
             vaultId!,
-            "app.workspace.getLeavesOfType('pdf').forEach(leaf=>leaf.detach());app.workspace.detachLeavesOfType('zotero-annotation-view');window.__zotlitWriteOutcomeProbe.release();true",
+            async ({ app, page: pageHelpers }) => {
+              app.workspace
+                .getLeavesOfType("pdf")
+                .forEach((leaf) => leaf.detach());
+              app.workspace.detachLeavesOfType("zotero-annotation-view");
+              pageHelpers.scratch.__zotlitWriteOutcomeProbe!.release!();
+              return String(true);
+            },
+            undefined,
           );
           await expect
             .poll(state, { timeout: 10_000 })
@@ -6767,9 +16080,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         } finally {
           await restoreWriteOutcomeProbe(vaultId!);
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(savedLayout)}));return true;})()`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+              await app.workspace.changeLayout(JSON.parse(__typedArg0));
+              return String(true);
+            },
+            { __typedArg0: savedLayout },
           );
         }
       }, 120000);
@@ -6783,9 +16100,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         });
         const retained = await annotationColor(api, serverID, createdKey);
         expect(retained).not.toBeNull();
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});if(!app.workspace.getLeavesOfType('pdf').length)await app.workspace.getLeaf('tab').openFile(file);app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+          async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+            const file = app.vault.getFileByPath(__typedArg0);
+            if (!app.workspace.getLeavesOfType("pdf").length)
+              await app.workspace.getLeaf("tab").openFile(file!);
+            app.commands.executeCommandById("zotlit:open-annot-view");
+            app.commands.executeCommandById(
+              "zotlit:annot-view-follow-active-tab",
+            );
+            return String(true);
+          },
+          { __typedArg0: attachmentPath },
         );
         expect(
           await waitFor(async () => {
@@ -6796,18 +16123,57 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         await setLocalApi(rdp, false);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).reason);})()`,
-            { expected: "local-api-disabled" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                return String(
+                  String(
+                    (() => {
+                      const capability = bridge.runSync(
+                        repository.capabilityFor(__typedArg0),
+                      );
+                      return "reason" in capability
+                        ? capability.reason
+                        : undefined;
+                    })(),
+                  ),
+                );
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6780",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "local-api-disabled" }),
         ).toBe(true);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const list=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
-            { expected: "zotero-db" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const list = await zotlit.services.bridge.runPromise(
+                  zotlit.services.annotationRepository.read(__typedArg0),
+                );
+                return String(String(list?.source.kind));
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6787",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "zotero-db" }),
         ).toBe(true);
         expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
           card: retained,
@@ -6816,18 +16182,50 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         await setLocalApi(rdp, true);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);return String(bridge.runSync(repository.capabilityFor(${JSON.stringify(attachment.key)})).kind);})()`,
-            { expected: "writable" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                return String(
+                  String(
+                    bridge.runSync(repository.capabilityFor(__typedArg0)).kind,
+                  ),
+                );
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6800",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "writable" }),
         ).toBe(true);
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const list=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
-            { expected: "zotero-local-api" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const list = await zotlit.services.bridge.runPromise(
+                  zotlit.services.annotationRepository.read(__typedArg0),
+                );
+                return String(String(list?.source.kind));
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6807",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "zotero-local-api" }),
         ).toBe(true);
         expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
           card: retained,
@@ -6843,14 +16241,32 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           "library",
           "FDRFQ7C2.png",
         );
-        const notePaths = await obJson<{
-          literature: string;
-          imported: string;
-          live: boolean;
-          assets: string[];
-        }>(
+        const notePaths = await obRun(
           vaultId!,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.bridge.runPromise(services.noteIndex.whenIndexed);const literature=services.bridge.runSync(services.noteIndex.getNotesByItemKey('RUGIER24'))[0];const imported=services.bridge.runSync(services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA'))[0];if(!literature||!imported)throw new Error('Managed acceptance notes missing');return JSON.stringify({literature:literature.path,imported:imported.path,live:services.bridge.runSync(services.settings.current)['note.default-profile'].bindings['note.import-annotations-as-template'],assets:app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')).map(file=>file.path)});})()`,
+          async ({ app, zotlit }) => {
+            const services = zotlit.services;
+            await services.bridge.runPromise(services.noteIndex.whenIndexed);
+            const literature = services.bridge.runSync(
+              services.noteIndex.getNotesByItemKey("RUGIER24"),
+            )[0];
+            const imported = services.bridge.runSync(
+              services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
+            )[0];
+            if (!literature || !imported)
+              throw new Error("Managed acceptance notes missing");
+            return {
+              literature: literature.path,
+              imported: imported.path,
+              live: services.bridge.runSync(services.settings.current)[
+                "note.default-profile"
+              ].bindings["note.import-annotations-as-template"],
+              assets: app.vault
+                .getFiles()
+                .filter((file) => file.name.startsWith("zotlit-excerpt-"))
+                .map((file) => file.path),
+            };
+          },
+          undefined,
         );
         const originalLiterature = await readFile(
           join(vaultPath, notePaths.literature),
@@ -6860,15 +16276,77 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           join(vaultPath, notePaths.imported),
           "utf8",
         );
-        const originalInk = await obJson<{ color: string }>(
+        const originalInk = await obRun(
           vaultId!,
-          `(async()=>{const list=await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.read('RGRPDF24'));const annotation=list?.annotations.find(value=>value.key==='TYY6Z6ZF');if(!annotation)throw new Error('Ink annotation missing');return JSON.stringify({color:annotation.color});})()`,
+          async ({ zotlit }) => {
+            const list = await zotlit.services.bridge.runPromise(
+              zotlit.services.annotationRepository.read("RGRPDF24"),
+            );
+            const annotation = list?.annotations.find(
+              (value) => value.key === "TYY6Z6ZF",
+            );
+            if (!annotation) throw new Error("Ink annotation missing");
+            return { color: annotation.color };
+          },
+          undefined,
         );
         await using restore = new AsyncDisposableStack();
         restore.defer(async () => {
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.bridge.runPromise(services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(originalInk.color)}));await services.bridge.runPromise(services.zoteroReads.refresh);services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${JSON.stringify(notePaths.live)}}));const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(literature)await app.vault.modify(literature,${JSON.stringify(originalLiterature)});if(imported)await app.vault.modify(imported,${JSON.stringify(originalImported)});const keep=new Set(${JSON.stringify(notePaths.assets)});for(const file of app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')))if(!keep.has(file.path))await app.vault.delete(file);return true;})()`,
+            async (
+              { app, zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+                __typedArg4,
+                __typedArg5,
+                __typedArg6,
+              }: {
+                __typedArg0: string | null;
+                __typedArg1: boolean;
+                __typedArg2: string;
+                __typedArg3: string;
+                __typedArg4: string;
+                __typedArg5: string;
+                __typedArg6: string[];
+              },
+            ) => {
+              const services = zotlit.services;
+              await services.bridge.runPromise(
+                services.annotationRepository.patchColor(
+                  "TYY6Z6ZF",
+                  __typedArg0!,
+                ),
+              );
+              await services.bridge.runPromise(services.zoteroReads.refresh);
+              services.bridge.runSync(
+                services.settings.updateDefaultLiteratureNoteProfileBindings({
+                  "note.import-annotations-as-template": __typedArg1,
+                }),
+              );
+              const literature = app.vault.getFileByPath(__typedArg2);
+              const imported = app.vault.getFileByPath(__typedArg3);
+              if (literature) await app.vault.modify(literature, __typedArg4);
+              if (imported) await app.vault.modify(imported, __typedArg5);
+              const keep = new Set(__typedArg6);
+              for (const file of app.vault
+                .getFiles()
+                .filter((file) => file.name.startsWith("zotlit-excerpt-")))
+                if (!keep.has(file.path)) await app.vault.delete(file);
+              return String(true);
+            },
+            {
+              __typedArg0: originalInk.color,
+              __typedArg1: notePaths.live,
+              __typedArg2: notePaths.literature,
+              __typedArg3: notePaths.imported,
+              __typedArg4: originalLiterature,
+              __typedArg5: originalImported,
+              __typedArg6: notePaths.assets,
+            },
           );
           expect(
             await waitFor(
@@ -6879,13 +16357,63 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         });
 
-        const prepared = await obJson<{
-          legacyUrl: string;
-          literature: { diagnostic: unknown };
-          imported: unknown;
-        }>(
+        const prepared = await obRun(
           vaultId!,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;services.bridge.runSync(services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true}));const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!literature||!imported)throw new Error('Managed acceptance notes missing');const legacyUrl=require('url').pathToFileURL(${JSON.stringify(legacySource)}).href;await app.vault.modify(literature,(await app.vault.read(literature))+${JSON.stringify("\n\n![Legacy excerpt](")}+legacyUrl+${JSON.stringify(")\n")});const literatureResult=await services.noteFeature.updateNote(literature,{indexedKey:'RUGIER24',scope:'full'});const importedResult=await services.batchImport.reimportNoteByKey('NNNNAAAA',imported);return JSON.stringify({legacyUrl,literature:{diagnostic:literatureResult.diagnostic??null},imported:importedResult});})()`,
+          async (
+            { app, zotlit },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+              __typedArg3,
+              __typedArg4,
+            }: {
+              __typedArg0: string;
+              __typedArg1: string;
+              __typedArg2: string;
+              __typedArg3: "\n\n![Legacy excerpt](";
+              __typedArg4: ")\n";
+            },
+          ) => {
+            const services = zotlit.services;
+            services.bridge.runSync(
+              services.settings.updateDefaultLiteratureNoteProfileBindings({
+                "note.import-annotations-as-template": true,
+              }),
+            );
+            const literature = app.vault.getFileByPath(__typedArg0);
+            const imported = app.vault.getFileByPath(__typedArg1);
+            if (!literature || !imported)
+              throw new Error("Managed acceptance notes missing");
+            const legacyUrl = require("url").pathToFileURL(__typedArg2).href;
+            await app.vault.modify(
+              literature,
+              (await app.vault.read(literature)) +
+                __typedArg3 +
+                legacyUrl +
+                __typedArg4,
+            );
+            const literatureResult = await services.noteFeature.updateNote(
+              literature,
+              { indexedKey: "RUGIER24", scope: "full" },
+            );
+            const importedResult = await services.batchImport.reimportNoteByKey(
+              "NNNNAAAA",
+              imported,
+            );
+            return {
+              legacyUrl,
+              literature: { diagnostic: literatureResult.diagnostic ?? null },
+              imported: importedResult,
+            };
+          },
+          {
+            __typedArg0: notePaths.literature,
+            __typedArg1: notePaths.imported,
+            __typedArg2: legacySource,
+            __typedArg3: "\n\n![Legacy excerpt](",
+            __typedArg4: ")\n",
+          },
         );
         expect(prepared.literature).toEqual({ diagnostic: null });
         expect(prepared.imported).toEqual({ outcome: "overwritten" });
@@ -6920,9 +16448,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         const changedColor = "#d12f2f";
         expect(
-          await obJson<{ kind: string }>(
+          await obRun(
             vaultId!,
-            `(async()=>JSON.stringify(await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(changedColor)}))))()`,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: "#d12f2f" }) => {
+              const outcome = await zotlit.services.bridge.runPromise(
+                zotlit.services.annotationRepository.patchColor(
+                  "TYY6Z6ZF",
+                  __typedArg0,
+                ),
+              );
+              return { kind: outcome.kind };
+            },
+            { __typedArg0: changedColor },
           ),
         ).toMatchObject({ kind: "idle" });
         expect(
@@ -6932,14 +16469,32 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               changedColor,
           ),
         ).toBe(true);
-        await obEval(
+        await obRun(
           vaultId!,
-          "(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroReads.refresh);return true;})()",
+          async ({ zotlit }) => {
+            await zotlit.services.bridge.runPromise(
+              zotlit.services.zoteroReads.refresh,
+            );
+            return String(true);
+          },
+          undefined,
         );
         expect(
-          await obJson<unknown>(
+          await obRun(
             vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+            async (
+              { app, zotlit },
+              { __typedArg0 }: { __typedArg0: string },
+            ) => {
+              const services = zotlit.services;
+              const file = app.vault.getFileByPath(__typedArg0);
+              if (!file) throw new Error("Imported Note missing");
+              return await services.batchImport.reimportNoteByKey(
+                "NNNNAAAA",
+                file,
+              );
+            },
+            { __typedArg0: notePaths.imported },
           ),
         ).toEqual({ outcome: "overwritten" });
 
@@ -6973,96 +16528,309 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       // It clears both key stores and leaves a fresh Always Allow key behind,
       // so it runs after every test that writes with the block's own key.
       it("Allow leaves ZotLit read-only, and says so", async () => {
-        /** Whether ZotLit's stored record holds a key; a forgotten one keeps only its server. */
-        const keySaved =
-          "String(!!JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')??'{}').key)";
         /** Whether ZotLit is showing the notice with exactly this title. */
         const noticeShows = (title: string) =>
-          obEvalUntil(
-            vaultId!,
-            `String([...document.querySelectorAll('.zt-notice .zt-notice-text')].some((node)=>node.textContent===${JSON.stringify(title)}))`,
-            { expected: "true" },
-          );
+          ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (_context, { __typedArg0 }: { __typedArg0: string }) => {
+                return String(
+                  String(
+                    [
+                      ...document.querySelectorAll<HTMLElement>(
+                        ".zt-notice .zt-notice-text",
+                      ),
+                    ].some((node) => node.textContent === __typedArg0),
+                  ),
+                );
+              },
+              { __typedArg0: title },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6962",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" });
         const notAllowed =
           "To edit annotations, choose Always Allow in Zotero.";
 
         await using restore = new AsyncDisposableStack();
-        const popout = await obEval(
+        const popout = await obRun(
           vaultId!,
-          "JSON.stringify(app.vault.getConfig('settingsPopoutWindow')??null)",
+          async ({ app }) => {
+            return String(
+              JSON.stringify(
+                app.vault.getConfig("settingsPopoutWindow") ?? null,
+              ),
+            );
+          },
+          undefined,
         );
         restore.defer(async () => {
-          await obEval(
+          await obRun(
             vaultId!,
-            `app.setting.close();app.vault.setConfig('settingsPopoutWindow',${popout});true`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: boolean }) => {
+              app.setting.close();
+              app.vault.setConfig("settingsPopoutWindow", __typedArg0);
+              return String(true);
+            },
+            { __typedArg0: JSON.parse(popout) as boolean },
           );
         });
 
         await resetAuthorizations(rdp);
-        await obEval(
+        await obRun(
           vaultId!,
-          "(async()=>{await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization);for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+          async ({ zotlit }) => {
+            await zotlit.services.bridge.runPromise(
+              zotlit.services.zoteroLocalApi.forgetAuthorization,
+            );
+            for (const node of document.querySelectorAll<HTMLElement>(
+              ".notice",
+            ))
+              node.remove();
+            return String(true);
+          },
+          undefined,
         );
         await stubPrompt(rdp, { allow: true, remember: false });
         expect(
-          await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                return String(
+                  String(
+                    bridge.runSync(repository.capabilityFor(__typedArg0)).kind,
+                  ),
+                );
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:6989",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({
             expected: "authorization-required",
           }),
         ).toBe(true);
 
         // The settings row, where the capability notices open it: the
         // settings modal in the main window, which eval can reach.
-        await obEval(
+        await obRun(
           vaultId!,
-          "(async()=>{app.vault.setConfig('settingsPopoutWindow',false);await app.plugins.plugins.zotlit.services.capabilityNotices.showEditingCapability();return true;})()",
+          async ({ app, zotlit }) => {
+            app.vault.setConfig("settingsPopoutWindow", false);
+            await zotlit.services.capabilityNotices.showEditingCapability();
+            return String(true);
+          },
+          undefined,
         );
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(function(){${PAGE}const row=[...app.setting.containerEl.querySelectorAll('.setting-item')].find((el)=>el.querySelector('.setting-item-name')?.textContent==='Zotero editing');const button=row&&[...row.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button||button.disabled||button.style.display==='none')return 'false';press(button,'Allow editing');return 'true';})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ app, page: pageHelpers }) => {
+                const { press } = pageHelpers;
+                const row = [
+                  ...app.setting.containerEl.querySelectorAll<HTMLElement>(
+                    ".setting-item",
+                  ),
+                ].find(
+                  (el) =>
+                    el.querySelector<HTMLElement>(".setting-item-name")
+                      ?.textContent === "Zotero editing",
+                );
+                const button =
+                  row &&
+                  [...row.querySelectorAll<HTMLButtonElement>("button")].find(
+                    (el) => el.textContent.trim() === "Allow editing",
+                  );
+                if (
+                  !button ||
+                  button.disabled ||
+                  button.style.display === "none"
+                )
+                  return String("false");
+                press(button, "Allow editing");
+                return String("true");
+              },
+              undefined,
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:7001",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
 
         expect(await noticeShows(notAllowed)).toBe(true);
         expect(
-          await obEval(vaultId!, capabilityOf(attachment.key, "kind")),
+          await obRun(
+            vaultId!,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              await bridge.runPromise(repository.probe);
+              return String(
+                String(
+                  bridge.runSync(repository.capabilityFor(__typedArg0)).kind,
+                ),
+              );
+            },
+            { __typedArg0: attachment.key },
+          ),
         ).toBe("authorization-required");
-        expect(await obEval(vaultId!, keySaved)).toBe("false");
+        expect(
+          await obRun(
+            vaultId!,
+            async ({ app }) => {
+              return String(
+                String(
+                  !!JSON.parse(
+                    app.secretStorage.getSecret(
+                      "zotlit-zotero-write-authorization",
+                    ) ?? "{}",
+                  ).key,
+                ),
+              );
+            },
+            undefined,
+          ),
+        ).toBe("false");
         expect(await authorizationCount(rdp)).toBe(0);
 
         // The notice's own button asks again, and Zotero now answers Always
         // Allow.
         await stubPrompt(rdp, { allow: true, remember: true });
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            `(function(){${PAGE}const notice=[...document.querySelectorAll('.zt-notice')].find((node)=>node.textContent.includes(${JSON.stringify(notAllowed)}));const button=notice&&[...notice.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button)return 'false';press(button,'Allow editing');return 'true';})()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+              }: {
+                __typedArg0: "To edit annotations, choose Always Allow in Zotero.";
+              },
+            ) => {
+              const { press } = pageHelpers;
+              const notice = [
+                ...document.querySelectorAll<HTMLElement>(".zt-notice"),
+              ].find((node) => node.textContent.includes(__typedArg0));
+              const button =
+                notice &&
+                [...notice.querySelectorAll<HTMLElement>("button")].find(
+                  (el) => el.textContent.trim() === "Allow editing",
+                );
+              if (!button) return String("false");
+              press(button, "Allow editing");
+              return String("true");
+            },
+            { __typedArg0: notAllowed },
           ),
         ).toBe("true");
 
         expect(await noticeShows("Zotero editing is enabled.")).toBe(true);
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{
-              using cleanup=new DisposableStack();
-              const notice=${WINDOW_DOCUMENTS}.flatMap(doc=>[...doc.querySelectorAll('.zt-notice')]).find(node=>node.textContent.includes('Zotero editing is enabled.'));
-              if(!notice)throw new Error('Editing success notice is missing');
-              const dismissed=Promise.withResolvers();
-              const observer=cleanup.adopt(new notice.ownerDocument.defaultView.MutationObserver(()=>{if(!notice.isConnected)dismissed.resolve('dismissed');}),value=>value.disconnect());
-              observer.observe(notice.ownerDocument.body,{childList:true,subtree:true});
-              cleanup.adopt(setTimeout(()=>dismissed.reject(new Error('Editing success notice still covers the view after five seconds')),Temporal.Duration.from({seconds:5}).total('milliseconds')),clearTimeout);
-              return await dismissed.promise;
-            })()`,
+            async ({ page: pageHelpers }) => {
+              using cleanup = new DisposableStack();
+              const notice = pageHelpers
+                .windowDocuments()
+                .flatMap((doc) => [
+                  ...doc.querySelectorAll<HTMLElement>(".zt-notice"),
+                ])
+                .find((node) =>
+                  node.textContent.includes("Zotero editing is enabled."),
+                );
+              if (!notice) throw new Error("Editing success notice is missing");
+              const dismissed = Promise.withResolvers();
+              const observer = cleanup.adopt(
+                new notice.ownerDocument.defaultView!.MutationObserver(() => {
+                  if (!notice.isConnected) dismissed.resolve("dismissed");
+                }),
+                (value) => value.disconnect(),
+              );
+              observer.observe(notice.ownerDocument.body, {
+                childList: true,
+                subtree: true,
+              });
+              cleanup.adopt(
+                setTimeout(
+                  () =>
+                    dismissed.reject(
+                      new Error(
+                        "Editing success notice still covers the view after five seconds",
+                      ),
+                    ),
+                  Temporal.Duration.from({ seconds: 5 }).total("milliseconds"),
+                ),
+                clearTimeout,
+              );
+              return String(await dismissed.promise);
+            },
+            undefined,
           ),
         ).toBe("dismissed");
         expect(
-          await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                return String(
+                  String(
+                    bridge.runSync(repository.capabilityFor(__typedArg0)).kind,
+                  ),
+                );
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:7042",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({
             expected: "writable",
           }),
         ).toBe(true);
-        expect(await obEval(vaultId!, keySaved)).toBe("true");
+        expect(
+          await obRun(
+            vaultId!,
+            async ({ app }) => {
+              return String(
+                String(
+                  !!JSON.parse(
+                    app.secretStorage.getSecret(
+                      "zotlit-zotero-write-authorization",
+                    ) ?? "{}",
+                  ).key,
+                ),
+              );
+            },
+            undefined,
+          ),
+        ).toBe("true");
       }, 120000);
 
       // Last in this block, so it covers every write above: ZotLit writes
@@ -7076,7 +16844,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   describe.skipIf(!debuggerPort || !vaultId)("an External Annotation", () => {
     it("is locked on its card and in the reader, and Zotero keeps it unchanged", async () => {
       await prepareAuthorizationFixture();
-      using rdp = await openZoteroRdp(debuggerPort!);
+      const rdp = await openZoteroRdp(debuggerPort!);
       await verifyExternalAnnotationLock({ vaultId: vaultId!, rdp, m });
     }, 180000);
   });
@@ -7088,91 +16856,313 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       const key = seededAnnotation.key;
       const original =
         (await storedAnnotation(api, serverID, key)).annotationComment ?? "";
-      const tab = `app.workspace.getLeavesOfType('zotlit-query-file').map((leaf)=>leaf.view).find((view)=>view.file?.path===created)`;
-      const card = `(${tab})?.contentEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
 
       // The Annotation Source must be the Local API before a card can write.
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
-          { expected: "zotero-local-api" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              await bridge.runPromise(repository.probe);
+              const list = await bridge.runPromise(
+                repository.read(__typedArg0),
+              );
+              return String(String(list?.source.kind));
+            },
+            { __typedArg0: attachment.key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7077",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "zotero-local-api" }),
       ).toBe(true);
 
-      const before = await obJson<string[]>(
+      const before = await obRun(
         vaultId!,
-        "JSON.stringify(app.vault.getFiles().map((file)=>file.path))",
+        async ({ app }) => {
+          return app.vault.getFiles().map((file) => file.path);
+        },
+        undefined,
       );
-      await obEval(
+      await obRun(
         vaultId!,
-        "app.commands.executeCommandById('zotlit:new-query-file');true",
+        async ({ app }) => {
+          app.commands.executeCommandById("zotlit:new-query-file");
+          return String(true);
+        },
+        undefined,
       );
       let created = "";
       expect(
         await waitFor(async () => {
-          const files = await obJson<string[]>(
+          const files = await obRun(
             vaultId!,
-            "JSON.stringify(app.vault.getFiles().map((file)=>file.path))",
+            async ({ app }) => {
+              return app.vault.getFiles().map((file) => file.path);
+            },
+            undefined,
           );
           created = files.find((path) => !before.includes(path)) ?? "";
           return created.endsWith(".zotquery");
         }),
       ).toBe(true);
       cleanup.defer(async () => {
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{const created=${JSON.stringify(created)};for(const leaf of app.workspace.getLeavesOfType('zotlit-query-file'))if(leaf.view.file?.path===created)leaf.detach();const file=app.vault.getFileByPath(created);if(file)await app.vault.delete(file);return true;})()`,
+          async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+            const created = __typedArg0;
+            for (const leaf of app.workspace.getLeavesOfType(
+              "zotlit-query-file",
+            ))
+              if ((leaf.view as FileView).file?.path === created) leaf.detach();
+            const file = app.vault.getFileByPath(created);
+            if (file) await app.vault.delete(file);
+            return String(true);
+          },
+          { __typedArg0: created },
         );
       });
-      const declare = `const created=${JSON.stringify(created)};`;
 
       // The file opens on its Items; its Annotations are the second view.
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(function(){${declare}return String(!!${tab}?.contentEl.querySelector('[data-query-view-menu]'));})()`,
-          { expected: "true", tries: 120 },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+              const created = __typedArg0;
+              return String(
+                String(
+                  !!app.workspace
+                    .getLeavesOfType("zotlit-query-file")
+                    .map((leaf) => leaf.view as QueryFileView)
+                    .find((view) => view.file?.path === created)
+                    ?.contentEl.querySelector<HTMLElement>(
+                      "[data-query-view-menu]",
+                    ),
+                ),
+              );
+            },
+            { __typedArg0: created },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7113",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true", tries: 120 }),
       ).toBe(true);
-      await obEval(
+      await obRun(
         vaultId!,
-        `(async()=>{${PAGE}${declare}${pickQueryView(tab, m.query_file_annotations_view_name())}return true;})()`,
+        async (
+          { app, page: pageHelpers },
+          {
+            __typedArg0,
+            __typedArg1,
+          }: { __typedArg0: string; __typedArg1: string },
+        ) => {
+          const created = __typedArg0;
+          await pageHelpers.pickQueryView(
+            app.workspace
+              .getLeavesOfType("zotlit-query-file")
+              .map((leaf) => leaf.view as QueryFileView)
+              .find((view) => view.file?.path === created)!,
+            __typedArg1,
+          );
+          return String(true);
+        },
+        {
+          __typedArg0: created,
+          __typedArg1: m.query_file_annotations_view_name(),
+        },
       );
 
       // The tab shows the seeded Annotation's card among the library's.
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(function(){${declare}return String(!!${card});})()`,
-          { expected: "true", tries: 120 },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const created = __typedArg0;
+              return String(
+                String(
+                  !!app.workspace
+                    .getLeavesOfType("zotlit-query-file")
+                    .map((leaf) => leaf.view as QueryFileView)
+                    .find((view) => view.file?.path === created)
+                    ?.contentEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                    ),
+                ),
+              );
+            },
+            { __typedArg0: created, __typedArg1: key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7126",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true", tries: 120 }),
       ).toBe(true);
 
       // Select the card alone, open its comment editor, and type.
-      const editor = `${card}?.querySelector('.cm-content')`;
+
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(function(){${PAGE}${declare}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()`,
-          { expected: "open" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async (
+              { app, page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: string;
+                __typedArg3: string;
+              },
+            ) => {
+              const { press } = pageHelpers;
+              const created = __typedArg0;
+              const card = app.workspace
+                .getLeavesOfType("zotlit-query-file")
+                .map((leaf) => leaf.view as QueryFileView)
+                .find((view) => view.file?.path === created)
+                ?.contentEl.querySelector<HTMLElement>(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                );
+              if (
+                app.workspace
+                  .getLeavesOfType("zotlit-query-file")
+                  .map((leaf) => leaf.view as QueryFileView)
+                  .find((view) => view.file?.path === created)
+                  ?.contentEl.querySelector<HTMLElement>(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+                  )
+                  ?.querySelector<HTMLElement>(".cm-content")
+              )
+                return String("open");
+              if (!card!.hasAttribute("data-alone")) {
+                press(card as HTMLElement, "card");
+                return String("selecting");
+              }
+              getSelection()!.removeAllRanges();
+              press(
+                card!.querySelector<HTMLElement>(".zt-annot-comment-field"),
+                "comment field",
+              );
+              return String(
+                String(
+                  !!app.workspace
+                    .getLeavesOfType("zotlit-query-file")
+                    .map((leaf) => leaf.view as QueryFileView)
+                    .find((view) => view.file?.path === created)
+                    ?.contentEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg3)}]`,
+                    )
+                    ?.querySelector<HTMLElement>(".cm-content") && "open",
+                ),
+              );
+            },
+            {
+              __typedArg0: created,
+              __typedArg1: key,
+              __typedArg2: key,
+              __typedArg3: key,
+            },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7136",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "open" }),
       ).toBe(true);
       const comment = "Typed in a Query File";
       cleanup.defer(async () => {
         await restoreAnnotationComment(api, {
           serverID,
-          key: await obEval(
+          key: await obRun(
             vaultId!,
-            `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+            async ({ app }) => {
+              return String(
+                await JSON.parse(
+                  app.secretStorage.getSecret(
+                    "zotlit-zotero-write-authorization",
+                  )!,
+                ).key,
+              );
+            },
+            undefined,
           ),
           annotationKey: key,
           comment: original,
         }).catch(() => {});
       });
-      await obEval(
+      await obRun(
         vaultId!,
-        `(function(){${declare}const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+        async (
+          { app },
+          {
+            __typedArg0,
+            __typedArg1,
+            __typedArg2,
+          }: {
+            __typedArg0: string;
+            __typedArg1: string;
+            __typedArg2: "Typed in a Query File";
+          },
+        ) => {
+          const created = __typedArg0;
+          const content = app.workspace
+            .getLeavesOfType("zotlit-query-file")
+            .map((leaf) => leaf.view as QueryFileView)
+            .find((view) => view.file?.path === created)
+            ?.contentEl.querySelector<HTMLElement>(
+              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+            )
+            ?.querySelector<HTMLElement>(".cm-content");
+          const view = (content! as PairedEditorContent).cmTile.root.view;
+          view.focus();
+          view.dispatch({
+            changes: {
+              from: 0,
+              to: view.state.doc.length,
+              insert: __typedArg2,
+            },
+            userEvent: "input.type",
+          });
+          content!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "Escape",
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return String(true);
+        },
+        { __typedArg0: created, __typedArg1: key, __typedArg2: comment },
       );
 
       // Zotero holds the comment, and the card shows it.
@@ -7185,11 +17175,39 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ),
       ).toBe(true);
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(function(){${declare}return ${card}?.querySelector('.zt-annot-comment')?.textContent??'';})()`,
-          { expected: comment },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const created = __typedArg0;
+              return String(
+                app.workspace
+                  .getLeavesOfType("zotlit-query-file")
+                  .map((leaf) => leaf.view as QueryFileView)
+                  .find((view) => view.file?.path === created)
+                  ?.contentEl.querySelector<HTMLElement>(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                  )
+                  ?.querySelector<HTMLElement>(".zt-annot-comment")
+                  ?.textContent ?? "",
+              );
+            },
+            { __typedArg0: created, __typedArg1: key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7169",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: comment }),
       ).toBe(true);
     }, 180000);
 
@@ -7206,131 +17224,504 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       // The Annotation Source must be the Local API before a card can write.
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
-          { expected: "zotero-local-api" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              await bridge.runPromise(repository.probe);
+              const list = await bridge.runPromise(
+                repository.read(__typedArg0),
+              );
+              return String(String(list?.source.kind));
+            },
+            { __typedArg0: attachment.key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7190",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "zotero-local-api" }),
       ).toBe(true);
 
       // The PDF open in Obsidian holds the Attachment's Annotation History;
       // its Literature Note, in Live Preview beside it, embeds a view of its Item.
-      const layout = await obEval(
+      const layout = await obRun(
         vaultId!,
-        "JSON.stringify(app.workspace.getLayout())",
+        async ({ app }) => {
+          return String(JSON.stringify(app.workspace.getLayout()));
+        },
+        undefined,
       );
-      const noteText = await obEval(
+      const noteText = await obRun(
         vaultId!,
-        `app.vault.read(app.vault.getFileByPath(${JSON.stringify(notePath)}))`,
+        async (
+          { app },
+          {
+            __typedArg0,
+          }: { __typedArg0: "literatures/rougierTenSimpleRules2014.md" },
+        ) => {
+          return String(
+            await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
+          );
+        },
+        { __typedArg0: notePath },
       );
       cleanup.defer(async () => {
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(notePath)}),${JSON.stringify(noteText)});return true;})()`,
+          async (
+            { app },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: string;
+              __typedArg1: "literatures/rougierTenSimpleRules2014.md";
+              __typedArg2: string;
+            },
+          ) => {
+            await app.workspace.changeLayout(JSON.parse(__typedArg0));
+            await app.vault.modify(
+              app.vault.getFileByPath(__typedArg1)!,
+              __typedArg2,
+            );
+            return String(true);
+          },
+          { __typedArg0: layout, __typedArg1: notePath, __typedArg2: noteText },
         );
       });
       cleanup.defer(async () => {
         await restoreAnnotationComment(api, {
           serverID,
-          key: await obEval(
+          key: await obRun(
             vaultId!,
-            `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+            async ({ app }) => {
+              return String(
+                await JSON.parse(
+                  app.secretStorage.getSecret(
+                    "zotlit-zotero-write-authorization",
+                  )!,
+                ).key,
+              );
+            },
+            undefined,
           ),
           annotationKey: key,
           comment: original,
         }).catch(() => {});
       });
-      await obEval(
+      await obRun(
         vaultId!,
-        `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(attachmentPath)}));return true;})()`,
+        async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+          await app.workspace
+            .getLeaf("tab")
+            .openFile(app.vault.getFileByPath(__typedArg0)!);
+          return String(true);
+        },
+        { __typedArg0: attachmentPath },
       );
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `String(!!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(attachmentPath)})?.session)`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+              return String(
+                String(
+                  !!zotlit.services.bridge
+                    .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+                    .find((b) => b.filePath === __typedArg0)?.session,
+                ),
+              );
+            },
+            { __typedArg0: attachmentPath },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7229",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
-      await obEval(
+      await obRun(
         vaultId!,
-        `(async()=>{const leaf=app.workspace.getLeaf('split');await leaf.setViewState({type:'markdown',state:{file:${JSON.stringify(notePath)},mode:'source',source:false},active:true});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+        async (
+          { app },
+          {
+            __typedArg0,
+          }: { __typedArg0: "literatures/rougierTenSimpleRules2014.md" },
+        ) => {
+          const leaf = app.workspace.getLeaf("split");
+          await leaf.setViewState({
+            type: "markdown",
+            state: { file: __typedArg0, mode: "source", source: false },
+            active: true,
+          });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          return String(true);
+        },
+        { __typedArg0: notePath },
       );
-      const note = `app.workspace.getLeavesOfType('markdown').find((leaf)=>leaf.view.file?.path===${JSON.stringify(notePath)}).view`;
+
       // The embed stands below the note's Query Block, past the part of the
       // note Live Preview first draws (#1646).
       const embed = await revealQueryView(vaultId!, notePath, {
         embed: "Lab annotations.zotquery#This item",
       });
-      const card = `${embed.el}.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
-      await readQueryViewUntil<boolean>(
+
+      await readQueryViewUntil(
         vaultId!,
-        `(async()=>JSON.stringify(!!${card}))()`,
+        async (
+          { page: pageHelpers },
+          {
+            __typedArg0,
+            __typedArg1,
+          }: { __typedArg0: NoteQueryView; __typedArg1: string },
+        ) => {
+          return !!(
+            await pageHelpers.revealQueryView(__typedArg0)
+          ).querySelector(
+            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+          );
+        },
+        { __typedArg0: embed, __typedArg1: key },
         {
-          ready: (present) => present,
           what: "the card in the note's embed",
           tries: 120,
+          ready: (value) => value !== null && ((present) => present)(value),
         },
       );
 
       // Type a comment on the embedded card, as on the sidebar's.
-      const editor = `${card}?.querySelector('.cm-content')`;
-      await readQueryViewUntil<string>(
+
+      await readQueryViewUntil(
         vaultId!,
-        `(async()=>JSON.stringify(await (async()=>{${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){card.focus();press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()))()`,
+        async (
+          { page: pageHelpers },
+          {
+            __typedArg0,
+            __typedArg1,
+            __typedArg2,
+            __typedArg3,
+            __typedArg4,
+            __typedArg5,
+          }: {
+            __typedArg0: NoteQueryView;
+            __typedArg1: string;
+            __typedArg2: NoteQueryView;
+            __typedArg3: string;
+            __typedArg4: NoteQueryView;
+            __typedArg5: string;
+          },
+        ) => {
+          return await (async () => {
+            const { press } = pageHelpers;
+            const card = (
+              await pageHelpers.revealQueryView(__typedArg0)
+            ).querySelector(
+              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+            );
+            if (
+              (await pageHelpers.revealQueryView(__typedArg2))
+                .querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg3)}]`,
+                )
+                ?.querySelector(".cm-content")
+            )
+              return "open";
+            if (!card!.hasAttribute("data-alone")) {
+              (card! as HTMLElement).focus();
+              press(card as HTMLElement, "card");
+              return "selecting";
+            }
+            getSelection()!.removeAllRanges();
+            press(
+              card!.querySelector<HTMLElement>(".zt-annot-comment-field")!,
+              "comment field",
+            );
+            return String(
+              !!(await pageHelpers.revealQueryView(__typedArg4))
+                .querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg5)}]`,
+                )
+                ?.querySelector(".cm-content") && "open",
+            );
+          })();
+        },
         {
-          ready: (answer) => answer === "open",
+          __typedArg0: embed,
+          __typedArg1: key,
+          __typedArg2: embed,
+          __typedArg3: key,
+          __typedArg4: embed,
+          __typedArg5: key,
+        },
+        {
           what: "the comment editor on the embed's card",
+          ready: (value) =>
+            value !== null && ((answer) => answer === "open")(value),
         },
       );
       const comment = "Typed in a note's embed";
-      await obEval(
+      await obRun(
         vaultId!,
-        `(async()=>{const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+        async (
+          { page: pageHelpers },
+          {
+            __typedArg0,
+            __typedArg1,
+            __typedArg2,
+          }: {
+            __typedArg0: NoteQueryView;
+            __typedArg1: string;
+            __typedArg2: "Typed in a note's embed";
+          },
+        ) => {
+          const content = (await pageHelpers.revealQueryView(__typedArg0))
+            .querySelector<HTMLElement>(
+              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+            )
+            ?.querySelector<HTMLElement>(".cm-content");
+          const view = (content! as PairedEditorContent).cmTile.root.view;
+          view.focus();
+          view.dispatch({
+            changes: {
+              from: 0,
+              to: view.state.doc.length,
+              insert: __typedArg2,
+            },
+            userEvent: "input.type",
+          });
+          content!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "Escape",
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return String(true);
+        },
+        { __typedArg0: embed, __typedArg1: key, __typedArg2: comment },
       );
       expect(
         await waitFor(async () => (await storedComment()) === comment, 120),
       ).toBe(true);
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `(function(){const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;return String(bridge.runSync(repository.mutationFor(${JSON.stringify(key)})).kind==='idle'&&!bridge.runSync(repository.textDraftFor('comment',${JSON.stringify(key)}))&&bridge.runSync(repository.canUndo(${JSON.stringify(attachment.key)})));})()`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async (
+              { zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: string;
+              },
+            ) => {
+              const { annotationRepository: repository, bridge } =
+                zotlit.services;
+              return String(
+                String(
+                  bridge.runSync(repository.mutationFor(__typedArg0)).kind ===
+                    "idle" &&
+                    !bridge.runSync(
+                      repository.textDraftFor("comment", __typedArg1),
+                    ) &&
+                    bridge.runSync(repository.canUndo(__typedArg2)),
+                ),
+              );
+            },
+            { __typedArg0: key, __typedArg1: key, __typedArg2: attachment.key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7275",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
 
       /** The platform's undo chord, pressed where `target` names, as the keyboard sends it. */
-      const pressUndo = (target: string) =>
-        obJson<{ prevented: boolean }>(
-          vaultId!,
-          `(async()=>{const target=${target};target.focus();const event=new KeyboardEvent('keydown',{key:'z',code:'KeyZ',${platformKey}:true,bubbles:true,cancelable:true});target.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
-        );
 
       // The undo key in the note's own text is the note's: the comment stays.
-      await pressUndo(`${note}.editor.cm.contentDOM`);
+      await obRun(
+        vaultId!,
+        async (
+          { app },
+          {
+            __typedArg0,
+            __typedArg1,
+          }: {
+            __typedArg0: "literatures/rougierTenSimpleRules2014.md";
+            __typedArg1: "ctrlKey" | "metaKey";
+          },
+        ) => {
+          const target = (
+            app.workspace
+              .getLeavesOfType("markdown")
+              .find(
+                (leaf) => (leaf.view as FileView).file?.path === __typedArg0,
+              )!.view as MarkdownView
+          ).editor.cm.contentDOM;
+          target.focus();
+          const event = new KeyboardEvent("keydown", {
+            key: "z",
+            code: "KeyZ",
+            [__typedArg1]: true,
+            bubbles: true,
+            cancelable: true,
+          });
+          target.dispatchEvent(event);
+          return { prevented: event.defaultPrevented };
+        },
+        { __typedArg0: notePath, __typedArg1: platformKey },
+      );
       // A second is the window a wrongly taken undo would reach Zotero in;
       // no event marks that it did not.
       await new Promise((resolve) => setTimeout(resolve, 1000));
       expect(await storedComment()).toBe(comment);
 
       // On the focused card, it takes the comment back in Zotero.
-      expect(await pressUndo(card)).toEqual({ prevented: true });
+      expect(
+        await obRun(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: NoteQueryView;
+              __typedArg1: string;
+              __typedArg2: "ctrlKey" | "metaKey";
+            },
+          ) => {
+            const target = (
+              await pageHelpers.revealQueryView(__typedArg0)
+            ).querySelector<HTMLElement>(
+              `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+            );
+            target!.focus();
+            const event = new KeyboardEvent("keydown", {
+              key: "z",
+              code: "KeyZ",
+              [__typedArg2]: true,
+              bubbles: true,
+              cancelable: true,
+            });
+            target!.dispatchEvent(event);
+            return { prevented: event.defaultPrevented };
+          },
+          { __typedArg0: embed, __typedArg1: key, __typedArg2: platformKey },
+        ),
+      ).toEqual({ prevented: true });
       expect(
         await waitFor(async () => (await storedComment()) === original, 120),
       ).toBe(true);
 
       // A card dragged from the embed lands in the note, as from the sidebar.
       expect(
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{const view=${note};const cm=view.editor.cm;const transfer=new DataTransfer();const handle=${card}.querySelector('[draggable]');const from=handle.getBoundingClientRect();handle.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(from.left+from.width/2),clientY:Math.floor(from.top+from.height/2)}));const rect=cm.coordsAtPos(cm.state.doc.length);cm.contentDOM.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientX:Math.floor(rect.left+1),clientY:Math.floor((rect.top+rect.bottom)/2)}));return 'dropped';})()`,
+          async (
+            { app, page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: "literatures/rougierTenSimpleRules2014.md";
+              __typedArg1: NoteQueryView;
+              __typedArg2: string;
+            },
+          ) => {
+            const view = app.workspace
+              .getLeavesOfType("markdown")
+              .find(
+                (leaf) => (leaf.view as FileView).file?.path === __typedArg0,
+              )!.view as MarkdownView;
+            const cm = view.editor.cm;
+            const transfer = new DataTransfer();
+            const handle = (await pageHelpers.revealQueryView(__typedArg1))
+              .querySelector<HTMLElement>(
+                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg2)}]`,
+              )!
+              .querySelector<HTMLElement>("[draggable]");
+            const from = handle!.getBoundingClientRect();
+            handle!.dispatchEvent(
+              new DragEvent("dragstart", {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer: transfer,
+                clientX: Math.floor(from.left + from.width / 2),
+                clientY: Math.floor(from.top + from.height / 2),
+              }),
+            );
+            const rect = cm.coordsAtPos(cm.state.doc.length);
+            cm.contentDOM.dispatchEvent(
+              new DragEvent("drop", {
+                bubbles: true,
+                cancelable: true,
+                dataTransfer: transfer,
+                clientX: Math.floor(rect!.left + 1),
+                clientY: Math.floor((rect!.top + rect!.bottom) / 2),
+              }),
+            );
+            return String("dropped");
+          },
+          { __typedArg0: notePath, __typedArg1: embed, __typedArg2: key },
         ),
       ).toBe("dropped");
       expect(
-        await obEvalUntil(
-          vaultId!,
-          `String(${note}.editor.getValue().includes('> [!note]')&&/zotero:\\/\\/open\\/library\\/items\\/\\w+\\?annotation=${key}\\b/.test(${note}.editor.getValue()))`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            vaultId!,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: {
+                __typedArg0: "literatures/rougierTenSimpleRules2014.md";
+                __typedArg1: string;
+              },
+            ) => {
+              const view = app.workspace
+                .getLeavesOfType("markdown")
+                .map((leaf) => leaf.view as MarkdownView)
+                .find((view) => view.file?.path === __typedArg0)!;
+              const text = view.editor.getValue();
+              return String(
+                text.includes("> [!note]") &&
+                  new RegExp(
+                    `zotero://open/library/items/\\w+\\?annotation=${RegExp.escape(__typedArg1)}\\b`,
+                  ).test(text),
+              );
+            },
+            { __typedArg0: notePath, __typedArg1: key },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "paired-run.e2e.ts:7310",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
     }, 180000);
   });
@@ -7348,61 +17739,174 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         // The Annotation Source must be the Local API before a card can write.
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;await bridge.runPromise(repository.probe);const list=await bridge.runPromise(repository.read(${JSON.stringify(attachment.key)}));return String(list?.source.kind);})()`,
-            { expected: "zotero-local-api" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async ({ zotlit }, { __typedArg0 }: { __typedArg0: string }) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                await bridge.runPromise(repository.probe);
+                const list = await bridge.runPromise(
+                  repository.read(__typedArg0),
+                );
+                return String(String(list?.source.kind));
+              },
+              { __typedArg0: attachment.key },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:7332",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "zotero-local-api" }),
         ).toBe(true);
 
         // The Fixture wrote notes for the Item. Set them aside, so that the
         // plugin creates the note the default Profile renders.
-        const layout = await obEval(
+        const layout = await obRun(
           vaultId!,
-          "JSON.stringify(app.workspace.getLayout())",
+          async ({ app }) => {
+            return String(JSON.stringify(app.workspace.getLayout()));
+          },
+          undefined,
         );
-        const fixtureNotes = await obJson<{ path: string; text: string }[]>(
+        const fixtureNotes = await obRun(
           vaultId!,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.bridge.runPromise(services.noteIndex.whenIndexed);const notes=[];for(const note of services.bridge.runSync(services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)}))){const file=app.vault.getFileByPath(note.path);notes.push({path:note.path,text:await app.vault.read(file)});await app.vault.delete(file);}return JSON.stringify(notes);})()`,
+          async (
+            { app, zotlit },
+            { __typedArg0 }: { __typedArg0: "RUGIER24" },
+          ) => {
+            const services = zotlit.services;
+            await services.bridge.runPromise(services.noteIndex.whenIndexed);
+            const notes = [];
+            for (const note of services.bridge.runSync(
+              services.noteIndex.getNotesByItemKey(__typedArg0),
+            )) {
+              const file = app.vault.getFileByPath(note.path);
+              notes.push({
+                path: note.path,
+                text: await app.vault.read(file!),
+              });
+              await app.vault.delete(file!);
+            }
+            return notes;
+          },
+          { __typedArg0: itemKey },
         );
         expect(fixtureNotes.map(({ path }) => path)).toContain(
           "literatures/rougierTenSimpleRules2014.md",
         );
         let created = "";
         cleanup.defer(async () => {
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));const created=app.vault.getFileByPath(${JSON.stringify(created)});if(created)await app.vault.delete(created);for(const {path,text} of ${JSON.stringify(fixtureNotes)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.modify(file,text);else await app.vault.create(path,text);}return true;})()`,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+              }: {
+                __typedArg0: string;
+                __typedArg1: string;
+                __typedArg2: { path: string; text: string }[];
+              },
+            ) => {
+              await app.workspace.changeLayout(JSON.parse(__typedArg0));
+              const created = app.vault.getFileByPath(__typedArg1);
+              if (created) await app.vault.delete(created);
+              for (const { path, text } of __typedArg2) {
+                const file = app.vault.getFileByPath(path);
+                if (file) await app.vault.modify(file, text);
+                else await app.vault.create(path, text);
+              }
+              return String(true);
+            },
+            {
+              __typedArg0: layout,
+              __typedArg1: created,
+              __typedArg2: fixtureNotes,
+            },
           );
         });
         cleanup.defer(async () => {
           await restoreAnnotationComment(api, {
             serverID,
-            key: await obEval(
+            key: await obRun(
               vaultId!,
-              `JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key`,
+              async ({ app }) => {
+                return String(
+                  await JSON.parse(
+                    app.secretStorage.getSecret(
+                      "zotlit-zotero-write-authorization",
+                    )!,
+                  ).key,
+                );
+              },
+              undefined,
             ),
             annotationKey: key,
             comment: original,
           }).catch(() => {});
         });
         expect(
-          await obEvalUntil(
-            vaultId!,
-            `String(app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(itemKey)})).length)`,
-            { expected: "0" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              vaultId!,
+              async (
+                { zotlit },
+                { __typedArg0 }: { __typedArg0: "RUGIER24" },
+              ) => {
+                return String(
+                  String(
+                    zotlit.services.bridge.runSync(
+                      zotlit.services.noteIndex.getNotesByItemKey(__typedArg0),
+                    ).length,
+                  ),
+                );
+              },
+              { __typedArg0: itemKey },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "paired-run.e2e.ts:7371",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "0" }),
         ).toBe(true);
-        const result = await obJson<{ outcome: string; path?: string }>(
+        const result = await obRun(
           vaultId!,
-          `(async()=>{const services=app.plugins.plugins.zotlit.services;const hits=await services.itemLookup.search('',{limit:100});const hit=hits.find((candidate)=>candidate.item.indexedKey===${JSON.stringify(itemKey)});if(!hit)throw new Error('Fixture Item not found');const result=await services.noteFeature.createNote(hit.item,{profile:'default'});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path}:{outcome:result.outcome});})()`,
+          async ({ zotlit }, { __typedArg0 }: { __typedArg0: "RUGIER24" }) => {
+            const services = zotlit.services;
+            const hits = await services.itemLookup.search("", { limit: 100 });
+            const hit = hits.find(
+              (candidate) => candidate.item.indexedKey === __typedArg0,
+            );
+            if (!hit) throw new Error("Fixture Item not found");
+            const result = await services.noteFeature.createNote(hit.item, {
+              profile: "default",
+            });
+            return result.outcome === "created"
+              ? { outcome: "created", path: result.file.path }
+              : { outcome: result.outcome };
+          },
+          { __typedArg0: itemKey },
         );
         expect(result.outcome).toBe("created");
         created = result.path!;
         const read = () =>
-          obEval(
+          obRun(
             vaultId!,
-            `app.vault.read(app.vault.getFileByPath(${JSON.stringify(created)}))`,
+            async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+              return String(
+                await app.vault.read(app.vault.getFileByPath(__typedArg0)!),
+              );
+            },
+            { __typedArg0: created },
           );
         const block = [
           "## Annotations",
@@ -7445,37 +17949,150 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(report.ok).toBe(true);
         const own = report.rows!.map((row) => row.indexedKey);
         expect(own).toContain(key);
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.openFile(app.vault.getFileByPath(${JSON.stringify(created)}),{state:{mode:'source',source:false}});app.workspace.setActiveLeaf(leaf,{focus:true});return true;})()`,
+          async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+            const leaf = app.workspace.getLeaf("tab");
+            await leaf.openFile(app.vault.getFileByPath(__typedArg0)!, {
+              state: { mode: "source", source: false },
+            });
+            app.workspace.setActiveLeaf(leaf, { focus: true });
+            return String(true);
+          },
+          { __typedArg0: created },
         );
-        const blockEl = (await revealQueryView(vaultId!, created, { block: 0 }))
-          .el;
-        await readQueryViewUntil<string[]>(
+        const blockEl = await revealQueryView(vaultId!, created, { block: 0 });
+        await readQueryViewUntil(
           vaultId!,
-          `(async()=>JSON.stringify([...${blockEl}.querySelectorAll('.zt-annot-card')].map((n)=>n.getAttribute('data-zotero-annotation-key'))))()`,
+          async (
+            { page: pageHelpers },
+            { __typedArg0 }: { __typedArg0: NoteQueryView },
+          ) => {
+            return [
+              ...(
+                await pageHelpers.revealQueryView(__typedArg0)
+              ).querySelectorAll(".zt-annot-card"),
+            ].map((n) => n.getAttribute("data-zotero-annotation-key"));
+          },
+          { __typedArg0: blockEl },
           {
-            ready: (cards) => JSON.stringify(cards) === JSON.stringify(own),
             what: "the Query Block's cards",
             tries: 120,
+            ready: (value) =>
+              value !== null &&
+              ((cards) => JSON.stringify(cards) === JSON.stringify(own))(value),
           },
         );
 
         // Select the card alone, open its comment editor, and type.
-        const card = `${blockEl}.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(key)}]')`;
-        const editor = `${card}?.querySelector('.cm-content')`;
-        await readQueryViewUntil<string>(
+
+        await readQueryViewUntil(
           vaultId!,
-          `(async()=>JSON.stringify(await (async()=>{${PAGE}const card=${card};if(${editor})return 'open';if(!card.hasAttribute('data-alone')){press(card,'card');return 'selecting';}getSelection().removeAllRanges();press(card.querySelector('.zt-annot-comment-field'),'comment field');return String(!!${editor}&&'open');})()))()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+              __typedArg3,
+              __typedArg4,
+              __typedArg5,
+            }: {
+              __typedArg0: NoteQueryView;
+              __typedArg1: string;
+              __typedArg2: NoteQueryView;
+              __typedArg3: string;
+              __typedArg4: NoteQueryView;
+              __typedArg5: string;
+            },
+          ) => {
+            return await (async () => {
+              const { press } = pageHelpers;
+              const card = (
+                await pageHelpers.revealQueryView(__typedArg0)
+              ).querySelector(
+                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+              );
+              if (
+                (await pageHelpers.revealQueryView(__typedArg2))
+                  .querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg3)}]`,
+                  )
+                  ?.querySelector(".cm-content")
+              )
+                return "open";
+              if (!card!.hasAttribute("data-alone")) {
+                press(card as HTMLElement, "card");
+                return "selecting";
+              }
+              getSelection()!.removeAllRanges();
+              press(
+                card!.querySelector<HTMLElement>(".zt-annot-comment-field")!,
+                "comment field",
+              );
+              return String(
+                !!(await pageHelpers.revealQueryView(__typedArg4))
+                  .querySelector(
+                    `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg5)}]`,
+                  )
+                  ?.querySelector(".cm-content") && "open",
+              );
+            })();
+          },
           {
-            ready: (answer) => answer === "open",
+            __typedArg0: blockEl,
+            __typedArg1: key,
+            __typedArg2: blockEl,
+            __typedArg3: key,
+            __typedArg4: blockEl,
+            __typedArg5: key,
+          },
+          {
             what: "the comment editor on the block's card",
+            ready: (value) =>
+              value !== null && ((answer) => answer === "open")(value),
           },
         );
         const comment = "Typed in a Literature Note";
-        await obEval(
+        await obRun(
           vaultId!,
-          `(async()=>{const content=${editor};const view=content.cmTile.root.view;view.focus();view.dispatch({changes:{from:0,to:view.state.doc.length,insert:${JSON.stringify(comment)}},userEvent:'input.type'});content.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: NoteQueryView;
+              __typedArg1: string;
+              __typedArg2: "Typed in a Literature Note";
+            },
+          ) => {
+            const content = (await pageHelpers.revealQueryView(__typedArg0))
+              .querySelector<HTMLElement>(
+                `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+              )
+              ?.querySelector<HTMLElement>(".cm-content");
+            const view = (content! as PairedEditorContent).cmTile.root.view;
+            view.focus();
+            view.dispatch({
+              changes: {
+                from: 0,
+                to: view.state.doc.length,
+                insert: __typedArg2,
+              },
+              userEvent: "input.type",
+            });
+            content!.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key: "Escape",
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            return String(true);
+          },
+          { __typedArg0: blockEl, __typedArg1: key, __typedArg2: comment },
         );
         expect(
           await waitFor(
@@ -7485,50 +18102,146 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             120,
           ),
         ).toBe(true);
-        await readQueryViewUntil<string>(
+        await readQueryViewUntil(
           vaultId!,
-          `(async()=>JSON.stringify(${card}?.querySelector('.zt-annot-comment')?.textContent??''))()`,
+          async (
+            { page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+            }: { __typedArg0: NoteQueryView; __typedArg1: string },
+          ) => {
+            return (
+              (await pageHelpers.revealQueryView(__typedArg0))
+                .querySelector(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+                )
+                ?.querySelector(".zt-annot-comment")?.textContent ?? ""
+            );
+          },
+          { __typedArg0: blockEl, __typedArg1: key },
           {
-            ready: (answer) => answer === comment,
             what: "the comment on the block's card",
+            ready: (value) =>
+              value !== null && ((answer) => answer === comment)(value),
           },
         );
 
         // A sort change in the block's toolbar rewrites the block text.
-        const inBlock = (script: string) =>
-          obEval(
-            vaultId!,
-            `(async()=>{${PAGE}const el=${blockEl};${script};return true;})()`,
-          );
-        await inBlock(
-          "press(el.querySelector('[data-query-toolbar=\"sort\"]'),'Sort')",
+
+        await obRun(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            { __typedArg0 }: { __typedArg0: NoteQueryView },
+          ) => {
+            const { press } = pageHelpers;
+            const el = await pageHelpers.revealQueryView(__typedArg0);
+            press(
+              el.querySelector<HTMLElement>('[data-query-toolbar="sort"]'),
+              "Sort",
+            );
+            return String(true);
+          },
+          { __typedArg0: blockEl },
         );
-        await inBlock(
-          "press(el.querySelector('[data-query-popover=\"sort\"] [data-sort-add]'),'Add sort')",
+        await obRun(
+          vaultId!,
+          async (
+            { page: pageHelpers },
+            { __typedArg0 }: { __typedArg0: NoteQueryView },
+          ) => {
+            const { press } = pageHelpers;
+            const el = await pageHelpers.revealQueryView(__typedArg0);
+            press(
+              el.querySelector<HTMLElement>(
+                '[data-query-popover="sort"] [data-sort-add]',
+              ),
+              "Add sort",
+            );
+            return String(true);
+          },
+          { __typedArg0: blockEl },
         );
         // The new sort goes after the two of the default block.
-        await readQueryViewUntil<number>(
+        await readQueryViewUntil(
           vaultId!,
-          `(async()=>JSON.stringify(${blockEl}.querySelectorAll('[data-query-popover="sort"] [data-sort-row]').length))()`,
+          async (
+            { page: pageHelpers },
+            { __typedArg0 }: { __typedArg0: NoteQueryView },
+          ) => {
+            return (
+              await pageHelpers.revealQueryView(__typedArg0)
+            ).querySelectorAll('[data-query-popover="sort"] [data-sort-row]')
+              .length;
+          },
+          { __typedArg0: blockEl },
           {
-            ready: (rows) => rows === 3,
             what: "the Query Block's sort rows",
+            ready: (value) => value !== null && ((rows) => rows === 3)(value),
           },
         );
         for (const [control, value] of [
           ["data-sort-property", "type"],
           ["data-sort-direction", "DESC"],
         ] as const) {
-          await readQueryViewUntil<boolean>(
+          await readQueryViewUntil(
             vaultId!,
-            `(async()=>JSON.stringify(!!${blockEl}.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]')))()`,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: {
+                __typedArg0: NoteQueryView;
+                __typedArg1: "data-sort-property" | "data-sort-direction";
+              },
+            ) => {
+              return !!(
+                await pageHelpers.revealQueryView(__typedArg0)
+              ).querySelector(
+                `[data-query-popover="sort"] [data-sort-row]:last-of-type [${__typedArg1}]`,
+              );
+            },
+            { __typedArg0: blockEl, __typedArg1: control },
             {
-              ready: (present) => present,
               what: "the sort row's control",
+              ready: (value) => value !== null && ((present) => present)(value),
             },
           );
-          await inBlock(
-            `await pick(el.querySelector('[data-query-popover="sort"] [data-sort-row]:last-of-type [${control}]'),${JSON.stringify(value)},'${control}')`,
+          await obRun(
+            vaultId!,
+            async (
+              { page: pageHelpers },
+              {
+                __typedArg0,
+                __typedArg1,
+                __typedArg2,
+                __typedArg3,
+              }: {
+                __typedArg0: NoteQueryView;
+                __typedArg1: "data-sort-property" | "data-sort-direction";
+                __typedArg2: "type" | "DESC";
+                __typedArg3: "data-sort-property" | "data-sort-direction";
+              },
+            ) => {
+              const { pick } = pageHelpers;
+              const el = await pageHelpers.revealQueryView(__typedArg0);
+              await pick(
+                el.querySelector<HTMLButtonElement>(
+                  `[data-query-popover="sort"] [data-sort-row]:last-of-type [${__typedArg1}]`,
+                )!,
+                __typedArg2,
+                __typedArg3,
+              );
+              return String(true);
+            },
+            {
+              __typedArg0: blockEl,
+              __typedArg1: control,
+              __typedArg2: value,
+              __typedArg3: control,
+            },
           );
         }
         const sorted = block.replace(
@@ -7542,9 +18255,23 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // A full update leaves a body with no Managed Region as the
         // researcher has it.
         const update = () =>
-          obJson<{ diagnostic: unknown }>(
+          obRun(
             vaultId!,
-            `(async()=>{const services=app.plugins.plugins.zotlit.services;const result=await services.noteFeature.updateNote(app.vault.getFileByPath(${JSON.stringify(created)}),{indexedKey:${JSON.stringify(itemKey)},scope:'full'});return JSON.stringify({diagnostic:result.diagnostic??null});})()`,
+            async (
+              { app, zotlit },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: "RUGIER24" },
+            ) => {
+              const services = zotlit.services;
+              const result = await services.noteFeature.updateNote(
+                app.vault.getFileByPath(__typedArg0)!,
+                { indexedKey: __typedArg1, scope: "full" },
+              );
+              return { diagnostic: result.diagnostic ?? null };
+            },
+            { __typedArg0: created, __typedArg1: itemKey },
           );
         const beforeUpdate = await read();
         expect(await update()).toEqual({ diagnostic: null });
@@ -7600,9 +18327,21 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ].join("\n");
         // The note holds the legacy text exactly, so the update starts from it.
         expect(
-          await obEval(
+          await obRun(
             vaultId!,
-            `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(created)});const legacy=${JSON.stringify(legacy)};await app.vault.modify(file,legacy);return String((await app.vault.read(file))===legacy);})()`,
+            async (
+              { app },
+              {
+                __typedArg0,
+                __typedArg1,
+              }: { __typedArg0: string; __typedArg1: string },
+            ) => {
+              const file = app.vault.getFileByPath(__typedArg0);
+              const legacy = __typedArg1;
+              await app.vault.modify(file!, legacy);
+              return String(String((await app.vault.read(file!)) === legacy));
+            },
+            { __typedArg0: created, __typedArg1: legacy },
           ),
         ).toBe("true");
         expect(await update()).toEqual({ diagnostic: null });
@@ -7768,36 +18507,50 @@ async function annotationState(
  * outcome and fail the ordinary follow-up list read once.
  */
 async function installLostWriteProbe(vaultId: string): Promise<void> {
-  await obEval(
+  await obRun(
     vaultId,
-    `(() => {
-      const { Effect } = ${EFFECT_MODULE};
-      const services = app.plugins.plugins.zotlit.services;
+    async (
+      { zotlit, page: pageHelpers },
+      { __typedArg0 }: { __typedArg0: string },
+    ) => {
+      const { Effect } = require(__typedArg0) as Pick<
+        typeof import("@/lib/effect"),
+        "Effect"
+      >;
+      const services = zotlit.services;
       const api = services.zoteroLocalApi;
-      const probe = {
+      const probe: PairedWriteProbe = {
         api,
         authorizedSend: api.authorizedSend.bind(api),
         listAnnotations: api.listAnnotations.bind(api),
         calls: 0,
         failRead: false,
       };
-      window.__zotlitWriteOutcomeProbe = probe;
-      api.authorizedSend = (...args) => Effect.promise(async () => {
-        probe.calls += 1;
-        const reply = await services.bridge.runPromise(probe.authorizedSend(...args));
-        if ('value' in reply) {
-          probe.failRead = true;
-          return { failure: { kind: 'unknown-outcome' } };
-        }
-        return reply;
-      });
-      api.listAnnotations = (...args) => Effect.promise(async () => {
-        if (!probe.failRead) return await services.bridge.runPromise(probe.listAnnotations(...args));
-        probe.failRead = false;
-        return { failure: { kind: 'unreachable' } };
-      });
-      return true;
-    })()`,
+      pageHelpers.scratch.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = (...args) =>
+        Effect.promise(async () => {
+          probe.calls += 1;
+          const reply = await services.bridge.runPromise(
+            probe.authorizedSend(...args),
+          );
+          if ("value" in reply) {
+            probe.failRead = true;
+            return { failure: { kind: "unknown-outcome" } };
+          }
+          return reply;
+        });
+      api.listAnnotations = (...args) =>
+        Effect.promise(async () => {
+          if (!probe.failRead)
+            return await services.bridge.runPromise(
+              probe.listAnnotations(...args),
+            );
+          probe.failRead = false;
+          return { failure: { kind: "unreachable" } };
+        });
+      return String(true);
+    },
+    { __typedArg0: effectPath },
   );
 }
 
@@ -7807,14 +18560,30 @@ async function installClosingPaneProbe(
   annotationKey: string,
   color: string,
 ): Promise<void> {
-  await obEval(
+  await obRun(
     vaultId,
-    `(() => {
-      const { Effect } = ${EFFECT_MODULE};
-      const services = app.plugins.plugins.zotlit.services;
+    async (
+      { zotlit, page: pageHelpers },
+      {
+        __typedArg0,
+        __typedArg1,
+        __typedArg2,
+        __typedArg3,
+      }: {
+        __typedArg0: string;
+        __typedArg1: string;
+        __typedArg2: string;
+        __typedArg3: string;
+      },
+    ) => {
+      const { Effect } = require(__typedArg0) as Pick<
+        typeof import("@/lib/effect"),
+        "Effect"
+      >;
+      const services = zotlit.services;
       const api = services.zoteroLocalApi;
-      const gate = Promise.withResolvers();
-      const probe = {
+      const gate = Promise.withResolvers<void>();
+      const probe: PairedWriteProbe = {
         api,
         authorizedSend: api.authorizedSend.bind(api),
         listAnnotations: api.listAnnotations.bind(api),
@@ -7823,20 +18592,36 @@ async function installClosingPaneProbe(
         release: gate.resolve,
         outcome: null,
       };
-      window.__zotlitWriteOutcomeProbe = probe;
-      api.authorizedSend = (...args) => Effect.promise(async () => {
-        if (!args[0].endsWith('/'+${JSON.stringify(annotationKey)})) return await services.bridge.runPromise(probe.authorizedSend(...args));
-        probe.calls += 1;
-        const reply = await services.bridge.runPromise(probe.authorizedSend(...args));
-        probe.reached = true;
-        await gate.promise;
-        return reply;
-      });
+      pageHelpers.scratch.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = (...args) =>
+        Effect.promise(async () => {
+          if (!args[0].endsWith(`/${__typedArg1}`))
+            return await services.bridge.runPromise(
+              probe.authorizedSend(...args),
+            );
+          probe.calls += 1;
+          const reply = await services.bridge.runPromise(
+            probe.authorizedSend(...args),
+          );
+          probe.reached = true;
+          await gate.promise;
+          return reply;
+        });
       probe.pending = services.bridge
-        .runPromise(services.annotationRepository.patchColor(${JSON.stringify(annotationKey)}, ${JSON.stringify(color)}))
-        .then((outcome) => { probe.outcome = outcome; });
-      return true;
-    })()`,
+        .runPromise(
+          services.annotationRepository.patchColor(__typedArg2, __typedArg3),
+        )
+        .then((outcome) => {
+          probe.outcome = { kind: outcome.kind };
+        });
+      return String(true);
+    },
+    {
+      __typedArg0: effectPath,
+      __typedArg1: annotationKey,
+      __typedArg2: annotationKey,
+      __typedArg3: color,
+    },
   );
 }
 
@@ -7846,14 +18631,20 @@ async function installClosingPaneProbe(
  * write arrives at the seam. {@link restoreWriteOutcomeProbe} lets it go.
  */
 async function installHeldWriteProbe(vaultId: string): Promise<void> {
-  await obEval(
+  await obRun(
     vaultId,
-    `(() => {
-      const { Effect } = ${EFFECT_MODULE};
-      const services = app.plugins.plugins.zotlit.services;
+    async (
+      { zotlit, page: pageHelpers },
+      { __typedArg0 }: { __typedArg0: string },
+    ) => {
+      const { Effect } = require(__typedArg0) as Pick<
+        typeof import("@/lib/effect"),
+        "Effect"
+      >;
+      const services = zotlit.services;
       const api = services.zoteroLocalApi;
-      const gate = Promise.withResolvers();
-      const probe = {
+      const gate = Promise.withResolvers<void>();
+      const probe: PairedWriteProbe = {
         api,
         authorizedSend: api.authorizedSend.bind(api),
         listAnnotations: api.listAnnotations.bind(api),
@@ -7861,42 +18652,52 @@ async function installHeldWriteProbe(vaultId: string): Promise<void> {
         reached: false,
         release: gate.resolve,
       };
-      window.__zotlitWriteOutcomeProbe = probe;
-      api.authorizedSend = (...args) => Effect.promise(async () => {
-        probe.calls += 1;
-        probe.reached = true;
-        await gate.promise;
-        return await services.bridge.runPromise(probe.authorizedSend(...args));
-      });
-      return true;
-    })()`,
+      pageHelpers.scratch.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = (...args) =>
+        Effect.promise(async () => {
+          probe.calls += 1;
+          probe.reached = true;
+          await gate.promise;
+          return await services.bridge.runPromise(
+            probe.authorizedSend(...args),
+          );
+        });
+      return String(true);
+    },
+    { __typedArg0: effectPath },
   );
 }
 
 async function restoreWriteOutcomeProbe(vaultId: string): Promise<void> {
-  await obEval(
+  await obRun(
     vaultId,
-    `(async () => {
-      const probe = window.__zotlitWriteOutcomeProbe;
-      if (!probe) return 'clean';
+    async ({ page: pageHelpers }) => {
+      const probe = pageHelpers.scratch.__zotlitWriteOutcomeProbe;
+      if (!probe) return String("clean");
       try {
         probe.release?.();
         await probe.pending;
       } finally {
         probe.api.authorizedSend = probe.authorizedSend;
         probe.api.listAnnotations = probe.listAnnotations;
-        delete window.__zotlitWriteOutcomeProbe;
+        delete pageHelpers.scratch.__zotlitWriteOutcomeProbe;
       }
-      return 'restored';
-    })()`,
+      return String("restored");
+    },
+    undefined,
   );
 }
 
 async function writeOutcomeCalls(vaultId: string): Promise<number> {
   return Number(
-    await obEval(
+    await obRun(
       vaultId,
-      "String(window.__zotlitWriteOutcomeProbe?.calls ?? -1)",
+      async ({ page: pageHelpers }) => {
+        return String(
+          String(pageHelpers.scratch.__zotlitWriteOutcomeProbe?.calls ?? -1),
+        );
+      },
+      undefined,
     ),
   );
 }
@@ -7905,20 +18706,37 @@ function visibleAnnotationColors(
   vaultId: string,
   annotationKey: string,
 ): Promise<{ card: string | null; mark: string | null }> {
-  return obJson(
+  return obRun(
     vaultId,
-    `(() => {
-      const card = app.workspace.getLeavesOfType('zotero-annotation-view')
-        .map((leaf) => leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]'))
+    async (
+      { app },
+      {
+        __typedArg0,
+        __typedArg1,
+      }: { __typedArg0: string; __typedArg1: string },
+    ) => {
+      const card = app.workspace
+        .getLeavesOfType("zotero-annotation-view")
+        .map((leaf) =>
+          leaf.view.containerEl.querySelector<HTMLElement>(
+            `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+          ),
+        )
         .find(Boolean);
-      const mark = app.workspace.getLeavesOfType('pdf')
-        .map((leaf) => leaf.view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]'))
+      const mark = app.workspace
+        .getLeavesOfType("pdf")
+        .map((leaf) =>
+          leaf.view.containerEl.querySelector<SVGGraphicsElement>(
+            `.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(__typedArg1)}]`,
+          ),
+        )
         .find(Boolean);
-      return JSON.stringify({
-        card: card?.getAttribute('data-annot-color') ?? null,
-        mark: mark?.getAttribute('fill') ?? null,
-      });
-    })()`,
+      return {
+        card: card?.getAttribute("data-annot-color") ?? null,
+        mark: mark?.getAttribute("fill") ?? null,
+      };
+    },
+    { __typedArg0: annotationKey, __typedArg1: annotationKey },
   );
 }
 
@@ -8224,11 +19042,39 @@ async function setAnnotationTags(
     return "saved";
   })()`);
   expect(
-    await obEvalUntil(
-      vaultId!,
-      `(async()=>{const {annotationRepository:repository,bridge}=app.plugins.plugins.zotlit.services;const list=await bridge.runPromise(repository.refresh(${JSON.stringify(attachment.key)}));const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(annotationKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
-      { expected: JSON.stringify(spelledTags(tags)) },
-    ),
+    await ((options: { expected: string; tries?: number }) =>
+      obRunUntil(
+        vaultId!,
+        async (
+          { zotlit },
+          {
+            __typedArg0,
+            __typedArg1,
+          }: { __typedArg0: string; __typedArg1: string },
+        ) => {
+          const { annotationRepository: repository, bridge } = zotlit.services;
+          const list = await bridge.runPromise(repository.refresh(__typedArg0));
+          const record = list?.annotations.find(
+            (annotation) => annotation.key === __typedArg1,
+          );
+          return String(
+            JSON.stringify(
+              (record?.tagDetails ?? [])
+                .map(({ name, type }) => `${name}:${type}`)
+                .toSorted(),
+            ),
+          );
+        },
+        { __typedArg0: attachment.key, __typedArg1: annotationKey },
+        {
+          ready: (value) => value === options.expected,
+          tries: options.tries,
+          what: "paired-run.e2e.ts:8198",
+        },
+      ).then(
+        () => true,
+        () => false,
+      ))({ expected: JSON.stringify(spelledTags(tags)) }),
   ).toBe(true);
 }
 
@@ -8242,23 +19088,73 @@ async function setAnnotationTags(
  *   holds it, the gestures act on.
  */
 function cardTagEditor(annotationKey: string) {
-  const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]')).find(Boolean)`;
   return {
-    ...tagEditorIn(card),
+    ...tagEditorIn({ kind: "card", annotationKey }),
     /** One click on a part of the card, once the card draws it. */
     press: (target: string) =>
-      obEvalUntil(
-        vaultId!,
-        `(function(){${PAGE}const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';press(target,${JSON.stringify(target)});return 'pressed';})()`,
-        { expected: "pressed" },
-      ),
+      ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          vaultId!,
+          async (
+            { app, page: pageHelpers },
+            {
+              __typedArg0,
+              __typedArg1,
+              __typedArg2,
+            }: {
+              __typedArg0: string;
+              __typedArg1: string;
+              __typedArg2: string;
+            },
+          ) => {
+            const { press } = pageHelpers;
+            const target = app.workspace
+              .getLeavesOfType("zotero-annotation-view")
+              .map((leaf) =>
+                leaf.view.containerEl.querySelector<HTMLElement>(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                ),
+              )
+              .find(Boolean)
+              ?.querySelector<HTMLElement>(__typedArg1);
+            if (!target) return String("absent");
+            press(target, __typedArg2);
+            return String("pressed");
+          },
+          {
+            __typedArg0: annotationKey,
+            __typedArg1: target,
+            __typedArg2: target,
+          },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "paired-run.e2e.ts:8221",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "pressed" }),
     /** The tag toggle in the card's action bar. */
     toggle: ".clickable-icon:has(svg.lucide-tag)",
     /** The names the card draws while no session is open. */
     cardTags: () =>
-      obJson<string[]>(
+      obRun(
         vaultId!,
-        `JSON.stringify([...((${card})?.querySelectorAll('[aria-pressed]')??[])].map(chip=>chip.textContent))`,
+        async ({ app }, { __typedArg0 }: { __typedArg0: string }) => {
+          return [
+            ...(app.workspace
+              .getLeavesOfType("zotero-annotation-view")
+              .map((leaf) =>
+                leaf.view.containerEl.querySelector<HTMLElement>(
+                  `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(__typedArg0)}]`,
+                ),
+              )
+              .find(Boolean)
+              ?.querySelectorAll<HTMLElement>("[aria-pressed]") ?? []),
+          ].map((chip) => chip.textContent);
+        },
+        { __typedArg0: annotationKey },
       ),
   };
 }
@@ -8267,36 +19163,190 @@ function cardTagEditor(annotationKey: string) {
  * The inline tag editor inside one surface, the Annotation Card or the Mark
  * Popup: one editor component, so one set of gestures reaches both.
  *
- * @param root an expression for the element that holds the editor.
+ * @param root the card or popup that holds the editor.
  */
-function tagEditorIn(root: string) {
+function tagEditorIn(
+  root: { kind: "popup" } | { kind: "card"; annotationKey: string },
+) {
   return {
     editorReady: () =>
-      obEvalUntil(
-        vaultId!,
-        `String(!!(${root})?.querySelector('.zt-annot-tag-input:not([readonly])'))`,
-        { expected: "true" },
-      ),
+      ((options: { expected: string; tries?: number }) =>
+        obRunUntil(
+          vaultId!,
+          async (
+            { app },
+            {
+              __typedArg0,
+            }: {
+              __typedArg0:
+                | { kind: "popup" }
+                | { kind: "card"; annotationKey: string };
+            },
+          ) => {
+            return String(
+              String(
+                !!(
+                  __typedArg0.kind === "popup"
+                    ? document.querySelector<HTMLElement>(
+                        ".zt-pdf-mark-popup [data-zt-section=tags]",
+                      )
+                    : app.workspace
+                        .getLeavesOfType("zotero-annotation-view")
+                        .map((leaf) =>
+                          leaf.view.containerEl.querySelector<HTMLElement>(
+                            `.zt-annot-card[data-zotero-annotation-key="${__typedArg0.annotationKey}"]`,
+                          ),
+                        )
+                        .find(Boolean)
+                )?.querySelector<HTMLInputElement>(
+                  ".zt-annot-tag-input:not([readonly])",
+                ),
+              ),
+            );
+          },
+          { __typedArg0: root },
+          {
+            ready: (value) => value === options.expected,
+            tries: options.tries,
+            what: "paired-run.e2e.ts:8246",
+          },
+        ).then(
+          () => true,
+          () => false,
+        ))({ expected: "true" }),
     /** The names the open editor draws as chips. */
     editorChips: () =>
-      obJson<string[]>(
+      obRun(
         vaultId!,
-        `JSON.stringify([...((${root})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
+        async (
+          { app },
+          {
+            __typedArg0,
+          }: {
+            __typedArg0:
+              | { kind: "popup" }
+              | { kind: "card"; annotationKey: string };
+          },
+        ) => {
+          return [
+            ...((__typedArg0.kind === "popup"
+              ? document.querySelector<HTMLElement>(
+                  ".zt-pdf-mark-popup [data-zt-section=tags]",
+                )
+              : app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key="${__typedArg0.annotationKey}"]`,
+                    ),
+                  )
+                  .find(Boolean)
+            )?.querySelectorAll<HTMLInputElement>(
+              "[data-slot=tags-input-item-text]",
+            ) ?? []),
+          ].map((chip) => chip.textContent);
+        },
+        { __typedArg0: root },
       ),
     /** Text typed into the tag field; `enter` presses Enter after it. */
     type: (text: string, { enter }: { enter: boolean }) =>
-      obEval(
+      obRun(
         vaultId!,
-        `(function(){const field=(${root}).querySelector('.zt-annot-tag-input');field.value=${JSON.stringify(text)};field.dispatchEvent(new Event('input',{bubbles:true}));if(${enter})field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return 'typed';})()`,
+        async (
+          { app },
+          {
+            __typedArg0,
+            __typedArg1,
+            __typedArg2,
+          }: {
+            __typedArg0:
+              | { kind: "popup" }
+              | { kind: "card"; annotationKey: string };
+            __typedArg1: string;
+            __typedArg2: boolean;
+          },
+        ) => {
+          const field = (
+            __typedArg0.kind === "popup"
+              ? document.querySelector<HTMLElement>(
+                  ".zt-pdf-mark-popup [data-zt-section=tags]",
+                )
+              : app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key="${__typedArg0.annotationKey}"]`,
+                    ),
+                  )
+                  .find(Boolean)
+          )!.querySelector<HTMLInputElement>(".zt-annot-tag-input");
+          field!.value = __typedArg1;
+          field!.dispatchEvent(new Event("input", { bubbles: true }));
+          if (__typedArg2)
+            field!.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key: "Enter",
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+          return String("typed");
+        },
+        { __typedArg0: root, __typedArg1: text, __typedArg2: enter },
       ),
     /**
      * One chip's remove button. The chip is found by its name part, because
      * an automatic chip also holds its label.
      */
     remove: (name: string) =>
-      obEval(
+      obRun(
         vaultId!,
-        `(function(){${PAGE}const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';press(chip.querySelector('[data-slot=tags-input-item-remove]'),'remove '+${JSON.stringify(name)});return 'removed';})()`,
+        async (
+          { app, page: pageHelpers },
+          {
+            __typedArg0,
+            __typedArg1,
+            __typedArg2,
+          }: {
+            __typedArg0:
+              | { kind: "popup" }
+              | { kind: "card"; annotationKey: string };
+            __typedArg1: string;
+            __typedArg2: string;
+          },
+        ) => {
+          const { press } = pageHelpers;
+          const chip = [
+            ...(__typedArg0.kind === "popup"
+              ? document.querySelector<HTMLElement>(
+                  ".zt-pdf-mark-popup [data-zt-section=tags]",
+                )
+              : app.workspace
+                  .getLeavesOfType("zotero-annotation-view")
+                  .map((leaf) =>
+                    leaf.view.containerEl.querySelector<HTMLElement>(
+                      `.zt-annot-card[data-zotero-annotation-key="${__typedArg0.annotationKey}"]`,
+                    ),
+                  )
+                  .find(Boolean))!.querySelectorAll<HTMLInputElement>(
+              "[data-slot=tags-input-item]",
+            ),
+          ].find(
+            (item) =>
+              item.querySelector<HTMLInputElement>(
+                "[data-slot=tags-input-item-text]",
+              )?.textContent === __typedArg1,
+          );
+          if (!chip) return String("absent");
+          press(
+            chip.querySelector<HTMLInputElement>(
+              "[data-slot=tags-input-item-remove]",
+            ),
+            `remove ${__typedArg2}`,
+          );
+          return String("removed");
+        },
+        { __typedArg0: root, __typedArg1: name, __typedArg2: name },
       ),
   };
 }

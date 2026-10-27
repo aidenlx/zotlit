@@ -1,13 +1,15 @@
+import { DatabaseSync } from "node:sqlite";
+import type { WorkspaceLeaf, FileSystemAdapter } from "obsidian";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { ATTACHMENTS } from "@zotlit/scripts/fixture";
 // Annotation links in a note: a Durable Annotation Link clicked in any
 // Obsidian surface lands on its Annotation in Obsidian's reader, or reaches
 // Zotero when this computer cannot open the PDF; a hovered one shows the
 // Annotation it names. The Annotation Suggester writes the same link from a
 // search at the cursor.
 
-import { DatabaseSync } from "node:sqlite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
-import { ATTACHMENTS } from "@zotlit/scripts/fixture";
+import type { AnnotationView } from "@/views/annot-view/view";
 
 import {
   annotationAttachment,
@@ -19,8 +21,14 @@ import {
   reachable,
 } from "./e2e-run-fixture.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
-import { obEval, WINDOW_DOCUMENTS } from "./obsidian-cli.ts";
-import { MENU_READY } from "./page-gestures.ts";
+import { obRun } from "./obsidian-cli.ts";
+import type {
+  LinkGesture,
+  LinkRecorder,
+  LinkSettings,
+} from "./page-links-types.ts";
+import type { LinkMarkdownView } from "./page-links-types.ts";
+import type { PagePdfView } from "./page-notes-types.ts";
 
 const PDF_PATH = annotationAttachment.path!;
 const NOTE = "Annotation links.md";
@@ -99,122 +107,6 @@ interface Outcome {
   reads?: (string | null)[];
 }
 
-/** The rendered link to `url` in the markdown view `view`, as eval code. */
-const LINK_IN = {
-  reading: `[...view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===url)`,
-  properties: `[...(view.metadataEditor?.containerEl.querySelectorAll('.metadata-link-inner.external-link')??[])].find((link)=>link.dataset.href===url)`,
-  "live-preview": `[...view.editor.cm.contentDOM.querySelectorAll('.cm-link .cm-underline')].find((el)=>el.textContent===${JSON.stringify(LINK_TEXT)})`,
-  source: `[...view.editor.cm.contentDOM.querySelectorAll('.cm-link')].find((el)=>el.textContent===${JSON.stringify(LINK_TEXT)})`,
-} as const;
-
-/**
- * Eval code that writes {@link NOTE} holding `content`, a JavaScript
- * expression, and shows it where `gesture` reaches its link, binding `file`,
- * `leaf` and `view`. Each step is undone on the evaluation's `cleanup` stack,
- * registered before the next step that can fail. An editor's cursor rests on
- * the note's last line, which holds no link, so Live Preview draws the link.
- */
-function showNote(content: string, gesture: keyof typeof LINK_IN): string {
-  const state =
-    gesture === "reading"
-      ? "{mode:'preview'}"
-      : `{mode:'source',source:${gesture === "source"}}`;
-  return `const file=await app.vault.create(${JSON.stringify(NOTE)},${content});
-    cleanup.defer(()=>app.vault.delete(file));
-    const leaf=app.workspace.getLeaf('tab');
-    cleanup.adopt(leaf,(leaf)=>leaf.detach());
-    await leaf.setViewState({type:'markdown',state:{file:file.path,...${state}},active:true});
-    app.workspace.setActiveLeaf(leaf,{focus:true});
-    const view=leaf.view;
-    ${gesture === "reading" ? "" : "view.editor.setCursor({line:view.editor.lastLine(),ch:0});"}`;
-}
-
-/**
- * Eval code that finds the rendered link to `url` where `gesture` reaches it,
- * brings it into view, and binds `link` with a point `x`, `y` on it that
- * nothing covers.
- *
- * Gestures are synthetic: the End-to-end Run's window stays behind other apps,
- * where Chromium delivers no trusted input. Live Preview finds the link under
- * the pointer from the event's coordinates, so they name a point near the
- * start of the link's first line box: a wrapped link has none at the middle of
- * its bounding box, and a long Properties value runs on under the sidebar.
- */
-function linkTarget(gesture: keyof typeof LINK_IN): string {
-  return `const link=await until(()=>${LINK_IN[gesture]},()=>'The link did not render in ${gesture}');
-    link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
-    const box=link.getClientRects()[0];const x=box.left+Math.min(box.width/2,12),y=box.top+box.height/2;
-    const hit=link.ownerDocument.elementFromPoint(x,y);
-    if(!hit||!(hit===link||link.contains(hit)))throw new Error('The link is covered by '+(hit?.outerHTML.slice(0,120)??'nothing'));`;
-}
-
-/**
- * The bounded waits an evaluation declares first. Every wait ends by
- * throwing, inside the evaluation, so its cleanup stack still runs.
- * `until(found, what)` polls until `found()` answers, and answers with it;
- * `within(promise, end, what)` settles with `promise` or throws at `end`.
- */
-const WAITS = `
-  const sleep=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
-  const deadline=()=>Temporal.Now.instant().add({seconds:15});
-  const past=(end)=>Temporal.Instant.compare(Temporal.Now.instant(),end)>0;
-  const within=(promise,end,what)=>{
-    let timer;
-    const late=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(what)),Math.max(0,Temporal.Now.instant().until(end).total('milliseconds')));});
-    return Promise.race([promise,late]).finally(()=>clearTimeout(timer));
-  };
-  const until=async(found,what)=>{
-    for(const end=deadline();;await sleep(100)){
-      const value=found();
-      if(value)return value;
-      if(past(end))throw new Error(what());
-    }
-  };`;
-
-/**
- * Eval code, inside an `await using cleanup` block after {@link WAITS} and
- * first on its stack, that puts the Use Ledger back as the block found it once
- * every view the block opened has closed. A followed link records a read and
- * an insert a citation; the ledger keeps the newest Use of each Item and lets
- * none go, so ZotLit loads afresh over the saved entries, as it would at
- * startup — only where the scenario changed them. The reload unpatches and
- * patches `window.open` again over the suite's recorder, and warms the
- * Attachment index again, which the next scenario's click needs.
- */
-const RESTORE_LEDGER = `
-  const savedLedger=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
-  cleanup.defer(async()=>{
-    if(JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null)===savedLedger)return;
-    app.workspace.requestActiveLeafEvents.run();
-    const old=app.plugins.plugins.zotlit.services;
-    await app.plugins.disablePlugin('zotlit');
-    for(let i=0;i<200&&(!old.bridge.closed()||old.bridge.runSync(old.pdfAnnotationEditor.bindings).length>0);i++)await new Promise(r=>setTimeout(r,25));
-    if((!old.bridge.closed()||old.bridge.runSync(old.pdfAnnotationEditor.bindings).length>0))throw new Error('The ZotLit services did not close');
-    app.saveLocalStorage('zotlit-use-ledger',JSON.parse(savedLedger));
-    await app.plugins.enablePlugin('zotlit');
-    const fresh=app.plugins.plugins.zotlit.services;
-    const restored=JSON.stringify(app.loadLocalStorage('zotlit-use-ledger')??null);
-    if(restored!==savedLedger)throw new Error('The Use Ledger came back changed: '+restored);
-    await within(fresh.bridge.runPromise(fresh.attachmentResolver.indexed),deadline(),'The Attachment index was not built again');
-  });`;
-
-/**
- * Opens a draft `leaf` in Live Preview whose last line reads `line`, as eval
- * code that runs inside an `await using cleanup` block: the layout, the note,
- * and the leaf are each restored on that stack, registered before the step
- * that can fail.
- */
-const draft = (line: string) => `
-  const layout=app.workspace.getLayout();
-  cleanup.defer(()=>app.workspace.changeLayout(layout));
-  const file=await app.vault.create(${JSON.stringify(NOTE)},${JSON.stringify(`# Draft\n\n${line}`)});
-  cleanup.defer(()=>app.vault.delete(file));
-  const leaf=app.workspace.getLeaf('tab');
-  // An insertion is an edit the view saves later; saving it first keeps
-  // that save from writing the note back after its deletion.
-  cleanup.adopt(leaf,async(leaf)=>{await leaf.view.save?.();leaf.detach();});
-  await leaf.setViewState({type:'markdown',state:{file:file.path,mode:'source',source:false},active:true});`;
-
 /**
  * A one-line annotation template: the quote, its citation, and the durable
  * link, the shape a researcher writes to quote inside a sentence.
@@ -232,37 +124,6 @@ function inlineOf(annotation: {
 }
 
 /**
- * Eval code, inside an `await using cleanup` block after {@link WAITS}, that
- * makes the default Literature Note Profile render annotations through
- * {@link INLINE_ANNOTATION} until the block ends. A built-in Default gets a
- * document of its own, deleted on that stack; an existing one is restored.
- * Either way the templates reload afterwards.
- */
-const INLINE_PROFILE = `
-  const services=app.plugins.plugins.zotlit.services;
-  const profilePath=services.bridge.runSync(services.profileService.defaultDocumentPath);
-  const existing=app.vault.getFileByPath(profilePath);
-  const original=existing?await app.vault.read(existing):services.bridge.runSync(services.profileService.getBuiltInSource());
-  const header=${JSON.stringify("--- zotlit:annotation ---")};
-  if(!original.includes(header))throw new Error('The default profile has no annotation section');
-  if(!original.includes('{%'))throw new Error('The default profile does not render through Liquid');
-  const inline=original.slice(0,original.indexOf(header)+header.length)+${JSON.stringify(`\n${INLINE_ANNOTATION}\n`)};
-  if(existing){
-    cleanup.defer(async()=>{await app.vault.modify(existing,original);await services.bridge.runPromise(services.template.refresh);});
-    await app.vault.modify(existing,inline);
-  }else{
-    const folder=profilePath.slice(0,profilePath.lastIndexOf('/'));
-    if(folder&&!app.vault.getFolderByPath(folder)){
-      cleanup.defer(async()=>{const made=app.vault.getFolderByPath(folder);if(made&&made.children.length===0)await app.vault.delete(made);});
-      await app.vault.createFolder(folder);
-    }
-    cleanup.defer(async()=>{const made=app.vault.getFileByPath(profilePath);if(made)await app.vault.delete(made);await services.bridge.runPromise(services.template.refresh);});
-    await app.vault.create(profilePath,inline);
-  }
-  await services.bridge.runPromise(services.template.refresh);
-  await until(()=>services.bridge.runSync(services.template.getLoadedDocumentSource(profilePath))?.includes(${JSON.stringify(INLINE_ANNOTATION)}),()=>'The inline annotation template did not load');`;
-
-/**
  * Where an insert lands and what follows it: the draft's last line reads
  * `line` with the cursor at `ch`; `inline` renders through
  * {@link INLINE_ANNOTATION}; `typeOn` is typed once the insert lands.
@@ -273,12 +134,6 @@ interface InsertAt {
   inline?: boolean;
   typeOn?: string;
 }
-
-/** Eval code that types `typeOn` at the cursor of `editor`, when given. */
-const typeAfter = (typed: string | undefined) =>
-  typed === undefined
-    ? ""
-    : `editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(typed)}),{userEvent:'input.type'});`;
 
 /**
  * Inserts the Annotation `annotationKey` of the Rougier Item into an empty
@@ -291,37 +146,94 @@ async function insertFromCard(
   { line = "", ch = 0, inline = false, typeOn }: InsertAt = {},
 ): Promise<string> {
   const card = `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]`;
-  const reply = await obEval(
+  const reply = await obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
+    async (
+      { app, zotlit, page },
+      {
+        useInline,
+        inlineTemplate,
+        inlineSuffix,
+        notePath,
+        draftContent,
+        itemKey,
+        cursorCh,
+        cardSelector,
+        annotationKey,
+        typeAfter,
+      },
+    ) => {
+      const links = page.annotationLinkTools(() => zotlit.services);
+      const { until } = links;
       let text;
       {
-        await using cleanup=new AsyncDisposableStack();
-        ${RESTORE_LEDGER}
-        ${inline ? INLINE_PROFILE : ""}
-        ${draft(line)}
-        const sidebar=app.workspace.getRightLeaf(false);
-        cleanup.adopt(sidebar,(leaf)=>leaf.detach());
-        await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
+        await using cleanup = new AsyncDisposableStack();
+        links.restoreLedger(cleanup);
+        if (useInline) {
+          await links.inlineProfile(cleanup, {
+            template: inlineTemplate,
+            suffix: inlineSuffix,
+          });
+        }
+        const { leaf, view } = await links.draft(cleanup, {
+          notePath: notePath,
+          content: draftContent,
+        });
+        const sidebar = app.workspace.getRightLeaf(false)!;
+        cleanup.adopt(sidebar, (leaf) => leaf.detach());
+        await sidebar.setViewState({
+          type: "zotero-annotation-view",
+          state: { followMode: "pinned", pinnedItemKey: itemKey },
+        });
         await app.workspace.revealLeaf(sidebar);
-        app.workspace.setActiveLeaf(leaf,{focus:true});
-        const editor=leaf.view.editor;
-        editor.setCursor({line:editor.lastLine(),ch:${ch}});
-        const more=await until(()=>sidebar.view.contentEl.querySelector(${JSON.stringify(`${card} [aria-label="More options"]`)}),()=>'The Annotation card did not render');
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const editor = view.editor;
+        editor.setCursor({ line: editor.lastLine(), ch: cursorCh });
+        const more = await until(
+          () =>
+            (
+              sidebar.view as AnnotationView
+            ).contentEl.querySelector<HTMLElement>(cardSelector),
+          () => "The Annotation card did not render",
+        );
         more.click();
-        const item=await until(()=>[...activeDocument.querySelectorAll('.menu-item')].find((el)=>el.textContent.trim()==='Insert into note'),()=>'The card menu offers no "Insert into note"');
-        await ${MENU_READY};
+        const item = await until(
+          () =>
+            [
+              ...activeDocument.querySelectorAll<HTMLElement>(".menu-item"),
+            ].find((el) => el.textContent.trim() === "Insert into note"),
+          () => 'The card menu offers no "Insert into note"',
+        );
+        await page.menuReady();
         item.click();
-        await until(()=>editor.getValue().includes(${JSON.stringify(annotationKey)}),()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
-        ${typeAfter(typeOn)}
-        text=editor.getValue();
+        await until(
+          () => editor.getValue().includes(annotationKey),
+          () => `Nothing was inserted: ${JSON.stringify(editor.getValue())}`,
+        );
+        const typedAfter = typeAfter;
+        if (typedAfter !== null)
+          editor.cm.dispatch(editor.cm.state.replaceSelection(typedAfter), {
+            userEvent: "input.type",
+          });
+        text = editor.getValue();
       }
-      return JSON.stringify(text);
-    })()`,
-    60000,
+      return text;
+    },
+    {
+      useInline: inline,
+      inlineTemplate: INLINE_ANNOTATION,
+      inlineSuffix: `\n${INLINE_ANNOTATION}\n`,
+      notePath: NOTE,
+      draftContent: `# Draft\n\n${line}`,
+      itemKey: annotationItem.key,
+      cursorCh: ch,
+      cardSelector: `${card} [aria-label="More options"]`,
+      annotationKey: annotationKey,
+      typeAfter: typeOn ?? null,
+    },
+    { timeoutMs: 60000 },
   );
-  return JSON.parse(reply) as string;
+  return reply;
 }
 
 /** What typing a search into a draft left: its text, and which suggesters opened. */
@@ -348,73 +260,125 @@ async function searchAndInsert(
   choose: string,
   { line = "", ch = 0, inline = false, typeOn }: InsertAt = {},
 ): Promise<SearchOutcome> {
-  const reply = await obEval(
+  const reply = await obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
-      const suggesters=app.workspace.editorSuggest.suggests;
-      const annotations=suggesters.find((s)=>s.constructor.name==='AnnotationEditorSuggest');
-      const citations=suggesters.find((s)=>s.constructor.name==='CitationEditorSuggest');
-      if(!annotations)throw new Error('No Annotation Suggester is registered');
+    async (
+      { app, zotlit, page },
+      {
+        useInline,
+        inlineTemplate,
+        inlineSuffix,
+        notePath,
+        draftContent,
+        itemKey,
+        cursorCh,
+        typedText,
+        queryText,
+        querySource,
+        chosenText,
+        typeAfter,
+      },
+    ) => {
+      const links = page.annotationLinkTools(() => zotlit.services);
+      const { until } = links;
+      const suggesters = app.workspace.editorSuggest.suggests;
+      const annotations = suggesters.find(
+        (s) => s.constructor.name === "AnnotationEditorSuggest",
+      );
+      const citations = suggesters.find(
+        (s) => s.constructor.name === "CitationEditorSuggest",
+      );
+      if (!annotations)
+        throw new Error("No Annotation Suggester is registered");
       let outcome;
       {
-        await using cleanup=new AsyncDisposableStack();
-        ${RESTORE_LEDGER}
-        ${inline ? INLINE_PROFILE : ""}
-        ${draft(line)}
-        cleanup.defer(()=>annotations.close());
-        const ledger=()=>app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.useLedger.get(${JSON.stringify(annotationItem.key)}));
-        const before=ledger()?.instant.epochMilliseconds??null;
-        app.workspace.setActiveLeaf(leaf,{focus:true});
-        const editor=leaf.view.editor;
-        editor.setCursor({line:editor.lastLine(),ch:${ch}});
+        await using cleanup = new AsyncDisposableStack();
+        links.restoreLedger(cleanup);
+        if (useInline) {
+          await links.inlineProfile(cleanup, {
+            template: inlineTemplate,
+            suffix: inlineSuffix,
+          });
+        }
+        const { leaf, view } = await links.draft(cleanup, {
+          notePath: notePath,
+          content: draftContent,
+        });
+        cleanup.defer(() => annotations.close());
+        const ledger = () =>
+          zotlit.services.bridge.runSync(
+            zotlit.services.useLedger.get(itemKey),
+          );
+        const before = ledger()?.instant.epochMilliseconds ?? null;
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const editor = view.editor;
+        editor.setCursor({ line: editor.lastLine(), ch: cursorCh });
         editor.focus();
-        editor.cm.dispatch(editor.cm.state.replaceSelection(${JSON.stringify(typed)}),{userEvent:'input.type'});
-        const query=${JSON.stringify(typed)}.slice(${JSON.stringify(typed)}.indexOf('[>')+2);
-        const rows=()=>[...annotations.suggestEl.querySelectorAll('.suggestion-item')];
-        const row=await until(()=>annotations.isOpen&&annotations.context?.query===query&&rows().find((el)=>!el.closest('[aria-busy]')&&el.textContent.includes(${JSON.stringify(choose)})),()=>'The Annotation Suggester showed no row for '+JSON.stringify(query)+': '+JSON.stringify(rows().map((el)=>el.textContent)));
-        const shown=rows().map((el)=>el.textContent);
-        const sup=row.querySelector('sup')?.textContent??null;
-        const citationOpen=!!citations?.isOpen;
-        row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));
-        row.dispatchEvent(new MouseEvent('click',{bubbles:true}));
-        await until(()=>{const value=editor.getValue();return !value.includes('[>')&&value.includes('zotero://');},()=>'Nothing was inserted: '+JSON.stringify(editor.getValue()));
-        ${typeAfter(typeOn)}
-        const text=editor.getValue();
+        editor.cm.dispatch(editor.cm.state.replaceSelection(typedText), {
+          userEvent: "input.type",
+        });
+        const query = queryText.slice(querySource.indexOf("[>") + 2);
+        const rows = () => [
+          ...annotations.suggestEl.querySelectorAll(".suggestion-item"),
+        ];
+        const row = await until(
+          () =>
+            annotations.isOpen &&
+            annotations.context?.query === query &&
+            rows().find(
+              (el) =>
+                !el.closest("[aria-busy]") &&
+                el.textContent.includes(chosenText),
+            ),
+          () =>
+            `The Annotation Suggester showed no row for ${JSON.stringify(query)}: ${JSON.stringify(rows().map((el) => el.textContent))}`,
+        );
+        const shown = rows().map((el) => el.textContent);
+        const sup = row.querySelector("sup")?.textContent ?? null;
+        const citationOpen = !!citations?.isOpen;
+        row.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+        row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await until(
+          () => {
+            const value = editor.getValue();
+            return !value.includes("[>") && value.includes("zotero://");
+          },
+          () => `Nothing was inserted: ${JSON.stringify(editor.getValue())}`,
+        );
+        const typedAfter = typeAfter;
+        if (typedAfter !== null)
+          editor.cm.dispatch(editor.cm.state.replaceSelection(typedAfter), {
+            userEvent: "input.type",
+          });
+        const text = editor.getValue();
         // The Use lands with the text, so a Use the insert made is newer than
         // the one held before the search.
-        const after=ledger();
-        const use=after&&after.instant.epochMilliseconds!==before?after.kind:null;
-        outcome={text,rows:shown,sup,citationOpen,use};
+        const after = ledger();
+        const use =
+          after && after.instant.epochMilliseconds !== before
+            ? after.kind
+            : null;
+        outcome = { text, rows: shown, sup, citationOpen, use };
       }
-      return JSON.stringify(outcome);
-    })()`,
-    60000,
+      return outcome;
+    },
+    {
+      useInline: inline,
+      inlineTemplate: INLINE_ANNOTATION,
+      inlineSuffix: `\n${INLINE_ANNOTATION}\n`,
+      notePath: NOTE,
+      draftContent: `# Draft\n\n${line}`,
+      itemKey: annotationItem.key,
+      cursorCh: ch,
+      typedText: typed,
+      queryText: typed,
+      querySource: typed,
+      chosenText: choose,
+      typeAfter: typeOn ?? null,
+    },
+    { timeoutMs: 60000 },
   );
-  return JSON.parse(reply) as SearchOutcome;
-}
-
-/** The settings that decide what ZotLit does with a Durable Annotation Link. */
-interface LinkSettings {
-  "reader.open-annotation-links"?: boolean;
-}
-
-/**
- * Eval code, inside an evaluation's `cleanup` block with `s` bound to
- * ZotLit's services, that changes the annotation link settings to `changes`
- * and puts each one back on the stack first.
- */
-function applyLinkSettings(changes: LinkSettings): string {
-  return Object.entries(changes)
-    .map(
-      ([
-        key,
-        value,
-      ]) => `{const was=s.bridge.runSync(s.settings.current)[${JSON.stringify(key)}];
-        cleanup.defer(()=>s.bridge.runSync(s.settings.update({[${JSON.stringify(key)}]:was})));
-        s.bridge.runSync(s.settings.update({[${JSON.stringify(key)}]:${JSON.stringify(value)}}));}`,
-    )
-    .join("\n");
+  return reply;
 }
 
 interface Scenario {
@@ -427,7 +391,7 @@ interface Scenario {
    * target, or `chip` for the page chip of the Annotation's card in the
    * Annotation View, which carries the link as its backlink.
    */
-  gesture: keyof typeof LINK_IN | "external" | "chip";
+  gesture: LinkGesture | "external" | "chip";
   /** Turn `reader.open-file-links` off for this scenario. */
   captureOff?: boolean;
   /** The annotation link settings to change for this scenario. */
@@ -445,7 +409,7 @@ interface Scenario {
  * wait for the reader to land or the link to pass, and read the outcome. Every
  * change is undone on the evaluation's own stack, registered before the step
  * that can fail, so the outcome comes back from a vault already restored. The
- * click lands on {@link linkTarget}'s point.
+ * click lands on the rendered link's point.
  */
 async function follow({
   note,
@@ -457,89 +421,267 @@ async function follow({
   bound = annotationAttachment.key,
   reads = false,
 }: Scenario): Promise<Outcome> {
-  const follow =
-    gesture === "external"
-      ? `window.open(url,'_external');`
-      : gesture === "chip"
-        ? `const sidebar=app.workspace.getRightLeaf(false);
-        cleanup.adopt(sidebar,(leaf)=>leaf.detach());
-        await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'pinned',pinnedItemKey:${JSON.stringify(annotationItem.key)}}});
-        await app.workspace.revealLeaf(sidebar);
-        const card='.zt-annot-card[data-zotero-annotation-key='+JSON.stringify(new URL(url).searchParams.get('annotation'))+']';
-        const link=await until(()=>sidebar.view.contentEl.querySelector(card+' a.zt-annot-page-chip'),()=>'The card drew no page chip');
-        link.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
-        const box=link.getBoundingClientRect();
-        link.dispatchEvent(new MouseEvent('click',{clientX:box.left+box.width/2,clientY:box.top+box.height/2,bubbles:true,cancelable:true,button:0,view:link.ownerDocument.defaultView}));`
-        : `${linkTarget(gesture)}
-        const init={clientX:x,clientY:y,bubbles:true,cancelable:true,button:0,view:link.ownerDocument.defaultView};
-        link.dispatchEvent(new MouseEvent('mousedown',{...init,buttons:1}));link.dispatchEvent(new MouseEvent('mouseup',init));link.dispatchEvent(new MouseEvent('click',init));`;
-  const reply = await obEval(
+  const reply = await obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
-      const s=app.plugins.plugins.zotlit.services;
-      const observe=()=>{
-        const pdf=app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(PDF_PATH)});
+    async (
+      { app, zotlit, page },
+      {
+        observedPdfPath,
+        fileUrlPath,
+        requestedUrl,
+        urlPlaceholder,
+        captureDisabled,
+        changedSettings,
+        requestedGesture,
+        notePath,
+        noteContent,
+        notePlaceholder,
+        readPdfPath,
+        itemKey,
+        linkText,
+        expectedLanding,
+        bindingPdfPath,
+        bindingKey,
+        bindingLabel,
+        reportReads,
+      },
+    ) => {
+      const links = page.annotationLinkTools(() => zotlit.services);
+      const { deadline, within, until } = links;
+      const s = zotlit.services;
+      const observe = () => {
+        const pdf = app.workspace
+          .getLeavesOfType("pdf")
+          .map(({ view }) => view as PagePdfView)
+          .find((view) => view.file?.path === observedPdfPath);
         return {
-          drawn:!!pdf?.containerEl.querySelector('.zt-pdf-annotation-mark'),
-          reader:pdf?{page:pdf.viewer.child?.pdfViewer?.pdfViewer?.currentPageNumber??null,selected:[...new Set([...pdf.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))]}:null,
-          passed:window.__ztLinks.passed.slice(),
-          notices:${WINDOW_DOCUMENTS}.flatMap((doc)=>[...doc.querySelectorAll('.notice')].map((notice)=>notice.textContent)),
+          drawn: !!pdf?.containerEl.querySelector(".zt-pdf-annotation-mark"),
+          reader: pdf
+            ? {
+                page:
+                  pdf.viewer.child?.pdfViewer?.pdfViewer?.currentPageNumber ??
+                  null,
+                selected: [
+                  ...new Set(
+                    [
+                      ...pdf.containerEl.querySelectorAll<HTMLElement>(
+                        ".zt-pdf-annotation-mark.is-selected",
+                      ),
+                    ].map((mark) => mark.dataset.zoteroAnnotationKey!),
+                  ),
+                ],
+              }
+            : null,
+          passed: page.scratch.links!.passed.slice(),
+          notices: page
+            .windowDocuments()
+            .flatMap((doc) =>
+              [...doc.querySelectorAll(".notice")].map(
+                (notice) => notice.textContent,
+              ),
+            ),
         };
       };
       let outcome;
       {
-        await using cleanup=new AsyncDisposableStack();
-        ${RESTORE_LEDGER}
-        const layout=app.workspace.getLayout();
-        cleanup.defer(async()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();await app.workspace.changeLayout(layout);});
-        const captureSetting=s.bridge.runSync(s.settings.current)['reader.open-file-links'];
-        cleanup.defer(()=>s.bridge.runSync(s.settings.update({'reader.open-file-links':captureSetting})));
-        window.__ztLinks.passed=[];
-        for(const doc of ${WINDOW_DOCUMENTS})for(const notice of doc.querySelectorAll('.notice'))notice.remove();
-        const fileUrl=require('url').pathToFileURL(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)})).href;
-        const url=${JSON.stringify(url)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl);
-        if(${captureOff})s.bridge.runSync(s.settings.update({'reader.open-file-links':false}));
-        ${applyLinkSettings(linkSettings)}
-        ${gesture === "chip" ? "" : showNote(`${JSON.stringify(note)}.replaceAll(${JSON.stringify(FILE_URL)},fileUrl)`, gesture === "external" ? "live-preview" : gesture)}
+        await using cleanup = new AsyncDisposableStack();
+        links.restoreLedger(cleanup);
+        const layout = app.workspace.getLayout();
+        cleanup.defer(async () => {
+          for (const leaf of app.workspace.getLeavesOfType("pdf"))
+            leaf.detach();
+          await app.workspace.changeLayout(layout);
+        });
+        const captureSetting = s.bridge.runSync(s.settings.current)[
+          "reader.open-file-links"
+        ];
+        cleanup.defer(() => {
+          s.bridge.runSync(
+            s.settings.update({ "reader.open-file-links": captureSetting }),
+          );
+        });
+        page.scratch.links!.passed = [];
+        for (const doc of page.windowDocuments())
+          for (const notice of doc.querySelectorAll(".notice")) notice.remove();
+        const fileUrl = require("url").pathToFileURL(
+          (app.vault.adapter as FileSystemAdapter).getFullPath(fileUrlPath),
+        ).href;
+        const url = requestedUrl.replaceAll(urlPlaceholder, fileUrl);
+        if (captureDisabled)
+          s.bridge.runSync(
+            s.settings.update({ "reader.open-file-links": false }),
+          );
+        links.applySettings(cleanup, changedSettings);
+        const gesture = requestedGesture;
+        const shown =
+          gesture === "chip"
+            ? null
+            : await links.showNote(cleanup, {
+                notePath: notePath,
+                content: noteContent.replaceAll(notePlaceholder, fileUrl),
+                gesture: gesture === "external" ? "live-preview" : gesture,
+              });
+        const view = shown?.view;
         // The ledger records a read as the reader names its Attachment, so
         // the reader is asked which one it holds as each read lands.
-        const reads=[];
-        let replayed=false;
-        cleanup.defer(s.bridge.subscribe(s.useLedger.changes,()=>{
-          if(!replayed){replayed=true;return;}
-          const [newest]=Object.entries(s.bridge.runSync(s.useLedger.uses)).sort(([,a],[,b])=>b-a)[0]??[];
-          if(s.bridge.runSync(s.useLedger.get(newest))?.kind==='read')reads.push(s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(PDF_PATH)})?.attachment.attachmentKey??null);
-        }));
-        ${follow}
-        const lands=${JSON.stringify(lands === undefined ? null : JSON.stringify(lands))};
-        if(lands===null){
+        const reads: (string | null)[] = [];
+        let replayed = false;
+        cleanup.defer(
+          s.bridge.subscribe(s.useLedger.changes, () => {
+            if (!replayed) {
+              replayed = true;
+              return;
+            }
+            const [newest] =
+              Object.entries(s.bridge.runSync(s.useLedger.uses)).sort(
+                ([, a], [, b]) => b - a,
+              )[0] ?? [];
+            if (
+              newest !== undefined &&
+              s.bridge.runSync(s.useLedger.get(newest))?.kind === "read"
+            ) {
+              const attachment = s.bridge
+                .runSync(s.pdfAnnotationEditor.bindings)
+                .find((b) => b.filePath === readPdfPath)?.attachment;
+              reads.push(
+                attachment?.kind === "resolved"
+                  ? attachment.attachmentKey
+                  : null,
+              );
+            }
+          }),
+        );
+        if (gesture === "external") {
+          window.open(url, "_external");
+        } else if (gesture === "chip") {
+          const sidebar = cleanup.adopt(
+            app.workspace.getRightLeaf(false)!,
+            (leaf) => leaf.detach(),
+          );
+          await sidebar.setViewState({
+            type: "zotero-annotation-view",
+            state: { followMode: "pinned", pinnedItemKey: itemKey },
+          });
+          await app.workspace.revealLeaf(sidebar);
+          const card = `.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(new URL(url).searchParams.get("annotation"))}]`;
+          const link = await until(
+            () =>
+              (
+                sidebar.view as AnnotationView
+              ).contentEl.querySelector<HTMLElement>(
+                `${card} a.zt-annot-page-chip`,
+              ),
+            () => "The card drew no page chip",
+          );
+          link.scrollIntoView({
+            block: "center",
+            inline: "nearest",
+            behavior: "instant",
+          });
+          const box = link.getBoundingClientRect();
+          link.dispatchEvent(
+            new MouseEvent("click", {
+              clientX: box.left + box.width / 2,
+              clientY: box.top + box.height / 2,
+              bubbles: true,
+              cancelable: true,
+              button: 0,
+              view: link.ownerDocument.defaultView,
+            }),
+          );
+        } else {
+          const { link, x, y } = await links.linkTarget(view!, {
+            url,
+            gesture,
+            linkText: linkText,
+          });
+          const init = {
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            view: link.ownerDocument.defaultView,
+          };
+          link.dispatchEvent(
+            new MouseEvent("mousedown", { ...init, buttons: 1 }),
+          );
+          link.dispatchEvent(new MouseEvent("mouseup", init));
+          link.dispatchEvent(new MouseEvent("click", init));
+        }
+        const lands = expectedLanding;
+        if (lands === null) {
           // A passed link is recorded as the open hands it on, which is the
           // whole of the gesture's work.
-          await until(()=>window.__ztLinks.passed.length>0,()=>'No link reached the system handler');
-        }else{
+          await until(
+            () => page.scratch.links!.passed.length > 0,
+            () => "No link reached the system handler",
+          );
+        } else {
           // The reader's binding decides the Landing as it draws the read it
           // starts once it names the Attachment; a later read replaces the
           // promise, so the wait runs until the one awaited is the last.
-          const binding=await until(()=>s.bridge.runSync(s.pdfAnnotationEditor.bindings).find((b)=>b.filePath===${JSON.stringify(PDF_PATH)}&&b.attachment.kind==='resolved'&&b.attachment.attachmentKey===${JSON.stringify(bound)}),()=>'No reader named the Attachment '+${JSON.stringify(bound)}+': '+JSON.stringify(s.bridge.runSync(s.pdfAnnotationEditor.bindings).map((b)=>b.attachment)));
-          for(let read=binding.refreshed,end=deadline();;read=binding.refreshed){
-            await within(read,end,'The reader never drew its last read');
-            if(read===binding.refreshed)break;
+          const binding = await until(
+            () =>
+              s.bridge
+                .runSync(s.pdfAnnotationEditor.bindings)
+                .find(
+                  (b) =>
+                    b.filePath === bindingPdfPath &&
+                    b.attachment.kind === "resolved" &&
+                    b.attachment.attachmentKey === bindingKey,
+                ),
+            () =>
+              `No reader named the Attachment ${bindingLabel}: ${JSON.stringify(s.bridge.runSync(s.pdfAnnotationEditor.bindings).map((b) => b.attachment))}`,
+          );
+          for (
+            let read = binding.refreshed, end = deadline();
+            ;
+            read = binding.refreshed
+          ) {
+            await within(read, end, "The reader never drew its last read");
+            if (read === binding.refreshed) break;
           }
           // Obsidian's own page jump and the Landing's scroll frame follow,
           // and so do the Marks: the read settles on data, but PDF.js clears a
           // page as it renders and the binding paints it again on the page's
           // render event. A Landing on the page alone selects nothing, so the
           // wait asks for the Marks as well as the page.
-          await until(()=>{const now=observe();return now.drawn&&JSON.stringify(now.reader)===lands;},()=>'The reader did not land: '+JSON.stringify(observe()));
+          await until(
+            () => {
+              const now = observe();
+              return now.drawn && JSON.stringify(now.reader) === lands;
+            },
+            () => `The reader did not land: ${JSON.stringify(observe())}`,
+          );
         }
-        outcome={...observe(),...(${reads}?{reads}:{})};
+        outcome = { ...observe(), ...(reportReads ? { reads } : {}) };
       }
-      return JSON.stringify(outcome);
-    })()`,
-    60000,
+      return outcome;
+    },
+    {
+      observedPdfPath: PDF_PATH,
+      fileUrlPath: PDF_PATH,
+      requestedUrl: url,
+      urlPlaceholder: FILE_URL,
+      captureDisabled: captureOff,
+      changedSettings: linkSettings,
+      requestedGesture: gesture,
+      notePath: NOTE,
+      noteContent: note,
+      notePlaceholder: FILE_URL,
+      readPdfPath: PDF_PATH,
+      itemKey: annotationItem.key,
+      linkText: LINK_TEXT,
+      expectedLanding: lands === undefined ? null : JSON.stringify(lands),
+      bindingPdfPath: PDF_PATH,
+      bindingKey: bound,
+      bindingLabel: bound,
+      reportReads: reads,
+    },
+    { timeoutMs: 60000 },
   );
-  return JSON.parse(reply) as Outcome;
+  return reply;
 }
 
 /**
@@ -626,19 +768,31 @@ function addSharedFileAttachment(
  * index answers `kind` for {@link SHARED}'s Attachment. Answers which
  * Attachment the Rougier PDF's path names then.
  */
-async function reindexed(kind: "resolved" | "unresolved"): Promise<string> {
-  const reply = await obEval(
+async function reindexed(
+  kind: "resolved" | "unresolved",
+): Promise<string | null> {
+  return obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
-      const s=app.plugins.plugins.zotlit.services;
+    async ({ app, zotlit, page }, { kind, attachmentKey, pdfPath }) => {
+      const { until } = page.annotationLinkTools(() => zotlit.services);
+      const s = zotlit.services;
       await s.bridge.runPromise(s.zoteroReads.refresh);
-      await until(()=>s.bridge.runSync(s.attachmentResolver.lookup(${JSON.stringify(SHARED.attachmentKey)})).kind===${JSON.stringify(kind)},()=>'The Attachment index never answered ${kind} for ${SHARED.attachmentKey}');
-      return JSON.stringify(s.bridge.runSync(s.attachmentResolver.resolve(app.vault.adapter.getFullPath(${JSON.stringify(PDF_PATH)}))).attachmentKey??null);
-    })()`,
-    60000,
+      await until(
+        () =>
+          s.bridge.runSync(s.attachmentResolver.lookup(attachmentKey)).kind ===
+          kind,
+        () =>
+          `The Attachment index never answered ${kind} for ${attachmentKey}`,
+      );
+      const adapter = app.vault.adapter as import("obsidian").FileSystemAdapter;
+      const resolution = s.bridge.runSync(
+        s.attachmentResolver.resolve(adapter.getFullPath(pdfPath)),
+      );
+      return resolution.kind === "resolved" ? resolution.attachmentKey : null;
+    },
+    { kind, attachmentKey: SHARED.attachmentKey, pdfPath: PDF_PATH },
+    { timeoutMs: 60000 },
   );
-  return JSON.parse(reply) as string;
 }
 
 /** What two tabs on the Rougier PDF's one file showed, as {@link sharedTabs} read it. */
@@ -669,68 +823,164 @@ interface SharedTabsOutcome {
  */
 async function sharedTabs(): Promise<SharedTabsOutcome> {
   const cardsOf = (keys: readonly string[]) => JSON.stringify([...keys].sort());
-  const reply = await obEval(
+  const reply = await obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
-      const services=()=>app.plugins.plugins.zotlit.services;
-      const file=app.vault.getFileByPath(${JSON.stringify(PDF_PATH)});
-      const attachmentOf=(leaf)=>services().bridge.runSync(services().pdfAnnotationEditor.sessionFor(leaf.view))?.target?.attachmentKey??null;
-      const boundTo=(leaf,key,what)=>until(()=>attachmentOf(leaf)===key,()=>what+' never named '+key+': '+attachmentOf(leaf));
+    async (
+      { app, zotlit, page },
+      {
+        pdfPath,
+        initialKey,
+        reloadedKey,
+        targetAttachment,
+        targetAnnotation,
+        targetPage,
+        followedKey,
+        secondKey,
+        restoredCards,
+        secondCards,
+      },
+    ) => {
+      const links = page.annotationLinkTools(() => zotlit.services);
+      const { deadline, within, until } = links;
+      const services = () => zotlit.services;
+      const file = app.vault.getFileByPath(pdfPath)!;
+      const attachmentOf = (leaf: WorkspaceLeaf) =>
+        services().bridge.runSync(
+          services().pdfAnnotationEditor.sessionFor(leaf.view),
+        )?.target?.attachmentKey ?? null;
+      const boundTo = (leaf: WorkspaceLeaf, key: string, what: string) =>
+        until(
+          () => attachmentOf(leaf) === key,
+          () => `${what} never named ${key}: ${attachmentOf(leaf)}`,
+        );
       let outcome;
       {
-        await using cleanup=new AsyncDisposableStack();
-        ${RESTORE_LEDGER}
-        const layout=app.workspace.getLayout();
-        cleanup.defer(async()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();await app.workspace.changeLayout(layout);});
-        window.__ztLinks.passed=[];
-        const restored=app.workspace.getLeaf('tab');
-        cleanup.adopt(restored,(leaf)=>leaf.detach());
+        await using cleanup = new AsyncDisposableStack();
+        links.restoreLedger(cleanup);
+        const layout = app.workspace.getLayout();
+        cleanup.defer(async () => {
+          for (const leaf of app.workspace.getLeavesOfType("pdf"))
+            leaf.detach();
+          await app.workspace.changeLayout(layout);
+        });
+        page.scratch.links!.passed = [];
+        const restored = app.workspace.getLeaf("tab");
+        cleanup.adopt(restored, (leaf) => leaf.detach());
         await restored.openFile(file);
-        await boundTo(restored,${JSON.stringify(annotationAttachment.key)},'The first tab');
+        await boundTo(restored, initialKey, "The first tab");
         // ZotLit loads with the tab already open, as at startup.
-        await app.plugins.disablePlugin('zotlit');
-        await app.plugins.enablePlugin('zotlit');
-        await within(services().bridge.runPromise(services().attachmentResolver.indexed),deadline(),'The Attachment index was not built again');
-        await boundTo(restored,${JSON.stringify(annotationAttachment.key)},'The tab ZotLit found open');
+        await app.plugins.disablePlugin("zotlit");
+        await app.plugins.enablePlugin("zotlit");
+        await within(
+          services().bridge.runPromise(services().attachmentResolver.indexed),
+          deadline(),
+          "The Attachment index was not built again",
+        );
+        await boundTo(restored, reloadedKey, "The tab ZotLit found open");
         // A read is recorded once its binding names the Attachment, before
         // the tab's session does, so each is credited to the binding's.
-        const reads=[];
-        const ledger=services().useLedger;
-        let replayed=false;
-        cleanup.defer(services().bridge.subscribe(ledger.changes,()=>{
-          if(!replayed){replayed=true;return;}
-          const [newest]=Object.entries(services().bridge.runSync(ledger.uses)).sort(([,a],[,b])=>b-a)[0]??[];
-          if(services().bridge.runSync(ledger.get(newest))?.kind==='read')reads.push(services().bridge.runSync(services().pdfAnnotationEditor.bindingFor(restored.view))?.attachment.attachmentKey??null);
-        }));
-        app.workspace.setActiveLeaf(restored,{focus:true});
-        const opened=await services().targetOpener.open({kind:'annotation',attachmentKey:${JSON.stringify(SHARED.attachmentKey)},annotationKey:${JSON.stringify(SHARED.annotationKey)},pageIndex:0,pageLabel:${JSON.stringify(FIRST_PAGE.pageLabel)}},false);
-        if(opened.kind!=='reader')throw new Error('The open went elsewhere: '+JSON.stringify(opened));
-        await boundTo(restored,${JSON.stringify(SHARED.attachmentKey)},'The tab ZotLit found open');
-        const second=app.workspace.getLeaf('tab');
-        cleanup.adopt(second,(leaf)=>leaf.detach());
+        const reads: (string | null)[] = [];
+        const ledger = services().useLedger;
+        let replayed = false;
+        cleanup.defer(
+          services().bridge.subscribe(ledger.changes, () => {
+            if (!replayed) {
+              replayed = true;
+              return;
+            }
+            const [newest] =
+              Object.entries(services().bridge.runSync(ledger.uses)).sort(
+                ([, a], [, b]) => b - a,
+              )[0] ?? [];
+            if (
+              newest !== undefined &&
+              services().bridge.runSync(ledger.get(newest))?.kind === "read"
+            ) {
+              const attachment = services().bridge.runSync(
+                services().pdfAnnotationEditor.bindingFor(restored.view),
+              )?.attachment;
+              reads.push(
+                attachment?.kind === "resolved"
+                  ? attachment.attachmentKey
+                  : null,
+              );
+            }
+          }),
+        );
+        app.workspace.setActiveLeaf(restored, { focus: true });
+        const opened = await services().targetOpener.open(
+          {
+            kind: "annotation",
+            attachmentKey: targetAttachment,
+            annotationKey: targetAnnotation,
+            pageIndex: 0,
+            pageLabel: targetPage,
+          },
+          false,
+        );
+        if (opened.kind !== "reader")
+          throw new Error(`The open went elsewhere: ${JSON.stringify(opened)}`);
+        await boundTo(restored, followedKey, "The tab ZotLit found open");
+        const second = app.workspace.getLeaf("tab");
+        cleanup.adopt(second, (leaf) => leaf.detach());
         await second.openFile(file);
-        await boundTo(second,${JSON.stringify(annotationAttachment.key)},'The second tab');
-        const sidebar=app.workspace.getRightLeaf(false);
-        cleanup.adopt(sidebar,(leaf)=>leaf.detach());
-        await sidebar.setViewState({type:'zotero-annotation-view',state:{followMode:'active-tab'}});
+        await boundTo(second, secondKey, "The second tab");
+        const sidebar = app.workspace.getRightLeaf(false)!;
+        cleanup.adopt(sidebar, (leaf) => leaf.detach());
+        await sidebar.setViewState({
+          type: "zotero-annotation-view",
+          state: { followMode: "active-tab" },
+        });
         await app.workspace.revealLeaf(sidebar);
-        const cards=()=>[...new Set([...sidebar.view.contentEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')].map((el)=>el.dataset.zoteroAnnotationKey))].sort();
+        const cards = () =>
+          [
+            ...new Set(
+              [
+                ...(
+                  sidebar.view as AnnotationView
+                ).contentEl.querySelectorAll<HTMLElement>(
+                  ".zt-annot-card[data-zotero-annotation-key]",
+                ),
+              ].map((el) => el.dataset.zoteroAnnotationKey!),
+            ),
+          ].sort();
         // Each wait ends on the cards of the Attachment its tab holds; a
         // sidebar stuck on other cards fails with the cards it last showed.
-        const beside=(leaf,expected)=>{
-          app.workspace.setActiveLeaf(leaf,{focus:true});
-          return until(()=>JSON.stringify(cards())===expected&&cards(),()=>'The Annotation View beside the tab showed '+JSON.stringify(cards())+', not '+expected);
+        const beside = (leaf: WorkspaceLeaf, expected: string) => {
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+          return until(
+            () => JSON.stringify(cards()) === expected && cards(),
+            () =>
+              `The Annotation View beside the tab showed ${JSON.stringify(cards())}, not ${expected}`,
+          );
         };
-        const besideRestored=await beside(restored,${JSON.stringify(cardsOf([SHARED.annotationKey]))});
-        const besideSecond=await beside(second,${JSON.stringify(cardsOf(annotationKeys))});
-        outcome={reads,restored:attachmentOf(restored),besideRestored,besideSecond,passed:window.__ztLinks.passed.map(({url})=>url)};
+        const besideRestored = await beside(restored, restoredCards);
+        const besideSecond = await beside(second, secondCards);
+        outcome = {
+          reads,
+          restored: attachmentOf(restored),
+          besideRestored,
+          besideSecond,
+          passed: page.scratch.links!.passed.map(({ url }) => url),
+        };
       }
-      return JSON.stringify(outcome);
-    })()`,
-    120000,
+      return outcome;
+    },
+    {
+      pdfPath: PDF_PATH,
+      initialKey: annotationAttachment.key,
+      reloadedKey: annotationAttachment.key,
+      targetAttachment: SHARED.attachmentKey,
+      targetAnnotation: SHARED.annotationKey,
+      targetPage: FIRST_PAGE.pageLabel,
+      followedKey: SHARED.attachmentKey,
+      secondKey: annotationAttachment.key,
+      restoredCards: cardsOf([SHARED.annotationKey]),
+      secondCards: cardsOf(annotationKeys),
+    },
+    { timeoutMs: 120000 },
   );
-  return JSON.parse(reply) as SharedTabsOutcome;
+  return reply;
 }
 
 /**
@@ -763,17 +1013,35 @@ function rewriteAnnotationText(
  * repository holds `text` for the Rougier PDF's Annotation `annotationKey`.
  */
 async function reread(annotationKey: string, text: string): Promise<void> {
-  await obEval(
+  await obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
-      const s=app.plugins.plugins.zotlit.services;
+    async (
+      { zotlit, page },
+      { attachmentKey, annotationKey, expectedText, annotationLabel },
+    ) => {
+      const links = page.annotationLinkTools(() => zotlit.services);
+      const { sleep, deadline, past } = links;
+      const s = zotlit.services;
       await s.bridge.runPromise(s.zoteroReads.refresh);
-      const holds=async()=>(await s.bridge.runPromise(s.annotationRepository.read(${JSON.stringify(annotationAttachment.key)})))?.annotations.find(({key})=>key===${JSON.stringify(annotationKey)})?.text===${JSON.stringify(text)};
-      for(const end=deadline();!(await holds());await sleep(100))if(past(end))throw new Error('The repository never read the new text of ${annotationKey}');
+      const holds = async () =>
+        (
+          await s.bridge.runPromise(s.annotationRepository.read(attachmentKey))
+        )?.annotations.find(({ key }) => key === annotationKey)?.text ===
+        expectedText;
+      for (const end = deadline(); !(await holds()); await sleep(100))
+        if (past(end))
+          throw new Error(
+            `The repository never read the new text of ${annotationLabel}`,
+          );
       return true;
-    })()`,
-    60000,
+    },
+    {
+      attachmentKey: annotationAttachment.key,
+      annotationKey: annotationKey,
+      expectedText: text,
+      annotationLabel: annotationKey,
+    },
+    { timeoutMs: 60000 },
   );
 }
 
@@ -841,7 +1109,7 @@ interface HoverScenario {
  * {@link follow}, every change is undone on the evaluation's own stack before
  * the outcome comes back.
  *
- * The hover is a synthetic `mouseover` at {@link linkTarget}'s point. Obsidian
+ * The hover is a synthetic `mouseover` at the rendered link's point. Obsidian
  * hangs a hover popover off the view once its opening delay has run, so a
  * hover that shows nothing is read against a later hover over
  * {@link CONTROL_URL} that does.
@@ -864,81 +1132,252 @@ async function hover({
     absent && url !== CONTROL_URL
       ? `${noteWith(url)}\nSee also [the control](${CONTROL_URL}).\n`
       : noteWith(url);
-  const reply = await obEval(
+  const reply = await obRun(
     run.vaultId,
-    `(async()=>{
-      ${WAITS}
-      const s=app.plugins.plugins.zotlit.services;
-      let outcome;
+    async (
+      { app, zotlit, page },
       {
-        await using cleanup=new AsyncDisposableStack();
-        const layout=app.workspace.getLayout();
-        cleanup.defer(async()=>{await app.workspace.changeLayout(layout);});
-        const hoverAction=s.bridge.runSync(s.settings.current)['citation.hover-action'];
-        cleanup.defer(()=>s.bridge.runSync(s.settings.update({'citation.hover-action':hoverAction})));
-        const pandoc=s.bridge.runSync(s.settings.current)['citation.pandoc-citations'];
-        cleanup.defer(()=>s.bridge.runSync(s.settings.update({'citation.pandoc-citations':pandoc})));
-        const url=${JSON.stringify(url)};
-        ${hoverAction === undefined ? "" : `s.bridge.runSync(s.settings.update({'citation.hover-action':${JSON.stringify(hoverAction)}}));`}
-        ${pandocOff ? "s.bridge.runSync(s.settings.update({'citation.pandoc-citations':false}));" : ""}
-        ${applyLinkSettings(linkSettings)}
-        ${
-          pagePreviewMod === undefined
-            ? ""
-            : `const pagePreview=app.internalPlugins.getEnabledPluginById('page-preview')?.options;
-        if(!pagePreview)throw new Error('The Page preview core plugin is off');
-        const rowSet=Object.hasOwn(pagePreview,'zotlit-citekey'),row=pagePreview['zotlit-citekey'];
-        cleanup.defer(()=>{if(rowSet)pagePreview['zotlit-citekey']=row;else delete pagePreview['zotlit-citekey'];});
-        pagePreview['zotlit-citekey']=${pagePreviewMod};`
+        requestedUrl,
+        requestedHover,
+        disablePandoc,
+        changedSettings,
+        previewModifier,
+        notePath,
+        noteContent,
+        noteGesture,
+        targetGesture,
+        linkText,
+        hoverMeta,
+        hoverCtrl,
+        expectAbsent,
+        controlUrl,
+        expectImage,
+        crossUrl,
+        crossMeta,
+        crossCtrl,
+      },
+    ) => {
+      const links = page.annotationLinkTools(() => zotlit.services);
+      const { sleep, until } = links;
+      const s = zotlit.services;
+      let outcome: HoverOutcome;
+      {
+        await using cleanup = new AsyncDisposableStack();
+        const layout = app.workspace.getLayout();
+        cleanup.defer(async () => {
+          await app.workspace.changeLayout(layout);
+        });
+        const hoverAction = s.bridge.runSync(s.settings.current)[
+          "citation.hover-action"
+        ];
+        cleanup.defer(() => {
+          s.bridge.runSync(
+            s.settings.update({ "citation.hover-action": hoverAction }),
+          );
+        });
+        const pandoc = s.bridge.runSync(s.settings.current)[
+          "citation.pandoc-citations"
+        ];
+        cleanup.defer(() => {
+          s.bridge.runSync(
+            s.settings.update({ "citation.pandoc-citations": pandoc }),
+          );
+        });
+        const url = requestedUrl;
+        const changedHover = requestedHover;
+        if (changedHover !== null)
+          s.bridge.runSync(
+            s.settings.update({ "citation.hover-action": changedHover }),
+          );
+        if (disablePandoc)
+          s.bridge.runSync(
+            s.settings.update({ "citation.pandoc-citations": false }),
+          );
+        links.applySettings(cleanup, changedSettings);
+        const previewMod = previewModifier;
+        if (previewMod !== null) {
+          const pagePreview = (
+            app.internalPlugins.getEnabledPluginById("page-preview") as {
+              options?: {
+                "zotlit-citekey"?: boolean;
+              };
+            } | null
+          )?.options;
+          if (!pagePreview)
+            throw new Error("The Page preview core plugin is off");
+          const rowSet = Object.hasOwn(pagePreview, "zotlit-citekey"),
+            row = pagePreview["zotlit-citekey"];
+          cleanup.defer(() => {
+            if (rowSet) pagePreview["zotlit-citekey"] = row;
+            else delete pagePreview["zotlit-citekey"];
+          });
+          pagePreview["zotlit-citekey"] = previewMod;
         }
-        ${showNote(JSON.stringify(note), gesture)}
-        ${linkTarget(gesture)}
-        cleanup.defer(()=>view.hoverPopover?.hide());
-        link.dispatchEvent(new MouseEvent('mouseover',{clientX:x,clientY:y,bubbles:true,metaKey:${mod},ctrlKey:${mod},view:link.ownerDocument.defaultView}));
-        const opened=(view)=>view.hoverPopover?.hoverEl.isConnected?view.hoverPopover:null;
-        if(${absent}){
+        const { file, view } = await links.showNote(cleanup, {
+          notePath: notePath,
+          content: noteContent,
+          gesture: noteGesture,
+        });
+        const { link, x, y } = await links.linkTarget(view, {
+          url,
+          gesture: targetGesture,
+          linkText: linkText,
+        });
+        cleanup.defer(() => view.hoverPopover?.hide());
+        link.dispatchEvent(
+          new MouseEvent("mouseover", {
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            metaKey: hoverMeta,
+            ctrlKey: hoverCtrl,
+            view: link.ownerDocument.defaultView,
+          }),
+        );
+        const opened = (view: LinkMarkdownView) =>
+          view.hoverPopover?.hoverEl.isConnected ? view.hoverPopover : null;
+        if (expectAbsent) {
           // Absence is read off a control: a link that shows a popover,
           // hovered later in a split under the Citation Popover. Every hover
           // popover waits the same opening delay, so once the control's has
           // opened, one the first hover had started would have opened too.
           // The Hover Action goes back on before that delay ends; the first
           // link's mouseover has already decided whether it opens a popover.
-          s.bridge.runSync(s.settings.update({'citation.hover-action':'popover'}));
-          const control=app.workspace.getLeaf('split','vertical');
-          cleanup.adopt(control,(leaf)=>leaf.detach());
-          await control.setViewState({type:'markdown',state:{file:file.path,mode:'preview'}});
-          cleanup.defer(()=>control.view.hoverPopover?.hide());
-          const controlLink=await until(()=>[...control.view.previewMode.containerEl.querySelectorAll('a.external-link')].find((a)=>a.getAttribute('href')===${JSON.stringify(CONTROL_URL)}),()=>'The control link did not render');
-          controlLink.dispatchEvent(new MouseEvent('mouseover',{bubbles:true,view:controlLink.ownerDocument.defaultView}));
-          await until(()=>opened(control.view),()=>'The control hover opened no popover');
-          outcome={popover:!!opened(view)||link.ownerDocument.querySelectorAll('.hover-popover').length!==1,text:null,color:null,image:false,sup:null};
-        }else{
-          const popover=await until(()=>opened(view),()=>'No popover opened over the link');
-          const content=()=>popover.hoverEl.isConnected?popover.hoverEl.querySelector('.zt-citation-popover-content'):null;
-          await until(()=>content()?.textContent,()=>'The popover never filled: '+(popover.hoverEl.outerHTML.slice(0,300)));
-          const painted=()=>[...content().querySelectorAll('img')].find((img)=>img.src.startsWith('blob:')&&img.complete&&img.naturalWidth>0);
-          if(${image})await until(painted,()=>'The popover painted no Excerpt Image: '+content().outerHTML.slice(0,300));
-          const colored=content().querySelector('[style*="--zt-annot-color"]');
-          outcome={popover:true,text:content().textContent,color:colored?colored.style.getPropertyValue('--zt-annot-color'):null,image:!!painted(),sup:content().querySelector('sup')?.textContent??null};
-          if(${crossToUrl}){
+          s.bridge.runSync(
+            s.settings.update({ "citation.hover-action": "popover" }),
+          );
+          const control = app.workspace.getLeaf("split", "vertical");
+          cleanup.adopt(control, (leaf) => leaf.detach());
+          await control.setViewState({
+            type: "markdown",
+            state: { file: file.path, mode: "preview" },
+          });
+          cleanup.defer(() =>
+            (control.view as LinkMarkdownView).hoverPopover?.hide(),
+          );
+          const controlLink = await until(
+            () =>
+              [
+                ...(
+                  control.view as LinkMarkdownView
+                ).previewMode.containerEl.querySelectorAll("a.external-link"),
+              ].find((a) => a.getAttribute("href") === controlUrl),
+            () => "The control link did not render",
+          );
+          controlLink.dispatchEvent(
+            new MouseEvent("mouseover", {
+              bubbles: true,
+              view: controlLink.ownerDocument.defaultView,
+            }),
+          );
+          await until(
+            () => opened(control.view as LinkMarkdownView),
+            () => "The control hover opened no popover",
+          );
+          outcome = {
+            popover:
+              !!opened(view) ||
+              link.ownerDocument.querySelectorAll(".hover-popover").length !==
+                1,
+            text: null,
+            color: null,
+            image: false,
+            sup: null,
+          };
+        } else {
+          const popover = await until(
+            () => opened(view),
+            () => "No popover opened over the link",
+          );
+          const content = () =>
+            popover.hoverEl.isConnected
+              ? popover.hoverEl.querySelector(".zt-citation-popover-content")
+              : null;
+          await until(
+            () => content()?.textContent,
+            () =>
+              `The popover never filled: ${popover.hoverEl.outerHTML.slice(0, 300)}`,
+          );
+          const painted = () =>
+            [...content()!.querySelectorAll("img")].find(
+              (img) =>
+                img.src.startsWith("blob:") &&
+                img.complete &&
+                img.naturalWidth > 0,
+            );
+          if (expectImage)
+            await until(
+              painted,
+              () =>
+                `The popover painted no Excerpt Image: ${content()!.outerHTML.slice(0, 300)}`,
+            );
+          const colored = content()!.querySelector<HTMLElement>(
+            '[style*="--zt-annot-color"]',
+          );
+          outcome = {
+            popover: true,
+            text: content()!.textContent,
+            color: colored
+              ? colored.style.getPropertyValue("--zt-annot-color")
+              : null,
+            image: !!painted(),
+            sup: content()!.querySelector("sup")?.textContent ?? null,
+          };
+          if (crossUrl) {
             // Past the opening delay, so a popover the crossing moved or
             // emptied has settled by the time it is read.
-            const before=popover.hoverEl.getBoundingClientRect();
-            const urlEl=[...link.closest('.cm-line').querySelectorAll('.cm-url')].find((el)=>!el.classList.contains('cm-formatting'));
-            if(!urlEl)throw new Error('The link shows no URL');
-            const urlBox=urlEl.getClientRects()[0];
-            urlEl.dispatchEvent(new MouseEvent('mouseover',{clientX:urlBox.left+Math.min(urlBox.width/2,12),clientY:urlBox.top+urlBox.height/2,bubbles:true,relatedTarget:link,metaKey:${mod},ctrlKey:${mod},view:urlEl.ownerDocument.defaultView}));
+            const before = popover.hoverEl.getBoundingClientRect();
+            const urlEl = [
+              ...link.closest(".cm-line")!.querySelectorAll(".cm-url"),
+            ].find((el) => !el.classList.contains("cm-formatting"));
+            if (!urlEl) throw new Error("The link shows no URL");
+            const urlBox = urlEl.getClientRects()[0]!;
+            urlEl.dispatchEvent(
+              new MouseEvent("mouseover", {
+                clientX: urlBox.left + Math.min(urlBox.width / 2, 12),
+                clientY: urlBox.top + urlBox.height / 2,
+                bubbles: true,
+                relatedTarget: link,
+                metaKey: crossMeta,
+                ctrlKey: crossCtrl,
+                view: urlEl.ownerDocument.defaultView,
+              }),
+            );
             await sleep(500);
-            const after=popover.hoverEl.getBoundingClientRect();
-            outcome.crossed={same:opened(view)===popover,moved:before.left!==after.left||before.top!==after.top,text:content()?.textContent??null};
+            const after = popover.hoverEl.getBoundingClientRect();
+            outcome.crossed = {
+              same: opened(view) === popover,
+              moved: before.left !== after.left || before.top !== after.top,
+              text: content()?.textContent ?? null,
+            };
           }
         }
       }
-      return JSON.stringify(outcome);
-    })()`,
-    90000,
+      return outcome;
+    },
+    {
+      requestedUrl: url,
+      requestedHover: hoverAction ?? null,
+      disablePandoc: pandocOff,
+      changedSettings: linkSettings,
+      previewModifier: pagePreviewMod ?? null,
+      notePath: NOTE,
+      noteContent: note,
+      noteGesture: gesture,
+      targetGesture: gesture,
+      linkText: LINK_TEXT,
+      hoverMeta: mod,
+      hoverCtrl: mod,
+      expectAbsent: absent,
+      controlUrl: CONTROL_URL,
+      expectImage: image,
+      crossUrl: crossToUrl,
+      crossMeta: mod,
+      crossCtrl: mod,
+    },
+    { timeoutMs: 90000 },
   );
-  return JSON.parse(reply) as HoverOutcome;
+  return reply;
 }
 
 describe.skipIf(!reachable)("Annotation links", () => {
@@ -957,20 +1396,67 @@ describe.skipIf(!reachable)("Annotation links", () => {
   // itself and hide a missing warm-up.
   beforeAll(async () => {
     expect(
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async()=>{await app.plugins.disablePlugin('zotlit');const s=window.__ztLinks={native:window.open,passed:[],stopAnchor:(e)=>{const a=e.target?.closest?.('a[href^="zotero:"]');if(a?.closest('.workspace-leaf-content[data-type="zotero-annotation-view"]'))e.preventDefault();}};window.addEventListener('click',s.stopAnchor,true);window.open=function(url,target,features){if(String(url).startsWith('zotero:')){s.passed.push({url:String(url),target:target??null});return null;}return s.native.apply(this,arguments);};await app.plugins.enablePlugin('zotlit');const timeout=new Promise((resolve)=>setTimeout(()=>resolve('not indexed'),20000));return await Promise.race([((z)=>z.bridge.runPromise(z.attachmentResolver.indexed))(app.plugins.plugins.zotlit.services).then(()=>'indexed'),timeout]);})()`,
-        60000,
+        async ({ app, zotlit, page }) => {
+          await app.plugins.disablePlugin("zotlit");
+          const s: LinkRecorder = (page.scratch.links = {
+            native: window.open,
+            passed: [],
+            stopAnchor: (event) => {
+              const anchor =
+                event.target instanceof Element
+                  ? event.target.closest('a[href^="zotero:"]')
+                  : null;
+              if (
+                anchor?.closest(
+                  '.workspace-leaf-content[data-type="zotero-annotation-view"]',
+                )
+              )
+                event.preventDefault();
+            },
+          });
+          window.addEventListener("click", s.stopAnchor, true);
+          window.open = function (
+            this: Window,
+            ...args: Parameters<Window["open"]>
+          ) {
+            const [url, target] = args;
+            if (String(url).startsWith("zotero:")) {
+              s.passed.push({ url: String(url), target: target ?? null });
+              return null;
+            }
+            return s.native.apply(this, args);
+          };
+          await app.plugins.enablePlugin("zotlit");
+          const timeout = new Promise<string>((resolve) =>
+            setTimeout(() => resolve("not indexed"), 20000),
+          );
+          return await Promise.race([
+            zotlit.services.bridge
+              .runPromise(zotlit.services.attachmentResolver.indexed)
+              .then(() => "indexed"),
+            timeout,
+          ]);
+        },
+        undefined,
+        { timeoutMs: 60000 },
       ),
       "the Attachment index is built with no lookup asking for it",
     ).toBe("indexed");
   }, 120000);
 
   afterAll(async () => {
-    await obEval(
-      run.vaultId,
-      `(async()=>{const s=window.__ztLinks;if(!s)return true;await app.plugins.disablePlugin('zotlit');window.removeEventListener('click',s.stopAnchor,true);window.open=s.native;delete window.__ztLinks;await app.plugins.enablePlugin('zotlit');return true;})()`,
-    );
+    await obRun(run.vaultId, async ({ app, page }) => {
+      const s = page.scratch.links;
+      if (!s) return true;
+      await app.plugins.disablePlugin("zotlit");
+      window.removeEventListener("click", s.stopAnchor, true);
+      window.open = s.native;
+      delete page.scratch.links;
+      await app.plugins.enablePlugin("zotlit");
+      return true;
+    });
   }, 120000);
 
   it("opens the reader on the Annotation a link names, clicked in Live Preview", async () => {

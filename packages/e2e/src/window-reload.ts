@@ -2,10 +2,7 @@
 // at Obsidian startup.
 
 import { prepareRunWindow } from "./background-throttling.ts";
-import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
-
-/** Global the old window holds until the reload replaces it. */
-const OLD_WINDOW = "__ztWindowBeforeReload";
+import { cli, obRun, obRunUntil, waitFor } from "./obsidian-cli.ts";
 
 /**
  * Reloads `vaultId`'s window (`app:reload`) and resolves when the new window
@@ -22,31 +19,38 @@ const OLD_WINDOW = "__ztWindowBeforeReload";
  * taken down before the reload and put back after it.
  */
 export async function reloadWindow(vaultId: string): Promise<void> {
-  await obEval(
-    vaultId,
-    "(app.plugins.plugins.zotlit?.services.bridge.runPromise(app.plugins.plugins.zotlit?.services.settings.flush)??Promise.resolve()).then(()=>true)",
-  );
+  await obRun(vaultId, async ({ app, zotlit }) => {
+    if (app.plugins.plugins.zotlit)
+      await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
+  });
   // The reload goes after the reply, so this call is answered by the old
   // window; the marker tells that window from the new one.
-  const scheduled = await obEval(
-    vaultId,
-    `(()=>{window.__ztRestoreBackgroundThrottling?.();window.${OLD_WINDOW}=true;setTimeout(()=>app.commands.executeCommandById('app:reload'));return true;})()`,
-  );
-  if (scheduled !== "true") {
-    throw new Error(`could not reload the window of ${vaultId}: ${scheduled}`);
-  }
-  // Mid-reload calls go unanswered or answer the old window; obEvalUntil
-  // counts both as "not ready yet".
-  const ready = await obEvalUntil(
-    vaultId,
-    `String(!window.${OLD_WINDOW}&&app.workspace.layoutReady&&app.plugins.plugins.zotlit?._loaded===true&&!!app.plugins.plugins.zotlit.services)`,
-    { expected: "true", tries: 120 },
-  );
-  if (!ready) {
+  const scheduled = await obRun(vaultId, ({ app, page }) => {
+    window.__ztRestoreBackgroundThrottling?.();
+    page.scratch.windowBeforeReload = true;
+    setTimeout(() => app.commands.executeCommandById("app:reload"));
+    return true;
+  });
+  if (!scheduled) {
     throw new Error(
-      `the window of ${vaultId} did not come back with ZotLit loaded`,
+      `could not reload the window of ${vaultId}: ${String(scheduled)}`,
     );
   }
+  // Mid-reload calls go unanswered or answer the old window; obRunUntil
+  // counts both as "not ready yet".
+  await obRunUntil(
+    vaultId,
+    ({ app, zotlit, page }) =>
+      !page.scratch.windowBeforeReload &&
+      app.workspace.layoutReady &&
+      app.plugins.plugins.zotlit?._loaded === true &&
+      !!zotlit.services,
+    undefined,
+    {
+      what: `the window of ${vaultId} did not come back with ZotLit loaded`,
+      tries: 120,
+    },
+  );
   // A window answers `eval` before its command registry is built.
   const commands = await waitFor(async () => {
     const state = await cli([`vault=${vaultId}`, "plugins:restrict"]).catch(

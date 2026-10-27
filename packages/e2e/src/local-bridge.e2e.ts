@@ -9,8 +9,8 @@ import { openProfilesSettings } from "./e2e-run-helpers.ts";
 import { registerEndToEndRunHooks, run } from "./e2e-run-lifecycle.ts";
 import { clickModalButton, observeNotices } from "./e2e-run-note-helpers.ts";
 import * as suite from "./e2e-run-suite-helpers.ts";
-import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
-import { PAGE } from "./page-gestures.ts";
+import { obRun, obRunUntil } from "./obsidian-cli.ts";
+import { waitFor } from "./obsidian-cli.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
@@ -38,29 +38,99 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     afterAll(async () => {
       if (!run.vaultId) return;
-      await obEval(
+      await obRun(
         run.vaultId,
-        "if(window.zotlitE2EOpen){window.open=window.zotlitE2EOpen;delete window.zotlitE2EOpen;}delete window.zotlitE2ELaunch;true",
+        async ({ page }) => {
+          if (page.scratch.originalOpen) {
+            window.open = page.scratch.originalOpen;
+            delete page.scratch.originalOpen;
+          }
+          delete page.scratch.workbenchLaunch;
+          return String(true);
+        },
+        undefined,
       ).catch(() => {});
     });
 
     it("launches from the Template document row and exchanges its Connection code", async () => {
-      defaultPath = await obEval(
+      defaultPath = await obRun(
         run.vaultId,
-        "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.profileService.defaultDocumentPath)",
+        async ({ zotlit }) => {
+          return String(
+            zotlit.services.bridge.runSync(
+              zotlit.services.profileService.defaultDocumentPath,
+            ),
+          );
+        },
+        undefined,
       );
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.workbench':false}));window.zotlitE2EOpen=window.open;window.open=function(url){if(!/^https?:/.test(String(url)))return window.zotlitE2EOpen.apply(this,arguments);window.zotlitE2ELaunch=url;return null;};return true;})()`,
+        async ({ app, zotlit, page }, { defaultPath }) => {
+          const file = app.vault.getFileByPath(defaultPath);
+          if (file) await app.vault.delete(file);
+          app.saveLocalStorage("zotlit-workbench-launch-approved", null);
+          app.saveLocalStorage("zotlit-profile-customization", "ask");
+          zotlit.services.bridge.runSync(
+            zotlit.services.settings.update({
+              "server.enabled": false,
+              "server.workbench": false,
+            }),
+          );
+          page.scratch.originalOpen = window.open;
+          window.open = new Proxy(window.open, {
+            apply: (
+              target,
+              receiver: Window,
+              args: Parameters<typeof window.open>,
+            ) => {
+              const url = String(args[0]);
+              if (!url.startsWith("http:") && !url.startsWith("https:"))
+                return Reflect.apply(target, receiver, args) as Window | null;
+              page.scratch.workbenchLaunch = args[0];
+              return null;
+            },
+          });
+        },
+        { defaultPath },
       );
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `(function(){${PAGE}var radio=document.querySelector('input[name="zotlit-customize-destination"][value="native"]');if(!radio)return false;press(radio.closest('label')??radio,'Native destination');var row=Array.from(document.querySelectorAll('.modal .setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(run.m.modal_workbench_launch_remember())});var toggle=row?.querySelector('.checkbox-container');if(!toggle)return false;press(toggle,'Remember');return true;})()`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ page }, { __typedArg0 }) => {
+              const { press } = page;
+              var radio = document.querySelector<HTMLInputElement>(
+                'input[name="zotlit-customize-destination"][value="native"]',
+              );
+              if (!radio) return String(false);
+              press(radio.closest("label") ?? radio, "Native destination");
+              var row = Array.from(
+                document.querySelectorAll(".modal .setting-item"),
+              ).find(
+                (el) =>
+                  el.querySelector(".setting-item-name")?.textContent ===
+                  __typedArg0,
+              );
+              var toggle = row?.querySelector<HTMLElement>(
+                ".checkbox-container",
+              );
+              if (!toggle) return String(false);
+              press(toggle, "Remember");
+              return String(true);
+            },
+            { __typedArg0: run.m.modal_workbench_launch_remember() },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:59",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       expect(
         await clickModalButton(
@@ -69,57 +139,157 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ).toBe(true);
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench'&&app.loadLocalStorage('zotlit-profile-customization')==='native')",
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ app }) => {
+              return String(
+                String(
+                  app.workspace.activeLeaf?.view.getViewType() ===
+                    "zotlit-template-workbench" &&
+                    app.loadLocalStorage("zotlit-profile-customization") ===
+                      "native",
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:72",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          `String(!!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&app.workspace.activeLeaf?.view.controller?.readOnly===false&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.enabled']&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.workbench'])`,
+          async ({ app, zotlit, page }, { __typedArg0 }) => {
+            return String(
+              String(
+                !!app.vault.getFileByPath(__typedArg0) &&
+                  page.workbench()?.controller.readOnly === false &&
+                  page.scratch.workbenchLaunch === undefined &&
+                  !zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )["server.enabled"] &&
+                  !zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )["server.workbench"],
+              ),
+            );
+          },
+          { __typedArg0: defaultPath },
         ),
       ).toBe("true");
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench'&&!document.querySelector('input[name="zotlit-customize-destination"]'))`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ app }) => {
+              return String(
+                String(
+                  app.workspace.activeLeaf?.view.getViewType() ===
+                    "zotlit-template-workbench" &&
+                    !document.querySelector(
+                      'input[name="zotlit-customize-destination"]',
+                    ),
+                ),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:87",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       expect(
-        await obEval(
+        await obRun(
           run.vaultId,
-          "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.settings.current)['server.enabled'])",
+          async ({ zotlit, page }) => {
+            return String(
+              String(
+                page.scratch.workbenchLaunch === undefined &&
+                  !zotlit.services.bridge.runSync(
+                    zotlit.services.settings.current,
+                  )["server.enabled"],
+              ),
+            );
+          },
+          undefined,
         ),
       ).toBe("true");
       // The web save cases start from the built-in Default again.
-      await obEval(
+      await obRun(
         run.vaultId,
-        "(async function(){await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.profileService.restoreDefault());return true;})()",
+        async ({ zotlit }) => {
+          await zotlit.services.bridge.runPromise(
+            zotlit.services.profileService.restoreDefault(),
+          );
+          return String(true);
+        },
+        undefined,
       );
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `String(!app.vault.getFileByPath(${JSON.stringify(defaultPath)}))`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ app }, { __typedArg0 }) => {
+              return String(String(!app.vault.getFileByPath(__typedArg0)));
+            },
+            { __typedArg0: defaultPath },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:105",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
-      await obEval(
+      await obRun(
         run.vaultId,
-        "app.saveLocalStorage('zotlit-profile-customization','ask');true",
+        async ({ app }) => {
+          app.saveLocalStorage("zotlit-profile-customization", "ask");
+          return String(true);
+        },
+        undefined,
       );
       await suite.mainSettings();
       expect(await suite.clickTemplateCustomize()).toBe(true);
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `String(Array.from(document.querySelectorAll('.modal-title')).some(el=>el.textContent===${JSON.stringify(run.m.modal_workbench_launch_title())}))`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async (_context, { __typedArg0 }) => {
+              return String(
+                String(
+                  Array.from(document.querySelectorAll(".modal-title")).some(
+                    (el) => el.textContent === __typedArg0,
+                  ),
+                ),
+              );
+            },
+            { __typedArg0: run.m.modal_workbench_launch_title() },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:118",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       expect(
         await clickModalButton(
@@ -128,25 +298,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ),
       ).toBe(true);
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          "String(typeof window.zotlitE2ELaunch==='string')",
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ page }) => {
+              return String(
+                String(typeof page.scratch.workbenchLaunch === "string"),
+              );
+            },
+            undefined,
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:131",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       // Capture the browser handoff at its outer boundary. The entry action,
       // sheet, minted code, and HTTP exchange all run in the real plugin.
       let launch: URL;
       try {
-        launch = new URL(await obEval(run.vaultId, "window.zotlitE2ELaunch"));
+        launch = new URL(
+          await obRun(
+            run.vaultId,
+            async ({ page }) => {
+              return String(page.scratch.workbenchLaunch);
+            },
+            undefined,
+          ),
+        );
       } catch {
         throw new Error("The Workbench launch URL was unavailable");
       }
       origin = launch.origin;
       port = Number(
-        await obEval(
+        await obRun(
           run.vaultId,
-          "app.plugins.plugins.zotlit.services.bridge.runSync(app.plugins.plugins.zotlit.services.localServer.effectivePort)",
+          async ({ zotlit }) => {
+            return String(
+              zotlit.services.bridge.runSync(
+                zotlit.services.localServer.effectivePort,
+              ),
+            );
+          },
+          undefined,
         ),
       );
       const fragment = new URLSearchParams(launch.hash.slice(1));
@@ -177,7 +375,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       };
       expect(profile.document.state).toBe("built-in-absent");
       source = profile.source;
-      await obEval(run.vaultId, "app.setting.close();true");
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          app.setting.close();
+          return String(true);
+        },
+        undefined,
+      );
     });
 
     it("saves Default's document and shows the ejected settings state and Notice", async () => {
@@ -208,20 +413,62 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).toBe(true);
       await suite.mainSettings();
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(run.m.settings_profile_document_name())});return String(!!row&&Array.from(row.querySelectorAll('button')).some(el=>el.getAttribute('aria-label')===${JSON.stringify(run.m.settings_profile_document_restore())}));})()`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async (_context, { __typedArg0, __typedArg1 }) => {
+              var row = Array.from(
+                document.querySelectorAll(".setting-item"),
+              ).find(
+                (el) =>
+                  el.querySelector(".setting-item-name")?.textContent ===
+                  __typedArg0,
+              );
+              return String(
+                String(
+                  !!row &&
+                    Array.from(row.querySelectorAll("button")).some(
+                      (el) => el.getAttribute("aria-label") === __typedArg1,
+                    ),
+                ),
+              );
+            },
+            {
+              __typedArg0: run.m.settings_profile_document_name(),
+              __typedArg1: run.m.settings_profile_document_restore(),
+            },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:211",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
-      await obEval(run.vaultId, "app.setting.close();true");
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          app.setting.close();
+          return String(true);
+        },
+        undefined,
+      );
     });
 
     it("refuses a Save after the vault document changes", async () => {
       const changed = `${source}\n<!-- external edit -->\n`;
-      await obEval(
+      await obRun(
         run.vaultId,
-        `(async function(){await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(changed)});return true;})()`,
+        async ({ app }, { __typedArg0, __typedArg1 }) => {
+          await app.vault.modify(
+            app.vault.getFileByPath(__typedArg0)!,
+            __typedArg1,
+          );
+          return String(true);
+        },
+        { __typedArg0: defaultPath, __typedArg1: changed },
       );
       const response = await request("profile/selected/save", {
         reference: "default",
@@ -243,24 +490,82 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     it("disconnects from the settings row and refuses the next request with 401", async () => {
       await openProfilesSettings(run.vaultId, "settings_page_advanced");
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `(function(){${PAGE}var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(run.m.settings_local_server_workbench_connection_name())});if(!row||!row.textContent.includes(${JSON.stringify(new URL(origin).host)}))return false;var button=Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(run.m.settings_local_server_workbench_disconnect())});if(!button)return false;press(button,'Disconnect');return true;})()`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async ({ page }, { __typedArg0, __typedArg1, __typedArg2 }) => {
+              const { press } = page;
+              var row = Array.from(
+                document.querySelectorAll(".setting-item"),
+              ).find(
+                (el) =>
+                  el.querySelector(".setting-item-name")?.textContent ===
+                  __typedArg0,
+              );
+              if (!row || !row.textContent.includes(__typedArg1))
+                return String(false);
+              var button = Array.from(row.querySelectorAll("button")).find(
+                (el) => el.textContent === __typedArg2,
+              );
+              if (!button) return String(false);
+              press(button, "Disconnect");
+              return String(true);
+            },
+            {
+              __typedArg0:
+                run.m.settings_local_server_workbench_connection_name(),
+              __typedArg1: new URL(origin).host,
+              __typedArg2: run.m.settings_local_server_workbench_disconnect(),
+            },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:246",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
       const response = await request("profile/selected");
       expect(response.status).toBe(401);
       const refused = (await response.json()) as { error: { code: string } };
       expect(refused.error.code).toBe("session-revoked");
       expect(
-        await obEvalUntil(
-          run.vaultId,
-          `String(!Array.from(document.querySelectorAll('.setting-item-name')).some(el=>el.textContent===${JSON.stringify(run.m.settings_local_server_workbench_connection_name())}))`,
-          { expected: "true" },
-        ),
+        await ((options: { expected: string; tries?: number }) =>
+          obRunUntil(
+            run.vaultId,
+            async (_context, { __typedArg0 }) => {
+              return String(
+                String(
+                  !Array.from(
+                    document.querySelectorAll(".setting-item-name"),
+                  ).some((el) => el.textContent === __typedArg0),
+                ),
+              );
+            },
+            {
+              __typedArg0:
+                run.m.settings_local_server_workbench_connection_name(),
+            },
+            {
+              ready: (value) => value === options.expected,
+              tries: options.tries,
+              what: "local-bridge.e2e.ts:257",
+            },
+          ).then(
+            () => true,
+            () => false,
+          ))({ expected: "true" }),
       ).toBe(true);
-      await obEval(run.vaultId, "app.setting.close();true");
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          app.setting.close();
+          return String(true);
+        },
+        undefined,
+      );
     });
 
     it("keeps an unsupported Profile in Obsidian with one Notice when native is remembered", async () => {
@@ -277,16 +582,42 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         javascriptSource,
       ]) {
         expect(unsupported !== source).toBe(true);
-        await obEval(
+        await obRun(
           run.vaultId,
-          `(async function(){app.saveLocalStorage('zotlit-profile-customization','native');await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(unsupported)});delete window.zotlitE2ELaunch;return true;})()`,
+          async ({ app, page }, { __typedArg0, __typedArg1 }) => {
+            app.saveLocalStorage("zotlit-profile-customization", "native");
+            await app.vault.modify(
+              app.vault.getFileByPath(__typedArg0)!,
+              __typedArg1,
+            );
+            delete page.scratch.workbenchLaunch;
+            return String(true);
+          },
+          { __typedArg0: defaultPath, __typedArg1: unsupported },
         );
         expect(
-          await obEvalUntil(
-            run.vaultId,
-            `(async function(){return String((await app.plugins.plugins.zotlit.services.bridge.runPromise(app.plugins.plugins.zotlit.services.profileService.getSource('default')))===${JSON.stringify(unsupported)});})()`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              run.vaultId,
+              async ({ zotlit }, { __typedArg0 }) => {
+                return String(
+                  String(
+                    (await zotlit.services.bridge.runPromise(
+                      zotlit.services.profileService.getSource("default"),
+                    )) === __typedArg0,
+                  ),
+                );
+              },
+              { __typedArg0: unsupported },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "local-bridge.e2e.ts:285",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         await using notices = await observeNotices(run.vaultId);
         await suite.mainSettings();
@@ -306,19 +637,46 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           ),
         ).toHaveLength(1);
         expect(
-          await obEvalUntil(
-            run.vaultId,
-            `String(app.workspace.getActiveFile()?.path===${JSON.stringify(defaultPath)}&&app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench')`,
-            { expected: "true" },
-          ),
+          await ((options: { expected: string; tries?: number }) =>
+            obRunUntil(
+              run.vaultId,
+              async ({ app }, { __typedArg0 }) => {
+                return String(
+                  String(
+                    app.workspace.getActiveFile()?.path === __typedArg0 &&
+                      app.workspace.activeLeaf?.view.getViewType() ===
+                        "zotlit-template-workbench",
+                  ),
+                );
+              },
+              { __typedArg0: defaultPath },
+              {
+                ready: (value) => value === options.expected,
+                tries: options.tries,
+                what: "local-bridge.e2e.ts:309",
+              },
+            ).then(
+              () => true,
+              () => false,
+            ))({ expected: "true" }),
         ).toBe(true);
         expect(
-          await obEval(
+          await obRun(
             run.vaultId,
-            "String(window.zotlitE2ELaunch===undefined)",
+            async ({ page }) => {
+              return String(String(page.scratch.workbenchLaunch === undefined));
+            },
+            undefined,
           ),
         ).toBe("true");
-        await obEval(run.vaultId, "app.setting.close();true");
+        await obRun(
+          run.vaultId,
+          async ({ app }) => {
+            app.setting.close();
+            return String(true);
+          },
+          undefined,
+        );
       }
     });
   });
