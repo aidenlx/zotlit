@@ -26,7 +26,7 @@ import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/b
 import { defaults } from "@/services/settings/schema";
 
 import { exportWithCitations, registerPandocExport } from "./register";
-import type { PandocExportDeps } from "./register";
+import type { PandocExportDeps, PandocExportOutcome } from "./register";
 
 /** The styles Zotero has installed while the export dialog is open. */
 const zotero = vi.hoisted(() => ({ styles: [] as InstalledCslStyle[] }));
@@ -214,44 +214,55 @@ function openVault({
     /** Run one export of the note, as the palette entry does. */
     export: () => exportWithCitations(file, deps),
     /** Run one export, and read the dialog it opens. */
-    async openDialog() {
-      const outcome = exportWithCitations(file, deps);
-      await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
-      const modal = Modal.instances.at(-1)!;
-      const rows = settingsOf(modal.contentEl);
-      const [format, style] = rows
-        .flatMap((row) => row.components)
-        .filter((component) => component instanceof DropdownComponent);
-      // The listing lands after the dialog is built, so the entries the user
-      // reads are the ones the resolved listing left in the picker.
-      await vi.waitFor(() => expect(style!.options.length).toBeGreaterThan(1));
-      return {
-        format: format!,
-        style: style!,
-        /** What the dialog says under the style picker. */
-        styleNote: () =>
-          rows.find((row) => row.name === m.pandoc_export_style_name())?.desc,
-        /** The destination the dialog names, as the user reads it. */
-        destination: () =>
-          rows.find((row) => row.name === m.pandoc_export_destination_name())
-            ?.desc,
-        /** Dismiss the dialog without answering, as closing its window does. */
-        dismiss: () => modal.close(),
-        confirm: () =>
-          rows
-            .flatMap((row) => row.components)
-            .find(
-              (component): component is ButtonComponent =>
-                component instanceof ButtonComponent &&
-                component.text === m.pandoc_export_confirm(),
-            )
-            ?.click(),
-        title: modal.title,
-        /** How the export ended. */
-        outcome,
-      };
+    openDialog: () => dialog(exportWithCitations(file, deps)),
+    /** Run the command from the palette, and read the dialog it opens. */
+    openDialogFromPalette() {
+      palette.checkCallback?.(false);
+      return dialog(null);
     },
   };
+
+  /**
+   * The dialog an export opened.
+   *
+   * @param outcome how the export ends, where the test holds it.
+   */
+  async function dialog(outcome: Promise<PandocExportOutcome> | null) {
+    await vi.waitFor(() => expect(Modal.instances).toHaveLength(1));
+    const modal = Modal.instances.at(-1)!;
+    const rows = settingsOf(modal.contentEl);
+    const [format, style] = rows
+      .flatMap((row) => row.components)
+      .filter((component) => component instanceof DropdownComponent);
+    // The listing lands after the dialog is built, so the entries the user
+    // reads are the ones the resolved listing left in the picker.
+    await vi.waitFor(() => expect(style!.options.length).toBeGreaterThan(1));
+    return {
+      format: format!,
+      style: style!,
+      /** What the dialog says under the style picker. */
+      styleNote: () =>
+        rows.find((row) => row.name === m.pandoc_export_style_name())?.desc,
+      /** The destination the dialog names, as the user reads it. */
+      destination: () =>
+        rows.find((row) => row.name === m.pandoc_export_destination_name())
+          ?.desc,
+      /** Dismiss the dialog without answering, as closing its window does. */
+      dismiss: () => modal.close(),
+      confirm: () =>
+        rows
+          .flatMap((row) => row.components)
+          .find(
+            (component): component is ButtonComponent =>
+              component instanceof ButtonComponent &&
+              component.text === m.pandoc_export_confirm(),
+          )
+          ?.click(),
+      title: modal.title,
+      /** How the export ended. */
+      outcome,
+    };
+  }
 }
 
 function markdownFile(path: string): TFile {
@@ -408,6 +419,22 @@ describe("the Export note with citations command", () => {
       styleTitle: VAULT_STYLE.title,
     });
     expect(await readFile(join(basePath, "draft.docx"))).toHaveLength(0);
+  });
+
+  it("writes the export the palette entry runs", async () => {
+    await using stack = new AsyncDisposableStack();
+    const basePath = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({ note: {}, basePath });
+
+    const dialog = await vault.openDialogFromPalette();
+    dialog.confirm();
+
+    await vi.waitFor(async () =>
+      expect(await readdir(basePath)).toEqual(["draft.docx"]),
+    );
   });
 
   it("stops without a file where the export run is interrupted", async () => {
