@@ -95,6 +95,29 @@ describe.skipIf(!reachable)("Window reload", () => {
     ).toBe(true);
   });
 
+  it("reloads when ZotLit is disabled only in memory (#1848)", async () => {
+    try {
+      expect(
+        await obRun(vaultId, async ({ app }) => {
+          await app.plugins.disablePlugin("zotlit");
+          return app.plugins.plugins.zotlit === undefined;
+        }),
+      ).toBe(true);
+      await reloadWindow(vaultId);
+      expect(
+        await obRun(vaultId, ({ app, page }) => ({
+          loaded: app.plugins.plugins.zotlit?._loaded === true,
+          reloaded: page.scratch.windowBeforeReload === undefined,
+        })),
+      ).toEqual({ loaded: true, reloaded: true });
+    } finally {
+      await obRun(vaultId, async ({ app }) => {
+        if (!app.plugins.plugins.zotlit)
+          await app.plugins.enablePlugin("zotlit");
+      });
+    }
+  });
+
   it("loads ZotLit in startup order, where its rename handlers run before the metadata cache moves the path", async () => {
     const toggled = await obRun(vaultId, recordRename, {
       listenerSources: null,
