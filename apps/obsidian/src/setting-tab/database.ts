@@ -143,6 +143,17 @@ interface DatabaseFileStatus {
 }
 
 /**
+ * Run `refresh` behind a progress notice. It fails with the refresh's own
+ * error, which the notice names.
+ */
+export const refreshReads = <E>(refresh: Effect.Effect<void, E>) =>
+  withProgress(refresh, {
+    loading: m.notice_db_refreshing(),
+    success: m.notice_db_refreshed(),
+    error: m.notice_db_refresh_failed(),
+  });
+
+/**
  * Database file row: resolved `zotero.sqlite` path + a refresh button + an
  * inline status line that surfaces loading / refreshing / degraded /
  * refresh-failed states. The path derives from the Zotero profile's data dir,
@@ -199,11 +210,7 @@ function renderDatabaseFileRow(
       const pref = yield* ZoteroPref;
       // The progress notice reports a failed refresh and logs it, so the
       // runner has no failure left to show a second notice for.
-      const refresh = withProgress(reads.refresh, {
-        loading: m.notice_db_refreshing(),
-        success: m.notice_db_refreshed(),
-        error: m.notice_db_refresh_failed(),
-      }).pipe(Effect.ignore);
+      const refresh = refreshReads(reads.refresh).pipe(Effect.ignore);
 
       refreshButton?.onClick(() => void ctx.tab.run(refresh));
 

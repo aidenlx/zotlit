@@ -78,6 +78,19 @@ export function registerWelcomeView(
         void openLibraryView(plugin.app);
       });
   };
+  watchNotFound(plugin, deps, apply);
+}
+
+/**
+ * Hand `apply` each signal that changes the notice of a missing Zotero data
+ * folder: the missing state a registration finds, each change of that state,
+ * and each change of the workspace's tabs.
+ */
+export function watchNotFound(
+  plugin: Pick<Plugin, "app" | "register">,
+  deps: Pick<WelcomeRegistrationDeps, "runtime" | "reads">,
+  apply: (signal: NotFoundSignal) => void,
+): void {
   let missing = deps.reads.dbFileMissing;
   plugin.register(
     subscribe(deps.runtime, Stream.drop(deps.reads.changes, 1), (state) => {
