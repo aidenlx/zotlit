@@ -9,17 +9,14 @@ import type { App, PaneType, TFile } from "obsidian";
 import type { Item } from "@zotlit/db";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
-import {
-  pdfPickerReader,
-  resolveLiteratureNoteAttachments,
-} from "@/services/attachment-open/actions";
+import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
-import { createNoteInteractively } from "@/services/note-feature";
 import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import type { PlainNoteIndex } from "@/services/note-index/plain";
 
 export interface NoteResultDeps extends InteractiveCreationDeps {
+  app: App;
   noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
 }
 
@@ -50,7 +47,11 @@ export async function openOrCreateNote(
   }
   const found = await item();
   if (!found) return;
-  await openNote(deps.app, await createNoteInteractively(deps, found), newPane);
+  await openNote(
+    deps.app,
+    await deps.noteFeature.createNoteInteractively(found),
+    newPane,
+  );
 }
 
 /**
@@ -91,7 +92,9 @@ export async function openItemPdf(
   indexedKey: string,
   pane: PaneType | boolean,
 ): Promise<void> {
-  const attachments = await resolveLiteratureNoteAttachments(deps, indexedKey);
+  const attachments =
+    await deps.attachments.literatureNoteAttachments(indexedKey);
+  if (!attachments) return;
   openAttachments(attachments, {
     reader: withFixedPane(pdfPickerReader(deps.opener), pane),
     app: deps.app,

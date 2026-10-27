@@ -21,20 +21,35 @@ import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import type { ReadsAnswers } from "@/services/zotero-reads/__fixtures__";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
+import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
+import type {
+  PlannedCreation,
+  PlannedCreationProfile,
+} from "./creation-planning";
 import { companionNoteNotice, openCompanionNote } from "./index";
 import type {
-  CompanionNoteDeps,
   CompanionNoteTarget,
   CreationProfileSelection,
-  PreparedCreationProfile,
+  InteractiveCreationPorts,
 } from "./index";
-import type { CreationPlan } from "./operations";
+import { NoteFeature } from "./service";
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
-  chooseLiteratureNoteProfile: vi.fn(),
+  openLiteratureNoteProfile: vi.fn(),
 }));
+
+/** The picker answers `answer` once, as the user would. */
+function pickerAnswersOnce(answer: LiteratureNoteProfileChoice | undefined) {
+  vi.mocked(openLiteratureNoteProfile).mockImplementationOnce(
+    (_app, _options, resolve) => {
+      resolve(answer);
+      return { close: () => {} };
+    },
+  );
+}
 
 const REF: ItemRef = {
   itemID: 1,
@@ -48,8 +63,8 @@ const PAPERS = "Rz9Wm4YfH6Kd" as ProfileId;
 
 function creationPlans(
   indexedKeys: readonly string[],
-  plan: CreationPlan,
-): ReadonlyMap<string, CreationPlan> {
+  plan: PlannedCreation,
+): ReadonlyMap<string, PlannedCreation> {
   return new Map(indexedKeys.map((key) => [key, plan]));
 }
 
@@ -62,10 +77,20 @@ interface FlowServices {
   readonly readItems?: ReadsAnswers["ItemsByIndexedKeys"];
   /** Records each notice the flow shows. */
   readonly notifier: ReturnType<typeof testNotifier>;
+  /** Answers the Note Feature's lookups and updates. */
+  readonly feature: Partial<NoteFeature["Service"]>;
 }
 
-function flowLayer({ workspace, excluded, readItems, notifier }: FlowServices) {
+function flowLayer({
+  workspace,
+  excluded,
+  readItems,
+  notifier,
+  feature,
+}: FlowServices) {
   return Layer.mergeAll(
+    unimplementedProfileDialogServices,
+    Layer.mock(NoteFeature, feature),
     layerWorkspaceFrom(workspace),
     notifier.layer,
     Layer.mock(UseLedger, {
@@ -102,8 +127,10 @@ function creationHarness(selection: CreationProfileSelection) {
   const readItems = vi.fn(() =>
     Effect.succeed(new Map([[REF.indexedKey, item]])),
   );
-  const create = vi.fn(async () => ({ outcome: "created" as const, file }));
-  const previews: PreparedCreationProfile[] = [
+  const create = vi.fn(() =>
+    Effect.succeed({ outcome: "created" as const, file }),
+  );
+  const previews: PlannedCreationProfile[] = [
     {
       selector: selection.selector,
       label: "Papers",
@@ -114,30 +141,30 @@ function creationHarness(selection: CreationProfileSelection) {
       create,
     },
   ];
-  const planCreations = vi.fn(async (keys: readonly string[]) =>
-    creationPlans(keys, { item, selection, previews }),
+  const planCreations = vi.fn<NoteFeature["Service"]["planCreations"]>((keys) =>
+    Effect.succeed(creationPlans(keys, { item, selection, previews })),
   );
-  const deps: CompanionNoteDeps = {
+  const deps: InteractiveCreationPorts = {
     createProfile: vi.fn(),
     importProfile: vi.fn(),
     app: stubService<App>("App", {}),
-    noteFeature: stubService<CompanionNoteDeps["noteFeature"]>("NoteFeature", {
-      resolveCompanionNote: vi.fn(async (): Promise<CompanionNoteTarget> => ({
-        outcome: "create",
-      })),
-      planCreations,
-      createNote: create,
-      updateNote: vi.fn(async () => ({
-        bodyUpdated: true,
-        duplicateRegionCount: 0,
-      })),
-    }),
+  };
+  const feature = {
+    planCreations,
+    createNote: create,
+    resolveCompanionNote: vi.fn<NoteFeature["Service"]["resolveCompanionNote"]>(
+      () => Effect.succeed({ outcome: "create" }),
+    ),
+    updateNote: vi.fn<NoteFeature["Service"]["updateNote"]>(() =>
+      Effect.succeed({ bodyUpdated: true, duplicateRegionCount: 0 }),
+    ),
   };
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const excluded: string[] = [];
   const notifier = testNotifier();
   return {
     deps,
+    feature,
     file,
     item,
     readItems,
@@ -146,7 +173,7 @@ function creationHarness(selection: CreationProfileSelection) {
     workspace,
     excluded,
     notices: notifier.notices,
-    layer: flowLayer({ workspace, excluded, readItems, notifier }),
+    layer: flowLayer({ workspace, excluded, readItems, notifier, feature }),
   };
 }
 
@@ -159,24 +186,30 @@ it.effect.each(["open", "update"] as const)(
         source: "headless",
         shouldAsk: true,
       });
-      vi.mocked(chooseLiteratureNoteProfile).mockClear();
-      harness.planCreations.mockImplementation(async (keys) => {
+      vi.mocked(openLiteratureNoteProfile).mockClear();
+      harness.planCreations.mockImplementation((keys) => {
         expect(harness.readItems).toHaveBeenCalledOnce();
-        return creationPlans(keys, {
-          item: harness.item,
-          selection: { selector: PAPERS, source: "headless", shouldAsk: true },
-          previews: [
-            {
+        return Effect.succeed(
+          creationPlans(keys, {
+            item: harness.item,
+            selection: {
               selector: PAPERS,
-              label: "Papers",
-              folder: "Papers",
-              citationStyle: null,
-              document: undefined,
-              path: harness.file.path,
-              create: harness.create,
+              source: "headless",
+              shouldAsk: true,
             },
-          ],
-        });
+            previews: [
+              {
+                selector: PAPERS,
+                label: "Papers",
+                folder: "Papers",
+                citationStyle: null,
+                document: undefined,
+                path: harness.file.path,
+                create: harness.create,
+              },
+            ],
+          }),
+        );
       });
       yield* openCompanionNote(harness.deps, REF, {
         action,
@@ -188,7 +221,7 @@ it.effect.each(["open", "update"] as const)(
           headless: PAPERS,
         },
       );
-      expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
       expect(harness.create).toHaveBeenCalledOnce();
       expect(harness.workspace.opened).toEqual([
         openedAt("Papers/Study.md", false),
@@ -210,7 +243,7 @@ it.effect(
         shouldAsk: true,
         reason: m.profile_match_selected({ profile: "Papers" }),
       });
-      vi.mocked(chooseLiteratureNoteProfile).mockClear();
+      vi.mocked(openLiteratureNoteProfile).mockClear();
       yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
         Effect.provide(harness.layer),
       );
@@ -220,7 +253,7 @@ it.effect(
           headless: undefined,
         },
       );
-      expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
       expect(harness.create).toHaveBeenCalledOnce();
       expect(harness.workspace.opened).toEqual([
         openedAt("Papers/Study.md", false),
@@ -236,16 +269,17 @@ it.effect("asks when the selected Profile is unavailable", () =>
       shouldAsk: true,
       problem: { kind: "unavailable-profile", selector: BOOKS },
     });
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
+    pickerAnswersOnce(undefined);
     yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
       Effect.provide(harness.layer),
     );
-    expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+    expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
       harness.deps.app,
       expect.objectContaining({
         preselected: "default",
         problem: expect.stringContaining(BOOKS),
       }),
+      expect.any(Function),
     );
     expect(harness.create).not.toHaveBeenCalled();
     expect(harness.workspace.opened).toEqual([]);
@@ -259,13 +293,14 @@ it.effect("leaves a cancelled picker without a note or navigation", () =>
       source: "bound",
       shouldAsk: true,
     });
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
+    pickerAnswersOnce(undefined);
     yield* openCompanionNote(harness.deps, REF, { action: "open" }).pipe(
       Effect.provide(harness.layer),
     );
-    expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+    expect(openLiteratureNoteProfile).toHaveBeenLastCalledWith(
       harness.deps.app,
       expect.objectContaining({ preselected: "default", source: "bound" }),
+      expect.any(Function),
     );
     expect(harness.create).not.toHaveBeenCalled();
     expect(harness.workspace.opened).toEqual([]);
@@ -279,14 +314,14 @@ it.effect("creates directly when only Default is available", () =>
       source: "bound",
       shouldAsk: false,
     });
-    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+    vi.mocked(openLiteratureNoteProfile).mockClear();
     yield* openCompanionNote(harness.deps, REF, { action: "update" }).pipe(
       Effect.provide(harness.layer),
     );
     expect(harness.create).toHaveBeenCalledExactlyOnceWith(harness.item, {
       profile: "default",
     });
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(harness.planCreations).toHaveBeenCalledOnce();
     expect(harness.workspace.opened).toHaveLength(1);
   }),
@@ -328,9 +363,9 @@ it.effect(
         outcome: "refused" as const,
         diagnostic: unknownProfileDiagnostic(PAPERS),
       };
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue(target);
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed(target),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         profile: PAPERS,
@@ -353,10 +388,9 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
       source: "headless",
       shouldAsk: true,
     });
-    vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue({
-      outcome: "existing",
-      files: [harness.file],
-    });
+    harness.feature.resolveCompanionNote.mockReturnValue(
+      Effect.succeed({ outcome: "existing", files: [harness.file] }),
+    );
     yield* openCompanionNote(harness.deps, REF, {
       action: "update",
       profile: BOOKS,
@@ -364,7 +398,7 @@ it.effect("opens a matching existing note and updates under its stamp", () =>
     }).pipe(Effect.provide(harness.layer));
     expect(harness.workspace.opened).toHaveLength(1);
     expect(harness.excluded).toEqual([harness.file.path]);
-    expect(harness.deps.noteFeature.updateNote).toHaveBeenCalledExactlyOnceWith(
+    expect(harness.feature.updateNote).toHaveBeenCalledExactlyOnceWith(
       harness.file,
       { indexedKey: "ABCD2345", scope: "metadata" },
     );
@@ -389,15 +423,15 @@ it.effect(
           path: harness.file.path,
         }),
       };
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue(target);
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed(target),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "update",
         profile: "default",
       }).pipe(Effect.provide(harness.layer));
       expect(harness.workspace.opened).toHaveLength(1);
-      expect(harness.deps.noteFeature.updateNote).not.toHaveBeenCalled();
+      expect(harness.feature.updateNote).not.toHaveBeenCalled();
       expect(harness.create).not.toHaveBeenCalled();
       const notice = companionNoteNotice(
         harness.deps.app,
@@ -421,12 +455,9 @@ it.effect.each(["tab"] as const)(
         source: "headless",
         shouldAsk: false,
       });
-      vi.mocked(
-        harness.deps.noteFeature.resolveCompanionNote,
-      ).mockResolvedValue({
-        outcome: "existing",
-        files: [harness.file],
-      });
+      harness.feature.resolveCompanionNote.mockReturnValue(
+        Effect.succeed({ outcome: "existing", files: [harness.file] }),
+      );
       yield* openCompanionNote(harness.deps, REF, {
         action: "open",
         paneType,
@@ -478,28 +509,29 @@ it.effect.each(["open", "update"] as const)(
         files: [file] as [TFile],
         keptProfile: { selector: BOOKS, label: "Books" },
       };
-      const updateNote = vi.fn();
-      const createNote = vi.fn();
-      const resolveCompanionNote = vi.fn(async () => target);
-      const deps: CompanionNoteDeps = {
+      const updateNote = vi.fn<NoteFeature["Service"]["updateNote"]>();
+      const createNote = vi.fn<NoteFeature["Service"]["createNote"]>();
+      const resolveCompanionNote = vi.fn<
+        NoteFeature["Service"]["resolveCompanionNote"]
+      >(() => Effect.succeed(target));
+      const deps: InteractiveCreationPorts = {
         createProfile: vi.fn(),
         importProfile: vi.fn(),
         app: stubService<App>("App", {}),
-        noteFeature: stubService<CompanionNoteDeps["noteFeature"]>(
-          "NoteFeature",
-          {
-            resolveCompanionNote,
-            updateNote,
-            createNote,
-          },
-        ),
       };
       const workspace = new MemoryWorkspace({ layoutReady: true });
-      vi.mocked(chooseLiteratureNoteProfile).mockClear();
+      vi.mocked(openLiteratureNoteProfile).mockClear();
       const notifier = testNotifier();
 
       yield* openCompanionNote(deps, REF, { action, profile: PAPERS }).pipe(
-        Effect.provide(flowLayer({ workspace, excluded: [], notifier })),
+        Effect.provide(
+          flowLayer({
+            workspace,
+            excluded: [],
+            notifier,
+            feature: { resolveCompanionNote, updateNote, createNote },
+          }),
+        ),
       );
 
       expect(workspace.opened).toEqual([openedAt("Books/Paper.md", false)]);
@@ -508,7 +540,7 @@ it.effect.each(["open", "update"] as const)(
       });
       expect(updateNote).not.toHaveBeenCalled();
       expect(createNote).not.toHaveBeenCalled();
-      expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+      expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
       expect(texts(notifier.notices)).toEqual([
         m.notice_literature_note_profile_kept({ label: "Books" }),
       ]);

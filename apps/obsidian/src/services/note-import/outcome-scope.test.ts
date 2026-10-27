@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // One initiating import batch reusing one retention, through the real writer.
 import { it } from "@effect/vitest";
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import {
   mkdir,
   mkdtemp,
@@ -29,16 +29,11 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
-import type { VaultSource } from "@/lib/obsidian-vault";
-import { AttachmentImportService } from "@/services/attachment-import/service";
 import { bluePng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import type { ExcerptImage } from "@/services/excerpt-image/format";
 import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
-import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { ExcerptEntry } from "@/services/excerpt-image/service";
@@ -131,19 +126,6 @@ async function setupFixture(
     },
   };
   const paths = { dataDir, baseAttachmentPath: null };
-  const runtime = testRuntime();
-  const attachments = stack.use(
-    new AttachmentImportService({
-      bridge: effectBridge(runtime),
-      app,
-      settings: {
-        current: Effect.succeed(settings),
-        changes: Stream.empty,
-      },
-      zoteroPref: { ...paths, "resolved-changed": Stream.empty },
-    }),
-  );
-  await attachments.ready;
 
   const entries = new Map<string, ExcerptEntry>();
   const render = vi.fn(async (): Promise<ExcerptImage> => ({
@@ -177,13 +159,8 @@ async function setupFixture(
   );
   /** Every scope the import writer handed to its excerpt preparation. */
   const scopes: (ExcerptOutcomeScope | undefined)[] = [];
-  const preparation = createExcerptPreparation({
-    app,
-    paths,
-    resolver: service,
-  });
   const fakes: ImporterFakes = {
-    vault: host.app.vault as unknown as VaultSource,
+    vault: host.app.vault,
     workspace: host.app.workspace,
     profile: profileReader(settings),
     noteIndex: {
@@ -196,10 +173,21 @@ async function setupFixture(
       renderProfileAnnotation: renderAnnotation,
     },
     zoteroPref: paths,
-    attachmentImport: attachments,
-    excerptImages: (options) => {
-      scopes.push(options.outcomes);
-      return preparation(options);
+    attachmentImport: {
+      settings,
+      fileManager: app.fileManager,
+      basePath: vaultRoot,
+    },
+    excerptImages: {
+      resolver: {
+        operation: (options) => {
+          scopes.push(options?.outcomes);
+          return service.operation(options);
+        },
+        resolve: (request, signal) => service.resolve(request, signal),
+      },
+      fileManager: app.fileManager,
+      metadataCache: app.metadataCache,
     },
   };
   const { reads } = await stack.use(

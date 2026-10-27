@@ -632,7 +632,10 @@ async function pluginData(stored?: unknown) {
       "ExcerptDisplay",
       {},
     ),
-    noteFeature: stubService<LibraryViewDeps["noteFeature"]>("NoteFeature", {}),
+    noteFeature: stubService<LibraryViewDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {},
+    ),
     zoteroPref: { dataDir: "/Zotero", baseAttachmentPath: null },
     libraryTagNames: async () => [],
     allowEditing: vi.fn(),

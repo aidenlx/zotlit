@@ -13,6 +13,7 @@ import {
 import { describe, expect } from "vitest";
 
 import { openTestBridge } from "./__fixtures__/effect-bridge";
+import { AbortError } from "./abort-error";
 import { scopedBridge, valueOr } from "./effect-bridge";
 
 class BridgeError extends Schema.TaggedError<
@@ -115,6 +116,21 @@ it.effect("unloading the runtime interrupts a pending runPromiseExit", () =>
       expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true);
     }
   }),
+);
+
+it.effect(
+  "unloading the runtime rejects a pending runPromise with an AbortError",
+  () =>
+    Effect.promise(async () => {
+      const bridge = openTestBridge();
+      const pending = bridge.runPromise(Effect.never);
+      await bridge[Symbol.asyncDispose]();
+      const error: unknown = await pending.then(
+        () => undefined,
+        (reason: unknown) => reason,
+      );
+      expect(AbortError.test(error)).toBe(true);
+    }),
 );
 
 describe("valueOr", () => {

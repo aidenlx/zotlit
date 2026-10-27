@@ -1,16 +1,19 @@
-import { getLogLevels, isLogLevel } from "@logtape/logtape";
+import { Effect } from "effect";
 import { strToU8, zipSync } from "fflate";
-import { FileSystemAdapter } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
+import { withLogCategory } from "@/lib/effect-log-category";
 import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
+import { LegacyPortError, portCall } from "@/lib/legacy-port";
+import { reportOutcome } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
 import { requireElectron } from "@/lib/require";
 import { LOG_FILENAME } from "@/services/log/service";
+import { isLogLevel, LOG_LEVELS } from "@/services/settings/schema";
 import type { LogLevel } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import {
   profileCustomization,
   saveProfileCustomization,
@@ -18,11 +21,18 @@ import {
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
+import {
+  clearExcerptCache,
+  resetCitationIndex,
+  resetLanguagePacks,
+} from "./recovery";
 import { templateEngineItems } from "./templates";
 
-const logger = getLogger(["setting-tab", "advanced"]);
-
 const LOG_LEVEL_OFF_KEY = "off";
+
+/** The vault path of the plugin's log file. */
+const logPath = (ctx: SettingTabContext) =>
+  `${ctx.manifest.dir}/${LOG_FILENAME}`;
 
 /** The settings key whose stored `LogLevel | null` maps through {@link encodeLogLevel}. */
 export const LOG_LEVEL_KEY: SettingsKey = "log.level";
@@ -52,7 +62,7 @@ const LOG_LEVEL_OPTIONS: Record<string, string> = (() => {
   const opts: Record<string, string> = {
     [LOG_LEVEL_OFF_KEY]: m.settings_log_level_off(),
   };
-  for (const level of getLogLevels()) opts[level] = level;
+  for (const level of LOG_LEVELS) opts[level] = level;
   return opts;
 })();
 
@@ -64,7 +74,9 @@ export function advancedPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean =>
-    !ctx.bridge.runSync(ctx.settings.current)["log.to-file"];
+    !ctx.tab.sync(PluginSettings.use((settings) => settings.current))[
+      "log.to-file"
+    ];
   return [
     ...(ctx.webWorkbenchEnabled
       ? [
@@ -139,14 +151,14 @@ export function advancedPageItems(
           name: m.settings_log_open_file_name(),
           desc: m.settings_log_open_file_desc(),
           disabled: fileDisabled,
-          action: () => void openLogFile(ctx),
+          action: () => void ctx.tab.run(openLogFile(logPath(ctx))),
         },
         {
           id: "settings_log_export",
           name: m.settings_log_export_name(),
           desc: m.settings_log_export_desc(),
           disabled: fileDisabled,
-          action: () => void exportLogArchive(ctx),
+          action: () => void ctx.tab.run(exportLogArchive(logPath(ctx))),
         },
       ],
     },
@@ -159,19 +171,59 @@ export function advancedPageItems(
           id: "settings_excerpt_cache_clear",
           name: m.settings_excerpt_cache_clear_name(),
           desc: m.settings_excerpt_cache_clear_desc(),
-          action: () => showExcerptCacheClear(ctx),
+          action: () =>
+            void ctx.tab.run(
+              clearExcerptCache(
+                awaitConfirm(
+                  {
+                    title: m.settings_excerpt_cache_clear_name(),
+                    content: m.settings_excerpt_cache_clear_confirm_body(),
+                    action: m.settings_excerpt_cache_clear_action(),
+                    destructive: true,
+                  },
+                  ctx.app,
+                ),
+              ),
+            ),
         },
         {
           id: "settings_citation_index_reset",
           name: m.settings_citation_index_reset_name(),
           desc: m.settings_citation_index_reset_desc(),
-          action: () => void resetCitationIndex(ctx),
+          action: () =>
+            void ctx.tab.run(
+              resetCitationIndex(
+                awaitConfirm(
+                  {
+                    title: m.settings_citation_index_reset_confirm_title(),
+                    content: m.settings_citation_index_reset_confirm_body(),
+                    action: m.settings_citation_index_reset_action(),
+                    destructive: true,
+                  },
+                  ctx.app,
+                ),
+              ),
+            ),
         },
         {
           id: "settings_language_pack_reset",
           name: m.settings_language_pack_reset_name(),
           desc: m.settings_language_pack_reset_desc(),
-          action: () => void resetLanguagePacks(ctx),
+          action: () =>
+            void ctx.tab.run(
+              resetLanguagePacks(
+                awaitConfirm(
+                  {
+                    title: m.settings_language_pack_reset_confirm_title(),
+                    content: m.settings_language_pack_reset_confirm_body(),
+                    action: m.settings_language_pack_reset_action(),
+                    destructive: true,
+                  },
+                  ctx.app,
+                ),
+              ),
+              m.settings_failed_language_pack_reset(),
+            ),
         },
       ],
     },
@@ -179,116 +231,57 @@ export function advancedPageItems(
 }
 
 /**
- * Clears every stored citekey scan and rebuilds it from the vault. The rebuild
- * runs on past this call, so the notice names it rather than claiming it is done.
+ * Open the log file at the vault path `path` in the system's default app. A
+ * failure is logged and a notice tells the user.
  */
-async function resetCitationIndex(ctx: SettingTabContext): Promise<void> {
-  const confirmed = await confirm(
-    {
-      title: m.settings_citation_index_reset_confirm_title(),
-      content: m.settings_citation_index_reset_confirm_body(),
-      action: m.settings_citation_index_reset_action(),
-      destructive: true,
-    },
-    ctx.app,
-  );
-  if (!confirmed) return;
-  try {
-    await ctx.citationIndex.reset();
-    new BaseNotice(m.notice_citation_index_reset());
-  } catch (error) {
-    logger.error("Failed to reset the citation index", { error });
-    new BaseNotice(m.notice_citation_index_reset_failed());
-  }
-}
-
-async function showExcerptCacheClear(ctx: SettingTabContext): Promise<void> {
-  const outcome = await clearExcerptCache({
-    confirm: () =>
-      confirm(
-        {
-          title: m.settings_excerpt_cache_clear_name(),
-          content: m.settings_excerpt_cache_clear_confirm_body(),
-          action: m.settings_excerpt_cache_clear_action(),
-          destructive: true,
-        },
-        ctx.app,
-      ),
-    // The Held Reads go first: a card that repainted from the store while it
-    // emptied would hold an image the clear removed.
-    clear: async () => {
-      ctx.excerptDisplay.clear();
-      await ctx.excerptImage.clear();
-    },
-  });
-  if (outcome === "cleared") new BaseNotice(m.notice_excerpt_cache_cleared());
-  else if (outcome === "failed")
-    new BaseNotice(m.notice_excerpt_cache_clear_failed());
-}
-
-/** The confirmation decision gates storage; the settings seam renders its outcome. */
-export async function clearExcerptCache(actions: {
-  confirm: () => Promise<boolean>;
-  clear: () => Promise<void>;
-}): Promise<"cancelled" | "cleared" | "failed"> {
-  if (!(await actions.confirm())) return "cancelled";
-  try {
-    await actions.clear();
-    return "cleared";
-  } catch (error) {
-    logger.error("Failed to clear excerpt image cache", { error });
-    return "failed";
-  }
-}
+export const openLogFile = Effect.fn("SettingTab.openLogFile")(
+  function* (path: string) {
+    yield* reportOutcome(
+      Effect.gen(function* () {
+        const fullPath = yield* (yield* Vault).fullPath(path);
+        // Desktop-only plugin: the vault is always on a file system.
+        if (fullPath === null)
+          return yield* Effect.die(new Error("The vault is not on disk"));
+        const refused = yield* portCall("open-log-file", () =>
+          requireElectron().shell.openPath(fullPath),
+        );
+        if (refused)
+          return yield* new LegacyPortError({
+            step: "open-log-file",
+            cause: new Error(refused),
+          });
+      }),
+      {
+        success: () => undefined,
+        error: () => m.notice_open_log_file_failed(),
+      },
+    ).pipe(Effect.annotateLogs({ path }));
+  },
+  withLogCategory("setting-tab", "advanced"),
+);
 
 /**
- * Clears every downloaded Language Pack and the consent behind it. The pack
- * applied at startup keeps running, so the notice names the restart.
+ * Save the log file at the vault path `path` as a zip the user downloads. A
+ * failure is logged and a notice tells the user.
  */
-async function resetLanguagePacks(ctx: SettingTabContext): Promise<void> {
-  const confirmed = await confirm(
-    {
-      title: m.settings_language_pack_reset_confirm_title(),
-      content: m.settings_language_pack_reset_confirm_body(),
-      action: m.settings_language_pack_reset_action(),
-      destructive: true,
-    },
-    ctx.app,
-  );
-  if (!confirmed) return;
-  ctx.languagePack.reset();
-  new BaseNotice(m.notice_language_pack_reset());
-}
-
-async function openLogFile(ctx: SettingTabContext): Promise<void> {
-  const { adapter } = ctx.app.vault;
-  const logPath = `${ctx.manifest.dir}/${LOG_FILENAME}`;
-  if (!(adapter instanceof FileSystemAdapter)) {
-    new BaseNotice(m.notice_open_log_file_failed());
-    logger.error("Vault adapter is not a FileSystemAdapter", { logPath });
-    return;
-  }
-  const fullPath = adapter.getFullPath(logPath);
-  try {
-    const { shell } = requireElectron();
-    const errMsg = await shell.openPath(fullPath);
-    if (errMsg) throw new Error(errMsg);
-  } catch (error) {
-    logger.error("Failed to open log file", { fullPath, error });
-    new BaseNotice(m.notice_open_log_file_failed());
-  }
-}
-
-async function exportLogArchive(ctx: SettingTabContext): Promise<void> {
-  const { adapter } = ctx.app.vault;
-  const logPath = `${ctx.manifest.dir}/${LOG_FILENAME}`;
-  try {
-    const text = await adapter.read(logPath);
-    const zipBytes = zipSync({ [LOG_FILENAME]: strToU8(text) });
-    const blob = new Blob([zipBytes as BlobPart], { type: "application/zip" });
-    saveFile(blob, `zotlit-logs-${exportTimestamp()}.zip`);
-  } catch (error) {
-    logger.error("Failed to export log archive", { logPath, error });
-    new BaseNotice(m.notice_export_log_file_failed());
-  }
-}
+export const exportLogArchive = Effect.fn("SettingTab.exportLogArchive")(
+  function* (path: string) {
+    yield* reportOutcome(
+      Effect.gen(function* () {
+        const text = yield* (yield* Vault).readPath(path);
+        yield* Effect.sync(() => {
+          const zipBytes = zipSync({ [LOG_FILENAME]: strToU8(text) });
+          const blob = new Blob([zipBytes as BlobPart], {
+            type: "application/zip",
+          });
+          saveFile(blob, `zotlit-logs-${exportTimestamp()}.zip`);
+        });
+      }),
+      {
+        success: () => undefined,
+        error: () => m.notice_export_log_file_failed(),
+      },
+    ).pipe(Effect.annotateLogs({ path }));
+  },
+  withLogCategory("setting-tab", "advanced"),
+);

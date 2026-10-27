@@ -6,6 +6,8 @@
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1147
 
+import type { DateTime } from "effect";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   LocalApiFailure,
@@ -25,7 +27,7 @@ export interface CapabilityNotice {
   /** Whether it waits to be dismissed rather than timing out. */
   sticky: boolean;
   /** Optional display time; problems use the renderer's normal reading time. */
-  duration?: Temporal.Duration;
+  durationMs?: number;
   /** The one action offered, or null where there is nothing to open. */
   action: string | null;
 }
@@ -45,7 +47,7 @@ export function allowEditingNotice(
   if (!("failure" in result)) {
     return {
       ...plainNotice(m.notice_zotero_editing_enabled()),
-      duration: Temporal.Duration.from({ seconds: 3 }),
+      durationMs: 3000,
     };
   }
   switch (result.failure.kind) {
@@ -101,22 +103,25 @@ export class CapabilityNoticeLedger {
   readonly #conflictsSpoken = new Set<string>();
 
   /** @param now the clock a cooldown's remaining seconds are read against. */
-  constructor(now: () => Temporal.Instant) {
+  constructor(now: () => DateTime.Utc) {
     this.#now = now;
   }
 
+  /** The Attachments an episode is open for, which {@link refresh} re-reads. */
+  openEpisodes(): string[] {
+    return [...this.#episodes.keys()];
+  }
+
   /**
-   * Re-reads every Attachment an episode is open for and closes the ones that
-   * have cleared, so an Attachment that can be edited again speaks afresh the
-   * next time it cannot.
+   * Closes the episodes of the Attachments that have cleared, so an Attachment
+   * that can be edited again speaks afresh the next time it cannot.
    *
-   * @param capabilityOf one Attachment's Editing Capability.
+   * @param capabilities the Editing Capability of each Attachment in
+   *   {@link openEpisodes}, read again.
    */
-  refresh(capabilityOf: (attachmentKey: string) => EditingCapability): void {
-    // Deleting the entry being visited is safe: a Map iterator skips only what
-    // was removed before it got there.
-    for (const attachmentKey of this.#episodes.keys()) {
-      if (capabilityOf(attachmentKey).kind === "writable") {
+  refresh(capabilities: ReadonlyMap<string, EditingCapability>): void {
+    for (const [attachmentKey, capability] of capabilities) {
+      if (capability.kind === "writable") {
         this.#episodes.delete(attachmentKey);
       }
     }

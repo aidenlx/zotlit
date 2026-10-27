@@ -1,47 +1,153 @@
 // The Effect service over the Annotation Repository core.
-import { Clock, Context, Effect, Layer, PubSub, Stream } from "effect";
+import {
+  Clock,
+  Context,
+  Effect,
+  FiberMap,
+  FiberSet,
+  Layer,
+  PubSub,
+  Stream,
+} from "effect";
 
 import { scopedBridge } from "@/lib/effect-bridge";
-import { instantClock } from "@/lib/effect-clock";
 import { withLogCategory } from "@/lib/effect-log";
-import { filterTag } from "@/lib/effect-stream";
+import { filterTag, forkEach } from "@/lib/effect-stream";
+import { portCall } from "@/lib/legacy-port";
 import { ExcerptImages } from "@/services/excerpt-image/layer";
-import { savedExcerptRequestOver } from "@/services/excerpt-image/request";
+import { savedExcerptRequestFor } from "@/services/excerpt-image/request";
 import type { Held } from "@/services/query-client/service";
 import { QueryClients } from "@/services/query-client/service";
 import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
+import { changed } from "@/services/zotero-reads/events";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { AnnotationRepositoryCore } from "./repository";
+import type { EditingCapability } from "./capability";
+import type { DatabaseRowsError } from "./core/bridge";
+import {
+  annotationState,
+  discardTagDraft,
+  discardTextDraft,
+  editTags,
+  editTextField,
+  holdUnsavableDrafts,
+  retryTextDraft,
+  submitTags,
+  submitTextField,
+  tagDraftFor,
+  textDraftFor,
+} from "./core/drafts";
+import {
+  canRedo,
+  canUndo,
+  closeHistory,
+  openHistory,
+  redo,
+  undo,
+} from "./core/history-steps";
+import {
+  capability,
+  capabilityFor,
+  dropDatabasePartition,
+  hold,
+  inRepository,
+  peek,
+  read,
+  refresh,
+  refreshLocks,
+  sourceMoved,
+} from "./core/lists";
+import type { AnnotationLibraryUnresolved } from "./core/lists";
 import type {
-  AnnotationDraft,
   AnnotationList,
   AnnotationRecord,
   AnnotationRepositoryCoreDeps,
   AnnotationRepositoryEvent,
   AnnotationSource,
   AnnotationState,
+  TagDraft,
+  TextFieldDraft,
+} from "./core/model";
+import { mutationFor } from "./core/outcomes";
+import { CoreState } from "./core/state";
+import {
+  createAnnotation,
+  deleteAnnotation,
+  deleteAnnotations,
+  discardConflict,
+  patchColor,
+  patchColors,
+  patchComment,
+  patchGeometry,
+  retryWrite,
+} from "./core/writes";
+import type {
   CreateOutcome,
-  EditingCapability,
+  WriteReadError,
+  WriteRunFailed,
+} from "./core/writes";
+import type { HistoryOutcome } from "./history";
+import type {
+  AnnotationDraft,
   GeometryEdit,
   GeometryInput,
-  HistoryOutcome,
   MutationState,
-  TagDraft,
   TextField,
-  TextFieldDraft,
-} from "./repository";
+} from "./write";
 
-export * from "./repository";
+export type { CreateOutcome, WriteReadError } from "./core/writes";
+export { WriteRunFailed } from "./core/writes";
+export {
+  UNHELD_RETENTION,
+  LocalApiReadFailed,
+  AnnotationLibraryUnresolved,
+} from "./core/lists";
+export type {
+  DatabaseAnnotationSource,
+  AnnotationSource,
+  AnnotationRecord,
+  AnnotationList,
+  TextFieldDraftState,
+  TextFieldDraft,
+  TagDraftState,
+  TagDraft,
+  AnnotationState,
+  AnnotationRepositoryEvent,
+  AnnotationRepositoryCoreDeps,
+} from "./core/model";
+export type { EditingCapability } from "./capability";
+export type { AnnotationLock, LockReason } from "./lock";
+export type {
+  HistoryDirection,
+  HistoryEditKind,
+  HistoryOutcome,
+  HistoryStep,
+} from "./history";
+export type {
+  AnnotationDraft,
+  GeometryEdit,
+  GeometryInput,
+  MutationState,
+  TextField,
+  WriteConflict,
+  WriteFailure,
+} from "./write";
+export type { DatabaseRowsError } from "./core/bridge";
 
 export type AnnotationRepositoryShape = {
   /**
    * @param attachmentKey the Attachment's Indexed Key.
    * @returns the list that stands, with the Pending Proposal of each write in
-   *   flight drawn over it, or null while no read has answered for it.
+   *   flight drawn over it, or null while no read has answered for it. It
+   *   fails where the read that rebinds the Attachment to its database fails.
    */
-  read(attachmentKey: string): Effect.Effect<AnnotationList | null>;
+  read(
+    attachmentKey: string,
+  ): Effect.Effect<
+    AnnotationList | null,
+    DatabaseRowsError | AnnotationLibraryUnresolved
+  >;
   /**
    * Keeps the lists of these Attachments published while a surface shows
    * them: a database change reads them again, and a write finds their
@@ -123,7 +229,7 @@ export type AnnotationRepositoryShape = {
     field: TextField,
     annotationKey: string,
     options?: { automatic?: boolean },
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /** Keep Zotero's reviewed value of one text field and discard the draft. */
   discardTextDraft(
     field: TextField,
@@ -133,7 +239,7 @@ export type AnnotationRepositoryShape = {
   retryTextDraft(
     field: TextField,
     annotationKey: string,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /** The active Zotero database's shared tag draft for one Annotation. */
   tagDraftFor(annotationKey: string): Effect.Effect<TagDraft | null>;
   /**
@@ -166,7 +272,7 @@ export type AnnotationRepositoryShape = {
   submitTags(
     annotationKey: string,
     options?: { automatic?: boolean },
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /** Drop a held tag draft and keep the tags Zotero holds. */
   discardTagDraft(annotationKey: string): Effect.Effect<void>;
   /**
@@ -194,7 +300,7 @@ export type AnnotationRepositoryShape = {
     attachmentKey: string,
     draft: Omit<AnnotationDraft, "parentKey">,
     options?: { group?: string },
-  ): Effect.Effect<CreateOutcome>;
+  ): Effect.Effect<CreateOutcome, WriteReadError>;
   /**
    * Recolour one Annotation, of whatever type: Zotero's colour setter is one
    * rule for all six, so an ink stroke recolours like a highlight.
@@ -205,7 +311,7 @@ export type AnnotationRepositoryShape = {
   patchColor(
     annotationKey: string,
     color: string,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Recolour a group of Annotations in Zotero, from one gesture on the Card
    * Selection. Each Annotation goes out as a request of its own and keeps its
@@ -230,7 +336,7 @@ export type AnnotationRepositoryShape = {
   patchComment(
     annotationKey: string,
     comment: string,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Save one Geometry Edit: the new position, the Sort Index recomputed from
    * it, and for a highlight or underline the quoted text. The record Zotero
@@ -246,7 +352,7 @@ export type AnnotationRepositoryShape = {
     annotationKey: string,
     edit: GeometryEdit,
     input: GeometryInput,
-  ): Effect.Effect<MutationState>;
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Erase one Annotation in Zotero. The record leaves the Attachment's list
    * only once Zotero has answered, so the card and the Annotation Mark stand
@@ -254,7 +360,9 @@ export type AnnotationRepositoryShape = {
    *
    * @param annotationKey the Annotation's Indexed Key.
    */
-  deleteAnnotation(annotationKey: string): Effect.Effect<MutationState>;
+  deleteAnnotation(
+    annotationKey: string,
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Erase a group of Annotations in Zotero, from one gesture on the Card
    * Selection. Each Annotation goes out as a request of its own and keeps its
@@ -279,7 +387,9 @@ export type AnnotationRepositoryShape = {
    * @returns what the second write left, which is `idle` where it landed and
    *   another conflict where Zotero moved again.
    */
-  retryWrite(annotationKey: string): Effect.Effect<MutationState>;
+  retryWrite(
+    annotationKey: string,
+  ): Effect.Effect<MutationState, WriteRunFailed>;
   /**
    * Leave Zotero's copy as it stands, from the card's "Discard". The card goes
    * back to what the last read answered; nothing is sent.
@@ -324,9 +434,13 @@ export type AnnotationRepositoryShape = {
    *
    * @param attachmentKey the Attachment's Indexed Key.
    */
-  undo(attachmentKey: string): Effect.Effect<HistoryOutcome>;
+  undo(
+    attachmentKey: string,
+  ): Effect.Effect<HistoryOutcome, WriteRunFailed | WriteReadError>;
   /** Step one undone edit forward again. */
-  redo(attachmentKey: string): Effect.Effect<HistoryOutcome>;
+  redo(
+    attachmentKey: string,
+  ): Effect.Effect<HistoryOutcome, WriteRunFailed | WriteReadError>;
   readonly annotationsChanged: Stream.Stream<string>;
   readonly excerptPixelsChanged: Stream.Stream<{
     record: AnnotationRecord;
@@ -341,6 +455,38 @@ export type AnnotationRepositoryShape = {
   }>;
 };
 
+/**
+ * Answers an Attachment's Annotations from the Annotation Source that is active
+ * for it, and says which source answered. Reads are held on the plugin-wide
+ * query client, so the overlay and the Annotation View asking for one Attachment
+ * at once cost one database read.
+ *
+ * It is also the one write path. A command takes Indexed Keys alone: the record
+ * the active source answered supplies the version the write sends as its
+ * precondition, and a record with no version — the Zotero DB source's — refuses
+ * the write before any request. Each write is a mutation on the plugin-wide
+ * query client, run one at a time per Annotation, and its variables are its
+ * Pending Proposal: every list this repository publishes draws the proposal in
+ * place of the confirmed fields until the write settles, and the query cache
+ * behind it keeps the confirmed record every write, conflict, and History Step
+ * is decided against.
+ *
+ * The Zotero DB partition is dropped wholesale whenever the database refreshes,
+ * and the Zotero Local API partition whenever that source moves — a Freshness
+ * Signal, another Zotero database, a capability that changed. Every Attachment
+ * the drop concerns is announced through `annotations-changed`, which is the
+ * only signal that a list was superseded, and read again here, so the pixels
+ * such a change moved are announced even with no surface mounted to ask.
+ *
+ * A surface holds the lists it shows through {@link AnnotationRepositoryShape.hold}
+ * and reads them through {@link AnnotationRepositoryShape.read}: the reads it asks
+ * in one task the Zotero DB source answers in one batch read. A list no surface
+ * holds any more is let go, so a view over a whole Library leaves nothing
+ * behind.
+ *
+ * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+ * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
+ */
 export class AnnotationRepository extends Context.Service<
   AnnotationRepository,
   AnnotationRepositoryShape
@@ -361,169 +507,255 @@ export function layerAnnotationRepository(options: {
       const queries = yield* QueryClients;
       const api = yield* ZoteroLocalApi;
       const pref = yield* ZoteroPref;
-      const now = instantClock(yield* Clock.Clock);
+      const clock = yield* Clock.Clock;
       const bridge = yield* scopedBridge;
       const bus = yield* PubSub.unbounded<AnnotationRepositoryEvent>();
       yield* Effect.addFinalizer(() => PubSub.shutdown(bus));
-      const excerptRequest = savedExcerptRequestOver({ reads, pref, bridge });
       // A session's first read of an Attachment has no list that stood
       // before it to compare against, so it is compared against the image
       // this device persists for the Annotation instead — the display's own
       // stored-outcome read, so an Annotation this device never cached has
       // no baseline here exactly as it has no image to replace there.
       const persistedExcerpt: AnnotationRepositoryCoreDeps["persistedExcerpt"] =
-        async (annotation, source) => {
-          const request = await excerptRequest({ annotation, source });
+        Effect.fnUntraced(function* (annotation, source) {
+          const request = yield* savedExcerptRequestFor({
+            annotation,
+            source,
+          }).pipe(
+            Effect.provideService(ZoteroReads, reads),
+            Effect.provideService(ZoteroPref, pref),
+          );
           if (!request) return null;
-          return (await images.stored(request))?.identity.fingerprint ?? null;
-        };
-      const core = yield* Effect.acquireDisposable(
-        Effect.tryPromise(() =>
-          Promise.resolve(
-            new AnnotationRepositoryCore({
-              bridge,
-              db: reads,
-              queryClient: queries,
-              localApi: api,
-              publish: (event) => {
-                void PubSub.publishUnsafe(bus, event);
-              },
-              writeToken: options.writeToken,
-              now,
-              persistedExcerpt,
-            }),
-          ),
+          // The Excerpt Image service is legacy until #1790: its stored read
+          // is the one Promise port left here.
+          const stored = yield* portCall("excerpt-stored", () =>
+            images.stored(request),
+          );
+          return stored?.identity.fingerprint ?? null;
+        });
+      const fibers = yield* FiberSet.make();
+      const refreshes = yield* FiberMap.make<
+        string,
+        AnnotationList | null,
+        never
+      >();
+      const idleSaves = yield* FiberMap.make<string>();
+      const burstSaves = yield* FiberMap.make<string>();
+      const shared = new CoreState(
+        {
+          bridge,
+          db: reads,
+          queryClient: queries,
+          localApi: api,
+          publish: (event) => {
+            void PubSub.publishUnsafe(bus, event);
+          },
+          writeToken: options.writeToken,
+          persistedExcerpt,
+        },
+        { fibers, refreshes, idleSaves, burstSaves },
+      );
+      // A command still queued when the repository closes sends nothing.
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          shared.commandGeneration += 1;
+        }),
+      );
+      // A database change and a Local API source move supersede lists; the
+      // reads they start run on the layer's Scope.
+      yield* forkEach(changed(reads), () =>
+        Effect.andThen(
+          dropDatabasePartition(shared),
+          FiberSet.run(fibers, refreshLocks(shared)),
         ),
       );
+      yield* forkEach(api.changes, () => sourceMoved(shared));
+      // A draft that can no longer be saved is held for an explicit save.
+      yield* forkEach(api.capabilityChanges, () => holdUnsavableDrafts(shared));
+      // The repository's reads read the time from the layer's Clock,
+      // whichever fiber calls them.
+      const onLayerClock = Effect.provideService(Clock.Clock, clock);
       const events = Stream.fromPubSub(bus);
       const byTag = <T extends AnnotationRepositoryEvent["_tag"]>(tag: T) =>
         filterTag(events, tag);
       return AnnotationRepository.of({
         read: Effect.fn("AnnotationRepository.read")((attachmentKey) =>
-          Effect.promise(() => core.read(attachmentKey)),
+          read(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         hold: Effect.fn("AnnotationRepository.hold")((attachmentKeys) =>
-          Effect.sync(() => core.hold(attachmentKeys)),
+          hold(shared, attachmentKeys),
         ),
         refresh: Effect.fn("AnnotationRepository.refresh")((attachmentKey) =>
-          Effect.promise(() => core.refresh(attachmentKey)),
+          refresh(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         peek: Effect.fn("AnnotationRepository.peek")((attachmentKey) =>
-          Effect.sync(() => core.peek(attachmentKey)),
+          Effect.sync(() => peek(shared, attachmentKey)),
         ),
         capabilityFor: Effect.fn("AnnotationRepository.capabilityFor")(
           (attachmentKey) =>
-            Effect.sync(() => core.capabilityFor(attachmentKey)),
+            capabilityFor(shared, attachmentKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
-        capability: Effect.sync(() => core.capability),
-        probe: Effect.promise(() => core.probe()).pipe(
-          Effect.withSpan("AnnotationRepository.probe"),
-        ),
+        capability: capability(shared).pipe(inRepository, onLayerClock),
+        probe: api.probe.pipe(Effect.withSpan("AnnotationRepository.probe")),
         mutationFor: Effect.fn("AnnotationRepository.mutationFor")(
-          (annotationKey) => Effect.sync(() => core.mutationFor(annotationKey)),
+          (annotationKey) =>
+            Effect.sync(() => mutationFor(shared, annotationKey)),
         ),
         // Untraced: the annotation view reads it once per changed Annotation.
         annotationState: Effect.fnUntraced(function* (annotationKey) {
-          return yield* Effect.sync(() => core.annotationState(annotationKey));
+          return yield* annotationState(shared, annotationKey).pipe(
+            inRepository,
+            onLayerClock,
+          );
         }),
         // Untraced: the annotation view reads it per Annotation and field.
         textDraftFor: Effect.fnUntraced(function* (field, annotationKey) {
-          return yield* Effect.sync(() =>
-            core.textDraftFor(field, annotationKey),
+          return yield* textDraftFor(shared, field, annotationKey).pipe(
+            inRepository,
+            onLayerClock,
           );
         }),
         editTextField: Effect.fn("AnnotationRepository.editTextField")(
           (field, annotationKey, text) =>
-            Effect.sync(() => core.editTextField(field, annotationKey, text)),
+            editTextField(shared, field, { annotationKey, text }).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         submitTextField: Effect.fn("AnnotationRepository.submitTextField")(
           (field, annotationKey, writeOptions) =>
-            Effect.promise(() =>
-              core.submitTextField(field, annotationKey, writeOptions),
-            ),
+            submitTextField(shared, field, {
+              annotationKey,
+              ...writeOptions,
+            }).pipe(inRepository, onLayerClock),
         ),
         discardTextDraft: Effect.fn("AnnotationRepository.discardTextDraft")(
           (field, annotationKey) =>
-            Effect.sync(() => core.discardTextDraft(field, annotationKey)),
+            discardTextDraft(shared, field, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         retryTextDraft: Effect.fn("AnnotationRepository.retryTextDraft")(
           (field, annotationKey) =>
-            Effect.promise(() => core.retryTextDraft(field, annotationKey)),
+            retryTextDraft(shared, field, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         // Untraced: the annotation view reads it per Annotation.
         tagDraftFor: Effect.fnUntraced(function* (annotationKey) {
-          return yield* Effect.sync(() => core.tagDraftFor(annotationKey));
+          return yield* tagDraftFor(shared, annotationKey).pipe(
+            inRepository,
+            onLayerClock,
+          );
         }),
         editTags: Effect.fn("AnnotationRepository.editTags")(
           (annotationKey, names) =>
-            Effect.sync(() => core.editTags(annotationKey, names)),
+            editTags(shared, annotationKey, names).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         submitTags: Effect.fn("AnnotationRepository.submitTags")(
           (annotationKey, writeOptions) =>
-            Effect.promise(() => core.submitTags(annotationKey, writeOptions)),
+            submitTags(shared, annotationKey, writeOptions).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         discardTagDraft: Effect.fn("AnnotationRepository.discardTagDraft")(
           (annotationKey) =>
-            Effect.sync(() => core.discardTagDraft(annotationKey)),
+            discardTagDraft(shared, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         createAnnotation: Effect.fn("AnnotationRepository.createAnnotation")(
           (attachmentKey, draft, createOptions) =>
-            Effect.promise(() =>
-              core.createAnnotation(attachmentKey, draft, createOptions),
-            ),
+            createAnnotation(shared, attachmentKey, {
+              draft,
+              ...createOptions,
+            }).pipe(inRepository, onLayerClock),
         ),
         patchColor: Effect.fn("AnnotationRepository.patchColor")(
           (annotationKey, color) =>
-            Effect.promise(() => core.patchColor(annotationKey, color)),
+            patchColor(shared, annotationKey, color).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         patchColors: Effect.fn("AnnotationRepository.patchColors")(
           (annotationKeys, color) =>
-            Effect.promise(() => core.patchColors(annotationKeys, color)),
+            patchColors(shared, annotationKeys, color).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         patchComment: Effect.fn("AnnotationRepository.patchComment")(
           (annotationKey, comment) =>
-            Effect.promise(() => core.patchComment(annotationKey, comment)),
+            patchComment(shared, annotationKey, comment).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         patchGeometry: Effect.fn("AnnotationRepository.patchGeometry")(
           (annotationKey, edit, input) =>
-            Effect.promise(() =>
-              core.patchGeometry(annotationKey, edit, input),
+            patchGeometry(shared, annotationKey, { edit, input }).pipe(
+              inRepository,
+              onLayerClock,
             ),
         ),
         deleteAnnotation: Effect.fn("AnnotationRepository.deleteAnnotation")(
           (annotationKey) =>
-            Effect.promise(() => core.deleteAnnotation(annotationKey)),
+            deleteAnnotation(shared, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         deleteAnnotations: Effect.fn("AnnotationRepository.deleteAnnotations")(
           (annotationKeys) =>
-            Effect.promise(() => core.deleteAnnotations(annotationKeys)),
+            deleteAnnotations(shared, annotationKeys).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         retryWrite: Effect.fn("AnnotationRepository.retryWrite")(
           (annotationKey) =>
-            Effect.promise(() => core.retryWrite(annotationKey)),
+            retryWrite(shared, annotationKey).pipe(inRepository, onLayerClock),
         ),
         discardConflict: Effect.fn("AnnotationRepository.discardConflict")(
           (annotationKey) =>
-            Effect.sync(() => core.discardConflict(annotationKey)),
+            discardConflict(shared, annotationKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         openHistory: Effect.fn("AnnotationRepository.openHistory")(
-          (attachmentKey) => Effect.sync(() => core.openHistory(attachmentKey)),
+          (attachmentKey) =>
+            openHistory(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         closeHistory: Effect.fn("AnnotationRepository.closeHistory")(
           (attachmentKey) =>
-            Effect.sync(() => core.closeHistory(attachmentKey)),
+            closeHistory(shared, attachmentKey).pipe(
+              inRepository,
+              onLayerClock,
+            ),
         ),
         canUndo: Effect.fn("AnnotationRepository.canUndo")((attachmentKey) =>
-          Effect.sync(() => core.canUndo(attachmentKey)),
+          canUndo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         canRedo: Effect.fn("AnnotationRepository.canRedo")((attachmentKey) =>
-          Effect.sync(() => core.canRedo(attachmentKey)),
+          canRedo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         undo: Effect.fn("AnnotationRepository.undo")((attachmentKey) =>
-          Effect.promise(() => core.undo(attachmentKey)),
+          undo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         redo: Effect.fn("AnnotationRepository.redo")((attachmentKey) =>
-          Effect.promise(() => core.redo(attachmentKey)),
+          redo(shared, attachmentKey).pipe(inRepository, onLayerClock),
         ),
         annotationsChanged: byTag("annotations-changed").pipe(
           Stream.map(({ attachmentKey }) => attachmentKey),

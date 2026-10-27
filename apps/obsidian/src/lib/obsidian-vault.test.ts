@@ -9,7 +9,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { TFile } from "obsidian";
+import { FileSystemAdapter, TFile } from "obsidian";
 import type { Vault as VaultApi } from "obsidian";
 import { assert, expect, vi } from "vitest";
 
@@ -102,6 +102,47 @@ it.effect("fails any other adapter rejection with VaultError", () =>
       path: "raw.md",
       message: "EACCES: raw.md",
       cause: denied,
+    });
+  }),
+);
+
+it.effect(
+  "gives a file-system vault's full paths and adds a file written to disk",
+  () =>
+    Effect.gen(function* () {
+      const source = new MemoryVault();
+      const reconcileInternalFile = vi.fn(async (_path: string) => {});
+      Object.assign(source, {
+        adapter: Object.assign(new FileSystemAdapter(), {
+          getFullPath: (path: string) => `/vault/${path}`,
+          reconcileInternalFile,
+        }),
+      });
+      const { vault } = yield* open(layerVaultFrom(source));
+      expect(yield* vault.fullPath("Images/a.png")).toBe("/vault/Images/a.png");
+      yield* vault.reconcileFile("Images/a.png");
+      expect(reconcileInternalFile).toHaveBeenCalledExactlyOnceWith(
+        "Images/a.png",
+      );
+      const rejected = new Error("not a file");
+      reconcileInternalFile.mockRejectedValueOnce(rejected);
+      expect(yield* Effect.flip(vault.reconcileFile("b.png"))).toMatchObject({
+        _tag: "VaultError",
+        operation: "reconcileFile",
+        path: "b.png",
+        cause: rejected,
+      });
+    }),
+);
+
+it.effect("gives no full path, and adds no file, off a file system", () =>
+  Effect.gen(function* () {
+    const { vault } = yield* open(layerVaultFrom(new MemoryVault()));
+    expect(yield* vault.fullPath("a.png")).toBeNull();
+    expect(yield* Effect.flip(vault.reconcileFile("a.png"))).toMatchObject({
+      _tag: "VaultError",
+      operation: "reconcileFile",
+      path: "a.png",
     });
   }),
 );

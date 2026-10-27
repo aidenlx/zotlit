@@ -1,5 +1,6 @@
 // The Imported notes page: how imported notes render, and the shared highlight
 // output mappings every Profile uses.
+import { Effect } from "effect";
 import type { SettingDefinitionItem } from "obsidian";
 
 import type { AnnotationColorName } from "@zotlit/db";
@@ -12,6 +13,7 @@ import {
 } from "@/lib/highlight-mapping";
 import type { HighlightMapping } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
+import { PluginSettings } from "@/services/settings/service";
 
 import type {
   SettingsControlKey,
@@ -75,7 +77,7 @@ export function highlightMappingItems(
     (color) => {
       const current = () =>
         getHighlightMapping(
-          ctx.bridge.runSync(ctx.settings.current)[
+          ctx.tab.sync(PluginSettings.use((settings) => settings.current))[
             "note.import-highlight-mappings"
           ],
           color,
@@ -96,10 +98,12 @@ export function highlightMappingItems(
                 .addOption("custom", m.settings_note_import_highlight_custom())
                 .setValue(current().output)
                 .onChange((output) => {
-                  updateMapping(ctx, color, {
-                    output: output as HighlightMapping["output"],
-                  });
-                  ctx.requestUpdate();
+                  void ctx.tab.run(
+                    updateMapping(color, {
+                      output: output as HighlightMapping["output"],
+                    }).pipe(Effect.andThen(ctx.tab.update)),
+                    m.settings_failed_save(),
+                  );
                 });
             });
           },
@@ -120,7 +124,10 @@ export function highlightMappingItems(
             showError(current().customEmoji);
             setting.addText((text) => {
               text.setValue(current().customEmoji).onChange((customEmoji) => {
-                updateMapping(ctx, color, { customEmoji });
+                void ctx.tab.run(
+                  updateMapping(color, { customEmoji }),
+                  m.settings_failed_save(),
+                );
                 showError(customEmoji);
               });
             });
@@ -131,13 +138,13 @@ export function highlightMappingItems(
   );
 }
 
+/** Save `patch` over the mapping of `color`. */
 function updateMapping(
-  ctx: SettingTabContext,
   color: AnnotationColorName,
   patch: Partial<HighlightMapping>,
-): void {
-  ctx.bridge.runSync(
-    ctx.settings.update((settings) => {
+) {
+  return PluginSettings.use((service) =>
+    service.update((settings) => {
       const mappings = settings["note.import-highlight-mappings"];
       return {
         "note.import-highlight-mappings": {

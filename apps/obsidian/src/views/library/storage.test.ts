@@ -135,7 +135,10 @@ async function openLibrary() {
       "ExcerptDisplay",
       {},
     ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {},
+    ),
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     libraryTagNames: async () => [],
     allowEditing: vi.fn(),

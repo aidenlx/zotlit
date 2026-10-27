@@ -115,7 +115,6 @@ it.effect(
       expect(plain.state).toBe("ready");
       expect(plain.error).toBeNull();
       expect(plain.moved).toBe(false);
-      expect(plain.activeReadMode).toBeNull();
       plain.notifyExternalChange();
       yield* Effect.promise(() => plain.refresh());
       yield* Effect.promise(() =>

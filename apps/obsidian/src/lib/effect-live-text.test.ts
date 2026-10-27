@@ -5,14 +5,13 @@ import { describe, expect, vi } from "vitest";
 import { createObsidianHost } from "./__fixtures__/obsidian-host";
 import { layerHost } from "./__fixtures__/obsidian-host-app";
 import { processLiveText } from "./effect-live-text";
-import type { VaultSource } from "./obsidian-vault";
 
 const PATH = "Notes/Paper.md";
 
 /** The Vault and Workspace tags over `host`'s vault and views. */
 function tagsOver(host: ReturnType<typeof createObsidianHost>) {
   return layerHost({
-    vault: host.vault as unknown as VaultSource,
+    vault: host.vault,
     workspace: host.workspace,
   });
 }
@@ -48,6 +47,31 @@ describe("processLiveText", () => {
         expect(host.text(PATH)).toBe("New\r\n");
         expect(save).not.toHaveBeenCalled();
         expect(view.lastSavedData).toBe("New\r\n");
+      }).pipe(Effect.provide(tagsOver(host)));
+    },
+  );
+
+  it.effect.each([
+    ["no view has the note open", false],
+    ["a view has the note open", true],
+  ] as const)(
+    "fails with LiveTextRewriteFailed and leaves the note when the rewrite throws, and %s",
+    ([, open]) => {
+      const host = createObsidianHost({ [PATH]: "Saved" });
+      if (open) host.openInEditor(host.file(PATH));
+      const thrown = new Error("Template threw");
+      return Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          processLiveText(host.file(PATH), () => {
+            throw thrown;
+          }),
+        );
+        expect(error).toMatchObject({
+          _tag: "LiveTextRewriteFailed",
+          path: PATH,
+          cause: thrown,
+        });
+        expect(host.text(PATH)).toBe("Saved");
       }).pipe(Effect.provide(tagsOver(host)));
     },
   );

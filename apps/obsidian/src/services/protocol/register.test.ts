@@ -4,6 +4,7 @@ import {
   Effect,
   Exit,
   Fiber,
+  FileSystem,
   Layer,
   PubSub,
   Scope,
@@ -18,9 +19,12 @@ import type { Attachment, getItemDisplayRefByID, Library } from "@zotlit/db";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerTestObsidianEnv } from "@/lib/__fixtures__/obsidian-env";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
+import { testPluginHost } from "@/lib/__fixtures__/plugin-host";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { openAttachments } from "@/lib/attachment-open";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
+import { FileManager } from "@/lib/obsidian-file-manager";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
@@ -33,15 +37,18 @@ import type {
   UpdateManyRequest,
 } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
+import { NoteFeature } from "@/services/note-feature/service";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
+import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import { NoteImporter } from "@/services/note-import/service";
 import type { NoteImportView } from "@/services/note-import/view";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
@@ -54,13 +61,24 @@ import type {
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
-import { registerProtocolHandlers } from "./register";
+import { layerProtocolHandlers, registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
 
-vi.mock("@/services/note-feature/update-batch", () => ({
-  runBatchUpdate: vi.fn(async () => ({ outcome: "batch-modal" })),
-  runBatchUpdateAll: vi.fn(async () => ({ outcome: "batch-modal" })),
-}));
+/** The Profile the import dialog answers. */
+type ImportedProfile = NonNullable<
+  Effect.Success<ReturnType<ProtocolDeps["importProfile"]>>
+>;
+
+vi.mock("@/services/note-feature/update-batch", async (importOriginal) => {
+  const { Effect } = await import("effect");
+  return {
+    ...(await importOriginal<
+      typeof import("@/services/note-feature/update-batch")
+    >()),
+    runBatchUpdate: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+    runBatchUpdateAll: vi.fn(() => Effect.succeed({ outcome: "batch-modal" })),
+  };
+});
 
 vi.mock("@/services/note-feature", async (importOriginal) => {
   const { Effect } = await import("effect");
@@ -192,8 +210,6 @@ const openBatchModal = vi.fn<NoteImportView["openBatchModal"]>();
 const noteImportView = stubService<NoteImportView>("NoteImportView", {
   openBatchModal: (options) => openBatchModal(options),
 });
-/** Note Feature, which a link-started import receives. */
-const noteFeature = stubService<ProtocolDeps["noteFeature"]>("NoteFeature", {});
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => unknown>();
@@ -231,6 +247,58 @@ interface Setup {
   readonly whenIndexed?: Effect.Effect<void>;
 }
 
+/** The services the handlers read, over the case's fakes. */
+function servicesFor(setup: Setup = {}) {
+  return Layer.mergeAll(
+    // The import dialog's own services: every case fakes the dialog.
+    Layer.mock(Template, {}),
+    Layer.mock(FileManager, {}),
+    Layer.succeed(
+      FileSystem.FileSystem,
+      stubService<FileSystem.FileSystem>("FileSystem", {}),
+    ),
+    Layer.mock(ZoteroPref, {
+      current: Effect.succeed(
+        stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+          sourceId: SOURCE_ID,
+          dataDir: "/data",
+          baseAttachmentPath: null,
+        }),
+      ),
+    }),
+    Layer.mock(ZoteroReads, {
+      current: Effect.succeed(
+        stubService<ZoteroReadsState>("ZoteroReadsState", {
+          state: setup.state ?? "ready",
+        }),
+      ),
+      reads: readsApi,
+      snapshot: Effect.succeed(readsApi),
+    }),
+    Layer.mock(LocalServer, {
+      updateManyRequests: setup.updateManyRequests ?? Stream.empty,
+      importNotesRequests: setup.importNotesRequests ?? Stream.empty,
+    }),
+    Layer.mock(UseLedger, {}),
+    // A link import reads only these members before it opens its modal.
+    Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
+    Layer.mock(LibraryScope, {}),
+    Layer.mock(MetadataCache, {}),
+    Layer.mock(NoteFeature, {}),
+    Layer.mock(NoteImporter, {}),
+    Layer.mock(PluginSettings, {}),
+    Layer.mock(Profile, {}),
+    Layer.mock(Vault, {
+      getFileByPath:
+        setup.getFileByPath ??
+        ((path: string) => Effect.succeed(setup.files?.get(path) ?? null)),
+    }),
+    notifier.layer,
+    layerWorkspaceFrom(setup.workspace ?? new MemoryWorkspace()),
+    layerTestObsidianEnv({ basePath: "/vault" }),
+  );
+}
+
 /** Register the handlers over the case's fakes; the case's Scope stops them. */
 const register = Effect.fn("register")(function* (setup: Setup = {}) {
   const plugin = {
@@ -244,54 +312,12 @@ const register = Effect.fn("register")(function* (setup: Setup = {}) {
   const deps = stubService<ProtocolDeps>("ProtocolDeps", {
     webWorkbenchEnabled: true,
     noteImportView,
-    noteFeature,
     // A link import's modal callbacks would run here; no case drives them.
     bridge: stubService<ProtocolDeps["bridge"]>("EffectBridge", {}),
     app: appStub(),
     ...setup.deps,
   });
-  const context = yield* Layer.build(
-    Layer.mergeAll(
-      Layer.mock(ZoteroPref, {
-        current: Effect.succeed(
-          stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
-            sourceId: SOURCE_ID,
-            dataDir: "/data",
-            baseAttachmentPath: null,
-          }),
-        ),
-      }),
-      Layer.mock(ZoteroReads, {
-        current: Effect.succeed(
-          stubService<ZoteroReadsState>("ZoteroReadsState", {
-            state: setup.state ?? "ready",
-          }),
-        ),
-        reads: readsApi,
-        snapshot: Effect.succeed(readsApi),
-      }),
-      Layer.mock(LocalServer, {
-        updateManyRequests: setup.updateManyRequests ?? Stream.empty,
-        importNotesRequests: setup.importNotesRequests ?? Stream.empty,
-      }),
-      Layer.mock(UseLedger, {}),
-      // A link import reads only these members before it opens its modal.
-      Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
-      Layer.mock(LibraryScope, {}),
-      Layer.mock(MetadataCache, {}),
-      Layer.mock(NoteImporter, {}),
-      Layer.mock(PluginSettings, {}),
-      Layer.mock(Profile, {}),
-      Layer.mock(Vault, {
-        getFileByPath:
-          setup.getFileByPath ??
-          ((path: string) => Effect.succeed(setup.files?.get(path) ?? null)),
-      }),
-      notifier.layer,
-      layerWorkspaceFrom(setup.workspace ?? new MemoryWorkspace()),
-      layerTestObsidianEnv({ basePath: "/vault" }),
-    ),
-  );
+  const context = yield* Layer.build(servicesFor(setup));
   return yield* registerProtocolHandlers(plugin, deps).pipe(
     Effect.provide(context),
   );
@@ -529,6 +555,36 @@ describe("open-attachment protocol link", () => {
   );
 });
 
+describe("layerProtocolHandlers", () => {
+  it.effect(
+    "registers the handlers on the plugin host, and runs them on the layer's services",
+    () =>
+      Effect.gen(function* () {
+        const host = testPluginHost({
+          registerObsidianProtocolHandler: (action, handler) => {
+            handlers.set(action, handler);
+          },
+        });
+        yield* Layer.build(
+          layerProtocolHandlers(
+            stubService<Omit<ProtocolDeps, "bridge">>("ProtocolDeps", {
+              webWorkbenchEnabled: true,
+              noteImportView,
+              app: appStub(),
+            }),
+          ).pipe(Layer.provide(Layer.merge(host.layer, servicesFor()))),
+        );
+
+        yield* dispatch("zotlit/update-all");
+
+        expect(runBatchUpdateAll).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ view: noteImportView }),
+          { groupID: 0, collectionKey: undefined },
+        );
+      }),
+  );
+});
+
 describe("library-wide protocol links", () => {
   it.effect("passes the named group as an exact update target", () =>
     Effect.gen(function* () {
@@ -556,6 +612,35 @@ describe("library-wide protocol links", () => {
         expect.anything(),
         { groupID: 0, collectionKey: undefined },
       );
+    }),
+  );
+
+  it.effect(
+    "shows the early-exit notice an update-all link's update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "empty-selection" }),
+        );
+        yield* register();
+
+        yield* dispatch("zotlit/update-all", { library: "7" });
+
+        expect(shown()).toEqual([m.batch_update_all_empty()]);
+        expect(notifier.notices[0]!.duration).toBe(2000);
+      }),
+  );
+
+  it.effect("shows no notice for an update-all link's update that failed", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdateAll).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/update-all", { library: "7" });
+
+      expect(shown()).toEqual([]);
     }),
   );
 
@@ -608,9 +693,7 @@ describe("clipboard Profile protocol handoff", () => {
   }
   /** What the importer answers after the user's consent. */
   function imported(path: string) {
-    return stubService<
-      NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
-    >("LiteratureNoteProfile", { path });
+    return stubService<ImportedProfile>("LiteratureNoteProfile", { path });
   }
 
   it.effect("omits the web clipboard handoff when the build gate is off", () =>
@@ -625,11 +708,8 @@ describe("clipboard Profile protocol handoff", () => {
     "waits for import consent and then opens the returned document",
     () =>
       Effect.gen(function* () {
-        const consent =
-          Promise.withResolvers<
-            Awaited<ReturnType<ProtocolDeps["importProfile"]>>
-          >();
-        const importProfile = vi.fn(() => consent.promise);
+        const consent = yield* Deferred.make<ImportedProfile | undefined>();
+        const importProfile = vi.fn(() => Deferred.await(consent));
         const { file, files } = profileVault();
         const app = appStub();
         yield* register({ deps: { app, importProfile }, files });
@@ -637,10 +717,11 @@ describe("clipboard Profile protocol handoff", () => {
         const fiber = handlers.get("zotlit/import-profile")!(
           protocolData("zotlit/import-profile", { clipboard: "true" }),
         );
+        yield* Effect.yieldNow;
         expect(importProfile).toHaveBeenCalledWith({ source: "clipboard" });
         expect(openTemplateWorkbench).not.toHaveBeenCalled();
 
-        consent.resolve(imported(file.path));
+        yield* Deferred.succeed(consent, imported(file.path));
         if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
         yield* Fiber.join(fiber);
         expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {});
@@ -653,7 +734,10 @@ describe("clipboard Profile protocol handoff", () => {
       const app = appStub();
       const workspace = new MemoryWorkspace();
       yield* register({
-        deps: { app, importProfile: vi.fn(async () => imported(file.path)) },
+        deps: {
+          app,
+          importProfile: vi.fn(() => Effect.succeed(imported(file.path))),
+        },
         files,
         workspace,
       });
@@ -673,7 +757,7 @@ describe("clipboard Profile protocol handoff", () => {
   it.effect("leaves the editor closed after import cancellation", () =>
     Effect.gen(function* () {
       yield* register({
-        deps: { importProfile: vi.fn(async () => undefined) },
+        deps: { importProfile: vi.fn(() => Effect.undefined) },
       });
 
       yield* dispatch("zotlit/import-profile", { clipboard: "true" });
@@ -683,39 +767,47 @@ describe("clipboard Profile protocol handoff", () => {
     }),
   );
 
-  it.effect("interrupts a waiting handoff when the Scope closes", () =>
-    Effect.gen(function* () {
-      const consent =
-        Promise.withResolvers<
-          Awaited<ReturnType<ProtocolDeps["importProfile"]>>
-        >();
-      const { file, files } = profileVault();
-      const scope = yield* Scope.make();
-      yield* register({
-        deps: { importProfile: vi.fn(() => consent.promise) },
-        files,
-      }).pipe(Scope.provide(scope));
-      const fiber = handlers.get("zotlit/import-profile")!(
-        protocolData("zotlit/import-profile", { clipboard: "true" }),
-      );
-      if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
+  it.effect(
+    "closes the import dialog and stops the handoff when the Scope closes",
+    () =>
+      Effect.gen(function* () {
+        const opened = yield* Deferred.make<void>();
+        const close = vi.fn();
+        const { files } = profileVault();
+        const scope = yield* Scope.make();
+        yield* register({
+          deps: {
+            // The dialog stays open until something closes it.
+            importProfile: vi.fn(() =>
+              awaitModal<ImportedProfile | undefined>(() => {
+                Deferred.doneUnsafe(opened, Effect.void);
+                return { close };
+              }),
+            ),
+          },
+          files,
+        }).pipe(Scope.provide(scope));
+        const fiber = handlers.get("zotlit/import-profile")!(
+          protocolData("zotlit/import-profile", { clipboard: "true" }),
+        );
+        if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
+        yield* Deferred.await(opened);
 
-      yield* Scope.close(scope, Exit.void);
-      const exit = yield* Fiber.await(fiber);
-      consent.resolve(imported(file.path));
-      yield* Effect.promise(() => consent.promise);
+        yield* Scope.close(scope, Exit.void);
+        const exit = yield* Fiber.await(fiber);
 
-      expect(Exit.hasInterrupts(exit)).toBe(true);
-      expect(openTemplateWorkbench).not.toHaveBeenCalled();
-      expect(shown()).toEqual([]);
-    }),
+        expect(Exit.hasInterrupts(exit)).toBe(true);
+        expect(close).toHaveBeenCalledOnce();
+        expect(openTemplateWorkbench).not.toHaveBeenCalled();
+        expect(shown()).toEqual([]);
+      }),
   );
 
   it.effect.each([undefined, "false", ""])(
     "does not read clipboard without the explicit flag: %s",
     (clipboard) =>
       Effect.gen(function* () {
-        const importProfile = vi.fn(async () => undefined);
+        const importProfile = vi.fn(() => Effect.undefined);
         yield* register({ deps: { importProfile } });
 
         yield* dispatch(
@@ -802,10 +894,12 @@ describe("refused protocol links", () => {
       Effect.gen(function* () {
         yield* register({
           deps: {
-            importProfile: vi.fn(async () =>
-              stubService<
-                NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
-              >("LiteratureNoteProfile", { path: "templates/gone.md" }),
+            importProfile: vi.fn(() =>
+              Effect.succeed(
+                stubService<ImportedProfile>("LiteratureNoteProfile", {
+                  path: "templates/gone.md",
+                }),
+              ),
             ),
           },
         });
@@ -821,10 +915,12 @@ describe("refused protocol links", () => {
     Effect.gen(function* () {
       yield* register({
         deps: {
-          importProfile: vi.fn(async () =>
-            stubService<
-              NonNullable<Awaited<ReturnType<ProtocolDeps["importProfile"]>>>
-            >("LiteratureNoteProfile", { path: "templates/shared.md" }),
+          importProfile: vi.fn(() =>
+            Effect.succeed(
+              stubService<ImportedProfile>("LiteratureNoteProfile", {
+                path: "templates/shared.md",
+              }),
+            ),
           ),
         },
         getFileByPath: () => Effect.die(new Error("vault read failed")),
@@ -852,11 +948,40 @@ describe("batch protocol links", () => {
         });
 
         expect(runBatchUpdate).toHaveBeenCalledExactlyOnceWith(
-          expect.anything(),
+          expect.objectContaining({ view: noteImportView }),
           [3, 4],
           { scope: "metadata", profile: "Bk3Qn7XvT2Lp" },
         );
       }),
+  );
+
+  it.effect(
+    "shows the early-exit notice a link's batch update ended with",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(runBatchUpdate).mockReturnValueOnce(
+          Effect.succeed<BatchUpdateResult>({ outcome: "db-unavailable" }),
+        );
+        yield* register();
+
+        yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+        expect(shown()).toEqual([m.batch_update_db_unavailable()]);
+        expect(notifier.notices[0]!.duration).toBe(2000);
+      }),
+  );
+
+  it.effect("shows no notice for a link's batch update that failed", () =>
+    Effect.gen(function* () {
+      vi.mocked(runBatchUpdate).mockReturnValueOnce(
+        Effect.die(new Error("classify failed")),
+      );
+      yield* register();
+
+      yield* dispatch("zotlit/update-many", { items: "3,4" });
+
+      expect(shown()).toEqual([]);
+    }),
   );
 
   it.effect("imports the one item an import-note link names", () =>
@@ -965,10 +1090,12 @@ describe("requests pushed over the Local Server", () => {
       }).pipe(Scope.provide(scope));
       const request: UpdateManyRequest = { items: [5], scope: "full" };
       const ran = yield* Deferred.make<void>();
-      vi.mocked(runBatchUpdate).mockImplementationOnce(async () => {
-        Deferred.doneUnsafe(ran, Effect.void);
-        return { outcome: "batch-modal" };
-      });
+      vi.mocked(runBatchUpdate).mockImplementationOnce(() =>
+        Effect.sync((): BatchUpdateResult => {
+          Deferred.doneUnsafe(ran, Effect.void);
+          return { outcome: "batch-modal" };
+        }),
+      );
       yield* PubSub.publish(requests, request);
       yield* Deferred.await(ran);
 

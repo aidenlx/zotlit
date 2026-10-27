@@ -406,7 +406,10 @@ async function mount(
       "ExcerptDisplay",
       { open: vi.fn(), refresh: vi.fn() },
     ),
-    noteFeature: stubService<QueryViewDeps["noteFeature"]>("NoteFeature", {}),
+    noteFeature: stubService<QueryViewDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {},
+    ),
     libraryTagNames: () => Promise.resolve([]),
     allowEditing: vi.fn(),
     reportBlockedGesture: vi.fn(),

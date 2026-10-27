@@ -1,5 +1,5 @@
 // Shared rendering and accounting for prepared excerpt links.
-import type { App } from "obsidian";
+import type { TFile } from "obsidian";
 
 import type { TemplateLink } from "@zotlit/db";
 
@@ -21,9 +21,13 @@ export interface PreparedExcerpt {
   used: boolean;
 }
 
+/**
+ * The template helper of one prepared excerpt. `markdownLink` gives the link
+ * to a file from the note, in the user's link format; it runs during the
+ * synchronous template render.
+ */
 export function createExcerptLink(
-  app: App,
-  notePath: string,
+  markdownLink: (file: TFile, subpath?: string, alias?: string) => string,
   state: PreparedExcerpt,
 ): TemplateLink {
   const render = (embed: boolean, alias?: string, subpath?: string) => {
@@ -36,12 +40,7 @@ export function createExcerptLink(
           : m.excerpt_image_unavailable();
       return `${explanation}${state.sourceLink ? ` ${state.sourceLink}` : ""}`;
     }
-    const link = app.fileManager.generateMarkdownLink(
-      syntheticFile(result.path),
-      notePath,
-      subpath,
-      alias,
-    );
+    const link = markdownLink(syntheticFile(result.path), subpath, alias);
     return embed ? `!${link}` : link;
   };
   return Object.assign(

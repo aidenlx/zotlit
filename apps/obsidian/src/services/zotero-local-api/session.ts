@@ -1002,8 +1002,8 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *
      * @returns the source, or null while another source must answer instead.
      */
-    // Untraced: the annotation repository runs this through `runSync` many
-    // times per render.
+    // Untraced: the annotation repository's core yields this in each read of
+    // the Editing Capability, many times per render.
     demandSource: Effect.gen(function* () {
       const current = yield* Ref.get(state);
       if (current.kind === "unprobed") yield* startProbe("first demand");
@@ -1014,8 +1014,8 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      * What the last Capability Probe learned, for the repository that computes
      * the Editing Capability from it. Asking does not arm a probe.
      */
-    // Untraced: the annotation repository runs this through `runSync` many
-    // times per render.
+    // Untraced: the annotation repository's core yields this in each read of
+    // the Editing Capability, many times per render.
     state: Effect.map(Ref.get(state), (current): LocalApiState =>
       current.kind === "unprobed" ? { kind: "probing" } : current,
     ).pipe(withLogCategory(LOG_CATEGORY)),
@@ -1037,8 +1037,8 @@ export const makeLocalApiSession = Effect.fnUntraced(function* ({
      *   the session itself — what the settings row shows, where no one library
      *   can be read-only.
      */
-    // Untraced: the annotation repository runs this through `runSync` many
-    // times per render.
+    // Untraced: the annotation repository's core yields this in each read of
+    // the Editing Capability, many times per render.
     writeStateFor: Effect.fnUntraced(function* (
       attachmentKey: string | null,
     ): Effect.fn.Return<WriteAuthorizationState> {

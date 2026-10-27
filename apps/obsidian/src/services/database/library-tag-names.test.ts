@@ -1,5 +1,14 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer, Logger, ManagedRuntime, References } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  ManagedRuntime,
+  References,
+} from "effect";
 import { describe, expect } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -155,6 +164,53 @@ describe("libraryTagNames", () => {
       ).toEqual(["history", "method"]);
       expect(snapshot.libraryCalls).toEqual([{}]);
       expect(snapshot.tagNameCalls).toEqual([{ libraryID: 7 }]);
+    }),
+  );
+
+  // A read that unload stops, such as one whose worker the unload ends,
+  // answers with an interrupt.
+  it.effect("passes a read's interrupt on without a warning", () =>
+    Effect.gen(function* () {
+      const snapshot = snapshotOf(
+        () => Effect.succeed([{ libraryID: 7, groupID: 42 }]),
+        () => Effect.interrupt,
+      );
+      const { logged, layer } = captureLogs();
+
+      const exit = yield* Effect.exit(
+        libraryTagNames(readsOf(ready, snapshot.api), GROUP_KEY).pipe(
+          Effect.provide(layer),
+        ),
+      );
+
+      expect(Exit.hasInterrupts(exit)).toBe(true);
+      expect(logged).toEqual([]);
+    }),
+  );
+
+  it.effect("logs no warning when the lookup is interrupted", () =>
+    Effect.gen(function* () {
+      const reading = yield* Deferred.make<void>();
+      const snapshot = snapshotOf(
+        () => Effect.succeed([{ libraryID: 7, groupID: 42 }]),
+        () =>
+          Deferred.succeed(reading, undefined).pipe(
+            Effect.andThen(Effect.never),
+          ),
+      );
+      const { logged, layer } = captureLogs();
+      const lookup = yield* Effect.forkChild(
+        libraryTagNames(readsOf(ready, snapshot.api), GROUP_KEY).pipe(
+          Effect.provide(layer),
+        ),
+        { startImmediately: true },
+      );
+      yield* Deferred.await(reading);
+
+      yield* Fiber.interrupt(lookup);
+
+      expect(Exit.hasInterrupts(yield* Fiber.await(lookup))).toBe(true);
+      expect(logged).toEqual([]);
     }),
   );
 });

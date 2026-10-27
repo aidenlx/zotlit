@@ -38,7 +38,7 @@ function makeModal(
     app: stubService<App>("App", {}),
     lookup: stubService<CitationSuggestDeps["lookup"]>("ItemLookup", lookup),
     noteFeature: stubService<CitationSuggestDeps["noteFeature"]>(
-      "NoteFeature",
+      "NoteFeatureHandle",
       { renderCitation: vi.fn() },
     ),
     settings: { current: Effect.succeed(defaults) },

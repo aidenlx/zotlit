@@ -9,6 +9,7 @@ import type {
   TagType,
 } from "@zotlit/db";
 
+import { fromInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ZoteroMethod } from "@/lib/zotero-http";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
@@ -17,6 +18,7 @@ import type { WireTag } from "@/services/zotero-local-api/wire";
 import { capabilityOfFailure } from "./capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
+import type { CopyInstant } from "./capability-copy";
 import type { LockReason } from "./lock";
 import { lockReasonText } from "./lock-copy";
 
@@ -606,7 +608,7 @@ export function eraseRequest(target: WriteTarget): WriteRequest {
  */
 export function groupFailureMessages(
   outcomes: readonly MutationState[],
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): string[] {
   return [
     ...new Set(
@@ -630,7 +632,7 @@ export function groupFailureMessages(
  */
 export function writeFailureMessage(
   failure: WriteFailure,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): string {
   // A lock is no failure of the save: it says its own reason alone.
   if (failure.kind === "locked") return lockReasonText(failure.reason);
@@ -648,7 +650,7 @@ export function writeFailureMessage(
  */
 export function writeFailureReason(
   failure: WriteFailure,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): string {
   switch (failure.kind) {
     case "db-source":
@@ -669,10 +671,7 @@ export function writeFailureReason(
     case "locked":
       return lockReasonText(failure.reason);
     default:
-      return blockedReason(
-        capabilityOfFailure(failure, () => now),
-        now,
-      );
+      return blockedReason(capabilityOfFailure(failure, fromInstant(now)), now);
   }
 }
 
@@ -685,7 +684,7 @@ export function writeFailureReason(
  */
 export function blockedReason(
   capability: EditingCapability,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): string {
   const copy = editingCapabilityCopy(capability, now);
   return copy.detail === null ? copy.label : `${copy.label}. ${copy.detail}`;

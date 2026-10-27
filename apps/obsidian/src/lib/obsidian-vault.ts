@@ -5,6 +5,7 @@
 // `MetadataCache`; policies/events.md (Capability tags) describes it.
 import { Context, Effect, Layer } from "effect";
 import type { Stream } from "effect";
+import { FileSystemAdapter } from "obsidian";
 import type {
   DataAdapter,
   DataWriteOptions,
@@ -93,6 +94,18 @@ export interface VaultShape {
   getAbstractFileByPath(path: string): Effect.Effect<TAbstractFile | null>;
   /** Every Markdown file in the vault now, in Obsidian's order. */
   readonly getMarkdownFiles: Effect.Effect<TFile[]>;
+  /**
+   * The file-system path of the vault path `path`, by the adapter's
+   * `getFullPath`; `null` when the vault is not on a file system.
+   */
+  fullPath(path: string): Effect.Effect<string | null>;
+  /**
+   * Add the file that was written to disk at the vault path `path` to the
+   * vault cache now, before the file watcher reports it (Obsidian's internal
+   * `reconcileInternalFile`). Fails with `VaultError` when the vault is not
+   * on a file system or Obsidian rejects.
+   */
+  reconcileFile(path: string): Effect.Effect<void, VaultError>;
   /** Each vault event, in Obsidian's order, from when the consumer's Stream starts. */
   readonly changes: Stream.Stream<VaultEvent>;
 }
@@ -176,6 +189,20 @@ export const makeVault = Effect.fnUntraced(function* (source: VaultSource) {
     ),
     getMarkdownFiles: Effect.sync(() => source.getMarkdownFiles()).pipe(
       Effect.withSpan("Vault.getMarkdownFiles"),
+    ),
+    fullPath: Effect.fn("Vault.fullPath")((path) =>
+      Effect.sync(() =>
+        source.adapter instanceof FileSystemAdapter
+          ? source.adapter.getFullPath(path)
+          : null,
+      ),
+    ),
+    reconcileFile: Effect.fn("Vault.reconcileFile")((path) =>
+      call("reconcileFile", path, async () => {
+        if (!(source.adapter instanceof FileSystemAdapter))
+          throw new Error("The vault is not on a file system");
+        await source.adapter.reconcileInternalFile(path);
+      }),
     ),
     changes: events.stream,
   });

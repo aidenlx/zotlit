@@ -19,6 +19,7 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   AvailableLibrary,
   LibrarySelector,
@@ -26,6 +27,8 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
+import type { CreationProfileSelection } from "@/services/note-feature";
+import { NoteFeature } from "@/services/note-feature/service";
 import { NoteIndex } from "@/services/note-index/service";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { Profile } from "@/services/profile/service";
@@ -34,6 +37,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
 import { ProfileAnnotationError } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -44,6 +48,7 @@ import {
   recordCalls,
   sharedClientOpener,
 } from "@/services/zotero-reads/test-utils";
+import { unimplementedProfileDialogServices } from "@/setting-tab/__fixtures__";
 import type {
   BatchClassifyControls,
   BatchModalOptions,
@@ -277,7 +282,10 @@ interface PromiseNoteImporter {
 
 /** What a case gives the batch import, in the plain shapes it states them in. */
 interface ImportDeps {
-  noteFeature: BatchImportPorts["noteFeature"];
+  noteFeature: {
+    reportExcerptImages: (summary: ExcerptSummary) => void;
+    resolveCreationProfile: () => Promise<CreationProfileSelection>;
+  };
   view: NoteImportView;
   profile: ProfileReader;
   zoteroReads: TestReads;
@@ -320,12 +328,13 @@ function importOver(deps: ImportDeps): BatchImport {
 
 /** The ports a batch import takes, from the case's `deps`. */
 function portsOf(deps: ImportDeps): Omit<BatchImportPorts, "bridge"> {
-  return { view: deps.view, noteFeature: deps.noteFeature };
+  return { view: deps.view };
 }
 
 /** The services a batch import reads, answering from `deps` at each call. */
 function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
   return Layer.mergeAll(
+    unimplementedProfileDialogServices,
     Layer.mock(LibraryScope, {
       resolveLibraries: () => Effect.sync(() => currentScope),
     }),
@@ -346,6 +355,12 @@ function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
           }),
         ),
     }),
+    Layer.mock(NoteFeature, {
+      reportExcerptImages: (summary) =>
+        Effect.sync(() => deps.noteFeature.reportExcerptImages(summary)),
+      resolveCreationProfile: () =>
+        Effect.promise(() => deps.noteFeature.resolveCreationProfile()),
+    }),
     Layer.mock(NoteIndex, {
       whenIndexed: Effect.promise(() => deps.noteIndex.whenIndexed()),
       getImportedNoteByNoteKey: (noteKey) =>
@@ -360,6 +375,8 @@ function layerOver(deps: ImportDeps): Layer.Layer<BatchImportServices> {
       resolveProfile: (selector) =>
         Effect.sync(() => deps.profile.resolveProfile(selector)),
     }),
+    // Only the real Profile picker reads it; the fake view does not.
+    Layer.mock(ZoteroPref, {}),
     Layer.mock(ZoteroReads, {
       current: Effect.sync(() =>
         stubService<ZoteroReadsState>("ZoteroReadsState", {
@@ -491,7 +508,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   );
   using chooseProfile = vi
     .spyOn(deps.view, "chooseProfile")
-    .mockResolvedValue(books);
+    .mockReturnValue(Effect.succeed(books));
   using settingsUpdate = vi.spyOn(deps.settings, "update");
   await importOver(deps).runBatchImport("note", [1, 2, 3]);
   const options = openedModals.at(-1)!;

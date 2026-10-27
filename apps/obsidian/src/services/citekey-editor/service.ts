@@ -2,9 +2,6 @@
 // treatment on and owns the click that opens a citekey's note. Its CodeMirror
 // extension registers in ./register.
 import { Cause, Context, Effect, Layer, PubSub, Stream } from "effect";
-import type { TFile } from "obsidian";
-
-import type { Item } from "@zotlit/db";
 
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -22,6 +19,9 @@ import type {
   NavigationPane,
 } from "@/services/citekey-navigation";
 import { LibraryScope } from "@/services/library-scope/service";
+import type { NoteCreationServices } from "@/services/note-feature/creation-handle";
+import { createNoteInteractively } from "@/services/note-feature/creation-view";
+import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
 import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
@@ -78,18 +78,6 @@ export function citekeyTreatment(
     active: navigationEnabled || showFormatted,
     hover: hoverPreferences(settings),
   };
-}
-
-/**
- * The legacy note creation flow, which the container builds after the graph
- * (`build.ts`). Ticket 13 converts it.
- */
-export interface CitekeyNoteCreation {
-  /**
-   * Create the Literature Note of `item` at once, asking for a Profile where
-   * the flow asks. `null` when the user cancels.
-   */
-  createNote(item: Item): Promise<TFile | null>;
 }
 
 /**
@@ -175,10 +163,11 @@ const log = withLogCategory("citekey-editor");
 const contained = logAndContinue("Cannot open the note", "citekey-editor");
 
 export const layerCitekeyEditor = (
-  creation: CitekeyNoteCreation,
+  creation: InteractiveCreationPorts,
 ): Layer.Layer<
   CitekeyEditor,
   never,
+  | NoteCreationServices
   | NoteIndex
   | ZoteroReads
   | CitationLookup
@@ -195,6 +184,7 @@ export const layerCitekeyEditor = (
       const libraryScope = yield* LibraryScope;
       const settings = yield* PluginSettings;
       const workspace = yield* Workspace;
+      const creationContext = yield* Effect.context<NoteCreationServices>();
       const events = yield* Effect.acquireRelease(
         PubSub.unbounded<CitekeyEditorEvent>(),
         (pubsub) => PubSub.shutdown(pubsub),
@@ -254,8 +244,18 @@ export const layerCitekeyEditor = (
           return;
         }
 
-        const file = yield* Effect.promise(() =>
-          creation.createNote(zoteroItem),
+        // A citation names one Item, so its note is created at once: the
+        // flow asks for a Profile only where no Profile resolves.
+        const file = yield* createNoteInteractively(creation, zoteroItem, {
+          direct: true,
+        }).pipe(
+          Effect.provideContext(creationContext),
+          Effect.catch((error) =>
+            Effect.logError("Cannot create the citekey note").pipe(
+              Effect.annotateLogs({ indexedKey: item.indexedKey, error }),
+              Effect.as(null),
+            ),
+          ),
         );
         if (!file) {
           yield* Effect.logDebug("Citekey note creation cancelled").pipe(

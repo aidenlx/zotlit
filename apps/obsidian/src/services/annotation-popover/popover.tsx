@@ -6,6 +6,7 @@ import type { Component, HoverParent } from "obsidian";
 import { formatIndexedKey } from "@zotlit/db";
 import type { AnnotationOpenUriOptions } from "@zotlit/db";
 
+import { AbortError } from "@/lib/abort-error";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { getLogger } from "@/lib/log";
 import type {
@@ -187,7 +188,7 @@ export class AnnotationPopoverCore implements Disposable {
           });
         })
         .catch((error: unknown) => {
-          if (!current()) return;
+          if (!current() || AbortError.test(error)) return;
           logger.warn("Cannot read the annotations of a hovered link", {
             attachmentKey,
             error,

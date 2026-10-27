@@ -641,7 +641,7 @@ it("keeps a comment editor open when an ordinary draft settles", async () => {
   });
 
   // The autosave comes due, and the draft goes once Zotero holds its text.
-  await vi.advanceTimersByTimeAsync(1_000);
+  await h.adjustRepositoryClock("1 second");
   await vi.waitFor(() =>
     expect(h.zotero.at("WRDS2222")?.comment).toBe("worth quoting"),
   );

@@ -74,10 +74,13 @@ function inertActionDeps(): Partial<AnnotActionDeps> {
     setSelectedAttachmentKey: () => {},
     toggleSelectedTag: () => {},
     refresh: async () => {},
-    noteFeature: stubService<AnnotActionDeps["noteFeature"]>("NoteFeature", {
-      renderAnnotationCitation: async () =>
-        stubService<AnnotationCitation>("AnnotationCitation", {}),
-    }),
+    noteFeature: stubService<AnnotActionDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {
+        renderAnnotationCitation: async () =>
+          stubService<AnnotationCitation>("AnnotationCitation", {}),
+      },
+    ),
     onDragStart: () => {},
     renderComment: () => () => {},
     fillViewMenu: () => {},

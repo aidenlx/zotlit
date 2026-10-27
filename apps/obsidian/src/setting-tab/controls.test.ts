@@ -1,21 +1,19 @@
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Stream } from "effect";
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
+import type { Plugin } from "obsidian";
 import { expect } from "vitest";
 
-import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge } from "@/lib/effect-bridge";
-import type { LocalServer } from "@/services/local-server/service";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { settingsRuntimeOf } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
 
+import { scopedSettingTab } from "./__fixtures__";
+import type { SettingTabContext } from "./context";
 import { ZotLitSettingTab } from "./index";
-import type { ZotLitSettingTabOptions } from "./index";
 
 it.effect(
-  "control writes are immediately readable and persist through the settings adapter",
+  "control writes are readable once written and persist through the settings service",
   () =>
     Effect.gen(function* () {
       let disk: unknown;
@@ -28,55 +26,33 @@ it.effect(
         },
       });
       yield* settings.loaded;
-      const cleanup: (() => void)[] = [];
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          for (const off of cleanup) off();
-        }),
+      const { tab } = yield* scopedSettingTab(
+        Context.make(PluginSettings, settings),
       );
-      // Other tab services only register callbacks in this control-only host.
-      const events = {
-        on: () => () => {},
-        changed: Stream.empty,
-        "compile-status-changed": Stream.empty,
-      };
-      const changes = {
-        binary: stubService<ManagedBinaryApi<Disposable | AsyncDisposable>>(
-          "ManagedBinary",
-          {
-            changes: Stream.empty,
-          },
-        ),
-        runSync: Effect.runSync,
-        runPromise: Effect.runPromise,
-      };
-      const runtime = testRuntime();
-      const tab = new ZotLitSettingTab({
-        runtime,
-        bridge: effectBridge(runtime),
-        plugin: { app: {}, register: (off: () => void) => cleanup.push(off) },
-        settings,
-        localServer: stubService<LocalServer["Service"]>("LocalServer", {
-          effectivePort: Effect.succeed(null),
-          effectivePortChanges: Stream.empty,
+      const settingTab = new ZotLitSettingTab(
+        stubService<Plugin>("Plugin", {
+          app: stubService("App", {}),
+          manifest: stubService("PluginManifest", {}),
         }),
-        localBridge: events,
-        libraryScope: events,
-        profile: { ...events, ready: new Promise(() => {}) },
-        template: events,
-        languagePack: { subscribe: () => () => {} },
-        pandocEngine: changes,
-        chineseSegmenter: changes,
-      } as unknown as ZotLitSettingTabOptions);
+        stubService<Omit<SettingTabContext, "app" | "manifest">>(
+          "SettingTabContext",
+          { tab },
+        ),
+      );
+      // Obsidian awaits each write before it refreshes the DOM state.
+      const write = (key: string, value: unknown) =>
+        Effect.promise(() => settingTab.setControlValue(key, value));
 
-      tab.setControlValue("citation.at-trigger", true);
-      expect(tab.getControlValue("citation.at-trigger")).toBe(true);
-      tab.setControlValue("template.auto-trim-leading", "keep");
-      expect(tab.getControlValue("template.auto-trim-leading")).toBe("keep");
-      tab.setControlValue("log.level", "off");
-      expect(tab.getControlValue("log.level")).toBe("off");
-      tab.setControlValue("note-profile:default:folder", "Research");
-      expect(tab.getControlValue("note-profile:default:folder")).toBe(
+      yield* write("citation.at-trigger", true);
+      expect(settingTab.getControlValue("citation.at-trigger")).toBe(true);
+      yield* write("template.auto-trim-leading", "keep");
+      expect(settingTab.getControlValue("template.auto-trim-leading")).toBe(
+        "keep",
+      );
+      yield* write("log.level", "off");
+      expect(settingTab.getControlValue("log.level")).toBe("off");
+      yield* write("note-profile:default:folder", "Research");
+      expect(settingTab.getControlValue("note-profile:default:folder")).toBe(
         "Research",
       );
       yield* settings.flush;

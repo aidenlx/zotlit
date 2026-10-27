@@ -28,6 +28,9 @@ import type {
   Point,
   SearchMatchPart,
   SearchResult,
+  Setting as ObsidianSetting,
+  SettingDefinitionItem,
+  SettingGroup as ObsidianSettingGroup,
   UserEvent,
 } from "obsidian";
 import {
@@ -113,6 +116,7 @@ globalThis.sleep ??= (ms: number) =>
  * `BaseNotice` touches in its constructor. */
 const noticeElStub = {
   addClasses: (_classes: string[]) => {},
+  toggle: (_show: boolean) => {},
   querySelector: (_selector: string): HTMLElement | null => null,
 } as unknown as HTMLElement;
 
@@ -1548,6 +1552,26 @@ export class Setting {
   }
 }
 
+/**
+ * `row` rendered into a fresh {@link Setting}, as Obsidian renders a `render`
+ * row, so a test reads the controls the user gets. `cleanup` is what `render`
+ * returned.
+ */
+export function renderRow<K extends string>(
+  row: SettingDefinitionItem<K>,
+): Setting & { readonly cleanup: (() => void) | undefined } {
+  if (!("render" in row) || !row.render)
+    throw new Error("Expected a render row");
+  const setting = new Setting(document.createElement("div"));
+  const cleanup = row.render(
+    setting as unknown as ObsidianSetting,
+    {} as ObsidianSettingGroup,
+  );
+  return Object.assign(setting, {
+    cleanup: typeof cleanup === "function" ? cleanup : undefined,
+  });
+}
+
 export class DropdownComponent {
   /** Every entry the dropdown offers, in the order it offers them. */
   options: { value: string; label: string; disabled?: boolean }[] = [];
@@ -1644,6 +1668,11 @@ export class TextComponent {
 
   setPlaceholder(placeholder: string): this {
     this.inputEl.placeholder = placeholder;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.inputEl.disabled = disabled;
     return this;
   }
 

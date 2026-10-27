@@ -1,6 +1,7 @@
 // Prepares excerpt helpers once, then counts only helpers used by the final render.
-import { Effect } from "effect";
-import type { App, TFile } from "obsidian";
+import { Context, Effect, Layer } from "effect";
+import type { FileSystem } from "effect";
+import type { TFile } from "obsidian";
 
 import {
   annotationHasCacheImage,
@@ -9,30 +10,54 @@ import {
 } from "@zotlit/db";
 import type { Annotation, AnnotationResolvers, TemplateLink } from "@zotlit/db";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
-import type { AttachmentPathContext } from "@zotlit/db/path";
 
-import { getLogger } from "@/lib/log";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
+import { portCall } from "@/lib/legacy-port";
+import { markdownLinker } from "@/lib/obsidian-file-manager";
+import type { FileManager } from "@/lib/obsidian-file-manager";
+import type { MetadataCache } from "@/lib/obsidian-metadata-cache";
+import type { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
+import type { VaultError } from "@/lib/vault-errors";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { Settings } from "@/services/settings/schema";
+import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
 import { createExcerptLink, summarizeExcerpts } from "./helper";
 import type { ExcerptSummary } from "./helper";
-import { materializeExcerpt, retainExcerpt } from "./materialize";
-import type { MaterializedExcerpt } from "./materialize";
+import { ExcerptImages } from "./layer";
+import {
+  makePublicationGate,
+  materializeExcerpt,
+  retainExcerpt,
+} from "./materialize";
+import type { MaterializedExcerpt, PublicationGate } from "./materialize";
 import type { ExcerptOutcomeScope } from "./outcome-scope";
 import { referencedExcerptPaths } from "./references";
 import { annotationRecordOf } from "./request";
-import type { ExcerptImageService, ExcerptRequest } from "./service";
+import type { ExcerptRequest } from "./service";
 export type { ExcerptSummary } from "./helper";
 
-const logger = getLogger("excerpt-prepare");
+const logged = withLogCategory("excerpt-prepare");
+
+/** Skips one excerpt that failed, with `message` logged for `annotationKey`. */
+const skipLogged = (message: string, annotationKey: string) =>
+  recover(
+    (cause) =>
+      Effect.logDebug(message).pipe(
+        Effect.annotateLogs({ annotationKey, cause }),
+        logged,
+      ),
+    Effect.void,
+  );
 
 /** One collector belongs to one user operation, including partial or cancelled batches. */
-export function collectExcerptSummary(
-  report: (summary: ExcerptSummary) => void,
-): {
+export function collectExcerptSummary(): {
   add: (summary: ExcerptSummary) => void;
-  [Symbol.dispose](): void;
+  /** The sum, or `undefined` while it counts no excerpt. */
+  total: () => ExcerptSummary | undefined;
 } {
   const total: ExcerptSummary = { zotero: 0, unchecked: 0, unavailable: 0 };
   return {
@@ -43,28 +68,53 @@ export function collectExcerptSummary(
       if (summary.notRefreshed)
         total.notRefreshed = (total.notRefreshed ?? 0) + summary.notRefreshed;
     },
-    [Symbol.dispose]() {
-      if (
-        total.zotero ||
-        total.unchecked ||
-        total.unavailable ||
-        total.notRefreshed
-      )
-        report(total);
-    },
+    total: () => nonEmptySummary(total),
   };
 }
+
+/** `summary`, or `undefined` when it counts no excerpt. */
+export const nonEmptySummary = (
+  summary: ExcerptSummary,
+): ExcerptSummary | undefined =>
+  summary.zotero ||
+  summary.unchecked ||
+  summary.unavailable ||
+  summary.notRefreshed
+    ? summary
+    : undefined;
+
+/** The reads of the write the excerpts serve, bound to its Snapshot. */
+export type ExcerptPreparationReads = Pick<
+  ZoteroReadsApi,
+  "AttachmentsByKeys" | "DatabaseIdentity" | "Libraries"
+>;
+
+/**
+ * What {@link PreparedExcerpts.prepare} fails with: a database read, or the
+ * read of the previous note.
+ */
+export type ExcerptPrepareError =
+  | Effect.Error<
+      ReturnType<ExcerptPreparationReads[keyof ExcerptPreparationReads]>
+    >
+  | VaultError;
+
+/** The excerpt helpers of one note write. */
 export interface PreparedExcerpts {
+  /** The template's image helper; it collects the excerpts the render asks for. */
   annotationImageLink: AnnotationResolvers["annotationImageLink"];
-  prepare(): Promise<void>;
+  /**
+   * Resolve and write every collected excerpt. Every database input is read
+   * before the vault. One excerpt that fails is logged and stays unavailable.
+   */
+  readonly prepare: Effect.Effect<void, ExcerptPrepareError>;
+  /** The outcomes of the helpers the final render used. */
   summary(): ExcerptSummary;
 }
-export type ExcerptPreparation = (options: {
-  /** The reads of the write the excerpts serve, bound to its Snapshot. */
-  reads: Pick<
-    ZoteroReadsApi,
-    "AttachmentsByKeys" | "DatabaseIdentity" | "Libraries"
-  >;
+
+/** The note write {@link ExcerptPreparation.forNote} prepares excerpts for. */
+export interface NoteExcerptOptions {
+  reads: ExcerptPreparationReads;
   notePath: string;
   settings: Readonly<Settings>;
   previousNote?: TFile;
@@ -74,140 +124,253 @@ export type ExcerptPreparation = (options: {
    * through this same scope, so repeated excerpts reuse one resolution.
    */
   outcomes?: ExcerptOutcomeScope;
-}) => PreparedExcerpts;
+}
 
-export function createExcerptPreparation(deps: {
-  app: App;
-  resolver: Pick<ExcerptImageService, "operation">;
-  paths: AttachmentPathContext;
-}): ExcerptPreparation {
-  return ({ reads, notePath, settings, previousNote, outcomes }) => {
-    const candidates = new Map<
-      string,
-      {
-        annotation: Annotation;
-        result: MaterializedExcerpt;
-        sourceLink: string;
-        used: boolean;
-        helper: TemplateLink;
-      }
-    >();
-    return {
-      annotationImageLink(annotation) {
-        if (!annotationHasCacheImage(annotation.type)) return null;
-        const prior = candidates.get(annotation.indexedKey);
-        if (prior) return prior.helper;
-        const candidate = {
-          annotation,
-          result: {
-            kind: "unavailable",
-            reason: "source",
-          } as MaterializedExcerpt,
-          sourceLink: `[Zotero](${annotationOpenUri({ attachmentKey: annotation.parentKey, annotationKey: annotation.key, groupID: annotation.groupID, pageLabel: annotation.pageLabel })})`,
-          used: false,
-          helper: (() => "") as TemplateLink,
+/** The captured card {@link ExcerptPreparation.forCard} prepares an excerpt for. */
+export interface CardExcerptOptions {
+  annotation: AnnotationRecord;
+  request: ExcerptRequest | null;
+  settings: Readonly<Settings>;
+  notePath: string;
+  /** Markdown link the unavailable-excerpt text points back to the Annotation with. */
+  sourceLink: string;
+  /** Whether the insertion target is still current. */
+  valid: Effect.Effect<boolean>;
+}
+
+/** A captured card's durable image helper, `null` for a card with no image. */
+export interface PreparedCardExcerpt {
+  helper: TemplateLink | null;
+  summary(): ExcerptSummary;
+}
+
+/**
+ * The Excerpt Image preparation of note writes and captured cards: it
+ * resolves each excerpt through {@link ExcerptImages} and writes it into the
+ * vault before the template renders its link.
+ */
+export class ExcerptPreparation extends Context.Service<
+  ExcerptPreparation,
+  {
+    /** The excerpt helpers of one note write, at the Zotero data directory now. */
+    forNote(options: NoteExcerptOptions): Effect.Effect<PreparedExcerpts>;
+    /**
+     * A captured card's helper, prepared before its one template render. An
+     * interrupt cancels it and takes back the bytes it wrote.
+     */
+    forCard(options: CardExcerptOptions): Effect.Effect<PreparedCardExcerpt>;
+  }
+>()("zotlit/excerpt-image/ExcerptPreparation") {}
+
+/** The services the preparation reads through their tags. */
+export type ExcerptPreparationServices =
+  | ExcerptImages
+  | FileManager
+  | FileSystem.FileSystem
+  | MetadataCache
+  | Vault
+  | Workspace
+  | ZoteroPref;
+
+/** The preparation over the graph's tags; one publication gate for all of it. */
+export const layerExcerptPreparation = Layer.effect(
+  ExcerptPreparation,
+  Effect.gen(function* () {
+    const context = yield* Effect.context<ExcerptPreparationServices>();
+    const gate = yield* makePublicationGate;
+    const link = yield* markdownLinker;
+    const markdownLinkFrom =
+      (notePath: string) => (file: TFile, subpath?: string, alias?: string) =>
+        link(file, notePath, { subpath, alias });
+    return ExcerptPreparation.of({
+      forNote: Effect.fn("ExcerptPreparation.forNote")(function* (options) {
+        const { dataDir, baseAttachmentPath } = yield* (yield* ZoteroPref)
+          .current;
+        return noteExcerpts(
+          {
+            gate,
+            markdownLink: markdownLinkFrom(options.notePath),
+            paths: { dataDir, baseAttachmentPath },
+          },
+          options,
+          (effect) => Effect.provideContext(effect, context),
+        );
+      }, Effect.provideContext(context)),
+      forCard: Effect.fn("ExcerptPreparation.forCard")((options) =>
+        cardExcerpt(gate, markdownLinkFrom(options.notePath), options).pipe(
+          Effect.provideContext(context),
+        ),
+      ),
+    });
+  }),
+);
+
+interface Candidate {
+  annotation: Annotation;
+  result: MaterializedExcerpt;
+  sourceLink: string;
+  used: boolean;
+  helper: TemplateLink;
+}
+
+function noteExcerpts(
+  deps: {
+    gate: PublicationGate;
+    markdownLink: Parameters<typeof createExcerptLink>[0];
+    paths: { dataDir: string; baseAttachmentPath: string | null };
+  },
+  { reads, notePath, settings, previousNote, outcomes }: NoteExcerptOptions,
+  provide: <A, E>(
+    effect: Effect.Effect<A, E, ExcerptPreparationServices>,
+  ) => Effect.Effect<A, E>,
+): PreparedExcerpts {
+  const candidates = new Map<string, Candidate>();
+  const prepare = Effect.gen(function* () {
+    // Every database input is read before the vault, in one batch.
+    const keysByLibrary = Map.groupBy(
+      candidates.values(),
+      ({ annotation }) => annotation.libraryID,
+    );
+    const [database, libraries, attachmentLists] = yield* Effect.all(
+      [
+        reads.DatabaseIdentity({}),
+        reads.Libraries({}),
+        Effect.forEach(
+          keysByLibrary,
+          ([libraryID, group]) =>
+            reads.AttachmentsByKeys({
+              libraryID,
+              keys: group.map(({ annotation }) => annotation.parentKey),
+            }),
+          { concurrency: "unbounded" },
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+    const attachments = new Map(
+      attachmentLists.flat().map((a) => [a.itemID, a]),
+    );
+    const images = yield* ExcerptImages;
+    const operation = yield* Effect.acquireDisposable(
+      Effect.sync(() => images.operation({ outcomes })),
+    );
+    const previousPaths = previousNote
+      ? yield* referencedExcerptPaths(previousNote)
+      : [];
+    for (const candidate of candidates.values()) {
+      const a = candidate.annotation;
+      yield* Effect.gen(function* () {
+        const attachment = attachments.get(a.parentItemID);
+        if (!attachment) return;
+        const position = parseAnnotationPosition(
+          a.position,
+          attachment.contentType ?? "application/pdf",
+        );
+        const request: ExcerptRequest = {
+          annotation: annotationRecordOf(a, attachment, position),
+          source: {
+            kind: "zotero-db",
+            database,
+            libraryID: a.libraryID,
+            libraryRevision:
+              libraries.find((l) => l.libraryID === a.libraryID)
+                ?.clientVersion ?? null,
+          },
+          sourceScope: deps.paths.dataDir,
+          libraryID: a.libraryID,
+          attachmentKey: attachment.indexedKey,
+          pdfPath: attachmentAbsPath(attachment, deps.paths),
+          zoteroPngPath: resolveAnnotCachePath(a, {
+            dataDir: deps.paths.dataDir,
+            groupID: a.groupID,
+          }),
         };
-        candidate.helper = createExcerptLink(deps.app, notePath, candidate);
-        candidates.set(annotation.indexedKey, candidate);
-        return candidate.helper;
-      },
-      async prepare() {
-        // Every database input is read before the vault, in one batch.
-        const keysByLibrary = Map.groupBy(
-          candidates.values(),
-          ({ annotation }) => annotation.libraryID,
-        );
-        const [database, libraries, attachmentLists] = await Effect.runPromise(
-          Effect.all(
-            [
-              reads.DatabaseIdentity({}),
-              reads.Libraries({}),
-              Effect.forEach(
-                keysByLibrary,
-                ([libraryID, group]) =>
-                  reads.AttachmentsByKeys({
-                    libraryID,
-                    keys: group.map(({ annotation }) => annotation.parentKey),
-                  }),
-                { concurrency: "unbounded" },
-              ),
-            ],
-            { concurrency: "unbounded" },
-          ),
-        );
-        const attachments = new Map(
-          attachmentLists.flat().map((a) => [a.itemID, a]),
-        );
-        await using operation = deps.resolver.operation({ outcomes });
-        const previousPaths = previousNote
-          ? await referencedExcerptPaths(deps.app, previousNote)
-          : [];
-        for (const candidate of candidates.values()) {
-          const a = candidate.annotation;
-          try {
-            const attachment = attachments.get(a.parentItemID);
-            if (!attachment) continue;
-            const position = parseAnnotationPosition(
-              a.position,
-              attachment.contentType ?? "application/pdf",
-            );
-            const request: ExcerptRequest = {
-              annotation: annotationRecordOf(a, attachment, position),
-              source: {
-                kind: "zotero-db",
-                database,
-                libraryID: a.libraryID,
-                libraryRevision:
-                  libraries.find((l) => l.libraryID === a.libraryID)
-                    ?.clientVersion ?? null,
-              },
-              sourceScope: deps.paths.dataDir,
-              libraryID: a.libraryID,
-              attachmentKey: attachment.indexedKey,
-              pdfPath: attachmentAbsPath(attachment, deps.paths),
-              zoteroPngPath: resolveAnnotCachePath(a, {
-                dataDir: deps.paths.dataDir,
-                groupID: a.groupID,
-              }),
-            };
-            try {
-              if (!settings["attachment.import"]) {
-                candidate.result = { kind: "unavailable", reason: "disabled" };
-              } else {
-                const outcome = await operation.resolve(request);
-                candidate.result = await materializeExcerpt({
-                  app: deps.app,
-                  notePath,
-                  settings,
-                  request,
-                  outcome,
-                });
-              }
-            } catch (error) {
-              logger.debug("Excerpt resolution failed", {
-                annotationKey: a.indexedKey,
-                error,
-              });
-            }
-            if (candidate.result.kind === "unavailable") {
-              candidate.result =
-                (await retainExcerpt({
-                  app: deps.app,
-                  request,
-                  paths: previousPaths,
-                })) ?? candidate.result;
-            }
-          } catch (error) {
-            logger.debug("Excerpt preparation failed", {
-              annotationKey: a.indexedKey,
-              error,
-            });
+        yield* Effect.gen(function* () {
+          if (!settings["attachment.import"]) {
+            candidate.result = { kind: "unavailable", reason: "disabled" };
+            return;
           }
+          const outcome = yield* portCall("excerpt-resolve", (signal) =>
+            operation.resolve(request, signal),
+          );
+          candidate.result = yield* materializeExcerpt({
+            gate: deps.gate,
+            notePath,
+            settings,
+            request,
+            outcome,
+          });
+        }).pipe(skipLogged("Excerpt resolution failed", a.indexedKey));
+        if (candidate.result.kind === "unavailable") {
+          candidate.result =
+            (yield* retainExcerpt({ request, paths: previousPaths })) ??
+            candidate.result;
         }
-      },
-      summary() {
-        return summarizeExcerpts(candidates.values());
-      },
-    };
+      }).pipe(skipLogged("Excerpt preparation failed", a.indexedKey));
+    }
+  }).pipe(Effect.scoped, provide);
+  return {
+    annotationImageLink(annotation) {
+      if (!annotationHasCacheImage(annotation.type)) return null;
+      const prior = candidates.get(annotation.indexedKey);
+      if (prior) return prior.helper;
+      const candidate: Candidate = {
+        annotation,
+        result: { kind: "unavailable", reason: "source" },
+        sourceLink: `[Zotero](${annotationOpenUri({ attachmentKey: annotation.parentKey, annotationKey: annotation.key, groupID: annotation.groupID, pageLabel: annotation.pageLabel })})`,
+        used: false,
+        helper: (() => "") as TemplateLink,
+      };
+      candidate.helper = createExcerptLink(deps.markdownLink, candidate);
+      candidates.set(annotation.indexedKey, candidate);
+      return candidate.helper;
+    },
+    prepare,
+    summary() {
+      return summarizeExcerpts(candidates.values());
+    },
   };
 }
+
+const cardExcerpt = Effect.fnUntraced(function* (
+  gate: PublicationGate,
+  markdownLink: Parameters<typeof createExcerptLink>[0],
+  options: CardExcerptOptions,
+) {
+  const { annotation, request, settings } = options;
+  let result: MaterializedExcerpt = {
+    kind: "unavailable",
+    reason: settings["attachment.import"] ? "source" : "disabled",
+  };
+  const image = annotationHasCacheImage(annotation.type);
+  if (
+    image &&
+    request &&
+    settings["attachment.import"] &&
+    (yield* options.valid)
+  ) {
+    const images = yield* ExcerptImages;
+    yield* Effect.gen(function* () {
+      const outcome = yield* portCall("excerpt-resolve", (signal) =>
+        images.resolve(request, signal),
+      );
+      if (yield* options.valid)
+        result = yield* materializeExcerpt({
+          gate,
+          notePath: options.notePath,
+          settings,
+          request,
+          outcome,
+          valid: options.valid,
+        });
+    }).pipe(skipLogged("Captured excerpt preparation failed", annotation.key));
+  }
+  const state = { used: false, result, sourceLink: options.sourceLink };
+  const prepared: PreparedCardExcerpt = {
+    helper: image ? createExcerptLink(markdownLink, state) : null,
+    summary() {
+      return summarizeExcerpts([state]);
+    },
+  };
+  return prepared;
+});

@@ -1,93 +1,32 @@
 import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
-import type { Item, ItemRef } from "@zotlit/db";
-
-import type { EffectBridge } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { withProgress } from "@/lib/notifier";
+import type { NoticeMessage, ProgressCopy } from "@/lib/notifier";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
-import type { ProfileSelector } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import { missingPartialNotice } from "@/lib/workbench-recovery";
+import { plainNoteError } from "@/services/note-feature/errors";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
-  NoteFeature,
   NoteOperationDiagnostic,
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { ProfileReader } from "@/services/profile/service";
-import type { PluginSettings } from "@/services/settings/service";
-import { InertTemplateError } from "@/services/template/errors";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
+import { isInertTemplateError } from "@/services/template/errors";
 
-/**
- * Dependencies for the batch runner's single-action create / update path.
- * Companion links use the separate interactive navigation flow.
- */
-export interface SingleUpdateDeps {
-  profile: ProfileReader;
-  app: App;
-  /**
-   * The database reads. A batch run opens its Snapshot here, and its note
-   * updates read through it.
-   */
-  zoteroReads: Pick<
-    PlainZoteroReads,
-    "acquireRead" | "reads" | "snapshot" | "state"
-  >;
-  settings: Pick<PluginSettings["Service"], "current" | "update">;
-  bridge: Pick<EffectBridge, "runSync">;
-  noteFeature: NoteFeature;
-  noteIndex: Pick<PlainNoteIndex, "getNotesByItemKey" | "whenIndexed">;
-}
+import { NoteFeature } from "./service";
+import type { UpdateNoteOptions } from "./write-pipeline";
 
-/**
- * Update the existing literature note, or create + open one if none exists.
- * `scope` controls how much an existing note is refreshed (see {@link UpdateScope}).
- *
- * A `metadata` scope never creates: the whole point of the narrowing is to leave
- * the body alone, and `createNote` would write a full templated one. Missing
- * notes report and stop, leaving the full-scope action as the way to create.
- */
-export async function updateNote(
-  deps: SingleUpdateDeps,
-  ref: ItemRef,
-  {
-    scope = "full",
-    profile,
-  }: { scope?: UpdateScope; profile?: ProfileSelector } = {},
-): Promise<void> {
-  const file = resolveLiteratureNoteWithWarning(
-    deps.noteIndex.getNotesByItemKey(ref.indexedKey),
-  );
-
-  if (!file) {
-    if (scope === "metadata") {
-      new BaseNotice(m.notice_update_metadata_no_note());
-      return;
-    }
-    await createAndOpen(deps, ref, profile);
-    return;
-  }
-
-  const itemKey = itemKeyFromFrontmatter(
-    deps.app.metadataCache.getFileCache(file),
-  );
-  if (!itemKey) return;
-
-  void toast.promise(
-    deps.noteFeature.updateNote(file, {
-      indexedKey: itemKey,
-      scope,
-      profile,
-    }),
-    updateNoteToast(scope, { app: deps.app }),
-  );
+/** The progress notice of a single-note update, with its messages as functions. */
+export interface UpdateNoteCopy extends ProgressCopy<UpdateResult> {
+  readonly loading: string;
+  readonly success: (result: UpdateResult) => NoticeMessage;
+  /** The message for what the update failed with; a Note Feature failure shows what its render or rewrite threw. */
+  readonly error: (error: unknown) => NoticeMessage;
 }
 
 /** Toast copy for a single-note update, framed by `scope`. A `metadata` update
@@ -96,20 +35,20 @@ export async function updateNote(
 export function updateNoteToast(
   scope: UpdateScope,
   options: { app?: App } = {},
-): {
-  loading: string;
-  success: (result: UpdateResult) => string | DocumentFragment;
-  error: (_msg: string, e: unknown) => string | DocumentFragment;
-} {
+): UpdateNoteCopy {
   const diagnosticContent = (diagnostic: NoteOperationDiagnostic) =>
     options.app
       ? noteOperationDiagnosticContent(options.app, diagnostic)
       : noteOperationDiagnosticNotice(diagnostic);
-  const error = (_msg: string, e: unknown): string | DocumentFragment =>
-    missingPartialNotice(e, options) ??
-    (e instanceof InertTemplateError
-      ? e.message
-      : m.notice_update_note_failed());
+  const error = (failure: unknown): NoticeMessage => {
+    const cause = plainNoteError(failure);
+    return (
+      missingPartialNotice(cause, options) ??
+      (isInertTemplateError(cause)
+        ? cause.message
+        : m.notice_update_note_failed())
+    );
+  };
   if (scope === "metadata") {
     return {
       loading: m.notice_updating_note_metadata(),
@@ -134,69 +73,94 @@ export function updateNoteToast(
   };
 }
 
-/** Lazily resolve the full Item and create + open a new literature note. */
-export async function createAndOpen(
-  deps: SingleUpdateDeps,
-  ref: ItemRef,
-  profile?: ProfileSelector,
-): Promise<void> {
-  const { reads } = deps.zoteroReads;
-  const items = await Effect.runPromise(
-    reads.ItemsByIndexedKeys({ indexedKeys: [ref.indexedKey] }),
-  );
-  const item = items.get(ref.indexedKey);
-  if (!item) return;
+/**
+ * The notices a note update shows. The caller builds them over the `App` that
+ * their recovery actions open, so the update itself holds no `App`.
+ */
+export interface BatchUpdateNotices {
+  /** The single update's toast copy for `scope`. */
+  readonly updateToast: (scope: UpdateScope) => UpdateNoteCopy;
+  /** The standard create notice of one note create. */
+  readonly createToast: ProgressCopy<CreateNoteResult>;
+  /** The batch modal's notice when its run fails. */
+  readonly runFailed: (error: unknown) => string | DocumentFragment;
+}
 
-  const file = await createNoteWithToast(deps.noteFeature, item, {
-    profile,
-    app: deps.app,
-  });
-  if (!file) return;
-  await deps.app.workspace.openLinkText(file.path, "", false, {
-    active: true,
-  });
+/** The note update's notices, with recovery actions that open in `app`. */
+export function batchUpdateNotices(app: App): BatchUpdateNotices {
+  return {
+    updateToast: (scope) => updateNoteToast(scope, { app }),
+    createToast: createNoteToast({ app }, plainNoteError),
+    runFailed: (error) => {
+      // The modal hands back what the run failed with; a Note Feature
+      // failure carries what the render or the rewrite threw.
+      const cause = plainNoteError(error);
+      return (
+        missingPartialNotice(cause, { app }) ??
+        (isInertTemplateError(cause)
+          ? cause.message
+          : m.batch_update_run_failed())
+      );
+    },
+  };
 }
 
 /**
- * Create a literature note for `item` behind the standard create toast. Returns
- * the created file, or `null` when creation failed — the toast already surfaced
- * the failure, so callers only need to skip their follow-up.
+ * Update `file` behind its progress notice. The notice tells the user how the
+ * update went, so a typed failure ends here; a defect or an interrupt passes.
  */
-export async function createNoteWithToast(
-  noteFeature: Pick<NoteFeature, "createNote">,
-  item: Item,
-  options: { profile?: ProfileSelector; app?: App } = {},
-): Promise<TFile | null> {
-  return createNoteTaskWithToast(
-    () => noteFeature.createNote(item, { profile: options.profile }),
-    { app: options.app },
-  );
-}
+export const updateWithNotice = Effect.fnUntraced(function* (
+  file: TFile,
+  options: UpdateNoteOptions,
+  copy: ProgressCopy<UpdateResult>,
+) {
+  yield* withProgress(
+    (yield* NoteFeature).updateNote(file, options),
+    copy,
+  ).pipe(Effect.ignore);
+});
 
 /**
- * Start the create notice only after the user's Profile decision has settled.
- * `created` replaces the plain success notice, e.g. to name the Profile and
- * path a resolved selection wrote to.
+ * Run `create` behind the create notice, started only after the user's Profile
+ * decision has settled. `created` replaces the plain success notice, e.g. to
+ * name the Profile and path a resolved selection wrote to. Returns the created
+ * file, or `null` when the create wrote nothing or failed: the notice already
+ * told the user. An interrupt passes.
  */
-export async function createNoteTaskWithToast(
-  create: () => Promise<CreateNoteResult>,
+export const createWithNotice = Effect.fnUntraced(function* <E, R>(
+  create: Effect.Effect<CreateNoteResult, E, R>,
   options: { app?: App; created?: (file: TFile) => string } = {},
-): Promise<TFile | null> {
-  try {
-    const result = await toast.promise(create(), {
-      loading: m.notice_creating_note(),
-      success: (result) => createNoteSuccessNotice(result, options),
-      error: (_msg, e) =>
+) {
+  const result = yield* withProgress(
+    create,
+    createNoteToast(options, plainNoteError),
+  ).pipe(recover(() => Effect.void, Effect.void));
+  return result?.outcome === "created" ? result.file : null;
+});
+
+/**
+ * The create notice's messages. `plainError` gives what a failure threw, for
+ * a caller that holds the failure around it.
+ */
+function createNoteToast(
+  options: { app?: App; created?: (file: TFile) => string },
+  plainError: (error: unknown) => unknown = (error) => error,
+): ProgressCopy<CreateNoteResult> & {
+  error: (error: unknown) => string | DocumentFragment;
+} {
+  return {
+    loading: m.notice_creating_note(),
+    success: (result) => createNoteSuccessNotice(result, options),
+    error: (error) => {
+      const e = plainError(error);
+      return (
         missingPartialNotice(e, options) ??
-        (e instanceof EmptyFilenameError || e instanceof InertTemplateError
+        (e instanceof EmptyFilenameError || isInertTemplateError(e)
           ? e.message
-          : m.notice_create_note_failed()),
-      swallowError: false,
-    });
-    return result.outcome === "created" ? result.file : null;
-  } catch {
-    return null;
-  }
+          : m.notice_create_note_failed())
+      );
+    },
+  };
 }
 
 /** The caller's words for a created note, a Profile recovery when the app can offer one, else the plain outcome. */

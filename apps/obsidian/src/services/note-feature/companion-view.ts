@@ -9,39 +9,22 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import * as toast from "@/lib/toast";
 import { UseLedger } from "@/services/use-ledger/service";
-import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { createNoteInteractively } from "./creation-view";
-import type { InteractiveCreationDeps } from "./creation-view";
-import type {
-  CompanionNoteTarget,
-  NoteFeature,
-  UpdateScope,
-} from "./operations";
+import type { InteractiveCreationPorts } from "./creation-view";
+import type { CompanionNoteTarget, UpdateScope } from "./operations";
+import { NoteFeature } from "./service";
 import {
   noteOperationDiagnosticContent,
   resolveLiteratureNoteWithWarning,
   updateNoteToast,
+  updateWithNotice,
 } from "./update-single";
 
-/**
- * The legacy values the Companion flow still holds. Note Feature and the
- * Profile factories convert in later slices; the flow reads the Zotero data
- * folder from the ZoteroPref tag.
- */
-export interface CompanionNoteDeps extends Omit<
-  InteractiveCreationDeps,
-  "zoteroPref"
-> {
-  noteFeature: InteractiveCreationDeps["noteFeature"] &
-    Pick<NoteFeature, "resolveCompanionNote" | "updateNote">;
-}
-
 export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
-  deps: CompanionNoteDeps,
+  deps: InteractiveCreationPorts,
   ref: ItemRef,
   options: {
     action: ProtocolAction;
@@ -54,6 +37,7 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
   const workspace = yield* Workspace;
   const useLedger = yield* UseLedger;
   const notifier = yield* Notifier;
+  const noteFeature = yield* NoteFeature;
   const open = (file: TFile) => {
     const navigate = workspace.openLinkText(file.path, "", {
       newLeaf: options.paneType ?? false,
@@ -63,11 +47,9 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
       ? useLedger.withoutNoteUse(file, navigate)
       : navigate;
   };
-  const target = yield* Effect.promise(() =>
-    deps.noteFeature.resolveCompanionNote(ref.indexedKey, {
-      profile: options.profile,
-    }),
-  );
+  const target = yield* noteFeature.resolveCompanionNote(ref.indexedKey, {
+    profile: options.profile,
+  });
   const notice = companionNoteNotice(deps.app, target);
   if (target.outcome === "refused") {
     yield* notifier.show(notice!);
@@ -80,14 +62,10 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
       yield* notifier.show(notice!);
     } else if (options.action === "update") {
       const scope = options.scope ?? "full";
-      yield* Effect.promise(() =>
-        toast.promise(
-          deps.noteFeature.updateNote(file, {
-            indexedKey: ref.indexedKey,
-            scope,
-          }),
-          updateNoteToast(scope, { app: deps.app }),
-        ),
+      yield* updateWithNotice(
+        file,
+        { indexedKey: ref.indexedKey, scope },
+        updateNoteToast(scope, { app: deps.app }),
       );
     }
     return;
@@ -101,13 +79,10 @@ export const openCompanionNote = Effect.fn("openCompanionNote")(function* (
     indexedKeys: [ref.indexedKey],
   })).get(ref.indexedKey);
   if (!item) return;
-  const { dataDir } = yield* (yield* ZoteroPref).current;
-  const file = yield* Effect.promise(() =>
-    createNoteInteractively({ ...deps, zoteroPref: { dataDir } }, item, {
-      headless: options.profile,
-      direct: true,
-    }),
-  );
+  const file = yield* createNoteInteractively(deps, item, {
+    headless: options.profile,
+    direct: true,
+  });
   if (file) {
     yield* open(file);
   }

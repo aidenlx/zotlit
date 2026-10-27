@@ -22,6 +22,7 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
+import { passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -1546,10 +1547,12 @@ export class MarkSelection implements Disposable {
       now: Temporal.Instant,
     ) => string = writeFailureMessage,
   ): void {
-    void outcome.then((state) => {
-      if (state.kind !== "failed") return;
-      new BaseNotice(message(state.failure, this.#deps.now()));
-    });
+    void outcome
+      .then((state) => {
+        if (state.kind !== "failed") return;
+        new BaseNotice(message(state.failure, this.#deps.now()));
+      })
+      .catch(passAborted);
   }
 
   #live(): boolean {

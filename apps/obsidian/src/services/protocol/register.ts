@@ -1,5 +1,4 @@
-import { Cause, Effect, Fiber, FiberSet, Schema, Scope } from "effect";
-import type { ManagedRuntime } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Layer, Schema } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import type { ItemRef } from "@zotlit/db";
@@ -29,9 +28,9 @@ import type { ProtocolAction } from "@zotlit/protocol";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
+import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
-import { openScope } from "@/lib/effect-scope";
 import { forkEach } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import { portCall } from "@/lib/legacy-port";
@@ -40,17 +39,16 @@ import type { NoticeMessage, OutcomeCopy } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
+import { PluginHost } from "@/lib/plugin-host";
 import {
   parseProfileSelector,
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import {
-  pdfPickerReader,
-  toObsidianOpenable,
-} from "@/services/attachment-open/actions";
+import { pdfPickerReader } from "@/services/attachment-open/actions";
 import type { TargetOpener } from "@/services/attachment-open/open-target";
+import { toObsidianOpenable } from "@/services/attachment-open/openable";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import { LocalServer } from "@/services/local-server/service";
 import type {
@@ -58,20 +56,28 @@ import type {
   UpdateManyRequest,
 } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
+import type { InteractiveCreationPorts } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
 import type {
-  BatchUpdateDeps,
+  BatchUpdatePorts,
   BatchUpdateResult,
+  BatchUpdateServices,
 } from "@/services/note-feature/update-batch";
-import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
+import {
+  batchUpdateNotices,
+  noteOperationDiagnosticNotice,
+} from "@/services/note-feature/update-single";
 import {
   runBatchImport,
   runBatchImportAll,
 } from "@/services/note-import/batch-import";
-import type { BatchImportServices } from "@/services/note-import/batch-import";
+import type {
+  BatchImportPorts,
+  BatchImportServices,
+} from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
@@ -81,15 +87,18 @@ import type { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 /** The services a protocol handler reads through their tags. */
 export type ProtocolServices =
   | BatchImportServices
+  | BatchUpdateServices
   | LocalServer
   | Notifier
   | ObsidianEnv
+  | ProfileDialogServices
   | UseLedger
   | Vault
   | Workspace
@@ -97,13 +106,11 @@ export type ProtocolServices =
   | ZoteroReads;
 
 /**
- * The legacy values the handlers still hold. Note Feature, the Profile
- * factories and the Attachment opener convert in later slices, and the batch
- * update runners still take the whole {@link BatchUpdateDeps} bundle, plain
- * adapters included. The bundle plans a library-wide update through the
- * `batchScope` edge handle.
+ * The legacy values the handlers still hold. The Profile dialogs run in the
+ * handler's fiber; the note import view and the Attachment opener convert in
+ * later slices.
  */
-export interface ProtocolDeps extends BatchUpdateDeps {
+export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
@@ -127,7 +134,7 @@ export interface ProtocolDeps extends BatchUpdateDeps {
  * fails is logged. Every handler run and every run of a request the Local
  * Server pushes is a fiber of the current Scope: closing it stops the pushed
  * requests and interrupts the runs still going. A legacy Promise a run waits
- * on (Note Feature, a batch update, a view opener) still runs to its end.
+ * on (a view opener) still runs to its end.
  */
 export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
   function* (
@@ -206,35 +213,35 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
 );
 
 /**
- * The edge `zt-main.ts` calls: {@link registerProtocolHandlers} on a Scope of
- * its own, which the returned disposal closes at unload.
- *
- * It calls `runtime.runSync` once, at load, in place of the container's
- * bridge: a departure from policies/services.md → Bridge, which leaves that
- * call to `build.ts`. The registration reads tags, and the bridge runs only
- * Effects that need none. The registration becomes a layer in the plugin
- * graph, and this edge goes away, once ticket 13 converts Note Feature.
+ * {@link registerProtocolHandlers} as a registration of the plugin graph: the
+ * handlers register on the {@link PluginHost} and run on the layer's Scope,
+ * which unload closes. The note import modal's callbacks run through the
+ * bridge over that Scope. `ports` hold the legacy values the handlers call.
  */
-export function startProtocolHandlers(
-  runtime: Pick<
-    ManagedRuntime.ManagedRuntime<ProtocolServices, never>,
-    "runSync"
-  >,
-  plugin: Pick<Plugin, "registerObsidianProtocolHandler">,
-  deps: ProtocolDeps,
-): AsyncDisposable {
-  const { scope, close } = openScope();
-  runtime.runSync(
-    registerProtocolHandlers(plugin, deps).pipe(Scope.provide(scope)),
+export const layerProtocolHandlers = (
+  ports: Omit<ProtocolDeps, "bridge">,
+): Layer.Layer<never, never, PluginHost | ProtocolServices> =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const host = yield* PluginHost;
+      const bridge = yield* scopedBridge;
+      yield* registerProtocolHandlers(host, { ...ports, bridge });
+    }),
   );
-  return { [Symbol.asyncDispose]: close };
-}
 
 /** The ports a batch import takes, from the handlers' legacy values. */
-function importPorts(deps: ProtocolDeps) {
+function importPorts(deps: ProtocolDeps): BatchImportPorts {
   return {
     view: deps.noteImportView,
-    noteFeature: deps.noteFeature,
+    bridge: deps.bridge,
+  };
+}
+
+/** The ports a note update takes, from the handlers' legacy values. */
+function updatePorts(deps: ProtocolDeps): BatchUpdatePorts {
+  return {
+    notices: batchUpdateNotices(deps.app),
+    view: deps.noteImportView,
     bridge: deps.bridge,
   };
 }
@@ -263,14 +270,12 @@ const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
   function* (event: UpdateManyRequest, deps: ProtocolDeps) {
     const requested = yield* resolveRequestedProfile(event.profileId);
     if (!requested.ok) return;
-    yield* Effect.promise(() =>
-      toast.promise(
-        runBatchUpdate(deps, event.items, {
-          scope: event.scope,
-          profile: requested.selector,
-        }),
-        { success: batchUpdateNotice },
-      ),
+    yield* reportOutcome(
+      runBatchUpdate(updatePorts(deps), event.items, {
+        scope: event.scope,
+        profile: requested.selector,
+      }),
+      batchUpdateToast,
     );
   },
   logAndContinue("Pushed batch update failed", "protocol"),
@@ -367,19 +372,21 @@ const handleBatchProtocol = Effect.fn("protocol.handleBatchProtocol")(
     const requested = yield* resolveRequestedProfile(query.profileId);
     if (!requested.ok) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        runBatchUpdate(deps, query.items, {
-          scope: query.scope,
-          profile: requested.selector,
-        }),
-        {
-          success: batchUpdateNotice,
-        },
-      ),
+    yield* reportOutcome(
+      runBatchUpdate(updatePorts(deps), query.items, {
+        scope: query.scope,
+        profile: requested.selector,
+      }),
+      batchUpdateToast,
     );
   },
 );
+
+/** A batch update's notices: the early-exit outcomes; a failure shows none. */
+const batchUpdateToast = {
+  success: batchUpdateNotice,
+  error: () => undefined,
+};
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {
   switch (result.outcome) {
@@ -511,14 +518,12 @@ const handleUpdateAllProtocol = Effect.fn("protocol.handleUpdateAllProtocol")(
     });
     if (!query) return;
 
-    yield* Effect.promise(() =>
-      toast.promise(
-        runBatchUpdateAll(deps, {
-          groupID: query.groupID,
-          collectionKey: query.collectionKey,
-        }),
-        { success: updateAllNotice },
-      ),
+    yield* reportOutcome(
+      runBatchUpdateAll(updatePorts(deps), {
+        groupID: query.groupID,
+        collectionKey: query.collectionKey,
+      }),
+      { success: updateAllNotice, error: () => undefined },
     );
   },
 );
@@ -679,9 +684,7 @@ class ImportedProfileMissing extends Schema.TaggedError<
 const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
   function* (deps: ProtocolDeps, paneType: PaneType | undefined) {
     yield* Effect.logDebug("Opening clipboard Profile import");
-    const profile = yield* portCall("import-profile", () =>
-      deps.importProfile({ source: "clipboard" }),
-    );
+    const profile = yield* deps.importProfile({ source: "clipboard" });
     if (!profile) {
       yield* Effect.logDebug(
         "Clipboard Profile import ended without a document",

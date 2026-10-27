@@ -1,6 +1,7 @@
 // Materializes Zotero Child Notes into flat Markdown mirrors on command.
 import { Context, Effect, Layer, Schema, Semaphore } from "effect";
-import { normalizePath, stringifyYaml, TFile, TFolder } from "obsidian";
+import { normalizePath, stringifyYaml } from "obsidian";
+import type { TFile } from "obsidian";
 
 import type {
   AnnotationSources,
@@ -26,21 +27,23 @@ import { processLiveText } from "@/lib/effect-live-text";
 import { withLogCategory } from "@/lib/effect-log";
 import { joinFolderPath, normalizeFolderPath } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
-import type { LegacyPortError } from "@/lib/legacy-port";
 import { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { formatErrorMessage } from "@/lib/toast";
-import type { VaultError } from "@/lib/vault-errors";
+import type { VaultError, VaultFolderBlockedError } from "@/lib/vault-errors";
+import { ensureVaultFolder } from "@/lib/vault-folder";
+import { AttachmentImport } from "@/services/attachment-import/service";
 import type {
-  AttachmentImport,
-  AttachmentImportService,
+  AttachmentFlushError,
+  AttachmentImportBatch,
 } from "@/services/attachment-import/service";
-import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { outcomeScope } from "@/services/excerpt-image/outcome-scope";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { ExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type {
-  ExcerptPreparation,
+  ExcerptPrepareError,
   ExcerptSummary,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
@@ -86,16 +89,6 @@ interface RunContext {
   outcomes: ExcerptOutcomeScope;
 }
 
-/**
- * The legacy pieces a note write calls: Attachment Import's per-note batch and
- * the excerpt preparation. They convert in a later slice; until then
- * `build.ts` binds them once the container holds them.
- */
-export interface NoteImportPorts {
-  readonly attachmentImport: Pick<AttachmentImportService, "prepare">;
-  readonly excerptImages?: ExcerptPreparation;
-}
-
 export interface ImportNoteOptions {
   /** Bound to the calling operation's Snapshot. */
   reads: ZoteroReadsApi;
@@ -125,8 +118,9 @@ interface PrepareExplicitImportOptions {
 export type NoteImportError =
   | NoteImportProfileError
   | NoteImportMintError
-  | NoteImportFolderError
-  | LegacyPortError
+  | VaultFolderBlockedError
+  | ExcerptPrepareError
+  | AttachmentFlushError
   | NoteImportParseError
   | Effect.Error<ReturnType<typeof readDisplayRef>>
   | ProfileOperationError
@@ -171,49 +165,50 @@ export class NoteImporter extends Context.Service<
 
 const logged = withLogCategory("note-import", "service");
 
-/** The note importer over the graph's tags and the legacy `ports`. */
-export const layerNoteImporter = (ports: NoteImportPorts) =>
-  Layer.effect(
-    NoteImporter,
-    Effect.gen(function* () {
-      const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
-      const context = yield* Effect.context<
-        Profile | NoteIndex | Vault | Workspace | ZoteroPref
-      >();
-      const templates = yield* syncTemplate;
-      const ctx: Ctx = { ports, templates };
-      const run = <A, E>(
-        effect: Effect.Effect<
-          A,
-          E,
-          Profile | NoteIndex | Vault | Workspace | ZoteroPref
-        >,
-      ) => Effect.provideContext(effect, context);
-      return NoteImporter.of({
-        prepareExplicitImport: Effect.fn("NoteImporter.prepareExplicitImport")(
-          function* (note, options) {
-            const prepared = yield* run(
-              prepareExplicitImport(ctx, note, options),
-            );
-            return {
-              ...prepared,
-              import: (current: Note, runOptions: ImportNoteOptions) =>
-                writes.withPermits(1)(
-                  run(prepared.importNow(current, runOptions)),
-                ),
-            };
-          },
-        ),
-        importNote: Effect.fn("NoteImporter.importNote")((note, options) =>
-          writes.withPermits(1)(run(doImportNote(ctx, note, options))),
-        ),
-      });
-    }),
-  );
+/** The services the note importer reads through their tags. */
+type NoteImporterServices =
+  | AttachmentImport
+  | ExcerptPreparation
+  | Profile
+  | NoteIndex
+  | Vault
+  | Workspace
+  | ZoteroPref;
+
+/** The note importer over the graph's tags. */
+export const layerNoteImporter = Layer.effect(
+  NoteImporter,
+  Effect.gen(function* () {
+    const writes = yield* Semaphore.make(WRITE_CONCURRENCY);
+    const context = yield* Effect.context<NoteImporterServices>();
+    const templates = yield* syncTemplate;
+    const ctx: Ctx = { templates };
+    const run = <A, E>(effect: Effect.Effect<A, E, NoteImporterServices>) =>
+      Effect.provideContext(effect, context);
+    return NoteImporter.of({
+      prepareExplicitImport: Effect.fn("NoteImporter.prepareExplicitImport")(
+        function* (note, options) {
+          const prepared = yield* run(
+            prepareExplicitImport(ctx, note, options),
+          );
+          return {
+            ...prepared,
+            import: (current: Note, runOptions: ImportNoteOptions) =>
+              writes.withPermits(1)(
+                run(prepared.importNow(current, runOptions)),
+              ),
+          };
+        },
+      ),
+      importNote: Effect.fn("NoteImporter.importNote")((note, options) =>
+        writes.withPermits(1)(run(doImportNote(ctx, note, options))),
+      ),
+    });
+  }),
+);
 
 /** Per-layer values every write reads. */
 interface Ctx {
-  readonly ports: NoteImportPorts;
   readonly templates: Effect.Success<typeof syncTemplate>;
 }
 
@@ -268,12 +263,6 @@ const writeScoped = (
       });
     }),
   );
-
-/** The batch's scope, or one this write owns until its Scope closes. */
-const outcomeScope = (provided: ExcerptOutcomeScope | undefined) =>
-  provided === undefined
-    ? Effect.acquireDisposable(Effect.sync(() => new ExcerptOutcomeScope()))
-    : Effect.succeed(provided);
 
 const prepareExplicitImport = Effect.fnUntraced(function* (
   ctx: Ctx,
@@ -398,15 +387,13 @@ const writeNote = Effect.fnUntraced(function* (
   const path = mode.action === "create" ? mode.path : mode.file.path;
 
   let body = "";
-  let attachmentBatch: AttachmentImport | undefined;
+  let attachmentBatch: AttachmentImportBatch | undefined;
   let excerpts: PreparedExcerpts | undefined;
   if (note.note) {
     const html = note.note;
-    const batch = yield* portCall("attachment-prepare", () =>
-      ctx.ports.attachmentImport.prepare(path, {
-        folderCache: run.attachmentFolderCache,
-      }),
-    );
+    const batch = yield* (yield* AttachmentImport).prepare(path, {
+      folderCache: run.attachmentFolderCache,
+    });
     attachmentBatch = batch;
     const templateMode = getProfileBinding(
       run.settings,
@@ -416,12 +403,9 @@ const writeNote = Effect.fnUntraced(function* (
       html,
       annotations: templateMode,
     });
-    const { excerptImages } = ctx.ports;
-    const annotations = excerptImages
-      ? inputs.annotations?.annotations
-      : undefined;
-    if (excerptImages && annotations?.length) {
-      const prepared = excerptImages({
+    const annotations = inputs.annotations?.annotations;
+    if (annotations?.length) {
+      const prepared = yield* (yield* ExcerptPreparation).forNote({
         reads: run.reads,
         notePath: path,
         settings: run.profile.settings,
@@ -431,7 +415,7 @@ const writeNote = Effect.fnUntraced(function* (
       excerpts = prepared;
       for (const annotation of annotations)
         prepared.annotationImageLink(annotation);
-      yield* portCall("excerpt-prepare", () => prepared.prepare());
+      yield* prepared.prepare;
     }
     const sources = inputs.annotations;
     const { templates } = ctx;
@@ -483,41 +467,50 @@ const writeNote = Effect.fnUntraced(function* (
   };
   const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 
-  let outcome: WriteOutcome;
-  if (mode.action === "create") {
-    const created = yield* (yield* Vault).create(mode.path, content).pipe(
-      Effect.as(true),
-      Effect.catchTag("FileExists", () => Effect.succeed(false)),
-    );
-    if (!created) {
-      yield* Effect.logWarning("Imported note already exists; skipped").pipe(
-        Effect.annotateLogs({ path }),
-        logged,
-      );
-      const skipped: WriteOutcome = "skipped";
-      return skipped;
-    }
-    outcome = "created";
-  } else {
-    yield* processLiveText(mode.file, () => content);
-    outcome = "overwritten";
-  }
+  // The write and its attachment copies run to the end: an interrupt never
+  // leaves a written note that names attachments not yet copied.
+  return yield* Effect.uninterruptible(
+    Effect.gen(function* () {
+      let outcome: WriteOutcome;
+      if (mode.action === "create") {
+        const created = yield* (yield* Vault).create(mode.path, content).pipe(
+          Effect.as(true),
+          Effect.catchTag("FileExists", () => Effect.succeed(false)),
+        );
+        if (!created) {
+          yield* Effect.logWarning(
+            "Imported note already exists; skipped",
+          ).pipe(Effect.annotateLogs({ path }), logged);
+          const skipped: WriteOutcome = "skipped";
+          return skipped;
+        }
+        outcome = "created";
+      } else {
+        // The rewrite returns a fixed text, so it cannot throw.
+        yield* processLiveText(mode.file, () => content).pipe(
+          Effect.catchTag("LiveTextRewriteFailed", (error) =>
+            Effect.die(error),
+          ),
+        );
+        outcome = "overwritten";
+      }
 
-  if (excerpts) run.reportExcerpts?.(excerpts.summary());
-  if (attachmentBatch) {
-    const flushed = attachmentBatch;
-    const copied = yield* portCall("attachment-flush", () => flushed.flush());
-    yield* Effect.logDebug("Imported note attachments").pipe(
-      Effect.annotateLogs({
-        path,
-        copied: copied.copied,
-        skipped: copied.skipped,
-        missing: copied.missing,
-      }),
-      logged,
-    );
-  }
-  return outcome;
+      if (excerpts) run.reportExcerpts?.(excerpts.summary());
+      if (attachmentBatch) {
+        const copied = yield* attachmentBatch.flush;
+        yield* Effect.logDebug("Imported note attachments").pipe(
+          Effect.annotateLogs({
+            path,
+            copied: copied.copied,
+            skipped: copied.skipped,
+            missing: copied.missing,
+          }),
+          logged,
+        );
+      }
+      return outcome;
+    }),
+  );
 });
 
 /** The parent Literature Note an explicitly created note inherits its Profile from. */
@@ -675,13 +668,7 @@ const ensureImportFolder = Effect.fnUntraced(function* (
   importFolderSetting: string,
 ) {
   const folder = normalizeFolderPath(normalizePath(importFolderSetting));
-  if (folder === "/") return folder;
-  const vault = yield* Vault;
-  const existing = yield* vault.getAbstractFileByPath(folder);
-  if (existing instanceof TFolder) return folder;
-  if (existing instanceof TFile)
-    return yield* new NoteImportFolderError({ path: folder });
-  yield* vault.createFolder(folder);
+  yield* ensureVaultFolder(folder);
   return folder;
 });
 
@@ -698,18 +685,5 @@ export class NoteImportMintError extends Schema.TaggedError<
 }) {
   override get message(): string {
     return `Imported note path collided with an existing file: ${this.path}`;
-  }
-}
-
-/** A file, not a folder, holds the import folder's path. */
-export class NoteImportFolderError extends Schema.TaggedError<
-  NoteImportFolderError,
-  { readonly brand: unique symbol }
->()("NoteImportFolderError", {
-  /** The import folder's vault path. */
-  path: Schema.String,
-}) {
-  override get message(): string {
-    return `Cannot create folder; a file exists at "${this.path}"`;
   }
 }

@@ -5,9 +5,6 @@ import { citationStyleLabel } from "@/lib/citation-style";
 import { holdScopeWhileFocused } from "@/lib/focus-scope";
 import type { FocusScope } from "@/lib/focus-scope";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { modalAnswer } from "@/lib/modal-answer";
-import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type {
@@ -15,9 +12,6 @@ import type {
   ProfilePreview,
 } from "@/services/note-feature";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { LiteratureNoteProfile } from "@/services/profile/service";
-
-const logger = getLogger(["profile-picker"]);
 
 export interface LiteratureNoteProfileChoice {
   id: ProfileSelector;
@@ -35,6 +29,17 @@ export interface LiteratureNoteProfileChoice {
   problem?: string;
 }
 
+/**
+ * A Profile dialog the user asked the picker for in place of a choice: New
+ * profile, or Import from its secondary action. The caller opens it.
+ */
+export interface ProfileDialogPick {
+  readonly action: "new" | "import";
+}
+
+/** What the picker answers: a Profile, or a Profile dialog to open. */
+export type ProfilePick = LiteratureNoteProfileChoice | ProfileDialogPick;
+
 type ProfilePickerRow =
   | LiteratureNoteProfileChoice
   | { action: "new"; label: string };
@@ -49,8 +54,6 @@ interface ProfilePickerOptions {
   problem?: string;
   previews?: readonly ProfilePreview[];
   styles?: readonly InstalledCslStyle[];
-  onNew?: () => Promise<LiteratureNoteProfileChoice | undefined>;
-  onImport?: () => Promise<void>;
 }
 
 const PROFILE_BADGE_CLASS =
@@ -59,74 +62,44 @@ const PROFILE_BADGE_CLASS =
 /** Secondary line under a Profile label; the color comes from the caller. */
 const PROFILE_NOTE_CLASS = "zt:text-xs zt:leading-tight";
 
-export function chooseLiteratureNoteProfile(
+/**
+ * Open the picker over `options.previews`, for a caller that waits on it with
+ * `awaitModal`. `resolve` gets the choice or the Profile dialog to open, or
+ * `undefined` when it closes.
+ */
+export function openLiteratureNoteProfile(
   app: App,
-  profilesOrOptions:
-    | readonly LiteratureNoteProfile[]
-    | (ProfilePickerOptions & {
-        previews: readonly ProfilePreview[];
-      }),
-  options: ProfilePickerOptions = {},
-): Promise<LiteratureNoteProfileChoice | undefined> {
-  const profiles = "previews" in profilesOrOptions ? [] : profilesOrOptions;
-  const selectedOptions =
-    "previews" in profilesOrOptions ? profilesOrOptions : options;
-  return modalAnswer<LiteratureNoteProfileChoice | undefined>((resolve) => {
-    const modal = new LiteratureNoteProfileModal(app, profiles, {
-      resolve,
-      ...selectedOptions,
-      preselected: selectedOptions.preselected ?? DEFAULT_PROFILE,
-    });
-    modal.open();
-    return modal;
+  options: ProfilePickerOptions & { previews: readonly ProfilePreview[] },
+  resolve: (pick: ProfilePick | undefined) => void,
+): { close(): void } {
+  const modal = new LiteratureNoteProfileModal(app, {
+    ...options,
+    resolve,
+    preselected: options.preselected ?? DEFAULT_PROFILE,
   });
+  modal.open();
+  return modal;
 }
 
 class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   readonly #choices: LiteratureNoteProfileChoice[];
-  readonly #resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
-  readonly #onNew: ProfilePickerOptions["onNew"];
-  readonly #onImport: ProfilePickerOptions["onImport"];
+  readonly #resolve: (pick: ProfilePick | undefined) => void;
   #settled = false;
   /** The Scope the Import button drawn last holds while it has focus. */
   #importKeys: FocusScope | null = null;
 
   constructor(
     app: App,
-    profiles: readonly LiteratureNoteProfile[],
     options: ProfilePickerOptions & {
-      resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
+      previews: readonly ProfilePreview[];
+      resolve: (pick: ProfilePick | undefined) => void;
       preselected: ProfileSelector;
     },
   ) {
     super(app);
-    this.#onNew = options.onNew;
-    this.#onImport = options.onImport;
-    this.#choices = options.previews
-      ? options.previews.map((preview) =>
-          profilePreviewChoice(preview, { styles: options.styles }),
-        )
-      : [
-          { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
-          ...profiles.map(({ id, label, document, bindings }) => ({
-            id,
-            label:
-              profiles.filter((profile) => profile.label === label).length > 1
-                ? `${label} (${document})`
-                : label,
-            detail: m.settings_profile_display({
-              folder:
-                bindings["note.literature-folder"] ??
-                m.settings_profile_inherit(),
-              style:
-                bindings["citation.references-style"] === null
-                  ? citationStyleLabel()
-                  : (bindings["citation.references-style"] ??
-                    m.settings_profile_inherit()),
-              document,
-            }),
-          })),
-        ];
+    this.#choices = options.previews.map((preview) =>
+      profilePreviewChoice(preview, { styles: options.styles }),
+    );
     for (const choice of this.#choices) {
       choice.candidate = options.candidates?.includes(choice.id)
         ? (options.matchContext ?? "item")
@@ -183,42 +156,27 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
         text: choice.label,
         cls: "suggestion-content zt:min-w-0",
       });
-      if (this.#onImport) {
-        const button = el.createDiv("suggestion-aux").createEl("button", {
-          text: m.profile_import_from_text_file(),
-        });
-        button.addEventListener("keydown", (event) => {
-          if (event.key === " ") event.stopPropagation();
-        });
-        this.#holdButtonKeys(button);
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          this.#settled = true;
-          this.close();
-          void this.#onImport!().then(
-            () => this.#resolve(undefined),
-            (error) => {
-              logger.error("Failed to open Profile import", { error });
-              new BaseNotice(m.notice_profile_action_failed());
-              this.#resolve(undefined);
-            },
-          );
-        });
-      }
+      const button = el.createDiv("suggestion-aux").createEl("button", {
+        text: m.profile_import_from_text_file(),
+      });
+      button.addEventListener("keydown", (event) => {
+        if (event.key === " ") event.stopPropagation();
+      });
+      this.#holdButtonKeys(button);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.#settled = true;
+        this.close();
+        this.#resolve({ action: "import" });
+      });
     } else renderProfileChoice(choice, el);
   }
 
   override onChooseSuggestion(choice: ProfilePickerRow): void {
     this.#settled = true;
-    if ("action" in choice)
-      void this.#onNew?.().then(this.#resolve, (error) => {
-        logger.error("Failed to open Profile creation", { error });
-        new BaseNotice(m.notice_profile_action_failed());
-        this.#resolve(undefined);
-      });
+    if ("action" in choice) this.#resolve({ action: "new" });
     else this.#resolve(choice.unavailable ? undefined : choice);
-    if ("action" in choice && !this.#onNew) this.#resolve(undefined);
   }
 
   /**

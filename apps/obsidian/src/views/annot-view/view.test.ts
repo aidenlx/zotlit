@@ -328,7 +328,10 @@ async function openSidebar(
     ),
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     excerptDisplay: { open: vi.fn(), refresh: vi.fn(), revalidate: vi.fn() },
-    noteFeature: stubService<AnnotViewDeps["noteFeature"]>("NoteFeature", {}),
+    noteFeature: stubService<AnnotViewDeps["noteFeature"]>(
+      "NoteFeatureHandle",
+      {},
+    ),
     noteIndex: stubService<AnnotViewDeps["noteIndex"]>("NoteIndex", {
       getNotesByItemKey: () => [],
     }),

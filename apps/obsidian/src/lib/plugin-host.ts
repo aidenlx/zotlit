@@ -2,14 +2,21 @@
 import { Context, Effect, Layer } from "effect";
 import type { Scope } from "effect";
 import { around } from "monkey-around";
-import type { Command, Plugin, View, WorkspaceLeaf } from "obsidian";
+import type {
+  Command,
+  Plugin,
+  PluginSettingTab,
+  View,
+  WorkspaceLeaf,
+} from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
+import { portCall } from "@/lib/legacy-port";
 
 /**
  * What a layer registers on: Obsidian commands, post-processors, editor
- * extensions, hover link sources, view creation hooks, zotlit:* commands,
- * and the manifest.
+ * extensions, hover link sources, protocol handlers, view creation hooks,
+ * the setting tab, zotlit:* commands, and the manifest.
  *
  * Obsidian removes every registration when the plugin unloads. `addCommand`
  * also removes its command when the caller's Scope closes, so a startup that
@@ -24,6 +31,7 @@ export interface PluginHostShape
       | "registerMarkdownPostProcessor"
       | "registerEditorExtension"
       | "registerHoverLinkSource"
+      | "registerObsidianProtocolHandler"
     >,
     CliHost {
   /** Add a command. Obsidian prefixes its id with the plugin id, as `Plugin.addCommand` does. */
@@ -40,6 +48,16 @@ export interface PluginHostShape
     viewTypes: readonly string[],
     created: (leaf: WorkspaceLeaf, view: View) => void,
   ): Effect.Effect<boolean, never, Scope.Scope>;
+  /**
+   * Add the setting tab `build` makes over this plugin. The caller's Scope
+   * closing removes it, closing it first when it is open, so its `render`
+   * cleanups run while the services they read are still up.
+   */
+  addSettingTab<T extends PluginSettingTab>(
+    build: (plugin: Plugin) => T,
+  ): Effect.Effect<T, never, Scope.Scope>;
+  /** Close Obsidian's settings window; nothing happens when it is closed. */
+  readonly closeSettings: Effect.Effect<void>;
 }
 
 /** The plugin the layer graph runs in. */
@@ -62,6 +80,8 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
       plugin.registerEditorExtension(extension),
     registerHoverLinkSource: (id, info) =>
       plugin.registerHoverLinkSource(id, info),
+    registerObsidianProtocolHandler: (action, handler) =>
+      plugin.registerObsidianProtocolHandler(action, handler),
     registerCliCommand: (name, command) =>
       plugin.registerCliCommand(name, command),
     addCommand: Effect.fn("PluginHost.addCommand")(function* (command) {
@@ -96,8 +116,30 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
         return true;
       },
     ),
+    addSettingTab: (build) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const tab = build(plugin);
+          plugin.addSettingTab(tab);
+          return tab;
+        }),
+        (tab) => Effect.sync(() => plugin.app.setting.removeSettingTab(tab)),
+      ),
+    closeSettings: Effect.sync(() => plugin.app.setting.close()),
   };
 }
+
+/**
+ * Close the settings window, then open a view through `open`: a view opened
+ * from a setting row shows only once the settings window is out of the way.
+ */
+export const leaveSettingsFor = <const S extends string, A>(
+  step: S,
+  open: (signal: AbortSignal) => Promise<A>,
+) =>
+  PluginHost.use((host) => host.closeSettings).pipe(
+    Effect.andThen(portCall(step, open)),
+  );
 
 export function layerPluginHost(
   plugin: Plugin & CliHost,

@@ -145,10 +145,6 @@
     "zotlit-tests/no-internal-mock",
     "zotlit-tests/no-source-text"
   ],
-  "apps/obsidian/src/services/note-feature/annotation-citation.test.ts": [
-    "zotlit-tests/no-internal-mock",
-    "zotlit-tests/no-source-text"
-  ],
   "apps/obsidian/src/services/note-feature/companion-view.test.ts": [
     "zotlit-tests/no-internal-mock"
   ],

@@ -2,6 +2,7 @@
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
 import { DateTime, Effect, PubSub, Stream } from "effect";
+import type { Duration } from "effect";
 import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
@@ -11,6 +12,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
+import { passAborted } from "@/lib/abort-error";
 import { withRecentColor } from "@/lib/annotation-colors";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { toInstant } from "@/lib/effect-clock";
@@ -789,6 +791,8 @@ export async function repositoryOver(
     dbEvents,
     serverEvents,
     localApiService,
+    runtime,
+    adjustLayerClock,
   } = await writable(stack, zotero.answers, { external });
   const list = await repository.read("RGRPDF24");
   return {
@@ -799,6 +803,13 @@ export async function repositoryOver(
     requests,
     list,
     localApiService,
+    /**
+     * Move the repository's TestClock, which its autosave timers run on;
+     * Vitest's fake timers do not reach them.
+     */
+    adjustRepositoryClock(duration: Duration.Input): Promise<void> {
+      return runtime.runPromise(adjustLayerClock(duration));
+    },
     /**
      * Zotero imports one Annotation from the PDF file, and a database refresh
      * tells the repository, which locks it.
@@ -865,7 +876,7 @@ export async function readerOverZotero(
   stack.defer(
     repository.listen("annotations-changed", (attachmentKey) => {
       draw(repository.peek(attachmentKey)?.value);
-      void repository.read(attachmentKey).then(draw);
+      void repository.read(attachmentKey).then(draw).catch(passAborted);
     }),
   );
   return { ...reader, ...zoteroSide };

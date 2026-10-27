@@ -97,6 +97,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { AbortError } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
 import { confirm } from "@/lib/confirm";
 import { subscribe } from "@/lib/effect-stream";
@@ -111,12 +112,12 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { QueryHandle } from "@/services/item-query/handle";
 import type {
-  NoteFeature,
+  NoteFeatureHandle,
   UpdateResult,
 } from "@/services/note-feature/operations";
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
-import { listInstalledStyles } from "@/services/pandoc/styles";
+import { listInstalledStylesOrNone } from "@/services/pandoc/styles";
 import type { PlainProfile } from "@/services/profile/plain";
 import { openCitationTemplate } from "@/services/template/actions";
 import type { PlainTemplate } from "@/services/template/plain";
@@ -192,7 +193,7 @@ export function originatingNoteUpdateNotice(
     case "not-ready":
       return m.template_workbench_update_not_ready();
     case "failed":
-      return feedback.error("", result.error);
+      return feedback.error(result.error);
     case "refused":
     case "updated": {
       if (result.result.bodyUpdated && !result.result.diagnostic)
@@ -210,7 +211,7 @@ export function originatingNoteUpdateNotice(
 
 export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   zoteroPref: Pick<PlainZoteroPref, "dataDir">;
-  noteFeature?: Pick<NoteFeature, "updateNote">;
+  noteFeature?: Pick<NoteFeatureHandle, "updateNote">;
   /**
    * ZotLit Query, which tests the Match of a Profile on a real Item and names
    * the custom fields a condition reads.
@@ -458,10 +459,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         return { outcome: "unavailable", name: origin.file.basename };
       if (error === changed)
         return { outcome: "not-ready", name: origin.file.basename };
-      logger.error("Failed to update originating note at {path}", {
-        path: origin.file.path,
-        error,
-      });
+      if (!AbortError.test(error))
+        logger.error("Failed to update originating note at {path}", {
+          path: origin.file.path,
+          error,
+        });
       return { outcome: "failed", name: origin.file.basename, error };
     }
   }
@@ -1849,7 +1851,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     try {
       if (this.#closed) return;
       const dataDir = this.#deps.zoteroPref.dataDir;
-      const styles = dataDir ? await listInstalledStyles(dataDir) : [];
+      const styles = dataDir ? await listInstalledStylesOrNone(dataDir) : [];
       if (this.#closed) return;
       this.#citationStyles = styles;
       this.#stylesUnavailable = false;

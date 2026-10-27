@@ -1,11 +1,20 @@
 import { it } from "@effect/vitest";
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import {
+  Context,
+  Effect,
+  Fiber,
+  FileSystem,
+  Layer,
+  Logger,
+  Queue,
+  References,
+  Stream,
+} from "effect";
 import { TFile } from "obsidian";
 import type { App } from "obsidian";
 import { describe, expect, vi } from "vitest";
 
-import type { Item } from "@zotlit/db";
-
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
@@ -18,19 +27,24 @@ import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
+import type { CreationProfileSelection } from "@/services/note-feature";
 import type {
-  CreationProfileSelection,
-  InteractiveCreationDeps,
-  PreparedCreationProfile,
-} from "@/services/note-feature";
-import type { CreationPlan } from "@/services/note-feature/operations";
+  PlannedCreation,
+  PlannedCreationProfile,
+} from "@/services/note-feature/creation-planning";
+import { NoteFeature } from "@/services/note-feature/service";
 import { createNoteHost } from "@/services/note-index/__fixtures__";
 import { layerNoteIndex } from "@/services/note-index/service";
+import { Profile } from "@/services/profile/service";
 import {
   layerPluginSettings,
   PluginSettings,
 } from "@/services/settings/service";
+import { Template } from "@/services/template/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { layerZoteroReads, ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import {
@@ -39,12 +53,11 @@ import {
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
 import type { SeededWork } from "@/services/zotero-reads/test-utils";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
-import { citekeyNoteCreation } from "./note-creation";
 import { CitekeyEditor, layerCitekeyEditor } from "./service";
-import type { CitekeyEditorEvent, CitekeyNoteCreation } from "./service";
+import type { CitekeyEditorEvent } from "./service";
 
 const MY_LIBRARY: AvailableLibrary = {
   selector: { type: "personal" },
@@ -70,8 +83,8 @@ interface EditorOptions {
   resolutions?: Record<string, CitekeyResolution>;
   /** The Items the database holds. */
   works?: readonly SeededWork[];
-  /** The legacy note creation flow. */
-  createNote?: CitekeyNoteCreation["createNote"];
+  /** How the Note Feature plans the creation of a note. */
+  planCreations?: NoteFeature["Service"]["planCreations"];
   /** The database state the editor reads. */
   readsState?: ZoteroReadsState["state"];
 }
@@ -86,7 +99,7 @@ const openEditor = Effect.fnUntraced(function* ({
   notes = {},
   resolutions = {},
   works = [],
-  createNote = () => Promise.reject(new Error("No note is created")),
+  planCreations = () => Effect.die(new Error("No note is planned")),
   readsState = "ready",
 }: EditorOptions = {}) {
   const host = createNoteHost(
@@ -120,9 +133,29 @@ const openEditor = Effect.fnUntraced(function* ({
     ZoteroReads,
   );
   const context = yield* Layer.build(
-    layerCitekeyEditor({ createNote }).pipe(
+    layerCitekeyEditor({
+      app: stubService<App>("App", {}),
+      createProfile: stubService("CreateProfile", {}),
+      importProfile: stubService("ImportProfile", {}),
+    }).pipe(
       Layer.provide(
         Layer.mergeAll(
+          // The Profile dialogs' own services: no case opens a dialog.
+          Layer.mock(Profile, {}),
+          Layer.mock(Template, {}),
+          Layer.succeed(
+            FileSystem.FileSystem,
+            stubService<FileSystem.FileSystem>("FileSystem", {}),
+          ),
+          Layer.mock(NoteFeature, { planCreations }),
+          testNotifier().layer,
+          Layer.mock(ZoteroPref, {
+            current: Effect.succeed(
+              stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+                dataDir: "",
+              }),
+            ),
+          }),
           layerNoteIndex,
           Layer.mock(ZoteroReads, {
             reads,
@@ -182,28 +215,33 @@ function created(path: string): TFile {
 describe("CitekeyEditor note creation", () => {
   it.effect("opens the note the creation flow made in the requested pane", () =>
     Effect.gen(function* () {
-      const choice = Promise.withResolvers<TFile | null>();
-      const asked: Item[] = [];
+      const choice = Promise.withResolvers<
+        LiteratureNoteProfileChoice | undefined
+      >();
+      pickerAnswers(() => choice.promise);
+      const { planCreations, create } = planning();
       const { editor, workspace } = yield* openEditor({
         resolutions: { paper2024: { kind: "unique", item: paper } },
         works: [{ itemID: paper.itemID, key: paper.key }],
-        createNote: (item) => {
-          asked.push(item);
-          return choice.promise;
-        },
+        planCreations,
       });
 
       const opening = yield* editor
         .openCitekey("paper2024", "tab")
         .pipe(Effect.forkScoped);
       yield* Effect.promise(async () => {
-        await expect.poll(() => asked).toHaveLength(1);
+        await expect.poll(() => planCreations.mock.calls).toHaveLength(1);
+        await expect
+          .poll(() => vi.mocked(openLiteratureNoteProfile).mock.calls)
+          .toHaveLength(1);
       });
-      expect(asked[0]?.indexedKey).toBe("PAPER234");
+      expect(planCreations.mock.calls[0]?.[0]).toEqual(["PAPER234"]);
+      expect(create).not.toHaveBeenCalled();
       expect(workspace.opened).toEqual([]);
 
-      choice.resolve(created("Books/Paper.md"));
+      choice.resolve({ id: books, label: "Books" });
       yield* Fiber.join(opening);
+      expect(create).toHaveBeenCalledOnce();
       expect(workspace.opened).toEqual([
         {
           linktext: "Books/Paper.md",
@@ -217,36 +255,84 @@ describe("CitekeyEditor note creation", () => {
 
   it.effect("keeps hover read-only and a cancelled creation silent", () =>
     Effect.gen(function* () {
-      let asked = 0;
+      pickerAnswers(async () => undefined);
+      const { planCreations, create } = planning();
       const { editor, workspace, events } = yield* openEditor({
         resolutions: { paper2024: { kind: "unique", item: paper } },
         works: [{ itemID: paper.itemID, key: paper.key }],
-        createNote: () => {
-          asked += 1;
-          return Promise.resolve(null);
-        },
+        planCreations,
       });
       const answer = lookupAnswerFor(["paper2024"], {
         paper2024: { kind: "unique", item: paper },
       });
 
       expect(yield* editor.hoverNotePath("paper2024", answer)).toBeNull();
-      expect(asked).toBe(0);
+      expect(planCreations).not.toHaveBeenCalled();
 
       yield* editor.openCitekey("paper2024", false);
-      expect(asked).toBe(1);
+      expect(planCreations).toHaveBeenCalledOnce();
+      expect(create).not.toHaveBeenCalled();
       expect(workspace.opened).toEqual([]);
       expect(events).toEqual([]);
     }),
   );
 
   it.effect(
-    "creates the note of an exact ambiguous-citekey candidate without resolving the key",
+    "logs a failed creation and opens nothing, as a cancelled one",
     () =>
       Effect.gen(function* () {
+        const refused = new DbUnavailable({ message: "the read failed" });
+        const { editor, workspace, events } = yield* openEditor({
+          resolutions: { paper2024: { kind: "unique", item: paper } },
+          works: [{ itemID: paper.itemID, key: paper.key }],
+          planCreations: () => Effect.fail(refused),
+        });
+        const errors: {
+          message: unknown;
+          annotations: Readonly<Record<string, unknown>>;
+        }[] = [];
+        const logs = Logger.layer([
+          Logger.make(({ logLevel, message, fiber }) => {
+            if (logLevel !== "Error") return;
+            errors.push({
+              message: Array.isArray(message) ? message[0] : message,
+              annotations: fiber.getRef(References.CurrentLogAnnotations),
+            });
+          }),
+        ]);
+
+        yield* editor
+          .openCitekey("paper2024", false)
+          .pipe(Effect.provide(logs));
+
+        expect(workspace.opened).toEqual([]);
+        expect(events).toEqual([]);
+        expect(errors).toEqual([
+          {
+            message: "Cannot create the citekey note",
+            annotations: expect.objectContaining({
+              indexedKey: "PAPER234",
+              error: refused,
+            }),
+          },
+        ]);
+      }),
+  );
+
+  it.effect(
+    "creates the note of an exact ambiguous-citekey candidate at once under a match-selected Profile, without resolving the key",
+    () =>
+      Effect.gen(function* () {
+        vi.mocked(openLiteratureNoteProfile).mockReset();
+        const { planCreations, create } = planning({
+          selector: books,
+          source: "match",
+          shouldAsk: true,
+          reason: m.profile_match_selected({ profile: "Books" }),
+        });
         const { editor, workspace, citekeysRead } = yield* openEditor({
           works: [{ itemID: paper.itemID, key: paper.key }],
-          createNote: () => Promise.resolve(created("Books/Paper.md")),
+          planCreations,
         });
 
         yield* editor.openCandidate(
@@ -255,6 +341,8 @@ describe("CitekeyEditor note creation", () => {
         );
 
         expect(citekeysRead).toEqual([]);
+        expect(openLiteratureNoteProfile).not.toHaveBeenCalled();
+        expect(create).toHaveBeenCalledOnce();
         expect(
           workspace.opened.map(({ linktext, newLeaf }) => [linktext, newLeaf]),
         ).toEqual([["Books/Paper.md", true]]);
@@ -452,30 +540,42 @@ describe("CitekeyEditor ambiguous citation keys", () => {
 });
 
 vi.mock("@/views/quick-switch/profile-picker", () => ({
-  chooseLiteratureNoteProfile: vi.fn(),
+  openLiteratureNoteProfile: vi.fn(),
 }));
 
-const books = "Bk3Qn7XvT2Lp" as ProfileId;
-const creationItem = {
-  itemID: 11,
-  libraryID: 1,
-  indexedKey: "PAPER234",
-  key: "PAPER234",
-} as Item;
+/** The picker answers what `answer` gives, as the user would. */
+function pickerAnswers(
+  answer: () => Promise<LiteratureNoteProfileChoice | undefined>,
+) {
+  vi.mocked(openLiteratureNoteProfile).mockReset();
+  vi.mocked(openLiteratureNoteProfile).mockImplementation(
+    (_app, _options, resolve) => {
+      void answer().then(resolve);
+      return { close: () => {} };
+    },
+  );
+}
 
-/** The creation flow over a Note Feature that plans `selection` for every Item. */
-function creation(
+const books = "Bk3Qn7XvT2Lp" as ProfileId;
+
+/**
+ * A Note Feature plan of `selection` for every Item: Default and Books, whose
+ * create writes Books/Paper.md.
+ */
+function planning(
   selection: CreationProfileSelection = {
     selector: "default",
     source: "bound",
     shouldAsk: true,
   },
 ) {
-  const create = vi.fn(async () => ({
-    outcome: "created" as const,
-    file: Object.assign(new TFile(), { path: "Books/Paper.md" }),
-  }));
-  const previews: PreparedCreationProfile[] = [
+  const create = vi.fn(() =>
+    Effect.succeed({
+      outcome: "created" as const,
+      file: created("Books/Paper.md"),
+    }),
+  );
+  const previews: PlannedCreationProfile[] = [
     {
       selector: "default",
       label: undefined,
@@ -495,75 +595,12 @@ function creation(
       create,
     },
   ];
-  const port = citekeyNoteCreation({
-    app: stubService<App>("App", {}),
-    createProfile: stubService<InteractiveCreationDeps["createProfile"]>(
-      "CreateProfile",
-      {},
+  const planCreations = vi.fn<NoteFeature["Service"]["planCreations"]>((keys) =>
+    Effect.succeed(
+      new Map<string, PlannedCreation>(
+        keys.map((key) => [key, { item: undefined, selection, previews }]),
+      ),
     ),
-    importProfile: stubService<InteractiveCreationDeps["importProfile"]>(
-      "ImportProfile",
-      {},
-    ),
-    zoteroPref: { dataDir: "/zotero" },
-    noteFeature: stubService<InteractiveCreationDeps["noteFeature"]>(
-      "NoteFeature",
-      {
-        planCreations: async (keys: readonly string[]) =>
-          new Map<string, CreationPlan>(
-            keys.map((key) => [
-              key,
-              { item: creationItem, selection, previews },
-            ]),
-          ),
-      },
-    ),
-  });
-  return { port, create };
+  );
+  return { planCreations, create };
 }
-
-// The note creation flow a citekey opens a new note through, as build.ts binds
-// it: the citation names one Item, so creation runs direct.
-describe("CitekeyEditor note creation binding", () => {
-  it("waits for the Profile choice before it creates the note", async () => {
-    const { port, create } = creation();
-    const choice = Promise.withResolvers<
-      LiteratureNoteProfileChoice | undefined
-    >();
-    vi.mocked(chooseLiteratureNoteProfile).mockReset();
-    vi.mocked(chooseLiteratureNoteProfile).mockReturnValue(choice.promise);
-
-    const creating = port.createNote(creationItem);
-    await vi.waitFor(() =>
-      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce(),
-    );
-    expect(create).not.toHaveBeenCalled();
-
-    choice.resolve({ id: books, label: "Books" });
-    expect((await creating)?.path).toBe("Books/Paper.md");
-    expect(create).toHaveBeenCalledOnce();
-  });
-
-  it("creates at once under a match-selected Profile, without the picker", async () => {
-    const { port, create } = creation({
-      selector: books,
-      source: "match",
-      shouldAsk: true,
-      reason: m.profile_match_selected({ profile: "Books" }),
-    });
-    vi.mocked(chooseLiteratureNoteProfile).mockReset();
-
-    expect((await port.createNote(creationItem))?.path).toBe("Books/Paper.md");
-    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-    expect(create).toHaveBeenCalledOnce();
-  });
-
-  it("creates nothing when the Profile choice is dismissed", async () => {
-    const { port, create } = creation();
-    vi.mocked(chooseLiteratureNoteProfile).mockReset();
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
-
-    expect(await port.createNote(creationItem)).toBeNull();
-    expect(create).not.toHaveBeenCalled();
-  });
-});

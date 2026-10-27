@@ -13,7 +13,7 @@ import { plainTemplate } from "@/services/template/plain";
 import { layerTemplate } from "@/services/template/service";
 
 import { plainProfile } from "./plain";
-import { layerProfile } from "./service";
+import { layerProfile, Profile } from "./service";
 
 /**
  * The real Profile dependency graph over the fake Obsidian host, with the
@@ -42,6 +42,7 @@ export const profileRuntimeOf = Effect.fnUntraced(function* (
   return {
     runtime,
     profile: Object.assign(plainProfile(runtime), { runtime }),
+    profileService: runtime.runSync(Profile),
     template: plainTemplate(runtime),
     settings: runtime.runSync(PluginSettings),
     bridge: effectBridge(runtime),
