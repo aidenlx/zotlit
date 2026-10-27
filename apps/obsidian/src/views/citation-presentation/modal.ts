@@ -34,7 +34,7 @@ export interface CitationPresentationModalOptions extends Pick<
  * vault style it inherits, and the Document Language it declares — so a note
  * that carries neither property is configured the same way as one that does.
  *
- * @returns the choice, or `null` when the user dismissed the dialog.
+ * Calls `resolve` with the choice, or `null` when the user dismissed the dialog.
  */
 export function openCitationPresentationModal(
   app: App,
@@ -46,10 +46,8 @@ export function openCitationPresentationModal(
     vaultLocale,
     declared,
   }: CitationPresentationModalOptions,
-): Promise<CitationPresentationChoice | null> {
-  const { promise, resolve } =
-    Promise.withResolvers<CitationPresentationChoice | null>();
-
+  resolve: (choice: CitationPresentationChoice | null) => void,
+): Modal {
   let styleId = declared.styleId;
   let languageInput: TextComponent;
 
@@ -113,7 +111,7 @@ export function openCitationPresentationModal(
 
   modal.setCloseCallback(() => resolve(null));
   modal.open();
-  return promise;
+  return modal;
 
   /** A Document Language citeproc cannot read stops at the field it was typed in. */
   function submit(): void {
