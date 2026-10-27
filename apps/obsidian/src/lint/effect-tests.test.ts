@@ -26,7 +26,7 @@ tester.run("no-effect-run-in-test", noEffectRunInTest, {
     // A fixture runs outside any case.
     `${effect}export const ledger = () => Effect.runSync(make);`,
     `${effect}it("renders", () => { expect(render()).toBe("x"); })`,
-    // A plain adapter's test drives the adapter through its runtime.
+    // A Promise edge's test drives the service through its runtime.
     `${effect}it("records", () => { runtime.runSync(Effect.void); })`,
     // Only Effect's own run entry points count.
     'import type { Effect } from "effect";\nit("reads", () => { Effect.runSync(read); })',

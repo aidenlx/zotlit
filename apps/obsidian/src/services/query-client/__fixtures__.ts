@@ -55,7 +55,7 @@ export function queryClientsFixture(
   });
 }
 
-/** A plain adapter on this test's Clock; the test Scope owns its runtime. */
+/** The native QueryClients on this test's Clock, with its runtime and bridge; the test Scope owns the runtime. */
 export const queryClientsOf = Effect.fn("queryClientsOf")(function* () {
   const context = yield* Effect.context<never>();
   const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
