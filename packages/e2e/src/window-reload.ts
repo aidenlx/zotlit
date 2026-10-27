@@ -19,8 +19,8 @@ import { cli, obRun, obRunUntil, waitFor } from "./obsidian-cli.ts";
  * taken down before the reload and put back after it.
  */
 export async function reloadWindow(vaultId: string): Promise<void> {
-  await obRun(vaultId, async ({ zotlit }) => {
-    if (zotlit)
+  await obRun(vaultId, async ({ app, zotlit }) => {
+    if (app.plugins.plugins.zotlit)
       await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
   });
   // The reload goes after the reply, so this call is answered by the old

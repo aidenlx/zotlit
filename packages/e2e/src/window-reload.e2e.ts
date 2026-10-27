@@ -18,7 +18,7 @@ const recordRename = async (
   let from: string;
   let to: string;
   if (listenerSources === null) {
-    await app.vault.create("startup-order.md", "# Startup order\\n");
+    await app.vault.create("startup-order.md", "# Startup order\n");
     await app.plugins.disablePlugin("zotlit");
     const unloaded = new Set(listed());
     await app.plugins.enablePlugin("zotlit");
@@ -93,6 +93,29 @@ describe.skipIf(!reachable)("Window reload", () => {
         return zotlit.services !== before;
       }),
     ).toBe(true);
+  });
+
+  it("reloads when ZotLit is disabled only in memory (#1848)", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(vaultId, async ({ app }) => {
+        if (!app.plugins.plugins.zotlit)
+          await app.plugins.enablePlugin("zotlit");
+      });
+    });
+    expect(
+      await obRun(vaultId, async ({ app }) => {
+        await app.plugins.disablePlugin("zotlit");
+        return app.plugins.plugins.zotlit === undefined;
+      }),
+    ).toBe(true);
+    await reloadWindow(vaultId);
+    expect(
+      await obRun(vaultId, ({ app, page }) => ({
+        loaded: app.plugins.plugins.zotlit?._loaded === true,
+        reloaded: page.scratch.windowBeforeReload === undefined,
+      })),
+    ).toEqual({ loaded: true, reloaded: true });
   });
 
   it("loads ZotLit in startup order, where its rename handlers run before the metadata cache moves the path", async () => {

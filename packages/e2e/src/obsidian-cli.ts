@@ -42,7 +42,7 @@ const THROWN = "__zotlitEvalError__";
  * `Error: <message>`, so an error raised inside Obsidian's code would read as
  * if the test's code raised it.
  */
-export function wrapEvalCode(code: string): string {
+function wrapEvalCode(code: string): string {
   return `(async()=>{try{return await (0,eval)(${JSON.stringify(code)});}catch(error){return ${JSON.stringify(THROWN)}+JSON.stringify({message:error instanceof Error?error.message:String(error),stack:error instanceof Error?error.stack:undefined});}})()`;
 }
 
@@ -66,7 +66,7 @@ function thrownError(json: string): Error {
  * necessarily the first character of the output. A reply of code wrapped by
  * {@link wrapEvalCode} that threw becomes that error.
  */
-export function parseEvalReply(text: string): string {
+function parseEvalReply(text: string): string {
   const marker = "\n=> ";
   const lastIndex = text.lastIndexOf(marker);
   let reply: string;
@@ -86,7 +86,7 @@ export function parseEvalReply(text: string): string {
  * a batch the app answers when it has done the work — where the default
  * deadline would report a loaded machine as a failed measurement.
  */
-export async function obEval(
+async function obEval(
   vaultId: string,
   code: string,
   timeoutMs?: number,
@@ -100,21 +100,14 @@ export async function obEval(
 }
 
 /**
- * The document of every window of the vault, the main window first, as an
- * eval expression: a notice goes to the window Obsidian counts as active.
- */
-export const WINDOW_DOCUMENTS =
-  "(()=>{const docs=new Set([document]);app.workspace.iterateAllLeaves((leaf)=>docs.add(leaf.view.containerEl.doc));return [...docs];})()";
-
-/**
  * Takes every notice off screen in every window, so the next one is the
  * caller's own.
  */
 export async function clearNotices(vaultId: string): Promise<void> {
-  await obEval(
-    vaultId,
-    `(function(){for(const doc of ${WINDOW_DOCUMENTS})for(const node of doc.querySelectorAll('.notice'))node.remove();return true;})()`,
-  );
+  await obRun(vaultId, ({ page }) => {
+    for (const doc of page.windowDocuments())
+      for (const node of doc.querySelectorAll(".notice")) node.remove();
+  });
 }
 
 /**

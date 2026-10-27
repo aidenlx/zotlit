@@ -1,9 +1,8 @@
 // A Query View in a note, a Query File embed or a Query Block, as a case
 // reaches it: drawn, settled, and drawn again on each use.
 
-import { obEval, obRun, readUntil } from "./obsidian-cli.ts";
+import { obRun, readUntil } from "./obsidian-cli.ts";
 import type { JsonCompatible, ObsidianContext } from "./page-context.ts";
-import { createPageHelpers } from "./page-helpers.ts";
 import type { NoteQueryView } from "./page-helpers.ts";
 
 /** A note just opened can take longer than one use's wait to load its query. */
@@ -87,12 +86,7 @@ export async function revealQueryView(
   notePath: string,
   target: QueryViewTarget,
 ): Promise<NoteQueryView> {
-  const targetData = { path: notePath, kind: kindOf(target) };
-  const handle: NoteQueryView = {
-    ...targetData,
-    // Temporary compatibility for the remaining migration batches; remove in #1855.
-    el: `(await (globalThis.__zotlitPageHelpers ??= (${createPageHelpers.toString()})(app)).revealQueryView(${JSON.stringify(targetData)}))`,
-  };
+  const handle: NoteQueryView = { path: notePath, kind: kindOf(target) };
   let failure: unknown;
   for (let attempt = 0; attempt < FIRST_DRAW_ATTEMPTS; attempt++) {
     try {
@@ -129,39 +123,18 @@ type QueryViewReader<A, T> = (
   args: A,
 ) => (T & JsonCompatible<T>) | Promise<T & JsonCompatible<T>>;
 
-/** Temporary legacy overload for the remaining migration batches; remove in #1855. */
-export function readQueryViewUntil<T>(
-  vaultId: string,
-  code: string,
-  options: QueryViewReadOptions<T>,
-): Promise<T>;
 // oxlint-disable-next-line max-params -- Keep the typed callback API aligned with obRun (#1848).
-export function readQueryViewUntil<A, T>(
+export async function readQueryViewUntil<A, T>(
   vaultId: string,
   callback: QueryViewReader<A, T>,
   args: A & JsonCompatible<A>,
-  options: QueryViewReadOptions<T>,
-): Promise<T>;
-// oxlint-disable-next-line max-params -- The temporary overload shares the typed transport's four arguments (#1848).
-export async function readQueryViewUntil<A, T>(
-  vaultId: string,
-  callback: QueryViewReader<A, T> | string,
-  argsOrOptions: (A & JsonCompatible<A>) | QueryViewReadOptions<T>,
-  typedOptions?: QueryViewReadOptions<T>,
+  { ready, ...options }: QueryViewReadOptions<T>,
 ): Promise<T> {
-  const { ready, ...options } =
-    typeof callback === "string"
-      ? (argsOrOptions as QueryViewReadOptions<T>)
-      : typedOptions!;
   let lastError = null as string | null;
   try {
     return await readUntil(
       async () => {
         try {
-          // Temporary legacy transport for batches not yet migrated; remove in #1855.
-          if (typeof callback === "string")
-            return JSON.parse(await obEval(vaultId, callback)) as T | null;
-          const args = argsOrOptions as A & JsonCompatible<A>;
           // oxlint-disable-next-line zotlit-tests/no-eval-capture -- Forward the caller-checked callback through the transport.
           return await obRun(vaultId, callback, args);
         } catch (error) {
