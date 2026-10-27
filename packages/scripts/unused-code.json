@@ -30,7 +30,6 @@
     "apps/obsidian/src/services/template/path.ts: isEtaTemplatePath",
     "apps/obsidian/src/services/use-ledger/__fixtures__.ts: inertUseLedger",
     "apps/obsidian/src/services/zotero-local-api/__fixtures__.ts: unauthorized",
-    "apps/obsidian/src/views/cited-by/navigation.ts: currentOccurrence",
     "apps/obsidian/src/views/query-view/vault-cell.tsx: VaultCell",
     "apps/obsidian/src/views/template-data-explorer/item-memory.ts: lastTemplateItem",
     "packages/workbench/src/language/contract.ts: sampleValue",
