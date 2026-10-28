@@ -1,8 +1,7 @@
 // Native overlays and Markdown lifecycle for the shared Template Workbench tree.
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
-import { Effect, Exit } from "effect";
-import type { Fiber } from "effect";
+import { Effect, Fiber } from "effect";
 import {
   AbstractInputSuggest,
   Component,
@@ -50,6 +49,7 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
+import { answerOf } from "@/lib/view-runner";
 import {
   CurrentAnswer,
   takeEnter,
@@ -136,14 +136,15 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
 export interface NativeWorkbenchSuggesterRequest extends WorkbenchSuggesterRequest {
   readonly searchItems?: (
     query: string,
-  ) => Effect.Effect<readonly WorkbenchSuggesterOption[], unknown>;
+  ) => Effect.Effect<readonly WorkbenchSuggesterOption[]>;
 }
 
 type NativeSuggestion = WorkbenchSuggesterOption & { group: string };
 
 class EditorSuggester extends SuggestModal<NativeSuggestion> {
   #revision = 0;
-  #latest: NativeSuggestion[] | Promise<NativeSuggestion[]> = [];
+  /** The latest query's answer, or the search that answers it. */
+  #latest: NativeSuggestion[] | Fiber.Fiber<NativeSuggestion[]> = [];
   readonly #current = new CurrentAnswer<NativeSuggestion>(
     this.resultContainerEl,
   );
@@ -196,34 +197,29 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
     if (!query.trim() || !search)
       return this.#current.track((this.#latest = choices));
     /** The answer of a newer query, for a search it outran. */
-    const newer = Effect.promise(() => Promise.resolve(this.#latest));
+    const newer = Effect.suspend(() => {
+      const latest = this.#latest;
+      return Array.isArray(latest)
+        ? Effect.succeed(latest)
+        : Fiber.join(latest);
+    });
     const shown = new Set(choices.map(({ id }) => id));
-    this.#latest = answerOf(
-      this.#run(
-        search(query).pipe(
-          Effect.matchEffect({
-            onSuccess: (items) =>
-              revision !== this.#revision
-                ? newer
-                : Effect.succeed([
-                    ...choices,
-                    ...items
-                      .filter(({ id }) => !shown.has(id))
-                      .map((item) => ({ ...item, group: "" })),
-                  ]),
-            onFailure: () =>
-              revision !== this.#revision
-                ? newer
-                : Effect.sync(() => {
-                    new BaseNotice(m.workbench_item_search_failed());
-                    return choices;
-                  }),
-          }),
+    const searching = this.#run(
+      search(query).pipe(
+        Effect.flatMap((items) =>
+          revision !== this.#revision
+            ? newer
+            : Effect.succeed([
+                ...choices,
+                ...items
+                  .filter(({ id }) => !shown.has(id))
+                  .map((item) => ({ ...item, group: "" })),
+              ]),
         ),
       ),
-      choices,
     );
-    return this.#current.track(this.#latest);
+    this.#latest = searching;
+    return this.#current.track(answerOf(searching, choices));
   }
   /**
    * A row reads the way a citation row reads: the name in the title slot,
@@ -357,18 +353,6 @@ function addWorkbenchMenuItems(
         .setDisabled(item.disabled ?? false)
         .onClick(item.onSelect),
     );
-}
-
-/**
- * The value `fiber` succeeds with, for an Obsidian override that answers a
- * Promise; `released` when the leaf's close interrupted it.
- */
-function answerOf<A>(fiber: Fiber.Fiber<A>, released: A): Promise<A> {
-  return new Promise((resolve) =>
-    fiber.addObserver((exit) =>
-      resolve(Exit.isSuccess(exit) ? exit.value : released),
-    ),
-  );
 }
 
 export function createTemplateWorkbenchHost(

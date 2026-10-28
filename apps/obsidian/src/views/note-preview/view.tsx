@@ -50,7 +50,8 @@ import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import { exitOf, makeViewRunner } from "@/lib/view-runner";
+import { answerOf, makeViewRunner } from "@/lib/view-runner";
+import type { ViewRun } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { profilesAtom } from "@/services/profile/atoms";
 import { templateFolderAtom } from "@/services/settings/atoms";
@@ -197,6 +198,8 @@ export class NotePreviewView extends ItemView {
   #problemHost: TemplateWorkbenchView | null = null;
   readonly #rendered = () => this.#restorePresentation();
   #host: (WorkbenchHost & Disposable) | null = null;
+  /** Forks on this leaf's view services; the close interrupts it. */
+  #run: ViewRun | null = null;
   constructor(leaf: WorkspaceLeaf, pluginId: string, deps: PreviewViewDeps) {
     super(leaf);
     this.#pluginId = pluginId;
@@ -496,6 +499,7 @@ export class NotePreviewView extends ItemView {
       this.#session = null;
       this.#scheduler = null;
       this.#host = null;
+      this.#run = null;
       this.#editor = null;
       this.#file = null;
       this.#sourceGeneration++;
@@ -545,6 +549,7 @@ export class NotePreviewView extends ItemView {
     this.#scheduler = scheduler;
     this.#session = session;
     this.#host = host;
+    this.#run = runner.run;
     // Added first, so it sits nearest More options; Obsidian prepends actions.
     const sectionAction = this.addAction(
       "rows-3",
@@ -1055,12 +1060,12 @@ export class NotePreviewView extends ItemView {
     const editor = this.#sourceEditor();
     const session = this.#session;
     const host = this.#host;
-    if (!session || !host) return;
+    const run = this.#run;
+    if (!session || !host || !run) return;
     const generation = ++this.#choiceGeneration;
     if (editor) {
       // The editor's chooser, on this leaf's runner until ticket 06.
-      const exit = await exitOf(host.run(editor.chooseItem()));
-      const accepted = exit._tag === "Success" && exit.value;
+      const accepted = await answerOf(run(editor.chooseItem()), false);
       if (
         accepted &&
         this.#session === session &&
@@ -1073,7 +1078,7 @@ export class NotePreviewView extends ItemView {
     const previousItem = session.state.getState().item;
     const previousContext = session.state.getState().context;
     const choice = await chooseWorkbenchItem(
-      host,
+      { run, host },
       {
         app: this.app,
         settings: this.#deps.settings,

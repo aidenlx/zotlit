@@ -76,11 +76,13 @@ export const customizeProfile = (
 ) => Effect.tryPromise(() => customize(request));
 
 /** Reveal `leaf`, focus it, and answer the view it holds when it is a Workbench. */
-const revealWorkbench = Effect.fnUntraced(function* (leaf: WorkspaceLeaf) {
-  yield* (yield* Workspace).revealLeaf(leaf);
-  leaf.getContainer().focus();
-  return leaf.view instanceof TemplateWorkbenchView ? leaf.view : null;
-});
+const revealWorkbench = Effect.fn("TemplateWorkbench.revealWorkbench")(
+  function* (leaf: WorkspaceLeaf) {
+    yield* (yield* Workspace).revealLeaf(leaf);
+    leaf.getContainer().focus();
+    return leaf.view instanceof TemplateWorkbenchView ? leaf.view : null;
+  },
+);
 
 /**
  * Open a Profile document with an explicitly supplied launch Item.
@@ -237,3 +239,8 @@ export const openNativeProfile = Effect.fn(
     ),
   } satisfies WorkbenchOpened;
 });
+
+/** What an open of a Profile in the native editor fails with. */
+export type NativeOpenError = Effect.Error<
+  ReturnType<typeof openNativeProfile>
+>;

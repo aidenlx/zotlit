@@ -217,13 +217,14 @@ describe("TemplateWorkbenchView", () => {
       duplicateRegionCount: 0,
     }));
     const waitUntilSettled = vi.fn(async () => "settled" as const);
-    const profileOf: NonNullable<
-      NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]
-    > = () =>
+    const profileOf = vi.fn<
+      NonNullable<NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]>
+    >(() =>
       Effect.succeed({
         ok: true,
         profile: bindProfile(defaults, { selector: "default" }),
-      });
+      }),
+    );
     const h = setup({
       runtime: testRuntime(),
       noteFeature: stubService<
@@ -267,8 +268,35 @@ describe("TemplateWorkbenchView", () => {
       getFileByPath,
       getFileCache,
       read,
+      profileOf,
     };
   }
+
+  // Ticket 04's review: a launch whose Profile read finishes last replaced
+  // the note a later launch had set.
+  it("keeps the later launch's note when an earlier Profile read finishes last", async () => {
+    const h = await originHarness();
+    const earlierRead = Promise.withResolvers<void>();
+    h.profileOf.mockImplementationOnce(() =>
+      Effect.promise(() => earlierRead.promise).pipe(
+        Effect.as({
+          ok: true as const,
+          profile: bindProfile(defaults, { selector: "default" }),
+        }),
+      ),
+    );
+    const later = Object.assign(new TFile(), {
+      path: "Literature/Later.md",
+      basename: "Later",
+    });
+    const earlier = run(h.view.setOriginatingNote(h.file));
+    await vi.waitFor(() => expect(h.profileOf).toHaveBeenCalledTimes(2));
+    await run(h.view.setOriginatingNote(later));
+    expect(h.view.originatingNote).toBe(later);
+    earlierRead.resolve();
+    expect(await earlier).toBeNull();
+    expect(h.view.originatingNote).toBe(later);
+  });
 
   it("updates the originating note after saving, independent of focus and preview selection", async () => {
     const h = await originHarness();
@@ -3264,6 +3292,42 @@ describe("Template Workbench Item choice", () => {
     expect(trigger).not.toHaveBeenCalledWith(
       "zotlit:workbench-selection",
       expect.objectContaining({ item: expect.objectContaining({ id: FIRST }) }),
+    );
+  });
+  it("closes the Zotero search when the view closes while it is open", async () => {
+    const { view } = setup({
+      runtime: testRuntime(),
+      itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
+        "ItemLookup",
+        {
+          search: async () => [],
+          openSession: () => ({
+            search: async () => [],
+            close: () => {},
+            [Symbol.dispose]() {},
+          }),
+        },
+      ),
+    });
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    using close = vi.spyOn(SuggestModal.prototype, "close");
+    const chosen = Effect.runPromiseExit(view.chooseItem());
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+    const chooser = open.mock.contexts[0] as SuggestModal<{ id: string }>;
+    chooser.selectSuggestion(
+      (await chooser.getSuggestions("")).find(
+        (row) => row.id === "search-zotero",
+      )!,
+      new KeyboardEvent("keydown", { key: "Enter" }),
+    );
+    // The Zotero search opens in its own picker.
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+    const picker = open.mock.contexts[1];
+    await view.close();
+    expect(close.mock.contexts).toContain(picker);
+    const exit = await chosen;
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+      true,
     );
   });
 });

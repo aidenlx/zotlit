@@ -20,6 +20,8 @@ import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
+import { answerOf } from "@/lib/view-runner";
+import type { ViewRun } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
@@ -42,6 +44,7 @@ import {
 } from "./theme";
 
 type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
+
 export type WorkbenchSelection =
   | { kind: "item"; item: WorkbenchItemChoice }
   | { kind: "annotation"; annotationId: string }
@@ -57,17 +60,6 @@ export type WorkbenchSelectionEvent = WorkbenchSelection & {
   leaf: WorkspaceLeaf;
   editor: WorkspaceLeaf | null;
 };
-
-/** A chooser's fiber on the host's runner, as far as a Promise caller reads it. */
-interface ChooserFiber<A> {
-  addObserver(
-    observer: (
-      exit:
-        | { readonly _tag: "Success"; readonly value: A }
-        | { _tag: "Failure" },
-    ) => void,
-  ): unknown;
-}
 
 const selectionOption = selectionControl({ kind: "option" });
 
@@ -137,19 +129,6 @@ export async function recentItemChoices(
   }
 }
 
-/**
- * The answer of `choice`, run on the host's runner, for a caller that awaits
- * a Promise. Closing the leaf interrupts the chooser, which reads as a
- * dismissal.
- */
-function chooseOn<A>(fiber: ChooserFiber<A | null>): Promise<A | null> {
-  return new Promise((resolve) => {
-    fiber.addObserver((exit) =>
-      resolve(exit._tag === "Success" ? exit.value : null),
-    );
-  });
-}
-
 export async function searchWorkbenchItem(
   deps: ItemSearchDeps,
 ): Promise<WorkbenchItemChoice | null> {
@@ -162,15 +141,20 @@ export async function searchWorkbenchItem(
     : null;
 }
 
-/** {@link workbenchItemChoice} for a caller that awaits a Promise. */
+/**
+ * {@link workbenchItemChoice} on the view's runner, for a caller that awaits a
+ * Promise. Closing the view interrupts the chooser, which reads as a
+ * dismissal.
+ */
 export function chooseWorkbenchItem(
-  host: WorkbenchHost,
-  deps: ItemSearchDeps & {
-    lookup: Pick<ItemLookupHandle, "search" | "openSession">;
-  },
+  view: { run: ViewRun; host: WorkbenchHost },
+  deps: ItemSearchDeps,
   selected?: WorkbenchItemChoice,
 ): Promise<WorkbenchItemChoice | null> {
-  return chooseOn(host.run(workbenchItemChoice(host, deps, selected)));
+  return answerOf(
+    view.run(workbenchItemChoice(view.host, deps, selected)),
+    null,
+  );
 }
 
 /** {@link workbenchAnnotationChoice} for a caller that awaits a Promise. */
@@ -179,7 +163,10 @@ export function chooseWorkbenchAnnotation(
   current: readonly AnnotationChoice[],
   selected: string | null,
 ): Promise<string | null> {
-  return chooseOn(host.run(workbenchAnnotationChoice(host, current, selected)));
+  return answerOf(
+    host.run(workbenchAnnotationChoice(host, current, selected)),
+    null,
+  );
 }
 
 /** The selected data's own name, which a pane shows wherever its header cannot. */

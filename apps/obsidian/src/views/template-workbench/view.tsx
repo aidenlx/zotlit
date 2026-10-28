@@ -101,7 +101,6 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { AppContext } from "@/lib/app-context";
 import { awaitConfirm } from "@/lib/confirm";
-import { valueOr } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -117,7 +116,7 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import {
-  exitOf,
+  answerOf,
   inFlightSlot,
   joinOnView,
   makeViewRunner,
@@ -209,6 +208,12 @@ import {
 
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
 const logger = getLogger(["views", "template-workbench"]);
+
+/** A native read that a newer read, an edit, or another file outran. */
+class StaleSourceRead extends Schema.TaggedError<
+  StaleSourceRead,
+  { readonly brand: unique symbol }
+>()("StaleSourceRead", {}) {}
 export type OriginatingNoteUpdateOutcome =
   | { outcome: "no-target" }
   | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
@@ -420,6 +425,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #customizing: InFlightSlot<void, never>;
   /** The Item chooser; a second request joins the chooser already open. */
   readonly #choosing: InFlightSlot<boolean, never>;
+  /** The citation styles read; a request while one runs joins it. */
+  readonly #styles: InFlightSlot<void, never>;
 
   /**
    * Save this file after any save in progress. The write finishes once it
@@ -432,8 +439,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     );
   }
   /** Obsidian's save, run on this leaf so its close waits for the write. */
-  override async save(clear?: boolean): Promise<void> {
-    valueOr(await exitOf(this.#runner.run(this.#saveFile(clear))), undefined);
+  override save(clear?: boolean): Promise<void> {
+    return answerOf(this.#runner.run(this.#saveFile(clear)), undefined);
   }
 
   get originatingNote(): TFile | null {
@@ -442,8 +449,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get updatingNote(): boolean {
     return this.#noteUpdates.running();
   }
-  /** Fork `flow` on this leaf, for a button or a menu entry; it reports its own outcome. */
-  start(flow: Effect.Effect<unknown, unknown, ViewServices>): void {
+  /**
+   * Fork `flow` on this leaf, for a button or a menu entry. The flow reports
+   * its own outcome, so it fails with nothing.
+   */
+  #start(flow: Effect.Effect<unknown, never, ViewServices>): void {
     this.#runner.run(flow);
   }
   /**
@@ -490,7 +500,27 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** Run a Workbench action on this leaf; closing the leaf stops it quietly. */
   #act(operation: string, action: Effect.Effect<void, unknown, ViewServices>) {
-    this.start(templateWorkbenchAction(operation, action));
+    this.#start(Effect.ignore(templateWorkbenchAction(operation, action)));
+  }
+  /** Update the originating note, for the button; the run reports its outcome. */
+  startNoteUpdate(): void {
+    this.#noteUpdates.start();
+  }
+  /** Customize the Default Profile, for the button. */
+  startCustomize(): void {
+    this.#customizing.start();
+  }
+  /** Open the Item chooser, for a button or a menu entry. */
+  startItemChoice(): void {
+    this.#choosing.start();
+  }
+  /** Open the annotation chooser, for a button or a menu entry. */
+  startAnnotationChoice(): void {
+    this.#start(this.#chooseAnnotation());
+  }
+  /** Read the citation styles again, as the Name tab asks on each visit. */
+  startStylesRefresh(): void {
+    this.#styles.start();
   }
   /** Update the originating note and report the outcome in a notice. */
   #noteUpdate(): Effect.Effect<
@@ -633,6 +663,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#runner.run,
       Effect.suspend(() => this.#chooseItem()),
     );
+    this.#styles = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#refreshStyles()),
+    );
     this.store = workbenchStore(deps.registry, this.model);
     this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
     this.#cleanup.defer(deps.registry.mount(templateFolderAtom));
@@ -672,7 +706,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
               createSharedPartialEffect(this.app, { name: query }),
             ),
         },
-        extractPartial: (source) => this.extractPartial(source),
+        // The menu runs this on the host's runner, which is this leaf's.
+        extractPartial: (source) =>
+          this.#runner.provide(this.#extractPartial(source)),
         hoverParent: this,
       },
       (content) => this.provide(content),
@@ -691,7 +727,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         editor: () => this.leaf,
         apply: (selection) => {
           if (selection.kind === "item")
-            this.start(this.#selectItem(selection.item));
+            this.#start(this.#selectItem(selection.item));
           else if (selection.kind === "annotation")
             this.preview?.select(selection.annotationId);
           else if (selection.kind === "partial")
@@ -1206,59 +1242,98 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#publishAuthoringContext();
     this.preview?.setSource(this.#controller.source);
   }
-  override async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
-    const generation = ++this.#readGeneration;
-    let reset = clear;
-    if (clear) this.#initialRead = generation;
-    const stale = Symbol("stale Profile source read");
-    try {
-      while (!this.#closed && file === this.file) {
-        const revision = this.#sourceRevision;
-        const baseline = this.lastSavedData;
-        // TextFileView writes its baseline immediately after the awaited read,
-        // before its native three-way merge. Cancel there, before any mutation;
-        // native methods still run on this view so private fields keep their owner.
-        const receiver = new Proxy(this, {
-          get(target, property) {
-            const value = Reflect.get(target, property, target);
-            return typeof value === "function" ? value.bind(target) : value;
-          },
-          set: (target, property, value) => {
-            if (
-              property === "lastSavedData" &&
-              (this.#closed ||
-                file !== this.file ||
-                generation !== this.#readGeneration ||
-                revision !== this.#sourceRevision ||
-                baseline !== this.lastSavedData)
-            )
-              throw stale;
-            return Reflect.set(target, property, value, target);
-          },
-        });
-        try {
-          await super.loadFileInternal.call(receiver, file, reset);
-          return;
-        } catch (error) {
-          if (error !== stale) throw error;
-          logger.trace("Discarded stale Profile source read", {
-            path: file.path,
-            closed: this.#closed,
-            fileChanged: file !== this.file,
-            readChanged: generation !== this.#readGeneration,
-            sourceChanged: revision !== this.#sourceRevision,
-            baselineChanged: baseline !== this.lastSavedData,
+  /** Obsidian's file read, run on this leaf so its close stops the read. */
+  override loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    return answerOf(this.#runner.run(this.#loadFile(file, clear)), undefined);
+  }
+  /**
+   * Read `file` into this view. A read that a newer read, an edit, or another
+   * file outran is discarded before it changes anything, and read again while
+   * the edit is the only change. Closing the leaf stops the read.
+   */
+  #loadFile(
+    file: TFile,
+    clear: boolean,
+  ): Effect.Effect<void, Cause.UnknownError> {
+    const loadBase = (receiver: this, reset: boolean) =>
+      super.loadFileInternal.call(receiver, file, reset);
+    return Effect.suspend(() => {
+      const generation = ++this.#readGeneration;
+      let reset = clear;
+      if (clear) this.#initialRead = generation;
+      /** Set once the read is interrupted; the native read then stands down. */
+      let stopped = false;
+      const read = (): Effect.Effect<void, Cause.UnknownError> =>
+        Effect.suspend(() => {
+          if (file !== this.file) return Effect.void;
+          const revision = this.#sourceRevision;
+          const baseline = this.lastSavedData;
+          // TextFileView writes its baseline immediately after the awaited
+          // read, before its native three-way merge. Cancel there, before any
+          // mutation; native methods still run on this view so private fields
+          // keep their owner.
+          const receiver = new Proxy(this, {
+            get(target, property) {
+              const value = Reflect.get(target, property, target);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+            set: (target, property, value) => {
+              if (
+                property === "lastSavedData" &&
+                (stopped ||
+                  file !== this.file ||
+                  generation !== this.#readGeneration ||
+                  revision !== this.#sourceRevision ||
+                  baseline !== this.lastSavedData)
+              )
+                throw new StaleSourceRead();
+              return Reflect.set(target, property, value, target);
+            },
           });
-          if (generation !== this.#readGeneration) return;
-          if (revision !== this.#sourceRevision) reset = false;
-        }
-      }
-    } finally {
-      if (this.#initialRead === generation) {
-        this.#initialRead = null;
-        this.#pendingSource = null;
-      }
-    }
+          return Effect.tryPromise({
+            try: () => loadBase(receiver, reset),
+            catch: (cause) =>
+              cause instanceof StaleSourceRead
+                ? cause
+                : new Cause.UnknownError(cause),
+          }).pipe(
+            Effect.catchTag("StaleSourceRead", () =>
+              Effect.gen({ self: this }, function* () {
+                yield* Effect.logTrace(
+                  "Discarded stale Profile source read",
+                ).pipe(
+                  Effect.annotateLogs({
+                    path: file.path,
+                    fileChanged: file !== this.file,
+                    readChanged: generation !== this.#readGeneration,
+                    sourceChanged: revision !== this.#sourceRevision,
+                    baselineChanged: baseline !== this.lastSavedData,
+                  }),
+                );
+                if (generation !== this.#readGeneration) return;
+                if (revision !== this.#sourceRevision) reset = false;
+                yield* read();
+              }),
+            ),
+          );
+        });
+      return read().pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            stopped = true;
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.#initialRead === generation) {
+              this.#initialRead = null;
+              this.#pendingSource = null;
+            }
+          }),
+        ),
+        withLogCategory("template-workbench"),
+      );
+    });
   }
   override clear(): void {
     if (this.#defaultDraft || this.#bindingDraft) return;
@@ -1424,18 +1499,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   ): Promise<void> {
     const previous = JSON.stringify(this.getState());
     try {
-      valueOr(
-        await exitOf(this.#runner.run(this.#restoreState(state, result))),
+      await answerOf(
+        this.#runner.run(this.#restoreState(state, result)),
         undefined,
       );
     } finally {
       if (previous !== JSON.stringify(this.getState())) result.history = true;
     }
   }
-  #restoreState(
-    state: unknown,
-    result: ViewStateResult,
-  ): Effect.Effect<void, unknown, ViewServices> {
+  #restoreState(state: unknown, result: ViewStateResult) {
     const restoreBase = (state: unknown) =>
       Effect.tryPromise(() => super.setState(state, result));
     return Effect.gen({ self: this }, function* () {
@@ -1598,8 +1670,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     });
     const choose = this.addAction("search", m.workbench_choose_item(), () => {
       if (this.store.getState().root === "annotation")
-        this.start(this.chooseAnnotation());
-      else this.start(this.chooseItem());
+        this.startAnnotationChoice();
+      else this.startItemChoice();
     });
     const redo = this.addAction("redo-2", m.workbench_redo(), () => {
       this.#controller.redo();
@@ -1650,7 +1722,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#updateActions();
     this.#root = createRoot(this.contentEl);
     this.#mount();
-    this.start(this.#refreshStyles());
+    this.startStylesRefresh();
   }
   /**
    * Obsidian's close. It waits for the write a running flow has started, such
@@ -1713,7 +1785,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
-        .onClick(() => this.start(this.chooseItem())),
+        .onClick(() => this.startItemChoice()),
     );
     if (this.documentKind !== "citation")
       menu.addItem((item) =>
@@ -1721,7 +1793,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setSection(MENU_SECTION.action)
           .setTitle(m.workbench_choose_annotation())
           .setIcon("highlighter")
-          .onClick(() => this.start(this.chooseAnnotation())),
+          .onClick(() => this.startAnnotationChoice()),
       );
     this.#addPartialsMenu(menu);
     menu.addItem((item) =>
@@ -1729,7 +1801,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_citation())
         .setIcon("quote")
-        .onClick(() => this.start(reportCitationTemplateOpen(this.app))),
+        .onClick(() =>
+          this.#start(Effect.ignore(reportCitationTemplateOpen(this.app))),
+        ),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     const target = this.templateDataTarget();
@@ -1753,7 +1827,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.template_workbench_open_markdown())
         .setIcon("file-text")
         .setDisabled(!this.file)
-        .onClick(() => this.start(this.#openMarkdown())),
+        .onClick(() => this.#act("open-markdown", this.#openMarkdown())),
     );
     if (this.file?.path === this.registry.get(defaultProfilePathAtom))
       menu.addItem((item) =>
@@ -1762,7 +1836,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setTitle(m.settings_profile_document_restore())
           .setWarning(true)
           .setIcon("rotate-ccw")
-          .onClick(() => this.start(this.restoreDefault())),
+          .onClick(() => this.#start(Effect.ignore(this.#restoreDefault()))),
       );
   }
   /**
@@ -1795,14 +1869,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         entry
           .setTitle(m.workbench_partial_new())
           .setIcon("plus")
-          .onClick(() => this.start(this.#createPartial({ name: "" }))),
+          .onClick(() =>
+            this.#start(Effect.ignore(this.#createPartial({ name: "" }))),
+          ),
       );
       if (bundled.length > 0 && !this.#controller.readOnly)
         submenu.addItem((entry) =>
           entry
             .setTitle(m.workbench_problem_bundled_partial_unpack())
             .setIcon("package-open")
-            .onClick(() => this.start(this.unpackBundledPartials())),
+            .onClick(() =>
+              this.#start(Effect.ignore(this.#unpackBundledPartials())),
+            ),
         );
     });
   }
@@ -1842,13 +1920,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    *   dismisses the prompt.
    */
   extractPartial(source: string): Effect.Effect<string | null> {
+    return joinOnView(this.#runner.run, this.#extractPartial(source));
+  }
+  #extractPartial(source: string) {
     const language = this.#documentLanguage;
-    return joinOnView(
-      this.#runner.run,
-      this.#createPartial({ source, language, open: "split" }).pipe(
-        Effect.map((name) =>
-          name === null ? null : partialCall(name, language),
-        ),
+    return this.#createPartial({ source, language, open: "split" }).pipe(
+      Effect.map((name) =>
+        name === null ? null : partialCall(name, language),
       ),
     );
   }
@@ -1941,56 +2019,56 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * still has somewhere to go.
    */
   unpackBundledPartials() {
-    return joinOnView(
-      this.#runner.run,
-      templateWorkbenchAction(
-        "unpack-partials",
-        Effect.gen({ self: this }, function* () {
-          const bundled = this.#controller.document?.manifest.partials ?? [];
-          if (this.#controller.readOnly || !bundled.length) return;
-          const template = yield* Template;
-          const result = yield* template.unpackPartials(
-            yield* template.planPartialUnpack(bundled),
-          );
-          this.#controller.dropBundledPartials(result.dropped);
-          const notifier = yield* Notifier;
-          for (const message of unpackedPartialNotices(result))
-            yield* notifier.show(message);
-        }),
-      ),
+    return joinOnView(this.#runner.run, this.#unpackBundledPartials());
+  }
+  #unpackBundledPartials() {
+    return templateWorkbenchAction(
+      "unpack-partials",
+      Effect.gen({ self: this }, function* () {
+        const bundled = this.#controller.document?.manifest.partials ?? [];
+        if (this.#controller.readOnly || !bundled.length) return;
+        const template = yield* Template;
+        const result = yield* template.unpackPartials(
+          yield* template.planPartialUnpack(bundled),
+        );
+        this.#controller.dropBundledPartials(result.dropped);
+        const notifier = yield* Notifier;
+        for (const message of unpackedPartialNotices(result))
+          yield* notifier.show(message);
+      }),
     );
   }
   /** Save this document, then restore the Default Profile and show it. */
   restoreDefault() {
-    return joinOnView(
-      this.#runner.run,
-      templateWorkbenchAction(
-        "restore-default",
-        Effect.gen({ self: this }, function* () {
-          const path = this.registry.get(defaultProfilePathAtom);
-          const confirmed = yield* awaitConfirm(
-            {
-              title: m.settings_profile_document_restore_title(),
-              content: m.settings_profile_document_restore_desc({ path }),
-              action: m.settings_profile_document_restore_action(),
-              destructive: true,
-            },
-            this.app,
-          );
-          if (!confirmed) return;
-          yield* this.#saveFile();
-          this.allowNoFile = true;
-          this.#defaultDraft = true;
-          yield* setLeafState(this.leaf, {
-            type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-            state: { file: null, defaultDraft: true },
-            active: true,
-          });
-          const profile = yield* Profile;
-          yield* profile.restoreDefault;
-          this.setViewData(yield* profile.getSource("default"), true);
-        }),
-      ),
+    return joinOnView(this.#runner.run, this.#restoreDefault());
+  }
+  #restoreDefault() {
+    return templateWorkbenchAction(
+      "restore-default",
+      Effect.gen({ self: this }, function* () {
+        const path = this.registry.get(defaultProfilePathAtom);
+        const confirmed = yield* awaitConfirm(
+          {
+            title: m.settings_profile_document_restore_title(),
+            content: m.settings_profile_document_restore_desc({ path }),
+            action: m.settings_profile_document_restore_action(),
+            destructive: true,
+          },
+          this.app,
+        );
+        if (!confirmed) return;
+        yield* this.#saveFile();
+        this.allowNoFile = true;
+        this.#defaultDraft = true;
+        yield* setLeafState(this.leaf, {
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+          state: { file: null, defaultDraft: true },
+          active: true,
+        });
+        const profile = yield* Profile;
+        yield* profile.restoreDefault;
+        this.setViewData(yield* profile.getSource("default"), true);
+      }),
     );
   }
 
@@ -2007,10 +2085,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (!this.#defaultDraft) return Effect.void;
     const controller = this.#controller;
     this.store.setState({ customization: "pending" });
-    logger.debug("Opening Default Profile for customization at {path}", {
-      path,
-    });
     return Effect.gen({ self: this }, function* () {
+      yield* Effect.logDebug("Opening Default Profile for customization");
       const { file } = yield* materializeDefault;
       if (!this.#defaultDraft || this.#controller !== controller) return;
       this.#bindingDraft = true;
@@ -2040,13 +2116,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     }).pipe(
       recover(
         (cause) =>
-          Effect.sync(() => {
-            logger.error("Failed to customize Default Profile at {path}", {
-              path,
-              error: Cause.squash(cause),
-            });
-            this.store.setState({ customization: "failed" });
-          }),
+          Effect.logError("Failed to customize Default Profile").pipe(
+            Effect.annotateLogs({ error: Cause.squash(cause) }),
+            Effect.andThen(
+              Effect.sync(() =>
+                this.store.setState({ customization: "failed" }),
+              ),
+            ),
+          ),
         Effect.void,
       ),
       Effect.tap(() =>
@@ -2055,6 +2132,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             this.store.setState({ customization: "idle" });
         }),
       ),
+      Effect.annotateLogs({ path }),
+      withLogCategory("template-workbench"),
     );
   }
   /** Read the citation styles again; closing the leaf stops the read quietly. */
@@ -2066,20 +2145,28 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     }).pipe(
       recover(
         (cause) =>
-          Effect.sync(() => {
-            logger.warn("Failed to read Template Workbench citation styles", {
-              error: Cause.squash(cause),
-            });
-            this.#stylesUnavailable = true;
-            this.#mount();
-          }),
+          Effect.logWarning(
+            "Failed to read Template Workbench citation styles",
+          ).pipe(
+            Effect.annotateLogs({ error: Cause.squash(cause) }),
+            Effect.andThen(
+              Effect.sync(() => {
+                this.#stylesUnavailable = true;
+                this.#mount();
+              }),
+            ),
+          ),
         Effect.void,
       ),
+      withLogCategory("template-workbench"),
     );
   }
-  /** Read the citation styles again, as the Name tab asks on each visit. */
+  /**
+   * Read the citation styles again. A request while a read runs joins it, so
+   * an older read never lands after a newer one.
+   */
   refreshStyles(): Effect.Effect<void> {
-    return joinOnView(this.#runner.run, this.#refreshStyles());
+    return this.#styles.join;
   }
   /** Save this document, then show it in Obsidian's Markdown view. */
   #openMarkdown(): Effect.Effect<void, Cause.UnknownError> {
@@ -2160,6 +2247,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** Ask the reader for the annotation the preview renders. */
   chooseAnnotation(): Effect.Effect<void> {
+    return joinOnView(this.#runner.run, this.#chooseAnnotation());
+  }
+  #chooseAnnotation(): Effect.Effect<void, never, ViewServices> {
     return Effect.gen({ self: this }, function* () {
       const preview = this.preview;
       if (!preview) return;
@@ -2187,21 +2277,27 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * @returns whether it became the selection.
    */
   #selectKey(indexedKey: string): Effect.Effect<boolean, never, ViewServices> {
-    return Effect.suspend(() => {
+    // The joinOnView shape: the fork and its finalizer are set up before an
+    // interrupt can land.
+    return Effect.uninterruptibleMask((restore) => {
       const generation = this.#itemGeneration;
       this.#selecting?.interruptUnsafe();
       const reading = this.#runner.run(readSelectableItem(indexedKey));
       this.#selecting = reading;
-      return Fiber.await(reading).pipe(
+      return restore(Fiber.await(reading)).pipe(
+        Effect.onInterrupt(() => Fiber.interrupt(reading)),
         Effect.flatMap((exit) => {
           if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-            return Effect.sync(() => {
-              logger.warn(
-                "Failed to restore Template Workbench Item {indexedKey}",
-                { indexedKey, error: Cause.squash(exit.cause) },
-              );
-              return false;
-            });
+            return Effect.logWarning(
+              "Failed to restore Template Workbench Item",
+            ).pipe(
+              Effect.annotateLogs({
+                indexedKey,
+                error: Cause.squash(exit.cause),
+              }),
+              withLogCategory("template-workbench"),
+              Effect.as(false),
+            );
           // A newer selection interrupted the read, or outran it.
           const choice = Exit.isSuccess(exit) ? exit.value : null;
           if (!choice || generation !== this.#itemGeneration)
@@ -2213,7 +2309,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             return true;
           });
         }),
-        Effect.onInterrupt(() => Fiber.interrupt(reading)),
       );
     });
   }
@@ -2713,7 +2808,7 @@ function EditorContent({
               disabled={view.updatingNote}
               onClick={() =>
                 // The update reports its own outcome, failures included.
-                view.start(view.updateOriginatingNote())
+                view.startNoteUpdate()
               }
             >
               <span className={originatingNoteNotice.labels}>
@@ -2751,7 +2846,7 @@ function EditorContent({
           <button
             className={templateWorkbenchButton}
             disabled={customization === "pending"}
-            onClick={() => view.start(view.customizeDefault())}
+            onClick={() => view.startCustomize()}
           >
             {customization === "pending"
               ? m.template_workbench_default_creating()
@@ -2793,7 +2888,7 @@ function EditorContent({
                       : "note",
               );
             setReveal(null);
-            if (tab === "name") view.start(view.refreshStyles());
+            if (tab === "name") view.startStylesRefresh();
           }}
         />
       )}
@@ -2884,7 +2979,7 @@ function EditorContent({
                 </p>
               ) : (
                 <PropertiesPane
-                  onChooseItem={() => view.start(view.chooseItem())}
+                  onChooseItem={() => view.startItemChoice()}
                   onRetry={() => view.preview?.refresh()}
                   onShowProblem={(id) => problems.select(id)}
                   controller={controller}
@@ -2929,7 +3024,7 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="match" modeActive={!advanced}>
               <NativeMatchPane
-                onChooseItem={() => view.start(view.chooseItem())}
+                onChooseItem={() => view.startItemChoice()}
                 controller={controller}
               />
             </TabPanel>
@@ -2965,7 +3060,7 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="name" modeActive={!advanced}>
               <NameFolderPane
-                onChooseItem={() => view.start(view.chooseItem())}
+                onChooseItem={() => view.startItemChoice()}
                 onRetry={() => view.preview?.refresh()}
                 controller={controller}
                 manifest={manifest.current}
@@ -3088,8 +3183,8 @@ function EditorHeader({ view }: { view: TemplateWorkbenchView }) {
         className={trigger()}
         onClick={() =>
           root === "annotation"
-            ? view.start(view.chooseAnnotation())
-            : view.start(view.chooseItem())
+            ? view.startAnnotationChoice()
+            : view.startItemChoice()
         }
       >
         <Icon name="search" />

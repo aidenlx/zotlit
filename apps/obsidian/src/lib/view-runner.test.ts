@@ -9,7 +9,13 @@ import {
 } from "@/lib/__fixtures__/view-atoms";
 import { Release } from "@/services/release/service";
 
-import { makeViewRunner } from "./view-runner";
+import {
+  answerOf,
+  inFlightSlot,
+  joinOnView,
+  makeViewRunner,
+} from "./view-runner";
+import type { InFlightSlot } from "./view-runner";
 
 const layerServices = Layer.mergeAll(
   layerUnreadViewServices,
@@ -71,5 +77,117 @@ it.effect(
       runner.run(Effect.never);
       yield* Effect.promise(() => runner[Symbol.asyncDispose]());
       yield* Effect.promise(() => runner.settled());
+    }).pipe(Effect.scoped),
+);
+
+/** A runner over the test services, closed with the test's Scope. */
+const scopedRunner = Effect.gen(function* () {
+  const registry = yield* scopedViewRegistry(yield* Layer.build(layerServices));
+  return yield* Effect.acquireDisposable(
+    Effect.sync(() => makeViewRunner(registry)),
+  );
+});
+
+it.effect("interrupts the run on the view when its caller is interrupted", () =>
+  Effect.gen(function* () {
+    const runner = yield* scopedRunner;
+    const started = yield* Deferred.make<void>();
+    let stopped = false;
+    const caller = yield* Effect.forkChild(
+      joinOnView(
+        runner.run,
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              stopped = true;
+            }),
+          ),
+        ),
+      ),
+    );
+    yield* Deferred.await(started);
+    yield* Fiber.interrupt(caller);
+    yield* Effect.promise(() => runner.settled());
+    expect(stopped).toBe(true);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("interrupts the caller of a run when the view closes", () =>
+  Effect.gen(function* () {
+    const registry = yield* scopedViewRegistry(
+      yield* Layer.build(layerServices),
+    );
+    const runner = makeViewRunner(registry);
+    const started = yield* Deferred.make<void>();
+    const caller = yield* Effect.forkChild(
+      joinOnView(
+        runner.run,
+        Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+      ),
+    );
+    yield* Deferred.await(started);
+    yield* Effect.promise(() => runner[Symbol.asyncDispose]());
+    expect(Exit.hasInterrupts(yield* Fiber.await(caller))).toBe(true);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("shares one run between the callers that join while it runs", () =>
+  Effect.gen(function* () {
+    const runner = yield* scopedRunner;
+    const finish = yield* Deferred.make<string>();
+    let runs = 0;
+    const changes: boolean[] = [];
+    let running = () => false;
+    const slot: InFlightSlot<string, never> = inFlightSlot(
+      runner.run,
+      Effect.suspend(() => {
+        runs++;
+        return Deferred.await(finish);
+      }),
+      () => changes.push(running()),
+    );
+    running = slot.running;
+    const first = yield* Effect.forkChild(slot.join);
+    const second = yield* Effect.forkChild(slot.join);
+    yield* Effect.yieldNow;
+    expect(slot.running()).toBe(true);
+    yield* Deferred.succeed(finish, "done");
+    expect(yield* Fiber.join(first)).toBe("done");
+    expect(yield* Fiber.join(second)).toBe("done");
+    expect(runs).toBe(1);
+    // onChange fires once when the run starts and once when it ends.
+    expect(changes).toEqual([true, false]);
+    expect(slot.running()).toBe(false);
+    // A join after the run ended starts a new run.
+    yield* Effect.forkChild(slot.join);
+    yield* Effect.yieldNow;
+    expect(runs).toBe(2);
+  }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "answers a run's value, its release value on an interrupt, and throws its failure",
+  () =>
+    Effect.gen(function* () {
+      const runner = yield* scopedRunner;
+      expect(
+        yield* Effect.promise(() =>
+          answerOf(runner.run(Effect.succeed("value")), "released"),
+        ),
+      ).toBe("value");
+      expect(
+        yield* Effect.promise(() =>
+          answerOf(runner.run(Effect.interrupt), "released"),
+        ),
+      ).toBe("released");
+      const failure = new Error("disk full");
+      const thrown = yield* Effect.promise(() =>
+        answerOf(runner.run(Effect.fail(failure)), "released").then(
+          () => null,
+          (error: unknown) => error,
+        ),
+      );
+      expect(thrown).toBe(failure);
     }).pipe(Effect.scoped),
 );

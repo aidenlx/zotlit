@@ -2,10 +2,12 @@
 // the citation insert, the Explorer's paper, the annotation view's link —
 // searches and draws its rows the same way; a subclass decides what a chosen
 // Item does. A choice acts only on the answer to the query in the input.
+import type { Effect } from "effect";
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { modalAnswer } from "@/lib/modal-answer";
 import type { PluginSettings } from "@/services/settings/service";
@@ -146,12 +148,28 @@ class ItemPickerModal extends ItemSearchModal {
   }
 
   requestInput(): Promise<SearchHit | null> {
-    return modalAnswer<SearchHit | null>((settle) => {
-      this.#settle = settle;
-      this.open();
-      return this;
-    });
+    return modalAnswer<SearchHit | null>((settle) => this.ask(settle));
   }
+
+  /** Open the picker; `settle` hears the chosen Item, or `null` on dismissal. */
+  ask(settle: (hit: SearchHit | null) => void): this {
+    this.#settle = settle;
+    this.open();
+    return this;
+  }
+}
+
+/**
+ * {@link pickItem} as an Effect: the chosen Item, or `null` on dismissal. An
+ * interrupt closes the picker.
+ */
+export function awaitItem(
+  deps: ItemSearchDeps,
+  placeholder: string,
+): Effect.Effect<SearchHit | null> {
+  return awaitModal<SearchHit | null>((settle) =>
+    new ItemPickerModal(deps, placeholder).ask(settle),
+  );
 }
 
 /** Ask the reader for one Item; `placeholder` says what it is for. */

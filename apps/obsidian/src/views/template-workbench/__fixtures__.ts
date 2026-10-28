@@ -18,6 +18,8 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { vaultError } from "@/lib/vault-errors";
 import type { ViewServices } from "@/lib/view-atoms";
 import { makeViewRegistry } from "@/lib/view-atoms";
+import { ItemLookup } from "@/services/item-lookup/service";
+import type { SearchOptions } from "@/services/item-lookup/service";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { QueryService } from "@/services/item-query/service";
 import { NoteWriteAborted } from "@/services/note-feature/errors";
@@ -260,6 +262,23 @@ export function makeWorkbenchHost(
   ).pipe(
     Context.add(Template, deps.services?.template ?? template),
     Context.add(Notifier, testNotifier().service),
+    // The Item search over the test's lookup handle.
+    Context.add(
+      ItemLookup,
+      stubService<ItemLookup["Service"]>("ItemLookup", {
+        search: (query, opts) =>
+          Effect.promise(() => deps.itemLookup.search(query, opts)),
+        openSession: Effect.map(
+          Effect.acquireDisposable(
+            Effect.sync(() => deps.itemLookup.openSession()),
+          ),
+          (session) => ({
+            search: (query: string, opts?: SearchOptions) =>
+              Effect.promise(() => session.search(query, opts)),
+          }),
+        ),
+      }),
+    ),
     Context.add(Profile, deps.services?.profile ?? profile),
     Context.add(
       ZoteroReads,

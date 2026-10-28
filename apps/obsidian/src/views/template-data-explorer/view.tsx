@@ -1,5 +1,5 @@
 // A native Explorer owns its data and navigation; workspace values supply its authoring context.
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
@@ -26,7 +26,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import { exitOf, makeViewRunner } from "@/lib/view-runner";
+import { answerOf, makeViewRunner } from "@/lib/view-runner";
+import type { ViewRun } from "@/lib/view-runner";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -97,6 +98,8 @@ export class TemplateDataExplorerView extends ItemView {
   #cleanup: DisposableStack | null = null;
   #editor: TemplateWorkbenchView | null = null;
   #host: ReturnType<typeof createTemplateWorkbenchHost> | null = null;
+  /** Forks on this leaf's view services; the close interrupts it. */
+  #run: ViewRun | null = null;
   #actions: ExplorerActions | null = null;
   #closed = false;
   #choiceGeneration = 0;
@@ -403,6 +406,7 @@ export class TemplateDataExplorerView extends ItemView {
     );
     // Closing the leaf interrupts every host Effect the Explorer still runs.
     const runner = cleanup.use(makeViewRunner(registry));
+    this.#run = runner.run;
     this.#host = cleanup.use(
       createTemplateWorkbenchHost(this.app, {
         run: runner.run,
@@ -585,16 +589,16 @@ export class TemplateDataExplorerView extends ItemView {
   async #chooseItem(searchAll = false): Promise<void> {
     const editor = this.#sourceEditor();
     if (editor && !searchAll) {
-      if (!this.#host) return;
+      if (!this.#run) return;
       // The editor's chooser, on this leaf's runner until ticket 06.
-      const exit = await exitOf(this.#host.run(editor.chooseItem()));
-      const selected = Exit.isSuccess(exit) && exit.value;
+      const selected = await answerOf(this.#run(editor.chooseItem()), false);
       if (selected && !this.#closed && editor === this.#sourceEditor())
         this.#apply(editor.authoringContext, true);
       return;
     }
     const host = this.#host;
-    if (!host) return;
+    const run = this.#run;
+    if (!host || !run) return;
     const generation = ++this.#choiceGeneration;
     const previous = this.#state().item;
     const deps = {
@@ -605,7 +609,7 @@ export class TemplateDataExplorerView extends ItemView {
     };
     const item = await (searchAll
       ? searchWorkbenchItem(deps)
-      : chooseWorkbenchItem(host, deps, previous ?? undefined));
+      : chooseWorkbenchItem({ run, host }, deps, previous ?? undefined));
     if (
       !item ||
       this.#closed ||
@@ -663,6 +667,7 @@ export class TemplateDataExplorerView extends ItemView {
     this.#cleanup = null;
     this.#root = null;
     this.#host = null;
+    this.#run = null;
     this.#actions = null;
     this.#editor = null;
     this.#release?.();

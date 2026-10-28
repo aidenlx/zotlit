@@ -12,19 +12,29 @@ import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
-import type { ItemLookupHandle } from "@/services/item-lookup/handle";
+import { awaitItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import { DEFAULT_LIMIT, ItemLookup } from "@/services/item-lookup/service";
+import type { SearchHit } from "@/services/item-lookup/service";
 
 import type { NativeWorkbenchSuggesterRequest } from "./host";
-import {
-  recentItemChoices,
-  sampleTypeLabel,
-  searchWorkbenchItem,
-} from "./selection";
+import { sampleTypeLabel } from "./selection";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
 
 type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
+
+/** The parent Items among `hits`, as choices. */
+const itemChoices = (hits: readonly SearchHit[]): WorkbenchItemChoice[] =>
+  hits.flatMap(({ item }) =>
+    isChildItemFields(item.fields)
+      ? []
+      : [
+          {
+            id: item.indexedKey,
+            title: itemSummary(item, item.fields).formatted,
+          },
+        ],
+  );
 
 /**
  * Ask the reader for an Item: the Sample Items, the recently updated Items,
@@ -34,13 +44,12 @@ type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
  */
 export const workbenchItemChoice = (
   host: Pick<WorkbenchHost, "suggester">,
-  deps: ItemSearchDeps & {
-    lookup: Pick<ItemLookupHandle, "search" | "openSession">;
-  },
+  deps: ItemSearchDeps,
   selected?: WorkbenchItemChoice,
-): Effect.Effect<WorkbenchItemChoice | null> =>
+): Effect.Effect<WorkbenchItemChoice | null, never, ItemLookup> =>
   Effect.gen(function* () {
-    const recent = yield* Effect.promise(() => recentItemChoices(deps.lookup));
+    const lookup = yield* ItemLookup;
+    const recent = itemChoices(yield* lookup.search("", { limit: 3 }));
     const choices = [...SAMPLE_ITEM_CHOICES, ...recent];
     const retained =
       selected && !choices.some(({ id }) => id === selected.id)
@@ -48,9 +57,7 @@ export const workbenchItemChoice = (
         : [];
     const found = new Map<string, WorkbenchItemChoice>();
     // The chooser's typed searches; the recent Items above stay one-shot.
-    const session = yield* Effect.acquireDisposable(
-      Effect.sync(() => deps.lookup.openSession()),
-    );
+    const session = yield* lookup.openSession;
     const request: NativeWorkbenchSuggesterRequest = {
       title: m.workbench_choose_item(),
       selected: selected?.id,
@@ -86,25 +93,23 @@ export const workbenchItemChoice = (
         },
       ],
       searchItems: (query) =>
-        Effect.tryPromise(() =>
-          session.search(query, { limit: DEFAULT_LIMIT }),
-        ).pipe(
+        session.search(query, { limit: DEFAULT_LIMIT }).pipe(
           Effect.map((hits) =>
-            hits.flatMap(({ item }) => {
-              if (isChildItemFields(item.fields)) return [];
-              const choice = {
-                id: item.indexedKey,
-                title: itemSummary(item, item.fields).formatted,
-              };
+            itemChoices(hits).map((choice) => {
               found.set(choice.id, choice);
-              return [{ id: choice.id, label: choice.title }];
+              return { id: choice.id, label: choice.title ?? choice.id };
             }),
           ),
         ),
     };
     const id = yield* host.suggester(request);
-    if (id === "search-zotero")
-      return yield* Effect.promise(() => searchWorkbenchItem(deps));
+    if (id === "search-zotero") {
+      const hit = yield* awaitItem(
+        deps,
+        m.template_data_explorer_pick_placeholder(),
+      );
+      return hit ? (itemChoices([hit])[0] ?? null) : null;
+    }
     return (
       [...retained, ...choices].find((item) => item.id === id) ??
       (id ? found.get(id) : null) ??
