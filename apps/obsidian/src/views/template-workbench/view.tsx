@@ -1843,7 +1843,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    */
   extractPartial(source: string): Effect.Effect<string | null> {
     const language = this.#documentLanguage;
-    return this.#runner.provide(
+    return joinOnView(
+      this.#runner.run,
       this.#createPartial({ source, language, open: "split" }).pipe(
         Effect.map((name) =>
           name === null ? null : partialCall(name, language),

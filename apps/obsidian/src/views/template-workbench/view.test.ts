@@ -3156,12 +3156,16 @@ describe("Template Workbench Item choice", () => {
     const selecting = Effect.runPromiseExit(
       view.selectItem({ id: FIRST, title: "First" }),
     );
-    // The extraction the editor's context menu starts on this leaf.
-    view.start(view.extractPartial("venue"));
+    // An extraction run from outside the leaf still runs on it.
+    const extracting = Effect.runPromiseExit(view.extractPartial("venue"));
     await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
     await view.close();
     expect(reads.interrupted).toEqual([FIRST]);
     expect(prompts).toEqual(["closed"]);
+    const extracted = await extracting;
+    expect(
+      Exit.isFailure(extracted) && Cause.hasInterruptsOnly(extracted.cause),
+    ).toBe(true);
     // The selection stops quietly: unapplied, or interrupted with the leaf.
     const exit = await selecting;
     expect(
