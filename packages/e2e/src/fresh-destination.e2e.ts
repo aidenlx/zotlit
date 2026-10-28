@@ -45,10 +45,13 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await prepareRunWindow(vaultId);
     await obRun(
       vaultId,
-      async ({ zotlit }) => {
+      async ({ app, zotlit }) => {
         zotlit.services.bridge.runSync(
           zotlit.services.settings.update({ "server.live-update": false }),
         );
+        // Customize opens the Template Workbench in Obsidian, also in a build
+        // with the web Workbench, which otherwise asks for the destination.
+        app.saveLocalStorage("zotlit-profile-customization", "native");
       },
       undefined,
     );
@@ -87,9 +90,10 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     );
     await changeNativeAnnotationCallout(vaultId, {
       view: {
-        path: await obRun(
-          vaultId,
-          ({ zotlit }) => zotlit.services.profile.defaultDocumentPath,
+        path: await obRun(vaultId, ({ zotlit }) =>
+          zotlit.services.bridge.runSync(
+            zotlit.services.profile.defaultDocumentPath,
+          ),
         ),
       },
       vaultPath,
@@ -152,7 +156,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          return zotlit.services.profile.profiles.length;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.profile.profiles,
+          ).length;
         },
         undefined,
       ),
@@ -233,9 +239,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     await obRunUntil(
       vaultId,
       async ({ zotlit }) => {
-        return zotlit.services.profile.profiles.some(
-          (p) => p.label === "Books",
-        );
+        return zotlit.services.bridge
+          .runSync(zotlit.services.profile.profiles)
+          .some((p) => p.label === "Books");
       },
       undefined,
       { what: "the Books profile to be saved in the profile list" },
@@ -243,9 +249,9 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     const books = (await obRun(
       vaultId,
       async ({ zotlit }) => {
-        return zotlit.services.profile.profiles.find(
-          (p) => p.label === "Books",
-        );
+        return zotlit.services.bridge
+          .runSync(zotlit.services.profile.profiles)
+          .find((p) => p.label === "Books");
       },
       undefined,
     )) as { id: string; path: string };

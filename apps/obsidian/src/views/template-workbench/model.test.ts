@@ -176,7 +176,9 @@ it.effect("reads a note's Profile again when its metadata changes", () =>
     });
     const profileOf = vi.fn<
       NonNullable<WorkbenchHostDeps["profile"]>["profileOf"]
-    >(() => ({ ok: false, stamped: { stamp: "old", id: undefined } }));
+    >(() =>
+      Effect.succeed({ ok: false, stamped: { stamp: "old", id: undefined } }),
+    );
     const host = makeWorkbenchHost(
       {
         profile: stubService<NonNullable<WorkbenchHostDeps["profile"]>>(

@@ -26,7 +26,6 @@ import type {
   CreationProfileSelection,
   CreationProfileSources,
   CreationSelectionProblem,
-  NoteFeatureHandle,
 } from "./operations";
 import { describeSelectionProblem } from "./selection-copy";
 import { NoteFeature } from "./service";
@@ -43,11 +42,6 @@ export interface InteractiveCreationPorts {
   readonly app: App;
   readonly createProfile: CreateProfileDialog;
   readonly importProfile: ImportProfileDialog;
-}
-
-/** What a view holds to create a note through the Profile selection. */
-export interface InteractiveCreationDeps {
-  noteFeature: Pick<NoteFeatureHandle, "createNoteInteractively">;
 }
 
 export interface InteractiveCreationOptions extends CreationProfileSources {

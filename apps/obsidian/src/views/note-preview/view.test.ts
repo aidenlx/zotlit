@@ -21,6 +21,7 @@ import { yieldToMain } from "@/lib/yield-to-main";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { templateRevisionAtom } from "@/services/template/atoms";
+import { templateFailure } from "@/services/template/service";
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "@/views/template-workbench/__fixtures__";
 import { makeWorkbenchHost } from "@/views/template-workbench/__fixtures__";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
@@ -130,9 +131,9 @@ afterEach(() => {
 const NO_PROFILES: Awaited<
   ReturnType<typeof createRenderFixture>
 >["deps"]["profile"] = {
-  getBuiltInSource: () => DEFAULT_PROFILE_SOURCE,
-  profiles: [],
-  resolveProfile: () => undefined,
+  getBuiltInSource: Effect.succeed(DEFAULT_PROFILE_SOURCE),
+  profiles: Effect.succeed([]),
+  resolveProfile: () => Effect.succeed(undefined),
 };
 
 function leafWithApp(app: App): WorkspaceLeaf {
@@ -185,12 +186,14 @@ async function setup(
         runtime: testRuntime(),
         settings: fixture.settings,
         bridge: fixture.deps.bridge,
-        zoteroReads: fixture.zoteroReads,
+        services: {
+          zoteroReads: fixture.zoteroReads,
+          template: fixture.templates,
+        },
         zoteroPref: stubService<TemplateWorkbenchDeps["zoteroPref"]>(
           "ZoteroPref",
           { dataDir: "/Zotero" },
         ),
-        templates: fixture.templates,
         nativePreview: fixture.deps,
         itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
           "ItemLookup",
@@ -775,10 +778,14 @@ Annotation`,
         ],
       }),
     );
-    expect(await source.profile.getSource("default")).toContain(
-      "Custom Default body.",
-    );
-    await using test = await setup(source.profile);
+    expect(
+      await source.bridge.runPromise(source.profile.getSource("default")),
+    ).toContain("Custom Default body.");
+    await using test = await setup({
+      resolveProfile: source.profile.resolveProfile,
+      getBuiltInSource: source.profile.getBuiltInSource,
+      profiles: source.profile.profiles,
+    });
     vi.useFakeTimers();
     vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
       (_app, listener) => {
@@ -836,21 +843,17 @@ Annotation`,
     await using test = await setup();
     const started = vi.fn();
     const released = vi.fn();
-    Object.defineProperty(
-      test.fixture.deps.templates,
-      "compile-status-changed",
-      {
-        value: Stream.unwrap(
-          Effect.acquireRelease(
-            Effect.sync(() => {
-              started();
-              return Stream.never;
-            }),
-            () => Effect.sync(released),
-          ),
+    Object.defineProperty(test.fixture.deps.templates, "compileEvents", {
+      value: Stream.unwrap(
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            started();
+            return Stream.never;
+          }),
+          () => Effect.sync(released),
         ),
-      },
-    );
+      ),
+    });
     test.fixture.deps.registry.refresh(templateRevisionAtom);
     await vi.waitFor(() => expect(started).toHaveBeenCalledOnce());
     vi.mocked(createTemplateWorkbenchHost).mockImplementationOnce(() => {
@@ -2507,9 +2510,9 @@ language: liquid
   it("offers a Profile choice where the vault holds the default and one more", async () => {
     await using test = await setup({
       ...NO_PROFILES,
-      profiles: [
+      profiles: Effect.succeed([
         { id: "reading12345", label: "Reading" },
-      ] as unknown as typeof NO_PROFILES.profiles,
+      ]) as unknown as typeof NO_PROFILES.profiles,
     });
     vi.useFakeTimers();
     const preview = await openPartialPreview(test);
@@ -2577,9 +2580,13 @@ After
       "renderPartialSource",
     ).mockImplementation((rawSource, data, options) => {
       const parsed = parsePlainTemplateDocument(rawSource);
-      return new TemplateFacade().render(options.name, data, {
-        source: parsed.source,
-        language: parsed.manifest.language,
+      return Effect.try({
+        try: () =>
+          new TemplateFacade().render(options.name, data, {
+            source: parsed.source,
+            language: parsed.manifest.language,
+          }),
+        catch: templateFailure,
       });
     });
     test.editor.file = file;

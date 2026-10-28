@@ -223,7 +223,7 @@ const TAB_ID = "zotlit";
  * tree here.
  */
 const DEEP_LINKED_ROWS = [
-  ["settings_zotero_editing", "services/build.ts"],
+  ["settings_zotero_editing", "services/plugin-runtime.ts"],
   ["settings_citation_references_style", "zt-main.ts, views/references"],
   ["settings_library_scope", "zt-main.ts"],
   ["settings_citation_engine", "views/references/register.ts"],

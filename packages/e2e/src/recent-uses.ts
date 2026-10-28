@@ -49,14 +49,30 @@ export async function verifyRecentUses(
         app.workspace.requestActiveLeafEvents.run();
         const oldServices = zotlit.services;
         await app.plugins.disablePlugin("zotlit");
-        await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();
-        for (let i = 0; i < 200 && !oldServices.bridge.closed(); i++)
+        const stillOpen = () =>
+          !oldServices.bridge.closed() ||
+          oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings)
+            .length > 0;
+        for (let i = 0; i < 200 && stillOpen(); i++)
           await new Promise((r) => setTimeout(r, 25));
-        if (!oldServices.bridge.closed())
-          throw new Error("The ZotLit services did not close");
+        if (stillOpen()) throw new Error("The ZotLit services did not close");
         app.saveLocalStorage("zotlit-use-ledger", JSON.parse(saved).ledger);
         await app.plugins.enablePlugin("zotlit");
-        return JSON.stringify(zotlit.services.useLedger.current);
+        return JSON.stringify(
+          Object.fromEntries(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(([key, use]) => [
+              key,
+              {
+                kind: use.kind,
+                instant: Temporal.Instant.fromEpochMilliseconds(
+                  use.instant.epochMilliseconds,
+                ).toString(),
+              },
+            ]),
+          ),
+        );
       },
       { saved: saved },
     );
@@ -399,7 +415,21 @@ export async function verifyRecentUses(
   const ledger = await obRun(
     vaultId,
     async ({ zotlit }) => {
-      return JSON.stringify(zotlit.services.useLedger.current);
+      return JSON.stringify(
+        Object.fromEntries(
+          Object.entries(
+            zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+          ).map(([key, use]) => [
+            key,
+            {
+              kind: use.kind,
+              instant: Temporal.Instant.fromEpochMilliseconds(
+                use.instant.epochMilliseconds,
+              ).toString(),
+            },
+          ]),
+        ),
+      );
     },
     undefined,
   );
@@ -432,7 +462,21 @@ export async function verifyRecentUses(
     await obRun(
       vaultId,
       async ({ zotlit }) => {
-        return JSON.stringify(zotlit.services.useLedger.current);
+        return JSON.stringify(
+          Object.fromEntries(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(([key, use]) => [
+              key,
+              {
+                kind: use.kind,
+                instant: Temporal.Instant.fromEpochMilliseconds(
+                  use.instant.epochMilliseconds,
+                ).toString(),
+              },
+            ]),
+          ),
+        );
       },
       undefined,
     ),
@@ -443,7 +487,21 @@ export async function verifyRecentUses(
     await obRun(
       vaultId,
       async ({ zotlit }) => {
-        return JSON.stringify(zotlit.services.useLedger.current);
+        return JSON.stringify(
+          Object.fromEntries(
+            Object.entries(
+              zotlit.services.bridge.runSync(zotlit.services.useLedger.current),
+            ).map(([key, use]) => [
+              key,
+              {
+                kind: use.kind,
+                instant: Temporal.Instant.fromEpochMilliseconds(
+                  use.instant.epochMilliseconds,
+                ).toString(),
+              },
+            ]),
+          ),
+        );
       },
       undefined,
     ),
@@ -553,7 +611,9 @@ export async function verifyRecentUses(
       if (enabled) {
         await until("document citations", async () =>
           (
-            await s.citationIndex.getDocumentCitationSet(leaf!.view.file!)
+            await s.bridge.runPromise(
+              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
+            )
           ).citations.some((c) => c.indexedKey === `${target}`),
         );
       } else {
@@ -662,7 +722,9 @@ export async function verifyRecentUses(
       if (enabled) {
         await until("document citations", async () =>
           (
-            await s.citationIndex.getDocumentCitationSet(leaf!.view.file!)
+            await s.bridge.runPromise(
+              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
+            )
           ).citations.some((c) => c.indexedKey === `${target}`),
         );
       } else {
@@ -814,7 +876,9 @@ export async function verifyRecentUses(
       if (enabled) {
         await until("document citations", async () =>
           (
-            await s.citationIndex.getDocumentCitationSet(leaf!.view.file!)
+            await s.bridge.runPromise(
+              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
+            )
           ).citations.some((c) => c.indexedKey === `${target}`),
         );
       } else {
@@ -995,7 +1059,7 @@ export async function verifyRecentUses(
       app.workspace.protocolHandler.handlers.get("zotlit/update")!({
         action: "zotlit/update",
         item: "1",
-        "source-id": s.zoteroPref.sourceId!,
+        "source-id": s.bridge.runSync(s.zoteroPref.current).sourceId!,
         scope: "metadata",
       });
       await until(
@@ -1027,7 +1091,7 @@ export async function verifyRecentUses(
       app.workspace.protocolHandler.handlers.get("zotlit/open")!({
         action: "zotlit/open",
         item: "1",
-        "source-id": s.zoteroPref.sourceId!,
+        "source-id": s.bridge.runSync(s.zoteroPref.current).sourceId!,
       });
       await until(
         "Companion open",

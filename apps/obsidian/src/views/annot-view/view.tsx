@@ -8,7 +8,6 @@ import type {
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
-import { passAborted } from "@/lib/abort-error";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
@@ -37,7 +36,7 @@ import {
   activeNoteAtom,
   noteSourceAtom,
 } from "@/services/note-index/atoms";
-import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
+import { pdfSessionsAtom } from "@/services/pdf-annotation-editor/atoms";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { PluginSettings } from "@/services/settings/service";
@@ -45,6 +44,7 @@ import {
   zoteroRevisionAtom,
   zoteroStateAtom,
 } from "@/services/zotero-reads/atoms";
+import { viewTargetOpener } from "@/views/open-target";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
@@ -146,7 +146,6 @@ export interface AnnotViewDeps extends QueryViewDeps {
   /** The shared item picker still consumes settings through its bridge. */
   bridge: Pick<EffectBridge, "runSync">;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
-  pdfReaders: Pick<PdfAnnotationEditor, "sessionFor" | "on">;
   itemLookup: Pick<ItemLookupHandle, "openSession">;
   settings: Pick<PluginSettings["Service"], "current">;
   /** The plugin's view registry, which holds each leaf's Follow Mode state. */
@@ -278,7 +277,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
         onPinItem: () => this.#pickItemToPin(),
         onUnpin: () => this.#unpin(),
         onEnableLiveUpdates: () => this.#enableLiveUpdates(),
-        onOpenPdf: () => void this.#openPdf().catch(passAborted),
+        onOpenPdf: () => this.#openPdf(),
         fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;
@@ -529,14 +528,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
     );
 
     opened.defer(
-      this.#deps.pdfReaders.on("session-added", (filePath) => {
-        if (
-          this.#followMode === "active-tab" &&
-          this.#deps.app.workspace.getActiveFile()?.path === filePath
-        ) {
-          this.#reload();
-        }
-      }),
+      registry.subscribe(
+        pdfSessionsAtom,
+        () => {
+          if (this.#followMode === "active-tab") this.#reload();
+        },
+        { immediate: true },
+      ),
     );
 
     const windowFocus = registerMigratingWindowEvent(
@@ -647,10 +645,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Open the Attachment on screen in Obsidian's own PDF view. A non-PDF
    * Attachment or a missing file is answered by the reader's own notice.
    */
-  async #openPdf(): Promise<void> {
+  #openPdf(): void {
     const active = selectActiveAttachment(this.#store.getState());
     if (!active) return;
-    await this.#deps.opener.open(
+    viewTargetOpener(this.#deps.registry, this.#deps.opener).open(
       { kind: "attachment", attachmentKey: active.indexedKey },
       false,
     );
@@ -817,9 +815,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
    * Attachments that keep it.
    */
   #activePdfSession(): ReaderSession | null {
-    return this.#deps.pdfReaders.sessionFor(
-      this.#deps.app.workspace.getMostRecentLeaf()?.view,
-    );
+    const view = this.#deps.app.workspace.getMostRecentLeaf()?.view;
+    return view
+      ? (this.#deps.registry.get(pdfSessionsAtom).get(view) ?? null)
+      : null;
   }
 
   #loadTarget(target: LoadTarget | null): void {

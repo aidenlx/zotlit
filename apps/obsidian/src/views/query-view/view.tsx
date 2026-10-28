@@ -6,7 +6,6 @@
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
 import { Effect } from "effect";
-import type { Stream } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
@@ -24,6 +23,7 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
+import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import { queryRevisionAtom } from "@/services/item-query/atoms";
 import type { Diagnostic } from "@/services/item-query/contract";
 import type { QueryHandle } from "@/services/item-query/handle";
@@ -34,13 +34,11 @@ import type {
 } from "@/services/item-query/query-view";
 import { QueryService } from "@/services/item-query/service";
 import { libraryAvailabilityRevisionAtom } from "@/services/library-scope/atoms";
-import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import {
   zoteroRevisionAtom,
   zoteroQueryUnavailableRevisionAtom,
 } from "@/services/zotero-reads/atoms";
-import type { ZoteroReadsEvents } from "@/services/zotero-reads/service";
 import { AnnotList } from "@/views/annot-view/AnnotView";
 import { CardDisplayContext } from "@/views/annot-view/card-display";
 import type { CardDisplay } from "@/views/annot-view/card-display";
@@ -51,6 +49,7 @@ import type {
 } from "@/views/annot-view/layout";
 import { useAnnotStore } from "@/views/annot-view/store";
 import type { AnnotState } from "@/views/annot-view/store";
+import { viewTargetOpener } from "@/views/open-target";
 
 import {
   makeQueryOperations,
@@ -124,27 +123,6 @@ import {
 export interface QueryViewDeps extends AnnotationsLayoutDeps {
   registry: ViewRegistryHandle;
   runtime: SubscriptionRuntime;
-  query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
-  reads: AnnotationsLayoutDeps["reads"] &
-    Pick<
-      {
-        readonly [K in keyof ZoteroReadsEvents]: Stream.Stream<
-          Parameters<ZoteroReadsEvents[K]> extends [infer A] ? A : void
-        >;
-      } & { acquireRead: AnnotationsLayoutDeps["reads"]["acquireRead"] },
-      | "changed"
-      | "degraded"
-      | "refresh-failed"
-      | "refreshing"
-      | "db-file-missing"
-      | "refresh-requested"
-      | "acquireRead"
-    >;
-  libraryScope: {
-    readonly changed: Stream.Stream<ResolvedLibraryScope | null>;
-    readonly "libraries-changed": Stream.Stream<void>;
-    readonly current: ResolvedLibraryScope | null;
-  };
   /** The keyboard of a view that a note holds, which the embed and the block share. */
   cardFocus: Pick<QueryCardFocus, "hold">;
   /** What the Table's Literature Note Property reads and does. */
@@ -612,10 +590,12 @@ export class QueryView extends Component implements HistorySurface {
    * child rows, which read the Libraries the view reads, as a child lives in
    * its parent's Library; their notes; and the readers their links open.
    */
-  get tableDeps(): Pick<QueryViewDeps, "query" | "literatureNotes"> & {
-    readers: QueryViewDeps["opener"];
+  get tableDeps(): {
+    query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
+    literatureNotes: LiteratureNotes;
+    readers: TargetOpenGesture;
   } {
-    const { literatureNotes, opener: readers } = this.#deps;
+    const { literatureNotes, opener } = this.#deps;
     return {
       query: {
         on: (_event, listener) =>
@@ -633,7 +613,7 @@ export class QueryView extends Component implements HistorySurface {
         customFieldNames: (signal) => this.customFieldNames(signal),
       },
       literatureNotes,
-      readers,
+      readers: viewTargetOpener(this.registry, opener),
     };
   }
 

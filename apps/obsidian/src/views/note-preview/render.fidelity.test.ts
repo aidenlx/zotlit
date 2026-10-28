@@ -55,8 +55,9 @@ async function realCreate(
   result: CreateNoteResult;
   written: { path: string; content: string } | undefined;
 }> {
-  const document =
-    fixture.deps.templates.prepareLiteratureNoteTemplateSource(source);
+  const document = fixture.deps.bridge.runSync(
+    fixture.deps.templates.prepareLiteratureNoteTemplateSource(source),
+  );
   const entry = seedProfileEntry(document.manifest, {
     document: "zotlit-profile.paper.md",
     path: "templates/zotlit-profile.paper.md",
@@ -88,7 +89,9 @@ async function realCreate(
     getLiteratureNoteTemplate: () => document,
     renderFilename: (data: object) => document.renderFilename(data),
     render: (name: string, data: object) =>
-      fixture.deps.templates.render(name as "note", data),
+      fixture.deps.bridge.runSync(
+        fixture.deps.templates.render(name as "note", data),
+      ),
   });
   const noteIndex: NoteFeatureSources["noteIndex"] = {
     whenIndexed: async () => {},

@@ -338,10 +338,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const state = pageHelpers.scratch.__zotlitQuerySource;
           if (!state) return;
           const services = zotlit.services;
-          services.zoteroPref.setDataDir(state.previous);
+          services.bridge.runSync(
+            services.zoteroPref.setDataDir(state.previous),
+          );
           await state.lease?.[Symbol.asyncDispose]();
           delete pageHelpers.scratch.__zotlitQuerySource;
-          await services.zoteroReads.refresh();
+          await services.bridge.runPromise(services.zoteroReads.refresh);
         },
         undefined,
       );
@@ -362,13 +364,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit, page: pageHelpers }, { otherDir }) => {
         const services = zotlit.services;
-        const lease = await services.zoteroReads.acquireRead();
+        const lease = await services.acquireZoteroRead();
         pageHelpers.scratch.__zotlitQuerySource = {
           lease,
-          previous: services.zoteroPref.dataDirOverride,
+          previous: services.bridge.runSync(services.zoteroPref.current)
+            .dataDirOverride,
         };
-        services.zoteroPref.setDataDir(otherDir);
-        await services.zoteroReads.refresh();
+        services.bridge.runSync(services.zoteroPref.setDataDir(otherDir));
+        await services.bridge.runPromise(services.zoteroReads.refresh);
       },
       { otherDir },
     );
@@ -1586,9 +1589,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         pageHelpers.scratch.zotlitE2EChanged = 0;
         pageHelpers.scratch.zotlitE2EOffChanged =
           zotlit.services.bridge.subscribe(
-            zotlit.services.zoteroReads.changed,
-            function () {
-              pageHelpers.scratch.zotlitE2EChanged!++;
+            zotlit.services.zoteroReads.events,
+            function (event) {
+              if (event._tag === "changed")
+                pageHelpers.scratch.zotlitE2EChanged!++;
             },
           );
       },
@@ -2331,7 +2335,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               `${app.plugins.plugins.zotlit!.manifest.dir}/zotlit.log.jsonl`,
             )
           ).length;
-          await zotlit.services.zoteroReads.refresh();
+          await zotlit.services.bridge.runPromise(
+            zotlit.services.zoteroReads.refresh,
+          );
         },
         undefined,
       );

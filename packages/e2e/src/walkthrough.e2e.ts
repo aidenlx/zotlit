@@ -21,6 +21,7 @@ import {
   isObsidianReachable,
   vaultScript,
 } from "./vault-script.ts";
+import { withWorkbenchSurfaces } from "./workbench-surfaces.ts";
 
 const root = await getWorkspaceRoot(import.meta.dirname);
 const fixture = join(root, ".scratch/e2e-walkthrough-fixture");
@@ -35,6 +36,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     const opened = await run(["open", path, "--vault-case", "demo"]);
     vaultId = opened.stdout.trim().split("\n")[0]!.trim();
     await prepareRunWindow(vaultId);
+    // Customize opens the Template Workbench in Obsidian, also in a build
+    // with the web Workbench, which otherwise asks for the destination.
+    await obRun(
+      vaultId,
+      async ({ app }) => {
+        app.saveLocalStorage("zotlit-profile-customization", "native");
+      },
+      undefined,
+    );
   }, 180_000);
 
   afterAll(async () => {
@@ -202,18 +212,23 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     expect(missing).toMatchObject({ errors: [{ code: "style-missing" }] });
   });
 
-  it("shows export destinations within the named vault when the format changes", async () => {
+  it("exports a draft as HTML after the destination follows the chosen format (#1830)", async () => {
     const m = await import("@obsidian-messages");
     const vault = basename(path);
+    const source = await readFile(
+      join(root, "packages/scripts/lib/fixture/vault-pages/pandoc-export.md"),
+      "utf8",
+    );
+    await using output = new AsyncDisposableStack();
+    output.defer(() => rm(join(path, "Export display.html"), { force: true }));
     const result = await obRun(
       vaultId,
-      async ({ app: host, page }) => {
+      async ({ app: host, page }, { source, confirm, done }) => {
         const app = host as WalkthroughApp;
-
-        const { waitFor } = page;
+        const { waitFor, until } = page;
         await using cleanup = new AsyncDisposableStack();
         const file = cleanup.adopt(
-          await app.vault.create("Export display.md", "A draft."),
+          await app.vault.create("Export display.md", source),
           (file) => app.vault.delete(file),
         );
         const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
@@ -254,7 +269,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             bubbles: true,
           }),
         );
-        return {
+        const result = {
           word,
           html: row!.querySelector<HTMLElement>(".setting-item-description")!
             .textContent,
@@ -263,8 +278,34 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             app.vault.adapter.getBasePath(),
           ),
         };
+        const style = modal!.querySelectorAll<HTMLSelectElement>("select")[1]!;
+        style.value = "";
+        style.dispatchEvent(
+          new style.ownerDocument.defaultView!.Event("change", {
+            bubbles: true,
+          }),
+        );
+        [...modal!.querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent === confirm)!
+          .click();
+        await until(
+          "HTML export completion",
+          () =>
+            [...doc.querySelectorAll<HTMLElement>(".notice")].some(
+              (notice) => notice.textContent === done,
+            ),
+          30000,
+        );
+        return result;
       },
-      undefined,
+      {
+        source,
+        confirm: m.pandoc_export_confirm(),
+        done: m.notice_pandoc_export_done({
+          file: "Export display.html",
+          style: m.settings_citation_references_style_default(),
+        }),
+      },
     );
     expect(result.word).toBe(
       m.pandoc_export_destination_in_vault({
@@ -279,6 +320,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       }),
     );
     expect(result.absolutePathShown).toBe(false);
+    const html = await readFile(join(path, "Export display.html"), "utf8");
+    expect(html).toContain("<strong>research draft</strong>");
+    expect(html).toContain("This callout becomes a readable quotation.");
+    expect(html).not.toContain("[!note]");
   });
 
   it("opens the Library View with the Welcome View beside the active note and reuses its tab", async () => {
@@ -428,8 +473,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     await obRunUntil(
       vaultId,
       async ({ zotlit }, { notePath }) => {
-        return zotlit.services.noteIndex
-          .getNotesByItemKey("DMRGRART")
+        return zotlit.services.bridge
+          .runSync(zotlit.services.noteIndex.getNotesByItemKey("DMRGRART"))
           .some((file) => file.path === notePath);
       },
       { notePath },
@@ -540,7 +585,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           });
         await leaf.openFile(file);
         (leaf.view as MarkdownView).editor.setCursor({ line: 2, ch: 3 });
-        const first = await services.citationText.read(file.path);
+        const first = await services.bridge.runPromise(
+          services.citationText.read(file.path),
+        );
         if (!first?.formatted.size)
           throw new Error("Initial citations were not formatted");
         const engine = await services.pandocEngine.runPromise(
@@ -564,12 +611,20 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               : Reflect.apply(target, receiver, args);
           },
         });
-        services.queryClient.invalidate(["citation-render"]);
-        services.queryClient.invalidate(["citation-text", file.path]);
-        const failed = await services.citationText.read(file.path);
-        const failedStatus = services.citationText.peek(file.path)?.status;
+        services.bridge.runSync(
+          services.queryClient.invalidate(["citation-render"]),
+        );
+        services.bridge.runSync(
+          services.queryClient.invalidate(["citation-text", file.path]),
+        );
+        const failed = await services.bridge.runPromise(
+          services.citationText.read(file.path),
+        );
+        const failedStatus = services.bridge.runSync(
+          services.citationText.peek(file.path),
+        )?.status;
         fail = false;
-        await services.citationText.read(file.path);
+        await services.bridge.runPromise(services.citationText.read(file.path));
         const duringCooldown = reads;
         // oxlint-disable-next-line no-restricted-globals -- Preserve the native cooldown-clock regression probe.
         const now = Date.now;
@@ -581,8 +636,12 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           // oxlint-disable-next-line no-restricted-globals -- Restore the native clock after the probe.
           Date.now = now;
         });
-        const recovered = await services.citationText.read(file.path);
-        const status = services.citationText.peek(file.path)?.status;
+        const recovered = await services.bridge.runPromise(
+          services.citationText.read(file.path),
+        );
+        const status = services.bridge.runSync(
+          services.citationText.peek(file.path),
+        )?.status;
         await new Promise((resolve) =>
           (leaf.view as MarkdownView).editor.cm.requestMeasure({
             read: () => null,
@@ -791,7 +850,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ]);
   });
 
-  it("keeps citation suggestions when a word reaches eight letters", async () => {
+  it("keeps citation suggestions for full words and inserts from both pickers", async () => {
     await obRunUntil(
       vaultId,
       async ({ zotlit }) => {
@@ -861,17 +920,66 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             found: hits.some((hit) => hit.item.key === "DMIANART"),
           });
         }
+        const fields = (
+          await zotlit.services.itemLookup.search("findings", { limit: 5 })
+        ).find((hit) => hit.item.key === "DMIANART")!.item.fields;
+        const key = "citationKey" in fields ? fields.citationKey : null;
+        const row = [
+          ...suggest!.suggestEl.querySelectorAll<HTMLElement>(
+            ".suggestion-item",
+          ),
+        ].find((el) =>
+          el.textContent.includes(
+            "Why Most Published Research Findings Are False",
+          ),
+        )!;
+        row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await waitFor(
+          () =>
+            editor.getValue().includes(`@${key}`) &&
+            !editor.getValue().includes("[@findings"),
+          true,
+          "Inline citation inserted",
+        );
+        const inline = editor.getValue();
+        editor.setCursor(editor.offsetToPos(inline.length));
+        app.commands.executeCommandById("zotlit:insert-citation");
+        await waitFor(
+          () => !!activeDocument.querySelector(".prompt-input"),
+          true,
+          "Insert citation modal",
+        );
+        const input =
+          activeDocument.querySelector<HTMLInputElement>(".prompt-input")!;
+        input.value = "findings";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const result = () =>
+          activeDocument.querySelector<HTMLElement>(
+            '.prompt-results [data-indexed-key="DMIANART"]',
+          );
+        await waitFor(() => !!result(), true, "Modal citation result");
+        result()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await waitFor(
+          () =>
+            editor.getValue().length > inline.length &&
+            editor.getValue().split(`@${key}`).length === 3,
+          true,
+          "Modal citation inserted",
+        );
+        const inserted = editor.getValue();
         await (leaf.view as MarkdownView).save();
-        return results;
+        return { results, inline, inserted, key };
       },
       undefined,
     );
-    expect(results).toEqual(
+    expect(results.results).toEqual(
       ["researc", "research", "finding", "findings"].map((query) => ({
         query,
         found: true,
       })),
     );
+    expect(results.inline).toContain(`@${results.key}`);
+    expect(results.inserted.split(`@${results.key}`)).toHaveLength(3);
   });
 
   it("keeps the citation suggester closed while entering a page locator", async () => {
@@ -1215,7 +1323,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       await obRun(
         vaultId,
         async ({ zotlit }) => {
-          await zotlit.services.profile.restoreDefault();
+          await zotlit.services.bridge.runPromise(
+            zotlit.services.profile.restoreDefault,
+          );
         },
         undefined,
       );
@@ -1349,6 +1459,94 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     );
   });
 
+  // #1859: a live Explorer offers snippets for the permitted engines.
+  it("updates Explorer template actions when JavaScript permission changes", async () => {
+    const result = await obRun(vaultId, async ({ app: host, zotlit, page }) => {
+      const app = host as WalkthroughApp;
+      const { waitFor } = page;
+      const services = zotlit.services;
+      const template = (await services.runtime.context()).mapUnsafe.get(
+        "zotlit/template/Template",
+      ) as import("@/lib/effect").Context.Service.Shape<
+        typeof import("@/services/template/service").Template
+      >;
+      const setPermission = (enabled: boolean) =>
+        services.bridge.runPromise(
+          template.setJavascriptTemplatesEnabled(enabled),
+        );
+      await using cleanup = new AsyncDisposableStack();
+      const previous = services.bridge.runSync(
+        template.javascriptTemplatesEnabled,
+      );
+      cleanup.defer(() => setPermission(previous));
+      for (const leaf of app.workspace.getLeavesOfType(
+        "zotlit-template-data-explorer",
+      ))
+        leaf.detach();
+      const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+        leaf.detach(),
+      );
+      await setPermission(false);
+      await leaf.setViewState({
+        type: "zotlit-template-data-explorer",
+        active: true,
+        state: { itemIndexedKey: "DMRGRART", root: "note", zotlitLaunch: true },
+      });
+      const element = (leaf.view as unknown as { contentEl: HTMLElement })
+        .contentEl;
+      const button = () =>
+        element.querySelector<HTMLElement>('[aria-label="Template actions"]');
+      await waitFor(() => !!button(), true, "Explorer field actions");
+      const labels = () =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>(".menu .menu-item-title"),
+        ).map((el) => el.textContent);
+      const closeMenu = () => {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+      };
+      cleanup.defer(closeMenu);
+      const menu = async () => {
+        button()!.click();
+        await waitFor(() => labels().length > 0, true, "Explorer menu");
+        return labels();
+      };
+      const disabled = await menu();
+      closeMenu();
+      await setPermission(true);
+      await waitFor(
+        () => {
+          closeMenu();
+          button()!.click();
+          return labels().includes("Eta");
+        },
+        true,
+        "Eta actions after permission",
+      );
+      const enabled = labels();
+      closeMenu();
+      await setPermission(false);
+      await waitFor(
+        () => {
+          closeMenu();
+          button()!.click();
+          return labels().includes("Copy output") && !labels().includes("Eta");
+        },
+        true,
+        "Liquid actions after permission is removed",
+      );
+      const revoked = labels();
+      closeMenu();
+      return { disabled, enabled, revoked };
+    });
+    expect(result.disabled).toContain("Copy output");
+    expect(result.disabled).not.toContain("Eta");
+    expect(result.enabled).toEqual(expect.arrayContaining(["Liquid", "Eta"]));
+    expect(result.revoked).toContain("Copy output");
+    expect(result.revoked).not.toContain("Eta");
+  });
+
   it.each(["built-in", "customized"])(
     "opens the %s template in its popout without displaying a main-window Workbench tab",
     async (kind) => {
@@ -1365,9 +1563,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           ])
             for (const leaf of app.workspace.getLeavesOfType(type))
               leaf.detach();
-          const profile = zotlit.services.profile;
-          if (kind === "built-in") await profile.restoreDefault();
-          else await profile.materializeDefault();
+          const { bridge, profile } = zotlit.services;
+          if (kind === "built-in")
+            await bridge.runPromise(profile.restoreDefault);
+          else await bridge.runPromise(profile.materializeDefault);
           const file = await app.vault.create(
             notePath,
             "---\nzotero-key: DMRGRART\n---\n# Popout",
@@ -1393,55 +1592,65 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           what: "the note frontmatter zotero-key to be DMRGRART before the preview check",
         },
       );
-      const result = await obRun(
+      const result = await withWorkbenchSurfaces(
         vaultId,
-        async ({ app: host, zotlit, page }) => {
-          const app = host as WalkthroughApp;
+        obRun(
+          vaultId,
+          async ({ app: host, zotlit, page }) => {
+            const app = host as WalkthroughApp;
 
-          const { waitFor } = page;
-          const editors = () => page.leavesOfType("zotlit-template-workbench");
-          let mainSamples = 0;
-          const sample = () => {
-            for (const leaf of editors()) {
-              const el = leaf.view.containerEl;
-              if (
-                el.ownerDocument === document &&
-                el.isConnected &&
-                el.getBoundingClientRect().width > 0
-              )
-                mainSamples++;
-            }
-          };
-          using resources = new DisposableStack();
-          const observer = resources.adopt(
-            new MutationObserver(sample),
-            (value) => value.disconnect(),
-          );
-          observer.observe(document.body, { childList: true, subtree: true });
-          resources.adopt(setInterval(sample, 10), clearInterval);
-          const accepted = app.commands.executeCommandById(
-            "zotlit:customize-note-template",
-          );
-          const ready = () =>
-            editors().some(
-              (leaf) =>
-                leaf.view.file &&
-                leaf.view.containerEl.ownerDocument !== document,
-            ) &&
-            page.leavesOfType("zotlit-note-preview").length > 0 &&
-            page.leavesOfType("zotlit-template-data-explorer").length > 0;
-          await waitFor(ready, true, "Template Workbench and companion views");
-          sample();
-          return {
-            accepted,
-            ready: ready(),
-            mainSamples,
-            customized: !!app.vault.getFileByPath(
-              zotlit.services.profile.defaultDocumentPath,
-            )!,
-          };
-        },
-        undefined,
+            const { waitFor } = page;
+            const editors = () =>
+              page.leavesOfType("zotlit-template-workbench");
+            let mainSamples = 0;
+            const sample = () => {
+              for (const leaf of editors()) {
+                const el = leaf.view.containerEl;
+                if (
+                  el.ownerDocument === document &&
+                  el.isConnected &&
+                  el.getBoundingClientRect().width > 0
+                )
+                  mainSamples++;
+              }
+            };
+            using resources = new DisposableStack();
+            const observer = resources.adopt(
+              new MutationObserver(sample),
+              (value) => value.disconnect(),
+            );
+            observer.observe(document.body, { childList: true, subtree: true });
+            resources.adopt(setInterval(sample, 10), clearInterval);
+            const accepted = app.commands.executeCommandById(
+              "zotlit:customize-note-template",
+            );
+            const ready = () =>
+              editors().some(
+                (leaf) =>
+                  leaf.view.file &&
+                  leaf.view.containerEl.ownerDocument !== document,
+              ) &&
+              page.leavesOfType("zotlit-note-preview").length > 0 &&
+              page.leavesOfType("zotlit-template-data-explorer").length > 0;
+            await waitFor(
+              ready,
+              true,
+              "Template Workbench and companion views",
+            );
+            sample();
+            return {
+              accepted,
+              ready: ready(),
+              mainSamples,
+              customized: !!app.vault.getFileByPath(
+                zotlit.services.bridge.runSync(
+                  zotlit.services.profile.defaultDocumentPath,
+                ),
+              )!,
+            };
+          },
+          undefined,
+        ),
       );
       expect(result).toEqual({
         accepted: true,
@@ -1481,10 +1690,10 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host, zotlit }) => {
         const app = host as WalkthroughApp;
 
-        const profile = zotlit.services.profile;
-        await profile.materializeDefault();
+        const { bridge, profile } = zotlit.services;
+        await bridge.runPromise(profile.materializeDefault);
         return await app.vault.read(
-          app.vault.getFileByPath(profile.defaultDocumentPath)!,
+          app.vault.getFileByPath(bridge.runSync(profile.defaultDocumentPath))!,
         );
       },
       undefined,
@@ -1496,9 +1705,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         async ({ app: host, zotlit }, { original }) => {
           const app = host as WalkthroughApp;
 
-          const profile = zotlit.services.profile;
+          const { bridge, profile } = zotlit.services;
           await app.vault.modify(
-            app.vault.getFileByPath(profile.defaultDocumentPath)!,
+            app.vault.getFileByPath(
+              bridge.runSync(profile.defaultDocumentPath),
+            )!,
             original,
           );
         },
@@ -1510,14 +1721,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host, zotlit, page }) => {
         const app = host as WalkthroughApp;
 
-        const profile = zotlit.services.profile;
-        const file = app.vault.getFileByPath(profile.defaultDocumentPath)!;
+        const { bridge, profile } = zotlit.services;
+        const file = app.vault.getFileByPath(
+          bridge.runSync(profile.defaultDocumentPath),
+        )!;
         const source = await app.vault.read(file);
         const listed = page.listAnnotations(source);
         await app.vault.modify(file, listed);
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(
-          app.vault.getFileByPath(profile.defaultDocumentPath)!,
+          app.vault.getFileByPath(bridge.runSync(profile.defaultDocumentPath))!,
         );
         app.workspace.setActiveLeaf(leaf, { focus: true });
         app.commands.executeCommandById("zotlit:customize-profile");
@@ -1536,7 +1749,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           .find(
             (leaf) =>
               leaf.view.file?.path ===
-              zotlit.services.profile.defaultDocumentPath,
+              zotlit.services.bridge.runSync(
+                zotlit.services.profile.defaultDocumentPath,
+              ),
           )?.view;
         const doc = view?.contentEl?.ownerDocument;
         const ready =
@@ -1573,7 +1788,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           .find(
             (leaf) =>
               leaf.view.file?.path ===
-              zotlit.services.profile.defaultDocumentPath,
+              zotlit.services.bridge.runSync(
+                zotlit.services.profile.defaultDocumentPath,
+              ),
           )
           ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(".prompt")
           ?.querySelector<HTMLInputElement>("input");
@@ -1603,7 +1820,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             .find(
               (leaf) =>
                 leaf.view.file?.path ===
-                zotlit.services.profile.defaultDocumentPath,
+                zotlit.services.bridge.runSync(
+                  zotlit.services.profile.defaultDocumentPath,
+                ),
             )
             ?.view?.contentEl?.ownerDocument.querySelector<HTMLElement>(
               ".prompt",
@@ -1643,7 +1862,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                   .find(
                     (leaf) =>
                       leaf.view.file?.path ===
-                      zotlit.services.profile.defaultDocumentPath,
+                      zotlit.services.bridge.runSync(
+                        zotlit.services.profile.defaultDocumentPath,
+                      ),
                   )?.view?.contentEl?.ownerDocument,
             )
             ?.view.contentEl?.querySelectorAll<HTMLElement>(".callout")
@@ -1658,7 +1879,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                   .find(
                     (leaf) =>
                       leaf.view.file?.path ===
-                      zotlit.services.profile.defaultDocumentPath,
+                      zotlit.services.bridge.runSync(
+                        zotlit.services.profile.defaultDocumentPath,
+                      ),
                   )?.view?.contentEl?.ownerDocument,
             )?.view.contentEl)!.querySelector<HTMLElement>(
             "[data-zotlit-preview-pending]",
@@ -1685,7 +1908,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
                     .find(
                       (leaf) =>
                         leaf.view.file?.path ===
-                        zotlit.services.profile.defaultDocumentPath,
+                        zotlit.services.bridge.runSync(
+                          zotlit.services.profile.defaultDocumentPath,
+                        ),
                     )?.view?.contentEl?.ownerDocument,
               )?.view.contentEl)!.querySelectorAll<HTMLElement>(".callout p"),
           ).some((p) => p.classList.contains("zt:bg-accent"));
@@ -1717,9 +1942,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
 
         const { press, until, waitFor } = page;
         await using cleanup = new AsyncDisposableStack();
-        const profile = zotlit.services.profile;
-        await profile.materializeDefault();
-        const file = app.vault.getFileByPath(profile.defaultDocumentPath)!;
+        const { bridge, profile } = zotlit.services;
+        await bridge.runPromise(profile.materializeDefault);
+        const file = app.vault.getFileByPath(
+          bridge.runSync(profile.defaultDocumentPath),
+        )!;
         const original = await app.vault.read(file);
         cleanup.defer(async () => {
           for (const type of [
@@ -1896,13 +2123,17 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             `Paper not found: ${JSON.stringify(hits.map((candidate) => candidate.item.key))}`,
           );
         });
-        const profile = await services.profile.create({
-          label: "Path preview",
-          bindings: { folder: "path-notes" },
-        });
+        const profile = await services.bridge.runPromise(
+          services.profile.create({
+            label: "Path preview",
+            bindings: { folder: "path-notes" },
+          }),
+        );
         cleanup.defer(async () => {
           detach();
-          await services.profile.delete(profile.id, "default");
+          await services.bridge.runPromise(
+            services.profile.delete(profile.id, "default"),
+          );
         });
         const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
           leaf.detach(),
@@ -1990,9 +2221,8 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         // The Profile takes the saved document once the template recompiles.
         await waitFor(
           () =>
-            services.profile.resolveProfile(profile.id)?.bindings[
-              "note.literature-folder"
-            ],
+            services.bridge.runSync(services.profile.resolveProfile(profile.id))
+              ?.bindings["note.literature-folder"],
           "Reading list",
           "Saved folder",
         );
@@ -2067,15 +2297,18 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       undefined,
     );
 
-    await obRunUntil(
+    await withWorkbenchSurfaces(
       vaultId,
-      async ({ page }) => {
-        return !!page
-          .leavesOfType("zotlit-template-workbench")[0]
-          ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
-      },
-      undefined,
-      { what: "the workbench tab bar to render after Customize reopens it" },
+      obRunUntil(
+        vaultId,
+        async ({ page }) => {
+          return !!page
+            .leavesOfType("zotlit-template-workbench")[0]
+            ?.view?.contentEl.querySelector<HTMLElement>('[role="tab"]');
+        },
+        undefined,
+        { what: "the workbench tab bar to render after Customize reopens it" },
+      ),
     );
     await obRun(
       vaultId,
@@ -2184,13 +2417,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
       async ({ app: host, zotlit }) => {
         const app = host as WalkthroughApp;
 
-        const { profile } = zotlit.services;
-        const books = await profile.create({
-          label: "Books",
-          bindings: { folder: "books" },
-        });
-        const folder = profile
-          .resolveProfile("default")!
+        const { bridge, profile } = zotlit.services;
+        const books = await bridge.runPromise(
+          profile.create({
+            label: "Books",
+            bindings: { folder: "books" },
+          }),
+        );
+        const folder = bridge
+          .runSync(profile.resolveProfile("default"))!
           .bindings["note.literature-folder"].replaceAll(/^\/+|\/+$/g, "");
         const dir = `${folder ? `${folder}/` : ""}2024`;
         if (!app.vault.getAbstractFileByPath(dir))
@@ -2371,10 +2606,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           const body = await app.vault.read(moved);
           const left = !!app.vault.getAbstractFileByPath(createdPath);
           await app.vault.delete(moved);
-          const { profile } = zotlit.services;
+          const { bridge, profile } = zotlit.services;
           await app.vault.delete(
             app.vault.getFileByPath(
-              profile.profiles.find((p) => p.id === createdId)!.path,
+              bridge.runSync(profile.profiles).find((p) => p.id === createdId)!
+                .path,
             )!,
           );
           app.workspace.detachLeavesOfType("empty");

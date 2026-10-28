@@ -11,6 +11,7 @@ import {
 } from "@/services/zotero-reads/test-utils";
 
 import { libraryScopeFixture } from "./__fixtures__";
+import { scopeChanges } from "./service";
 import type { LibraryScopeState } from "./service";
 import { LIBRARY_SCOPE_KEY } from "./service";
 
@@ -30,7 +31,7 @@ it.effect("a throwing subscriber receives both immediate changes (#1705)", () =>
     const changes: LibraryScopeState[] = [];
     const off = subscribe(
       f.runtime,
-      Stream.drop(f.plain.changes, 1),
+      Stream.drop(f.service.changes, 1),
       (state) => {
         changes.push(state);
         if (changes.length === 1) throw new Error("listener failed");
@@ -63,7 +64,7 @@ it.effect("a throwing subscriber receives both immediate changes (#1705)", () =>
       f.settings.update({ [LIBRARY_SCOPE_KEY]: { mode: "all" } }),
     );
     yield* Effect.promise(() =>
-      expect.poll(() => f.plain.current?.mode).toBe("all"),
+      expect.poll(() => f.bridge.runSync(f.service.current)?.mode).toBe("all"),
     );
     expect(changes).toHaveLength(2);
   }),
@@ -72,19 +73,34 @@ it.effect("a throwing subscriber receives both immediate changes (#1705)", () =>
 it.effect("all adapter methods remain safe after whole-runtime disposal", () =>
   Effect.gen(function* () {
     const f = yield* libraryScopeFixture(client());
-    const before = f.plain.current;
-    const rows = f.plain.libraryRows;
+    const before = f.bridge.runSync(f.service.current);
+    const rows = f.bridge.runSync(f.service.libraryRows);
     const listener = vi.fn();
-    subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener);
+    subscribe(f.runtime, Stream.drop(f.service.changes, 1), listener);
     yield* Effect.promise(() => f.close());
-    expect(f.plain.current).toBe(before);
-    expect(f.plain.libraries).toEqual(before?.available);
-    expect(f.plain.libraryRows).toBeNull();
-    expect(f.plain.effective).toEqual({ mode: "all" });
-    expect(f.plain.resolveLibraries(rows!)).toEqual(before);
-    subscribe(f.runtime, Stream.drop(f.plain.changes, 1), listener)();
-    subscribe(f.runtime, f.plain["changed"], listener)();
-    subscribe(f.runtime, f.plain["libraries-changed"], listener)();
+    expect(f.bridge.runSync(f.service.current)).toBe(before);
+    expect(f.bridge.runSync(f.service.libraries)).toEqual(before?.available);
+    expect(f.bridge.runSync(f.service.libraryRows)).toBeNull();
+    expect(f.bridge.runSync(f.service.effective)).toEqual({ mode: "all" });
+    expect(f.bridge.runSync(f.service.resolveLibraries(rows!))).toEqual(before);
+    subscribe(f.runtime, Stream.drop(f.service.changes, 1), listener)();
+    subscribe(
+      f.runtime,
+      scopeChanges(f.service.changes).pipe(
+        Stream.map((state) => state.current),
+      ),
+      listener,
+    )();
+    subscribe(
+      f.runtime,
+      f.service.changes.pipe(
+        Stream.map((state) => state.all),
+        Stream.changes,
+        Stream.drop(1),
+        Stream.map(() => undefined),
+      ),
+      listener,
+    )();
     f.bridge.runSync(
       f.settings.update({
         [LIBRARY_SCOPE_KEY]: { mode: "selected", libraries: [] },

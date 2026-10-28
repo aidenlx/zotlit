@@ -66,8 +66,8 @@ describe("TemplateService", () => {
       );
 
       expect(
-        service
-          .getLiteratureNoteTemplate("zotlit-profile.books.md")
+        service.bridge
+          .runSync(service.getLiteratureNoteTemplate("zotlit-profile.books.md"))
           ?.renderForCreate({ title: "First" }),
       ).toContain("# Books First");
 
@@ -78,8 +78,8 @@ describe("TemplateService", () => {
       yield* TestClock.adjust(500);
 
       expect(
-        service
-          .getLiteratureNoteTemplate("zotlit-profile.books.md")
+        service.bridge
+          .runSync(service.getLiteratureNoteTemplate("zotlit-profile.books.md"))
           ?.renderForCreate({ title: "Second" }),
       ).toContain("# Revised books Second");
 
@@ -87,7 +87,9 @@ describe("TemplateService", () => {
       yield* TestClock.adjust(500);
 
       expect(
-        service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+        service.bridge.runSync(
+          service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+        ),
       ).toBeUndefined();
     }),
   );
@@ -105,14 +107,16 @@ describe("TemplateService", () => {
         literatureNoteDocument("Books"),
       );
       expect(
-        service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+        service.bridge.runSync(
+          service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+        ),
       ).toBeUndefined();
 
-      yield* Effect.promise(() => service.refresh());
+      yield* Effect.promise(() => service.bridge.runPromise(service.refresh));
 
       expect(
-        service
-          .getLiteratureNoteTemplate("zotlit-profile.books.md")
+        service.bridge
+          .runSync(service.getLiteratureNoteTemplate("zotlit-profile.books.md"))
           ?.renderForCreate({ title: "First" }),
       ).toContain("# Books First");
     }),
@@ -142,8 +146,8 @@ frontmatter:
           makeHarness({ vault }, context),
         );
 
-        const inert = service.getLiteratureNoteTemplate(
-          "zotlit-profile.books.md",
+        const inert = service.bridge.runSync(
+          service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
         )?.frontmatter;
         expect(inert?.inertKeys).toEqual(["scripted"]);
         expect(
@@ -158,8 +162,8 @@ frontmatter:
 
         yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
-        const active = service.getLiteratureNoteTemplate(
-          "zotlit-profile.books.md",
+        const active = service.bridge.runSync(
+          service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
         )?.frontmatter;
         expect(active?.inertKeys).toEqual([]);
         expect(
@@ -365,8 +369,8 @@ filename: "{{ zt.title }}"
           "Bk3Qn7XvT2Lp" as ProfileId,
         )!;
         const data = { annotation: { text: "A" } };
-        const original = service.getLiteratureNoteTemplate(
-          "zotlit-profile.books.md",
+        const original = service.bridge.runSync(
+          service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
         )!;
         expect(original.renderForUpdate(data)).toBe(
           "%%zt-managed%%\nPROFILE A\n\n%%/zt-managed%%",
@@ -379,15 +383,17 @@ filename: "{{ zt.title }}"
           ),
         ).toBe("PROFILE A");
         const exported = yield* Effect.promise(() =>
-          service.exportLiteratureNotePack("zotlit-profile.books.md"),
+          service.bridge.runPromise(
+            service.exportLiteratureNotePack("zotlit-profile.books.md"),
+          ),
         );
         expect(
           new TemplateFacade().parseLiteratureNoteTemplate(exported).manifest
             .partials,
         ).toBeUndefined();
         expect(
-          service
-            .prepareLiteratureNoteTemplateSource(exported)
+          service.bridge
+            .runSync(service.prepareLiteratureNoteTemplateSource(exported))
             .renderAnnotation(data.annotation),
         ).toBe("PROFILE A");
         vault.modifyFile(
@@ -402,12 +408,16 @@ filename: "{{ zt.title }}"
           ),
         ).toBe("CHANGED A");
         expect(
-          service
-            .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+          service.bridge
+            .runSync(
+              service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+            )!
             .renderForUpdate(data),
         ).toBe("%%zt-managed%%\nCHANGED A\n\n%%/zt-managed%%");
         expect(original.renderAnnotation(data.annotation)).toBe("PROFILE A");
-        expect(service.render("annotation", data.annotation)).toBe("GLOBAL A");
+        expect(
+          service.bridge.runSync(service.render("annotation", data.annotation)),
+        ).toBe("GLOBAL A");
       }),
   );
 
@@ -433,7 +443,9 @@ partials:
             '{% render "summary" with zt as zt %}',
           );
         const paths = [...vault.files.keys()];
-        const document = service.prepareLiteratureNoteTemplateSource(source);
+        const document = service.bridge.runSync(
+          service.prepareLiteratureNoteTemplateSource(source),
+        );
         expect(document.renderForUpdate({ annotation: { text: "A" } })).toBe(
           "%%zt-managed%%\nLocal A\n\n%%/zt-managed%%",
         );
@@ -460,7 +472,9 @@ partials:
           makeHarness({ vault }, context),
         );
 
-        expect(service.getLiteratureNoteTemplateStatuses()).toMatchObject([
+        expect(
+          service.bridge.runSync(service.getLiteratureNoteTemplateStatuses),
+        ).toMatchObject([
           {
             reference: "zotlit-profile.books.md",
             path: "templates/zotlit-profile.books.md",
@@ -488,9 +502,11 @@ partials:
         );
         const paths = [...vault.files.keys()];
 
-        const rendered = service.renderLiteratureNoteTemplateSource(
-          literatureNoteDocument("Draft"),
-          { title: "Paper" },
+        const rendered = service.bridge.runSync(
+          service.renderLiteratureNoteTemplateSource(
+            literatureNoteDocument("Draft"),
+            { title: "Paper" },
+          ),
         );
 
         expect(rendered.create).toContain("# Draft Paper");
@@ -522,7 +538,9 @@ partials:
 
         const exported = new TemplateFacade().parseLiteratureNoteTemplate(
           yield* Effect.promise(() =>
-            service.exportLiteratureNotePack("zotlit-profile.books.md"),
+            service.bridge.runPromise(
+              service.exportLiteratureNotePack("zotlit-profile.books.md"),
+            ),
           ),
         );
 
@@ -557,7 +575,11 @@ partials:
       );
 
       expect(
-        service.renderLiteratureNoteTemplateSource(source, { title: "Paper" }),
+        service.bridge.runSync(
+          service.renderLiteratureNoteTemplateSource(source, {
+            title: "Paper",
+          }),
+        ),
       ).toMatchObject({ create: expect.stringContaining("Summary Paper") });
     }),
   );
@@ -597,8 +619,8 @@ partials:
           makeHarness({ vault }, context),
         );
         const paths = [...vault.files.keys()];
-        const document = service.getLiteratureNoteTemplate(
-          "zotlit-profile.shared.md",
+        const document = service.bridge.runSync(
+          service.getLiteratureNoteTemplate("zotlit-profile.shared.md"),
         )!;
 
         expect(document.renderForCreate({ title: "Paper" })).toContain(
@@ -614,8 +636,10 @@ partials:
           "Bundled Paper",
         );
         expect(
-          service
-            .getLiteratureNoteTemplate("zotlit-profile.local.md")!
+          service.bridge
+            .runSync(
+              service.getLiteratureNoteTemplate("zotlit-profile.local.md"),
+            )!
             .renderForCreate({ title: "Paper" }),
         ).toContain("Local Paper");
         expect([...vault.files.keys()]).toEqual(paths);
@@ -656,7 +680,9 @@ partials:
         );
 
         expect(() =>
-          service.getLiteratureNoteTemplate("zotlit-profile.shared.md"),
+          service.bridge.runSync(
+            service.getLiteratureNoteTemplate("zotlit-profile.shared.md"),
+          ),
         ).toThrow(
           m.settings_template_inert_eta({
             path: "templates/zotlit-profile.shared.md",
@@ -664,8 +690,10 @@ partials:
         );
         yield* service.templateService.setJavascriptTemplatesEnabled(true);
         expect(
-          service
-            .getLiteratureNoteTemplate("zotlit-profile.shared.md")!
+          service.bridge
+            .runSync(
+              service.getLiteratureNoteTemplate("zotlit-profile.shared.md"),
+            )!
             .renderForCreate({ title: "Paper" }),
         ).toContain("Bundled Paper");
       }),
@@ -679,13 +707,15 @@ partials:
       );
 
       expect(
-        service.render("note", {
-          title: "Paper",
-          backlink: "zotero://select/items/1",
-          attachments: [],
-          annotations: [],
-          notes: [],
-        }),
+        service.bridge.runSync(
+          service.render("note", {
+            title: "Paper",
+            backlink: "zotero://select/items/1",
+            attachments: [],
+            annotations: [],
+            notes: [],
+          }),
+        ),
       ).toContain("# Paper");
     }),
   );
@@ -706,7 +736,7 @@ partials:
           notes: [{ noteLink: () => "[[Child note]]" }],
         };
 
-        const body = service.render("note", data);
+        const body = service.bridge.runSync(service.render("note", data));
 
         expect(body).toContain("## Annotations\n\n```zotquery\n");
         expect(body).not.toContain("%%zt-managed%%");
@@ -748,7 +778,9 @@ partials:
       );
 
       expect(
-        service.render("note", { title: "Paper", attachments: [] }),
+        service.bridge.runSync(
+          service.render("note", { title: "Paper", attachments: [] }),
+        ),
       ).toContain("%%zt-managed%%\nManaged Paper\n\n%%/zt-managed%%");
       expect(
         yield* service.templateService.renderManagedContent({ title: "Paper" }),
@@ -771,7 +803,9 @@ partials:
         ),
       );
 
-      expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
+      expect(
+        service.bridge.runSync(service.render("note", { title: "Paper" })),
+      ).toBe("custom Paper");
     }),
   );
 
@@ -792,10 +826,12 @@ partials:
           ),
         );
 
-        expect(() => service.render("note", { title: "Paper" })).toThrow(
-          TemplateError,
-        );
-        expect(service.compileErrors.get("note")).toBeDefined();
+        expect(() =>
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toThrow(TemplateError);
+        expect(
+          service.bridge.runSync(service.compileErrors).get("note"),
+        ).toBeDefined();
       }),
   );
 
@@ -818,18 +854,22 @@ partials:
 
         const failure = (yield* Effect.flip(
           Effect.try(() =>
-            service.render("note", {
-              title: "Paper",
-              backlink: "zotero://select/items/1",
-              attachments: [],
-              annotations: [],
-              notes: [],
-            }),
+            service.bridge.runSync(
+              service.render("note", {
+                title: "Paper",
+                backlink: "zotero://select/items/1",
+                attachments: [],
+                annotations: [],
+                notes: [],
+              }),
+            ),
           ),
         )).cause;
         expect(failure).toBeInstanceOf(TemplateError);
         expect((failure as TemplateError).templateName).toBe("content");
-        expect(service.compileErrors.get("content")).toBeDefined();
+        expect(
+          service.bridge.runSync(service.compileErrors).get("content"),
+        ).toBeDefined();
       }),
   );
 
@@ -855,17 +895,21 @@ partials:
         );
         const data = {
           get citation(): string {
-            return service.render("citation", {});
+            return service.bridge.runSync(service.render("citation", {}));
           },
         };
 
         const failure = (yield* Effect.flip(
-          Effect.try(() => service.render("note", data)),
+          Effect.try(() =>
+            service.bridge.runSync(service.render("note", data)),
+          ),
         )).cause;
 
         expect(failure).toBeInstanceOf(TemplateError);
         expect((failure as TemplateError).templateName).toBe("citation");
-        expect(service.compileErrors.get("citation")).toBeDefined();
+        expect(
+          service.bridge.runSync(service.compileErrors).get("citation"),
+        ).toBeDefined();
       }),
   );
 
@@ -890,7 +934,7 @@ partials:
       };
 
       const failure = (yield* Effect.flip(
-        Effect.try(() => service.render("note", data)),
+        Effect.try(() => service.bridge.runSync(service.render("note", data))),
       )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
@@ -899,7 +943,7 @@ partials:
   );
 
   it.effect(
-    "leaves an application error untouched when its message names an inert template file",
+    "keeps an application error in its render failure when its message names an inert template file",
     () =>
       Effect.gen(function* () {
         const context = yield* Effect.context<never>();
@@ -921,19 +965,18 @@ partials:
           },
         };
 
-        const failure = (yield* Effect.flip(
-          Effect.try(() => service.render("note", data)),
-        )).cause;
+        const failure = yield* Effect.flip(service.render("note", data));
 
-        // liquidjs wraps a throwing data getter in its own error type, so the
-        // guard is the class the batch runners read: an application error whose
-        // message happens to name an inert template file stays untyped, and the
-        // thrown object stays reachable through the chain.
+        // The native boundary retains liquidjs's wrapped application error in
+        // TemplateRenderError.cause, including the original thrown object.
         expect(failure).not.toBeInstanceOf(InertTemplateError);
         expect(failure).not.toBeInstanceOf(TemplateError);
-        expect((failure as { originalError?: unknown }).originalError).toBe(
-          thrown,
-        );
+        expect(failure).toMatchObject({ _tag: "TemplateRenderError" });
+        if (failure._tag === "TemplateRenderError") {
+          expect(
+            (failure.cause as { originalError?: unknown }).originalError,
+          ).toBe(thrown);
+        }
       }),
   );
 
@@ -960,7 +1003,9 @@ partials:
         };
 
         const failure = (yield* Effect.flip(
-          Effect.try(() => service.render("note", data)),
+          Effect.try(() =>
+            service.bridge.runSync(service.render("note", data)),
+          ),
         )).cause;
 
         expect(failure).toBeInstanceOf(InertTemplateError);
@@ -989,7 +1034,9 @@ partials:
       );
 
       const failure = (yield* Effect.flip(
-        Effect.try(() => service.render("note", { title: "Paper" })),
+        Effect.try(() =>
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ),
       )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
@@ -1019,7 +1066,7 @@ partials:
       };
 
       const failure = (yield* Effect.flip(
-        Effect.try(() => service.render("note", data)),
+        Effect.try(() => service.bridge.runSync(service.render("note", data))),
       )).cause;
 
       expect(failure).toBeInstanceOf(InertTemplateError);
@@ -1039,8 +1086,12 @@ partials:
             makeHarness(undefined, context),
           );
 
-          expect(() => service.render("note", { title: "Paper" })).toThrow();
-          expect(service.compileErrors.get("note")).toBeDefined();
+          expect(() =>
+            service.bridge.runSync(service.render("note", { title: "Paper" })),
+          ).toThrow();
+          expect(
+            service.bridge.runSync(service.compileErrors).get("note"),
+          ).toBeDefined();
         }).pipe(
           // A JS `finally` around `yield*` does not run when the yielded
           // Effect fails; `ensuring` restores the default on every exit.
@@ -1070,7 +1121,9 @@ partials:
           ),
         );
 
-        expect(() => service.render("note", { title: "A" })).toThrow();
+        expect(() =>
+          service.bridge.runSync(service.render("note", { title: "A" })),
+        ).toThrow();
 
         vault.modifyFile(
           "templates/zotlit-note.eta.md",
@@ -1078,8 +1131,12 @@ partials:
         );
         yield* TestClock.adjust(500);
 
-        expect(service.render("note", { title: "B" })).toBe("fixed B");
-        expect(service.compileErrors.get("note")).toBeUndefined();
+        expect(
+          service.bridge.runSync(service.render("note", { title: "B" })),
+        ).toBe("fixed B");
+        expect(
+          service.bridge.runSync(service.compileErrors).get("note"),
+        ).toBeUndefined();
       }),
   );
 
@@ -1100,7 +1157,9 @@ partials:
           ),
         );
 
-        expect(service.render("note", { title: "A" })).toBe("first A");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "A" })),
+        ).toBe("first A");
         vault.modifyFile(
           "templates/zotlit-note.eta.md",
           "second <%= zt.title %>",
@@ -1108,7 +1167,9 @@ partials:
 
         yield* TestClock.adjust(500);
 
-        expect(service.render("note", { title: "B" })).toBe("second B");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "B" })),
+        ).toBe("second B");
       }),
   );
 
@@ -1126,7 +1187,9 @@ partials:
           makeHarness({ vault }, context),
         );
 
-        expect(service.render("note", { title: "A" })).toBe("first A");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "A" })),
+        ).toBe("first A");
         vault.modifyFile(
           "templates/zotlit-note.liquid.md",
           "second {{ zt.title }}",
@@ -1134,7 +1197,9 @@ partials:
 
         yield* TestClock.adjust(500);
 
-        expect(service.render("note", { title: "B" })).toBe("second B");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "B" })),
+        ).toBe("second B");
       }),
   );
 
@@ -1161,7 +1226,9 @@ partials:
       );
       yield* TestClock.adjust(0);
 
-      expect(service.render("note", { title: "Paper" })).toBe("other Paper");
+      expect(
+        service.bridge.runSync(service.render("note", { title: "Paper" })),
+      ).toBe("other Paper");
     }),
   );
 
@@ -1205,12 +1272,16 @@ partials:
         );
         yield* TestClock.adjust(0);
 
-        expect(service.render("note", { title: "A" })).toBe("other A");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "A" })),
+        ).toBe("other A");
 
         staleRead.resolve("stale <%= zt.title %>");
         yield* TestClock.adjust(0);
 
-        expect(service.render("note", { title: "B" })).toBe("other B");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "B" })),
+        ).toBe("other B");
       }),
   );
 
@@ -1254,12 +1325,16 @@ partials:
         );
         yield* TestClock.adjust(0);
 
-        expect(service.render("note", { title: "A" })).toBe("other A");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "A" })),
+        ).toBe("other A");
 
         staleRead.reject(new Error("stale read failed"));
         yield* TestClock.adjust(0);
 
-        expect(service.render("note", { title: "B" })).toBe("other B");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "B" })),
+        ).toBe("other B");
       }),
   );
 
@@ -1281,14 +1356,18 @@ partials:
         ),
       );
 
-      expect(service.render("custom", { title: "Paper" })).toBe("custom Paper");
+      expect(
+        service.bridge.runSync(service.render("custom", { title: "Paper" })),
+      ).toBe("custom Paper");
 
       settings.bridge.runSync(
         settings.update({ "template.folder": "OtherTemplates" }),
       );
       yield* TestClock.adjust(0);
 
-      expect(() => service.render("custom", { title: "Paper" })).toThrow();
+      expect(() =>
+        service.bridge.runSync(service.render("custom", { title: "Paper" })),
+      ).toThrow();
     }),
   );
 
@@ -1305,13 +1384,15 @@ partials:
       );
 
       expect(
-        service.render("note", {
-          title: "Paper",
-          backlink: "zotero://select/items/1",
-          attachments: [],
-          annotations: [],
-          notes: [],
-        }),
+        service.bridge.runSync(
+          service.render("note", {
+            title: "Paper",
+            backlink: "zotero://select/items/1",
+            attachments: [],
+            annotations: [],
+            notes: [],
+          }),
+        ),
       ).toContain("# Paper");
     }),
   );
@@ -1325,7 +1406,9 @@ partials:
         makeHarness({ vault }, context),
       );
 
-      expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
+      expect(
+        service.bridge.runSync(service.render("note", { title: "Paper" })),
+      ).toBe("custom Paper");
     }),
   );
 
@@ -1347,8 +1430,10 @@ partials:
           ),
         );
 
-        expect(service.render("note", { title: "Paper" })).toBe("L Paper");
-        expect(service.shadowedFiles.get("note")).toBe(
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("L Paper");
+        expect(service.bridge.runSync(service.shadowedFiles).get("note")).toBe(
           "templates/zotlit-note.eta.md",
         );
       }),
@@ -1375,8 +1460,12 @@ partials:
         vault.deleteFile("templates/zotlit-note.liquid.md");
         yield* TestClock.adjust(500);
 
-        expect(service.render("note", { title: "Paper" })).toBe("E Paper");
-        expect(service.shadowedFiles.get("note")).toBeUndefined();
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("E Paper");
+        expect(
+          service.bridge.runSync(service.shadowedFiles).get("note"),
+        ).toBeUndefined();
       }),
   );
 
@@ -1397,13 +1486,17 @@ partials:
           ),
         );
 
-        expect(service.render("note", { title: "Paper" })).toBe("E Paper");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("E Paper");
 
         vault.createFile("templates/zotlit-note.liquid.md", "L {{ zt.title }}");
         yield* TestClock.adjust(500);
 
-        expect(service.render("note", { title: "Paper" })).toBe("L Paper");
-        expect(service.shadowedFiles.get("note")).toBe(
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("L Paper");
+        expect(service.bridge.runSync(service.shadowedFiles).get("note")).toBe(
           "templates/zotlit-note.eta.md",
         );
       }),
@@ -1426,9 +1519,9 @@ partials:
           ),
         );
 
-        expect(service.render("note", { title: "Paper" })).toBe(
-          "custom {{ zt.title }}",
-        );
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("custom {{ zt.title }}");
 
         vault.renameFile(
           "templates/zotlit-note.eta.md",
@@ -1436,7 +1529,9 @@ partials:
         );
         yield* TestClock.adjust(500);
 
-        expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("custom Paper");
       }),
   );
 
@@ -1461,7 +1556,9 @@ partials:
       );
       yield* TestClock.adjust(500);
 
-      expect(service.render("note", { title: "Paper" })).toBe("edited Paper");
+      expect(
+        service.bridge.runSync(service.render("note", { title: "Paper" })),
+      ).toBe("edited Paper");
     }),
   );
 
@@ -1477,8 +1574,12 @@ partials:
           makeHarness({ vault }, context),
         );
 
-        expect(() => service.render("note", { title: "Paper" })).toThrow();
-        expect(service.compileErrors.get("note")).toBeDefined();
+        expect(() =>
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toThrow();
+        expect(
+          service.bridge.runSync(service.compileErrors).get("note"),
+        ).toBeDefined();
       }),
   );
 
@@ -1497,13 +1598,15 @@ partials:
         );
 
         expect(
-          service.render("note", {
-            title: "Paper",
-            backlink: "zotero://select/items/1",
-            attachments: [],
-            annotations: [],
-            notes: [],
-          }),
+          service.bridge.runSync(
+            service.render("note", {
+              title: "Paper",
+              backlink: "zotero://select/items/1",
+              attachments: [],
+              annotations: [],
+              notes: [],
+            }),
+          ),
         ).toContain("# Paper");
       }),
   );
@@ -1539,11 +1642,13 @@ partials:
         );
 
         const converted = yield* Effect.promise(() =>
-          service.convertLegacyLiteratureNoteTemplates({
-            note: { title: "Paper" },
-            filename: { citationKey: "doePaper" },
-            annotation: { text: "Excerpt" },
-          }),
+          service.bridge.runPromise(
+            service.convertLegacyLiteratureNoteTemplates({
+              note: { title: "Paper" },
+              filename: { citationKey: "doePaper" },
+              annotation: { text: "Excerpt" },
+            }),
+          ),
         );
 
         expect(converted.source).toContain(
@@ -1591,10 +1696,12 @@ partials:
         );
 
         const converted = yield* Effect.promise(() =>
-          service.convertLegacyLiteratureNoteTemplates({
-            note: { title: "Paper", notes: [] },
-            filename: { citationKey: "doePaper" },
-          }),
+          service.bridge.runPromise(
+            service.convertLegacyLiteratureNoteTemplates({
+              note: { title: "Paper", notes: [] },
+              filename: { citationKey: "doePaper" },
+            }),
+          ),
         );
 
         expect(converted.document.managedBlock).toBeNull();
@@ -1619,16 +1726,18 @@ partials:
           makeHarness({ vault }, context),
         );
 
-        expect(service.getLegacyLiteratureNoteTemplateFiles()).toContain(
-          "templates/zotlit-annotation.eta.md",
-        );
+        expect(
+          service.bridge.runSync(service.getLegacyLiteratureNoteTemplateFiles),
+        ).toContain("templates/zotlit-annotation.eta.md");
         yield* Effect.promise(() =>
           expect(
-            service.convertLegacyLiteratureNoteTemplates({
-              note: { title: "Paper" },
-              filename: { citationKey: "doePaper" },
-              annotation: { text: "Excerpt" },
-            }),
+            service.bridge.runPromise(
+              service.convertLegacyLiteratureNoteTemplates({
+                note: { title: "Paper" },
+                filename: { citationKey: "doePaper" },
+                annotation: { text: "Excerpt" },
+              }),
+            ),
           ).rejects.toMatchObject({
             code: "unsupported-legacy-template",
             difference: "inert template",
@@ -1649,9 +1758,11 @@ partials:
         ),
       );
 
-      expect(service.getTemplateFileStatuses().map(({ name }) => name)).toEqual(
-        ["filename", "note", "annotation", "content"],
-      );
+      expect(
+        service.bridge
+          .runSync(service.getTemplateFileStatuses)
+          .map(({ name }) => name),
+      ).toEqual(["filename", "note", "annotation", "content"]);
 
       settings.bridge.runSync(
         settings.update({ "note.template-conversion-pending": false }),
@@ -1659,7 +1770,9 @@ partials:
 
       // Nothing remains: Profile documents own the note sources and the Citation
       // Template owns the citation text.
-      expect(service.getTemplateFileStatuses()).toEqual([]);
+      expect(service.bridge.runSync(service.getTemplateFileStatuses)).toEqual(
+        [],
+      );
     }),
   );
 
@@ -1673,10 +1786,14 @@ partials:
       );
 
       expect(
-        service.renderCitation([{ citationKey: "smith2024" }], "main"),
+        service.bridge.runSync(
+          service.renderCitation([{ citationKey: "smith2024" }], "main"),
+        ),
       ).toBe("[@smith2024]");
       expect(
-        service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+        service.bridge.runSync(
+          service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+        ),
       ).toBe("@smith2024");
     }),
   );
@@ -1697,10 +1814,14 @@ partials:
         );
 
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          ),
         ).toBe("<smith2024>");
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+          ),
         ).toBe("~smith2024~");
       }),
   );
@@ -1724,7 +1845,9 @@ partials:
         );
 
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          ),
         ).toBe("[smith2024, p. 1]");
       }),
   );
@@ -1739,9 +1862,11 @@ partials:
         );
 
         expect(
-          service.renderCitation(
-            [{ citationKey: "smith2024", label: "page", locator: "62" }],
-            "main",
+          service.bridge.runSync(
+            service.renderCitation(
+              [{ citationKey: "smith2024", label: "page", locator: "62" }],
+              "main",
+            ),
           ),
         ).toBe("[@smith2024, {p. 62}]");
       }),
@@ -1762,7 +1887,9 @@ partials:
         );
 
         expect(() =>
-          service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          ),
         ).toThrow(
           m.settings_template_inert_eta({
             path: "templates/zotlit-citation.md",
@@ -1799,7 +1926,9 @@ partials:
         );
 
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+          ),
         ).toBe("@smith2024");
         expect(
           yield* service.templateService.getCitationTemplateStatus,
@@ -1819,9 +1948,11 @@ partials:
         const { service, vault } = yield* Effect.promise(() =>
           makeHarness(undefined, context),
         );
-        expect(service.loaded).toBe(true);
+        expect(service.bridge.runSync(service.loaded)).toBe(true);
 
-        const materialized = service.materializeCitationTemplate();
+        const materialized = service.bridge.runPromise(
+          service.materializeCitationTemplate,
+        );
         yield* TestClock.adjust(500);
         const file = yield* Effect.promise(() => materialized);
 
@@ -1848,7 +1979,9 @@ partials:
           compileError: null,
         });
 
-        const materialized = service.materializeCitationTemplate();
+        const materialized = service.bridge.runPromise(
+          service.materializeCitationTemplate,
+        );
         yield* TestClock.adjust(500);
         const file = yield* Effect.promise(() => materialized);
 
@@ -1862,12 +1995,15 @@ partials:
         vault.modifyFile(file.path, "EDITED {{ zt.variant }}");
         yield* TestClock.adjust(500);
         expect(
-          (yield* Effect.promise(() => service.materializeCitationTemplate()))
-            .path,
+          (yield* Effect.promise(() =>
+            service.bridge.runPromise(service.materializeCitationTemplate),
+          )).path,
         ).toBe(file.path);
         expect(vault.contents.get(file.path)).toBe("EDITED {{ zt.variant }}");
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "alt"),
+          ),
         ).toBe("EDITED alt");
 
         const restored = yield* Effect.forkChild(
@@ -1882,7 +2018,9 @@ partials:
           (yield* service.templateService.getCitationTemplateStatus).customized,
         ).toBe(false);
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          ),
         ).toBe("[@smith2024]");
       }),
   );
@@ -1902,9 +2040,11 @@ partials:
 
         const exported = new TemplateFacade().parseLiteratureNoteTemplate(
           yield* Effect.promise(() =>
-            service.exportLiteratureNotePackSource(
-              literatureNoteDocument("Books"),
-              { include: ["citation"] },
+            service.bridge.runPromise(
+              service.exportLiteratureNotePackSource(
+                literatureNoteDocument("Books"),
+                { include: ["citation"] },
+              ),
             ),
           ),
         );
@@ -1932,7 +2072,7 @@ partials:
         ),
       );
 
-      const statuses = service.getTemplateFileStatuses();
+      const statuses = service.bridge.runSync(service.getTemplateFileStatuses);
 
       expect(statuses.find((entry) => entry.name === "note")).toMatchObject({
         winner: {
@@ -2104,7 +2244,9 @@ partials:
               ),
             ),
           ).toBeDefined();
-          expect(service.compileErrors.get("filename")).toBeDefined();
+          expect(
+            service.bridge.runSync(service.compileErrors).get("filename"),
+          ).toBeDefined();
         }),
     );
 
@@ -2183,21 +2325,25 @@ describe("javascript templates gate", () => {
         );
 
         expect(() =>
-          service.render("note", {
-            title: "Paper",
-            backlink: "zotero://select/items/1",
-            attachments: [],
-            annotations: [],
-            notes: [],
-          }),
+          service.bridge.runSync(
+            service.render("note", {
+              title: "Paper",
+              backlink: "zotero://select/items/1",
+              attachments: [],
+              annotations: [],
+              notes: [],
+            }),
+          ),
         ).toThrow(InertTemplateError);
-        expect(() => service.render("note", { title: "Paper" })).toThrow(
+        expect(() =>
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toThrow("templates/zotlit-note.eta.md");
+        expect(service.bridge.runSync(service.inertEtaFiles).get("note")).toBe(
           "templates/zotlit-note.eta.md",
         );
-        expect(service.inertEtaFiles.get("note")).toBe(
-          "templates/zotlit-note.eta.md",
-        );
-        expect(service.compileErrors.get("note")).toBeUndefined();
+        expect(
+          service.bridge.runSync(service.compileErrors).get("note"),
+        ).toBeUndefined();
       }),
   );
 
@@ -2211,8 +2357,8 @@ describe("javascript templates gate", () => {
       );
 
       expect(
-        service
-          .getTemplateFileStatuses()
+        service.bridge
+          .runSync(service.getTemplateFileStatuses)
           .find((entry) => entry.name === "note"),
       ).toMatchObject({
         winner: { language: "eta", source: { kind: "none" } },
@@ -2235,11 +2381,15 @@ describe("javascript templates gate", () => {
           makeHarness({ vault }, context),
         );
 
-        expect(service.render("note", { title: "Paper" })).toBe("L Paper");
-        expect(service.shadowedFiles.get("note")).toBe(
+        expect(
+          service.bridge.runSync(service.render("note", { title: "Paper" })),
+        ).toBe("L Paper");
+        expect(service.bridge.runSync(service.shadowedFiles).get("note")).toBe(
           "templates/zotlit-note.eta.md",
         );
-        expect(service.inertEtaFiles.get("note")).toBeUndefined();
+        expect(
+          service.bridge.runSync(service.inertEtaFiles).get("note"),
+        ).toBeUndefined();
       }),
   );
 
@@ -2258,8 +2408,10 @@ describe("javascript templates gate", () => {
         ),
       );
 
-      expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
-      expect(service.inertEtaFiles.size).toBe(0);
+      expect(
+        service.bridge.runSync(service.render("note", { title: "Paper" })),
+      ).toBe("custom Paper");
+      expect(service.bridge.runSync(service.inertEtaFiles).size).toBe(0);
     }),
   );
 
@@ -2279,17 +2431,23 @@ describe("javascript templates gate", () => {
         notes: [],
       };
 
-      expect(() => service.render("note", data)).toThrow(InertTemplateError);
+      expect(() =>
+        service.bridge.runSync(service.render("note", data)),
+      ).toThrow(InertTemplateError);
 
       yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
-      expect(service.render("note", { title: "Paper" })).toBe("custom Paper");
-      expect(service.inertEtaFiles.size).toBe(0);
+      expect(
+        service.bridge.runSync(service.render("note", { title: "Paper" })),
+      ).toBe("custom Paper");
+      expect(service.bridge.runSync(service.inertEtaFiles).size).toBe(0);
       expect(localStorage.get("zotlit-javascript-templates")).toBe("1");
 
       yield* service.templateService.setJavascriptTemplatesEnabled(false);
 
-      expect(() => service.render("note", data)).toThrow(InertTemplateError);
+      expect(() =>
+        service.bridge.runSync(service.render("note", data)),
+      ).toThrow(InertTemplateError);
       expect(localStorage.has("zotlit-javascript-templates")).toBe(false);
     }),
   );
@@ -2322,11 +2480,15 @@ describe("validateFrontmatterExpr", () => {
         );
 
         expect(
-          service.validateFrontmatterExpr("zt.title", "liquid"),
+          service.bridge.runSync(
+            service.validateFrontmatterExpr("zt.title", "liquid"),
+          ),
         ).toBeNull();
-        expect(service.validateFrontmatterExpr("1 +", "liquid")).toEqual(
-          expect.any(String),
-        );
+        expect(
+          service.bridge.runSync(
+            service.validateFrontmatterExpr("1 +", "liquid"),
+          ),
+        ).toEqual(expect.any(String));
       }),
   );
 
@@ -2340,11 +2502,15 @@ describe("validateFrontmatterExpr", () => {
         );
 
         expect(
-          service.validateFrontmatterExpr("zt.title", "javascript"),
+          service.bridge.runSync(
+            service.validateFrontmatterExpr("zt.title", "javascript"),
+          ),
         ).toBeNull();
-        expect(service.validateFrontmatterExpr("1 +", "javascript")).toEqual(
-          expect.any(String),
-        );
+        expect(
+          service.bridge.runSync(
+            service.validateFrontmatterExpr("1 +", "javascript"),
+          ),
+        ).toEqual(expect.any(String));
       }),
   );
 
@@ -2355,7 +2521,11 @@ describe("validateFrontmatterExpr", () => {
         makeHarness(undefined, context),
       );
 
-      expect(service.validateFrontmatterExpr("1 +", "javascript")).toBeNull();
+      expect(
+        service.bridge.runSync(
+          service.validateFrontmatterExpr("1 +", "javascript"),
+        ),
+      ).toBeNull();
     }),
   );
 });
@@ -2370,12 +2540,19 @@ describe("frontmatter fields", () => {
           makeHarness(undefined, context),
         );
 
-        expect(service.javascriptTemplatesEnabled).toBe(false);
-        const result = evalFrontmatterFields(service.frontmatterFields, {
-          title: "A Study",
-          relatedItems: [{ indexedKey: "A1", noteLink: () => "[[Related A]]" }],
-          collections: [{ path: ["Top", "Sub"] }],
-        });
+        expect(service.bridge.runSync(service.javascriptTemplatesEnabled)).toBe(
+          false,
+        );
+        const result = evalFrontmatterFields(
+          service.bridge.runSync(service.frontmatterFields),
+          {
+            title: "A Study",
+            relatedItems: [
+              { indexedKey: "A1", noteLink: () => "[[Related A]]" },
+            ],
+            collections: [{ path: ["Top", "Sub"] }],
+          },
+        );
 
         expect(result).toEqual({
           title: "A Study",
@@ -2414,8 +2591,12 @@ describe("frontmatter fields", () => {
           ),
         );
 
-        expect(() => service.frontmatterFields).toThrow(InertTemplateError);
-        expect(() => service.frontmatterFields).toThrow("note_js");
+        expect(() => service.bridge.runSync(service.frontmatterFields)).toThrow(
+          InertTemplateError,
+        );
+        expect(() => service.bridge.runSync(service.frontmatterFields)).toThrow(
+          "note_js",
+        );
       }),
   );
 
@@ -2449,14 +2630,18 @@ describe("frontmatter fields", () => {
           ),
         );
 
-        expect(service.frontmatterFields.map((field) => field.key)).toEqual([
-          "note_liquid",
-          "note_js",
-        ]);
+        expect(
+          service.bridge
+            .runSync(service.frontmatterFields)
+            .map((field) => field.key),
+        ).toEqual(["note_liquid", "note_js"]);
 
-        const result = evalFrontmatterFields(service.frontmatterFields, {
-          title: "Hi",
-        });
+        const result = evalFrontmatterFields(
+          service.bridge.runSync(service.frontmatterFields),
+          {
+            title: "Hi",
+          },
+        );
         expect(result).toEqual({ note_liquid: "Hi", note_js: "Hi" });
       }),
   );
@@ -2470,12 +2655,11 @@ describe("frontmatter fields", () => {
           makeHarness(undefined, context),
         );
 
-        expect(service.frontmatterFields.map((field) => field.key)).toEqual([
-          "title",
-          "related",
-          "collections",
-          "citekey",
-        ]);
+        expect(
+          service.bridge
+            .runSync(service.frontmatterFields)
+            .map((field) => field.key),
+        ).toEqual(["title", "related", "collections", "citekey"]);
 
         settings.bridge.runSync(
           settings.update({
@@ -2491,9 +2675,11 @@ describe("frontmatter fields", () => {
         );
 
         yield* TestClock.adjust(0);
-        expect(service.frontmatterFields.map((field) => field.key)).toEqual([
-          "custom",
-        ]);
+        expect(
+          service.bridge
+            .runSync(service.frontmatterFields)
+            .map((field) => field.key),
+        ).toEqual(["custom"]);
       }),
   );
 
@@ -2518,7 +2704,9 @@ describe("frontmatter fields", () => {
         ),
       );
 
-      expect(() => service.frontmatterFields).toThrow(InertTemplateError);
+      expect(() => service.bridge.runSync(service.frontmatterFields)).toThrow(
+        InertTemplateError,
+      );
 
       settings.bridge.runSync(
         settings.update({
@@ -2538,17 +2726,22 @@ describe("frontmatter fields", () => {
           ],
         }),
       );
-      expect(() => service.frontmatterFields).toThrow(InertTemplateError);
+      expect(() => service.bridge.runSync(service.frontmatterFields)).toThrow(
+        InertTemplateError,
+      );
 
       yield* TestClock.adjust(0);
       yield* service.templateService.setJavascriptTemplatesEnabled(true);
-      expect(service.frontmatterFields.map((field) => field.key)).toEqual([
-        "js1",
-        "js2",
-      ]);
+      expect(
+        service.bridge
+          .runSync(service.frontmatterFields)
+          .map((field) => field.key),
+      ).toEqual(["js1", "js2"]);
 
       yield* service.templateService.setJavascriptTemplatesEnabled(false);
-      expect(() => service.frontmatterFields).toThrow(InertTemplateError);
+      expect(() => service.bridge.runSync(service.frontmatterFields)).toThrow(
+        InertTemplateError,
+      );
     }),
   );
 });
@@ -2574,13 +2767,15 @@ describe("Template Document kinds", () => {
         );
 
         expect(
-          service
-            .getLiteratureNoteTemplateStatuses()
+          service.bridge
+            .runSync(service.getLiteratureNoteTemplateStatuses)
             .map(({ reference }) => reference),
         ).toEqual(["zotlit-profile.books.md"]);
-        expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
-          "Authors: Ada Lovelace",
-        );
+        expect(
+          service.bridge.runSync(
+            service.render("authors", { authors: "Ada Lovelace" }),
+          ),
+        ).toBe("Authors: Ada Lovelace");
         expect(yield* service.templateService.getUnrecognizedFiles).toEqual([]);
       }),
   );
@@ -2607,8 +2802,10 @@ describe("Template Document kinds", () => {
         );
 
         expect(
-          service
-            .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+          service.bridge
+            .runSync(
+              service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+            )!
             .renderForCreate({ title: "Paper", authors: "Ada Lovelace" }),
         ).toContain("Authors: Ada Lovelace");
       }),
@@ -2630,14 +2827,18 @@ describe("Template Document kinds", () => {
         );
 
         expect(() =>
-          service.render("authors", { authors: "Ada Lovelace" }),
+          service.bridge.runSync(
+            service.render("authors", { authors: "Ada Lovelace" }),
+          ),
         ).toThrow(m.settings_template_inert_eta({ path }));
 
         yield* service.templateService.setJavascriptTemplatesEnabled(true);
 
-        expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
-          "Authors: Ada Lovelace",
-        );
+        expect(
+          service.bridge.runSync(
+            service.render("authors", { authors: "Ada Lovelace" }),
+          ),
+        ).toBe("Authors: Ada Lovelace");
       }),
   );
 
@@ -2658,24 +2859,32 @@ describe("Template Document kinds", () => {
         makeHarness({ vault }, context),
       );
 
-      expect(service.getPartialDocument("authors")).toEqual({
+      expect(
+        service.bridge.runSync(service.getPartialDocument("authors")),
+      ).toEqual({
         name: "authors",
         path: "templates/zotlit-partial.authors.md",
         language: "liquid",
       });
       // The gate keeps this one inert, but the document still owns the name.
-      expect(service.getPartialDocument("venue")).toEqual({
+      expect(
+        service.bridge.runSync(service.getPartialDocument("venue")),
+      ).toEqual({
         name: "venue",
         path: "templates/zotlit-partial.venue.md",
         language: "eta",
       });
       // A manifest the parser refused names no language, so Liquid stands in.
-      expect(service.getPartialDocument("broken")).toEqual({
+      expect(
+        service.bridge.runSync(service.getPartialDocument("broken")),
+      ).toEqual({
         name: "broken",
         path: "templates/zotlit-partial.broken.md",
         language: "liquid",
       });
-      expect(service.getPartialDocument("missing")).toBeNull();
+      expect(
+        service.bridge.runSync(service.getPartialDocument("missing")),
+      ).toBeNull();
     }),
   );
 
@@ -2697,8 +2906,10 @@ describe("Template Document kinds", () => {
         );
 
         expect(() =>
-          service
-            .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+          service.bridge
+            .runSync(
+              service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+            )!
             .renderForCreate({ title: "Paper" }),
         ).toThrowError(
           expect.objectContaining<Partial<MissingPartialError>>({
@@ -2735,8 +2946,10 @@ describe("Template Document kinds", () => {
         );
 
         expect(() =>
-          service
-            .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+          service.bridge
+            .runSync(
+              service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+            )!
             .renderForCreate({ title: "Paper", authors: "Ada Lovelace" }),
         ).toThrow(m.settings_template_inert_eta({ path }));
       }),
@@ -2757,7 +2970,9 @@ describe("Template Document kinds", () => {
         );
         const data = { authors: "Ada Lovelace" };
 
-        expect(service.render("authors", data)).toBe("Authors: Ada Lovelace");
+        expect(service.bridge.runSync(service.render("authors", data))).toBe(
+          "Authors: Ada Lovelace",
+        );
 
         vault.renameFile(
           "templates/zotlit-partial.authors.md",
@@ -2765,8 +2980,12 @@ describe("Template Document kinds", () => {
         );
         yield* TestClock.adjust(500);
 
-        expect(service.render("creators", data)).toBe("Authors: Ada Lovelace");
-        expect(() => service.render("authors", data)).toThrowError(
+        expect(service.bridge.runSync(service.render("creators", data))).toBe(
+          "Authors: Ada Lovelace",
+        );
+        expect(() =>
+          service.bridge.runSync(service.render("authors", data)),
+        ).toThrowError(
           expect.objectContaining<Partial<TemplateError>>({
             templateName: "authors",
           }),
@@ -2775,7 +2994,9 @@ describe("Template Document kinds", () => {
         vault.deleteFile("templates/zotlit-partial.creators.md");
         yield* TestClock.adjust(500);
 
-        expect(() => service.render("creators", data)).toThrowError(
+        expect(() =>
+          service.bridge.runSync(service.render("creators", data)),
+        ).toThrowError(
           expect.objectContaining<Partial<TemplateError>>({
             templateName: "creators",
           }),
@@ -2805,12 +3026,16 @@ describe("Template Document kinds", () => {
           "---\nlanguage: liquid\n---\nBy {{ zt.authors }}",
         );
         yield* TestClock.adjust(500);
-        expect(service.render("authors", data)).toBe("By Ada Lovelace");
+        expect(service.bridge.runSync(service.render("authors", data))).toBe(
+          "By Ada Lovelace",
+        );
 
         vault.deleteFile("templates/zotlit-authors.liquid.md");
         yield* TestClock.adjust(500);
 
-        expect(service.render("authors", data)).toBe("By Ada Lovelace");
+        expect(service.bridge.runSync(service.render("authors", data))).toBe(
+          "By Ada Lovelace",
+        );
       }),
   );
 
@@ -2829,7 +3054,9 @@ describe("Template Document kinds", () => {
         expect(yield* service.templateService.getUnrecognizedFiles).toEqual([
           "templates/zotlit-foo.md",
         ]);
-        expect(service.getLiteratureNoteTemplateStatuses()).toEqual([]);
+        expect(
+          service.bridge.runSync(service.getLiteratureNoteTemplateStatuses),
+        ).toEqual([]);
 
         vault.deleteFile("templates/zotlit-foo.md");
         yield* TestClock.adjust(500);
@@ -2855,7 +3082,9 @@ describe("Template Document kinds", () => {
           makeHarness({ vault }, context),
         );
 
-        expect(service.getLegacyTemplateDocuments()).toEqual({
+        expect(
+          service.bridge.runSync(service.getLegacyTemplateDocuments),
+        ).toEqual({
           citation: [
             {
               name: "cite",
@@ -2884,9 +3113,11 @@ describe("Template Document kinds", () => {
         });
         // A legacy partial still answers by its bare name, the way 2.1.x
         // registered it, so a note template that calls it keeps rendering.
-        expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
-          "By Ada Lovelace",
-        );
+        expect(
+          service.bridge.runSync(
+            service.render("authors", { authors: "Ada Lovelace" }),
+          ),
+        ).toBe("By Ada Lovelace");
         // `citation` is the Citation Template's name; the extension-named file
         // claiming it is reported instead of registered.
         expect(yield* service.templateService.getUnrecognizedFiles).toEqual([
@@ -2915,9 +3146,11 @@ describe("Template Document kinds", () => {
 
         yield* Effect.promise(() =>
           expect(
-            service.convertLegacyTemplateDocuments([
-              { citationKey: "doe2020" },
-            ]),
+            service.bridge.runPromise(
+              service.convertLegacyTemplateDocuments([
+                { citationKey: "doe2020" },
+              ]),
+            ),
           ).rejects.toMatchObject({
             code: "unsupported-legacy-template",
             difference: "citation render",
@@ -2944,12 +3177,12 @@ describe("Template Document kinds", () => {
         makeHarness({ vault }, context),
       );
 
-      expect(service.getPartialNames()).toEqual([
+      expect(service.bridge.runSync(service.getPartialNames)).toEqual([
         "authors",
         "broken",
         "venue-line",
       ]);
-      expect(service.getPartialDocuments()).toEqual([
+      expect(service.bridge.runSync(service.getPartialDocuments)).toEqual([
         {
           name: "authors",
           path: "templates/zotlit-partial.authors.md",
@@ -2992,7 +3225,7 @@ describe("Template Document kinds", () => {
           { name: "citation", language: "liquid", source: "Their citation" },
         ] as const;
 
-        const plan = service.planPartialUnpack(bundled);
+        const plan = service.bridge.runSync(service.planPartialUnpack(bundled));
         expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
           "summary:unchanged",
           "authors:conflict",
@@ -3000,7 +3233,7 @@ describe("Template Document kinds", () => {
           "citation:unchanged",
         ]);
 
-        const outcome = service.unpackPartials(plan);
+        const outcome = service.bridge.runPromise(service.unpackPartials(plan));
         yield* TestClock.adjust(500);
 
         // Nothing was approved, so the reader's own authors stands — and its entry
@@ -3021,14 +3254,20 @@ describe("Template Document kinds", () => {
         expect(
           vault.getFileByPath("templates/zotlit-partial.citation.md"),
         ).toBeNull();
-        expect(service.render("venue-line", { venue: "JMLR" })).toBe("JMLR");
+        expect(
+          service.bridge.runSync(
+            service.render("venue-line", { venue: "JMLR" }),
+          ),
+        ).toBe("JMLR");
 
         // Re-planned against the folder as it stands now, with authors approved.
-        const replaced = service.unpackPartials(
-          service.planPartialUnpack(bundled),
-          {
-            replace: ["authors"],
-          },
+        const replaced = service.bridge.runPromise(
+          service.unpackPartials(
+            service.bridge.runSync(service.planPartialUnpack(bundled)),
+            {
+              replace: ["authors"],
+            },
+          ),
         );
         yield* TestClock.adjust(500);
 
@@ -3059,13 +3298,13 @@ describe("Template Document kinds", () => {
           { name: "Authors", language: "liquid", source: "{{ zt.authors }}" },
         ] as const;
 
-        const plan = service.planPartialUnpack(bundled);
+        const plan = service.bridge.runSync(service.planPartialUnpack(bundled));
         expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
           "Authors:other-case",
         ]);
 
         const outcome = yield* Effect.promise(() =>
-          service.unpackPartials(plan),
+          service.bridge.runPromise(service.unpackPartials(plan)),
         );
 
         expect(outcome).toEqual({
@@ -3083,7 +3322,9 @@ describe("Template Document kinds", () => {
         // A Shared Partial resolves by exact name, so the manifest copy is all
         // that answers `{% render "Authors" %}`: its entry has to stay.
         expect(() =>
-          service.render("Authors", { authors: "Ada Lovelace" }),
+          service.bridge.runSync(
+            service.render("Authors", { authors: "Ada Lovelace" }),
+          ),
         ).toThrowError(
           expect.objectContaining<Partial<TemplateError>>({
             templateName: "Authors",
@@ -3101,10 +3342,12 @@ describe("Template Document kinds", () => {
         const { service } = yield* Effect.promise(() =>
           makeHarness({ vault }, context),
         );
-        const plan = service.planPartialUnpack([
-          { name: "authors", language: "liquid", source: "Theirs" },
-          { name: "../../../escape", language: "liquid", source: "Escaped" },
-        ]);
+        const plan = service.bridge.runSync(
+          service.planPartialUnpack([
+            { name: "authors", language: "liquid", source: "Theirs" },
+            { name: "../../../escape", language: "liquid", source: "Escaped" },
+          ]),
+        );
         // The plan says up front that the escaping name reaches no file, so an
         // import never announces it as one it will write.
         expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
@@ -3114,7 +3357,7 @@ describe("Template Document kinds", () => {
 
         // The reader writes their own authors between the plan and the write.
         vault.createFile("templates/zotlit-partial.authors.md", "Mine");
-        const outcome = service.unpackPartials(plan);
+        const outcome = service.bridge.runPromise(service.unpackPartials(plan));
         yield* TestClock.adjust(500);
 
         expect(vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
@@ -3159,13 +3402,15 @@ describe("Template Document kinds", () => {
           makeHarness({ vault }, context),
         );
 
-        expect(service.render("authors", { authors: "Rougier" })).toBe(
-          "Rougier",
-        );
+        expect(
+          service.bridge.runSync(
+            service.render("authors", { authors: "Rougier" }),
+          ),
+        ).toBe("Rougier");
         // The reader can still share the text they wrote; the recipient's own gate
         // decides whether it runs there. A document with no readable source cannot
         // travel at all.
-        expect(service.getPartialEntries()).toEqual([
+        expect(service.bridge.runSync(service.getPartialEntries)).toEqual([
           { name: "authors", language: "liquid", source: "{{ zt.authors }}" },
           { name: "scripted", language: "eta", source: "<%= it.title %>" },
         ]);
@@ -3181,16 +3426,24 @@ describe("Template Document kinds", () => {
           makeHarness(undefined, context),
         );
 
-        const created = service.createPartial("venue-line", {
-          source: "{{ zt.venue }}",
-        });
+        const created = service.bridge.runPromise(
+          service.createPartial("venue-line", {
+            source: "{{ zt.venue }}",
+          }),
+        );
         yield* TestClock.adjust(500);
         const file = yield* Effect.promise(() => created);
 
         expect(file.path).toBe("templates/zotlit-partial.venue-line.md");
         expect(vault.contents.get(file.path)).toBe("{{ zt.venue }}");
-        expect(service.getPartialNames()).toEqual(["venue-line"]);
-        expect(service.render("venue-line", { venue: "JMLR" })).toBe("JMLR");
+        expect(service.bridge.runSync(service.getPartialNames)).toEqual([
+          "venue-line",
+        ]);
+        expect(
+          service.bridge.runSync(
+            service.render("venue-line", { venue: "JMLR" }),
+          ),
+        ).toBe("JMLR");
 
         const deleted = yield* Effect.forkChild(
           service.templateService.deletePartial("venue-line"),
@@ -3200,7 +3453,7 @@ describe("Template Document kinds", () => {
         yield* Fiber.join(deleted);
 
         expect(vault.getFileByPath(file.path)).toBeNull();
-        expect(service.getPartialNames()).toEqual([]);
+        expect(service.bridge.runSync(service.getPartialNames)).toEqual([]);
       }),
   );
 
@@ -3211,17 +3464,21 @@ describe("Template Document kinds", () => {
         makeHarness({ javascriptTemplates: true }, context),
       );
 
-      const created = service.createPartial("venue-line", {
-        source: "<%= zt.venue %>",
-        language: "eta",
-      });
+      const created = service.bridge.runPromise(
+        service.createPartial("venue-line", {
+          source: "<%= zt.venue %>",
+          language: "eta",
+        }),
+      );
       yield* TestClock.adjust(500);
       const file = yield* Effect.promise(() => created);
 
       expect(vault.contents.get(file.path)).toBe(
         "---\nlanguage: eta\n---\n<%= zt.venue %>",
       );
-      expect(service.getPartialDocument("venue-line")).toEqual({
+      expect(
+        service.bridge.runSync(service.getPartialDocument("venue-line")),
+      ).toEqual({
         name: "venue-line",
         path: file.path,
         language: "eta",
@@ -3239,22 +3496,30 @@ describe("Template Document kinds", () => {
       );
 
       yield* Effect.promise(() =>
-        expect(service.createPartial("citation")).rejects.toMatchObject({
+        expect(
+          service.bridge.runPromise(service.createPartial("citation")),
+        ).rejects.toMatchObject({
           name: "PartialNameError",
           refusal: "reserved",
         }),
       );
       yield* Effect.promise(() =>
-        expect(service.createPartial("authors")).rejects.toMatchObject({
+        expect(
+          service.bridge.runPromise(service.createPartial("authors")),
+        ).rejects.toMatchObject({
           refusal: "duplicate",
         }),
       );
       yield* Effect.promise(() =>
-        expect(service.createPartial("venue line")).rejects.toMatchObject({
+        expect(
+          service.bridge.runPromise(service.createPartial("venue line")),
+        ).rejects.toMatchObject({
           refusal: "characters",
         }),
       );
-      expect(service.getPartialNames()).toEqual(["authors"]);
+      expect(service.bridge.runSync(service.getPartialNames)).toEqual([
+        "authors",
+      ]);
     }),
   );
 
@@ -3277,10 +3542,12 @@ describe("Template Document kinds", () => {
           },
           { name: "citation", path: "templates/zotlit-partial.citation.md" },
         ]);
-        expect(service.getPartialNames()).toEqual([]);
+        expect(service.bridge.runSync(service.getPartialNames)).toEqual([]);
         // The Citation Template still renders its own built-in text.
         expect(
-          service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          service.bridge.runSync(
+            service.renderCitation([{ citationKey: "smith2024" }], "main"),
+          ),
         ).toBe("[@smith2024]");
 
         vault.deleteFile("templates/zotlit-partial.annotation.md");
@@ -3315,7 +3582,7 @@ describe("Template Document kinds", () => {
             key: "AB12CD34",
           }),
         ).toBe("smith2024%zt-suffix:6:_:%");
-        expect(service.getPartialNames()).toEqual([]);
+        expect(service.bridge.runSync(service.getPartialNames)).toEqual([]);
         expect(yield* service.templateService.getReservedPartialFiles).toEqual([
           { name: "filename", path: "templates/zotlit-partial.filename.md" },
         ]);

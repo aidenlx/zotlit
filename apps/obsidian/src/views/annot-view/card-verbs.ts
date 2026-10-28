@@ -1,29 +1,15 @@
 // The verbs over one Annotation or a group that both surfaces share: the
 // Annotation View's menus and keys, and the Obsidian PDF view's keys and Mark
 // Popup. A delete asks once, and a group names its count; one mark in the PDF
-// is erased with no question. Every verb here never rejects, so a caller may
-// start one with `void`, and each returns the failure notices it raised.
-import type { App } from "obsidian";
-
-import { AbortError } from "@/lib/abort-error";
-import { confirm } from "@/lib/confirm";
+// is erased with no question.
 import type { ConfirmOptions } from "@/lib/confirm";
-import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import type {
-  AnnotationRecord,
-  AnnotationRepository,
-} from "@/services/annotation-repository/service";
-import { groupFailureMessages } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import type { CardBlock } from "./card-controls";
 import { copiedText } from "./copied-text";
-
-const logger = getLogger(["views", "annot-view"]);
 
 /**
  * The confirmation a delete of `count` Annotations asks for. An erase leaves
@@ -47,107 +33,6 @@ export function deleteConfirmation(count: number): ConfirmOptions {
 }
 
 /**
- * Ask once, then {@link erase} these Annotations. Never rejects.
- *
- * @param options.annotationKeys Indexed Keys, in list order.
- * @param options.now the clock a cooldown's remaining seconds are read against.
- * @returns the failure notices raised, once per reason; none where the user
- *   declined.
- */
-export async function confirmDelete(
-  app: App,
-  {
-    annotations,
-    bridge,
-  }: {
-    annotations: Pick<
-      AnnotationRepository["Service"],
-      "deleteAnnotation" | "deleteAnnotations"
-    >;
-    bridge: Pick<EffectBridge, "runPromise">;
-  },
-  options: { annotationKeys: readonly string[]; now: () => Temporal.Instant },
-): Promise<readonly string[]> {
-  if (options.annotationKeys.length === 0) return [];
-  if (!(await confirm(deleteConfirmation(options.annotationKeys.length), app)))
-    return [];
-  return await erase(annotations, bridge, options);
-}
-
-/**
- * Erase these Annotations in Zotero with no confirmation: one alone, or two or
- * more as one History Step where each keeps its own outcome. A write that did
- * not land says why in a notice, once per reason, as every failed write does.
- * Never rejects.
- *
- * @param options.annotationKeys Indexed Keys, in list order.
- * @param options.now the clock a cooldown's remaining seconds are read against.
- * @returns the failure notices raised, once per reason.
- */
-export async function erase(
-  annotations: Pick<
-    AnnotationRepository["Service"],
-    "deleteAnnotation" | "deleteAnnotations"
-  >,
-  bridge: Pick<EffectBridge, "runPromise">,
-  {
-    annotationKeys,
-    now,
-  }: { annotationKeys: readonly string[]; now: () => Temporal.Instant },
-): Promise<readonly string[]> {
-  const [first] = annotationKeys;
-  if (first === undefined) return [];
-  return await settleWrites(
-    async () =>
-      annotationKeys.length === 1
-        ? [await bridge.runPromise(annotations.deleteAnnotation(first))]
-        : await bridge.runPromise(
-            annotations.deleteAnnotations(annotationKeys),
-          ),
-    { what: "delete", count: annotationKeys.length, now },
-  );
-}
-
-/**
- * Recolour these Annotations in Zotero: one alone, or two or more as one
- * History Step where each keeps its own outcome. A write that did not land
- * says why in a notice, once per reason. Never rejects.
- *
- * @param options.annotationKeys Indexed Keys, in list order.
- * @param options.color the swatch to store.
- * @param options.now the clock a cooldown's remaining seconds are read against.
- * @returns the failure notices raised, once per reason.
- */
-export async function recolor(
-  annotations: Pick<
-    AnnotationRepository["Service"],
-    "patchColor" | "patchColors"
-  >,
-  bridge: Pick<EffectBridge, "runPromise">,
-  {
-    annotationKeys,
-    color,
-    now,
-  }: {
-    annotationKeys: readonly string[];
-    color: string;
-    now: () => Temporal.Instant;
-  },
-): Promise<readonly string[]> {
-  const [first] = annotationKeys;
-  if (first === undefined) return [];
-  return await settleWrites(
-    async () =>
-      annotationKeys.length === 1
-        ? [await bridge.runPromise(annotations.patchColor(first, color))]
-        : await bridge.runPromise(
-            annotations.patchColors(annotationKeys, color),
-          ),
-    { what: "recolour", count: annotationKeys.length, now },
-  );
-}
-
-/**
  * Put the text of these cards on the clipboard as `text/plain`, by the one
  * rule of {@link copiedText}.
  *
@@ -164,38 +49,6 @@ export function copyText(
     error: m.annot_view_copy_failed(),
   });
   return true;
-}
-
-/**
- * Wait for the writes of one verb, and say why in a notice, once per reason,
- * for each that did not land. A send that threw is an outcome ZotLit never
- * learned.
- *
- * @returns the notices it raised, which is what the seam renders.
- */
-async function settleWrites(
-  send: () => Promise<readonly MutationState[]>,
-  {
-    what,
-    count,
-    now,
-  }: { what: string; count: number; now: () => Temporal.Instant },
-): Promise<readonly string[]> {
-  let outcomes: readonly MutationState[];
-  try {
-    outcomes = await send();
-  } catch (error) {
-    if (AbortError.test(error)) return [];
-    logger.warn("A write threw before Zotero answered", {
-      verb: what,
-      annotations: count,
-      error,
-    });
-    outcomes = [{ kind: "failed", failure: { kind: "unknown-outcome" } }];
-  }
-  const messages = groupFailureMessages(outcomes, now());
-  for (const message of messages) new BaseNotice(message);
-  return messages;
 }
 
 /**

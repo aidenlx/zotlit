@@ -21,13 +21,11 @@ import { valueOr } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
-import { portCall } from "@/lib/legacy-port";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
 
@@ -38,48 +36,6 @@ export type ExcerptRequestReads = Pick<
   ZoteroReadsApi,
   "AttachmentSources" | "DatabaseIdentity"
 >;
-
-/**
- * The file inputs one saved Annotation resolves through, or `null` where nothing
- * can: no Annotation Source, another Zotero data directory, or a database that
- * cannot answer.
- *
- * The database verifies the source again, so a record the source does not hold
- * resolves to nothing rather than to another database's pixels.
- */
-export function savedExcerptRequest(options: {
-  annotation: AnnotationRecord;
-  source: AnnotationSource | null;
-  sourceScope: string | null;
-  zoteroReads: Pick<PlainZoteroReads, "acquireRead">;
-  paths: AttachmentPathContext;
-  /** Runs the read on the plugin's runtime, so its log reaches the plugin logger. */
-  bridge: Pick<EffectBridge, "runPromise">;
-}): Promise<ExcerptRequest | null> {
-  const { annotation, source, sourceScope } = options;
-  // The paths as they stand now: a request belongs to the data directory its
-  // source was read from, whatever the settings become during the read.
-  const paths: AttachmentPathContext = {
-    dataDir: options.paths.dataDir,
-    baseAttachmentPath: options.paths.baseAttachmentPath,
-  };
-  if (!source || sourceScope !== paths.dataDir) return Promise.resolve(null);
-  return options.bridge.runPromise(
-    readSavedExcerptRequest({
-      annotation,
-      source,
-      paths,
-      snapshot: Effect.acquireDisposable(
-        portCall("acquire-read", () => options.zoteroReads.acquireRead()),
-      ).pipe(Effect.map(({ reads }) => reads)),
-      dataDir: Effect.sync(() => options.paths.dataDir),
-    }).pipe(
-      // A caller outside Effect gets nothing for a read the runtime stopped,
-      // as for one the database could not answer.
-      Effect.catchCause(() => Effect.succeed(null)),
-    ),
-  );
-}
 
 /**
  * The file inputs one saved Annotation resolves through, under the paths of

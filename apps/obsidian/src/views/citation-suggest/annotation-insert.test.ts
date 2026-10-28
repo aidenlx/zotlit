@@ -1,20 +1,24 @@
-// @vitest-environment happy-dom
 // Choosing an Annotation Suggester result whose insert does not land: the
 // Annotation is gone, or an edit took the trigger text while it rendered.
 // Where the text goes and how it is spaced is `captureInsertion`'s, tested in
 // `views/annot-view/async-insert.test.ts`; a landed insert and its Use are
 // proven in the running app by `packages/e2e/src/annotation-links.e2e.ts`.
 import type { EditorView } from "@codemirror/view";
+// @vitest-environment happy-dom
+import { it } from "@effect/vitest";
+import { Effect } from "effect";
 import { TFile } from "obsidian";
 import type { App, Editor, MarkdownFileInfo } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
-import type { NoteFeatureHandle } from "@/services/note-feature";
+import { annotationAction } from "@/services/note-feature/__fixtures__/annotation-actions";
+import type { AnnotationInsert } from "@/services/note-feature/insert-annotation";
 import { buildUseLedger, ledgerHost } from "@/services/use-ledger/__fixtures__";
+import { UseLedger } from "@/services/use-ledger/service";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
 
 import { insertAnnotation } from "./annotation-insert";
@@ -79,30 +83,38 @@ async function harness(
     editor,
     file,
   });
-  const prepare = vi.fn<NoteFeatureHandle["prepareAnnotationInsert"]>(
-    async () => {
-      whileRendering?.(cm);
-      return {
-        text: "quote",
-        summary: {
-          zotero: 0,
-          unchecked: 0,
-          unavailable: 0,
-          written: 0,
-          reused: 0,
-        },
-      };
-    },
-  );
+  const prepare = vi.fn<() => Promise<AnnotationInsert>>(async () => {
+    whileRendering?.(cm);
+    return {
+      text: "quote",
+      summary: {
+        zotero: 0,
+        unchecked: 0,
+        unavailable: 0,
+      },
+    };
+  });
   const insert = (target: AnnotationHit, from: number, to: number) =>
     insertAnnotation(
       {
         app,
-        annotations: repository,
+        workspace: app.workspace,
         bridge,
-        noteFeature: { prepareAnnotationInsert: prepare },
-        zoteroPref: { dataDir: "/zotero" },
-        useLedger,
+        annotationNotes: {
+          insert: (request) =>
+            annotationAction(
+              request,
+              Effect.tryPromise((signal) => {
+                signal.throwIfAborted();
+                return prepare();
+              }),
+              {
+                repository,
+                serverID: "A8sf5Zsz8ySw",
+                ledger: useLedger.runtime.runSync(UseLedger),
+              },
+            ),
+        },
         notify: () => {},
       },
       { hit: target, info, isCurrent: () => true, range: { from, to } },
@@ -116,30 +128,53 @@ async function harness(
 }
 
 describe("insertAnnotation", () => {
-  it("records no Use when an edit over the trigger text drops the insert", async () => {
-    await using stack = new AsyncDisposableStack();
-    const h = await harness(stack, "As shown [>message] here", {
-      whileRendering: (cm) =>
-        cm.dispatch({ changes: { from: 9, to: 19, insert: "typed" } }),
-    });
+  it.effect(
+    "records no Use when an edit over the trigger text drops the insert",
+    () =>
+      Effect.promise(async () => {
+        await using stack = new AsyncDisposableStack();
+        const h = await harness(stack, "As shown [>message] here", {
+          whileRendering: (cm) =>
+            cm.dispatch({ changes: { from: 9, to: 19, insert: "typed" } }),
+        });
 
-    expect(await h.insert(hit, 9, 19)).toEqual({ kind: "settled" });
+        expect(await h.insert(hit, 9, 19)).toBeUndefined();
 
-    expect(h.prepare).toHaveBeenCalledOnce();
-    expect(h.text()).toBe("As shown typed here");
-    expect(h.useLedger.current).toEqual({});
-  });
+        expect(h.prepare).toHaveBeenCalledOnce();
+        expect(h.text()).toBe("As shown typed here");
+        expect(h.useLedger.runtime.runSync(h.useLedger.current)).toEqual({});
+      }),
+  );
 
-  it("answers unavailable and leaves the trigger text when the annotation is gone", async () => {
+  it.effect(
+    "answers unavailable and leaves the trigger text when the annotation is gone",
+    () =>
+      Effect.promise(async () => {
+        await using stack = new AsyncDisposableStack();
+        const h = await harness(stack, "[>message]");
+
+        expect(await h.insert({ ...hit, key: "GONE2345" }, 0, 10)).toEqual({
+          kind: "unavailable",
+        });
+
+        expect(h.text()).toBe("[>message]");
+        expect(h.prepare).not.toHaveBeenCalled();
+        expect(h.useLedger.runtime.runSync(h.useLedger.current)).toEqual({});
+      }),
+  );
+});
+
+it.effect("#1835 records a Use only after the selected annotation lands", () =>
+  Effect.promise(async () => {
     await using stack = new AsyncDisposableStack();
     const h = await harness(stack, "[>message]");
-
-    expect(await h.insert({ ...hit, key: "GONE2345" }, 0, 10)).toEqual({
-      kind: "unavailable",
+    expect(await h.insert(hit, 0, 10)).toEqual({
+      kind: "inserted",
+      summary: { zotero: 0, unchecked: 0, unavailable: 0 },
     });
-
-    expect(h.text()).toBe("[>message]");
-    expect(h.prepare).not.toHaveBeenCalled();
-    expect(h.useLedger.current).toEqual({});
-  });
-});
+    expect(h.text()).toBe("quote ");
+    expect(
+      h.useLedger.runtime.runSync(h.useLedger.current)[hit.itemKey]?.kind,
+    ).toBe("cited");
+  }),
+);

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 // The render seam: a crop drawn from the reader's own document once that
 // document proves it holds the file's bytes, and from the file otherwise.
@@ -218,9 +219,10 @@ async function harness(options: {
     new ExcerptImageService({
       cache: {
         get: async (key) => entries.get(key),
-        put: async (key, entry) => {
-          entries.set(key, entry);
-        },
+        put: (key, entry) =>
+          Effect.sync(() => {
+            entries.set(key, entry);
+          }),
       },
       // Every request's own file, so a harness can carry more than one PDF.
       stamp: async (path) => {

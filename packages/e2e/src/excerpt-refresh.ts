@@ -87,7 +87,7 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
           state.completed++;
           return result;
         });
-      services.excerptDisplay.clear();
+      await services.bridge.runPromise(services.excerptDisplay.clear);
       state.leaf = app.workspace.getLeaf("tab");
       await state.leaf.setViewState({
         type: "zotero-annotation-view",

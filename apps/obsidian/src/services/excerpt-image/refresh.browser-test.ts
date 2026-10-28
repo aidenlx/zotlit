@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 // Runs the production Excerpt Display and Excerpt Image service over Chromium's
 // own IndexedDB, so a saved edit's replacement, a restart, an eviction, and a
 // manual clear are the plugin's own code and the plugin's own store.
@@ -9,20 +11,18 @@
 // Chromium canvas encoded as lossless WebP. Note-asset and Zotero-cache
 // survival need a vault and a Zotero data directory, so they are covered where
 // those exist — see `service.test.ts`.
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { ExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/service";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import { taggedQueryClients } from "@/services/query-client/__fixtures__";
-import type { PlainQueryClients } from "@/services/query-client/plain";
 
 import { check } from "./__fixtures__/check";
+import { ExcerptDisplayFixture } from "./__fixtures__/display";
 import { settledDisplay } from "./__fixtures__/display-state";
 import { encodeExcerptImage } from "./__fixtures__/encode";
 import { renderGate } from "./__fixtures__/render-gate";
 import type { GatedRender } from "./__fixtures__/render-gate";
 import { excerptAnnotationRecord, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
-import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
+import { EXCERPT_DISPLAY } from "./display";
 import type { ExcerptDisplayDemand, ExcerptImageDisplay } from "./display";
 import type { ExcerptImage } from "./format";
 import { EXCERPT_JOB_LIMIT } from "./pdf-queue";
@@ -135,8 +135,8 @@ async function crop(seed: number): Promise<ExcerptImage> {
 interface Live {
   readonly store: ExcerptStore;
   readonly service: ExcerptImageService;
-  readonly display: ExcerptDisplayService;
-  readonly queries: PlainQueryClients;
+  readonly display: ExcerptDisplayFixture;
+  readonly queries: ReturnType<typeof queryClientsFixture>;
   readonly renders: GatedRender[];
   /** One render, once the service reached it. */
   started(index: number): Promise<GatedRender>;
@@ -166,10 +166,8 @@ async function live(options: {
     render: gate.render,
   });
   const queries = queryClientsFixture();
-  const bridge = openTestBridge();
-  const display = new ExcerptDisplayService({
-    queries: taggedQueryClients(queries),
-    bridge,
+  const display = new ExcerptDisplayFixture({
+    queries: queries,
     resolve: (request, signal) => service.resolve(request, signal),
     stored: (request) => {
       const read = service.stored(request);
@@ -216,7 +214,6 @@ async function live(options: {
     },
     async close() {
       await display[Symbol.asyncDispose]();
-      await bridge[Symbol.asyncDispose]();
       await queries[Symbol.asyncDispose]();
       await service[Symbol.asyncDispose]();
       store[Symbol.dispose]();
@@ -308,7 +305,8 @@ export async function run(): Promise<RefreshReport> {
 
       card.release();
       check(
-        app.queries.keysUnder([EXCERPT_DISPLAY]).length === 0,
+        app.queries.bridge.runSync(app.queries.keysUnder([EXCERPT_DISPLAY]))
+          .length === 0,
         "A released card left its Held Read behind",
       );
 
@@ -414,11 +412,13 @@ export async function run(): Promise<RefreshReport> {
     });
     try {
       const oldest = request("#ff0000");
-      await app.store.put(excerptKey(oldest), {
-        bytes: measured.bytes,
-        format: measured.format,
-        pdf: PDF,
-      });
+      await Effect.runPromise(
+        app.store.put(excerptKey(oldest), {
+          bytes: measured.bytes,
+          format: measured.format,
+          pdf: PDF,
+        }),
+      );
       await app.store.putLatest(excerptAnnotationRecord(oldest), {
         key: excerptKey(oldest),
         fingerprint: "F1",
@@ -441,22 +441,26 @@ export async function run(): Promise<RefreshReport> {
           fingerprint: `F${index}`,
           pdf: null,
         });
-      await app.store.put("replacement", {
-        bytes: measured.bytes,
-        format: measured.format,
-        pdf: PDF,
-      });
+      await Effect.runPromise(
+        app.store.put("replacement", {
+          bytes: measured.bytes,
+          format: measured.format,
+          pdf: PDF,
+        }),
+      );
       check(
         (await app.store.get("replacement")) !== undefined,
         "References charged the image budget",
       );
 
       // The next crop pushes the oldest image out, and its reference with it.
-      await app.store.put("newest", {
-        bytes: measured.bytes,
-        format: measured.format,
-        pdf: PDF,
-      });
+      await Effect.runPromise(
+        app.store.put("newest", {
+          bytes: measured.bytes,
+          format: measured.format,
+          pdf: PDF,
+        }),
+      );
       check(
         (await app.store.get(excerptKey(oldest))) === undefined &&
           (await app.store.latest(excerptAnnotationRecord(oldest))) ===
@@ -518,7 +522,8 @@ export async function run(): Promise<RefreshReport> {
       app.display.clear();
       await app.service.clear();
       check(
-        app.queries.keysUnder([EXCERPT_DISPLAY]).length === 0,
+        app.queries.bridge.runSync(app.queries.keysUnder([EXCERPT_DISPLAY]))
+          .length === 0,
         "A cleared display kept its Held Read",
       );
       check(

@@ -7,16 +7,12 @@
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import type { Scope } from "effect";
 import { Cause, Effect, Exit } from "effect";
-import { MarkdownView } from "obsidian";
-import type { Editor, MarkdownFileInfo, PaneType, TFile } from "obsidian";
+import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
-import { AbortError } from "@/lib/abort-error";
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
-import { recover } from "@/lib/effect-cause";
-import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -24,19 +20,16 @@ import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
 import { pdfPickerReader } from "@/services/attachment-open/actions";
 import { literatureNoteAttachments } from "@/services/attachment-open/literature-note";
-import type {
-  TargetOpener,
-  OpenOutcome,
-} from "@/services/attachment-open/open-target";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
+import { openLiteratureNote } from "@/services/note-feature/navigation";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
-import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import { NoteIndex } from "@/services/note-index/service";
 import { InertTemplateError } from "@/services/template/errors";
 import { UseLedger } from "@/services/use-ledger/service";
-import { ZoteroReads } from "@/services/zotero-reads/service";
+import { readActionItem } from "@/services/zotero-reads/read-item";
 import { captureInsertion } from "@/views/annot-view/async-insert";
 import { getInsertionEditor } from "@/views/annot-view/drag-insert";
+import { viewTargetOpener } from "@/views/open-target";
 
 import { lastEditor } from "./last-note";
 
@@ -58,47 +51,10 @@ export const libraryItemCommand = viewRuntime.fn(
   { concurrent: true },
 );
 
-export const openLibraryTargetCommand = viewRuntime.fn(
-  (request: {
-    readonly opener: Pick<TargetOpener, "open">;
-    readonly args: Parameters<TargetOpener["open"]>;
-    readonly result: PromiseWithResolvers<OpenOutcome>;
-  }) =>
-    Effect.tryPromise(() => request.opener.open(...request.args)).pipe(
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (Exit.isFailure(exit))
-            request.result.reject(
-              Cause.hasInterruptsOnly(exit.cause)
-                ? new AbortError()
-                : Cause.squash(exit.cause),
-            );
-          else request.result.resolve(exit.value);
-        }),
-      ),
-    ),
-  { concurrent: true },
-);
-
-export function libraryTargetOpener(
-  registry: ViewRegistryHandle,
-  opener: Pick<TargetOpener, "open">,
-): Pick<TargetOpener, "open"> {
-  return {
-    open: (...args) => {
-      const result = Promise.withResolvers<OpenOutcome>();
-      registry.set(openLibraryTargetCommand, { opener, args, result });
-      return result.promise;
-    },
-  };
-}
-
 export type ItemActionsDeps = Pick<AttachmentOpenDeps, "app" | "opener"> & {
   registry: ViewRegistryHandle;
-  noteFeature: Pick<
-    NoteFeatureHandle,
-    "createNoteInteractively" | "renderCitation"
-  >;
+  noteFeature: Pick<NoteFeatureHandle, "renderCitation">;
+  creation: InteractiveCreationPorts;
   /**
    * Hands a `zotero://` link to the system.
    * @default window.open
@@ -135,28 +91,6 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
     deps.registry.set(libraryItemCommand, { effect, result });
     return result.promise;
   };
-  const read = (
-    indexedKey: string,
-  ): Effect.Effect<Item | null, never, ZoteroReads> =>
-    Effect.gen(function* () {
-      const snapshot = yield* (yield* ZoteroReads).snapshot;
-      const items = yield* snapshot.ItemsByIndexedKeys({
-        indexedKeys: [indexedKey],
-      });
-      return items.get(indexedKey) ?? null;
-    }).pipe(
-      Effect.scoped,
-      recover(
-        (error) =>
-          Effect.logWarning("The Library View could not read an Item", {
-            indexedKey,
-            error,
-          }),
-        Effect.succeed(null),
-      ),
-      withLogCategory("library-view", "item-actions"),
-    );
-
   const resolveCitation = (item: Item) =>
     Effect.gen(function* () {
       const citationKey =
@@ -193,48 +127,15 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
         ? { kind: "insert" as const, text: rendered }
         : rendered;
     });
-  const openNote = async (
-    file: TFile,
-    pane: PaneType | boolean,
-  ): Promise<void> => {
-    const { workspace } = deps.app;
-    if (!pane) {
-      const existing = workspace
-        .getLeavesOfType("markdown")
-        .find(
-          (leaf) =>
-            leaf.view instanceof MarkdownView && leaf.view.file === file,
-        );
-      if (existing) {
-        await workspace.revealLeaf(existing);
-        workspace.setActiveLeaf(existing, { focus: true });
-        return;
-      }
-    }
-    await workspace.openLinkText(file.path, "", pane, { active: true });
-  };
-
   return {
     openNote: (indexedKey, pane) =>
       run(
-        Effect.gen(function* () {
-          const index = yield* NoteIndex;
-          yield* index.whenIndexed;
-          const existing = resolveLiteratureNoteWithWarning(
-            yield* index.getNotesByItemKey(indexedKey),
-          );
-          if (existing) {
-            yield* Effect.tryPromise(() => openNote(existing, pane));
-            return;
-          }
-          const item = yield* read(indexedKey);
-          if (item) {
-            const file = yield* Effect.tryPromise(() =>
-              deps.noteFeature.createNoteInteractively(item),
-            );
-            if (file) yield* Effect.tryPromise(() => openNote(file, pane));
-          }
-        }),
+        Effect.asVoid(
+          openLiteratureNote(deps.creation, indexedKey, {
+            source: "interactive",
+            paneType: pane,
+          }),
+        ),
       ),
     openPdf: (indexedKey, pane) =>
       run(
@@ -242,7 +143,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
           const attachments = yield* literatureNoteAttachments(indexedKey);
           openAttachments(attachments, {
             reader: withFixedPane(
-              pdfPickerReader(libraryTargetOpener(deps.registry, deps.opener)),
+              pdfPickerReader(viewTargetOpener(deps.registry, deps.opener)),
               pane,
             ),
             app: deps.app,
@@ -273,7 +174,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
               }),
             ),
           );
-          const item = yield* read(indexedKey);
+          const item = yield* readActionItem(indexedKey);
           if (!item) return;
           const outcome = yield* resolveCitation(item);
           if (outcome.kind === "notice") {
@@ -290,7 +191,7 @@ export function itemActions(deps: ItemActionsDeps): ItemActions {
     copyCitationKey: (indexedKey) =>
       run(
         Effect.gen(function* () {
-          const item = yield* read(indexedKey);
+          const item = yield* readActionItem(indexedKey);
           if (!item) return;
           const citationKey =
             "citationKey" in item.fields ? item.fields.citationKey : null;

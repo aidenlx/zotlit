@@ -4,13 +4,12 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
-import type { PlainCitationLookup } from "@/services/citation-index/plain";
-import type {} from "@/services/citation-index/service";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
+import type { CitationIndex } from "@/services/citation-index/service";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { NoteFeatureHandle } from "@/services/note-feature";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainUseLedger } from "@/services/use-ledger/plain";
+import type { UseLedger } from "@/services/use-ledger/service";
 
 import { AnnotationEditorSuggest } from "./annotation-suggest";
 import type { AnnotationSuggestDeps } from "./annotation-suggest";
@@ -22,12 +21,12 @@ export interface CitationSuggestDeps {
   lookup: ItemLookupHandle;
   noteFeature: Pick<NoteFeatureHandle, "renderCitation">;
   settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">;
   /** Says whether the Citation Key of a chosen Item names several Items, and
    *  whether the snapshot that answers that has resolved at all yet. */
-  citationLookup: Pick<PlainCitationLookup, "read" | "status">;
-  citationIndex: Pick<PlainCitationIndex, "getDocumentCitationSet">;
-  useLedger: Pick<PlainUseLedger, "record">;
+  citationLookup: Pick<CitationLookup["Service"], "read" | "current">;
+  citationIndex: Pick<CitationIndex["Service"], "getDocumentCitationSet">;
+  useLedger: Pick<UseLedger["Service"], "record">;
 }
 
 /**

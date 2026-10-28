@@ -9,7 +9,6 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { ViewRegistry } from "@/lib/view-atoms";
 
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
@@ -20,7 +19,6 @@ import { annotationHistoryFileMenu } from "./services/annotation-repository/menu
 import { addAttachmentOpenActions } from "./services/attachment-open/actions";
 import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { attachmentOpenFileMenu } from "./services/attachment-open/menu";
-import { buildServices } from "./services/build";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerFileMenu } from "./services/file-menu";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
@@ -35,7 +33,7 @@ import {
   addNoteFeatureActions,
   noteFeatureFileMenu,
 } from "./services/note-feature/actions";
-import { addProfileActions } from "./services/profile/actions";
+import { createPluginRuntime } from "./services/plugin-runtime";
 import { ServiceStartupFailed } from "./services/startup-failure";
 import {
   createProfileDialog,
@@ -56,6 +54,7 @@ import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
 import { registerNotePreview } from "./views/note-preview/register";
+import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQueryBlock } from "./views/query-view/block";
 import { QueryCardFocus } from "./views/query-view/card-focus";
@@ -161,10 +160,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
   #stack?: AsyncDisposableStack;
 
   // Debug/escape-hatch access only. Services should depend on each other via DI.
-  #services?: Awaited<ReturnType<typeof buildServices>>["services"];
+  #services?: Awaited<ReturnType<typeof createPluginRuntime>>;
 
   /**
-   * The service container, for `obsidian eval` callers outside the bundle —
+   * The plugin runtime's values, for `obsidian eval` callers outside the bundle —
    * `packages/e2e` and `packages/scripts` reach it through a string, so they
    * keep working while TypeScript sees nothing to navigate.
    *
@@ -233,7 +232,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
-    const { services } = await buildServices(this, stack, languagePack).catch(
+    const services = await createPluginRuntime(this, stack, languagePack).catch(
       reportStartupFailure,
     );
 
@@ -242,12 +241,11 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const customizeDeps = {
       settings: services.settings,
-      profile: services.profileService,
+      profile: services.profile,
       customize,
       bridge: services.bridge,
     };
     addCustomizeActions(this, customizeDeps);
-    addProfileActions(this, { importProfile: services.importProfile });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, {
       citekeyEditor: services.citekeyEditor,
@@ -262,6 +260,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       attachments: services.literatureNoteAttachments,
       opener: services.targetOpener,
+      bridge: services.bridge,
     };
     addAttachmentOpenActions(this, attachmentOpenDeps);
     void stack.use(
@@ -275,7 +274,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     const noteFeatureDeps = {
       app: this.app,
       noteActions: services.noteActions,
-      batchImport: services.batchImport,
+      importChildNotes: services.importChildNotes,
     };
     addNoteFeatureActions(this, noteFeatureDeps);
     stack.defer(
@@ -290,20 +289,16 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteFeature: services.noteFeature,
       settings: services.settings,
       bridge: services.bridge,
-      citationLookup: services.citationLookup,
-      citationIndex: services.citationIndex,
-      useLedger: services.useLedger,
+      ...services.citationSuggestServices,
     });
     if (ANNOTATION_SUGGESTER_ENABLED) {
       registerAnnotationSuggest(this, {
         app: this.app,
+        workspace: this.app.workspace,
         query: services.query,
-        annotations: services.annotationRepository,
         bridge: services.bridge,
-        noteFeature: services.noteFeature,
-        zoteroPref: services.zoteroPref,
+        annotationNotes: services.annotationNotes,
         settings: services.settings,
-        useLedger: services.useLedger,
         notify: (message) => void new BaseNotice(message),
         commentRenderer: (owner, sourcePath) =>
           createCommentRenderer({
@@ -317,8 +312,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
-      noteIndex: services.noteIndex,
-      noteFeature: services.noteFeature,
+      registry: services.viewRegistry,
+      creation: {
+        app: this.app,
+        createProfile: (options) => createProfileDialog(this.app, options),
+        importProfile: (options) => importProfileDialog(this.app, options),
+      },
       settings: services.settings,
       bridge: services.bridge,
       opener: services.targetOpener,
@@ -327,15 +326,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
-      query: services.query,
       literatureNotes: literatureNotes({
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
         app: this.app,
         creation: {
           app: this.app,
@@ -345,32 +341,35 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       }),
       opener: services.targetOpener,
     };
+    // A view's open outlives the tab that started it: the reader may
+    // replace that tab.
+    stack.defer(queryViewDeps.registry.mount(openTargetCommand));
     registerAnnotView(this, {
       ...queryViewDeps,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
       bridge: services.bridge,
-      pdfReaders: services.pdfAnnotationEditor,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
       ...queryViewDeps,
-      reads: services.zoteroReads,
-      libraryScope: services.libraryScope,
       welcome: {
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
         setupActions: createSetupActions({
           app: this.app,
-          registry: services.runtime.runSync(ViewRegistry),
+          registry: services.viewRegistry,
           pluginId: this.manifest.id,
         }),
       },
       items: itemActions({
-        registry: services.runtime.runSync(ViewRegistry),
+        creation: {
+          app: this.app,
+          createProfile: (options) => createProfileDialog(this.app, options),
+          importProfile: (options) => importProfileDialog(this.app, options),
+        },
+        registry: services.viewRegistry,
         app: this.app,
         noteFeature: services.noteFeature,
         opener: services.targetOpener,
@@ -390,14 +389,15 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
         if (view instanceof QueryFileView) return view.query;
         return (
           (view && queryCardFocus.surfaceIn(view.containerEl)) ??
-          services.pdfAnnotationEditor.bindingFor(view)
+          services.bridge.runSync(services.pdfAnnotationEditor.bindingFor(view))
         );
       },
     });
 
     const templateWorkbenchDeps = {
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       bridge: services.bridge,
+      notifier: services.notifier,
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
@@ -405,7 +405,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       settings: services.settings,
       nativePreview: {
         app: this.app,
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
@@ -413,41 +413,33 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerTemplateDataExplorer(this, {
       bridge: services.bridge,
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      templates: services.template,
     });
 
     registerNotePreview(this, {
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       bridge: services.bridge,
+      notifier: services.notifier,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });
 
     registerReferencesView(this, {
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
 
     registerCitedByView(this, {
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
 
     registerPandocExport(this, {
-      fileSystem: services.fileSystem,
-      citationParse: services.citationParseService,
-      profile: services.profile,
       app: this.app,
-      db: services.zoteroReads,
-      citationLookup: services.citationLookup,
-      pandocEngine: services.pandocEngine,
-      zoteroPref: services.zoteroPref,
-      zoteroHttp: services.zoteroHttp,
-      settings: services.settings,
+      context: services.pandocExportContext,
       bridge: services.bridge,
       openSettings: () => {
         this.app.setting.open();
@@ -456,9 +448,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const citationPresentationDeps = {
+      workspace: services.workspace,
+      metadataCache: services.metadataCache,
       fileSystem: services.fileSystem,
       app: this.app,
       zoteroPref: services.zoteroPref,
+      notifier: services.notifier,
       settings: services.settings,
       bridge: services.bridge,
     };
@@ -478,7 +473,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
           annotations: services.annotationRepository,
           bridge: services.bridge,
           surfaceFor: (leaf) =>
-            services.pdfAnnotationEditor.bindingFor(leaf.view),
+            services.bridge.runSync(
+              services.pdfAnnotationEditor.bindingFor(leaf.view),
+            ),
         }),
         indexedKeyFileMenu(),
         explorerFileMenu(this.app),
@@ -488,7 +485,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     registerWelcomeView(this, {
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
 
     // The companion's Freshness Signal means the database changed and its
@@ -496,7 +493,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     // lane as the filesystem watchers.
     stack.defer(
       services.bridge.subscribe(services.localServer.dbUpdated, () => {
-        services.zoteroReads.notifyExternalChange();
+        services.bridge.runAndForget(services.zoteroReads.notifyExternalChange);
       }),
     );
 

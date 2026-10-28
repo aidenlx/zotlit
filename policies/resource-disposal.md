@@ -12,7 +12,7 @@ Explicit Resource Management is stage-4 and available in every runtime this repo
 
 Inside Effect, a resource's lifetime is its `Scope`. Acquire with `Effect.acquireRelease` (or `Layer.effect` for a service's resources), and register bare cleanup with `Effect.addFinalizer`. An entry and exit around one piece of work (a gate, a lock, an add / work / remove guard) is `Effect.acquireUseRelease`, so no interrupt lands between the entry and the release. A `Disposable` from outside Effect, such as an Obsidian event registration, enters through `Effect.acquireDisposable` (wrap a synchronous acquire in `Effect.sync`, a Promise in `Effect.tryPromise`), which also takes an `AsyncDisposable`. A failed release reaches the code that closes the scope, which logs it, and the remaining finalizers still run. In `apps/obsidian`, `zotlit-services/effect-native-resources` rejects a stack, `using`, or manual dispose in an Effect generator's body; elsewhere the reviewer checks it.
 
-Stacks and scopes meet only at the boundary where non-Effect code owns an Effect lifetime: `openScope()` and `buildRuntime()` put the scope's close, or the runtime's disposal, on the caller's stack (`stack.defer(…)`), and `serviceLayer` puts a legacy `Service`'s `[Symbol.asyncDispose]` on a scope.
+Stacks and scopes meet only at the boundary where non-Effect code owns an Effect lifetime: `openScope()` and `buildRuntime()` put the scope's close, or the runtime's disposal, on the caller's stack (`stack.defer(…)`).
 
 In tests: `using` / `await using` for routine cleanup; manual `[Symbol.dispose]()` calls only when exercising disposal behavior itself.
 

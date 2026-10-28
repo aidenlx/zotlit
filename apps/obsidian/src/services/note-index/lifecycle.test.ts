@@ -14,13 +14,13 @@ import { expect } from "vitest";
 import { buildRuntime } from "@/lib/effect-layer";
 
 import {
+  buildNoteIndex,
   cache,
   createNoteHost,
   noteIndexOf,
   noteIndexOver,
   startup,
 } from "./__fixtures__";
-import { plainNoteIndex } from "./plain";
 import { NoteIndex } from "./service";
 import type { NoteIndexChange } from "./service";
 
@@ -125,7 +125,7 @@ it.effect(
     }),
 );
 
-// #1705: use the same graph barrier as buildServices before constructing an adapter.
+// #1705: use the same graph barrier as plugin startup before reading the index.
 it.effect(
   "the built runtime exposes the first scan when layout and cache are ready",
   () =>
@@ -139,8 +139,8 @@ it.effect(
       );
       const runtime = buildRuntime(noteIndexOver(host), stack);
       yield* Effect.promise(() => runtime.context());
-      const index = plainNoteIndex(runtime);
-      expect(index.getNotesByItemKey("ABCD2345")).toEqual([
+      const index = runtime.runSync(NoteIndex);
+      expect(yield* index.getNotesByItemKey("ABCD2345")).toEqual([
         host.vault.files.get("paper.md")!,
       ]);
     }),
@@ -285,5 +285,41 @@ it.effect.each(["layout", "clean-cache"] as const)(
       yield* Fiber.join(pending);
       startup(host);
       expect(yield* index.getIndexedItemKeys).toEqual([]);
+    }),
+);
+
+// Failure mode: unload closes the Note Index under a plugin edge whose own
+// teardown still reads it, as a view saving its document on close does, or
+// leaves its listeners behind once that edge has finished.
+it.effect(
+  "serves an edge above it on the startup stack until that edge's teardown ends",
+  () =>
+    Effect.gen(function* () {
+      const host = createNoteHost(
+        { "paper.md": cache({ itemKey: "ABCD2345" }) },
+        { enabledAtRuntime: true },
+      );
+      const stack = new AsyncDisposableStack();
+      const index = buildNoteIndex(host, stack);
+      yield* index.whenIndexed;
+      const file = host.vault.files.get("paper.md")!;
+      const finish = Promise.withResolvers<void>();
+      const started = Promise.withResolvers<void>();
+      stack.defer(async () => {
+        started.resolve();
+        await finish.promise;
+      });
+
+      const disposed = stack.disposeAsync();
+      yield* Effect.promise(() => started.promise);
+      host.metadataCache.change(file, cache({ itemKey: "ZZZ99999" }));
+      yield* index.whenSettled;
+      expect(yield* index.getNotesByItemKey("ZZZ99999")).toEqual([file]);
+
+      finish.resolve();
+      yield* Effect.promise(() => disposed);
+      host.metadataCache.change(file, cache({ itemKey: "QQQ77777" }));
+      expect(yield* index.getNotesByItemKey("QQQ77777")).toEqual([]);
+      expect(yield* index.getNotesByItemKey("ZZZ99999")).toEqual([file]);
     }),
 );

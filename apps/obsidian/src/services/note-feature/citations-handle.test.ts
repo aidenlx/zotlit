@@ -1,4 +1,4 @@
-// The views' edge to the citation renders and the annotation insert.
+// The views' edge to citation renders.
 import { it } from "@effect/vitest";
 import { Effect, Layer, Stream } from "effect";
 import { expect, vi } from "vitest";
@@ -6,10 +6,8 @@ import { expect, vi } from "vitest";
 import type { CiteRef } from "@zotlit/db";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { AbortError } from "@/lib/abort-error";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { ExcerptPreparation } from "@/services/excerpt-image/prepare";
 import { NoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
@@ -24,18 +22,15 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
-import { layerZoteroReads, ZoteroReads } from "@/services/zotero-reads/service";
-import type { ZoteroReadsApi } from "@/services/zotero-reads/service";
+import { layerZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 import {
   inProcessClient,
   memoryOpener,
 } from "@/services/zotero-reads/test-utils";
 
 import { bindNoteCitations } from "./citations-handle";
-import type {
-  AnnotationInsertRequest,
-  NoteCitationServices,
-} from "./citations-handle";
+import type { NoteCitationServices } from "./citations-handle";
 
 /**
  * A journal article with the citation key `Hensher2011` and an attachment
@@ -68,28 +63,6 @@ const SEED = `
 const pref = stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
   dataDir: "/zotero",
   baseAttachmentPath: null,
-});
-
-/** An insert of a card into a note; `valid` says whether the editor still takes it. */
-function insertRequest(
-  options: { valid?: boolean; signal?: AbortSignal } = {},
-): AnnotationInsertRequest {
-  return {
-    annotation: stubService<AnnotationRecord>("AnnotationRecord", {
-      parentKey: "ATCH2345",
-    }),
-    source: { kind: "zotero-local-api", serverID: "SERVER000001" },
-    sourceScope: "/zotero",
-    notePath: "Target.md",
-    signal: options.signal ?? new AbortController().signal,
-    valid: () => options.valid ?? false,
-  };
-}
-
-/** Reads whose Snapshot never opens. */
-const pendingReads = Layer.mock(ZoteroReads, {
-  reads: stubService<ZoteroReadsApi>("ZoteroReadsApi", {}),
-  snapshot: Effect.never,
 });
 
 /** The handle on a plugin-like runtime, with a Citation Template that runs `render`. */
@@ -174,9 +147,6 @@ it.effect("resolves the annotation reads with their results", () =>
       await expect(
         handle.citations.renderAnnotationCitation("MISS2345"),
       ).resolves.toEqual({ kind: "not-in-database" });
-      await expect(
-        handle.citations.prepareAnnotationInsert(insertRequest()),
-      ).resolves.toBeNull();
       expect(handle.forCard).not.toHaveBeenCalled();
     } finally {
       await handle.dispose();
@@ -213,43 +183,5 @@ it.effect("settles as the bridge does after the runtime is disposed", () =>
     await expect(
       citations.renderAnnotationCitation("MISS2345"),
     ).rejects.toBeInstanceOf(DbUnavailable);
-    await expect(
-      citations.prepareAnnotationInsert(insertRequest()),
-    ).rejects.toBeInstanceOf(DbUnavailable);
-  }),
-);
-
-it.effect(
-  "rejects a pending insert with an AbortError when the runtime is disposed",
-  () =>
-    Effect.promise(async () => {
-      const handle = await openHandle(() => "", pendingReads);
-      const pending = handle.citations.prepareAnnotationInsert(
-        insertRequest({ valid: true }),
-      );
-      const settled = pending.then(
-        () => "resolved",
-        (error: unknown) => error,
-      );
-      await handle.dispose();
-      // The view's insert reads an AbortError as unload, which shows nothing.
-      expect(AbortError.test(await settled)).toBe(true);
-    }),
-);
-
-it.effect("rejects a pending insert with the reason its caller aborted", () =>
-  Effect.promise(async () => {
-    const handle = await openHandle(() => "", pendingReads);
-    try {
-      const controller = new AbortController();
-      const pending = handle.citations.prepareAnnotationInsert(
-        insertRequest({ valid: true, signal: controller.signal }),
-      );
-      const reason = new Error("The card was dropped elsewhere");
-      controller.abort(reason);
-      await expect(pending).rejects.toBe(reason);
-    } finally {
-      await handle.dispose();
-    }
   }),
 );

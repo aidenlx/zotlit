@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { expect } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
@@ -59,22 +59,38 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
       (change) => received.push(change),
     );
     yield* Effect.promise(() => close());
-    expect(service.getNotesByItemKey("ABCD2345")).toEqual([paper]);
-    expect(service.getImportedNoteByNoteKey("ZZZ99999")).toEqual([imported]);
-    expect(service.getNotesByProfile("default")).toEqual({
+    expect(
+      service.bridge.runSync(service.getNotesByItemKey("ABCD2345")),
+    ).toEqual([paper]);
+    expect(
+      service.bridge.runSync(service.getImportedNoteByNoteKey("ZZZ99999")),
+    ).toEqual([imported]);
+    expect(
+      service.bridge.runSync(service.getNotesByProfile("default")),
+    ).toEqual({
       literatureNotes: [paper],
       importedNotes: [imported],
     });
-    expect(service.getPropertyNames()).toEqual(["topic"]);
-    expect(service.getIndexedItemKeys()).toEqual(["ABCD2345"]);
-    yield* Effect.promise(() => service.whenIndexed());
-    yield* Effect.promise(() => service.whenSettled());
+    expect(service.bridge.runSync(service.getPropertyNames)).toEqual(["topic"]);
+    expect(service.bridge.runSync(service.getIndexedItemKeys)).toEqual([
+      "ABCD2345",
+    ]);
+    yield* Effect.promise(() => service.bridge.runPromise(service.whenIndexed));
+    yield* Effect.promise(() => service.bridge.runPromise(service.whenSettled));
     const stop = subscribe(service.runtime, service.changes, (change) =>
       received.push(change),
     );
     const events: string[] = [];
-    const stopEvent = subscribe(service.runtime, service["changed"], () =>
-      events.push("changed"),
+    const stopEvent = subscribe(
+      service.runtime,
+      service.changes.pipe(
+        Stream.filter(
+          (change): change is Extract<typeof change, { file: unknown }> =>
+            change.type === "changed",
+        ),
+        Stream.map((change) => change.file),
+      ),
+      () => events.push("changed"),
     );
     metadataCache.change(paper, cache({ itemKey: "NEW12345" }));
     vault.deleteFile("paper.md");
@@ -83,7 +99,9 @@ it.effect("every adapter method remains usable after runtime disposal", () =>
     stopEvent();
     expect(received).toEqual([]);
     expect(events).toEqual([]);
-    expect(service.getIndexedItemKeys()).toEqual(["ABCD2345"]);
+    expect(service.bridge.runSync(service.getIndexedItemKeys)).toEqual([
+      "ABCD2345",
+    ]);
   }),
 );
 
@@ -101,7 +119,7 @@ it.effect(
         { "paper.md": cache({}) },
         { enabledAtRuntime: true },
       );
-      yield* Effect.promise(() => index.whenIndexed());
+      yield* Effect.promise(() => index.bridge.runPromise(index.whenIndexed));
       const received: NoteIndexChange[] = [];
       const delivered = Promise.withResolvers<void>();
       const stop = subscribe(index.runtime, index.changes, (change) => {
@@ -117,7 +135,9 @@ it.effect(
         "changed",
         "frontmatter-changed",
       ]);
-      expect(index.getIndexedItemKeys()).toEqual(["ABCD2345"]);
+      expect(index.bridge.runSync(index.getIndexedItemKeys)).toEqual([
+        "ABCD2345",
+      ]);
       stop();
       const removed = Promise.withResolvers<void>();
       const stopObserver = subscribe(index.runtime, index.changes, (change) => {
@@ -127,6 +147,6 @@ it.effect(
       yield* Effect.promise(() => removed.promise);
       stopObserver();
       expect(received).toHaveLength(2);
-      expect(index.getIndexedItemKeys()).toEqual([]);
+      expect(index.bridge.runSync(index.getIndexedItemKeys)).toEqual([]);
     }),
 );

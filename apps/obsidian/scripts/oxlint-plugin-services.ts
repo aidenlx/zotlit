@@ -3,7 +3,7 @@
 // services over legacy classes, tag ids, Scope-owned resources and runners,
 // CLI registration, workers on effect/rpc, Effect-native events and state, and
 // failure boundaries. Rule tests: src/lint/services.test.ts.
-import { sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 
 import { importsEffect, isMemberOf } from "./oxlint-ast.ts";
 import type { AstNode, ModuleProgram, Rule } from "./oxlint-ast.ts";
@@ -110,9 +110,8 @@ export const effectNativeResources: Rule = {
 };
 
 /**
- * New services are Effect services (policies/services.md → Conversion scope).
- * A legacy service keeps its class until the change made for its conversion;
- * oxlint.config.ts lists those files as the backlog.
+ * Every plugin service is an Effect service (policies/services.md →
+ * Conversion scope), so a class that extends `Service` is reported.
  */
 export const noLegacyService: Rule = {
   meta: {
@@ -373,58 +372,6 @@ export const noNanoevents: Rule = {
   },
 };
 
-const EMITTER_KEYS = new Set(["on", "subscribe"]);
-
-/** The name of a non-computed property, method, or signature key. */
-function keyName(node: EventNode): string | undefined {
-  const key = node.computed ? undefined : node.key;
-  if (key?.type === "Identifier") return String(key.name);
-  if (key?.type === "Literal" && typeof key.value === "string")
-    return key.value;
-  return undefined;
-}
-
-/**
- * A plain adapter (`<service>/plain.ts`, policies/services.md → Plain adapter)
- * hands out its service's Streams and state. Plain code subscribes with `subscribe(runtime, stream, callback)`
- * from `@/lib/effect-stream`. The helper attaches before returning, isolates
- * each callback's failures, and goes quiet after runtime disposal. An
- * adapter's own `on`/`subscribe` would each have to re-earn those guarantees.
- */
-export const plainAdapterStreams: Rule = {
-  meta: {
-    type: "problem",
-    docs: {
-      description:
-        "Forbid emitter-shaped on/subscribe members on plain adapters.",
-    },
-    messages: {
-      emitter:
-        "Expose the Stream or state instead of `{{name}}`; plain code subscribes with subscribe(runtime, stream, callback) from @/lib/effect-stream (policies/events.md).",
-    },
-    schema: [],
-  },
-  create(context) {
-    const check = (node: unknown) => {
-      const member = node as EventNode;
-      const name = keyName(member);
-      if (name && EMITTER_KEYS.has(name))
-        context.report({
-          node: member.key as never,
-          messageId: "emitter",
-          data: { name },
-        });
-    };
-    return {
-      Property: check,
-      MethodDefinition: check,
-      PropertyDefinition: check,
-      TSMethodSignature: check,
-      TSPropertySignature: check,
-    };
-  },
-};
-
 const CAPABILITY_TAGS: Readonly<Record<string, string>> = {
   vault: "Vault tag (@/lib/obsidian-vault)",
   metadataCache: "MetadataCache tag (@/lib/obsidian-metadata-cache)",
@@ -625,8 +572,9 @@ function isStateTag(node: AstNode | undefined): boolean {
 }
 
 /**
- * A plain adapter asks whether its runtime is released through `isScopeClosed`
- * from `@/lib/effect-scope`, so every adapter reads release the same way.
+ * Code that asks whether its Scope is released reads it through
+ * `isScopeClosed` from `@/lib/effect-scope`, so every caller reads release the
+ * same way.
  */
 export const scopeClosed: Rule = {
   meta: {
@@ -678,7 +626,7 @@ interface ImportNode extends AstNode {
  * `Effect.runSync`, `runPromise`, `runFork`, `runPromiseExit`, `runSyncExit`
  * and `runCallback` run an Effect with an empty context: its logs skip the
  * plugin logger and log level, and it gets none of the plugin's services.
- * Plugin code runs an Effect through the container bridge, a layer's own
+ * Plugin code runs an Effect through the runtime bridge, a layer's own
  * context runner (`Effect.runSyncWith(yield* Effect.context())`), or a
  * runtime (`runtime.runSync`). Only the `Effect` imported from `effect` is
  * checked, so those calls stay valid. Files that create a
@@ -742,7 +690,7 @@ const CAPTURED_RUNNERS = new Set(["runPromiseWith", "runPromiseExitWith"]);
  * pending runs going, and a run after unload answers from the released
  * services. A service that keeps a runner for later callbacks builds it on a
  * Scope instead — `scopedBridge`, `forkedBridge` for a write runner, the
- * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in a plain adapter —
+ * layer's `FiberSet.runtime`, or `effectBridge(runtime)` in `plugin-runtime.ts` —
  * so unload stops what is pending (`policies/unload.md`). oxlint.config.ts
  * turns the rule on for `src/services/**`, which leaves out the helpers that
  * build those runners (`lib/effect-bridge.ts`, `lib/effect-scope.ts`).
@@ -1024,6 +972,52 @@ export const temporalInEffect: Rule = {
   },
 };
 
+/**
+ * Rejects an import or re-export of a `<service>/plain` module under
+ * `src/services/`, in source, tests and fixtures alike. A caller reads the
+ * service's Effect tag: Effect code `yield*`s it, and code outside Effect holds
+ * the service that `plugin-runtime.ts` reads once and runs each call through
+ * the runtime's `bridge`. Every run then lives in a Scope, so unload stops it and
+ * the caller gets its released answer from one helper, where each per-service
+ * adapter re-implemented that answer on its own runtime
+ * (policies/services.md → Bridge, policies/unload.md).
+ */
+export const noPlainServiceAdapters: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Forbid a `<service>/plain` adapter; read the service's Effect tag.",
+    },
+    messages: {
+      adapter:
+        "Read the Effect service tag, and from outside Effect run its calls through the runtime's `bridge` (policies/services.md → Bridge).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node: unknown) => {
+      const source = node as { readonly source?: { readonly value?: unknown } };
+      const value = source.source?.value;
+      if (typeof value !== "string") return;
+      const path = value.startsWith(".")
+        ? resolve(dirname(context.filename), value).split(sep).join("/")
+        : value;
+      if (
+        (path.startsWith("@/services/") || path.includes("/src/services/")) &&
+        ["plain", "plain.ts", "plain.js"].includes(path.split("/").at(-1)!)
+      )
+        context.report({ node: node as never, messageId: "adapter" });
+    };
+    return {
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+      ImportExpression: check,
+    };
+  },
+};
+
 export default {
   meta: { name: "zotlit-services" },
   rules: {
@@ -1035,8 +1029,8 @@ export default {
     "no-default-runtime": noDefaultRuntime,
     "no-legacy-service": noLegacyService,
     "no-nanoevents": noNanoevents,
+    "no-plain-service-adapters": noPlainServiceAdapters,
     "obsidian-capabilities": obsidianCapabilities,
-    "plain-adapter-streams": plainAdapterStreams,
     "scope-closed": scopeClosed,
     "scoped-runner": scopedRunner,
     "service-tag-id": serviceTagId,

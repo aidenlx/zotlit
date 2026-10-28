@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Cause, Effect, Exit, Stream } from "effect";
 import type { CachedMetadata } from "obsidian";
 import { describe, expect } from "vitest";
 
@@ -43,18 +43,27 @@ it.effect(
         },
         { enabledAtRuntime: true },
       );
-      const notes = service.getNotesByProfile(profile);
+      const notes = service.bridge.runSync(service.getNotesByProfile(profile));
       expect(paths(notes.literatureNotes)).toEqual(["Book.md"]);
       expect(paths(notes.importedNotes)).toEqual(["Import.md"]);
       expect(
-        paths(service.getNotesByProfile("default").literatureNotes),
+        paths(
+          service.bridge.runSync(service.getNotesByProfile("default"))
+            .literatureNotes,
+        ),
       ).toEqual(["Default.md"]);
       metadataCache.change(vault.files.get("Book.md")!, {
         frontmatter: { "zotero-key": ITEM_A },
       });
-      expect(service.getNotesByProfile(profile).literatureNotes).toEqual([]);
       expect(
-        paths(service.getNotesByProfile("default").literatureNotes).sort(),
+        service.bridge.runSync(service.getNotesByProfile(profile))
+          .literatureNotes,
+      ).toEqual([]);
+      expect(
+        paths(
+          service.bridge.runSync(service.getNotesByProfile("default"))
+            .literatureNotes,
+        ).sort(),
       ).toEqual(["Book.md", "Default.md"]);
     }),
 );
@@ -71,17 +80,35 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: true },
         );
         const changes: string[] = [];
-        subscribe(service.runtime, service["changed"], (file) =>
-          changes.push(`changed ${file.path}`),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changes.push(`changed ${file.path}`),
         );
-        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
-          changes.push(`frontmatter ${file.path}`),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "frontmatter-changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changes.push(`frontmatter ${file.path}`),
         );
 
         const file = vault.files.get("draft.md")!;
         metadataCache.change(file, cache({ itemKey: ITEM_A }));
         vault.renameFile("draft.md", "paper.md");
-        yield* Effect.promise(() => service.whenSettled());
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
 
         // The change lands first, while the note is still at its old path;
         // the rename then moves a note that is already a Literature Note.
@@ -90,7 +117,9 @@ describe("NoteIndex", () => {
           "frontmatter draft.md",
           "changed paper.md",
         ]);
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["paper.md"]);
       }),
   );
 
@@ -103,21 +132,41 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: true },
         );
         const changes: string[] = [];
-        subscribe(service.runtime, service["changed"], (file) =>
-          changes.push(`changed ${file.path}`),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changes.push(`changed ${file.path}`),
         );
-        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
-          changes.push(`frontmatter ${file.path}`),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "frontmatter-changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changes.push(`frontmatter ${file.path}`),
         );
 
         const file = vault.renameFile("draft.md", "paper.md");
         metadataCache.change(file, cache({ itemKey: ITEM_A }));
-        yield* Effect.promise(() => service.whenSettled());
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
 
         // The rename lands first and moves a note with no keys, so it says
         // nothing; the change then makes it a Literature Note at its new path.
         expect(changes).toEqual(["changed paper.md", "frontmatter paper.md"]);
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["paper.md"]);
       }),
   );
 
@@ -130,17 +179,29 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: true },
         );
         const changes: string[] = [];
-        subscribe(service.runtime, service["changed"], (file) =>
-          changes.push(file.path),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changes.push(file.path),
         );
 
         const file = vault.files.get("paper.md")!;
         vault.deleteFile("paper.md");
         metadataCache.delete(file);
-        yield* Effect.promise(() => service.whenSettled());
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
 
         expect(changes).toEqual(["paper.md"]);
-        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+        expect(
+          service.bridge.runSync(service.getNotesByItemKey(ITEM_A)),
+        ).toEqual([]);
       }),
   );
 
@@ -157,23 +218,42 @@ describe("NoteIndex", () => {
         metadataCache.watchVault(vault);
         metadataCache.resolve();
         const changes: string[] = [];
-        subscribe(service.runtime, service["indexed"], () =>
-          changes.push("indexed"),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter((change) => change.type === "indexed"),
+            Stream.map(() => undefined),
+          ),
+          () => changes.push("indexed"),
         );
-        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
-          changes.push(`frontmatter ${file.path}`),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "frontmatter-changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changes.push(`frontmatter ${file.path}`),
         );
 
         const file = vault.files.get("paper.md")!;
         workspace.layoutReady();
         metadataCache.change(file, cache({ itemKey: ITEM_B }));
-        yield* Effect.promise(() => service.whenSettled());
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
 
         // The Full Scan runs first and indexes the old key; the change then
         // moves the note to the new key.
         expect(changes).toEqual(["indexed", "frontmatter paper.md"]);
-        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
-        expect(paths(service.getNotesByItemKey(ITEM_B))).toEqual(["paper.md"]);
+        expect(
+          service.bridge.runSync(service.getNotesByItemKey(ITEM_A)),
+        ).toEqual([]);
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_B))),
+        ).toEqual(["paper.md"]);
       }),
   );
 
@@ -186,7 +266,9 @@ describe("NoteIndex", () => {
         { enabledAtRuntime: true },
       );
 
-      expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      expect(
+        paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+      ).toEqual(["paper.md"]);
     }),
   );
 
@@ -199,11 +281,15 @@ describe("NoteIndex", () => {
         { enabledAtRuntime: false },
       );
 
-      expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+      expect(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))).toEqual(
+        [],
+      );
 
       startup({ metadataCache, workspace, vault });
 
-      expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      expect(
+        paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+      ).toEqual(["paper.md"]);
     }),
   );
 
@@ -216,11 +302,24 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: false },
         );
         const heard: string[] = [];
-        subscribe(service.runtime, service["changed"], (file) =>
-          heard.push(`changed ${file.path}`),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => heard.push(`changed ${file.path}`),
         );
-        subscribe(service.runtime, service["indexed"], () =>
-          heard.push("indexed"),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter((change) => change.type === "indexed"),
+            Stream.map(() => undefined),
+          ),
+          () => heard.push("indexed"),
         );
         startup({ metadataCache, workspace, vault });
         // The whole index changed, not one file.
@@ -236,7 +335,9 @@ describe("NoteIndex", () => {
       );
 
       yield* Effect.promise(() =>
-        expect(service.whenIndexed()).resolves.toBeUndefined(),
+        expect(
+          service.bridge.runPromise(service.whenIndexed),
+        ).resolves.toBeUndefined(),
       );
     }),
   );
@@ -251,14 +352,16 @@ describe("NoteIndex", () => {
         );
 
         let settled = false;
-        const gate = service.whenIndexed().then(() => {
+        const gate = service.bridge.runPromise(service.whenIndexed).then(() => {
           settled = true;
         });
         expect(settled).toBe(false);
 
         startup({ metadataCache, workspace, vault });
         yield* Effect.promise(() => gate);
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["paper.md"]);
       }),
   );
 
@@ -271,8 +374,16 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: false },
         );
         const seen: string[][] = [];
-        subscribe(service.runtime, service["indexed"], () =>
-          seen.push(paths(service.getNotesByItemKey(ITEM_A))),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter((change) => change.type === "indexed"),
+            Stream.map(() => undefined),
+          ),
+          () =>
+            seen.push(
+              paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+            ),
         );
 
         startup({ metadataCache, workspace, vault });
@@ -296,8 +407,12 @@ describe("NoteIndex", () => {
         metadataCache.setCache("paper.md", cache({ itemKey: ITEM_B }));
         metadataCache.resolve();
 
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
-        expect(service.getNotesByItemKey(ITEM_B)).toEqual([]);
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["paper.md"]);
+        expect(
+          service.bridge.runSync(service.getNotesByItemKey(ITEM_B)),
+        ).toEqual([]);
       }),
   );
 
@@ -308,8 +423,16 @@ describe("NoteIndex", () => {
       });
       startup({ metadataCache, workspace, vault });
       const changed: string[] = [];
-      subscribe(service.runtime, service["changed"], (file) =>
-        changed.push(file.path),
+      subscribe(
+        service.runtime,
+        service.changes.pipe(
+          Stream.filter(
+            (change): change is Extract<typeof change, { file: unknown }> =>
+              change.type === "changed",
+          ),
+          Stream.map((change) => change.file),
+        ),
+        (file) => changed.push(file.path),
       );
 
       metadataCache.change(
@@ -318,7 +441,9 @@ describe("NoteIndex", () => {
       );
 
       expect(changed).toEqual(["paper.md"]);
-      expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+      expect(
+        paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+      ).toEqual(["paper.md"]);
     }),
   );
 
@@ -329,8 +454,16 @@ describe("NoteIndex", () => {
       });
       startup({ metadataCache, workspace, vault });
       const changed: string[] = [];
-      subscribe(service.runtime, service["changed"], (file) =>
-        changed.push(file.path),
+      subscribe(
+        service.runtime,
+        service.changes.pipe(
+          Stream.filter(
+            (change): change is Extract<typeof change, { file: unknown }> =>
+              change.type === "changed",
+          ),
+          Stream.map((change) => change.file),
+        ),
+        (file) => changed.push(file.path),
       );
 
       metadataCache.change(
@@ -358,11 +491,27 @@ describe("NoteIndex", () => {
         );
         const changed: string[] = [];
         const frontmatter: string[] = [];
-        subscribe(service.runtime, service["changed"], (file) =>
-          changed.push(file.path),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => changed.push(file.path),
         );
-        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
-          frontmatter.push(file.path),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "frontmatter-changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => frontmatter.push(file.path),
         );
 
         metadataCache.change(
@@ -399,8 +548,16 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: true },
         );
         const frontmatter: string[] = [];
-        subscribe(service.runtime, service["frontmatter-changed"], (file) =>
-          frontmatter.push(file.path),
+        subscribe(
+          service.runtime,
+          service.changes.pipe(
+            Stream.filter(
+              (change): change is Extract<typeof change, { file: unknown }> =>
+                change.type === "frontmatter-changed",
+            ),
+            Stream.map((change) => change.file),
+          ),
+          (file) => frontmatter.push(file.path),
         );
 
         // A body edit: the cache is new, its frontmatter the same.
@@ -448,7 +605,7 @@ describe("NoteIndex", () => {
           { enabledAtRuntime: true },
         );
 
-        expect(service.getPropertyNames()).toEqual([
+        expect(service.bridge.runSync(service.getPropertyNames)).toEqual([
           "rating",
           "Reading status",
           "status",
@@ -458,7 +615,7 @@ describe("NoteIndex", () => {
           vault.files.get("b.md")!,
           cache({ itemKey: ITEM_B, properties: { priority: "high" } }),
         );
-        expect(service.getPropertyNames()).toEqual([
+        expect(service.bridge.runSync(service.getPropertyNames)).toEqual([
           "priority",
           "rating",
           "status",
@@ -478,8 +635,12 @@ describe("NoteIndex", () => {
         cache({ itemKey: ITEM_B }),
       );
 
-      expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
-      expect(paths(service.getNotesByItemKey(ITEM_B))).toEqual(["paper.md"]);
+      expect(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))).toEqual(
+        [],
+      );
+      expect(
+        paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_B))),
+      ).toEqual(["paper.md"]);
     }),
   );
 
@@ -490,11 +651,14 @@ describe("NoteIndex", () => {
         const { service, close } = yield* makeHarness({
           "paper.md": cache({ itemKey: ITEM_A }),
         });
-        const gate = service.whenIndexed();
+        const gate = service.bridge.runPromiseExit(service.whenIndexed);
 
         yield* Effect.promise(() => close());
 
-        yield* Effect.promise(() => expect(gate).resolves.toBeUndefined());
+        const exit = yield* Effect.promise(() => gate);
+        expect(
+          Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause),
+        ).toBe(true);
       }),
   );
 
@@ -507,9 +671,11 @@ describe("NoteIndex", () => {
       startup({ metadataCache, workspace, vault });
 
       yield* Effect.promise(() =>
-        expect(service.whenIndexed()).resolves.toBeUndefined(),
+        expect(
+          service.bridge.runPromise(service.whenIndexed),
+        ).resolves.toBeUndefined(),
       );
-      expect(service.getIndexedItemKeys()).toEqual([]);
+      expect(service.bridge.runSync(service.getIndexedItemKeys)).toEqual([]);
     }),
   );
 
@@ -526,12 +692,9 @@ describe("NoteIndex", () => {
       // tie-a.md and tie-b.md keep the default mtime 0 → path breaks the tie.
       startup({ metadataCache, workspace, vault });
 
-      expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
-        "new.md",
-        "old.md",
-        "tie-a.md",
-        "tie-b.md",
-      ]);
+      expect(
+        paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+      ).toEqual(["new.md", "old.md", "tie-a.md", "tie-b.md"]);
     }),
   );
 
@@ -544,7 +707,9 @@ describe("NoteIndex", () => {
 
       vault.deleteFile("paper.md");
 
-      expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+      expect(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))).toEqual(
+        [],
+      );
     }),
   );
 
@@ -596,8 +761,16 @@ describe.each([
     const harness = yield* makeHarness(files, { enabledAtRuntime });
     if (!enabledAtRuntime) startup(harness);
     const changed: string[] = [];
-    subscribe(harness.service.runtime, harness.service["changed"], (file) =>
-      changed.push(file.path),
+    subscribe(
+      harness.service.runtime,
+      harness.service.changes.pipe(
+        Stream.filter(
+          (change): change is Extract<typeof change, { file: unknown }> =>
+            change.type === "changed",
+        ),
+        Stream.map((change) => change.file),
+      ),
+      (file) => changed.push(file.path),
     );
     return { ...harness, changed };
   });
@@ -611,17 +784,21 @@ describe.each([
         });
 
         vault.renameFile("literatures/paper.md", "Drafts/moved.md");
-        yield* Effect.promise(() => service.whenSettled());
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
-          "Drafts/moved.md",
-        ]);
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["Drafts/moved.md"]);
         expect(changed).toEqual(["Drafts/moved.md"]);
 
         vault.renameFile("Drafts/moved.md", "literatures/paper.md");
-        yield* Effect.promise(() => service.whenSettled());
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual([
-          "literatures/paper.md",
-        ]);
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["literatures/paper.md"]);
       }),
   );
 
@@ -634,13 +811,21 @@ describe.each([
         });
 
         vault.renameFile("paper.md", "paper.md.away");
-        yield* Effect.promise(() => service.whenSettled());
-        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
+        expect(
+          service.bridge.runSync(service.getNotesByItemKey(ITEM_A)),
+        ).toEqual([]);
 
         // The cache still holds the parse under the restored path and reports no change.
         vault.renameFile("paper.md.away", "paper.md");
-        yield* Effect.promise(() => service.whenSettled());
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["paper.md"]);
         expect(changed).toEqual(["paper.md.away", "paper.md"]);
       }),
   );
@@ -652,7 +837,9 @@ describe.each([
       });
 
       vault.renameFile("plain.md", "Notes/plain.md");
-      yield* Effect.promise(() => service.whenSettled());
+      yield* Effect.promise(() =>
+        service.bridge.runPromise(service.whenSettled),
+      );
 
       expect(changed).toEqual([]);
     }),
@@ -667,11 +854,17 @@ describe.each([
 
         // The cache holds nothing for the file yet.
         const file = vault.renameFile("paper.txt", "paper.md");
-        yield* Effect.promise(() => service.whenSettled());
-        expect(service.getNotesByItemKey(ITEM_A)).toEqual([]);
+        yield* Effect.promise(() =>
+          service.bridge.runPromise(service.whenSettled),
+        );
+        expect(
+          service.bridge.runSync(service.getNotesByItemKey(ITEM_A)),
+        ).toEqual([]);
 
         metadataCache.change(file, cache({ itemKey: ITEM_A }));
-        expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
+        expect(
+          paths(service.bridge.runSync(service.getNotesByItemKey(ITEM_A))),
+        ).toEqual(["paper.md"]);
       }),
   );
 });

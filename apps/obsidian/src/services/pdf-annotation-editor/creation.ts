@@ -77,6 +77,7 @@ import { CLICK_SLOP, distance } from "./hit-test";
 import type { Point } from "./hit-test";
 import { InkStroke } from "./ink-stroke";
 import type { MarkPopupHost } from "./mark-popup-host";
+import { captureText, createMark } from "./operations";
 import {
   appendPendingStroke,
   arm,
@@ -190,7 +191,7 @@ export interface ReaderPage {
 /** What the creation surfaces write Annotations through. */
 export type AnnotationCreates = Pick<
   AnnotationRepository["Service"],
-  "createAnnotation"
+  "createAnnotation" | "hold"
 >;
 
 /**
@@ -315,7 +316,7 @@ export interface MarkCreationDeps {
   /** What this view's surfaces draw from; the toolbar redraws off it alone. */
   surfaceState: ReaderSurfaceStore;
   annotations: AnnotationCreates;
-  bridge: Pick<EffectBridge, "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
   now: () => Temporal.Instant;
 }
 
@@ -515,6 +516,7 @@ export class MarkCreation implements CreationGestures, Disposable {
           });
       },
       (error: unknown) => {
+        if (AbortError.test(error)) return;
         logger.warn("Could not place the text selection on the page", {
           error,
         });
@@ -1063,6 +1065,12 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#deps.reportCreateFailure(m.pdf_create_reason_no_document());
       return null;
     }
+    // The list stays held until the create settles: a draft the view's close
+    // finishes is created after the view let go of its own hold, and a list
+    // dropped under the create leaves it no Zotero source to write to.
+    using _held = this.#deps.bridge.runSync(
+      this.#deps.annotations.hold([this.#deps.attachmentKey]),
+    );
     const { foreground, disarm } = CREATE_EFFECTS[type];
     if (foreground) {
       this.#writing = true;
@@ -1070,27 +1078,14 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     let created = false;
     try {
-      const [sortIndex, pageLabel] = await Promise.all([
-        structure.sortIndex(position),
-        structure.pageLabel(
-          position.pageIndex,
-          previousAnnotations(this.#deps.records()),
-        ),
-      ]);
       const outcome = await this.#deps.bridge.runPromise(
-        this.#deps.annotations.createAnnotation(
-          this.#deps.attachmentKey,
-          {
-            type,
-            color,
-            comment,
-            text,
-            pageLabel,
-            sortIndex,
-            position,
-          },
-          { group },
-        ),
+        createMark(this.#deps.annotations, {
+          attachmentKey: this.#deps.attachmentKey,
+          structure,
+          draft: { type, color, comment, text, position },
+          previous: previousAnnotations(this.#deps.records()),
+          group,
+        }),
       );
       if (outcome.kind === "failed") {
         this.#deps.reportCreateFailure(
@@ -1104,11 +1099,9 @@ export class MarkCreation implements CreationGestures, Disposable {
       if (disarm) this.#arm(null);
       return outcome.annotationKey;
     } catch (error) {
-      if (AbortError.test(error)) return null;
-      logger.warn("An Annotation was not created", { type, error });
-      this.#deps.reportCreateFailure(
-        m.annot_view_write_reason_unknown_outcome(),
-      );
+      // The create's own failure is an outcome; this is what came after it.
+      if (!AbortError.test(error))
+        logger.warn("An Annotation create did not finish", { type, error });
       return null;
     } finally {
       if (foreground) {
@@ -1339,10 +1332,10 @@ export class MarkCreation implements CreationGestures, Disposable {
     const pages = selectionPagesOf(selection.getRangeAt(0), this.#deps.pages());
     const structure = this.#deps.structure();
     if (!pages.length || !structure) return null;
-    const captured = await structure.selectText({
-      text: selection.toString(),
-      pages,
-    });
+    const text = selection.toString();
+    const captured = await this.#deps.bridge.runPromise(
+      captureText(structure, { text, pages }),
+    );
     if (!captured) {
       logger.debug("Text selection maps onto no character of its pages", {
         pageIndexes: pages.map(({ pageIndex }) => pageIndex),

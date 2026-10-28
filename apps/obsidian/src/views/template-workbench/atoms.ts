@@ -3,14 +3,12 @@ import { Effect } from "effect";
 import type { App, TFile } from "obsidian";
 
 import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
-import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 
 import { itemSummary } from "@/lib/item-summary";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import { Profile } from "@/services/profile/service";
-import { openCitationTemplate } from "@/services/template/actions";
-import { Template } from "@/services/template/service";
+import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -37,7 +35,7 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
     ),
     builtIn: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
-        return yield* (yield* Profile).getBuiltInSource();
+        return yield* (yield* Profile).getBuiltInSource;
       }),
     ),
     profileOf: makeWorkbenchCommand(registry, (file: TFile) =>
@@ -45,37 +43,13 @@ export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
         return yield* (yield* Profile).profileOf(file);
       }),
     ),
-    settle: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        return yield* (yield* Template).waitUntilSettled(10_000);
-      }),
-    ),
     materialize: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {
-        return yield* (yield* Profile).materializeDefault();
-      }),
-    ),
-    restore: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        const profile = yield* Profile;
-        yield* profile.restoreDefault();
-        return yield* profile.getSource("default");
+        return yield* (yield* Profile).materializeDefault;
       }),
     ),
     citation: makeWorkbenchCommand(registry, (app: App) =>
-      Effect.gen(function* () {
-        yield* openCitationTemplate(app, yield* Template);
-      }),
-    ),
-    unpack: makeWorkbenchCommand(
-      registry,
-      (bundled: readonly LiteratureNoteTemplatePartial[]) =>
-        Effect.gen(function* () {
-          const templates = yield* Template;
-          return yield* templates.unpackPartials(
-            yield* templates.planPartialUnpack(bundled),
-          );
-        }),
+      reportCitationTemplateOpen(app),
     ),
     styles: makeWorkbenchTask(registry, () =>
       Effect.gen(function* () {

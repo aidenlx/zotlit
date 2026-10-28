@@ -1,7 +1,10 @@
 // Rebuildable Excerpt Images live in device-local IndexedDB, separate from saved vault assets.
+import { Effect, Exit } from "effect";
+import { PreventSchedulerYield } from "effect/Scheduler";
 import { openDB } from "idb";
 import type { DBSchema } from "idb";
 
+import { ExcerptCacheWriteError } from "./error";
 import { detectExcerptImageFormat, isExcerptImage } from "./format";
 import type { ExcerptImage, ExcerptImageFormat } from "./format";
 import type { ExcerptCache, ExcerptEntry, ExcerptIdentity } from "./service";
@@ -117,40 +120,71 @@ export async function openExcerptStore(
       await tx.done;
       return undefined;
     },
-    async put(key, entry) {
-      const byteCount = entry.bytes.byteLength;
-      if (byteCount > budget) return;
-      const tx = db.transaction(
-        ["images", "latest", "accounting"],
-        "readwrite",
-      );
-      void tx.done.catch(() => undefined);
-      const images = tx.objectStore("images");
-      const latest = tx.objectStore("latest");
-      const accounting = tx.objectStore("accounting");
-      const state = (await accounting.get("state")) ?? {
-        totalBytes: 0,
-        clock: 0,
-      };
-      const previous = await images.get(key);
-      state.totalBytes += byteCount - (previous?.byteCount ?? 0);
-      await images.put({ ...entry, key, byteCount, lastAccess: ++state.clock });
-      let cursor = await images.index("access").openCursor();
-      while (cursor && state.totalBytes > budget) {
-        state.totalBytes -= cursor.value.byteCount;
-        // The bytes a reference locates leave with them: a reference without its
-        // image would paint nothing after a restart and refresh for nothing.
-        let pointing = await latest.index("image").openCursor(cursor.value.key);
-        while (pointing) {
-          await pointing.delete();
-          pointing = await pointing.continue();
-        }
-        await cursor.delete();
-        cursor = await cursor.continue();
-      }
-      await accounting.put(state, "state");
-      await tx.done;
-    },
+    put: Effect.fn("ExcerptStore.put")(
+      function* (key, entry) {
+        const byteCount = entry.bytes.byteLength;
+        if (byteCount > budget) return;
+        const tx = yield* Effect.try(() =>
+          db.transaction(["images", "latest", "accounting"], "readwrite"),
+        );
+        void tx.done.catch(() => undefined);
+        yield* Effect.gen(function* () {
+          const images = tx.objectStore("images");
+          const latest = tx.objectStore("latest");
+          const accounting = tx.objectStore("accounting");
+          const state = (yield* Effect.tryPromise(() =>
+            accounting.get("state"),
+          )) ?? {
+            totalBytes: 0,
+            clock: 0,
+          };
+          const previous = yield* Effect.tryPromise(() => images.get(key));
+          state.totalBytes += byteCount - (previous?.byteCount ?? 0);
+          yield* Effect.tryPromise(() =>
+            images.put({ ...entry, key, byteCount, lastAccess: ++state.clock }),
+          );
+          let cursor = yield* Effect.tryPromise(() =>
+            images.index("access").openCursor(),
+          );
+          while (cursor && state.totalBytes > budget) {
+            const oldest = cursor;
+            state.totalBytes -= oldest.value.byteCount;
+            // References leave in the same transaction as the bytes they locate.
+            let pointing = yield* Effect.tryPromise(() =>
+              latest.index("image").openCursor(oldest.value.key),
+            );
+            while (pointing) {
+              const reference = pointing;
+              yield* Effect.tryPromise(() => reference.delete());
+              pointing = yield* Effect.tryPromise(() => reference.continue());
+            }
+            yield* Effect.tryPromise(() => oldest.delete());
+            cursor = yield* Effect.tryPromise(() => oldest.continue());
+          }
+          yield* Effect.tryPromise(() => accounting.put(state, "state"));
+          yield* Effect.tryPromise(() => tx.done);
+        }).pipe(
+          Effect.onExit((exit) =>
+            Exit.isFailure(exit)
+              ? Effect.promise(async () => {
+                  try {
+                    tx.abort();
+                  } catch {
+                    // An IndexedDB request failure can already have aborted it.
+                  }
+                  await tx.done.catch(() => undefined);
+                })
+              : Effect.void,
+          ),
+        );
+      },
+      // IDB closes a transaction when its request microtasks drain. Keep Effect's
+      // cooperative task yields outside it; IDB requests still suspend naturally.
+      Effect.provideService(PreventSchedulerYield, true),
+      Effect.mapError(
+        (error) => new ExcerptCacheWriteError({ cause: error.cause }),
+      ),
+    ),
     async latest(identity) {
       return await db.get("latest", identity);
     },

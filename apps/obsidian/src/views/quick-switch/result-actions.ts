@@ -3,81 +3,51 @@
 // answers the same keys through the same functions (ADR 0074).
 //
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
-import { MarkdownView } from "obsidian";
-import type { App, PaneType, TFile } from "obsidian";
+import { Cause, Effect, Exit } from "effect";
+import type { PaneType } from "obsidian";
 
 import type { Item } from "@zotlit/db";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
-import { pdfPickerReader } from "@/services/attachment-open/actions";
+import { viewRuntime } from "@/lib/view-atoms";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import {
+  openGesture,
+  pdfPickerReader,
+} from "@/services/attachment-open/actions";
 import type { AttachmentOpenDeps } from "@/services/attachment-open/actions";
-import type { InteractiveCreationDeps } from "@/services/note-feature/creation-view";
-import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
+import { openLiteratureNote } from "@/services/note-feature/navigation";
 
-export interface NoteResultDeps extends InteractiveCreationDeps {
-  app: App;
-  noteIndex: Pick<PlainNoteIndex, "whenIndexed" | "getNotesByItemKey">;
+export interface NoteResultDeps {
+  registry: ViewRegistryHandle;
+  creation: InteractiveCreationPorts;
 }
 
-/**
- * Open the Literature Note of the Item `indexedKey`; where it has none,
- * write one through the Profile selection and open it. `item` reads the Item
- * the note is written from, only where one is written.
- */
-export async function openOrCreateNote(
+/** Run the shared note navigation from the Quick Switch modal callback. */
+export function openOrCreateNote(
   deps: NoteResultDeps,
-  {
-    indexedKey,
-    item,
-    newPane,
-  }: {
-    indexedKey: string;
-    item: () => Promise<Item | null | undefined>;
-    newPane: PaneType | boolean;
-  },
+  options: { indexedKey: string; item: Item; newPane: PaneType | boolean },
 ): Promise<void> {
-  await deps.noteIndex.whenIndexed();
-  const existing = resolveLiteratureNoteWithWarning(
-    deps.noteIndex.getNotesByItemKey(indexedKey),
+  const result = Promise.withResolvers<void>();
+  const command = viewRuntime.fn((_input: void) =>
+    openLiteratureNote(deps.creation, options.indexedKey, {
+      source: "interactive",
+      item: options.item,
+      paneType: options.newPane,
+    }).pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+            result.reject(Cause.squash(exit.cause));
+          else result.resolve();
+        }),
+      ),
+    ),
   );
-  if (existing) {
-    await openNote(deps.app, existing, newPane);
-    return;
-  }
-  const found = await item();
-  if (!found) return;
-  await openNote(
-    deps.app,
-    await deps.noteFeature.createNoteInteractively(found),
-    newPane,
-  );
-}
-
-/**
- * Open `file`: in a new pane, or where a tab already shows it, else in the
- * current one.
- */
-async function openNote(
-  app: App,
-  file: TFile | null | undefined,
-  newPane: PaneType | boolean,
-): Promise<void> {
-  if (!file) return;
-  const { workspace } = app;
-  if (!newPane) {
-    const existing = workspace
-      .getLeavesOfType("markdown")
-      .find(
-        (leaf) => leaf.view instanceof MarkdownView && leaf.view.file === file,
-      );
-    if (existing) {
-      await workspace.revealLeaf(existing);
-      workspace.setActiveLeaf(existing, { focus: true });
-      return;
-    }
-  }
-  await workspace.openLinkText(file.path, "", newPane, { active: true });
+  const release = deps.registry.mount(command);
+  deps.registry.set(command, undefined);
+  return result.promise.finally(release);
 }
 
 /**
@@ -96,7 +66,10 @@ export async function openItemPdf(
     await deps.attachments.literatureNoteAttachments(indexedKey);
   if (!attachments) return;
   openAttachments(attachments, {
-    reader: withFixedPane(pdfPickerReader(deps.opener), pane),
+    reader: withFixedPane(
+      pdfPickerReader(openGesture(deps.opener, deps.bridge.runAndForget)),
+      pane,
+    ),
     app: deps.app,
   });
 }

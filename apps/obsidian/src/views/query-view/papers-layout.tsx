@@ -17,10 +17,8 @@ import { FirstLine, Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemTypeIcon } from "@/lib/item-type-icon";
 import { cn } from "@/lib/utils";
-import type {
-  OpenTarget,
-  TargetOpener,
-} from "@/services/attachment-open/open-target";
+import type { TargetOpenGesture } from "@/services/attachment-open/actions";
+import type { OpenTarget } from "@/services/attachment-open/open-target";
 import type { QueryViewValue } from "@/services/item-query/query-view";
 
 import { useItemRow } from "./item-rows";
@@ -218,7 +216,7 @@ export function PapersLayout({ view }: { view: QueryView }) {
 interface Expansion {
   readonly expanded: ReadonlyMap<string, ChildState>;
   readonly toggle: (record: TableRecord) => void;
-  readonly readers: Pick<TargetOpener, "open">;
+  readonly readers: TargetOpenGesture;
 }
 
 function PaperRow({

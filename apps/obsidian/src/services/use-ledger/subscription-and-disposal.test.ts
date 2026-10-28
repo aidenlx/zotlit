@@ -6,7 +6,7 @@ import { expect } from "vitest";
 import { subscribe } from "@/lib/effect-stream";
 
 import { buildUseLedger, ledgerHost } from "./__fixtures__";
-import type { PlainLedger as Ledger } from "./plain";
+import type { Ledger } from "./service";
 
 // #1705: a throwing subscriber stays registered and sees both immediate Uses.
 it.effect("keeps a throwing listener subscribed for later Uses", () =>
@@ -25,21 +25,24 @@ it.effect("keeps a throwing listener subscribed for later Uses", () =>
       }),
     );
 
-    ledger.record("AAAAAAAB", "opened");
-    ledger.record("AAAAAAAC", "opened");
+    yield* ledger.record("AAAAAAAB", "opened");
+    yield* ledger.record("AAAAAAAC", "opened");
     yield* Effect.promise(() => promise);
 
     expect(received.map((next) => Object.keys(next).sort())).toEqual([
       ["AAAAAAAB"],
       ["AAAAAAAB", "AAAAAAAC"],
     ]);
-    const last = ledger.current;
+    const last = yield* ledger.current;
     yield* Effect.promise(() => stack.disposeAsync());
-    expect(ledger.current).toBe(last);
-    expect(ledger.get("AAAAAAAB")).toBe(last.AAAAAAAB);
-    expect(Object.keys(ledger.uses).sort()).toEqual(["AAAAAAAB", "AAAAAAAC"]);
-    ledger.record("AAAAAAAD", "opened");
-    expect(ledger.current).toBe(last);
+    expect(yield* ledger.current).toBe(last);
+    expect(yield* ledger.get("AAAAAAAB")).toBe(last.AAAAAAAB);
+    expect(Object.keys(yield* ledger.uses).sort()).toEqual([
+      "AAAAAAAB",
+      "AAAAAAAC",
+    ]);
+    yield* ledger.record("AAAAAAAD", "opened");
+    expect(yield* ledger.current).toBe(last);
     expect(() =>
       subscribe(ledger.runtime, Stream.drop(ledger.changes, 1), () => {
         throw new Error("closed listener");

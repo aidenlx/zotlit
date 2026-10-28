@@ -195,7 +195,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }) => {
-          return zotlit.services.zoteroReads.state;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.zoteroReads.current,
+          ).state;
         },
         undefined,
         {
@@ -206,8 +208,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }, { targetItemKey }) => {
-          return await zotlit.services.citationLookup
-            .read({ indexedKeys: [targetItemKey] })
+          return await zotlit.services.bridge
+            .runPromise(
+              zotlit.services.citationLookup.read({
+                indexedKeys: [targetItemKey],
+              }),
+            )
             .then(function (answer) {
               return String(answer.citekeyOf(targetItemKey));
             });
@@ -237,7 +243,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }) => {
-          return zotlit.services.citationLookup.status;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.citationLookup.current,
+          ).status;
         },
         undefined,
         {
@@ -249,16 +257,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return await zotlit.services.zoteroReads.refresh().then(function () {
-            return true;
-          });
+          return await zotlit.services.bridge
+            .runPromise(zotlit.services.zoteroReads.refresh)
+            .then(function () {
+              return true;
+            });
         },
         undefined,
       );
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }) => {
-          return zotlit.services.zoteroReads.state;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.zoteroReads.current,
+          ).state;
         },
         undefined,
         {
@@ -289,7 +301,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }) => {
-          return zotlit.services.citationLookup.status;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.citationLookup.current,
+          ).status;
         },
         undefined,
         {
@@ -300,11 +314,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRunUntil(
         run.vaultId,
         async ({ zotlit }, { targetItemKey }) => {
-          return await zotlit.services.citationLookup
-            .whenResolved()
+          return await zotlit.services.bridge
+            .runPromise(zotlit.services.citationLookup.whenResolved)
             .then(function () {
-              return zotlit.services.citationLookup
-                .read({ indexedKeys: [targetItemKey] })
+              return zotlit.services.bridge
+                .runPromise(
+                  zotlit.services.citationLookup.read({
+                    indexedKeys: [targetItemKey],
+                  }),
+                )
                 .then(function (answer) {
                   return String(answer.citekeyOf(targetItemKey));
                 });
@@ -339,9 +357,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 return Reflect.apply(target, receiver, args);
               },
             });
-            return zotlit.services.zoteroReads.refresh().then(function () {
-              return true;
-            });
+            return zotlit.services.bridge
+              .runPromise(zotlit.services.zoteroReads.refresh)
+              .then(function () {
+                return true;
+              });
           })();
         },
         undefined,

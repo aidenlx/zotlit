@@ -70,11 +70,6 @@ const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
       "A view on view atoms keeps its state in a per-leaf model of atoms (ADR 0082).",
   }),
 );
-const plainAdapterPattern = {
-  group: ["@/services/*/plain"],
-  message:
-    "A view on view atoms reads the service tag through an atom (ADR 0082).",
-};
 
 const runtimeImports = {
   ...commonImports,
@@ -132,6 +127,7 @@ export default defineConfig({
     "zotlit-keyboard/no-layer-check": "error",
     "zotlit-menu/no-literal-section": "error",
     "zotlit-services/service-tag-id": "error",
+    "zotlit-services/no-plain-service-adapters": "error",
     "zotlit-services/cli-command-registration": "error",
     "zotlit-effect-style/no-tacit": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
@@ -182,7 +178,6 @@ export default defineConfig({
         "src/views/library/reading-card.tsx",
         "src/views/library/view.ts",
         "src/views/note-preview/session.ts",
-        "src/views/pandoc-export/register.ts",
         "src/views/query-view/view.tsx",
         "src/views/references/view.tsx",
         "src/views/template-workbench/view.tsx",
@@ -230,13 +225,6 @@ export default defineConfig({
       // These tests exercise the run entry points themselves.
       files: ["src/lib/effect-runtime.test.ts", "src/lib/effect-entry.test.ts"],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
-    },
-    {
-      // Tests written before the rule that mock @/lib/notice. A file leaves
-      // this list once it asserts its module's outcomes without a mock of
-      // @/lib/notice or @/lib/toast.
-      files: ["src/views/template-workbench/register.test.ts"],
-      rules: { "zotlit-effect-tests/no-notice-mock": "off" },
     },
     {
       files: ["src/**"],
@@ -335,7 +323,10 @@ export default defineConfig({
       // Helpers and constructors that take a raw App object
       // (`documentPresentation(app.metadataCache, …)`,
       // `readProfileStamp(app.metadataCache, …)`, `vault: app.vault`).
-      files: ["src/services/build.ts", "src/services/pandoc/register.ts"],
+      files: [
+        "src/services/plugin-runtime.ts",
+        "src/services/pandoc/register.ts",
+      ],
       rules: { "zotlit-services/obsidian-capabilities": "off" },
     },
     {
@@ -385,7 +376,6 @@ export default defineConfig({
         "src/views/library/view.ts",
         "src/views/note-preview/citations.ts",
         "src/views/note-preview/session.ts",
-        "src/views/pandoc-export/register.ts",
         "src/views/query-view/table-notes.ts",
         "src/views/query-view/view.tsx",
         "src/views/template-workbench/match-data.ts",
@@ -452,25 +442,15 @@ export default defineConfig({
       rules: { "zotlit-services/temporal-in-effect": "error" },
     },
     {
-      // The edge between Effect and plain code: a plain adapter hands Effect
-      // values to plain callers as Temporal; @zotlit/db rows carry
-      // Temporal.Instant, the date type of the template contract, and
-      // instant-codec.ts codes it for the ZoteroReads wire.
-      files: [
-        "src/services/**/plain.ts",
-        "src/services/zotero-reads/instant-codec.ts",
-      ],
+      // @zotlit/db rows carry Temporal.Instant, the date type of the template
+      // contract, and instant-codec.ts codes it for the ZoteroReads wire.
+      files: ["src/services/zotero-reads/instant-codec.ts"],
       rules: { "zotlit-services/temporal-in-effect": "off" },
-    },
-    {
-      files: ["src/services/**/plain.ts"],
-      rules: { "zotlit-services/plain-adapter-streams": "error" },
     },
     {
       // Legacy emitters, written before no-nanoevents. A file moves off this
       // list when its service converts to Effect.
       files: [
-        "src/services/pdf-annotation-editor/service.ts",
         "src/services/reader-session/session.ts",
         "src/views/library/item-drag.test.ts",
         "src/views/library/view.test.ts",
@@ -536,30 +516,6 @@ export default defineConfig({
       },
     },
     {
-      // Views on view atoms with no Plain dependency left. The Template Data
-      // Explorer joins when the Template service converts.
-      files: [
-        "src/views/library/**",
-        "src/views/query-view/**",
-        "src/views/annot-view/**",
-        "src/views/cited-by/**",
-        "src/views/references/**",
-        "src/views/note-preview/**",
-        "src/views/template-workbench/**",
-        "src/views/welcome/**",
-      ],
-      rules: {
-        "no-restricted-imports": [
-          "error",
-          {
-            ...runtimeImports,
-            paths: [...runtimeImports.paths, ...viewStorePaths],
-            patterns: [...runtimeImports.patterns, plainAdapterPattern],
-          },
-        ],
-      },
-    },
-    {
       // Tests can inspect the schema; the plugin's other import rules remain.
       files: [
         "src/**/*.{test,spec}.{ts,tsx,js,jsx}",
@@ -571,6 +527,32 @@ export default defineConfig({
           {
             patterns: [parentImportPattern, datePattern],
             paths: [...effectWrapperPaths, ...obsidianImportPaths],
+          },
+        ],
+      },
+    },
+    {
+      // IndexedDB transactions must finish their request microtasks before a task yield.
+      files: [
+        "src/services/excerpt-image/store.ts",
+        "src/services/excerpt-image/store.browser-test.ts",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: runtimeImports.paths.map((path) =>
+              path.name === "effect/Scheduler"
+                ? {
+                    ...path,
+                    allowImportNames: [
+                      "PreventSchedulerYield",
+                      "MaxOpsBeforeYield",
+                    ],
+                  }
+                : path,
+            ),
           },
         ],
       },
@@ -596,8 +578,6 @@ export default defineConfig({
         "vite.config.ts",
         "src/services/pandoc/filter/zotlit-cite.pandoc.test.ts",
         "src/zt-main.ts",
-        "src/services/build.ts",
-        "src/services/service-base.ts",
         "src/services/log/**",
       ],
       rules: {
@@ -674,15 +654,6 @@ export default defineConfig({
         "src/views/template-workbench/view.test.ts",
       ],
       rules: { "zotlit-effect-tests/no-effect-run-in-test": "off" },
-    },
-    {
-      // Legacy services, written before the rule. A file moves off this list
-      // when its service converts to Effect (/obsidian-services).
-      files: [
-        "src/services/excerpt-image/display.ts",
-        "src/services/pdf-annotation-editor/service.ts",
-      ],
-      rules: { "zotlit-services/no-legacy-service": "off" },
     },
     {
       // Tests written before the rule that assert zt: classes; a file moves off

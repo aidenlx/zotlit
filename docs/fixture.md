@@ -48,6 +48,14 @@ pnpm fixture paths
 
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
 
+`pandoc-export.md` checks **Export note with citations**. Rebuild with `pnpm fixture`, open the page in the Fixture Vault, and follow **Check the export**. Install the Pandoc engine first if the command asks for it. Export as HTML with the default citation style: the progress notice ends with the file and style, and the file preserves bold text and the callout body while removing the Obsidian callout marker. Run the command again and dismiss its dialog: no new output is written. The focused desktop check is `pnpm e2e --project=desktop src/walkthrough.e2e.ts -t 'exports a draft as HTML'`; it stages this committed page in the demo vault and reads the HTML after the completion notice.
+
+`excerpt-display.md` checks live excerpt display, refresh, reopening, saved-edit replacement, cache clear, and unload. Use the `all` Scope Case and follow its action and expected-result table; the saved-edit cases require a Paired Run.
+
+`citekey-smoke-test.md` checks both citation pickers in its **Citation search and insertion** section: cited-item priority, main and alternate insertion, a changed destination, unload, the 150 ms index wait, and closing a pending picker. Use the `all` Scope Case and follow the action and expected-outcome table.
+
+`tools-for-thought.md` checks Template Data Explorer permissions in its **Template Data Explorer permissions** section: Liquid-only actions, enabling and removing JavaScript permission with an open Explorer, separate searches in two leaves, and cleanup after both leaves close.
+
 ### Excerpt-rendering acceptance inputs
 
 Each build copies three generated inputs to
@@ -213,6 +221,7 @@ group in vault-wide answers because other Fixture pages cite the same Items.
 
 | Fixture Vault page | Purpose |
 | --- | --- |
+| `citation-only-test.md` | Run Set citation presentation, confirm a language, cancel a change, and disable ZotLit with the dialog open. The page states the expected note text and dialog state for each case. |
 | `citation-scan-forms.md` | Compare Pandoc citation forms, Citation Fragments, and normalised wikilinks across References, Cited By, the popover, CitationText, CLI, and export. |
 | `Scan target.md` | Provide an ordinary-space Literature Note target for the no-break-space and trailing-backslash links, as the only Literature Note of the My Library Item `PUBJRNL3` (`marshMarginaliaEvidence2019`). |
 | `citation-scan-exclusions.md` | Check code, math, frontmatter, HTML and Obsidian comments, plus a partially commented Citation Cluster and visible dollar-sign cases. |

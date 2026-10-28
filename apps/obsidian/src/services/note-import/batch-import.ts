@@ -100,7 +100,7 @@ export interface BatchImportPorts {
 
 /**
  * The note-import command surface for callers outside Effect: the
- * interactive batch/single/child import routing. `build.ts` binds it over the
+ * interactive batch/single/child import routing. `plugin-runtime.ts` binds it over the
  * plugin's services (`batch-import-handle.ts`).
  */
 export interface BatchImport {
@@ -109,10 +109,6 @@ export interface BatchImport {
     mode: ImportMode,
     itemIDs: readonly number[],
   ): Promise<BatchImportResult>;
-  /** @see {@link runBatchImportAll} */
-  runBatchImportAll(target?: BatchTarget): Promise<BatchImportResult>;
-  /** @see {@link runChildImportByKey} */
-  runChildImportByKey(indexedKey: string): Promise<BatchImportResult | null>;
   /** @see {@link reimportNoteByKey} */
   reimportNoteByKey(
     noteKey: string,

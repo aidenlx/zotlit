@@ -11,12 +11,12 @@ import type { App, EventRef, View, Vault, Workspace } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { toInstant } from "@/lib/effect-clock";
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
+import { NoteIndex } from "@/services/note-index/service";
 
 import {
   annotation,
@@ -30,19 +30,15 @@ import {
   pdfReader,
   readerSettings,
 } from "./__fixtures__";
-import { PdfAnnotationEditor } from "./service";
+import { openPdfEditor as PdfAnnotationEditor } from "./__fixtures__/editor";
 import type { AttachmentResolution } from "./service";
 
 beforeEach(() => {
   setMockPlatform({ isMacOS: false });
 });
 
-let bridge = openTestBridge();
-
 afterEach(async () => {
   resetMockPlatform();
-  await bridge[Symbol.asyncDispose]();
-  bridge = openTestBridge();
   await noteIndexes.disposeAsync();
   noteIndexes = new AsyncDisposableStack();
 });
@@ -109,6 +105,7 @@ function workspace(views: { view: unknown }[]) {
             view: view as unknown as View,
           }),
         ),
+      offref,
       onLayoutReady: (callback: () => void) => callback(),
       on: ((
         name: string,
@@ -159,17 +156,17 @@ let noteIndexes = new AsyncDisposableStack();
 
 /** The real Note Index over a vault with no Literature Note. */
 async function emptyNoteIndex() {
-  return (await openNoteVault({}, noteIndexes)).noteIndex;
+  return (await openNoteVault({}, noteIndexes)).noteIndex.runtime.runSync(
+    NoteIndex,
+  );
 }
 
 /** The service's deps that every test here builds the same way. */
 async function standingDeps() {
   return {
-    bridge,
     markGestures: markGestures(),
     settings: readerSettings(),
     noteIndex: await emptyNoteIndex(),
-    libraryTagNames: async () => [],
   };
 }
 
@@ -211,7 +208,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
   const attachments = attachmentReads(RESOLVED);
   const annotations = annotationReads();
   const { app, offref } = workspace([{ view }]);
-  const service = new PdfAnnotationEditor({
+  const service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations,
@@ -221,7 +218,6 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
 
   {
     await using _service = service;
-    await service.ready;
 
     expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
       "/vault/attachments/rougier-2014.pdf",
@@ -249,21 +245,20 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     "pagerendered",
     expect.any(Function),
   );
-  expect(offref).toHaveBeenCalledTimes(3);
+  expect(offref).toHaveBeenCalledTimes(4);
 });
 
 it("refreshes the repository when an open PDF leaf becomes active", async () => {
   const view = pdfView("attachments/rougier-2014.pdf");
   const annotations = annotationReads();
   const harness = workspace([{ view }]);
-  await using service = new PdfAnnotationEditor({
+  await using _service = await PdfAnnotationEditor({
     app: harness.app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
 
   harness.activate(view);
 
@@ -276,14 +271,13 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
   const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   await service.bindings[0]!.refreshed;
 
   // What a zoom, a rotation or a page recycle does: PDF.js `reset()` drops
@@ -302,14 +296,13 @@ it("probes the page a view had already painted before the binding attached", asy
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.probed;
 
@@ -361,7 +354,9 @@ function paintedPage() {
       viewer.pdfDocument = value;
     },
     /** Drags across the glyph, the gesture that opens the create popup. */
-    dragAcrossGlyph: async (service: PdfAnnotationEditor) => {
+    dragAcrossGlyph: async (
+      service: Awaited<ReturnType<typeof PdfAnnotationEditor>>,
+    ) => {
       const range = document.createRange();
       range.selectNodeContents(textLayer);
       vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
@@ -404,14 +399,13 @@ function createPopup(): Element | null {
 it("opens the create popup over a page painted before the binding attached", async () => {
   const painted = paintedPage();
   const { app } = workspace([{ view: painted.view }]);
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   await service.bindings[0]!.refreshed;
 
   await painted.dragAcrossGlyph(service);
@@ -430,14 +424,13 @@ it("reads the text structure of a document Obsidian opened after the binding att
   painted.pdfDocument = undefined;
   delete painted.page.pdfPage;
   const { app } = workspace([{ view: painted.view }]);
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   await service.bindings[0]!.refreshed;
 
   painted.pdfDocument = pdfDocument;
@@ -454,14 +447,13 @@ it("reads the text structure of a document Obsidian opened after the binding att
 it("reads the text structure again once the view reopened its document", async () => {
   const painted = paintedPage();
   const { app } = workspace([{ view: painted.view }]);
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   await service.bindings[0]!.refreshed;
   await painted.dragAcrossGlyph(service);
   const readsOfOld = painted.page.pdfPage!.getTextContent.mock.calls.length;
@@ -487,14 +479,13 @@ it("waits for the first render when Obsidian is still opening the document", asy
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
 
   // Only the view and controller stages: P1 to P6 and P10.
@@ -515,14 +506,13 @@ it("reads an external file's absolute path from the file itself", async () => {
   const view = { ...pdfView(null), file };
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
 
   expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/Users/reader/Zotero/storage/ABCD2345/paper.pdf",
@@ -540,14 +530,13 @@ it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () =
   const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   reader.renderFirstPage();
   await binding.probed;
@@ -573,14 +562,13 @@ it("paints a view bound while the resolver could not answer yet", async () => {
   const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   reader.renderFirstPage();
   await binding.probed;
@@ -606,14 +594,13 @@ it("unbinds a leaf whose viewer Obsidian already closed", async () => {
   const leaves = [{ view }];
   const { app, relayout } = workspace(leaves);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   await service.bindings[0]!.refreshed;
 
   expect(markedKeys(reader.page)).toEqual(["PUPR5FG5"]);
@@ -636,14 +623,13 @@ it("fails closed to the reader when the controller seam changed shape", async ()
   const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
 
@@ -664,14 +650,13 @@ it("drops its page listener when a page's viewport changed shape", async () => {
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
 
@@ -692,14 +677,13 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
   const leaves = [{ view }];
   const { app, relayout } = workspace(leaves);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
 
   Object.assign(view, pdfView("attachments/second.pdf", second));
   relayout();
@@ -734,14 +718,13 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
   const annotations = annotationReads([HIGHLIGHT]);
   const { app, relayout } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
 
   expect(attachments.resolve).not.toHaveBeenCalled();
   expect(annotations.read).not.toHaveBeenCalled();
@@ -763,14 +746,13 @@ it("exposes each open PDF view as a Reader Session of its own", async () => {
   const other = pdfView("attachments/other.pdf");
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
 
   const session = service.sessionFor(view as never);
   expect(session).toBe(service.bindings[0]!.session);
@@ -787,16 +769,15 @@ it("announces a late PDF session after its resolved target is available", async 
   const view = pdfView(null, reader);
   const { app, relayout } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const announced: unknown[] = [];
-  service.on("session-added", (filePath) => {
+  service.subscribe((filePath) => {
     announced.push({
       filePath,
       target: service.sessionFor(view as never)?.target,
@@ -818,7 +799,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
   const view = pdfView("attachments/loose.pdf");
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads({
       kind: "resolved",
@@ -831,7 +812,6 @@ it("names a standalone attachment in its session, with no parent Item", async ()
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
 
   expect(service.sessionFor(view as never)!.target).toEqual({
     attachmentKey: "LSTAND23",
@@ -845,14 +825,13 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
   const annotations = annotationReads([HIGHLIGHT, UNDERLINE]);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
   reader.renderFirstPage();
@@ -878,14 +857,13 @@ it("paints a group a consumer selected, with no popup, and walks it down to one 
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT, UNDERLINE, lower]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
   reader.renderFirstPage();
@@ -927,14 +905,13 @@ it("keeps a selected group through a landing on one of its marks", async () => {
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
   reader.renderFirstPage();
@@ -962,14 +939,13 @@ it("lands on the mark a card click names, on a page Obsidian moves to first", as
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
 
@@ -999,14 +975,13 @@ it("drops a Landing still waiting on its page when a consumer clears the selecti
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
 
@@ -1026,14 +1001,13 @@ it("stops announcing once the view's binding is gone", async () => {
   const view = pdfView("attachments/rougier-2014.pdf");
   const { app } = workspace([{ view }]);
 
-  const service = new PdfAnnotationEditor({
+  const service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
   });
-  await service.ready;
   const session = service.bindings[0]!.session;
   const announced: unknown[] = [];
   session.on("target-changed", (target) => announced.push(target));
@@ -1055,15 +1029,14 @@ it("keeps the toolbar's nodes across capability announcements, and stands them d
     ...reader.toolbarRightEl.querySelectorAll<HTMLElement>("[data-zt-tool]"),
   ];
 
-  await using service = new PdfAnnotationEditor({
+  await using _service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
-    now: () => toInstant(NOW),
+    now: () => NOW,
   });
-  await service.ready;
   const drawn = controls();
   expect(drawn.map((node) => node.dataset.ztTool)).toEqual([
     "highlight",
@@ -1108,17 +1081,16 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
       retryAfter: RETRY_AFTER,
     });
 
-  const service = new PdfAnnotationEditor({
+  const service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
     ...(await standingDeps()),
-    now: () => toInstant(NOW),
+    now: () => NOW,
   });
   {
     await using _service = service;
-    await service.ready;
     expect(started).not.toHaveBeenCalled();
 
     cooling();
@@ -1145,14 +1117,13 @@ it("keeps pending authorization informational in the PDF reader", async () => {
   const gestures = capabilityGestures();
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using _service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([], { kind: "authorizing" }),
     capabilityGestures: gestures,
     ...(await standingDeps()),
   });
-  await service.ready;
 
   const node = affordanceIn(reader.toolbarRightEl)!;
   node.click();
@@ -1171,14 +1142,13 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   const gestures = capabilityGestures();
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: gestures,
     ...(await standingDeps()),
   });
-  await service.ready;
 
   // The gesture probes Zotero before anything is said, so the binding's own
   // completion signal is what a check waits on.
@@ -1218,7 +1188,7 @@ it("opens one Annotation History per Attachment and ends it with the last view",
   const annotations = annotationReads();
   const open = [{ view: first }, { view: second }];
   const { app, relayout } = workspace(open);
-  const service = new PdfAnnotationEditor({
+  const service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
@@ -1228,7 +1198,6 @@ it("opens one Annotation History per Attachment and ends it with the last view",
 
   {
     await using _service = service;
-    await service.ready;
 
     // Two views of one Attachment share one history.
     expect(annotations.histories).toEqual(new Map([["ABCD2345", 2]]));
@@ -1249,14 +1218,13 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
   const gestures = capabilityGestures();
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: gestures,
     ...(await standingDeps()),
   });
-  await service.ready;
   const binding = service.bindings[0]!;
   await binding.refreshed;
   reader.renderFirstPage();
@@ -1326,16 +1294,15 @@ it("records a read of the other Attachment an open names in a restored tab", asy
   );
   const recordRead = vi.fn();
 
-  await using service = new PdfAnnotationEditor({
+  await using service = await PdfAnnotationEditor({
     app,
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
-    recordRead,
-    now: () => toInstant(NOW),
+    recordUse: recordRead,
+    now: () => NOW,
     ...(await standingDeps()),
   });
-  await service.ready;
   layoutReady();
   expect(recordRead).not.toHaveBeenCalled();
 
@@ -1344,8 +1311,8 @@ it("records a read of the other Attachment an open names in a restored tab", asy
   expect(service.bindings[0]!.attachment).toMatchObject({
     attachmentKey: SHARED.attachmentKey,
   });
-  expect(recordRead.mock.calls.map(([read]) => read.attachmentKey)).toEqual([
-    RESOLVED.attachmentKey,
-    SHARED.attachmentKey,
+  expect(recordRead.mock.calls.map(([itemKey]) => itemKey)).toEqual([
+    RESOLVED.itemKey,
+    SHARED.itemKey,
   ]);
 });

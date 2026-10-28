@@ -76,7 +76,7 @@ export class QuickSwitchModal extends ItemSearchModal {
     }
     await openOrCreateNote(this.#deps, {
       indexedKey,
-      item: () => Promise.resolve(hit.item),
+      item: hit.item,
       newPane: Keymap.isModEvent(evt),
     });
   }

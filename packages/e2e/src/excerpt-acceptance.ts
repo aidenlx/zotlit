@@ -391,8 +391,12 @@ export async function verifyReaderBackedExcerpts(
             leaves: leaves.length,
             page: !!page,
             canvas: !!canvas && canvas.width > 0 && canvas.height > 0,
-            borrowed: !!zotlit.services.pdfAnnotationEditor.borrowDocument(
-              (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+            borrowed: !!zotlit.services.bridge.runSync(
+              zotlit.services.pdfAnnotationEditor.borrowDocument(
+                (app.vault.adapter as FileSystemAdapter).getFullPath(
+                  vaultPath!,
+                ),
+              ),
             ),
           });
         })(),
@@ -420,8 +424,10 @@ export async function verifyReaderBackedExcerpts(
         leaves: leaves.length,
         page: !!page,
         canvas: !!canvas && canvas.width > 0 && canvas.height > 0,
-        borrowed: !!zotlit.services.pdfAnnotationEditor.borrowDocument(
-          (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+        borrowed: !!zotlit.services.bridge.runSync(
+          zotlit.services.pdfAnnotationEditor.borrowDocument(
+            (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+          ),
         ),
       };
     },
@@ -449,14 +455,15 @@ export async function verifyReaderBackedExcerpts(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -600,8 +607,10 @@ export async function verifyReaderBackedExcerpts(
           leaves: leaves.length,
           page: !!page,
           canvas: !!canvas && canvas.width > 0 && canvas.height > 0,
-          borrowed: !!zotlit.services.pdfAnnotationEditor.borrowDocument(
-            (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+          borrowed: !!zotlit.services.bridge.runSync(
+            zotlit.services.pdfAnnotationEditor.borrowDocument(
+              (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+            ),
           ),
         };
       },
@@ -618,8 +627,10 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     async ({ app, zotlit }, { noteItemKey }) => {
       const services = zotlit.services;
-      await services.noteIndex.whenIndexed();
-      const file = services.noteIndex.getImportedNoteByNoteKey(noteItemKey)[0];
+      await services.bridge.runPromise(services.noteIndex.whenIndexed);
+      const file = services.bridge.runSync(
+        services.noteIndex.getImportedNoteByNoteKey(noteItemKey),
+      )[0];
       if (!file)
         throw new Error(
           `The Fixture Vault holds no Imported Note for ${noteItemKey}`,
@@ -714,14 +725,15 @@ export async function verifyReaderBackedExcerpts(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -838,7 +850,7 @@ export async function verifyReaderBackedExcerpts(
             result: null,
             error: null,
           });
-        await services.noteIndex.whenIndexed();
+        await services.bridge.runPromise(services.noteIndex.whenIndexed);
         void services.batchImport
           .runBatchImport("note", [itemID])
           .then(
@@ -1183,8 +1195,10 @@ export async function verifyReaderBackedExcerpts(
     async ({ app, zotlit }, { vaultPath }) => {
       return (
         app.workspace.getLeavesOfType("pdf").length === 0 &&
-        !zotlit.services.pdfAnnotationEditor.borrowDocument(
-          (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+        !zotlit.services.bridge.runSync(
+          zotlit.services.pdfAnnotationEditor.borrowDocument(
+            (app.vault.adapter as FileSystemAdapter).getFullPath(vaultPath!),
+          ),
         )
       );
     },
@@ -1737,7 +1751,7 @@ export async function verifyMultiPdfExcerptBatch(
     vaultId,
     async ({ zotlit }) => {
       const services = zotlit.services;
-      await services.noteIndex.whenIndexed();
+      await services.bridge.runPromise(services.noteIndex.whenIndexed);
       await services.bridge.runPromise(services.excerptImage.clear);
     },
     undefined,
@@ -2030,14 +2044,15 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2248,6 +2263,15 @@ export async function verifySavedEditDisplay(
         decoded: !!(image && image.complete && image.naturalWidth > 0),
         created: state.created.slice(),
         revoked: state.revoked.slice(),
+        // The images the other cards paint, which load on their own.
+        othersPaint: app.workspace
+          .getLeavesOfType("zotero-annotation-view")
+          .flatMap((leaf) => [
+            ...leaf.view.containerEl.querySelectorAll<HTMLImageElement>(
+              `.zt-annot-card:not(${cardSelector}) img`,
+            ),
+          ])
+          .map(({ src }) => src),
         diagnostics: (() => {
           const snapshot =
             zotlit.services.excerptImage.rendererDiagnostics!.snapshot();
@@ -2270,7 +2294,11 @@ export async function verifySavedEditDisplay(
   // to show the edited image, that URL is still live, and every URL it
   // superseded — the image before the edit, and any temporary it allocated and
   // did not keep — is released. A refactor is free to allocate more than one.
-  const allocated = edited.created.slice(before.created.length);
+  // The probe hears the whole window, so a URL another card paints is that
+  // card's own load, such as a view still painting its other cards.
+  const allocated = edited.created
+    .slice(before.created.length)
+    .filter((url) => !edited.othersPaint.includes(url));
   const revoked = edited.revoked.slice(before.revoked.length);
   expect(allocated).toContain(edited.src);
   expect(revoked).not.toContain(edited.src);
@@ -2343,14 +2371,15 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2538,14 +2567,15 @@ export async function verifySavedEditDisplay(
         return {
           annotation,
           source: list.source,
-          sourceScope: services.zoteroPref.dataDir,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
           attachmentKey: annotation.parentKey,
           libraryID: libraryId,
           pdfPath: (app.vault.adapter as FileSystemAdapter).getFullPath(
             vaultPath!,
           ),
           zoteroPngPath: require("path").join(
-            services.zoteroPref.dataDir,
+            services.bridge.runSync(services.zoteroPref.current).dataDir,
             "cache",
             "library",
             `${key}.png`,
@@ -2699,30 +2729,23 @@ export async function verifySavedEditDisplay(
   // ── What a remount shows ────────────────────────────────────────────────
   // Reopening the view drops its cards and mounts them again, which is the
   // surface a restart shows: the card seeds from that reference, and what it
-  // paints must be the saved edit's pixels.
-  const viewState = await obRun(
-    vaultId,
-    async ({ app }) => {
-      const leaves = app.workspace.getLeavesOfType("zotero-annotation-view");
-      if (leaves.length === 0)
-        throw new Error("The Annotation View is not open");
-      const state = leaves[0]!.getViewState();
-      for (const leaf of leaves) leaf.detach();
-      return { state: JSON.stringify(state) };
-    },
-    undefined,
-  );
+  // paints must be the saved edit's pixels. The view reopens in its own leaf,
+  // where a restart restores it, so it still follows the PDF tab.
   expect(
     await obRun(
       vaultId,
-      async ({ app }, { state }) => {
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.setViewState(
-          Object.assign({}, JSON.parse(state), { active: true }),
+      async ({ app }) => {
+        const [leaf, ...others] = app.workspace.getLeavesOfType(
+          "zotero-annotation-view",
         );
+        if (!leaf) throw new Error("The Annotation View is not open");
+        const state = leaf.getViewState();
+        for (const other of others) other.detach();
+        await leaf.setViewState({ type: "empty" });
+        await leaf.setViewState(state);
         return true;
       },
-      { state: viewState.state },
+      undefined,
     ),
   ).toBe(true);
   await obRunUntil(

@@ -222,7 +222,7 @@ it.effect.each([false, true])(
       }
       const worker = yield* Queue.take(spawned);
       worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
-      const { pending } = cancellableParse(parser, {
+      const pending = yield* cancellableParse(parser, {
         path: "draft.md",
         generation: 1,
         text: "",
@@ -230,7 +230,7 @@ it.effect.each([false, true])(
       const request = yield* Queue.take(worker.sent);
       if (request._tag !== "Request") throw new Error("Expected parse request");
       worker.reply(request.id, "draft.md", 1);
-      expect(yield* Effect.promise(() => pending)).toMatchObject({
+      expect(yield* Fiber.join(pending)).toMatchObject({
         path: "draft.md",
         generation: 1,
       });

@@ -605,17 +605,20 @@ export function eraseRequest(target: WriteTarget): WriteRequest {
  * once. A conflict is no failure here: its card shows it.
  *
  * @param now the instant a cooldown's remaining seconds are measured from.
+ * @param message the notice for one failure, where the write names itself.
  */
 export function groupFailureMessages(
   outcomes: readonly MutationState[],
   now: CopyInstant,
+  message: (
+    failure: WriteFailure,
+    now: CopyInstant,
+  ) => string = writeFailureMessage,
 ): string[] {
   return [
     ...new Set(
       outcomes.flatMap((outcome) =>
-        outcome.kind === "failed"
-          ? [writeFailureMessage(outcome.failure, now)]
-          : [],
+        outcome.kind === "failed" ? [message(outcome.failure, now)] : [],
       ),
     ),
   ];

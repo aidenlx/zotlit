@@ -3,20 +3,17 @@
 // names an Obsidian-Openable Attachment. The patch is the opener's entry point
 // for links Obsidian rendered; which links it takes is the opener's to decide.
 
+import { Effect } from "effect";
 import { around } from "monkey-around";
 import type { PaneType } from "obsidian";
 
 import { disposable } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
-import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
+import { withLogCategory } from "@/lib/effect-log";
 import type { AttachmentResolver } from "@/services/attachment-resolver/service";
 import type { PluginSettings } from "@/services/settings/service";
 
 import type { TargetOpener } from "./open-target";
-
-const logger = getLogger("attachment-open");
 
 /**
  * The target Obsidian's own "Open in default browser" context-menu item passes
@@ -49,10 +46,11 @@ export function paneFromTarget(target: string | undefined): PaneType | boolean {
 
 export interface FileLinkCaptureDeps {
   /** Decides which links ZotLit takes, and opens them. */
-  opener: Pick<TargetOpener, "follow">;
+  opener: Pick<TargetOpener["Service"], "follow">;
   attachments: Pick<AttachmentResolver["Service"], "warm">;
   settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
+  /** Runs the opener's decision at the click, then the open it answers. */
+  bridge: Pick<EffectBridge, "runSync" | "runAndForget">;
   /** The window whose `open` is patched. Defaults to the one the plugin runs in. */
   window?: Window;
 }
@@ -91,17 +89,20 @@ export function registerFileLinkCapture(deps: FileLinkCaptureDeps): Disposable {
           ) {
             return native(url, target, features);
           }
-          const followed = deps.opener.follow(
-            String(url),
-            paneFromTarget(target),
+          // The decision runs now, so the click is claimed or passed on
+          // before this handler returns.
+          const followed = deps.bridge.runSync(
+            deps.opener.follow(String(url), paneFromTarget(target)),
           );
           if (followed === null) return native(url, target, features);
 
-          logger.debug("Link captured", { url: String(url), target });
-          void followed.then((outcome) => {
-            if (outcome.kind === "file-missing")
-              new BaseNotice(m.notice_pdf_file_missing());
-          });
+          deps.bridge.runAndForget(
+            Effect.logDebug("Link captured").pipe(
+              Effect.annotateLogs({ url: String(url), target }),
+              withLogCategory("attachment-open"),
+              Effect.andThen(followed),
+            ),
+          );
           return null;
         },
     }),

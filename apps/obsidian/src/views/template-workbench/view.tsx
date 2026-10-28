@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { useAtomValue } from "@effect/atom-react";
+import { Effect, Schema } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
@@ -97,18 +98,23 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import { AbortError } from "@/lib/abort-error";
+import { AbortError, passAborted } from "@/lib/abort-error";
 import { AppContext } from "@/lib/app-context";
-import { confirm } from "@/lib/confirm";
+import { awaitConfirm } from "@/lib/confirm";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
+import { portCall } from "@/lib/legacy-port";
 import { loadedTextFileView } from "@/lib/live-text";
 import { getLogger } from "@/lib/log";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { BaseNotice } from "@/lib/notice";
+import { Notifier, withOutcome } from "@/lib/notifier";
+import type { NoticeMessage } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
@@ -119,6 +125,7 @@ import type {
 import { updateNoteToast } from "@/services/note-feature/update-single";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { defaultProfilePathAtom } from "@/services/profile/atoms";
+import { Profile } from "@/services/profile/service";
 import {
   defaultBindingsAtom,
   templateFolderAtom,
@@ -128,6 +135,8 @@ import {
   partialNamesAtom,
   templateRevisionAtom,
 } from "@/services/template/atoms";
+import { Template } from "@/services/template/service";
+import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
@@ -146,9 +155,9 @@ import { makeExportTemplateDataCommand } from "@/views/template-data-explorer/at
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
 
-import { runTemplateWorkbenchAction } from "./actions";
+import { templateWorkbenchAction } from "./actions";
 import { makeWorkbenchCommands, makeChoiceCommand } from "./atoms";
-import { makeWorkbenchCommand } from "./command";
+import { makeWorkbenchCommand, makeWorkbenchTask } from "./command";
 import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
 import { createTemplateWorkbenchHost } from "./host";
@@ -186,10 +195,52 @@ import {
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
 const logger = getLogger(["views", "template-workbench"]);
 export type OriginatingNoteUpdateOutcome =
-  | { outcome: "no-target" | "released" }
+  | { outcome: "no-target" }
   | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
-  | { outcome: "updated" | "refused"; name: string; result: UpdateResult }
-  | { outcome: "failed"; name: string; error: unknown };
+  | { outcome: "updated" | "refused"; name: string; result: UpdateResult };
+
+/** The note operation failed while updating the originating note `note`. */
+export class OriginatingNoteUpdateError extends Schema.TaggedError<
+  OriginatingNoteUpdateError,
+  { readonly brand: unique symbol }
+>()("OriginatingNoteUpdateError", {
+  /** The originating note's name. */
+  note: Schema.String,
+  /** What the note operation rejected with. */
+  cause: Schema.Defect(),
+}) {}
+
+/** The notices that report what unpacking a Profile's bundled partials did. */
+export function unpackedPartialNotices(
+  result: Pick<
+    PartialUnpackOutcome,
+    "written" | "kept" | "otherCase" | "refused"
+  >,
+): string[] {
+  const { written, kept, otherCase, refused } = result;
+  return [
+    ...(written.length > 0
+      ? [m.notice_partials_unpacked({ names: written.join(", ") })]
+      : []),
+    ...(kept.length > 0
+      ? [m.notice_partials_kept({ names: kept.join(", ") })]
+      : []),
+    ...(otherCase.length > 0
+      ? [m.notice_partials_other_case({ names: otherCase.join(", ") })]
+      : []),
+    // The manifest entry stays, so without this the action reads as inert:
+    // the bundled-partial problem is still there the next time it is read.
+    ...(refused.length > 0
+      ? [m.notice_partials_refused({ names: refused.join(", ") })]
+      : []),
+  ];
+}
+
+/** One Workbench action a leaf runs and reports. */
+interface WorkbenchAction {
+  readonly operation: string;
+  readonly action: Effect.Effect<void, unknown, ViewServices>;
+}
 
 /** The UI renders operation outcomes, keeping template saves separate from note updates. */
 export function originatingNoteUpdateNotice(
@@ -199,7 +250,6 @@ export function originatingNoteUpdateNotice(
   const feedback = updateNoteToast("full", { app });
   switch (result.outcome) {
     case "no-target":
-    case "released":
       return null;
     case "unavailable":
       return m.template_workbench_update_unavailable({ name: result.name });
@@ -207,8 +257,6 @@ export function originatingNoteUpdateNotice(
       return m.template_workbench_update_save_failed();
     case "not-ready":
       return m.template_workbench_update_not_ready();
-    case "failed":
-      return feedback.error(result.error);
     case "refused":
     case "updated": {
       if (result.result.bodyUpdated && !result.result.diagnostic)
@@ -304,6 +352,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   readonly #commands;
   readonly #partialCommand;
+  readonly #action;
+  readonly #noteUpdate;
   readonly #chooseItemCommand;
   readonly #chooseAnnotationCommand;
   readonly #exportCommand = makeExportTemplateDataCommand();
@@ -369,15 +419,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get updatingNote(): boolean {
     return this.#updatingNote !== null;
   }
-  /** A launch explicitly sets the target; focus and preview changes leave it intact. */
-  async setOriginatingNote(file: TFile | null): Promise<void> {
+  /**
+   * A launch explicitly sets the target; focus and preview changes leave it
+   * intact.
+   *
+   * @returns the name of a note this editor cannot update, for the launch to
+   *   explain, or `null`.
+   */
+  async setOriginatingNote(file: TFile | null): Promise<string | null> {
     const indexedKey =
       file && itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file));
     const resolved = file && (await this.#commands.profileOf.run(file));
-    if (file && (!indexedKey || !resolved?.ok))
-      new BaseNotice(
-        m.template_workbench_update_unavailable({ name: file.basename }),
-      );
     this.#originatingNote =
       file && indexedKey && resolved?.ok
         ? {
@@ -388,86 +440,122 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           }
         : null;
     this.#mount();
+    return file && (!indexedKey || !resolved?.ok) ? file.basename : null;
   }
   updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
     if (this.#updatingNote) return this.#updatingNote;
-    this.#updatingNote = this.#updateOriginatingNote().finally(() => {
+    this.#updatingNote = this.#noteUpdate.run().finally(() => {
       this.#updatingNote = null;
       this.#mount();
     });
     this.#mount();
     return this.#updatingNote;
   }
-  async #updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
-    const origin = this.#originatingNote;
-    const update = this.#deps.noteFeature;
-    if (!origin || !update) return { outcome: "no-target" };
-    // Session state only: the note update checks the note's own Zotero key
-    // against the content its one write replaces.
-    const available = () =>
-      !this.#closed &&
-      this.#originatingNote === origin &&
-      this.file === origin.template &&
-      this.app.vault.getFileByPath(origin.file.path) === origin.file;
-    if (!available())
-      return { outcome: "unavailable", name: origin.file.basename };
-    try {
-      await this.save();
-      if (
-        !this.file ||
-        (await this.app.vault.read(this.file)) !== this.getViewData()
-      )
-        return { outcome: "save-failed", name: origin.file.basename };
-    } catch (error) {
-      logger.error("Failed to save template before note update", { error });
-      return { outcome: "save-failed", name: origin.file.basename };
-    }
-    // Settlement covers this revision. Later edits get their own update attempt.
-    const revision = this.#sourceRevision;
-    const unavailable = new Error("Originating note is unavailable");
-    const changed = new Error("Template changed during note update");
-    const beforeWrite = () => {
-      if (!available()) throw unavailable;
-      if (this.#sourceRevision !== revision) throw changed;
-    };
-    try {
-      if ((await this.#commands.settle.run()) !== "settled")
-        return { outcome: "not-ready", name: origin.file.basename };
-      if (
-        !this.file ||
-        (await this.app.vault.read(this.file)) !== this.getViewData()
-      )
-        return { outcome: "save-failed", name: origin.file.basename };
-      beforeWrite();
-      const result = await update.updateNote(origin.file, {
-        indexedKey: origin.indexedKey,
-        scope: "full",
-        profile: origin.profile,
-        beforeWrite,
-      });
-      // The note no longer belongs to the item this editor opened it for, so
-      // another update from here would be refused the same way.
-      if (result.diagnostic?.code === "literature-note-key-changed")
-        return { outcome: "unavailable", name: origin.file.basename };
-      return {
-        outcome: result.diagnostic ? "refused" : "updated",
-        name: origin.file.basename,
-        result,
-      };
-    } catch (error) {
-      if (AbortError.test(error)) return { outcome: "released" };
-      if (!available())
-        return { outcome: "unavailable", name: origin.file.basename };
-      if (error === unavailable)
-        return { outcome: "unavailable", name: origin.file.basename };
-      if (error === changed)
-        return { outcome: "not-ready", name: origin.file.basename };
-      logger.error("Failed to update originating note at {path}", {
-        path: origin.file.path,
-        error,
-      });
-      return { outcome: "failed", name: origin.file.basename, error };
-    }
+  /** Run a Workbench action on this leaf; closing the leaf stops it quietly. */
+  #run(
+    operation: string,
+    action: Effect.Effect<void, unknown, ViewServices>,
+  ): Promise<void> {
+    return this.#action.run({ operation, action }).catch(passAborted);
+  }
+  /**
+   * Save this template, wait for it to compile, and update the originating
+   * note with it. What stands in the way is an outcome; the note operation's
+   * own failure is an {@link OriginatingNoteUpdateError}.
+   */
+  #updateOriginatingNote(): Effect.Effect<
+    OriginatingNoteUpdateOutcome,
+    OriginatingNoteUpdateError,
+    ViewServices
+  > {
+    return Effect.gen({ self: this }, function* () {
+      const origin = this.#originatingNote;
+      const update = this.#deps.noteFeature;
+      if (!origin || !update) return { outcome: "no-target" } as const;
+      const name = origin.file.basename;
+      // Session state only: the note update checks the note's own Zotero key
+      // against the content its one write replaces.
+      const available = () =>
+        !this.#closed &&
+        this.#originatingNote === origin &&
+        this.file === origin.template &&
+        this.app.vault.getFileByPath(origin.file.path) === origin.file;
+      if (!available()) return { outcome: "unavailable", name } as const;
+      const vault = yield* Vault;
+      /** Whether the file on disk holds what this editor shows; `false` where it cannot be read. */
+      const saved = Effect.gen({ self: this }, function* () {
+        const file = this.file;
+        return (
+          file !== null && (yield* vault.read(file)) === this.getViewData()
+        );
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logError("Failed to read the saved template").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as(false),
+          ),
+        ),
+      );
+      const written = yield* portCall("save-template", () => this.save()).pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          Effect.logError("Failed to save template before note update").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as(false),
+          ),
+        ),
+      );
+      if (!written || !(yield* saved))
+        return { outcome: "save-failed", name } as const;
+      // Settlement covers this revision. Later edits get their own update attempt.
+      const revision = this.#sourceRevision;
+      const settled = yield* (yield* Template).waitUntilSettled(10_000);
+      if (settled !== "settled") return { outcome: "not-ready", name } as const;
+      if (!(yield* saved)) return { outcome: "save-failed", name } as const;
+      /** What a write this editor can no longer stand behind answers. */
+      const refusal = () =>
+        !available()
+          ? ({ outcome: "unavailable", name } as const)
+          : this.#sourceRevision !== revision
+            ? ({ outcome: "not-ready", name } as const)
+            : null;
+      const before = refusal();
+      if (before) return before;
+      return yield* portCall("update-note", () =>
+        update.updateNote(origin.file, {
+          indexedKey: origin.indexedKey,
+          scope: "full",
+          profile: origin.profile,
+          // The note operation stops its write where this throws.
+          beforeWrite: () => {
+            if (refusal()) throw new Error("The originating note moved on");
+          },
+        }),
+      ).pipe(
+        Effect.map((result): OriginatingNoteUpdateOutcome =>
+          // The note no longer belongs to the item this editor opened it for,
+          // so another update from here would be refused the same way.
+          result.diagnostic?.code === "literature-note-key-changed"
+            ? { outcome: "unavailable", name }
+            : {
+                outcome: result.diagnostic ? "refused" : "updated",
+                name,
+                result,
+              },
+        ),
+        Effect.catch((error) => {
+          const refused = refusal();
+          return refused
+            ? Effect.succeed(refused)
+            : Effect.fail(
+                new OriginatingNoteUpdateError({
+                  note: name,
+                  cause: error.cause,
+                }),
+              );
+        }),
+      );
+    }).pipe(withLogCategory("template-workbench"));
   }
 
   constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
@@ -485,6 +573,24 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       deps.registry,
       (options: CreateSharedPartialOptions) =>
         createSharedPartialEffect(this.app, options),
+    );
+    this.#action = makeWorkbenchCommand(
+      deps.registry,
+      ({ operation, action }: WorkbenchAction) =>
+        templateWorkbenchAction(operation, action),
+      { concurrent: true },
+    );
+    this.#noteUpdate = makeWorkbenchTask(deps.registry, () =>
+      Effect.gen({ self: this }, function* () {
+        return yield* withOutcome(this.#updateOriginatingNote(), {
+          success: (result): NoticeMessage | undefined =>
+            originatingNoteUpdateNotice(this.app, result) ?? undefined,
+          error: (error) =>
+            updateNoteToast("full", { app: this.app }).error(
+              error instanceof OriginatingNoteUpdateError ? error.cause : error,
+            ),
+        });
+      }),
     );
     this.store = workbenchStore(deps.registry, this.model);
     this.#cleanup.defer(deps.registry.mount(this.#exportCommand));
@@ -1505,6 +1611,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#chooseItemCommand[Symbol.dispose]();
       this.#chooseAnnotationCommand[Symbol.dispose]();
       this.#partialCommand[Symbol.dispose]();
+      this.#action[Symbol.dispose]();
+      this.#noteUpdate[Symbol.dispose]();
       this.#commands[Symbol.dispose]();
       this.preview?.[Symbol.dispose]();
       this.#editor[Symbol.dispose]();
@@ -1547,8 +1655,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("panels-top-left")
         .onClick(
           () =>
-            void runTemplateWorkbenchAction("open-workbench", () =>
-              openWorkbenchLayout(this.app, this),
+            void this.#run(
+              "open-workbench",
+              portCall("open-workbench", () =>
+                openWorkbenchLayout(this.app, this),
+              ),
             ),
         ),
     );
@@ -1574,10 +1685,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setTitle(m.template_workbench_open_citation())
         .setIcon("quote")
         .onClick(
-          () =>
-            void runTemplateWorkbenchAction("open-citation", () =>
-              this.#commands.citation.run(this.app),
-            ),
+          () => void this.#commands.citation.run(this.app).catch(passAborted),
         ),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
@@ -1637,12 +1745,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           entry
             .setTitle(partial.name)
             .setChecked(this.file?.path === partial.path)
-            .onClick(
-              () =>
-                void runTemplateWorkbenchAction("open-partial", () =>
-                  this.#openPartial(partial.path),
-                ),
-            ),
+            .onClick(() => void this.#openPartial(partial.path)),
         );
       submenu.addSeparator();
       submenu.addItem((entry) =>
@@ -1661,12 +1764,17 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     });
   }
 
-  async #openPartial(path: string): Promise<void> {
-    const file = this.app.vault.getFileByPath(path);
-    if (file)
-      await openTemplateWorkbench(this.app, file, {
-        explainUnsupported: false,
-      });
+  #openPartial(path: string): Promise<void> {
+    return this.#run(
+      "open-partial",
+      portCall("open-partial", async () => {
+        const file = this.app.vault.getFileByPath(path);
+        if (file)
+          await openTemplateWorkbench(this.app, file, {
+            explainUnsupported: false,
+          });
+      }),
+    );
   }
 
   /**
@@ -1773,9 +1881,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       });
       return;
     }
-    void runTemplateWorkbenchAction("open-partial", () =>
-      this.#openPartial(document.path),
-    );
+    void this.#openPartial(document.path);
   }
   /**
    * Write every partial this document still carries in its manifest into the
@@ -1789,58 +1895,53 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * The keep-or-replace ask belongs to import, which is where the bundle's copy
    * still has somewhere to go.
    */
-  unpackBundledPartials(): Promise<boolean> {
-    return runTemplateWorkbenchAction("unpack-partials", async () => {
-      const bundled = this.#controller.document?.manifest.partials ?? [];
-      if (this.#controller.readOnly || !bundled.length) return;
-      const { written, kept, dropped, refused, otherCase } =
-        await this.#commands.unpack.run(bundled);
-      this.#controller.dropBundledPartials(dropped);
-      if (written.length > 0)
-        new BaseNotice(
-          m.notice_partials_unpacked({ names: written.join(", ") }),
+  unpackBundledPartials(): Promise<void> {
+    return this.#run(
+      "unpack-partials",
+      Effect.gen({ self: this }, function* () {
+        const bundled = this.#controller.document?.manifest.partials ?? [];
+        if (this.#controller.readOnly || !bundled.length) return;
+        const template = yield* Template;
+        const result = yield* template.unpackPartials(
+          yield* template.planPartialUnpack(bundled),
         );
-      if (kept.length > 0)
-        new BaseNotice(m.notice_partials_kept({ names: kept.join(", ") }));
-      if (otherCase.length > 0)
-        new BaseNotice(
-          m.notice_partials_other_case({ names: otherCase.join(", ") }),
-        );
-      // The manifest entry stays, so without this the action reads as inert:
-      // the bundled-partial problem is still there the next time it is read.
-      if (refused.length > 0)
-        new BaseNotice(
-          m.notice_partials_refused({ names: refused.join(", ") }),
-        );
-    });
+        this.#controller.dropBundledPartials(result.dropped);
+        const notifier = yield* Notifier;
+        for (const message of unpackedPartialNotices(result))
+          yield* notifier.show(message);
+      }),
+    );
   }
-  async restoreDefault(): Promise<void> {
-    await runTemplateWorkbenchAction("restore-default", async () => {
-      const path = this.registry.get(defaultProfilePathAtom);
-      if (
-        !(await confirm(
+  restoreDefault(): Promise<void> {
+    return this.#run(
+      "restore-default",
+      Effect.gen({ self: this }, function* () {
+        const path = this.registry.get(defaultProfilePathAtom);
+        const confirmed = yield* awaitConfirm(
           {
             title: m.settings_profile_document_restore_title(),
-            content: m.settings_profile_document_restore_desc({
-              path,
-            }),
+            content: m.settings_profile_document_restore_desc({ path }),
             action: m.settings_profile_document_restore_action(),
             destructive: true,
           },
           this.app,
-        ))
-      )
-        return;
-      await this.save();
-      this.allowNoFile = true;
-      this.#defaultDraft = true;
-      await this.leaf.setViewState({
-        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-        state: { file: null, defaultDraft: true },
-        active: true,
-      });
-      this.setViewData(await this.#commands.restore.run(), true);
-    });
+        );
+        if (!confirmed) return;
+        yield* portCall("save", () => this.save());
+        this.allowNoFile = true;
+        this.#defaultDraft = true;
+        yield* portCall("restore-default-view", () =>
+          this.leaf.setViewState({
+            type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+            state: { file: null, defaultDraft: true },
+            active: true,
+          }),
+        );
+        const profile = yield* Profile;
+        yield* profile.restoreDefault;
+        this.setViewData(yield* profile.getSource("default"), true);
+      }),
+    );
   }
 
   /** Customize binds the existing document before enabling any edits. */
@@ -2525,11 +2626,10 @@ function EditorContent({
             <button
               className={originatingNoteNotice.button}
               disabled={view.updatingNote}
-              onClick={async () => {
-                const result = await view.updateOriginatingNote();
-                const notice = originatingNoteUpdateNotice(view.app, result);
-                if (notice !== null) new BaseNotice(notice);
-              }}
+              onClick={() =>
+                // The update reports its own outcome, failures included.
+                void view.updateOriginatingNote().catch(() => {})
+              }
             >
               <span className={originatingNoteNotice.labels}>
                 <span

@@ -1,40 +1,45 @@
-// Keeps one guarded binding per open Obsidian PDF view.
+// Keeps one guarded binding per open Obsidian PDF view on the layer's Scope.
+import {
+  Clock,
+  Context,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import type { PDFFileView, View, WorkspaceLeaf } from "obsidian";
+
+import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { fromInstant, instantClock } from "@/lib/effect-clock";
+import { withLogCategory } from "@/lib/effect-log";
+import { forkEach } from "@/lib/effect-stream";
+import { Notifier } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
+import { CapabilityNotices } from "@/services/annotation-repository/notices";
+import { AnnotationRepository } from "@/services/annotation-repository/service";
+import { AttachmentResolver } from "@/services/attachment-resolver/service";
+import { libraryTagNames } from "@/services/database/library-tag-names";
 import type {
-  App,
-  FileSystemAdapter,
-  PDFFileView,
-  View,
-  WorkspaceLeaf,
-} from "obsidian";
-
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
-
-import { registerEvent } from "@/lib/disposables";
-import type { EffectBridge } from "@/lib/effect-bridge";
-import { getLogger } from "@/lib/log";
-import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
+  BorrowedExcerptDocument,
+  ExcerptReaderDocuments,
+} from "@/services/excerpt-image/reader-borrow";
+import { NoteIndex } from "@/services/note-index/service";
 import type { ReaderSession } from "@/services/reader-session/session";
-import { Service } from "@/services/service-base";
-import type { PluginSettings } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
+import { UseLedger } from "@/services/use-ledger/service";
+import { writeReadUse } from "@/services/zotero-local-api/last-read";
+import { ZoteroLocalApi } from "@/services/zotero-local-api/service";
+import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { registerAnnotationAnchorCapture } from "./anchor-capture";
 import { PdfViewBinding } from "./binding";
-import type {
-  AnnotationReads,
-  AttachmentReads,
-  CapabilityGestures,
-  CommentNotes,
-} from "./binding";
 import { PdfReads } from "./reads";
-import type { PdfRead } from "./reads";
 import { openFileOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import { toolColorStore } from "./tools";
 
-const logger = getLogger("pdf-annotation-editor");
-
-// Re-exported so a consumer of the reader seam reaches the resolution it binds
-// a view to without naming the resolver service.
 export type { AttachmentResolution } from "@/services/attachment-resolver/service";
 export type {
   ReaderSession,
@@ -44,270 +49,249 @@ export type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
-  CommentNotes,
   PdfViewBinding,
 } from "./binding";
 export type { MarkGestures } from "./selection";
 export type { PdfSeamProbeId, PdfSeamProbeResult } from "./seam";
 
-export interface PdfAnnotationEditorDeps {
-  app: App;
-  attachments: AttachmentReads;
-  annotations: AnnotationReads;
-  bridge: Pick<
-    EffectBridge,
-    "runSync" | "runPromise" | "runAndForget" | "subscribe"
-  >;
-  /** What the Editing Capability affordance and a blocked keystroke reach. */
-  capabilityGestures: CapabilityGestures;
-  /**
-   * What the Mark Popup's reveal verb reaches in the sidebar, and the notice a
-   * blocked control's press raises.
-   */
-  markGestures: Pick<MarkGestures, "blockedPress" | "revealAnnotation">;
-  /** The Literature Notes a rendered comment's links resolve against. */
-  noteIndex: CommentNotes;
-  /** The tag names of an Annotation's Library, which the tag editor suggests. */
-  libraryTagNames: (annotationKey: string) => Promise<readonly string[]>;
-  /** Where each annotation tool's colour is kept, so it holds across PDFs. */
-  settings: Pick<PluginSettings["Service"], "current" | "update">;
-  /** Records an accepted read locally; also retains its Attachment for live write-back. */
-  recordRead?: (read: PdfRead) => void;
-  /** The clock each binding's cooldown countdown is read against. */
-  now?: () => Temporal.Instant;
+/** UI gestures and the late-bound reader port that breaks the Excerpt dependency cycle. */
+export interface PdfAnnotationEditorPorts {
+  revealAnnotation: MarkGestures["revealAnnotation"];
+  blockedPress: (
+    block: Parameters<MarkGestures["blockedPress"]>[0],
+    showCapability: () => void,
+  ) => void;
+  readers: ExcerptReaderDocuments;
 }
 
-export interface PdfAnnotationEditorEvents {
-  "session-added": (filePath: string) => void;
-}
-
-/**
- * Owns the one guarded adapter to Obsidian's private PDF reader seam, and a
- * binding per open PDF view: created on file open and layout change, disposed
- * on file switch, leaf close, and plugin unload.
- *
- * Holds no database client. The attachment it binds a view to arrives through
- * the injected {@link AttachmentReads} and its Annotations through the
- * repository, so a seam that changed shape costs the reader its surfaces and
- * leaves every other ZotLit surface alone.
- */
-export class PdfAnnotationEditor extends Service<void> {
-  readonly #app;
-  readonly #attachments;
-  readonly #annotations;
-  readonly #bridge;
-  readonly #capabilityGestures;
-  readonly #markGestures;
-  readonly #toolColors;
-  readonly #noteIndex;
-  readonly #libraryTagNames;
-  readonly #now;
-  readonly #reads;
-  #trackOpens = false;
-  readonly #restoredViews = new WeakSet<PDFFileView>();
-  readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
-  readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
-  #retired = false;
-
-  ready: Promise<void>;
-
-  constructor({
-    app,
-    attachments,
-    annotations,
-    bridge,
-    capabilityGestures,
-    markGestures,
-    noteIndex,
-    libraryTagNames,
-    settings,
-    now = () => Temporal.Now.instant(),
-    recordRead = () => {},
-  }: PdfAnnotationEditorDeps) {
-    super();
-    this.#app = app;
-    this.#attachments = attachments;
-    this.#annotations = annotations;
-    this.#bridge = bridge;
-    this.#capabilityGestures = capabilityGestures;
-    this.#markGestures = markGestures;
-    this.#toolColors = toolColorStore(settings, bridge);
-    this.#noteIndex = noteIndex;
-    this.#libraryTagNames = libraryTagNames;
-    this.#now = now;
-    this.#reads = new PdfReads({ now, record: recordRead });
-    this.ready = this.#load();
+/** The live reader bindings and sessions owned by this plugin lifetime. */
+export class PdfAnnotationEditor extends Context.Service<
+  PdfAnnotationEditor,
+  {
+    readonly bindings: Effect.Effect<readonly PdfViewBinding[]>;
+    readonly sessions: Stream.Stream<ReadonlyMap<View, ReaderSession>>;
+    bindingFor(
+      view: View | null | undefined,
+    ): Effect.Effect<PdfViewBinding | null>;
+    sessionFor(
+      view: View | null | undefined,
+    ): Effect.Effect<ReaderSession | null>;
+    borrowDocument(
+      absolutePath: string,
+    ): Effect.Effect<BorrowedExcerptDocument | null>;
+    readonly sessionAdded: Stream.Stream<string>;
   }
+>()("zotlit/pdf-annotation-editor/PdfAnnotationEditor") {}
 
-  /** The live binding for each open PDF view, in workspace order. */
-  get bindings(): readonly PdfViewBinding[] {
-    return [...this.#bindings.values()];
-  }
-
-  /**
-   * The binding one view holds, for a surface that acts on the PDF view a
-   * gesture arrived from — the command palette on the active view, and the
-   * More options menu on the leaf it was opened over.
-   *
-   * @returns that view's binding, or `null` for anything other than a PDF view
-   *   this service bound.
-   */
-  bindingFor(view: View | null | undefined): PdfViewBinding | null {
-    if (!view) return null;
-    return this.#bindings.get(view as PDFFileView) ?? null;
-  }
-
-  /**
-   * The Reader Session one view hosts. Asked by view, not by file: two views
-   * can show one file as two Attachments that keep it.
-   *
-   * @returns that PDF view as a Reader Session, or `null` for anything other
-   *   than a PDF view this service bound.
-   */
-  sessionFor(view: View | null | undefined): ReaderSession | null {
-    return this.bindingFor(view)?.session ?? null;
-  }
-
-  /**
-   * The document an open PDF view holds for a file, for excerpt work that
-   * crops from the reader instead of loading the file again.
-   *
-   * @param absolutePath the file's absolute path, the one an excerpt request
-   *   resolves for an Attachment.
-   * @returns that view's document, or `null` while no open view holds the file
-   *   or holds no document for it yet.
-   */
-  borrowDocument(absolutePath: string): BorrowedExcerptDocument | null {
-    for (const binding of this.#bindings.values()) {
-      if (binding.absolutePath === absolutePath) return binding.borrow();
-    }
-    return null;
-  }
-
-  on<K extends keyof PdfAnnotationEditorEvents>(
-    event: K,
-    cb: PdfAnnotationEditorEvents[K],
-  ): () => void {
-    return this.#emitter.on(event, cb);
-  }
-
-  async #load(): Promise<void> {
-    await using stack = new AsyncDisposableStack();
-    const { workspace } = this.#app;
-    stack.use(
-      registerEvent(workspace.on("file-open", () => this.#reconcileViews())),
-    );
-    stack.use(
-      registerEvent(
-        workspace.on("layout-change", () => this.#reconcileViews()),
-      ),
-    );
-    stack.use(
-      registerEvent(
-        workspace.on("active-leaf-change", (leaf) => {
-          if (leaf) this.#bindings.get(leaf.view as PDFFileView)?.activate();
-        }),
-      ),
-    );
-    // A view already open takes its Anchor here: the patch fires on every open,
-    // and a cold one has no binding yet — that one lands off its first read.
-    stack.use(
-      registerAnnotationAnchorCapture({
-        onAnchor: (leaf) => this.#landAnchor(leaf),
-      }),
-    );
-    stack.defer(() => {
-      this.#retired = true;
-      for (const binding of this.#bindings.values()) binding[Symbol.dispose]();
-      this.#bindings.clear();
-    });
-
-    workspace.onLayoutReady(() => {
-      this.#reconcileViews();
-      this.#trackOpens = true;
-    });
-    this.commit(stack.move());
-  }
-
-  /**
-   * Re-aims a PDF view that is already open at the Annotation an Anchor named.
-   * A view bound to another Attachment of the same file than the one the open
-   * named is bound afresh, and the new binding lands off its first read.
-   */
-  #landAnchor(leaf: WorkspaceLeaf): void {
-    if (this.#retired) return;
-    const view = leaf.view as PDFFileView;
-    const binding = this.#bindings.get(view);
-    if (!binding?.renamed) {
-      binding?.land();
-      return;
-    }
-    logger.debug("An open named another Attachment of the bound file", {
-      path: binding.filePath,
-      bound: binding.historyAttachment,
-    });
-    this.#unbind(view, binding, { open: true });
-    this.#reconcileViews();
-  }
-
-  /**
-   * Drops a view's binding: it closes the read it recorded and forgets that
-   * the view was restored, unless the view is still open on nothing — the
-   * empty tab a restored PDF passes through before its file loads.
-   */
-  #unbind(
-    view: PDFFileView,
-    binding: PdfViewBinding,
-    { open }: { open: boolean },
-  ): void {
-    if (this.#trackOpens) binding.close();
-    if (!open || binding.filePath !== null) this.#restoredViews.delete(view);
-    binding[Symbol.dispose]();
-    this.#bindings.delete(view);
-  }
-
-  #reconcileViews(): void {
-    if (this.#retired) return;
-    const views = this.#app.workspace
-      .getLeavesOfType(PDF_VIEW_TYPE)
-      .map((leaf) => leaf.view as PDFFileView);
-    const open = new Set(views);
-
-    for (const [view, binding] of this.#bindings) {
-      // A view that swapped files gets a fresh binding, so the seam probes and
-      // the attachment resolution both run again for the file now on screen.
-      if (
-        open.has(view) &&
-        binding.filePath === (openFileOf(view)?.path ?? null)
-      )
-        continue;
-      this.#unbind(view, binding, { open: open.has(view) });
-    }
-
-    // Desktop-only plugin: the adapter is always a FileSystemAdapter.
-    const adapter = this.#app.vault.adapter as FileSystemAdapter;
-    for (const view of views) {
-      if (this.#bindings.has(view)) continue;
-      if (!this.#trackOpens) this.#restoredViews.add(view);
-      const binding = new PdfViewBinding({
-        view,
-        adapter,
-        attachments: this.#attachments,
-        annotations: this.#annotations,
-        bridge: this.#bridge,
-        capabilityGestures: this.#capabilityGestures,
-        markGestures: this.#markGestures,
-        toolColors: this.#toolColors,
-        noteIndex: this.#noteIndex,
-        libraryTagNames: this.#libraryTagNames,
-        now: this.#now,
-        reads: this.#reads,
-        openedAt: this.#restoredViews.has(view) ? null : this.#now(),
+/** Acquires listeners before starting layout work; closing the Scope withdraws every binding. */
+export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
+  Layer.effect(
+    PdfAnnotationEditor,
+    Effect.gen(function* () {
+      const workspace = yield* Workspace;
+      const vault = yield* Vault;
+      const attachments = yield* AttachmentResolver;
+      const annotations = yield* AnnotationRepository;
+      const noteIndex = yield* NoteIndex;
+      const settings = yield* PluginSettings;
+      const ledger = yield* UseLedger;
+      const zoteroReads = yield* ZoteroReads;
+      const api = yield* ZoteroLocalApi;
+      const notices = yield* CapabilityNotices;
+      const notifier = yield* Notifier;
+      const bridge = yield* scopedBridge;
+      const now = instantClock(yield* Clock.Clock);
+      const events = yield* PubSub.unbounded<string>();
+      const sessions = yield* SubscriptionRef.make<
+        ReadonlyMap<View, ReaderSession>
+      >(new Map());
+      yield* Effect.addFinalizer(() => PubSub.shutdown(sessions.pubsub));
+      yield* Effect.addFinalizer(() => PubSub.shutdown(events));
+      const bindings = new Map<PDFFileView, PdfViewBinding>();
+      const restoredViews = new WeakSet<PDFFileView>();
+      let trackOpens = false;
+      let retired = false;
+      const colors = toolColorStore(settings, bridge);
+      // PdfReads and the PDF.js bindings are callback edges until #1860.
+      const reads = new PdfReads({
+        now,
+        record: ({ attachmentKey, itemKey, serverID, instant }) => {
+          bridge.runSync(ledger.record(itemKey, "read", fromInstant(instant)));
+          void bridge.runPromiseExit(
+            writeReadUse({
+              attachmentKey,
+              serverID,
+              instant: fromInstant(instant),
+            }).pipe(
+              Effect.provideService(ZoteroReads, zoteroReads),
+              Effect.provideService(ZoteroLocalApi, api),
+            ),
+          );
+        },
       });
-      this.#bindings.set(view, binding);
-      binding.load();
-      if (binding.filePath)
-        this.#emitter.emit("session-added", binding.filePath);
-    }
-  }
-}
+      const showCapability = () =>
+        bridge.runAndForget(notices.showEditingCapability);
+      const unbind = (
+        view: PDFFileView,
+        binding: PdfViewBinding,
+        { open }: { open: boolean },
+      ) => {
+        if (trackOpens) binding.close();
+        if (!open || binding.filePath !== null) restoredViews.delete(view);
+        binding[Symbol.dispose]();
+        bindings.delete(view);
+      };
+      const reconcile = Effect.gen(function* () {
+        if (retired) return;
+        const views = (yield* workspace.leavesOfType(PDF_VIEW_TYPE)).map(
+          (leaf) => leaf.view as PDFFileView,
+        );
+        const open = new Set(views);
+        let changed = false;
+        for (const [view, binding] of bindings) {
+          if (
+            open.has(view) &&
+            binding.filePath === (openFileOf(view)?.path ?? null)
+          )
+            continue;
+          unbind(view, binding, { open: open.has(view) });
+          changed = true;
+        }
+        for (const view of views) {
+          if (bindings.has(view)) continue;
+          if (!trackOpens) restoredViews.add(view);
+          const binding = new PdfViewBinding({
+            view,
+            adapter: {
+              getFullPath: (path) => bridge.runSync(vault.fullPath(path))!,
+            },
+            attachments,
+            annotations,
+            bridge,
+            notifier,
+            capabilityGestures: {
+              reportBlockedGesture: (key) =>
+                bridge.runAndForget(notices.reportBlockedGesture(key)),
+              allowEditing: showCapability,
+            },
+            markGestures: {
+              revealAnnotation: ports.revealAnnotation,
+              blockedPress: (block) =>
+                ports.blockedPress(block, showCapability),
+            },
+            toolColors: colors,
+            noteIndex,
+            libraryTagNames: async (key) =>
+              valueOr(
+                await bridge.runPromiseExit(libraryTagNames(zoteroReads, key)),
+                [],
+              ),
+            now,
+            reads,
+            openedAt: restoredViews.has(view) ? null : now(),
+          });
+          bindings.set(view, binding);
+          changed = true;
+          binding.load();
+          if (binding.filePath) yield* PubSub.publish(events, binding.filePath);
+        }
+        if (changed)
+          yield* SubscriptionRef.set(
+            sessions,
+            new Map(
+              [...bindings].map(([view, binding]) => [view, binding.session]),
+            ),
+          );
+      });
+      const landAnchor = Effect.fnUntraced(function* (leaf: WorkspaceLeaf) {
+        if (retired) return;
+        const view = leaf.view as PDFFileView;
+        const binding = bindings.get(view);
+        if (!binding?.renamed) {
+          binding?.land();
+          return;
+        }
+        yield* Effect.logDebug(
+          "An open named another Attachment of the bound file",
+        ).pipe(
+          withLogCategory("pdf-annotation-editor"),
+          Effect.annotateLogs({
+            path: binding.filePath,
+            bound: binding.historyAttachment,
+          }),
+        );
+        unbind(view, binding, { open: true });
+        yield* reconcile;
+      });
+      const run = Effect.runSyncWith(yield* Effect.context<never>());
+      yield* Effect.acquireDisposable(
+        Effect.sync(() =>
+          registerAnnotationAnchorCapture({
+            onAnchor: (leaf) => run(landAnchor(leaf)),
+          }),
+        ),
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          retired = true;
+          for (const binding of bindings.values()) binding[Symbol.dispose]();
+          bindings.clear();
+        }),
+      );
+      const bindingFor = Effect.fn("PdfAnnotationEditor.bindingFor")(
+        (view: View | null | undefined) =>
+          Effect.sync(() =>
+            view ? (bindings.get(view as PDFFileView) ?? null) : null,
+          ),
+      );
+      const borrowDocument = Effect.fn("PdfAnnotationEditor.borrowDocument")(
+        (absolutePath: string) =>
+          Effect.sync(() => {
+            for (const binding of bindings.values()) {
+              if (binding.absolutePath === absolutePath)
+                return binding.borrow();
+            }
+            return null;
+          }),
+      );
+      // Excerpts start below this layer. Their callback answers detached until
+      // this layer acquires, and again once its bindings have been withdrawn.
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          ports.readers.borrow = (path) => run(borrowDocument(path));
+        }),
+        () =>
+          Effect.sync(() => {
+            ports.readers.borrow = () => null;
+          }),
+      );
+      yield* forkEach(workspace.changes, (event) => {
+        if (event._tag === "file-open" || event._tag === "layout-change")
+          return reconcile;
+        if (event._tag === "active-leaf-change" && event.leaf) {
+          bindings.get(event.leaf.view as PDFFileView)?.activate();
+        }
+      });
+      yield* workspace.layoutReady.pipe(
+        Effect.andThen(reconcile),
+        Effect.andThen(
+          Effect.sync(() => {
+            trackOpens = true;
+          }),
+        ),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      return PdfAnnotationEditor.of({
+        bindings: Effect.sync(() => [...bindings.values()]).pipe(
+          Effect.withSpan("PdfAnnotationEditor.bindings"),
+        ),
+        sessions: SubscriptionRef.changes(sessions),
+        bindingFor,
+        sessionFor: Effect.fn("PdfAnnotationEditor.sessionFor")((view) =>
+          Effect.map(bindingFor(view), (binding) => binding?.session ?? null),
+        ),
+        borrowDocument,
+        sessionAdded: Stream.fromPubSub(events),
+      });
+    }),
+  );

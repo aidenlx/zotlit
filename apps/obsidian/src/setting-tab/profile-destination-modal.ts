@@ -2,8 +2,8 @@
 import { Modal, TextComponent } from "obsidian";
 import type { App } from "obsidian";
 
-import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { isUserStop } from "@/lib/user-cancel";
 import type {
   LiteratureNoteProfile,
   PreparedProfileCreation,
@@ -77,7 +77,7 @@ export class ProfileDestinationModal extends Modal {
         this.#decision.resolve(profile);
         this.close();
       } catch (error) {
-        if (AbortError.test(error)) return;
+        if (isUserStop(error)) return;
         reason.set(
           Error.isError(error)
             ? error.message

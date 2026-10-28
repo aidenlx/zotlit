@@ -27,6 +27,7 @@ import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import { LogCategory } from "@/lib/effect-log";
 import { subscribe } from "@/lib/effect-stream";
 import type { EffectiveReadMode } from "@/services/database/read-source";
+import * as readsEvents from "@/services/zotero-reads/events";
 
 import { readsFixture } from "./__fixtures__";
 import { layerRcRef } from "./connection";
@@ -287,7 +288,7 @@ describe("ZoteroReads worker adapter", () => {
     () =>
       Effect.gen(function* () {
         const workers = fakeWorkers();
-        const { plain: service } = yield* readsFixture(
+        const { service } = yield* readsFixture(
           makeWorkerReads(workers.connect),
         );
         const oldLease = yield* Effect.acquireDisposable(
@@ -296,13 +297,15 @@ describe("ZoteroReads worker adapter", () => {
         expect(yield* workerSeen(oldLease.reads)).toBe(1);
 
         const degraded = Promise.withResolvers<void>();
-        const off = subscribe(service.runtime, service["degraded"], () =>
-          degraded.resolve(),
+        const off = subscribe(
+          service.runtime,
+          readsEvents.degraded(service),
+          () => degraded.resolve(),
         );
         yield* workers.kill(1);
         yield* Effect.promise(() => degraded.promise);
         off();
-        yield* Effect.promise(() => service.refresh());
+        yield* service.refresh;
 
         const newLease = yield* Effect.acquireDisposable(
           Effect.tryPromise(async () => await service.acquireRead()),
@@ -551,11 +554,11 @@ describe("ZoteroReads worker adapter", () => {
           readsFixture(makeWorkerReads(workers.connect)),
         );
         yield* TestClock.adjust("15 seconds");
-        const { plain, runtime } = yield* Fiber.join(opening);
+        const { service, runtime } = yield* Fiber.join(opening);
         yield* runtime.disposeEffect;
         yield* runtime.disposeEffect;
         expect(workers.ended(1)).toBe(true);
-        expect(plain.state).toBe("degraded");
+        expect((yield* service.current).state).toBe("degraded");
       }),
   );
 
@@ -583,18 +586,18 @@ describe("ZoteroReads worker adapter", () => {
   );
 
   it.effect(
-    "moves ZoteroReadsService to degraded on a worker error, and refresh() recovers",
+    "moves ZoteroReads to degraded on a worker error, and refresh recovers",
     () =>
       Effect.gen(function* () {
         const workers = fakeWorkers();
-        const { plain: service } = yield* readsFixture(
+        const { service } = yield* readsFixture(
           makeWorkerReads(workers.connect),
         );
         const { reads } = service;
         yield* workerSeen(reads);
 
         const degraded = new Promise<DbUnavailable>((resolve) =>
-          subscribe(service.runtime, service["degraded"], resolve),
+          subscribe(service.runtime, readsEvents.degraded(service), resolve),
         );
         yield* workers.kill(1);
         yield* Effect.promise(() =>
@@ -603,43 +606,41 @@ describe("ZoteroReads worker adapter", () => {
             message: "worker #1 crashed",
           }),
         );
-        expect(service.state).toBe("degraded");
+        expect((yield* service.current).state).toBe("degraded");
 
-        yield* Effect.promise(() => service.refresh());
-        yield* Effect.promise(() =>
-          vi.waitFor(() => expect(service.state).toBe("ready")),
+        yield* service.refresh;
+        yield* Stream.runHead(
+          Stream.filter(service.changes, (state) => state.state === "ready"),
         );
         expect(yield* workerSeen(reads)).toBe(2);
         expect(workers.ended(1)).toBe(true);
       }),
   );
 
-  it.effect(
-    "reports no degraded ZoteroReadsService when unload ends the worker",
-    () =>
-      Effect.gen(function* () {
-        const workers = fakeWorkers();
-        const { plain: service, runtime } = yield* readsFixture(
-          makeWorkerReads(workers.connect),
-        );
-        const { reads } = service;
-        yield* workerSeen(reads);
-        yield* Effect.promise(() =>
-          vi.waitFor(() => expect(service.state).toBe("ready")),
-        );
-        const degraded: DbUnavailable[] = [];
-        subscribe(service.runtime, service["degraded"], (error) =>
-          degraded.push(error),
-        );
+  it.effect("reports no degraded ZoteroReads when unload ends the worker", () =>
+    Effect.gen(function* () {
+      const workers = fakeWorkers();
+      const { service, runtime } = yield* readsFixture(
+        makeWorkerReads(workers.connect),
+      );
+      const { reads } = service;
+      yield* workerSeen(reads);
+      yield* Stream.runHead(
+        Stream.filter(service.changes, (state) => state.state === "ready"),
+      );
+      const degraded: DbUnavailable[] = [];
+      subscribe(service.runtime, readsEvents.degraded(service), (error) =>
+        degraded.push(error),
+      );
 
-        yield* runtime.disposeEffect;
+      yield* runtime.disposeEffect;
 
-        expect(workers.ended(1)).toBe(true);
-        // A live worker gets its graceful close on unload.
-        expect(workers.abandoned(1)).toBe(false);
-        expect(degraded).toEqual([]);
-        expect(service.state).toBe("ready");
-      }),
+      expect(workers.ended(1)).toBe(true);
+      // A live worker gets its graceful close on unload.
+      expect(workers.abandoned(1)).toBe(false);
+      expect(degraded).toEqual([]);
+      expect((yield* service.current).state).toBe("ready");
+    }),
   );
 
   it.effect(

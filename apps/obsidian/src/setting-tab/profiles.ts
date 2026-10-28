@@ -20,6 +20,7 @@ import { Customize } from "@/services/local-bridge/customize";
 import { installedStyles } from "@/services/note-feature/creation-view";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
+import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
 import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
@@ -339,8 +340,10 @@ function openDocument(ctx: SettingTabContext, path: string) {
   return Effect.gen(function* () {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
-    yield* leaveSettingsFor("open-native-profile", () =>
-      openNativeProfile(ctx.app, file, { customize: true }),
+    yield* explainWorkbenchOpen(
+      yield* leaveSettingsFor("open-native-profile", () =>
+        openNativeProfile(ctx.app, file, { customize: true }),
+      ),
     );
   });
 }
@@ -375,7 +378,7 @@ function restoreDefaultProfile(ctx: SettingTabContext) {
       },
       ctx.app,
     );
-    if (confirmed) yield* profile.restoreDefault();
+    if (confirmed) yield* profile.restoreDefault;
   });
 }
 

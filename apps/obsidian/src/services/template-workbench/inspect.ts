@@ -623,7 +623,7 @@ export function createInspectHandler(
       else
         source =
           document.kind === "profile"
-            ? yield* profileStore.getBuiltInSource()
+            ? yield* profileStore.getBuiltInSource
             : formatPlainTemplateDocument(CITATION_TEMPLATE_SOURCE, "liquid");
       return yield* answer({
         ok: true,

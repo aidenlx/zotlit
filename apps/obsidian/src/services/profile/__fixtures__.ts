@@ -9,10 +9,8 @@ import {
   PluginSettings,
 } from "@/services/settings/service";
 import type { createTemplateHost } from "@/services/template/__fixtures__";
-import { plainTemplate } from "@/services/template/plain";
-import { layerTemplate } from "@/services/template/service";
+import { layerTemplate, Template } from "@/services/template/service";
 
-import { plainProfile } from "./plain";
 import { layerProfile, Profile } from "./service";
 
 /**
@@ -41,9 +39,15 @@ export const profileRuntimeOf = Effect.fnUntraced(function* (
   yield* Effect.promise(() => runtime.context());
   return {
     runtime,
-    profile: Object.assign(plainProfile(runtime), { runtime }),
+    profile: Object.assign(runtime.runSync(Profile), {
+      runtime,
+      bridge: effectBridge(runtime),
+    }),
     profileService: runtime.runSync(Profile),
-    template: plainTemplate(runtime),
+    template: Object.assign(runtime.runSync(Template), {
+      runtime,
+      bridge: effectBridge(runtime),
+    }),
     settings: runtime.runSync(PluginSettings),
     bridge: effectBridge(runtime),
   };

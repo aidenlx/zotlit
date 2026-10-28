@@ -23,6 +23,7 @@ import {
   verifyReaderBackedExcerpts,
   verifySavedEditDisplay,
 } from "./excerpt-acceptance.ts";
+import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import { useListingProfile } from "./listing-profile.ts";
 import { obRun, obRunUntil } from "./obsidian-cli.ts";
@@ -31,6 +32,11 @@ import { clearVault, e2eVaultDir } from "./vault-script.ts";
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
+
+  // #1795: the real Refresh gesture re-arms the converted display layer.
+  it("refreshes a displayed excerpt after an unavailable read", async () => {
+    await verifyExcerptRefresh(run.vaultId);
+  }, 120000);
 
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(run.vaultId);
@@ -480,8 +486,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       id,
       async ({ zotlit }) => {
-        return zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA")
-          .length;
+        return zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
+        ).length;
       },
       undefined,
       {
@@ -492,8 +499,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const importedPath = await obRun(
       id,
       async ({ zotlit }) => {
-        return zotlit.services.noteIndex.getImportedNoteByNoteKey(
-          "NNNNAAAA",
+        return zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getImportedNoteByNoteKey("NNNNAAAA"),
         )[0]!.path;
       },
       undefined,

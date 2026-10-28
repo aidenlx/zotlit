@@ -8,11 +8,11 @@ import {
 } from "obsidian";
 import type { App, ButtonComponent } from "obsidian";
 
-import { AbortError } from "@/lib/abort-error";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { isUserStop } from "@/lib/user-cancel";
 import type { ProfileNoteDraft } from "@/services/note-feature/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { describeMatch } from "@/services/profile-selection";
@@ -36,10 +36,6 @@ import {
 
 const logger = getLogger(["setting-tab", "profile-import"]);
 export type ImportSource = "clipboard" | "file";
-export type ImportProfile = (options?: {
-  indexedKey?: string;
-  source?: ImportSource;
-}) => Promise<LiteratureNoteProfile | undefined>;
 
 /** What the import dialog reads and runs while it is open. */
 export interface ImportProfileDeps {
@@ -394,7 +390,7 @@ export class ImportProfileModal extends Modal {
       this.close();
       new BaseNotice(profileImportNotice(profile));
     } catch (cause) {
-      if (AbortError.test(cause)) return;
+      if (isUserStop(cause)) return;
       logger.error("Failed to write imported Profile", { cause });
       error.set(
         Error.isError(cause) ? cause.message : m.notice_profile_action_failed(),

@@ -34,9 +34,12 @@ import {
   PluginStub,
 } from "@/lib/__fixtures__/obsidian-host";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
+import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import { layerWorkspaceFrom } from "@/lib/obsidian-workspace";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import type { SearchHit, SearchOptions } from "@/services/item-lookup/service";
 import { ItemLookup } from "@/services/item-lookup/service";
 import type {
@@ -54,6 +57,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 import { LibraryScope as LibraryScopeService } from "@/services/library-scope/service";
+import { NoteFeature } from "@/services/note-feature/service";
 import { notedItemKeysAtom } from "@/services/note-index/atoms";
 import { NoteIndex } from "@/services/note-index/service";
 import type { NoteIndexChange } from "@/services/note-index/service";
@@ -62,6 +66,8 @@ import { PluginSettings } from "@/services/settings/service";
 import { useLedgerAtom } from "@/services/use-ledger/atoms";
 import { UseLedger } from "@/services/use-ledger/service";
 import type { Ledger, UseKind } from "@/services/use-ledger/service";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import {
   zoteroRevisionAtom,
   zoteroStateAtom,
@@ -70,6 +76,7 @@ import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
 import { stubbedReads } from "@/services/zotero-reads/test-utils";
+import type { QueryHostDeps } from "@/views/query-view/__fixtures__/host";
 import { noLiteratureNotes } from "@/views/query-view/__fixtures__/literature-notes";
 import {
   fakeQuery,
@@ -456,7 +463,11 @@ const GROUPS: Readonly<Record<string, (item: SeedItem) => readonly string[]>> =
   };
 
 /** Plugin data with `stored` as its Library View Document, still loading. */
-async function pluginData(stored?: unknown, actionItem?: Item) {
+async function pluginData(
+  stored?: unknown,
+  actionItem?: Item,
+  navigation?: Layer.Layer<NoteFeature | Workspace | ZoteroPref>,
+) {
   setMockPlatform({ isMacOS: true });
   cleanup.defer(resetMockPlatform);
   const host = createObsidianHost({});
@@ -514,7 +525,7 @@ async function pluginData(stored?: unknown, actionItem?: Item) {
     CollectionPaths: sourceReads.reads.CollectionPaths,
     ConnectionReadout: sourceReads.reads.ConnectionReadout,
   });
-  const readsDeps = stubService<LibraryViewDeps["reads"]>("ZoteroReads", {
+  const readsDeps = stubService<QueryHostDeps["reads"]>("ZoteroReads", {
     ...reads.streams,
     get state() {
       return database_.state;
@@ -709,6 +720,7 @@ async function pluginData(stored?: unknown, actionItem?: Item) {
           ),
           events,
         }),
+        navigation ?? Layer.empty,
       ),
     }),
   );
@@ -725,12 +737,12 @@ async function pluginData(stored?: unknown, actionItem?: Item) {
 
   await waitFor(() => expect(nativeEvents.subscribers).toBeGreaterThan(0));
 
-  const deps = stubService<LibraryViewDeps>("LibraryViewDeps", {
+  const deps = stubService<LibraryViewDeps & QueryHostDeps>("LibraryViewDeps", {
     runtime,
     registry: welcomeHost.registry,
     app,
     reads: readsDeps,
-    libraryScope: stubService<LibraryViewDeps["libraryScope"]>("LibraryScope", {
+    libraryScope: stubService<QueryHostDeps["libraryScope"]>("LibraryScope", {
       changed: Stream.map(
         scopeEvents.streams.changed,
         () => libraryScope.current,
@@ -745,7 +757,7 @@ async function pluginData(stored?: unknown, actionItem?: Item) {
     items,
     welcome: { registry: welcomeHost.registry, setupActions },
     literatureNotes,
-    opener: { open: () => Promise.resolve({ kind: "reader" as const }) },
+    opener: { open: () => Effect.succeed({ kind: "reader" as const }) },
   });
   /** Zotero's database changes to hold `items`, and says so. */
   const change = async (items: readonly SeedItem[]) => {
@@ -2333,7 +2345,7 @@ it("leaves the search box unfocused when the command brings the tab forward unde
  * Hold the banner's connection readout until the returned call lands it, as
  * on a first launch, where Zotero's database is still loading.
  */
-async function holdReadout(deps: LibraryViewDeps) {
+async function holdReadout(deps: LibraryViewDeps & QueryHostDeps) {
   const ready = Promise.withResolvers<{ itemCount: number }>();
   await using lease = await deps.reads.acquireRead();
   Object.assign(lease.reads, {
@@ -3331,7 +3343,7 @@ describe("Reading Card", () => {
 
   it("lists the files, which open in their reader, the Zotero notes, which link to Zotero, and the tags as chips", async () => {
     const { deps, change } = await pluginData();
-    const open = vi.fn(() => Promise.resolve());
+    const open = vi.fn(() => Effect.succeed({ kind: "reader" as const }));
     Object.assign(deps, { opener: { open } });
     const view = await openTab(deps);
     await act(async () => {
@@ -4067,11 +4079,73 @@ describe("Tag Selector", () => {
 
 // #1710: a shared item gesture finishes after the last Library tab closes.
 effectIt.live(
-  "opens the created note after the last Library tab closes during the Profile prompt",
+  "opens the created note after the last Library tab closes during creation planning",
   () =>
     Effect.promise(async () => {
       const item = makeItem({ itemType: "journalArticle", title: "Paper" });
-      const { deps, host } = await pluginData(undefined, item);
+      let created = Promise.withResolvers<TFile>();
+      let cancelled = false;
+      const planCreations = vi.fn<NoteFeature["Service"]["planCreations"]>(
+        (keys) =>
+          Effect.promise((signal) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                cancelled = true;
+              },
+              { once: true },
+            );
+            return created.promise.then(
+              (file) =>
+                new Map(
+                  keys.map((key) => [
+                    key,
+                    {
+                      item,
+                      selection: {
+                        selector: "default" as const,
+                        source: "match" as const,
+                        shouldAsk: false,
+                        reason: "Fixture match",
+                      },
+                      previews: [
+                        {
+                          selector: "default" as const,
+                          label: undefined,
+                          folder: "literatures",
+                          citationStyle: null,
+                          document: undefined,
+                          path: file.path,
+                          create: () =>
+                            Effect.succeed({
+                              outcome: "created" as const,
+                              file,
+                            }),
+                        },
+                      ],
+                    },
+                  ]),
+                ),
+            );
+          }),
+      );
+      const workspace = new MemoryWorkspace();
+      const openLinkText = vi.spyOn(workspace, "openLinkText");
+      const { deps, host } = await pluginData(
+        undefined,
+        item,
+        Layer.mergeAll(
+          Layer.mock(NoteFeature, { planCreations }),
+          layerWorkspaceFrom(workspace),
+          Layer.mock(ZoteroPref, {
+            current: Effect.succeed(
+              stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
+                dataDir: "",
+              }),
+            ),
+          }),
+        ),
+      );
       const pluginLifetime = new DisposableStack();
       cleanup.defer(() => pluginLifetime.dispose());
       registerLibraryView(
@@ -4085,20 +4159,19 @@ effectIt.live(
         deps,
       );
       const view = await openTab(deps);
-      const created = Promise.withResolvers<TFile>();
-      const createNoteInteractively = vi.fn(() => created.promise);
-      const openLinkText = vi.fn(async () => {});
-      Object.assign(deps.app.workspace, { openLinkText });
       const actions = itemActions({
         app: deps.app,
         registry: deps.registry,
         opener: deps.opener,
-        noteFeature: { createNoteInteractively, renderCitation: () => "" },
+        noteFeature: { renderCitation: () => "" },
+        creation: {
+          app: deps.app,
+          createProfile: vi.fn(),
+          importProfile: vi.fn(),
+        },
       });
       const opening = actions.openNote(item.indexedKey, "tab");
-      await waitFor(() =>
-        expect(createNoteInteractively).toHaveBeenCalledOnce(),
-      );
+      await waitFor(() => expect(planCreations).toHaveBeenCalledOnce());
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       cleanup.defer(() => void vi.useRealTimers());
       await view.close();
@@ -4109,16 +4182,14 @@ effectIt.live(
       expect(openLinkText).toHaveBeenCalledWith(file.path, "", "tab", {
         active: true,
       });
-      const next = Promise.withResolvers<TFile>();
-      createNoteInteractively.mockImplementation(() => next.promise);
+      created = Promise.withResolvers<TFile>();
       const interrupted = actions.openNote(item.indexedKey, "tab");
-      await waitFor(() =>
-        expect(createNoteInteractively).toHaveBeenCalledTimes(2),
-      );
+      await waitFor(() => expect(planCreations).toHaveBeenCalledTimes(2));
       pluginLifetime.dispose();
       await vi.advanceTimersByTimeAsync(10);
       await interrupted;
-      next.resolve(file);
+      expect(cancelled).toBe(true);
+      created.resolve(file);
       expect(openLinkText).toHaveBeenCalledOnce();
     }),
 );

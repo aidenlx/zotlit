@@ -20,6 +20,7 @@ import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import type { MetadataCacheSource } from "@/lib/obsidian-metadata-cache";
 import type { VaultSource } from "@/lib/obsidian-vault";
 import type { ParseClient } from "@/services/citation-parse/client";
@@ -32,17 +33,19 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeEvents } from "@/services/library-scope/service";
 import { buildNoteIndex } from "@/services/note-index/__fixtures__";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
-import type { PlainQueryClients } from "@/services/query-client/plain";
+import type { QueryClients } from "@/services/query-client/service";
 import { testClock } from "@/services/query-client/test-clock";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
 import type { SettingsFixture } from "@/services/settings/__fixtures__";
 import type { Settings } from "@/services/settings/schema";
 import type { TestReads } from "@/services/zotero-reads/__fixtures__";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type {
+  ZoteroReads,
+  ZoteroReadsState,
+} from "@/services/zotero-reads/service";
 import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 import {
   inProcessReadsService,
@@ -51,7 +54,7 @@ import {
 
 import { citationIndexFixture, citationLookupFixture } from "./__fixtures__";
 import { CitationLookup } from "./lookup-service";
-import type { PlainCitationIndex } from "./plain";
+import type { CitationIndex } from "./service";
 import type { CitekeyRecord, CitekeyStore } from "./service";
 
 export const KEY_A = "ABCD2345";
@@ -310,6 +313,8 @@ export class DatabaseStub implements AsyncDisposable {
   readonly citekeys = new CitekeysStub(defaultCitekeys());
   itemReads = 0;
   libraries = () => [personalLibrary(), groupLibrary()];
+  /** When set, every snapshot read fails with this error. */
+  snapshotError: DbUnavailable | null = null;
   readonly #service: TestReads;
   readonly #changed = testEvent<void>();
   readonly #degraded = testEvent<DbUnavailable>();
@@ -319,6 +324,19 @@ export class DatabaseStub implements AsyncDisposable {
   readonly refreshing = Stream.empty;
   readonly "db-file-missing" = Stream.empty;
   readonly "refresh-requested" = Stream.empty;
+  readonly current: Effect.Effect<ZoteroReadsState> = Effect.sync(() => ({
+    state: this.state,
+    error: null,
+    moved: false,
+    dbFileMissing: false,
+    activeReadMode: null,
+  }));
+  readonly events = Stream.merge(
+    this.changed.pipe(Stream.map(() => ({ _tag: "changed" as const }))),
+    this.degraded.pipe(
+      Stream.map((error) => ({ _tag: "degraded" as const, error })),
+    ),
+  );
   readonly #ready = Promise.withResolvers<void>();
 
   constructor({
@@ -430,7 +448,9 @@ export class DatabaseStub implements AsyncDisposable {
                 this.citekeys.calls.push(
                   ...this.libraries().map((library) => library.libraryID),
                 );
-                this.#refresh = this.#service.refresh();
+                this.#refresh = this.#service.bridge.runPromise(
+                  this.#service.refresh,
+                );
               }
               yield* Effect.promise(() => this.#refresh ?? Promise.resolve());
               return yield* client.CitationLookup(payload, options);
@@ -454,7 +474,7 @@ export class DatabaseStub implements AsyncDisposable {
         Effect.flatMap(this.#client(), (client) =>
           client.CitationLookup(...args),
         ),
-    } as PlainZoteroReads["reads"];
+    } as ZoteroReads["Service"]["reads"];
   }
 
   async acquireRead(): Promise<ZoteroReadLease> {
@@ -462,10 +482,14 @@ export class DatabaseStub implements AsyncDisposable {
     return this.#service.acquireRead();
   }
 
-  get snapshot(): PlainZoteroReads["snapshot"] {
+  get snapshot(): ZoteroReads["Service"]["snapshot"] {
     return Effect.andThen(
       Effect.promise(() => this.#ready.promise),
-      this.#service.snapshot,
+      Effect.suspend(() =>
+        this.snapshotError
+          ? Effect.fail(this.snapshotError)
+          : this.#service.snapshot,
+      ),
     );
   }
 
@@ -480,7 +504,7 @@ export class DatabaseStub implements AsyncDisposable {
   async replaceRows(seed: string): Promise<void> {
     this.#seed = seed;
     this.#lastSql = seed;
-    await this.#service.refresh();
+    await this.#service.bridge.runPromise(this.#service.refresh);
     this.notifyChanged();
   }
 
@@ -508,7 +532,7 @@ export class CitekeysStub {
 
 /**
  * The Libraries the active database holds and the scope resolved over them —
- * the stand-in for `PlainLibraryScope` the Citation Index resolves against.
+ * the scenario source the Citation Index resolves against.
  */
 export class LibraryScopeStub {
   libraries: AvailableLibrary[];
@@ -648,7 +672,8 @@ export interface CitationIndexHarness extends AsyncDisposable {
     workspace: MemoryWorkspace;
   };
   draft: TFile;
-  index: PlainCitationIndex & {
+  index: CitationIndex["Service"] & {
+    bridge: EffectBridge;
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
   };
   ready: Promise<void>;
@@ -656,7 +681,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   closeIndex: () => Promise<void>;
   lookup: Awaited<ReturnType<typeof citationLookupFixture>>;
   metadataCache: MockMetadataCache;
-  noteIndex: PlainNoteIndex;
+  noteIndex: ReturnType<typeof buildNoteIndex>;
   settings: SettingsFixture;
   settingsBridge: SettingsFixture["bridge"];
   store: MemoryStore;
@@ -666,7 +691,7 @@ export interface CitationIndexHarness extends AsyncDisposable {
   citekeys: CitekeysStub;
   libraryScope: LibraryScopeStub;
   /** The one client the owners built on this harness share. */
-  queryClient: PlainQueryClients;
+  queryClient: QueryClients["Service"];
   /** Moves the client's clock one step past the failure cooldown deadline. */
   passCooldown: () => void;
 }
@@ -775,7 +800,8 @@ export async function createCitationIndexHarness(
     },
     stack,
   );
-  let index: PlainCitationIndex & {
+  let index: CitationIndex["Service"] & {
+    bridge: EffectBridge;
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
   };
   const ready = fixture.ready.then((value) => {
@@ -783,7 +809,8 @@ export async function createCitationIndexHarness(
   });
   const awaitReady = options.awaitReady ?? true;
   if (awaitReady) await ready;
-  if (awaitReady && !options.db) await lookup.whenResolved();
+  if (awaitReady && !options.db)
+    await lookup.bridge.runPromise(lookup.whenResolved);
   vault.reads.length = 0;
   store.writes.length = 0;
   const resources = stack.move();

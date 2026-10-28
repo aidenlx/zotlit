@@ -56,7 +56,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       defaultPath = await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          return zotlit.services.profile.defaultDocumentPath;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.profile.defaultDocumentPath,
+          );
         },
         undefined,
       );
@@ -188,7 +190,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         run.vaultId,
         async ({ zotlit }) => {
-          await zotlit.services.profile.restoreDefault();
+          await zotlit.services.bridge.runPromise(
+            zotlit.services.profile.restoreDefault,
+          );
         },
         undefined,
       );
@@ -475,8 +479,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           run.vaultId,
           async ({ zotlit }, { unsupported }) => {
             return (
-              (await zotlit.services.profile.getSource("default")) ===
-              unsupported
+              (await zotlit.services.bridge.runPromise(
+                zotlit.services.profile.getSource("default"),
+              )) === unsupported
             );
           },
           { unsupported },

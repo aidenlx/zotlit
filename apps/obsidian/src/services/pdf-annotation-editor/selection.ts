@@ -24,13 +24,15 @@ import type {
 
 import { passAborted } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import { confirm } from "@/lib/confirm";
 import { registerDomEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
-import { BaseNotice } from "@/lib/notice";
+import type { Notifier } from "@/lib/notifier";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
+import type { CopyInstant } from "@/services/annotation-repository/capability-copy";
 import {
   firstLockRefusal,
   lockBlock,
@@ -48,10 +50,7 @@ import {
   writeFailureMessage,
   writeFailureReason,
 } from "@/services/annotation-repository/write";
-import type {
-  MutationState,
-  WriteFailure,
-} from "@/services/annotation-repository/write";
+import type { WriteFailure } from "@/services/annotation-repository/write";
 import { raiseMenu } from "@/services/menu-events";
 import type { ReaderSessionHost } from "@/services/reader-session/session";
 import {
@@ -66,12 +65,7 @@ import {
 } from "@/views/annot-view/card-controls";
 import type { CardBlock, CardControl } from "@/views/annot-view/card-controls";
 import { sameKeys } from "@/views/annot-view/card-selection";
-import {
-  confirmDelete,
-  erase,
-  copyText,
-  recolor,
-} from "@/views/annot-view/card-verbs";
+import { copyText, deleteConfirmation } from "@/views/annot-view/card-verbs";
 import { controlEntry } from "@/views/annot-view/comment-parts";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import type {
@@ -126,6 +120,13 @@ import type {
 import type { MarkPopupHost } from "./mark-popup-host";
 import { tagSectionShows } from "./mark-popup-tags";
 import type { MarkPopupTagSectionProps } from "./mark-popup-tags";
+import {
+  eraseMarks,
+  recolorMarks,
+  reportWrite,
+  reportWrites,
+  saveGeometry,
+} from "./operations";
 import {
   beginAdjust,
   cancelAdjust,
@@ -267,6 +268,8 @@ export interface MarkSelectionDeps {
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
   bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  /** Where a write that did not land says why. */
+  notifier: Notifier["Service"];
   /** The colours used last, which a recolour puts a colour first in. */
   colors: ToolColorStore;
   /** What this view's surfaces draw from, the Editing Capability among it. */
@@ -677,15 +680,9 @@ export class MarkSelection implements Disposable {
       if (locked) this.#deps.gestures.blockedPress(locked);
       else if (selected.length === 1) this.#erase(selected);
       else
-        void confirmDelete(
-          this.#deps.app,
-          {
-            annotations: this.#deps.annotations,
-            bridge: this.#deps.bridge,
-          },
-          {
-            annotationKeys: selected,
-            now: () => this.#deps.now(),
+        void confirm(deleteConfirmation(selected.length), this.#deps.app).then(
+          (confirmed) => {
+            if (confirmed) this.#erase(selected);
           },
         );
       return;
@@ -1053,25 +1050,16 @@ export class MarkSelection implements Disposable {
       this.#deps.gestures.reportBlockedGesture();
       return;
     }
-    const sortIndex = await this.#deps.sortIndex(proposal);
-    if (sortIndex === null) {
-      end();
-      return;
-    }
-    const outcome = this.#deps.bridge.runPromise(
-      this.#deps.annotations.patchGeometry(
+    await this.#write(
+      saveGeometry(this.#deps.annotations, this.#deps.sortIndex, {
         key,
-        {
-          position: proposal,
-          sortIndex,
-          ...(text !== undefined && { text }),
-        },
+        proposal,
+        text,
         input,
-      ),
-    );
-    // The write's proposal is drawn from here on.
-    end();
-    this.#write(outcome, geometryFailureMessage);
+        onRead: end,
+      }),
+      geometryFailureMessage,
+    ).finally(end);
   }
 
   /**
@@ -1186,10 +1174,8 @@ export class MarkSelection implements Disposable {
    * it where it needs Save tags.
    */
   #submitTags(annotationKey: string): void {
-    this.#write(
-      this.#deps.bridge.runPromise(
-        this.#deps.annotations.submitTags(annotationKey, { automatic: true }),
-      ),
+    void this.#write(
+      this.#deps.annotations.submitTags(annotationKey, { automatic: true }),
     );
   }
 
@@ -1285,19 +1271,13 @@ export class MarkSelection implements Disposable {
       );
     return {
       save: () =>
-        this.#write(
-          this.#deps.bridge.runPromise(
-            annotations.submitTextField("comment", annotation.key),
-          ),
+        void this.#write(
+          annotations.submitTextField("comment", annotation.key),
         ),
       allowEditing: () => gestures.allowEditing(),
       discard,
       applyAgain: () =>
-        this.#write(
-          this.#deps.bridge.runPromise(
-            annotations.retryTextDraft("comment", annotation.key),
-          ),
-        ),
+        void this.#write(annotations.retryTextDraft("comment", annotation.key)),
       discardConflict: discard,
     };
   }
@@ -1307,10 +1287,7 @@ export class MarkSelection implements Disposable {
     const { annotations, gestures } = this.#deps;
     return {
       // Save tags is the explicit save, never the editor's automatic one.
-      save: () =>
-        this.#write(
-          this.#deps.bridge.runPromise(annotations.submitTags(annotation.key)),
-        ),
+      save: () => void this.#write(annotations.submitTags(annotation.key)),
       allowEditing: () => gestures.allowEditing(),
       discard: () =>
         this.#deps.bridge.runSync(annotations.discardTagDraft(annotation.key)),
@@ -1397,12 +1374,10 @@ export class MarkSelection implements Disposable {
         editor.text(),
       ),
     );
-    this.#write(
-      this.#deps.bridge.runPromise(
-        this.#deps.annotations.submitTextField("comment", annotation.key, {
-          automatic,
-        }),
-      ),
+    void this.#write(
+      this.#deps.annotations.submitTextField("comment", annotation.key, {
+        automatic,
+      }),
     );
   }
 
@@ -1504,22 +1479,18 @@ export class MarkSelection implements Disposable {
    */
   #recolor(annotationKeys: readonly string[], color: string): void {
     recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-    void recolor(this.#deps.annotations, this.#deps.bridge, {
-      annotationKeys,
-      color,
-      now: () => this.#deps.now(),
-    });
+    this.#writes(
+      recolorMarks(this.#deps.annotations, annotationKeys, color),
+      "recolour",
+    );
   }
 
   /**
-   * Erase these marks with no confirmation, through the verb the Annotation
-   * View's delete settles through.
+   * Erase these marks with no confirmation: one alone, or a group as one
+   * History Step, as the Annotation View does.
    */
   #erase(annotationKeys: readonly string[]): void {
-    void erase(this.#deps.annotations, this.#deps.bridge, {
-      annotationKeys,
-      now: () => this.#deps.now(),
-    });
+    this.#writes(eraseMarks(this.#deps.annotations, annotationKeys), "delete");
   }
 
   /** Forward through the stack under the last click, wrapping at its end. */
@@ -1529,25 +1500,44 @@ export class MarkSelection implements Disposable {
 
   /**
    * The seam a write's outcome is rendered at: the repository answers data and
-   * the notice is raised here, once, naming the reason. A failed write's
-   * Pending Proposal goes with it, so a failure needs no undo here.
+   * the notice is raised through the Notifier, once, naming the reason. A
+   * failed write's Pending Proposal goes with it, so a failure needs no undo
+   * here.
    *
    * @param message the notice for a failure; a Geometry Edit names itself.
+   * @returns once the write settled; it never rejects.
    * @see apps/obsidian/policies/ui-seams.md
    */
   #write(
-    outcome: Promise<MutationState>,
-    message: (
-      failure: WriteFailure,
-      now: Temporal.Instant,
-    ) => string = writeFailureMessage,
-  ): void {
-    void outcome
-      .then((state) => {
-        if (state.kind !== "failed") return;
-        new BaseNotice(message(state.failure, this.#deps.now()));
-      })
-      .catch(passAborted);
+    write: Parameters<typeof reportWrite>[1],
+    message?: (failure: WriteFailure, now: CopyInstant) => string,
+  ): Promise<void> {
+    return this.#runReport(
+      reportWrite(this.#deps.notifier, write, {
+        verb: "edit",
+        now: () => this.#deps.now(),
+        message,
+      }),
+    );
+  }
+
+  /** {@link MarkSelection.#write} for the writes of one verb over a group. */
+  #writes(writes: Parameters<typeof reportWrites>[1], verb: string): void {
+    void this.#runReport(
+      reportWrites(this.#deps.notifier, writes, {
+        verb,
+        now: () => this.#deps.now(),
+      }),
+    );
+  }
+
+  /** Runs a reported write; unload ends it with no notice. */
+  #runReport(
+    report: Parameters<MarkSelectionDeps["bridge"]["runPromise"]>[0],
+  ): Promise<void> {
+    return this.#deps.bridge
+      .runPromise(report)
+      .then(() => undefined, passAborted);
   }
 
   #live(): boolean {
@@ -1695,7 +1685,7 @@ function linkUnder(target: EventTarget | null): boolean {
  */
 export function geometryFailureMessage(
   failure: WriteFailure,
-  now: Temporal.Instant,
+  now: CopyInstant,
 ): string {
   return failure.kind === "locked"
     ? writeFailureMessage(failure, now)

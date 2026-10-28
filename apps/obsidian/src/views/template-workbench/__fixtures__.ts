@@ -5,20 +5,22 @@ import { onTestFinished } from "vitest";
 
 import type { WorkbenchHost } from "@zotlit/workbench/ui";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
 import { buildRuntime } from "@/lib/effect-layer";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
+import { Notifier } from "@/lib/notifier";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
+import { vaultError } from "@/lib/vault-errors";
 import type { ViewServices } from "@/lib/view-atoms";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { QueryService } from "@/services/item-query/service";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
-import type { ProfileOperations } from "@/services/profile/service";
 import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -28,7 +30,10 @@ import { Template } from "@/services/template/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type { inProcessReadsService } from "@/services/zotero-reads/test-utils";
+import type {
+  ZoteroReadLease,
+  ZoteroReadsState,
+} from "@/services/zotero-reads/service";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
@@ -36,13 +41,28 @@ import type { TemplateWorkbenchDeps } from "./view";
 type TemplateFixture = TemplateOperations & {
   readonly "compile-status-changed": Stream.Stream<void>;
 };
-type ZoteroReadsFixture = ReturnType<typeof inProcessReadsService>;
+type ZoteroReadsFixture = {
+  state: ZoteroReadsState["state"];
+  reads: ZoteroReads["Service"]["reads"];
+  acquireRead(): Promise<ZoteroReadLease>;
+  changed: Stream.Stream<void>;
+  degraded: Stream.Stream<unknown>;
+  "refresh-failed": Stream.Stream<unknown>;
+  refreshing: Stream.Stream<boolean>;
+  "db-file-missing": Stream.Stream<void>;
+  "refresh-requested": Stream.Stream<void>;
+};
 
 export type WorkbenchHostDeps = Omit<
   ExplorerViewDeps,
   "pluginVersion" | "registry"
 > &
   TemplateDataDeps & {
+    services?: {
+      template?: Template["Service"];
+      profile?: Profile["Service"];
+      zoteroReads?: ZoteroReads["Service"];
+    };
     app?: App;
     runtime: SubscriptionRuntime;
     zoteroReads: Pick<
@@ -68,7 +88,7 @@ export type WorkbenchHostDeps = Omit<
     render?: WorkbenchHost["render"];
     nativePreview?: NativeRenderDeps;
     pluginVersion?: string;
-    templates: ExplorerViewDeps["templates"] &
+    templates: Pick<TemplateFixture, "javascriptTemplatesEnabled"> &
       Pick<
         TemplateFixture,
         | "waitUntilSettled"
@@ -83,7 +103,8 @@ export type WorkbenchHostDeps = Omit<
         | "unpackPartials"
       >;
     profile?: Pick<
-      ProfileOperations,
+      Profile["Service"],
+      | "profiles"
       | "getSource"
       | "profileOf"
       | "getBuiltInSource"
@@ -100,6 +121,7 @@ export function makeWorkbenchHost(
   const deps = stubService<WorkbenchHostDeps>("WorkbenchHostDeps", {
     settings: { current: Effect.succeed(defaults), changes: Stream.empty },
     app: undefined,
+    services: undefined,
     profile: undefined,
     noteFeature: undefined,
     nativePreview: undefined,
@@ -114,6 +136,7 @@ export function makeWorkbenchHost(
     }),
     templates: stubService<WorkbenchHostDeps["templates"]>("Template", {
       loaded: true,
+      javascriptTemplatesEnabled: false,
       getPartialNames: () => [],
       getPartialDocuments: () => [],
       "compile-status-changed": Stream.empty,
@@ -121,6 +144,9 @@ export function makeWorkbenchHost(
     ...input,
   });
   const template = stubService<Template["Service"]>("Template", {
+    javascriptTemplatesEnabled: Effect.sync(
+      () => deps.templates.javascriptTemplatesEnabled,
+    ),
     status: Effect.sync(() => ({
       state: deps.templates.loaded ? "loaded" : "loading",
       compileErrors: new Map(),
@@ -164,41 +190,30 @@ export function makeWorkbenchHost(
         return deps.templates.createPartial(name, options);
       }),
   });
-  const profileState = () => ({
-    loaded: true,
-    profiles: deps.profile
-      ? "profiles" in deps.profile
-        ? (deps.profile
-            .profiles as readonly import("@/services/profile/service").LiteratureNoteProfile[])
-        : []
-      : [],
-    diagnostics: [],
-    defaultDocumentPath:
-      (deps.profile && "defaultDocumentPath" in deps.profile
-        ? deps.profile.defaultDocumentPath
-        : undefined) ?? "templates/zotlit-profile.default.md",
-    templateStatus: { state: "loaded" as const, compileErrors: new Map() },
+  const profileState = Effect.gen(function* () {
+    return {
+      loaded: true,
+      profiles:
+        deps.profile && "profiles" in deps.profile
+          ? yield* deps.profile.profiles
+          : [],
+      diagnostics: [],
+      defaultDocumentPath:
+        deps.profile && "defaultDocumentPath" in deps.profile
+          ? yield* deps.profile.defaultDocumentPath
+          : "templates/zotlit-profile.default.md",
+      templateStatus: { state: "loaded" as const, compileErrors: new Map() },
+    };
   });
   const profile = stubService<Profile["Service"]>("Profile", {
-    state: Effect.sync(profileState),
-    changes: Stream.suspend(() => Stream.make(profileState())),
-    profileOf: (file) => Effect.sync(() => deps.profile!.profileOf(file)),
-    getBuiltInSource: () => Effect.sync(() => deps.profile!.getBuiltInSource()),
+    state: profileState,
+    changes: Stream.fromEffect(profileState),
+    profileOf: (file) => Effect.suspend(() => deps.profile!.profileOf(file)),
+    getBuiltInSource: Effect.suspend(() => deps.profile!.getBuiltInSource),
     getSource: (selector) =>
-      Effect.promise((signal) => {
-        signal.throwIfAborted();
-        return deps.profile!.getSource(selector);
-      }),
-    materializeDefault: () =>
-      Effect.promise((signal) => {
-        signal.throwIfAborted();
-        return deps.profile!.materializeDefault();
-      }),
-    restoreDefault: () =>
-      Effect.promise((signal) => {
-        signal.throwIfAborted();
-        return deps.profile!.restoreDefault();
-      }),
+      Effect.suspend(() => deps.profile!.getSource(selector)),
+    materializeDefault: Effect.suspend(() => deps.profile!.materializeDefault),
+    restoreDefault: Effect.suspend(() => deps.profile!.restoreDefault),
   });
   const dbState = () => ({
     state: deps.zoteroReads.state,
@@ -217,35 +232,40 @@ export function makeWorkbenchHost(
       ),
     }),
   ).pipe(
-    Context.add(Template, template),
-    Context.add(Profile, profile),
+    Context.add(Template, deps.services?.template ?? template),
+    Context.add(Notifier, testNotifier().service),
+    Context.add(Profile, deps.services?.profile ?? profile),
     Context.add(
       ZoteroReads,
-      stubService<ZoteroReads["Service"]>("ZoteroReads", {
-        current: Effect.sync(dbState),
-        changes: Stream.suspend(() => Stream.make(dbState())),
-        events: Stream.suspend(() =>
-          Stream.map(
-            "changed" in deps.zoteroReads
-              ? deps.zoteroReads.changed
-              : Stream.empty,
-            () => ({ _tag: "changed" as const }),
+      deps.services?.zoteroReads ??
+        stubService<ZoteroReads["Service"]>("ZoteroReads", {
+          current: Effect.sync(dbState),
+          changes: Stream.suspend(() => Stream.make(dbState())),
+          events: Stream.suspend(() =>
+            Stream.map(
+              "changed" in deps.zoteroReads
+                ? deps.zoteroReads.changed
+                : Stream.empty,
+              () => ({ _tag: "changed" as const }),
+            ),
           ),
-        ),
-        reads: stubService<ZoteroReads["Service"]["reads"]>("ZoteroReadsApi", {
-          ItemsByIndexedKeys: (request) =>
-            deps.zoteroReads.reads.ItemsByIndexedKeys(request),
+          reads: stubService<ZoteroReads["Service"]["reads"]>(
+            "ZoteroReadsApi",
+            {
+              ItemsByIndexedKeys: (request) =>
+                deps.zoteroReads.reads.ItemsByIndexedKeys(request),
+            },
+          ),
+          snapshot: Effect.map(
+            Effect.acquireDisposable(
+              Effect.promise((signal) => {
+                signal.throwIfAborted();
+                return deps.zoteroReads.acquireRead();
+              }),
+            ),
+            (lease) => lease.reads,
+          ),
         }),
-        snapshot: Effect.map(
-          Effect.acquireDisposable(
-            Effect.promise((signal) => {
-              signal.throwIfAborted();
-              return deps.zoteroReads.acquireRead();
-            }),
-          ),
-          (lease) => lease.reads,
-        ),
-      }),
     ),
     Context.add(
       ZoteroPref,
@@ -279,6 +299,11 @@ export function makeWorkbenchHost(
       stubService<Vault["Service"]>("Vault", {
         getFileByPath: (path) =>
           Effect.sync(() => deps.app!.vault.getFileByPath(path)),
+        read: (file) =>
+          Effect.tryPromise({
+            try: () => deps.app!.vault.read(file),
+            catch: vaultError("read", file.path),
+          }),
       }),
     ),
     Context.add(

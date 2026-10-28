@@ -18,7 +18,7 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
-import { AbortError, passAborted } from "@/lib/abort-error";
+import { passAborted } from "@/lib/abort-error";
 import {
   registerDomEvent,
   registerMigratingWindowEvent,
@@ -26,9 +26,8 @@ import {
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
+import type { Notifier } from "@/lib/notifier";
 import { themeAttribute } from "@/lib/theme-hooks";
-import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -43,6 +42,7 @@ import type {
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
+import type { NoteIndex } from "@/services/note-index/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
@@ -62,6 +62,7 @@ import type { TextRotation } from "./geometry-edit";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
+import { readMarks, stepMarkHistory } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import {
   createReaderSurfaceState,
@@ -195,19 +196,19 @@ export interface CapabilityGestures {
 }
 
 /** The one read a rendered comment takes from the Note Index. */
-export interface CommentNotes {
-  getNotesByItemKey: (itemKey: string) => readonly { path: string }[];
-}
+type CommentNotes = Pick<NoteIndex["Service"], "getNotesByItemKey">;
 
 export interface PdfViewBindingDeps {
   view: PDFFileView;
-  adapter: FileSystemAdapter;
+  adapter: Pick<FileSystemAdapter, "getFullPath">;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
   bridge: Pick<
     EffectBridge,
-    "runSync" | "runPromise" | "runAndForget" | "subscribe"
+    "runSync" | "runPromise" | "runPromiseExit" | "runAndForget" | "subscribe"
   >;
+  /** Where the reader's writes and History Steps say what became of them. */
+  notifier: Notifier["Service"];
   capabilityGestures: CapabilityGestures;
   /**
    * The gestures the Mark Popup reaches outside the reader's own surfaces:
@@ -249,6 +250,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #attachments;
   readonly #annotations;
   readonly #bridge;
+  readonly #notifier;
   readonly #gestures;
   readonly #markGestures;
   readonly #toolColors;
@@ -361,6 +363,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     attachments,
     annotations,
     bridge,
+    notifier,
     capabilityGestures,
     markGestures,
     toolColors,
@@ -375,6 +378,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#attachments = attachments;
     this.#annotations = annotations;
     this.#bridge = bridge;
+    this.#notifier = notifier;
     this.#gestures = capabilityGestures;
     this.#markGestures = markGestures;
     this.#toolColors = toolColors;
@@ -393,7 +397,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     if (this.#attachment.kind !== "resolved") return "";
     const { itemKey } = this.#attachment;
     if (itemKey === null) return "";
-    return this.#noteIndex.getNotesByItemKey(itemKey)[0]?.path ?? "";
+    return (
+      this.#bridge.runSync(this.#noteIndex.getNotesByItemKey(itemKey))[0]
+        ?.path ?? ""
+    );
   }
 
   /**
@@ -890,9 +897,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         );
       },
       reportBlockedGesture: () => this.#editGesture(),
-      reportCreateFailure: (reason) => {
-        new BaseNotice(m.pdf_create_failed({ reason }));
-      },
+      reportCreateFailure: (reason) =>
+        this.#bridge.runAndForget(
+          this.#notifier.show(m.pdf_create_failed({ reason })),
+        ),
       renderCapability: (slot) => {
         this.#capabilitySlot = slot;
         this.#drawCapability(selectCapabilityAffordance(state.getState()));
@@ -929,6 +937,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
       bridge: this.#bridge,
+      notifier: this.#notifier,
       colors: this.#toolColors,
       surfaceState: state,
       gestures: {
@@ -1080,11 +1089,16 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     return structure;
   }
 
-  /** Releases the held Structured Characters and their pending label pass. */
+  /**
+   * Releases the held Structured Characters and their pending label pass. The
+   * structure is closed with its document, so a create still waiting on it,
+   * such as a Text Draft the view's close finished, stops waiting.
+   */
   #closeStructure(): void {
     const held = this.#held;
     if (!held) return;
     held.win.cancelIdleCallback(held.idle);
+    held.structure.close();
     this.#held = null;
   }
 
@@ -1317,29 +1331,32 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   stepHistory(direction: HistoryDirection): void {
     if (this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
-    const stepping =
-      direction === "undo"
-        ? this.#bridge.runPromise(this.#annotations.undo(attachmentKey))
-        : this.#bridge.runPromise(this.#annotations.redo(attachmentKey));
-    const answered = stepping.then((outcome) => {
-      if (this.#surfaces.disposed) return;
-      const notice = historyOutcomeNotice(outcome, this.#now());
-      if (notice !== null) new BaseNotice(notice);
-      switch (outcome.kind) {
-        case "stepped":
-          return this.#landOn(outcome.annotationKey);
-        case "removed":
-          return this.#landOnPage(outcome.pageIndex);
-        case "blocked":
-          this.#editGesture();
-          return;
-        case "changed":
-        case "failed":
-        case "locked":
-        case "idle":
-          return;
-      }
-    });
+    const answered = this.#bridge
+      .runPromise(
+        stepMarkHistory(this.#annotations, this.#notifier, {
+          attachmentKey,
+          direction,
+          speaks: () => !this.#surfaces.disposed,
+          now: () => this.#now(),
+        }),
+      )
+      .then((outcome) => {
+        if (this.#surfaces.disposed) return;
+        switch (outcome.kind) {
+          case "stepped":
+            return this.#landOn(outcome.annotationKey);
+          case "removed":
+            return this.#landOnPage(outcome.pageIndex);
+          case "blocked":
+            this.#editGesture();
+            return;
+          case "changed":
+          case "failed":
+          case "locked":
+          case "idle":
+            return;
+        }
+      });
     // Chained rather than replaced, so a second press in flight leaves this
     // settling behind both rather than behind the later one alone. Settled
     // rather than resolved, so it answers however each press ended.
@@ -1495,9 +1512,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     if (this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
     const serial = ++this.#refreshSerial;
+    const path = this.filePath;
     this.#refreshing = this.#bridge
-      .runPromise(this.#annotations.read(attachmentKey))
-      .then((list) => {
+      .runPromiseExit(readMarks(this.#annotations, attachmentKey, path))
+      .then((exit) => {
+        if (exit._tag === "Failure") return;
+        const list = exit.value;
         if (this.#surfaces.disposed || serial !== this.#refreshSerial) return;
         if (list === null) {
           logger.debug("No annotation list stands for this attachment yet", {
@@ -1511,10 +1531,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         this.#draw(list);
       })
       .catch((error: unknown) => {
-        if (AbortError.test(error)) return;
-        logger.warn("Failed to read the annotations of an open PDF", {
+        logger.warn("Failed to draw the annotations of an open PDF", {
           error,
-          path: this.filePath,
+          path,
           attachmentKey,
         });
       });
@@ -1675,7 +1694,7 @@ function pagesDrawing(
  */
 function absolutePathOf(
   file: { path: string },
-  adapter: FileSystemAdapter,
+  adapter: Pick<FileSystemAdapter, "getFullPath">,
 ): string {
   return file instanceof TExternalFile
     ? file.getRealPath()

@@ -6,7 +6,6 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
-import { BaseNotice } from "@/lib/notice";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
@@ -25,16 +24,18 @@ import {
   openWorkbenchLayout,
 } from "@/views/note-preview/register";
 
-import { runTemplateWorkbenchAction } from "./actions";
+import { startTemplateWorkbenchAction } from "./actions";
+import type { WorkbenchActionDeps, WorkbenchOpened } from "./actions";
 import { makeDefaultSourceCommand } from "./atoms";
 import { templateDocumentKind } from "./document-kind";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
-type RegistrationDeps = TemplateWorkbenchDeps & {
-  webWorkbenchEnabled: boolean;
-  customize: CustomizeAction;
-};
+type RegistrationDeps = TemplateWorkbenchDeps &
+  WorkbenchActionDeps & {
+    webWorkbenchEnabled: boolean;
+    customize: CustomizeAction;
+  };
 /**
  * What the Workbench's commands, header action, and file-menu entries ask of a
  * file: which kind of Template Document it is, which Profile a note opens, and
@@ -119,7 +120,7 @@ export function registerTemplateWorkbenchView(
       const target = plugin.app.workspace.getActiveFile();
       if (!isProfile(target)) return false;
       if (!checking)
-        void runTemplateWorkbenchAction("customize", () =>
+        startTemplateWorkbenchAction(deps, "customize", () =>
           customizeTarget(target, { destination: "native" }),
         );
       return true;
@@ -133,7 +134,7 @@ export function registerTemplateWorkbenchView(
         const target = targetOf(plugin.app.workspace.getActiveFile());
         if (!target) return false;
         if (!checking)
-          void runTemplateWorkbenchAction("open-web", () =>
+          startTemplateWorkbenchAction(deps, "open-web", () =>
             customizeTarget(target, { destination: "web" }),
           );
         return true;
@@ -149,7 +150,7 @@ export function registerTemplateWorkbenchView(
       // file menu and the Markdown header action already take.
       if (isPlainDocument(active)) {
         if (!checking)
-          void runTemplateWorkbenchAction("open-editor", () =>
+          startTemplateWorkbenchAction(deps, "open-editor", () =>
             openTemplateWorkbench(plugin.app, active, {
               explainUnsupported: false,
               ...(leaf ? { leaf } : {}),
@@ -163,7 +164,7 @@ export function registerTemplateWorkbenchView(
         const itemIndexedKey =
           active &&
           itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
-        void runTemplateWorkbenchAction("open-editor", () =>
+        startTemplateWorkbenchAction(deps, "open-editor", () =>
           openNativeProfile(plugin.app, target, {
             ...(itemIndexedKey ? { itemIndexedKey } : {}),
             ...(leaf ? { leaf } : {}),
@@ -185,7 +186,7 @@ export function registerTemplateWorkbenchView(
         explainUnsupported: false,
         ...(problem ? { problem } : {}),
       };
-      void runTemplateWorkbenchAction("open-workbench", () =>
+      startTemplateWorkbenchAction(deps, "open-workbench", () =>
         file
           ? openTemplateWorkbench(plugin.app, file, options)
           : openNativeProfile(plugin.app, deps.registry, options),
@@ -216,7 +217,7 @@ export function registerTemplateWorkbenchView(
           view.addAction("file-pen-line", m.template_workbench_open(), () => {
             const file = view.file;
             if (!file) return;
-            void runTemplateWorkbenchAction("open-editor", () =>
+            startTemplateWorkbenchAction(deps, "open-editor", () =>
               openTemplateWorkbench(plugin.app, file, {
                 leaf: view.leaf,
                 ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
@@ -256,14 +257,13 @@ export function templateWorkbenchFileMenu(
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_open())
           .setIcon("file-pen-line")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("open-editor", () =>
-                openTemplateWorkbench(app, file, {
-                  explainUnsupported: false,
-                  ...(leaf ? { leaf } : {}),
-                }),
-              ),
+          .onClick(() =>
+            startTemplateWorkbenchAction(deps, "open-editor", () =>
+              openTemplateWorkbench(app, file, {
+                explainUnsupported: false,
+                ...(leaf ? { leaf } : {}),
+              }),
+            ),
           ),
       );
       return;
@@ -277,14 +277,13 @@ export function templateWorkbenchFileMenu(
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_open_layout())
           .setIcon("panels-top-left")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("customize", () =>
-                customizeTarget(target, {
-                  ...options,
-                  destination: "native",
-                }),
-              ),
+          .onClick(() =>
+            startTemplateWorkbenchAction(deps, "customize", () =>
+              customizeTarget(target, {
+                ...options,
+                destination: "native",
+              }),
+            ),
           ),
       );
     if (deps.webWorkbenchEnabled)
@@ -293,14 +292,13 @@ export function templateWorkbenchFileMenu(
           .setSection(MENU_SECTION.open)
           .setTitle(m.template_workbench_web_open())
           .setIcon("external-link")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("open-web", () =>
-                customizeTarget(target, {
-                  ...options,
-                  destination: "web",
-                }),
-              ),
+          .onClick(() =>
+            startTemplateWorkbenchAction(deps, "open-web", () =>
+              customizeTarget(target, {
+                ...options,
+                destination: "web",
+              }),
+            ),
           ),
       );
     menu.addItem((item) =>
@@ -310,7 +308,7 @@ export function templateWorkbenchFileMenu(
         .setIcon("file-pen-line")
         .onClick(() => {
           const leaf = activeLeafFor(app, file);
-          void runTemplateWorkbenchAction("open-editor", () =>
+          startTemplateWorkbenchAction(deps, "open-editor", () =>
             openNativeProfile(app, target, {
               ...options,
               ...(leaf ? { leaf } : {}),
@@ -331,7 +329,17 @@ function activeLeafFor(
     : undefined;
 }
 
-/** Open a Profile file or the built-in Default draft in the native editor. */
+/** An open that asks the reader to know nothing. */
+const OPENED: WorkbenchOpened = {
+  nativeRequired: false,
+  unavailableNote: null,
+};
+
+/**
+ * Open a Profile file or the built-in Default draft in the native editor.
+ *
+ * @returns what the open asks the reader to know, for the caller to show.
+ */
 export async function openNativeProfile(
   app: App,
   target: NativeProfileTarget | ViewRegistryHandle,
@@ -344,7 +352,7 @@ export async function openNativeProfile(
     /** The failure that brought the reader here, explained on arrival. */
     problem?: ArrivingProblem;
   } = {},
-): Promise<void> {
+): Promise<WorkbenchOpened> {
   const path =
     target instanceof TFile
       ? target.path
@@ -359,32 +367,33 @@ export async function openNativeProfile(
         : null;
   let source: string;
   if (file) source = await app.vault.cachedRead(file);
-  else if (target instanceof TFile) return;
+  else if (target instanceof TFile) return OPENED;
   else if (!("get" in target)) source = await target.getSource("default");
   else {
     using command = makeDefaultSourceCommand(target);
     source = await command.run();
   }
-  if (file) {
-    await openTemplateWorkbench(app, file, {
+  if (file)
+    return openTemplateWorkbench(app, file, {
       ...options,
       ...(target instanceof TFile ? {} : { defaultProfile: true }),
     });
-    return;
-  }
-  if (options.explainUnsupported !== false && requiresNative(source))
-    new BaseNotice(m.template_workbench_native_required());
+  const nativeRequired =
+    options.explainUnsupported !== false && requiresNative(source);
   const { itemIndexedKey } = options;
   const workbench = options.customize
     ? await findWorkbenchLayout(app, { file: null, defaultProfile: true })
     : null;
   if (workbench?.file) {
-    await openTemplateWorkbench(app, workbench.file, {
+    const opened = await openTemplateWorkbench(app, workbench.file, {
       ...options,
       leaf: workbench.leaf,
       defaultProfile: true,
     });
-    return;
+    return {
+      ...opened,
+      nativeRequired: nativeRequired || opened.nativeRequired,
+    };
   }
   const leaf =
     workbench?.leaf ??
@@ -410,11 +419,16 @@ export async function openNativeProfile(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
-  if (leaf.view instanceof TemplateWorkbenchView) {
-    if (options.problem) leaf.view.explainArrival(options.problem);
-    if (options.customize) await leaf.view.customizeDefault();
-    await leaf.view.setOriginatingNote(options.originatingNote ?? null);
-  }
+  if (!(leaf.view instanceof TemplateWorkbenchView))
+    return { ...OPENED, nativeRequired };
+  if (options.problem) leaf.view.explainArrival(options.problem);
+  if (options.customize) await leaf.view.customizeDefault();
+  return {
+    nativeRequired,
+    unavailableNote: await leaf.view.setOriginatingNote(
+      options.originatingNote ?? null,
+    ),
+  };
 }
 
 export function requiresNative(source: string): boolean {
@@ -428,7 +442,11 @@ export function requiresNative(source: string): boolean {
   );
 }
 
-/** Open a Profile document with an explicitly supplied launch Item. */
+/**
+ * Open a Profile document with an explicitly supplied launch Item.
+ *
+ * @returns what the open asks the reader to know, for the caller to show.
+ */
 export async function openTemplateWorkbench(
   app: App,
   file: TFile,
@@ -443,12 +461,10 @@ export async function openTemplateWorkbench(
     /** The failure that brought the reader here, explained on arrival. */
     problem?: ArrivingProblem;
   } = {},
-): Promise<void> {
-  if (
+): Promise<WorkbenchOpened> {
+  const nativeRequired =
     options.explainUnsupported !== false &&
-    requiresNative(await app.vault.cachedRead(file))
-  )
-    new BaseNotice(m.template_workbench_native_required());
+    requiresNative(await app.vault.cachedRead(file));
   const { itemIndexedKey } = options;
   const workbench = options.customize
     ? await findWorkbenchLayout(app, {
@@ -481,9 +497,14 @@ export async function openTemplateWorkbench(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
-  if (leaf.view instanceof TemplateWorkbenchView) {
-    if (options.problem) leaf.view.explainArrival(options.problem);
-    if (options.customize) await openWorkbenchLayout(app, leaf.view);
-    await leaf.view.setOriginatingNote(options.originatingNote ?? null);
-  }
+  if (!(leaf.view instanceof TemplateWorkbenchView))
+    return { ...OPENED, nativeRequired };
+  if (options.problem) leaf.view.explainArrival(options.problem);
+  if (options.customize) await openWorkbenchLayout(app, leaf.view);
+  return {
+    nativeRequired,
+    unavailableNote: await leaf.view.setOriginatingNote(
+      options.originatingNote ?? null,
+    ),
+  };
 }

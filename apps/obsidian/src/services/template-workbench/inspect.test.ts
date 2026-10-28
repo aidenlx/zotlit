@@ -649,9 +649,9 @@ describe("registered template-inspect across a reconciliation", () => {
       source: edited,
       freshness: { state: "current" },
     });
-    expect(f.template.getLoadedDocumentSource(PARTIAL)).toBe(
-      "External partial marker",
-    );
+    expect(
+      f.template.bridge.runSync(f.template.getLoadedDocumentSource(PARTIAL)),
+    ).toBe("External partial marker");
   });
 
   it("reports a superseded source instead of claiming the first request is current", async () => {

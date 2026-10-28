@@ -1,6 +1,7 @@
 import { Text } from "@codemirror/state";
 import { it as effectIt } from "@effect/vitest";
-import { Effect } from "effect";
+import { DateTime, Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -8,13 +9,16 @@ import type {
   EditorPosition,
   EditorSuggestContext,
 } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { scopedBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { CitationIndex } from "@/services/citation-index/service";
 import type {
   CitationKeyResolution,
   CitekeyResolution,
@@ -28,7 +32,9 @@ import { buildItemLookup } from "@/services/item-lookup/__fixtures__";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { defaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
+import type { UseKind } from "@/services/use-ledger/service";
 import { layerRcRef } from "@/services/zotero-reads/connection";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import {
   inProcessClient,
   memoryOpener,
@@ -42,6 +48,12 @@ import {
   resolveCitationTrigger,
 } from "./editor-suggest";
 import type { CitationSuggestDeps } from "./register";
+
+let bridge: ReturnType<typeof openTestBridge>;
+beforeEach(() => {
+  bridge = openTestBridge();
+  return () => bridge[Symbol.asyncDispose]();
+});
 
 function makeHit(citationKey: string | null): SearchHit {
   return searchHit("ABC123", "ABC123", citationKey);
@@ -70,8 +82,9 @@ function insertDeps(
   renderCitation: CitationSuggestDeps["noteFeature"]["renderCitation"],
   resolved: CitekeyResolution = { kind: "unique", item: UNIQUE_ITEM },
   resolution: CitationKeyResolution = "fresh",
-): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup"> {
+): Pick<CitationSuggestDeps, "noteFeature" | "citationLookup" | "bridge"> {
   return {
+    bridge,
     noteFeature: stubService<CitationSuggestDeps["noteFeature"]>(
       "NoteFeatureHandle",
       { renderCitation },
@@ -79,14 +92,25 @@ function insertDeps(
     citationLookup: stubService<CitationSuggestDeps["citationLookup"]>(
       "CitationLookup",
       {
-        read: async ({ citekeys }) => {
-          if (resolution === "failed")
-            throw new Error("Citation lookup failed");
-          return lookupAnswer(
-            Object.fromEntries((citekeys ?? []).map((key) => [key, resolved])),
-          );
-        },
-        status: resolution ?? "pending",
+        read: ({ citekeys }) =>
+          Effect.suspend(() => {
+            if (resolution === "failed")
+              return Effect.fail(
+                new DbUnavailable({ message: "Citation lookup failed" }),
+              );
+            return Effect.succeed(
+              lookupAnswer(
+                Object.fromEntries(
+                  (citekeys ?? []).map((key) => [key, resolved]),
+                ),
+              ),
+            );
+          }),
+        current: Effect.succeed({
+          status: resolution ?? "pending",
+          revision: null,
+          stopped: false,
+        }),
       },
     ),
   };
@@ -100,138 +124,197 @@ const UNIQUE_ITEM = {
 };
 
 describe("resolveCitationInsert", async () => {
-  it("resolves to a not-ready notice when the template isn't loaded yet", async () => {
-    // Regression for the C3 readiness gap: renderCitation returns null instead
-    // of throwing when `template.loaded` is false, so the handler (which can't
-    // await) must resolve to a notice rather than inserting an empty string
-    // into the editor.
-    const renderCitation = vi.fn().mockReturnValue(null);
-    const hit = makeHit("abc2024");
-
-    const outcome = await resolveCitationInsert(
-      insertDeps(renderCitation),
-      hit,
-      "main",
-    );
-
-    expect(renderCitation).toHaveBeenCalledWith(
-      [{ citationKey: "abc2024", item: hit.item }],
-      "main",
-    );
-    expect(outcome).toEqual({
-      kind: "notice",
-      message: m.notice_template_not_ready(),
-    });
-  });
-
-  it("resolves an inert-template error to a notice carrying its own message", async () => {
-    const renderCitation = vi.fn(() => {
-      throw new InertTemplateError("The citation text is inert");
-    });
-
-    const outcome = await resolveCitationInsert(
-      insertDeps(renderCitation),
-      makeHit("abc2024"),
-      "main",
-    );
-
-    expect(outcome).toEqual({
-      kind: "notice",
-      message: "The citation text is inert",
-    });
-  });
-
-  it("rethrows render errors that are not inert-template errors", async () => {
-    const renderCitation = vi.fn(() => {
-      throw new Error("boom");
-    });
-
-    await expect(
-      resolveCitationInsert(
-        insertDeps(renderCitation),
+  effectIt.effect("#1857 interruption reports no insertion outcome", () =>
+    Effect.promise(async () => {
+      await using bridge = openTestBridge();
+      const deps = insertDeps(() => "[@abc2024]");
+      const started = Promise.withResolvers<void>();
+      const pending = resolveCitationInsert(
+        {
+          ...deps,
+          bridge,
+          citationLookup: {
+            ...deps.citationLookup,
+            read: () =>
+              Effect.sync(() => started.resolve()).pipe(
+                Effect.andThen(Effect.never),
+              ),
+          },
+        },
         makeHit("abc2024"),
         "main",
-      ),
-    ).rejects.toThrow("boom");
-  });
+      );
+      await started.promise;
+      await bridge[Symbol.asyncDispose]();
+      expect(await pending).toBeNull();
+    }),
+  );
 
-  it("resolves to a no-citekey notice without rendering when the item has none", async () => {
-    const renderCitation = vi.fn();
+  effectIt.effect(
+    "resolves to a not-ready notice when the template isn't loaded yet",
+    () =>
+      Effect.promise(async () => {
+        // Regression for the C3 readiness gap: renderCitation returns null instead
+        // of throwing when `template.loaded` is false, so the handler (which can't
+        // await) must resolve to a notice rather than inserting an empty string
+        // into the editor.
+        const renderCitation = vi.fn().mockReturnValue(null);
+        const hit = makeHit("abc2024");
 
-    const outcome = await resolveCitationInsert(
-      insertDeps(renderCitation),
-      makeHit(null),
-      "main",
-    );
+        const outcome = await resolveCitationInsert(
+          insertDeps(renderCitation),
+          hit,
+          "main",
+        );
 
-    expect(renderCitation).not.toHaveBeenCalled();
-    expect(outcome).toEqual({
-      kind: "notice",
-      message: m.notice_no_citekey({ key: "ABC123" }),
-    });
-  });
-
-  it("refuses a Citation Key that names several Zotero Items", async () => {
-    const renderCitation = vi.fn();
-
-    const outcome = await resolveCitationInsert(
-      insertDeps(renderCitation, {
-        kind: "ambiguous",
-        candidates: [
-          UNIQUE_ITEM,
-          { itemID: 2, libraryID: 4, key: "ROE2025", indexedKey: "ROE2025g7" },
-        ],
+        expect(renderCitation).toHaveBeenCalledWith(
+          [{ citationKey: "abc2024", item: hit.item }],
+          "main",
+        );
+        expect(outcome).toEqual({
+          kind: "notice",
+          message: m.notice_template_not_ready(),
+        });
       }),
-      makeHit("abc2024"),
-      "main",
-    );
+  );
 
-    // The inserted text carries the key alone, so inserting it would lose the
-    // Item the user picked here.
-    expect(renderCitation).not.toHaveBeenCalled();
-    expect(outcome).toEqual({
-      kind: "notice",
-      message: m.notice_citekey_ambiguous_insert({ citekey: "abc2024" }),
-    });
-  });
+  effectIt.effect(
+    "resolves an inert-template error to a notice carrying its own message",
+    () =>
+      Effect.promise(async () => {
+        const renderCitation = vi.fn(() => {
+          throw new InertTemplateError("The citation text is inert");
+        });
 
-  it("refuses an insert while the resolution snapshot has no answer yet", async () => {
-    const renderCitation = vi.fn();
+        const outcome = await resolveCitationInsert(
+          insertDeps(renderCitation),
+          makeHit("abc2024"),
+          "main",
+        );
 
-    // A snapshot still resolving answers every key as missing, so an ambiguous
-    // key would slip through the refusal above and lose its Item identity.
-    const outcome = await resolveCitationInsert(
-      insertDeps(renderCitation, { kind: "missing" }, null),
-      makeHit("abc2024"),
-      "main",
-    );
+        expect(outcome).toEqual({
+          kind: "notice",
+          message: "The citation text is inert",
+        });
+      }),
+  );
 
-    expect(renderCitation).not.toHaveBeenCalled();
-    expect(outcome).toEqual({
-      kind: "notice",
-      message: m.notice_citekey_not_ready(),
-    });
-  });
+  effectIt.effect(
+    "rethrows render errors that are not inert-template errors",
+    () =>
+      Effect.promise(async () => {
+        const renderCitation = vi.fn(() => {
+          throw new Error("boom");
+        });
 
-  it("refuses insertion when a fresh lookup fails despite a held answer", async () => {
-    const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
+        await expect(
+          resolveCitationInsert(
+            insertDeps(renderCitation),
+            makeHit("abc2024"),
+            "main",
+          ),
+        ).rejects.toThrow("boom");
+      }),
+  );
 
-    const outcome = await resolveCitationInsert(
-      insertDeps(
-        renderCitation,
-        { kind: "unique", item: UNIQUE_ITEM },
-        "failed",
-      ),
-      makeHit("abc2024"),
-      "main",
-    );
+  effectIt.effect(
+    "resolves to a no-citekey notice without rendering when the item has none",
+    () =>
+      Effect.promise(async () => {
+        const renderCitation = vi.fn();
 
-    expect(renderCitation).not.toHaveBeenCalled();
-    expect(outcome).toEqual({
-      kind: "notice",
-      message: m.notice_citekey_not_ready(),
-    });
-  });
+        const outcome = await resolveCitationInsert(
+          insertDeps(renderCitation),
+          makeHit(null),
+          "main",
+        );
+
+        expect(renderCitation).not.toHaveBeenCalled();
+        expect(outcome).toEqual({
+          kind: "notice",
+          message: m.notice_no_citekey({ key: "ABC123" }),
+        });
+      }),
+  );
+
+  effectIt.effect(
+    "refuses a Citation Key that names several Zotero Items",
+    () =>
+      Effect.promise(async () => {
+        const renderCitation = vi.fn();
+
+        const outcome = await resolveCitationInsert(
+          insertDeps(renderCitation, {
+            kind: "ambiguous",
+            candidates: [
+              UNIQUE_ITEM,
+              {
+                itemID: 2,
+                libraryID: 4,
+                key: "ROE2025",
+                indexedKey: "ROE2025g7",
+              },
+            ],
+          }),
+          makeHit("abc2024"),
+          "main",
+        );
+
+        // The inserted text carries the key alone, so inserting it would lose the
+        // Item the user picked here.
+        expect(renderCitation).not.toHaveBeenCalled();
+        expect(outcome).toEqual({
+          kind: "notice",
+          message: m.notice_citekey_ambiguous_insert({ citekey: "abc2024" }),
+        });
+      }),
+  );
+
+  effectIt.effect(
+    "refuses an insert while the resolution snapshot has no answer yet",
+    () =>
+      Effect.promise(async () => {
+        const renderCitation = vi.fn();
+
+        // A snapshot still resolving answers every key as missing, so an ambiguous
+        // key would slip through the refusal above and lose its Item identity.
+        const outcome = await resolveCitationInsert(
+          insertDeps(renderCitation, { kind: "missing" }, null),
+          makeHit("abc2024"),
+          "main",
+        );
+
+        expect(renderCitation).not.toHaveBeenCalled();
+        expect(outcome).toEqual({
+          kind: "notice",
+          message: m.notice_citekey_not_ready(),
+        });
+      }),
+  );
+
+  effectIt.effect(
+    "refuses insertion when a fresh lookup fails despite a held answer",
+    () =>
+      Effect.promise(async () => {
+        const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
+
+        const outcome = await resolveCitationInsert(
+          insertDeps(
+            renderCitation,
+            { kind: "unique", item: UNIQUE_ITEM },
+            "failed",
+          ),
+          makeHit("abc2024"),
+          "main",
+        );
+
+        expect(renderCitation).not.toHaveBeenCalled();
+        expect(outcome).toEqual({
+          kind: "notice",
+          message: m.notice_citekey_not_ready(),
+        });
+      }),
+  );
 });
 
 describe("resolveCitationTrigger", () => {
@@ -458,6 +541,7 @@ describe("Citation Suggester document citations", () => {
 
   function setup(
     read: CitationSuggestDeps["citationIndex"]["getDocumentCitationSet"],
+    run: EffectBridge = bridge,
   ) {
     const search = vi.fn().mockResolvedValue([]);
     const close = vi.fn();
@@ -476,65 +560,89 @@ describe("Citation Suggester document citations", () => {
           { getDocumentCitationSet: read },
         ),
         settings: { current: Effect.succeed(defaults) },
-        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
+        bridge: run,
       }),
     );
     return { suggest, search, [Symbol.dispose]: () => suggest.close() };
   }
 
-  it("uses the Document Citation Set through comments, math and nested code (#1694)", async () => {
-    await using index = await createCitationIndexHarness({
-      "draft.md": [
-        "%% [@roe2025] %%",
-        "$x [@roe2025]$",
-        "> [!note] Example",
-        "> ~~~",
-        "> [@roe2025]",
-        "> ~~~",
-        "",
-        "$5 [@doe2024] x$",
-      ].join("\n"),
-    });
-    const set = await index.index.getDocumentCitationSet(index.draft);
-    expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([KEY_A]);
-    using h = setup(index.index.getDocumentCitationSet.bind(index.index));
-    await h.suggest.getSuggestions({ ...context, file: index.draft });
-    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [KEY_A] });
-  });
+  effectIt.effect(
+    "uses the Document Citation Set through comments, math and nested code (#1694)",
+    () =>
+      Effect.promise(async () => {
+        await using index = await createCitationIndexHarness({
+          "draft.md": [
+            "%% [@roe2025] %%",
+            "$x [@roe2025]$",
+            "> [!note] Example",
+            "> ~~~",
+            "> [@roe2025]",
+            "> ~~~",
+            "",
+            "$5 [@doe2024] x$",
+          ].join("\n"),
+        });
+        const set = await index.index.bridge.runPromise(
+          index.index.getDocumentCitationSet(index.draft),
+        );
+        expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
+          KEY_A,
+        ]);
+        using h = setup(
+          index.runtime.runSync(CitationIndex).getDocumentCitationSet,
+        );
+        await h.suggest.getSuggestions({ ...context, file: index.draft });
+        expect(h.search).toHaveBeenCalledWith("", {
+          limit: 50,
+          cited: [KEY_A],
+        });
+      }),
+  );
 
-  it("reads once per dropdown and skips unresolved keys", async () => {
-    const read = vi.fn().mockResolvedValue({
-      citations: [
-        { indexedKey: "AAAA2222" },
-        { indexedKey: null },
-        { indexedKey: "BBBB3333g2" },
-      ],
-    });
-    using h = setup(read);
-    await h.suggest.getSuggestions(context);
-    await h.suggest.getSuggestions({ ...context, query: "Paper" });
-    expect(read).toHaveBeenCalledTimes(1);
-    expect(read).toHaveBeenCalledWith(file, {
-      signal: expect.any(AbortSignal),
-    });
-    expect(h.search).toHaveBeenLastCalledWith("Paper", {
-      limit: 50,
-      cited: ["AAAA2222", "BBBB3333g2"],
-    });
-    h.suggest.close();
-    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
-    await h.suggest.getSuggestions(context);
-    expect(read).toHaveBeenCalledTimes(2);
-  });
+  effectIt.effect("reads once per dropdown and skips unresolved keys", () =>
+    Effect.promise(async () => {
+      const read = vi.fn(() =>
+        Effect.succeed(
+          stubService<DocumentCitationSet>("DocumentCitationSet", {
+            citations: [
+              { indexedKey: "AAAA2222" },
+              { indexedKey: null },
+              { indexedKey: "BBBB3333g2" },
+            ].map((citation) =>
+              stubService<DocumentCitationSet["citations"][number]>(
+                "Citation",
+                citation,
+              ),
+            ),
+          }),
+        ),
+      );
+      using h = setup(read);
+      await h.suggest.getSuggestions(context);
+      await h.suggest.getSuggestions({ ...context, query: "Paper" });
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith(file);
+      expect(h.search).toHaveBeenLastCalledWith("Paper", {
+        limit: 50,
+        cited: ["AAAA2222", "BBBB3333g2"],
+      });
+      h.suggest.close();
+      await h.suggest.getSuggestions(context);
+      expect(read).toHaveBeenCalledTimes(2);
+    }),
+  );
 
-  it("keeps the newest hits visible when keystrokes overlap a document read", async () => {
-    const document = Promise.withResolvers<DocumentCitationSet>();
-    await using stack = new AsyncDisposableStack();
-    const lookup = await buildItemLookup(
-      inProcessClient(
-        layerRcRef(
-          memoryOpener(
-            () => `
+  effectIt.effect(
+    "keeps the newest hits visible when keystrokes overlap a document read",
+    () =>
+      Effect.promise(async () => {
+        const document = Promise.withResolvers<DocumentCitationSet>();
+        await using stack = new AsyncDisposableStack();
+        const lookup = await buildItemLookup(
+          inProcessClient(
+            layerRcRef(
+              memoryOpener(
+                () => `
         insert into libraries (libraryID, type, version, clientVersion)
           values (1, 'user', 1, 0);
         insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
@@ -544,49 +652,53 @@ describe("Citation Suggester document citations", () => {
           values (1, 1, '2024-01-01 00:00:00', '2024-01-01 00:00:00', 1, 'ALPHA222');
         insert into itemData (itemID, fieldID, valueID) values (1, 10, 1);
       `,
-          ).open,
-        ),
-      ),
-      [{ selector: { type: "personal" }, libraryID: 1, name: null }],
-      stack,
-    );
-    const suggest = new CitationEditorSuggest(
-      stubService<CitationSuggestDeps>("CitationSuggestDeps", {
-        app: stubService<App>("App", {}),
-        lookup,
-        citationIndex: stubService<CitationSuggestDeps["citationIndex"]>(
-          "CitationIndex",
-          { getDocumentCitationSet: () => document.promise },
-        ),
-        settings: { current: Effect.succeed(defaults) },
-        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
-      }),
-    );
-    using _close = { [Symbol.dispose]: () => suggest.close() };
-    const close = vi.spyOn(suggest, "close");
-    // Obsidian consumes every answer and closes the dropdown for an empty list.
-    const showSuggestions = (hits: SearchHit[]) => {
-      if (hits.length === 0) suggest.close();
-      return hits.map((hit) => hit.item.indexedKey);
-    };
-    const first = suggest
-      .getSuggestions({ ...context, query: "missing" })
-      .then(showSuggestions);
-    const second = suggest
-      .getSuggestions({ ...context, query: "Alpha" })
-      .then(showSuggestions);
-    document.resolve(
-      stubService<DocumentCitationSet>("DocumentCitationSet", {
-        citations: [],
-      }),
-    );
+              ).open,
+            ),
+          ),
+          [{ selector: { type: "personal" }, libraryID: 1, name: null }],
+          stack,
+        );
+        const suggest = new CitationEditorSuggest(
+          stubService<CitationSuggestDeps>("CitationSuggestDeps", {
+            app: stubService<App>("App", {}),
+            lookup,
+            citationIndex: stubService<CitationSuggestDeps["citationIndex"]>(
+              "CitationIndex",
+              {
+                getDocumentCitationSet: () =>
+                  Effect.promise((_signal) => document.promise),
+              },
+            ),
+            settings: { current: Effect.succeed(defaults) },
+            bridge,
+          }),
+        );
+        using _close = { [Symbol.dispose]: () => suggest.close() };
+        const close = vi.spyOn(suggest, "close");
+        // Obsidian consumes every answer and closes the dropdown for an empty list.
+        const showSuggestions = (hits: SearchHit[]) => {
+          if (hits.length === 0) suggest.close();
+          return hits.map((hit) => hit.item.indexedKey);
+        };
+        const first = suggest
+          .getSuggestions({ ...context, query: "missing" })
+          .then(showSuggestions);
+        const second = suggest
+          .getSuggestions({ ...context, query: "Alpha" })
+          .then(showSuggestions);
+        document.resolve(
+          stubService<DocumentCitationSet>("DocumentCitationSet", {
+            citations: [],
+          }),
+        );
 
-    expect(await Promise.all([first, second])).toEqual([
-      ["ALPHA222"],
-      ["ALPHA222"],
-    ]);
-    expect(close).not.toHaveBeenCalled();
-  });
+        expect(await Promise.all([first, second])).toEqual([
+          ["ALPHA222"],
+          ["ALPHA222"],
+        ]);
+        expect(close).not.toHaveBeenCalled();
+      }),
+  );
 
   effectIt.effect(
     "#1789 unload leaves the document citation fallback silent",
@@ -604,7 +716,7 @@ describe("Citation Suggester document citations", () => {
             citationIndex: {
               getDocumentCitationSet: () => {
                 started.resolve();
-                return new Promise<DocumentCitationSet>(() => {});
+                return Effect.never;
               },
             },
           },
@@ -621,49 +733,56 @@ describe("Citation Suggester document citations", () => {
       }),
   );
 
-  it("keeps searching when document citations fail", async () => {
-    using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
-    const error = new Error("Index unavailable");
-    using h = setup(vi.fn().mockRejectedValue(error));
-    await h.suggest.getSuggestions(context);
-    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
-    expect(debug).toHaveBeenCalledWith(expect.any(String), {
-      reason: "failed",
-      error,
-    });
-  });
+  effectIt.effect("keeps searching when document citations fail", () =>
+    Effect.promise(async () => {
+      using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
+      const error = new DbUnavailable({ message: "Index unavailable" });
+      using h = setup(vi.fn(() => Effect.fail(error)));
+      await h.suggest.getSuggestions(context);
+      expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
+      expect(debug).toHaveBeenCalledWith(expect.any(String), {
+        reason: "failed",
+        error,
+      });
+    }),
+  );
 
-  it("bounds a slow document read and retains the fallback for the session", async () => {
-    using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
-    vi.useFakeTimers();
-    using _restore = { [Symbol.dispose]: () => vi.useRealTimers() };
-    const read = vi.fn().mockReturnValue(new Promise(() => {}));
-    using h = setup(read);
-    const pending = h.suggest.getSuggestions(context);
-    await vi.advanceTimersByTimeAsync(150);
-    await pending;
-    expect(debug).toHaveBeenCalledWith(expect.any(String), {
-      reason: "timeout",
-    });
-    expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
-    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
-    await h.suggest.getSuggestions(context);
-    expect(read).toHaveBeenCalledTimes(1);
-  });
+  effectIt.effect(
+    "bounds a slow document read at 150 ms and retains the fallback for the session",
+    () =>
+      Effect.gen(function* () {
+        const run = yield* scopedBridge;
+        const cancelled = vi.fn();
+        const read = vi.fn(() =>
+          Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(cancelled))),
+        );
+        using h = setup(read, run);
+        const pending = h.suggest.getSuggestions(context);
+        yield* TestClock.adjust(149);
+        expect(h.search).not.toHaveBeenCalled();
+        yield* TestClock.adjust(1);
+        yield* Effect.promise(() => pending);
+        expect(h.search).toHaveBeenCalledWith("", { limit: 50, cited: [] });
+        expect(cancelled).toHaveBeenCalledOnce();
+        yield* Effect.promise(() => h.suggest.getSuggestions(context));
+        expect(read).toHaveBeenCalledTimes(1);
+      }),
+  );
 
-  it("drops a pending answer when the dropdown closes", async () => {
-    using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
-    const read = vi.fn().mockReturnValue(new Promise(() => {}));
-    using h = setup(read);
-    const pending = h.suggest.getSuggestions(context);
-    h.suggest.close();
-    await expect(pending).resolves.toEqual([]);
-    expect(debug).toHaveBeenCalledWith(expect.any(String), {
-      reason: "aborted",
-    });
-    expect(read.mock.calls[0]![1].signal.aborted).toBe(true);
-    expect(h.search).not.toHaveBeenCalled();
-  });
+  effectIt.effect("drops a pending answer when the dropdown closes", () =>
+    Effect.promise(async () => {
+      using debug = vi.spyOn(getLogger(["views", "citation-suggest"]), "debug");
+      const read = vi.fn(() => Effect.never);
+      using h = setup(read);
+      const pending = h.suggest.getSuggestions(context);
+      h.suggest.close();
+      await expect(pending).resolves.toEqual([]);
+      expect(debug).toHaveBeenCalledWith(expect.any(String), {
+        reason: "aborted",
+      });
+      expect(h.search).not.toHaveBeenCalled();
+    }),
+  );
 });
 
 // Regression tests for #1665: the dropdown kept an earlier query's rows on
@@ -705,7 +824,7 @@ describe("Citation Suggester choices while the typed query's answer is pending",
       }
       return answer;
     };
-    const record = vi.fn();
+    const record = vi.fn<(key: string, kind: UseKind) => void>();
     const suggest = new CitationEditorSuggest(
       stubService<CitationSuggestDeps>("CitationSuggestDeps", {
         app: stubService<App>("App", {}),
@@ -719,16 +838,21 @@ describe("Citation Suggester choices while the typed query's answer is pending",
         citationIndex: stubService<CitationSuggestDeps["citationIndex"]>(
           "CitationIndex",
           {
-            getDocumentCitationSet: async () =>
-              stubService<DocumentCitationSet>("DocumentCitationSet", {
-                citations: [],
-              }),
+            getDocumentCitationSet: () =>
+              Effect.succeed(
+                stubService<DocumentCitationSet>("DocumentCitationSet", {
+                  citations: [],
+                }),
+              ),
           },
         ),
         settings: { current: Effect.succeed(defaults) },
-        bridge: { runSync: Effect.runSync, runPromise: Effect.runPromise },
         useLedger: stubService<CitationSuggestDeps["useLedger"]>("UseLedger", {
-          record,
+          record: (key, kind) =>
+            Effect.sync(() => {
+              record(key, kind);
+              return { instant: DateTime.makeUnsafe(0), kind };
+            }),
         }),
         ...insertDeps((cites: { citationKey: string }[]) =>
           cites.map(({ citationKey }) => `[@${citationKey}]`).join(""),
@@ -765,32 +889,38 @@ describe("Citation Suggester choices while the typed query's answer is pending",
     };
   }
 
-  it("inserts the first row of the typed query's answer when Enter comes before it", async () => {
-    using h = setup();
-    h.type("");
-    await h.answer("", [figures, rules]);
-    h.type("ten simple");
+  effectIt.effect(
+    "inserts the first row of the typed query's answer when Enter comes before it",
+    () =>
+      Effect.promise(async () => {
+        using h = setup();
+        h.type("");
+        await h.answer("", [figures, rules]);
+        h.type("ten simple");
 
-    // The empty query's rows are still on screen, DMRGRART first.
-    h.suggest.selectSuggestion(figures, enter);
-    expect(h.note()).toBe("[@ten simple");
+        // The empty query's rows are still on screen, DMRGRART first.
+        h.suggest.selectSuggestion(figures, enter);
+        expect(h.note()).toBe("[@ten simple");
 
-    await h.answer("ten simple", [rules, figures]);
-    await vi.waitFor(() => expect(h.note()).toBe("[@rougier2024]"));
-    expect(h.record).toHaveBeenCalledWith("RUGIER24", "cited");
-  });
+        await h.answer("ten simple", [rules, figures]);
+        await vi.waitFor(() => expect(h.note()).toBe("[@rougier2024]"));
+        expect(h.record).toHaveBeenCalledWith("RUGIER24", "cited");
+      }),
+  );
 
-  it("drops a click on a row of an earlier query's answer", async () => {
-    using h = setup();
-    h.type("");
-    await h.answer("", [figures, rules]);
-    h.type("ten simple");
+  effectIt.effect("drops a click on a row of an earlier query's answer", () =>
+    Effect.promise(async () => {
+      using h = setup();
+      h.type("");
+      await h.answer("", [figures, rules]);
+      h.type("ten simple");
 
-    h.suggest.selectSuggestion(figures, click);
-    h.suggest.selectSuggestion(figures, enter);
-    await h.answer("ten simple", [rules, figures]);
+      h.suggest.selectSuggestion(figures, click);
+      h.suggest.selectSuggestion(figures, enter);
+      await h.answer("ten simple", [rules, figures]);
 
-    await vi.waitFor(() => expect(h.note()).toBe("[@rougier2024]"));
-    expect(h.record.mock.calls).toEqual([["RUGIER24", "cited"]]);
-  });
+      await vi.waitFor(() => expect(h.note()).toBe("[@rougier2024]"));
+      expect(h.record.mock.calls).toEqual([["RUGIER24", "cited"]]);
+    }),
+  );
 });

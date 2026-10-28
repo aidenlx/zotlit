@@ -765,8 +765,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             return JSON.stringify(
               [tieFirst, tieSecond].map((key) => [
                 key,
-                zotlit.services.noteIndex
-                  .getNotesByItemKey(key)
+                zotlit.services.bridge
+                  .runSync(zotlit.services.noteIndex.getNotesByItemKey(key))
                   .map((file) => file.path),
                 app.metadataCache.getCache(`literatures/${key}.md`)
                   ?.frontmatter?.["zt-rank"] ?? null,
@@ -1511,7 +1511,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const found = await obRun(
           run.vaultId,
           async ({ zotlit }, { fresh }) => {
-            const note = zotlit.services.noteIndex.getNotesByItemKey(fresh)[0];
+            const note = zotlit.services.bridge.runSync(
+              zotlit.services.noteIndex.getNotesByItemKey(fresh),
+            )[0];
             if (note) return note.path;
             const prompt =
               activeDocument.querySelector<HTMLInputElement>(".prompt input")!;

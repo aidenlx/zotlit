@@ -123,8 +123,8 @@ function enclosingCase(node: AstNode): ReturnType<typeof caseKind> {
  * An Effect test runs through `it.effect` from `@effect/vitest`
  * (policies/testing-strategy.md → Effect code), which supplies the plugin's
  * runtime services and the test services such as TestClock. A
- * `ManagedRuntime`'s own `run…` stays allowed: a plain adapter's test drives
- * the adapter through its runtime.
+ * `ManagedRuntime`'s own `run…` stays allowed: a test of a Promise edge drives
+ * the service through its runtime.
  */
 export const noEffectRunInTest: Rule = {
   meta: {

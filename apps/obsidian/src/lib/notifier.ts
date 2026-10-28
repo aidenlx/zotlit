@@ -12,9 +12,9 @@ import {
 import type { Duration } from "effect";
 import type { Scope } from "effect";
 
-import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
+import { isUserStop } from "@/lib/user-cancel";
 
 /** What a notice shows: plain text, or a fragment from `BaseNotice.render`. */
 export type NoticeMessage = string | DocumentFragment;
@@ -110,8 +110,8 @@ export interface ProgressCopy<A = unknown> {
  * Report a task's outcome the way `toast.promise` does: the loading message
  * after 200 ms when the task has not finished (so a fast task does not flash
  * it), then the success message for 2 s (or `successDuration`) or the error
- * message for 4 s. An interrupted task or an abort shows nothing, and an
- * error is logged.
+ * message for 4 s. An interrupted task, an abort, or the user's cancel
+ * (`UserCancelled`) shows nothing, and an error is logged.
  *
  * @param outcome Completes with the task's Exit once the task ends. It runs
  *   again after the loading delay, so it awaits a task started elsewhere
@@ -146,15 +146,16 @@ export const reportProgress = Effect.fn("Notifier.reportProgress")(function* <
 }, Effect.scoped);
 
 /**
- * The error message for a task that failed with `cause`: none for an abort,
- * else the message `copy` gives for the error, logged with the error.
+ * The error message for a task that failed with `cause`: none for an abort
+ * or the user's cancel (`UserCancelled`), else the message `copy` gives for
+ * the error, logged with the error.
  */
 const failureMessage = Effect.fnUntraced(function* (
   cause: Cause.Cause<unknown>,
   copy: (error: unknown) => NoticeMessage | undefined,
 ) {
   const error = Cause.squash(cause);
-  if (AbortError.test(error)) return undefined;
+  if (isUserStop(error)) return undefined;
   const message = copy(error);
   yield* Effect.logError("Toast reported error").pipe(
     Effect.annotateLogs({
@@ -203,8 +204,8 @@ export interface OutcomeCopy<A> {
 /**
  * Run `task` and report its outcome as {@link reportProgress} does, without a
  * loading message: the success message for 2 s, or the error message for 4 s
- * with the error logged. An abort shows nothing. The notice does not hold the
- * run, and an interrupt passes on without a notice.
+ * with the error logged. An abort or the user's cancel shows nothing. The
+ * notice does not hold the run, and an interrupt passes on without a notice.
  */
 export const reportOutcome = Effect.fn("Notifier.reportOutcome")(function* <
   A,
@@ -223,3 +224,18 @@ export const reportOutcome = Effect.fn("Notifier.reportOutcome")(function* <
   const message = yield* failureMessage(exit.cause, copy.error);
   if (message) yield* notifier.show(message, { duration: 4000 });
 });
+
+/**
+ * Run `task` and report its outcome as {@link reportOutcome} does, keeping the
+ * task's result or failure for the caller. It shows no loading message, so no
+ * notice shows while a dialog the task opens waits for the user.
+ */
+export const withOutcome = <A, E, R>(
+  task: Effect.Effect<A, E, R>,
+  copy: OutcomeCopy<A>,
+): Effect.Effect<A, E, R | Notifier> =>
+  Effect.gen(function* () {
+    const exit = yield* Effect.exit(task);
+    yield* reportOutcome(exit, copy);
+    return yield* exit;
+  });

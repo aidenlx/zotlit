@@ -573,7 +573,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 },
               ),
             );
-          await zotlit.services.zoteroReads.refresh();
+          await zotlit.services.bridge.runPromise(
+            zotlit.services.zoteroReads.refresh,
+          );
         },
         undefined,
       );
@@ -724,7 +726,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const uses = await obRun(
       run.vaultId,
       async ({ zotlit }) => {
-        return zotlit.services.useLedger.uses;
+        return zotlit.services.bridge.runSync(zotlit.services.useLedger.uses);
       },
       undefined,
     );

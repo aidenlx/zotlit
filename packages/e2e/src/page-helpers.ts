@@ -241,6 +241,43 @@ export function createPageHelpers(app: PageApp) {
     });
     return [...docs];
   }
+  /** The Template Workbench leaves, their companions, and the focus they sit under. */
+  function workbenchSurfaces() {
+    const surfaces = (type: keyof WalkthroughViews) =>
+      leavesOfType(type).map((leaf) => {
+        const win = leaf.getContainer().win;
+        return {
+          window: win === window ? "main" : "popout",
+          closed: win.closed,
+          state: JSON.stringify(leaf.view.getState()),
+          tabs: Array.from(
+            leaf.view.containerEl.querySelectorAll("[role=tab]"),
+            (tab) => tab.textContent.trim(),
+          ),
+          content:
+            leaf.view.containerEl.querySelector(".view-content")
+              ?.childElementCount ?? null,
+        };
+      });
+    return {
+      workbench: surfaces("zotlit-template-workbench"),
+      explorer: surfaces("zotlit-template-data-explorer"),
+      preview: surfaces("zotlit-note-preview"),
+      activeLeaf: app.workspace.activeLeaf?.view.getViewType() ?? null,
+      activeWindow: activeWindow === window ? "main" : "popout",
+      focused: activeDocument.hasFocus(),
+      modals: windowDocuments().flatMap((doc) =>
+        Array.from(
+          doc.querySelectorAll(".modal-container .modal"),
+          (modal) => ({
+            className: modal.className,
+            title: modal.querySelector(".modal-title")?.textContent ?? null,
+            text: modal.textContent.slice(0, 400),
+          }),
+        ),
+      ),
+    };
+  }
   function popupEditor() {
     return document.querySelector<HTMLElement>(
       ".zt-pdf-mark-popup .cm-content",
@@ -571,10 +608,11 @@ export function createPageHelpers(app: PageApp) {
         app.workspace.requestActiveLeafEvents.run();
         const old = getServices();
         await app.plugins.disablePlugin("zotlit");
-        await old.pdfAnnotationEditor[Symbol.asyncDispose]();
-        for (let i = 0; i < 200 && !old.bridge.closed(); i++) await sleep(25);
-        if (!old.bridge.closed())
-          throw new Error("The ZotLit services did not close");
+        const stillOpen = () =>
+          !old.bridge.closed() ||
+          old.bridge.runSync(old.pdfAnnotationEditor.bindings).length > 0;
+        for (let i = 0; i < 200 && stillOpen(); i++) await sleep(25);
+        if (stillOpen()) throw new Error("The ZotLit services did not close");
         app.saveLocalStorage("zotlit-use-ledger", JSON.parse(savedLedger));
         await app.plugins.enablePlugin("zotlit");
         const fresh = getServices();
@@ -618,11 +656,13 @@ export function createPageHelpers(app: PageApp) {
       { template, suffix }: { template: string; suffix: string },
     ) {
       const services = getServices();
-      const profilePath = services.profile.defaultDocumentPath;
+      const profilePath = services.bridge.runSync(
+        services.profile.defaultDocumentPath,
+      );
       const existing = app.vault.getFileByPath(profilePath);
       const original = existing
         ? await app.vault.read(existing)
-        : services.profile.getBuiltInSource();
+        : services.bridge.runSync(services.profile.getBuiltInSource);
       const header = "--- zotlit:annotation ---";
       if (!original.includes(header))
         throw new Error("The default profile has no annotation section");
@@ -633,7 +673,7 @@ export function createPageHelpers(app: PageApp) {
       if (existing) {
         cleanup.defer(async () => {
           await app.vault.modify(existing, original);
-          await services.template.refresh();
+          await services.bridge.runPromise(services.template.refresh);
         });
         await app.vault.modify(existing, inline);
       } else {
@@ -649,15 +689,15 @@ export function createPageHelpers(app: PageApp) {
         cleanup.defer(async () => {
           const made = app.vault.getFileByPath(profilePath);
           if (made) await app.vault.delete(made);
-          await services.template.refresh();
+          await services.bridge.runPromise(services.template.refresh);
         });
         await app.vault.create(profilePath, inline);
       }
-      await services.template.refresh();
+      await services.bridge.runPromise(services.template.refresh);
       await until(
         () =>
-          services.template
-            .getLoadedDocumentSource(profilePath)
+          services.bridge
+            .runSync(services.template.getLoadedDocumentSource(profilePath))
             ?.includes(template),
         () => "The inline annotation template did not load",
       );
@@ -883,6 +923,7 @@ export function createPageHelpers(app: PageApp) {
     restoreAnnotationPreparation,
     annotationOpenSubpath,
     workbench,
+    workbenchSurfaces,
     pdfView,
     clientOfFirstPage,
     toolButton,

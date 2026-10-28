@@ -9,25 +9,25 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Vault } from "@/lib/obsidian-vault";
 import { QueryService } from "@/services/item-query/service";
-import type { PlainNoteIndex } from "@/services/note-index/plain";
+import type { TFile } from "obsidian";
 import { NoteIndex } from "@/services/note-index/service";
-import type { PlainProfile } from "@/services/profile/plain";
+import type { ProfileReader } from "@/services/profile/service";
 import { Profile } from "@/services/profile/service";
 import { Template, templateFailure } from "@/services/template/service";
 import type { TemplateOperations } from "@/services/template/service";
-import type { PlainZoteroReads } from "@/services/zotero-reads/plain";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import type { CreationPlanningServices } from "@/services/note-feature/creation-planning";
 
 /** The plain deps the planning services read, as a Note Feature test holds them. */
 export interface PlanningSources {
-  profile: Pick<PlainProfile, "profiles" | "resolveProfile" | "profileOf">;
-  noteIndex: Pick<
-    PlainNoteIndex,
-    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
-  zoteroReads: Pick<PlainZoteroReads, "reads" | "snapshot">;
+  profile: Pick<ProfileReader, "profiles" | "resolveProfile" | "profileOf">;
+  noteIndex: {
+    whenIndexed(): Promise<void>;
+    getNotesByItemKey(key: string): TFile[];
+    getImportedNoteByNoteKey(key: string): TFile[];
+  };
+  zoteroReads: Pick<ZoteroReads["Service"], "reads" | "snapshot">;
   template: Pick<
     TemplateOperations,
     "renderFilename" | "getLiteratureNoteTemplate" | "frontmatterFields"

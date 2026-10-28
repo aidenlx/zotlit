@@ -7,7 +7,6 @@ import { beforeEach, expect } from "vitest";
 
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
@@ -20,7 +19,7 @@ beforeEach(() => {
 });
 
 // #1819: a stopped create is silent; a write failure keeps its log and notice.
-it.effect.each(["abort", "interrupt", "failure"] as const)(
+it.effect.each(["interrupt", "failure"] as const)(
   "reports a Shared Partial write stopped by %s",
   (reason) =>
     Effect.gen(function* () {
@@ -38,13 +37,7 @@ it.effect.each(["abort", "interrupt", "failure"] as const)(
               createPartial: () =>
                 reason === "interrupt"
                   ? Effect.interrupt
-                  : Effect.fail(
-                      templateFailure(
-                        reason === "abort"
-                          ? new AbortError()
-                          : new Error("disk full"),
-                      ),
-                    ),
+                  : Effect.fail(templateFailure(new Error("disk full"))),
             }),
             Layer.mock(Workspace, {}),
             Layer.succeed(Notifier, notifier.service),

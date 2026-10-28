@@ -1,69 +1,51 @@
-// Opens a Literature Note's PDF Attachments: the PDF reader, the picker's reader, and the `open-pdf` command.
+// Opens a Literature Note's PDF Attachments: the picker's reader and the `open-pdf` command.
 
 import { TFile } from "obsidian";
-import type { App, Plugin } from "obsidian";
+import type { App, PaneType, Plugin } from "obsidian";
 
-import { passAborted } from "@/lib/abort-error";
-import {
-  createObsidianAttachmentReader,
-  openAttachments,
-} from "@/lib/attachment-open";
+import { openAttachments } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import type { PluginSettings } from "@/services/settings/service";
-import { activateAnnotView } from "@/views/annot-view/register";
 
 import type { LiteratureNoteAttachmentsHandle } from "./handle";
-import type { TargetOpener, TargetReader } from "./open-target";
+import type { OpenTarget, TargetOpener } from "./open-target";
 import type { ObsidianOpenableAttachment } from "./resolve";
 
-/** What opening a PDF in Obsidian needs, wherever the gesture came from. */
-export interface PdfReaderDeps {
-  app: App;
-  settings: Pick<PluginSettings["Service"], "current">;
-  bridge: Pick<EffectBridge, "runSync">;
+/**
+ * An open a gesture starts outside Effect. Its caller runs each open on a
+ * runner that unload interrupts, and the opener reports a failure itself, so
+ * the gesture fires the open and forgets it.
+ */
+export interface TargetOpenGesture {
+  open(target: OpenTarget, pane: PaneType | boolean): void;
 }
 
-/**
- * Obsidian's PDF view as the Target Opener drives it: the file opens, and the
- * annotation view comes forward beside it so the Item's Annotations are on
- * screen. `reader.focus-annot-view` drops the second step for a user who
- * keeps the sidebar arranged their own way.
- */
-export function createPdfReader(deps: PdfReaderDeps): TargetReader {
-  return createObsidianAttachmentReader(deps.app, {
-    onOpened: () => {
-      if (
-        deps.bridge.runSync(deps.settings.current)["reader.focus-annot-view"]
-      ) {
-        void activateAnnotView(deps.app);
-      }
-    },
-  });
+/** {@link TargetOpenGesture} that runs each open of `opener` through `run`. */
+export function openGesture(
+  opener: Pick<TargetOpener["Service"], "open">,
+  run: (open: ReturnType<TargetOpener["Service"]["open"]>) => void,
+): TargetOpenGesture {
+  return { open: (target, pane) => run(opener.open(target, pane)) };
 }
 
 /**
  * A picker's reader that opens each row through the Target Opener, by the
  * row's key, so a picked Attachment is opened by the same rule as every other.
- * The picker fires the open and forgets it, so the unload's `AbortError` ends
- * it quietly.
  */
 export function pdfPickerReader(
-  opener: Pick<TargetOpener, "open">,
+  opener: TargetOpenGesture,
 ): AttachmentReader<ObsidianOpenableAttachment> {
   return {
     icon: "file-text",
     onEmpty: () => new BaseNotice(m.notice_no_pdf_attachment()),
     open: (attachment, pane) =>
-      opener
-        .open(
-          { kind: "attachment", attachmentKey: attachment.indexedKey },
-          pane,
-        )
-        .catch(passAborted),
+      opener.open(
+        { kind: "attachment", attachmentKey: attachment.indexedKey },
+        pane,
+      ),
   };
 }
 
@@ -71,7 +53,9 @@ export interface AttachmentOpenDeps {
   app: App;
   /** Resolves a Literature Note's Indexed Key to its Item's PDF Attachments. */
   attachments: LiteratureNoteAttachmentsHandle;
-  opener: Pick<TargetOpener, "open">;
+  opener: Pick<TargetOpener["Service"], "open">;
+  /** Runs each open the picker fires; unload interrupts it. */
+  bridge: Pick<EffectBridge, "runAndForget">;
 }
 
 async function runOpenPdfCommand(
@@ -82,7 +66,7 @@ async function runOpenPdfCommand(
     await deps.attachments.literatureNoteAttachments(indexedKey);
   if (!attachments) return;
   openAttachments(attachments, {
-    reader: pdfPickerReader(deps.opener),
+    reader: pdfPickerReader(openGesture(deps.opener, deps.bridge.runAndForget)),
     app: deps.app,
   });
 }

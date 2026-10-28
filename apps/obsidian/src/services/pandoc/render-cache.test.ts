@@ -1,6 +1,6 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
-import { Context, Effect, Fiber, Layer, Queue, Stream } from "effect";
+import { Context, Effect, Exit, Fiber, Layer, Queue, Stream } from "effect";
 import "@mock/dom-parser";
 import { TestClock } from "effect/testing";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
@@ -36,7 +36,12 @@ import type {
   RenderedCitation,
   RenderRequest,
 } from "./engine";
-import { BibliographyRender, layerBibliographyRender } from "./render-cache";
+import {
+  BibliographyRender,
+  layerBibliographyRender,
+  renderInvalidated,
+  missingStyleChanges,
+} from "./render-cache";
 import type { CitationRenderOutcome } from "./render-cache";
 import { bibliographyRenderFixture } from "./render-cache/__fixtures__";
 import type { BibliographyRenderFixtureOptions } from "./render-cache/__fixtures__";
@@ -112,7 +117,10 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const harness = yield* harnessOf({ "citation.locale": "en-US" });
-      expect(harness.cache.vaultPresentation.locale).toBe("en-US");
+      expect(
+        harness.cache.bridge.runSync(harness.cache.state).vaultPresentation
+          .locale,
+      ).toBe("en-US");
       const locales: (string | null)[] = [];
       const stop = subscribe(
         harness.cache.runtime,
@@ -139,23 +147,35 @@ it.effect.each(["share", "import"] as const)(
         yield* profileRuntimeOf(createTemplateHost());
       const harness = yield* harnessOf({}, undefined, profile);
       const changes: unknown[] = [];
-      subscribe(profile.runtime, profile["changed"], () =>
-        changes.push(profile.state),
+      subscribe(
+        profile.runtime,
+        profile.changes.pipe(
+          Stream.drop(1),
+          Stream.map(() => undefined),
+        ),
+        () => changes.push(profile.bridge.runSync(profile.state)),
       );
       const items = [item("alpha")];
       const before = yield* Effect.promise(() =>
-        harness.cache.readBibliography(items),
+        harness.cache.bridge.runPromise(harness.cache.readBibliography(items)),
       );
       if (operation === "share") yield* profileService.prepareShare("default");
       else
         yield* profileService.prepareImport(
-          profile.getBuiltInSource().replace("id: default", "id: Bk3Qn7XvT2Lp"),
+          (yield* profile.getBuiltInSource).replace(
+            "id: default",
+            "id: Bk3Qn7XvT2Lp",
+          ),
         );
       yield* TestClock.adjust(0);
       expect(changes).toEqual([]);
       expect(harness.invalidations).toEqual([]);
       expect(
-        yield* Effect.promise(() => harness.cache.readBibliography(items)),
+        yield* Effect.promise(() =>
+          harness.cache.bridge.runPromise(
+            harness.cache.readBibliography(items),
+          ),
+        ),
       ).toBe(before);
       expect(harness.engine.requests).toHaveLength(1);
     }),
@@ -166,7 +186,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const h = yield* harnessOf({ "citation.references-style": APA });
-      yield* Effect.promise(() => h.cache.render([item("alpha")]));
+      yield* Effect.promise(() =>
+        h.cache.bridge.runPromise(h.cache.render([item("alpha")])),
+      );
       const service = yield* Effect.promise(() =>
         h.cache.runtime.runPromise(BibliographyRender),
       );
@@ -186,13 +208,17 @@ it.effect("#1705: released reads retain the engine-absent outcome", () =>
     h.pandocEngine.setStatus({ kind: "absent" });
     yield* Effect.promise(() => h.cache.runtime.dispose());
     yield* Effect.promise(() =>
-      expect(h.cache.render([item("alpha")])).resolves.toEqual({
+      expect(
+        h.cache.bridge.runPromise(h.cache.render([item("alpha")])),
+      ).resolves.toEqual({
         kind: "unavailable",
         reason: "engine-absent",
       }),
     );
     yield* Effect.promise(() =>
-      expect(h.cache.readBibliography([item("alpha")])).resolves.toBeNull(),
+      expect(
+        h.cache.bridge.runPromise(h.cache.readBibliography([item("alpha")])),
+      ).resolves.toBeNull(),
     );
   }),
 );
@@ -203,17 +229,14 @@ it.effect("a read that waits after unload ends at once", () =>
   Effect.gen(function* () {
     const h = yield* harnessOf({ "citation.references-style": APA });
     yield* Effect.promise(() => h.cache.runtime.dispose());
-    yield* Effect.promise(() =>
-      expect(h.cache.render([item("alpha")])).resolves.toEqual({
-        kind: "unavailable",
-        reason: "failed",
-      }),
+    const render = yield* Effect.promise(() =>
+      h.cache.bridge.runPromiseExit(h.cache.render([item("alpha")])),
     );
-    yield* Effect.promise(() =>
-      expect(h.cache.readBibliography([item("alpha")])).rejects.toMatchObject({
-        name: "AbortError",
-      }),
+    const read = yield* Effect.promise(() =>
+      h.cache.bridge.runPromiseExit(h.cache.readBibliography([item("alpha")])),
     );
+    expect(Exit.hasInterrupts(render)).toBe(true);
+    expect(Exit.hasInterrupts(read)).toBe(true);
   }),
 );
 
@@ -232,7 +255,7 @@ it.effect(
       yield* Queue.take(subscribed);
       const seen: unknown[] = [];
       subscribe(h.cache.runtime, h.cache.changes, (state) => seen.push(state));
-      const last = h.cache.state;
+      const last = h.cache.bridge.runSync(h.cache.state);
       const gate = Promise.withResolvers<void>();
       const started = Promise.withResolvers<void>();
       h.engine.gate = gate;
@@ -241,7 +264,7 @@ it.effect(
         return "";
       };
       const pending = expect(
-        h.cache.readBibliography([item("alpha")]),
+        h.cache.bridge.runPromise(h.cache.readBibliography([item("alpha")])),
       ).rejects.toMatchObject({ name: "AbortError" });
       yield* Effect.promise(() => started.promise);
       yield* Effect.promise(() => h.cache.runtime.dispose());
@@ -253,21 +276,25 @@ it.effect(
       h.zoteroPref.resolvedChanged();
       yield* TestClock.adjust(0);
       expect(seen).toEqual([last]);
-      expect(h.cache.state).toBe(last);
-      expect(h.cache.vaultPresentation).toEqual(last.vaultPresentation);
+      expect(h.cache.bridge.runSync(h.cache.state)).toBe(last);
+      expect(h.cache.bridge.runSync(h.cache.state).vaultPresentation).toEqual(
+        last.vaultPresentation,
+      );
       yield* Effect.promise(() =>
-        expect(h.cache.render([])).resolves.toEqual({
+        expect(h.cache.bridge.runPromise(h.cache.render([]))).resolves.toEqual({
           kind: "unavailable",
           reason: "failed",
         }),
       );
       yield* Effect.promise(() =>
-        expect(h.cache.readCitations([], [])).rejects.toMatchObject({
+        expect(
+          h.cache.bridge.runPromise(h.cache.readCitations([], [])),
+        ).rejects.toMatchObject({
           name: "AbortError",
         }),
       );
       expect(() =>
-        subscribe(h.cache.runtime, h.cache.missingStyle, () => {
+        subscribe(h.cache.runtime, missingStyleChanges(h.cache.changes), () => {
           throw new Error("closed listener");
         })(),
       ).not.toThrow();
@@ -284,7 +311,9 @@ it.effect(
       const { profile, profileService } = yield* profileRuntimeOf(host);
       const harness = yield* harnessOf({}, undefined, profile);
       const items = [item("alpha")];
-      yield* Effect.promise(() => harness.cache.readBibliography(items));
+      yield* Effect.promise(() =>
+        harness.cache.bridge.runPromise(harness.cache.readBibliography(items)),
+      );
       host.vault.modifyFile(path, "Updated summary");
       const preparing = yield* Effect.forkChild(
         profileService.prepareShare("default"),
@@ -302,7 +331,9 @@ it.effect(
       ).toContain("Updated summary");
       yield* TestClock.adjust(0);
       expect(harness.invalidations).toHaveLength(1);
-      yield* Effect.promise(() => harness.cache.readBibliography(items));
+      yield* Effect.promise(() =>
+        harness.cache.bridge.runPromise(harness.cache.readBibliography(items)),
+      );
       expect(harness.engine.requests).toHaveLength(2);
     }),
 );
@@ -320,13 +351,13 @@ it.effect(
           started.resolve();
           return "";
         };
-        const rendering = expect(
+        const rendering = harness.cache.bridge.runPromiseExit(
           harness.cache.render([item("alpha")]),
-        ).resolves.toEqual({ kind: "unavailable", reason: "failed" });
+        );
         await started.promise;
         await harness[Symbol.asyncDispose]();
         try {
-          await rendering;
+          expect(Exit.hasInterrupts(await rendering)).toBe(true);
         } finally {
           gate.resolve();
         }
@@ -434,12 +465,9 @@ class PandocEngineStub {
 /** The one database event the cache listens for: a new working client. */
 class DatabaseStub {
   readonly #events = testEvent<void>();
-  readonly changed = this.#events.stream;
-  readonly degraded = Stream.empty;
-  readonly "refresh-failed" = Stream.empty;
-  readonly refreshing = Stream.empty;
-  readonly "refresh-requested" = Stream.empty;
-  readonly "db-file-missing" = Stream.empty;
+  readonly events = this.#events.stream.pipe(
+    Stream.map(() => ({ _tag: "changed" as const })),
+  );
   notifyChanged() {
     this.#events.emit();
   }
@@ -499,7 +527,18 @@ async function openHarness(
     await bibliographyRenderFixture(
       {
         profile: profile ?? {
-          changed: profileChanged.stream,
+          changes: profileChanged.stream.pipe(
+            Stream.map(() => ({
+              loaded: true,
+              profiles: [],
+              diagnostics: [],
+              defaultDocumentPath: "",
+              templateStatus: {
+                state: "loaded" as const,
+                compileErrors: new Map(),
+              },
+            })),
+          ),
         },
         db,
         pandocEngine,
@@ -511,11 +550,11 @@ async function openHarness(
   );
 
   const invalidations: number[] = [];
-  subscribe(cache.runtime, cache["invalidated"], () =>
+  subscribe(cache.runtime, renderInvalidated(cache), () =>
     invalidations.push(invalidations.length + 1),
   );
   const missingStyles: string[] = [];
-  subscribe(cache.runtime, cache.missingStyle, (styleId) =>
+  subscribe(cache.runtime, missingStyleChanges(cache.changes), (styleId) =>
     missingStyles.push(styleId),
   );
 
@@ -642,12 +681,14 @@ describe("BibliographyRenderCache", () => {
 
         const [first, second] = yield* Effect.promise(() =>
           Promise.all([
-            cache.render(items),
-            cache.render([item("alpha"), item("zebra")]),
+            cache.bridge.runPromise(cache.render(items)),
+            cache.bridge.runPromise(
+              cache.render([item("alpha"), item("zebra")]),
+            ),
           ]),
         );
         const third = yield* Effect.promise(() =>
-          cache.render([item("alpha"), item("zebra")]),
+          cache.bridge.runPromise(cache.render([item("alpha"), item("zebra")])),
         );
 
         expect(engine.requests).toHaveLength(1);
@@ -678,9 +719,15 @@ describe("BibliographyRenderCache", () => {
       const harness = yield* harnessOf();
       const { cache, engine } = harness;
 
-      yield* Effect.promise(() => cache.render([item("alpha"), item("zebra")]));
-      yield* Effect.promise(() => cache.render([item("zebra"), item("alpha")]));
-      yield* Effect.promise(() => cache.render([item("alpha")]));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render([item("alpha"), item("zebra")])),
+      );
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render([item("zebra"), item("alpha")])),
+      );
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render([item("alpha")])),
+      );
 
       expect(engine.requests).toHaveLength(3);
     }),
@@ -692,9 +739,9 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine, db, invalidations } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
       db.notifyChanged();
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
 
       expect(invalidations).toHaveLength(1);
       expect(engine.requests).toHaveLength(2);
@@ -707,9 +754,9 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine, zoteroPref, invalidations } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
       zoteroPref.resolvedChanged();
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
 
       expect(invalidations).toHaveLength(1);
       expect(engine.requests).toHaveLength(2);
@@ -724,13 +771,17 @@ describe("BibliographyRenderCache", () => {
         const { cache, engine, settings, invalidations } = harness;
         const items = [item("alpha")];
 
-        yield* Effect.promise(() => cache.render(items));
+        yield* Effect.promise(() =>
+          cache.bridge.runPromise(cache.render(items)),
+        );
         harness.bridge.runSync(
           settings.updateDefaultLiteratureNoteProfileBindings({
             "citation.references-style": IEEE,
           }),
         );
-        const changed = yield* Effect.promise(() => cache.render(items));
+        const changed = yield* Effect.promise(() =>
+          cache.bridge.runPromise(cache.render(items)),
+        );
         // The same style again is no change at all.
         harness.bridge.runSync(
           settings.updateDefaultLiteratureNoteProfileBindings({
@@ -754,7 +805,9 @@ describe("BibliographyRenderCache", () => {
         const harness = yield* harnessOf();
         const { cache, invalidations } = harness;
 
-        yield* Effect.promise(() => cache.render([item("alpha")]));
+        yield* Effect.promise(() =>
+          cache.bridge.runPromise(cache.render([item("alpha")])),
+        );
         harness.profileEvents.emit("changed");
 
         expect(invalidations).toHaveLength(1);
@@ -767,13 +820,13 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine, pandocEngine, invalidations } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
       pandocEngine.setStatus({
         kind: "installed",
         version: "3.11",
         binary: { directory: "pandoc-engine", name: "pandoc.wasm" },
       });
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
 
       expect(invalidations).toHaveLength(1);
       expect(engine.requests).toHaveLength(2);
@@ -789,7 +842,9 @@ describe("BibliographyRenderCache", () => {
       pandocEngine.setStatus({ kind: "absent" });
 
       yield* Effect.promise(() =>
-        expect(cache.render([item("alpha")])).resolves.toEqual({
+        expect(
+          cache.bridge.runPromise(cache.render([item("alpha")])),
+        ).resolves.toEqual({
           kind: "unavailable",
           reason: "engine-absent",
         }),
@@ -805,7 +860,7 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine } = harness;
 
       yield* Effect.promise(() =>
-        expect(cache.render([])).resolves.toEqual({
+        expect(cache.bridge.runPromise(cache.render([]))).resolves.toEqual({
           kind: "held",
           key: expect.any(String),
           record: {
@@ -833,7 +888,9 @@ describe("BibliographyRenderCache", () => {
         const { cache, missingStyles } = harness;
 
         yield* Effect.promise(() =>
-          expect(cache.render([], { styleId: IEEE })).resolves.toEqual({
+          expect(
+            cache.bridge.runPromise(cache.render([], { styleId: IEEE })),
+          ).resolves.toEqual({
             kind: "unavailable",
             reason: "style-missing",
           }),
@@ -850,7 +907,7 @@ describe("BibliographyRenderCache", () => {
 
       engine.fails = true;
       yield* Effect.promise(() =>
-        expect(cache.render(items)).resolves.toEqual({
+        expect(cache.bridge.runPromise(cache.render(items))).resolves.toEqual({
           kind: "unavailable",
           reason: "failed",
         }),
@@ -858,7 +915,7 @@ describe("BibliographyRenderCache", () => {
       engine.fails = false;
       // The refusal stands rather than re-running the engine on every ask.
       yield* Effect.promise(() =>
-        expect(cache.render(items)).resolves.toEqual({
+        expect(cache.bridge.runPromise(cache.render(items))).resolves.toEqual({
           kind: "unavailable",
           reason: "failed",
         }),
@@ -867,7 +924,9 @@ describe("BibliographyRenderCache", () => {
 
       db.notifyChanged();
       yield* Effect.promise(() =>
-        expect(cache.render(items)).resolves.toMatchObject({
+        expect(
+          cache.bridge.runPromise(cache.render(items)),
+        ).resolves.toMatchObject({
           kind: "held",
         }),
       );
@@ -902,8 +961,12 @@ describe("BibliographyRenderCache", () => {
         const read = (title: string) => {
           const items = [{ ...item("alpha"), title }];
           return kind === "bibliography"
-            ? h.cache.readBibliography(items).then((value) => value?.entries)
-            : h.cache.readCitations(["[@alpha]"], items);
+            ? h.cache.bridge
+                .runPromise(h.cache.readBibliography(items))
+                .then((value) => value?.entries)
+            : h.cache.bridge.runPromise(
+                h.cache.readCitations(["[@alpha]"], items),
+              );
         };
         const first = read("Old title");
         yield* Effect.promise(() => started.promise);
@@ -929,8 +992,12 @@ describe("BibliographyRenderCache", () => {
         const h = yield* harnessOf();
         const read = () =>
           kind === "bibliography"
-            ? h.cache.readBibliography([item("alpha")])
-            : h.cache.readCitations(["[@alpha]"], [item("alpha")]);
+            ? h.cache.bridge.runPromise(
+                h.cache.readBibliography([item("alpha")]),
+              )
+            : h.cache.bridge.runPromise(
+                h.cache.readCitations(["[@alpha]"], [item("alpha")]),
+              );
         yield* Effect.promise(async () => await read());
         h.db.notifyChanged();
         h.engine.fails = true;
@@ -951,14 +1018,25 @@ describe("BibliographyRenderCache", () => {
       const { cache } = harness;
       const settlements: [string, Held<unknown> | null][] = [];
       const delivered = yield* Queue.unbounded<void>();
-      subscribe(cache.runtime, cache["settled"], (args) =>
-        ((key, held) => {
-          settlements.push([key, held]);
-          Queue.offerUnsafe(delivered, undefined);
-        })(...args),
+      subscribe(
+        cache.runtime,
+        cache.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { _tag: "settled" }> =>
+              event._tag === "settled",
+          ),
+          Stream.map((event) => [event.key, event.held] as const),
+        ),
+        (args) =>
+          ((key, held) => {
+            settlements.push([key, held]);
+            Queue.offerUnsafe(delivered, undefined);
+          })(...args),
       );
 
-      yield* Effect.promise(() => cache.render([item("alpha")]));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render([item("alpha")])),
+      );
       yield* Queue.take(delivered);
 
       expect(settlements).toEqual([
@@ -988,7 +1066,9 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine, db } = harness;
       const items = [item("alpha")];
       yield* Effect.promise(() =>
-        expect(cache.render(items)).resolves.toMatchObject({
+        expect(
+          cache.bridge.runPromise(cache.render(items)),
+        ).resolves.toMatchObject({
           kind: "held",
         }),
       );
@@ -996,11 +1076,15 @@ describe("BibliographyRenderCache", () => {
       engine.fails = true;
       db.notifyChanged();
 
-      const replacing = yield* Effect.promise(() => cache.render(items));
+      const replacing = yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render(items)),
+      );
       if (replacing.kind !== "held") throw new Error("Missing held render");
       yield* Effect.promise(() => replacing.record.settled);
       yield* Effect.promise(() =>
-        expect(cache.render(items)).resolves.toMatchObject({
+        expect(
+          cache.bridge.runPromise(cache.render(items)),
+        ).resolves.toMatchObject({
           kind: "held",
           record: {
             status: "failed",
@@ -1020,22 +1104,26 @@ describe("BibliographyRenderCache", () => {
       // Each render names the ordinal of the engine run behind it, so the render
       // that ends up standing is the one the entries name.
       engine.stamp = () => ` #${engine.requests.length}`;
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
 
       const gate = Promise.withResolvers<void>();
       engine.gate = gate;
       db.notifyChanged();
       // The render that answers here is the held one; the replacement it starts
       // is the one the second drop lands on.
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
       db.notifyChanged();
       gate.resolve();
 
       // The superseded second render never publishes: the ask its cancellation
       // armed is the third run, and that is the render that stands.
-      yield* Effect.promise(() => cache.readBibliography(items));
       yield* Effect.promise(() =>
-        expect(cache.render(items)).resolves.toMatchObject({
+        cache.bridge.runPromise(cache.readBibliography(items)),
+      );
+      yield* Effect.promise(() =>
+        expect(
+          cache.bridge.runPromise(cache.render(items)),
+        ).resolves.toMatchObject({
           kind: "held",
           record: {
             value: { entries: [{ content: inlines("entry for alpha #3") }] },
@@ -1057,31 +1145,46 @@ describe("BibliographyRenderCache", () => {
         const { cache, engine, missingStyles } = harness;
 
         yield* Effect.promise(() =>
-          expect(cache.render([item("alpha")])).resolves.toEqual({
+          expect(
+            cache.bridge.runPromise(cache.render([item("alpha")])),
+          ).resolves.toEqual({
             kind: "unavailable",
             reason: "style-missing",
           }),
         );
         yield* Effect.promise(() =>
           expect(
-            cache.renderCitations(["[@alpha]"], [item("alpha")]),
+            cache.bridge.runPromise(
+              cache.renderCitations(["[@alpha]"], [item("alpha")]),
+            ),
           ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" }),
         );
-        yield* Effect.promise(() => cache.render([item("alpha")]));
+        yield* Effect.promise(() =>
+          cache.bridge.runPromise(cache.render([item("alpha")])),
+        );
 
         expect(engine.requests).toHaveLength(0);
         expect(engine.citationRequests).toHaveLength(0);
         expect(missingStyles).toEqual([APA]);
 
         const lateMissingStyles: string[] = [];
-        subscribe(cache.runtime, cache.missingStyle, (styleId) =>
-          lateMissingStyles.push(styleId),
+        subscribe(
+          cache.runtime,
+          missingStyleChanges(cache.changes),
+          (styleId) => lateMissingStyles.push(styleId),
         );
         expect(lateMissingStyles).toEqual([APA]);
 
         const newMissingStyles: string[] = [];
-        subscribe(cache.runtime, cache["style-missing"], (styleId) =>
-          newMissingStyles.push(styleId),
+        subscribe(
+          cache.runtime,
+          cache.changes.pipe(
+            Stream.map((state) => state.missingStyle),
+            Stream.changes,
+            Stream.drop(1),
+            Stream.filter((style): style is string => style !== null),
+          ),
+          (styleId) => newMissingStyles.push(styleId),
         );
         harness.bridge.runSync(
           harness.settings.update({ "citation.locale": "fr-FR" }),
@@ -1097,11 +1200,15 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine, settings, invalidations } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
-      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
+      );
       harness.bridge.runSync(settings.update({ "citation.locale": "de-DE" }));
-      yield* Effect.promise(() => cache.render(items));
-      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
+      );
       // The same locale again is no change at all.
       harness.bridge.runSync(settings.update({ "citation.locale": "de-DE" }));
 
@@ -1127,7 +1234,9 @@ describe("BibliographyRenderCache", () => {
         const { cache, engine } = harness;
 
         yield* Effect.promise(() =>
-          cache.render([item("alpha")], { styleId: null }),
+          cache.bridge.runPromise(
+            cache.render([item("alpha")], { styleId: null }),
+          ),
         );
 
         expect(engine.requests[0]?.styleXml).toBeUndefined();
@@ -1146,9 +1255,9 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
       yield* Effect.promise(() => installed.pointAt(IEEE));
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
 
       expect(engine.requests).toHaveLength(2);
       expect(engine.requests[0]?.styleXml).toContain(`<id>${APA}</id>`);
@@ -1168,11 +1277,11 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
       yield* Effect.promise(() =>
         installed.edit(0, independentXml(APA, "Edited in Zotero")),
       );
-      yield* Effect.promise(() => cache.render(items));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
 
       expect(engine.requests).toHaveLength(2);
       expect(engine.requests[1]?.styleXml).toContain(
@@ -1193,9 +1302,13 @@ describe("BibliographyRenderCache", () => {
       const { cache, engine } = harness;
       const items = [item("alpha")];
 
-      yield* Effect.promise(() => cache.render(items));
-      yield* Effect.promise(() => cache.render(items, { locale: "de-DE" }));
-      yield* Effect.promise(() => cache.render(items, { locale: "de-DE" }));
+      yield* Effect.promise(() => cache.bridge.runPromise(cache.render(items)));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render(items, { locale: "de-DE" })),
+      );
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.render(items, { locale: "de-DE" })),
+      );
 
       expect(engine.requests).toHaveLength(2);
       expect(engine.requests[0]?.styleXml).not.toContain("default-locale");
@@ -1216,7 +1329,9 @@ describe("BibliographyRenderCache", () => {
 
       yield* Effect.promise(() =>
         expect(
-          cache.render([item("alpha")], { styleId: IEEE }),
+          cache.bridge.runPromise(
+            cache.render([item("alpha")], { styleId: IEEE }),
+          ),
         ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" }),
       );
 
@@ -1235,8 +1350,12 @@ describe("BibliographyRenderCache citations", () => {
 
       const [first, second] = yield* Effect.promise(() =>
         Promise.all([
-          cache.renderCitations(["[@alpha]", "@alpha"], items),
-          cache.renderCitations(["[@alpha]", "@alpha"], items),
+          cache.bridge.runPromise(
+            cache.renderCitations(["[@alpha]", "@alpha"], items),
+          ),
+          cache.bridge.runPromise(
+            cache.renderCitations(["[@alpha]", "@alpha"], items),
+          ),
         ]),
       );
 
@@ -1259,8 +1378,12 @@ describe("BibliographyRenderCache citations", () => {
       const harness = yield* harnessOf();
       const { cache, engine } = harness;
 
-      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
-      yield* Effect.promise(() => cache.renderCitations(["@alpha"], items));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
+      );
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.renderCitations(["@alpha"], items)),
+      );
 
       expect(engine.citationRequests).toHaveLength(2);
     }),
@@ -1271,14 +1394,16 @@ describe("BibliographyRenderCache citations", () => {
       const harness = yield* harnessOf();
       const { cache, engine, settings } = harness;
 
-      yield* Effect.promise(() => cache.renderCitations(["[@alpha]"], items));
+      yield* Effect.promise(() =>
+        cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
+      );
       harness.bridge.runSync(
         settings.updateDefaultLiteratureNoteProfileBindings({
           "citation.references-style": IEEE,
         }),
       );
       const changed = yield* Effect.promise(() =>
-        cache.renderCitations(["[@alpha]"], items),
+        cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
       );
 
       expect(changed).toEqual({
@@ -1296,7 +1421,9 @@ describe("BibliographyRenderCache citations", () => {
       pandocEngine.setStatus({ kind: "absent" });
 
       yield* Effect.promise(() =>
-        expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
+        expect(
+          cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
+        ).resolves.toEqual({
           kind: "unavailable",
           reason: "engine-absent",
         }),
@@ -1312,7 +1439,9 @@ describe("BibliographyRenderCache citations", () => {
 
       expect(
         citationValue(
-          yield* Effect.promise(() => cache.renderCitations([], [])),
+          yield* Effect.promise(() =>
+            cache.bridge.runPromise(cache.renderCitations([], [])),
+          ),
         ),
       ).toEqual([]);
       expect(engine.citationRequests).toHaveLength(0);
@@ -1326,7 +1455,9 @@ describe("BibliographyRenderCache citations", () => {
 
       engine.fails = true;
       yield* Effect.promise(() =>
-        expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
+        expect(
+          cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
+        ).resolves.toEqual({
           kind: "unavailable",
           reason: "failed",
         }),
@@ -1336,7 +1467,7 @@ describe("BibliographyRenderCache citations", () => {
       expect(
         citationValue(
           yield* Effect.promise(() =>
-            cache.renderCitations(["[@alpha]"], items),
+            cache.bridge.runPromise(cache.renderCitations(["[@alpha]"], items)),
           ),
         ),
       ).not.toBeNull();

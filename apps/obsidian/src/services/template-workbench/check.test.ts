@@ -310,7 +310,9 @@ describe("plain document checks", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture();
         yield* Effect.promise(() =>
-          f.template.createPartial("changing", { source: "Before" }),
+          f.template.bridge.runPromise(
+            f.template.createPartial("changing", { source: "Before" }),
+          ),
         );
         const original = f.templates.renderPartialSource.bind(f.templates);
         vi.spyOn(f.templates, "renderPartialSource").mockImplementationOnce(
@@ -349,7 +351,9 @@ describe("plain document checks", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture();
         yield* Effect.promise(() =>
-          f.template.createPartial("replaced", { source: "Installed" }),
+          f.template.bridge.runPromise(
+            f.template.createPartial("replaced", { source: "Installed" }),
+          ),
         );
         const path = "templates/zotlit-partial.replaced.md";
         f.vault.contents.set(path, "Saved but not reconciled");
@@ -581,7 +585,9 @@ describe("plain document checks", () => {
           "templates/zotlit-citation.md",
           "---\nlanguage: liquid\n---\nSaved {% if zt.variant == 'alt' %}alternate{% else %}primary{% endif %}: {{ zt.citations.size }}",
         );
-        yield* Effect.promise(() => f.template.waitUntilSettled(1000));
+        yield* Effect.promise(() =>
+          f.template.bridge.runPromise(f.template.waitUntilSettled(1000)),
+        );
         const before = new Map(f.vault.contents);
         const saved = yield* f.check({
           document: "citation",
@@ -615,10 +621,12 @@ describe("plain document checks", () => {
       Effect.gen(function* () {
         const f = yield* scopedFixture();
         yield* Effect.promise(() =>
-          f.template.createPartial("example", {
-            source: "Partial",
-            language: "liquid",
-          }),
+          f.template.bridge.runPromise(
+            f.template.createPartial("example", {
+              source: "Partial",
+              language: "liquid",
+            }),
+          ),
         );
         const selection: Record<string, string> =
           root === "citation"
@@ -715,8 +723,10 @@ describe("registered template-check", () => {
         expect(
           JSON.stringify(yield* Effect.sync(() => f.settings.current)),
         ).toBe(settings);
-        expect(f.profile.profiles).toHaveLength(1);
-        expect(f.template.getLoadedDocumentSource(PATH)).toBe(SOURCE);
+        expect(f.profile.bridge.runSync(f.profile.profiles)).toHaveLength(1);
+        expect(
+          f.template.bridge.runSync(f.template.getLoadedDocumentSource(PATH)),
+        ).toBe(SOURCE);
         const structural = yield* f.check({ profile: "Books", draft });
         expect(structural).toMatchObject({
           ok: true,
@@ -756,9 +766,11 @@ describe("registered template-check", () => {
             fold: { "zotlit-profile": expect.stringContaining("Nx4Qn7XvT2Lp") },
           },
         });
-        expect(f.profile.profiles.map((profile) => profile.id)).toEqual([
-          "Bk3Qn7XvT2Lp",
-        ]);
+        expect(
+          f.profile.bridge
+            .runSync(f.profile.profiles)
+            .map((profile) => profile.id),
+        ).toEqual(["Bk3Qn7XvT2Lp"]);
       }),
   );
 
@@ -811,7 +823,9 @@ describe("registered template-check", () => {
           "templates/zotlit-partial.note.md",
           "Reserved partial output",
         );
-        yield* Effect.promise(() => f.template.waitUntilSettled(1000));
+        yield* Effect.promise(() =>
+          f.template.bridge.runPromise(f.template.waitUntilSettled(1000)),
+        );
 
         const answer = yield* f.check({
           document: "partial:note",
@@ -896,9 +910,9 @@ describe("registered template-check", () => {
           ),
         ).toBe("inherited-style");
         expect(
-          f.profile.resolveProfile("Bk3Qn7XvT2Lp" as never)?.bindings[
-            "note.literature-folder"
-          ],
+          f.profile.bridge.runSync(
+            f.profile.resolveProfile("Bk3Qn7XvT2Lp" as never),
+          )?.bindings["note.literature-folder"],
         ).toBe("Installed");
       }),
   );

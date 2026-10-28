@@ -129,9 +129,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                     ).getFullPath(active.path)
                   : null;
                 const session = active
-                  ? services.pdfAnnotationEditor.bindings.find(
-                      (b) => b.filePath === active.path,
-                    )?.session
+                  ? services.bridge
+                      .runSync(services.pdfAnnotationEditor.bindings)
+                      .find((b) => b.filePath === active.path)?.session
                   : null;
                 return {
                   count: leaves.length,
@@ -147,8 +147,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                     : null,
                   fullPath: full,
                   exists: full ? require("fs").existsSync(full) : false,
-                  profileDir: services.zoteroPref.resolvedProfileDir,
-                  dataDir: services.zoteroPref.dataDir,
+                  profileDir: services.bridge.runSync(
+                    services.zoteroPref.current,
+                  ).resolvedProfileDir,
+                  dataDir: services.bridge.runSync(services.zoteroPref.current)
+                    .dataDir,
                 };
               })(),
             );

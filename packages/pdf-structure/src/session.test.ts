@@ -104,6 +104,58 @@ describe("a Reader Session's Page Labels", () => {
       await structure.pageLabel(2, [{ pageLabel: "205", pageIndex: 1 }]),
     ).toBe("206");
   });
+
+  it("answer the page's own number once the document closes before the pass ends", async () => {
+    // A closed PDF.js document never answers the reads it was asked.
+    const { source } = stubSource({
+      getCatalogPageLabels: () => new Promise(() => {}),
+    });
+    const structure = new PdfTextStructure(source);
+
+    const label = structure.pageLabel(1, []);
+    structure.close();
+
+    expect(await label).toBe("2");
+  });
+
+  it("keep the pass's labels when it ended before the document closed", async () => {
+    const { source } = stubSource({
+      getCatalogPageLabels: () => Promise.resolve(["i", "ii", "iii"]),
+    });
+    const structure = new PdfTextStructure(source);
+    await structure.pageLabels();
+
+    structure.close();
+
+    expect(await structure.pageLabel(1, [])).toBe("ii");
+  });
+});
+
+describe("a Sort Index once the document closes", () => {
+  const position: PdfPosition = { pageIndex: 0, rects: [[72, 694, 78, 708]] };
+
+  it("is read from a page structured before the close", async () => {
+    const structure = new PdfTextStructure(stubSource().source);
+    const before = await structure.sortIndex(position);
+
+    structure.close();
+
+    expect(await structure.sortIndex(position)).toBe(before);
+  });
+
+  it("fails for a page the closed document never answered", async () => {
+    const { source } = stubSource({
+      getTextItems: () => new Promise(() => {}),
+    });
+    const structure = new PdfTextStructure(source);
+
+    const sortIndex = structure.sortIndex(position);
+    structure.close();
+
+    await expect(sortIndex).rejects.toThrow(
+      "The PDF closed before its page was read",
+    );
+  });
 });
 
 describe("a Sort Index on a page with no text layer", () => {

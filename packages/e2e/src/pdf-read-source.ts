@@ -20,8 +20,12 @@ export async function verifyPdfReadSource(
     vaultId,
     async ({ zotlit }) => {
       return {
-        dataDir: zotlit.services.zoteroPref.dataDir,
-        override: zotlit.services.zoteroPref.dataDirOverride,
+        dataDir: zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPref.current,
+        ).dataDir,
+        override: zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPref.current,
+        ).dataDirOverride,
         log: {
           "log.level": zotlit.services.bridge.runSync(
             zotlit.services.settings.current,
@@ -41,7 +45,9 @@ export async function verifyPdfReadSource(
       vaultId,
       async ({ app, zotlit }, { override, log }) => {
         app.workspace.getLeavesOfType("pdf").forEach((l) => l.detach());
-        zotlit.services.zoteroPref.setDataDir(override);
+        zotlit.services.bridge.runSync(
+          zotlit.services.zoteroPref.setDataDir(override),
+        );
         zotlit.services.bridge.runSync(zotlit.services.settings.update(log));
         await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
         const file = app.vault.getFileByPath("old-source.pdf")!;
@@ -87,17 +93,21 @@ export async function verifyPdfReadSource(
       await zotlit.services.bridge.runPromise(zotlit.services.settings.flush);
       const oldServices = zotlit.services;
       await app.plugins.disablePlugin("zotlit");
-      await oldServices.pdfAnnotationEditor[Symbol.asyncDispose]();
-      for (let i = 0; i < 200 && !oldServices.bridge.closed(); i++)
+      const stillOpen = () =>
+        !oldServices.bridge.closed() ||
+        oldServices.bridge.runSync(oldServices.pdfAnnotationEditor.bindings)
+          .length > 0;
+      for (let i = 0; i < 200 && stillOpen(); i++)
         await new Promise((r) => setTimeout(r, 25));
-      if (!oldServices.bridge.closed())
-        throw new Error("The ZotLit services did not close");
+      if (stillOpen()) throw new Error("The ZotLit services did not close");
       await app.plugins.enablePlugin("zotlit");
       await app.vault.copy(
         app.vault.getFileByPath("attachments/rougier-2014.pdf")!,
         "old-source.pdf",
       );
-      zotlit.services.zoteroPref.setDataDir(oldDir);
+      zotlit.services.bridge.runSync(
+        zotlit.services.zoteroPref.setDataDir(oldDir),
+      );
     },
     { oldDir },
   );
@@ -142,9 +152,10 @@ export async function verifyPdfReadSource(
           vaultId,
           async ({ zotlit }) => {
             return String(
-              zotlit.services.pdfAnnotationEditor.bindings.find(
-                (b) => b.filePath === "old-source.pdf",
-              )?.session?.target?.attachmentKey === "RGRPDF24",
+              zotlit.services.bridge
+                .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+                .find((b) => b.filePath === "old-source.pdf")?.session?.target
+                ?.attachmentKey === "RGRPDF24",
             );
           },
           undefined,
@@ -154,7 +165,9 @@ export async function verifyPdfReadSource(
   await obRun(
     vaultId,
     async ({ zotlit }, { dataDir }) => {
-      zotlit.services.zoteroPref.setDataDir(dataDir);
+      zotlit.services.bridge.runSync(
+        zotlit.services.zoteroPref.setDataDir(dataDir),
+      );
       await zotlit.services.bridge.runPromise(
         zotlit.services.zoteroLocalApi.probe,
       );

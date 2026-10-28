@@ -12,6 +12,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 
 import { dispatchKey } from "@/lib/__fixtures__/keymap";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { passAborted } from "@/lib/abort-error";
 import { withRecentColor } from "@/lib/annotation-colors";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -569,6 +570,8 @@ export interface ReaderSurfacesOptions {
    * @default false
    */
   isMacOS?: boolean;
+  /** Where the surfaces' notices go; a recording one unless given. */
+  notifier?: ReturnType<typeof testNotifier>;
 }
 
 /**
@@ -589,6 +592,7 @@ export function readerSurfaces({
   textRotation = () => 0,
   colors = toolColors(),
   isMacOS = false,
+  notifier = testNotifier(),
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
   const store = createReaderSurfaceState({
@@ -596,6 +600,9 @@ export function readerSurfaces({
     capability,
     now: READER_NOW,
   });
+  // The view holds its Attachment's list while it is open, as the binding
+  // does.
+  const viewHold = bridge.runSync(annotations.hold(["RGRPDF24"]));
   let held = records;
   ingestAnnotations(store, held, { annotations, bridge });
   const listening = listenAnnotationEvents(store, annotations, bridge);
@@ -667,6 +674,7 @@ export function readerSurfaces({
     report: (keys) => reported.push(keys),
     annotations,
     bridge,
+    notifier: notifier.service,
     colors,
     surfaceState: store,
     gestures,
@@ -717,6 +725,8 @@ export function readerSurfaces({
     colors,
     gestures,
     reportCreateFailure,
+    /** Every notice the surfaces showed, in order. */
+    notices: notifier.notices,
     focusReader,
     reported,
     navigated,
@@ -748,6 +758,7 @@ export function readerSurfaces({
       host[Symbol.dispose]();
       session[Symbol.dispose]();
       listening.dispose();
+      viewHold[Symbol.dispose]();
     },
   };
 }
@@ -879,5 +890,5 @@ export async function readerOverZotero(
       void repository.read(attachmentKey).then(draw).catch(passAborted);
     }),
   );
-  return { ...reader, ...zoteroSide };
+  return { ...reader, ...zoteroSide, closeRuntime: () => stack.disposeAsync() };
 }

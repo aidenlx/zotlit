@@ -102,9 +102,9 @@ export async function settledGesture(
   await obRun(
     vaultId,
     async ({ zotlit }, { attachmentPath }) => {
-      await zotlit.services.pdfAnnotationEditor.bindings.find(
-        (candidate) => candidate.filePath === attachmentPath,
-      )!.gestured;
+      await zotlit.services.bridge
+        .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+        .find((candidate) => candidate.filePath === attachmentPath)!.gestured;
     },
     { attachmentPath },
   );
@@ -182,9 +182,9 @@ export async function openPdfWithAnnotationView(
   await obRunUntil(
     vaultId,
     async ({ zotlit }, { attachmentPath }) => {
-      return !!zotlit.services.pdfAnnotationEditor.bindings.find(
-        (b) => b.filePath === attachmentPath,
-      )?.session;
+      return !!zotlit.services.bridge
+        .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+        .find((b) => b.filePath === attachmentPath)?.session;
     },
     { attachmentPath },
     {
@@ -387,15 +387,15 @@ export async function recomputedSortIndex(
   return obRun(
     vaultId,
     async ({ zotlit }, { attachmentPath, position }) => {
-      const binding = zotlit.services.pdfAnnotationEditor.bindings.find(
-        (candidate) => candidate.filePath === attachmentPath,
-      )!;
+      const binding = zotlit.services.bridge
+        .runSync(zotlit.services.pdfAnnotationEditor.bindings)
+        .find((candidate) => candidate.filePath === attachmentPath)!;
       return (await binding.sortIndex(position))!;
     },
     {
       attachmentPath,
       position: JSON.parse(position) as Parameters<
-        import("@zotlit/obsidian/e2e").E2eServices["pdfAnnotationEditor"]["bindings"][number]["sortIndex"]
+        import("@/services/pdf-annotation-editor/service").PdfViewBinding["sortIndex"]
       >[0],
     },
   );

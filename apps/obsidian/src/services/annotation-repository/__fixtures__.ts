@@ -30,8 +30,10 @@ import { toInstant } from "@/lib/effect-clock";
 import { buildRuntime } from "@/lib/effect-layer";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { AvailableExcerpt } from "@/services/excerpt-image/service";
-import { plainQueryClients } from "@/services/query-client/plain";
-import { layerQueryClients } from "@/services/query-client/service";
+import {
+  layerQueryClients,
+  QueryClients,
+} from "@/services/query-client/service";
 import {
   annotationItem,
   annotationPage,
@@ -331,7 +333,10 @@ export async function setup(
   const service = Context.get(repositoryContext, AnnotationRepository);
   const bridge = effectBridge(runtime);
   const repository = repositoryClient(service, bridge, closeRepository);
-  const queryClient = plainQueryClients(runtime);
+  const queryClient = Object.assign(runtime.runSync(QueryClients), {
+    bridge,
+    runtime,
+  });
   // The repository reads the harness runtime's TestClock, not the case's.
   const layerClock = Context.get(dependencies, Clock.Clock);
   const adjustLayerClock = (duration: Duration.Input) =>

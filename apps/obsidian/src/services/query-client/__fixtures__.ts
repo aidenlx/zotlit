@@ -1,41 +1,21 @@
-import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 import { Clock, Context, Effect, Exit, Layer, Scope } from "effect";
 // A real QueryClients layer for consumer tests outside Effect.
 import { TestClock } from "effect/testing";
 
+import { effectBridge } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 
-import { plainQueryClients } from "./plain";
-import type { PlainQueryClients } from "./plain";
-import type { QueryClients } from "./service";
-import type { HeldReadEvents } from "./service";
+import { QueryClients } from "./service";
 import { layerQueryClients } from "./service";
 import type { TestClock as QueryTestClock } from "./test-clock";
-
-/** A plain test client with the Effect surface `ExcerptDisplayService` reads. */
-export function taggedQueryClients(
-  queries: PlainQueryClients,
-): Pick<
-  QueryClients["Service"],
-  "client" | "invalidate" | "peek" | "read" | "watch"
-> {
-  return {
-    client: queries.client,
-    invalidate: (key) => Effect.sync(() => queries.invalidate(key)),
-    peek: <T>(key: QueryKey) => Effect.sync(() => queries.peek<T>(key)),
-    read: <T>(key: QueryKey, queryFn: QueryFunction<T>) =>
-      // The real read settles a failure as what the key holds: it never fails.
-      Effect.promise((signal) => queries.read(key, queryFn, signal)),
-    watch: <T>(prefix: QueryKey, on: HeldReadEvents<T>) =>
-      Effect.sync(() => queries.watch(prefix, on)),
-  };
-}
 
 export function buildQueryClients(
   stack: AsyncDisposableStack,
   now?: QueryTestClock["now"],
-): PlainQueryClients & {
+): QueryClients["Service"] & {
   runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+  bridge: EffectBridge;
 } {
   const clock = Context.get(Context.empty(), Clock.Clock);
   const layer =
@@ -55,15 +35,19 @@ export function buildQueryClients(
           ),
         );
   const runtime = buildRuntime(layer, stack);
-  return Object.assign(plainQueryClients(runtime), { runtime });
+  return Object.assign(runtime.runSync(QueryClients), {
+    runtime,
+    bridge: effectBridge(runtime),
+  });
 }
 
 /** A consumer fixture whose owner disposes its runtime. */
 export function queryClientsFixture(
   now?: QueryTestClock["now"],
-): PlainQueryClients &
+): QueryClients["Service"] &
   AsyncDisposable & {
     runtime: import("@/lib/effect-stream").SubscriptionRuntime;
+    bridge: EffectBridge;
   } {
   const stack = new AsyncDisposableStack();
   return Object.assign(buildQueryClients(stack, now), {
@@ -71,7 +55,7 @@ export function queryClientsFixture(
   });
 }
 
-/** A plain adapter on this test's Clock; the test Scope owns its runtime. */
+/** The native QueryClients on this test's Clock, with its runtime and bridge; the test Scope owns the runtime. */
 export const queryClientsOf = Effect.fn("queryClientsOf")(function* () {
   const context = yield* Effect.context<never>();
   const scope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
@@ -81,8 +65,9 @@ export const queryClientsOf = Effect.fn("queryClientsOf")(function* () {
   const { runtime } = yield* Effect.acquireDisposable(
     Effect.tryPromise(() => openTestRuntime(Context.merge(context, services))),
   );
-  return Object.assign(plainQueryClients(runtime), {
+  return Object.assign(runtime.runSync(QueryClients), {
     runtime,
+    bridge: effectBridge(runtime),
     passCooldown: () =>
       runtime.runPromise(
         TestClock.adjust(5001).pipe(Effect.provideContext(context)),

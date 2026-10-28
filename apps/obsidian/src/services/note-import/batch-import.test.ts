@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect";
+import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
-import type { CachedMetadata } from "obsidian";
+import type { App, CachedMetadata } from "obsidian";
 import { beforeEach, describe, expect, vi } from "vitest";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
@@ -10,6 +11,7 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema, rowInstant } from "@zotlit/db/test-utils";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
@@ -17,6 +19,7 @@ import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import type { ProfileId } from "@/lib/profile-stamp";
+import type { BatchTarget } from "@/services/batch-scope";
 import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
@@ -56,8 +59,16 @@ import type {
   FlatTask,
 } from "@/views/batch-modal";
 
-import { runBatchImport } from "./batch-import";
-import type { BatchImport, BatchImportPorts } from "./batch-import";
+import {
+  runBatchImport,
+  runBatchImportAll,
+  runChildImportByKey,
+} from "./batch-import";
+import type {
+  BatchImport,
+  BatchImportPorts,
+  BatchImportResult,
+} from "./batch-import";
 import type { BatchImportServices } from "./batch-import";
 import { bindBatchImport } from "./batch-import-handle";
 import {
@@ -65,6 +76,7 @@ import {
   batchImportToast,
   childImportToast,
 } from "./batch-import-notices";
+import { importAllNotes } from "./commands";
 import { NoteImporter, NoteImportProfileError } from "./service";
 import type {
   ImportNoteOptions,
@@ -313,7 +325,7 @@ const settled = <A>(call: () => Promise<A>) =>
   );
 
 /**
- * The real {@link bindBatchImport}, as `build.ts` binds it, over services
+ * The real {@link bindBatchImport}, as `plugin-runtime.ts` binds it, over services
  * that answer from `deps` at the time of each call. The case's resources
  * dispose the runtime.
  */
@@ -323,6 +335,43 @@ function importOver(deps: ImportDeps): BatchImport {
     effectBridge(runtime),
     runtime.runSync(Effect.context<BatchImportServices>()),
     portsOf(deps),
+  );
+}
+
+/**
+ * {@link runBatchImportAll} over the services {@link importOver} binds, as
+ * the Import all notes command runs it.
+ */
+function importAllOver(
+  deps: ImportDeps,
+  target?: BatchTarget,
+): Promise<BatchImportResult> {
+  return runOver(deps, (ports) => runBatchImportAll(ports, target));
+}
+
+/**
+ * {@link runChildImportByKey} over the services {@link importOver} binds, as
+ * the Import child notes command runs it.
+ */
+function childImportOver(
+  deps: ImportDeps,
+  indexedKey: string,
+): Promise<BatchImportResult | null> {
+  return runOver(deps, (ports) => runChildImportByKey(ports, indexedKey));
+}
+
+/** Run `effect` over `deps`; the case's resources dispose the runtime. */
+function runOver<A, E>(
+  deps: ImportDeps,
+  effect: (ports: BatchImportPorts) => Effect.Effect<A, E, BatchImportServices>,
+): Promise<A> {
+  const runtime = buildRuntime(layerOver(deps), caseResources);
+  const bridge = effectBridge(runtime);
+  return bridge.runPromise(
+    Effect.provideContext(
+      effect({ ...portsOf(deps), bridge }),
+      runtime.runSync(Effect.context<BatchImportServices>()),
+    ),
   );
 }
 
@@ -791,13 +840,13 @@ describe("classify through the NoteRefs stream", () => {
   });
 });
 
-describe("runBatchImportAll", () => {
+describe("Import all notes (runBatchImportAll)", () => {
   const COLLECTION = "ABCD2345";
 
   it("returns db-unavailable when the database is closed", async () => {
     const { deps } = makeDeps({}, { dbState: "loading" });
 
-    await expect(importOver(deps).runBatchImportAll()).resolves.toEqual({
+    await expect(importAllOver(deps)).resolves.toEqual({
       outcome: "db-unavailable",
     });
     expect(openedModals).toHaveLength(0);
@@ -808,7 +857,7 @@ describe("runBatchImportAll", () => {
     const recorded = recordCalls(["ScopeItemIDs"]);
     const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-    await expect(importOver(deps).runBatchImportAll()).resolves.toEqual({
+    await expect(importAllOver(deps)).resolves.toEqual({
       outcome: "no-library-in-scope",
     });
     expect(recorded.calls).toEqual([]);
@@ -822,7 +871,7 @@ describe("runBatchImportAll", () => {
     const recorded = recordCalls(["ScopeItemIDs"]);
     const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-    const result = await importOver(deps).runBatchImportAll();
+    const result = await importAllOver(deps);
 
     expect(result).toEqual({ outcome: "batch-modal" });
     expect(recorded.calls.map(({ payload }) => payload.libraryID)).toEqual([
@@ -848,7 +897,7 @@ describe("runBatchImportAll", () => {
     seedNotes([50, 51]);
     const { deps } = makeDeps({});
 
-    await importOver(deps).runBatchImportAll();
+    await importAllOver(deps);
 
     const { manifest } = await driveLastModal();
     expect(
@@ -867,7 +916,7 @@ describe("runBatchImportAll", () => {
     seedNotes([50, 51]);
     const { deps } = makeDeps({});
 
-    await importOver(deps).runBatchImportAll();
+    await importAllOver(deps);
 
     const opts = openedModals.at(-1)!;
     await driveLastModal();
@@ -881,7 +930,7 @@ describe("runBatchImportAll", () => {
     seedNotes([51], { libraryID: GROUP_LIBRARY.libraryID });
     const { deps } = makeDeps({});
 
-    const result = await importOver(deps).runBatchImportAll();
+    const result = await importAllOver(deps);
 
     expect(result).toMatchObject({ outcome: "single" });
     expect(openedModals).toHaveLength(0);
@@ -894,7 +943,7 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      const result = await importOver(deps).runBatchImportAll({
+      const result = await importAllOver(deps, {
         groupID: 7,
       });
 
@@ -910,7 +959,7 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      await importOver(deps).runBatchImportAll({ groupID: 0 });
+      await importAllOver(deps, { groupID: 0 });
 
       expect(recorded.calls).toMatchObject([
         { payload: { libraryID: USER_LIBRARY_ID } },
@@ -921,9 +970,9 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      await expect(
-        importOver(deps).runBatchImportAll({ groupID: 99 }),
-      ).resolves.toEqual({ outcome: "unavailable-target" });
+      await expect(importAllOver(deps, { groupID: 99 })).resolves.toEqual({
+        outcome: "unavailable-target",
+      });
       expect(recorded.calls).toEqual([]);
       expect(openedModals).toHaveLength(0);
     });
@@ -937,7 +986,7 @@ describe("runBatchImportAll", () => {
       const recorded = recordCalls(["ScopeItemIDs"]);
       const { deps } = makeDeps({}, { wrap: recorded.wrap });
 
-      const result = await importOver(deps).runBatchImportAll({
+      const result = await importAllOver(deps, {
         groupID: 7,
         collectionKey: COLLECTION,
       });
@@ -958,7 +1007,7 @@ describe("runBatchImportAll", () => {
       const { deps } = makeDeps({});
 
       await expect(
-        importOver(deps).runBatchImportAll({
+        importAllOver(deps, {
           groupID: 0,
           collectionKey: COLLECTION,
         }),
@@ -971,7 +1020,7 @@ describe("runBatchImportAll", () => {
       const { deps } = makeDeps({});
 
       await expect(
-        importOver(deps).runBatchImportAll({
+        importAllOver(deps, {
           groupID: 0,
           collectionKey: COLLECTION,
         }),
@@ -1105,6 +1154,42 @@ describe("single note import (mode=note, 1 id)", () => {
       expect(close).toHaveBeenCalledOnce();
       expect(importNote).not.toHaveBeenCalled();
     }),
+  );
+
+  it.effect(
+    "Import all notes shows no notice while the overwrite confirm is open",
+    () =>
+      Effect.gen(function* () {
+        seedNotes([50]);
+        const { deps } = makeDeps(
+          {},
+          { existing: [makeFile("Imported/Note 50.md")] },
+        );
+        const opened = yield* Deferred.make<void>();
+        deps.view.confirm = () =>
+          awaitModal<boolean>(() => {
+            Deferred.doneUnsafe(opened, Exit.void);
+            return { close: () => {} };
+          });
+        const notifier = testNotifier();
+        const bridge = stubService<BatchImportPorts["bridge"]>(
+          "EffectBridge",
+          {},
+        );
+
+        const importing = yield* importAllNotes(
+          { ...portsOf(deps), bridge },
+          stubService<App>("App", {}),
+        ).pipe(
+          Effect.provide(Layer.merge(layerOver(deps), notifier.layer)),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(opened);
+        yield* TestClock.adjust("1 second");
+
+        expect(notifier.notices).toEqual([]);
+        yield* Fiber.interrupt(importing);
+      }),
   );
 
   it("cancels when the overwrite confirm is declined", async () => {
@@ -1453,12 +1538,12 @@ describe("child-mode modal classify", () => {
   });
 });
 
-describe("runChildImportByKey", () => {
+describe("Import child notes (runChildImportByKey)", () => {
   it("reports database unavailable instead of not found", async () => {
     const { deps } = makeDeps({}, { dbState: "loading" });
 
     await expect(
-      importOver(deps).runChildImportByKey(formatIndexedKey("ABCD2345", null)),
+      childImportOver(deps, formatIndexedKey("ABCD2345", null)),
     ).resolves.toEqual({ outcome: "db-unavailable" });
   });
 
@@ -1466,7 +1551,7 @@ describe("runChildImportByKey", () => {
     const { deps } = makeDeps({});
 
     await expect(
-      importOver(deps).runChildImportByKey(formatIndexedKey("MISSING1", null)),
+      childImportOver(deps, formatIndexedKey("MISSING1", null)),
     ).resolves.toBeNull();
   });
 
@@ -1478,7 +1563,8 @@ describe("runChildImportByKey", () => {
     seedNotes([50], { parentItemID: 7 });
     const { deps, importNote } = makeDeps({});
 
-    const result = await importOver(deps).runChildImportByKey(
+    const result = await childImportOver(
+      deps,
       formatIndexedKey("ABCD2345", null),
     );
 
@@ -1503,7 +1589,7 @@ describe("runChildImportByKey", () => {
     );
 
     await expect(
-      importOver(deps).runChildImportByKey(formatIndexedKey("ABCD2345", null)),
+      childImportOver(deps, formatIndexedKey("ABCD2345", null)),
     ).rejects.toThrow("sqlite read failed");
   });
 

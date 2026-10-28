@@ -1,7 +1,8 @@
 import { testEvent } from "@/lib/__fixtures__/event-stream";
 
-import { Stream } from "effect";
-import type { PlainCitationLookup } from "@/services/citation-index/plain";
+import { Effect, Stream } from "effect";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
+import type { CitationLookup } from "@/services/citation-index/lookup-service";
 
 import type {
   CitationLookupAnswer,
@@ -14,16 +15,15 @@ import type {
 } from "@/services/citation-index/lookup-service";
 
 /** The consumer seam: async delivery, strict requested answers, and a held placeholder. */
-export class CitationLookupStub implements Pick<
-  PlainCitationLookup,
-  "read" | "observe" | "changed" | "status-changed" | "status" | "whenResolved" | "changes"
-> {
-  status: CitationLookupStatus = "fresh";
+type LookupService = CitationLookup["Service"];
+
+export class CitationLookupStub implements LookupService {
+  statusValue: CitationLookupStatus = "fresh";
+  readonly current = Effect.sync(() => ({ status: this.statusValue, revision: String(this.#revision), stopped: false }));
   #revision = 0;
   readonly #events = testEvent<CitationLookupState>();
-  readonly changes = Stream.suspend(() => this.#events.stream.pipe(Stream.prepend([{status: this.status, revision: String(this.#revision), stopped: false}])));
-  readonly changed = this.#events.stream.pipe(Stream.map(() => undefined));
-  readonly "status-changed" = this.changed;
+  readonly changes = Stream.suspend(() => this.#events.stream.pipe(Stream.prepend([{status: this.statusValue, revision: String(this.#revision), stopped: false}])));
+  readonly invalidated = this.#events.stream.pipe(Stream.map(() => undefined));
   readonly #answer;
   readonly #deliveries = new Set<Promise<void>>();
 
@@ -48,26 +48,32 @@ export class CitationLookupStub implements Pick<
     return this.#refresh.size;
   }
 
-  async whenResolved(): Promise<void> {}
+  readonly whenResolved = Effect.void;
 
-  async read(
-    request: CitationLookupRequest,
-    { signal }: { signal?: AbortSignal } = {},
-  ): Promise<CitationLookupAnswer> {
-    signal?.throwIfAborted();
-    const answer = await this.#answer(request);
-    signal?.throwIfAborted();
-    if (!answer) throw new Error("Citation Lookup is unavailable");
-    return answer;
+  read(request: CitationLookupRequest) {
+    return Effect.tryPromise({
+      try: async (signal) => {
+        signal.throwIfAborted();
+        const answer = await this.#answer(request);
+        signal.throwIfAborted();
+        if (!answer) throw new Error("Citation Lookup is unavailable");
+        return answer;
+      },
+      catch: (cause) => new DbUnavailable({ message: cause instanceof Error ? cause.message : String(cause) }),
+    });
   }
 
   refresh(): void {
     this.#revision++;
     for (const refresh of this.#refresh) refresh();
-    this.#events.emit({status: this.status, revision: String(this.#revision), stopped: false});
+    this.#events.emit({status: this.statusValue, revision: String(this.#revision), stopped: false});
   }
 
-  observe(changed: () => void): CitationLookupObservation {
+  observe(changed: () => void): Effect.Effect<CitationLookupObservation> {
+    return Effect.sync(() => this.#observe(changed));
+  }
+
+  #observe(changed: () => void): CitationLookupObservation {
     let current: CitationLookupObservation["current"] = null;
     let request: CitationLookupRequest | null = null;
     let identity: string | undefined;
@@ -150,7 +156,7 @@ export function lookupObservation(
   changed: () => void,
   released: () => void = () => undefined,
 ): CitationLookupObservation {
-  const observation = new CitationLookupStub(answer).observe(changed);
+  const observation = Effect.runSync(new CitationLookupStub(answer).observe(changed));
   return {
     get current() {
       return observation.current;

@@ -305,8 +305,11 @@ async function searchAndInsert(
           content: draftContent,
         });
         cleanup.defer(() => annotations.close());
-        const ledger = () => zotlit.services.useLedger.get(itemKey);
-        const before = ledger()?.instant.toString() ?? null;
+        const ledger = () =>
+          zotlit.services.bridge.runSync(
+            zotlit.services.useLedger.get(itemKey),
+          );
+        const before = ledger()?.instant.epochMilliseconds ?? null;
         app.workspace.setActiveLeaf(leaf, { focus: true });
         const editor = view.editor;
         editor.setCursor({ line: editor.lastLine(), ch: cursorCh });
@@ -352,7 +355,9 @@ async function searchAndInsert(
         // the one held before the search.
         const after = ledger();
         const use =
-          after && after.instant.toString() !== before ? after.kind : null;
+          after && after.instant.epochMilliseconds !== before
+            ? after.kind
+            : null;
         outcome = { text, rows: shown, sup, citationOpen, use };
       }
       return outcome;
@@ -528,16 +533,16 @@ async function follow({
               return;
             }
             const [newest] =
-              Object.entries(s.useLedger.uses).sort(
+              Object.entries(s.bridge.runSync(s.useLedger.uses)).sort(
                 ([, a], [, b]) => b - a,
               )[0] ?? [];
             if (
               newest !== undefined &&
-              s.useLedger.get(newest)?.kind === "read"
+              s.bridge.runSync(s.useLedger.get(newest))?.kind === "read"
             ) {
-              const attachment = s.pdfAnnotationEditor.bindings.find(
-                (b) => b.filePath === readPdfPath,
-              )?.attachment;
+              const attachment = s.bridge
+                .runSync(s.pdfAnnotationEditor.bindings)
+                .find((b) => b.filePath === readPdfPath)?.attachment;
               reads.push(
                 attachment?.kind === "resolved"
                   ? attachment.attachmentKey
@@ -618,14 +623,16 @@ async function follow({
           // promise, so the wait runs until the one awaited is the last.
           const binding = await until(
             () =>
-              s.pdfAnnotationEditor.bindings.find(
-                (b) =>
-                  b.filePath === bindingPdfPath &&
-                  b.attachment.kind === "resolved" &&
-                  b.attachment.attachmentKey === bindingKey,
-              ),
+              s.bridge
+                .runSync(s.pdfAnnotationEditor.bindings)
+                .find(
+                  (b) =>
+                    b.filePath === bindingPdfPath &&
+                    b.attachment.kind === "resolved" &&
+                    b.attachment.attachmentKey === bindingKey,
+                ),
             () =>
-              `No reader named the Attachment ${bindingLabel}: ${JSON.stringify(s.pdfAnnotationEditor.bindings.map((b) => b.attachment))}`,
+              `No reader named the Attachment ${bindingLabel}: ${JSON.stringify(s.bridge.runSync(s.pdfAnnotationEditor.bindings).map((b) => b.attachment))}`,
           );
           for (
             let read = binding.refreshed, end = deadline();
@@ -767,7 +774,7 @@ async function reindexed(
     async ({ app, zotlit, page }, { kind, attachmentKey, pdfPath }) => {
       const { until } = page.annotationLinkTools(() => zotlit.services);
       const s = zotlit.services;
-      await s.zoteroReads.refresh();
+      await s.bridge.runPromise(s.zoteroReads.refresh);
       await until(
         () =>
           s.bridge.runSync(s.attachmentResolver.lookup(attachmentKey)).kind ===
@@ -836,8 +843,9 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
       const services = () => zotlit.services;
       const file = app.vault.getFileByPath(pdfPath)!;
       const attachmentOf = (leaf: WorkspaceLeaf) =>
-        services().pdfAnnotationEditor.sessionFor(leaf.view)?.target
-          ?.attachmentKey ?? null;
+        services().bridge.runSync(
+          services().pdfAnnotationEditor.sessionFor(leaf.view),
+        )?.target?.attachmentKey ?? null;
       const boundTo = (leaf: WorkspaceLeaf, key: string, what: string) =>
         until(
           () => attachmentOf(leaf) === key,
@@ -879,11 +887,15 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
               return;
             }
             const [newest] =
-              Object.entries(ledger.uses).sort(([, a], [, b]) => b - a)[0] ??
-              [];
-            if (newest !== undefined && ledger.get(newest)?.kind === "read") {
-              const attachment = services().pdfAnnotationEditor.bindingFor(
-                restored.view,
+              Object.entries(services().bridge.runSync(ledger.uses)).sort(
+                ([, a], [, b]) => b - a,
+              )[0] ?? [];
+            if (
+              newest !== undefined &&
+              services().bridge.runSync(ledger.get(newest))?.kind === "read"
+            ) {
+              const attachment = services().bridge.runSync(
+                services().pdfAnnotationEditor.bindingFor(restored.view),
               )?.attachment;
               reads.push(
                 attachment?.kind === "resolved"
@@ -894,15 +906,17 @@ async function sharedTabs(): Promise<SharedTabsOutcome> {
           }),
         );
         app.workspace.setActiveLeaf(restored, { focus: true });
-        const opened = await services().targetOpener.open(
-          {
-            kind: "annotation",
-            attachmentKey: targetAttachment,
-            annotationKey: targetAnnotation,
-            pageIndex: 0,
-            pageLabel: targetPage,
-          },
-          false,
+        const opened = await services().bridge.runPromise(
+          services().targetOpener.open(
+            {
+              kind: "annotation",
+              attachmentKey: targetAttachment,
+              annotationKey: targetAnnotation,
+              pageIndex: 0,
+              pageLabel: targetPage,
+            },
+            false,
+          ),
         );
         if (opened.kind !== "reader")
           throw new Error(`The open went elsewhere: ${JSON.stringify(opened)}`);
@@ -1008,7 +1022,7 @@ async function reread(annotationKey: string, text: string): Promise<void> {
       const links = page.annotationLinkTools(() => zotlit.services);
       const { sleep, deadline, past } = links;
       const s = zotlit.services;
-      await s.zoteroReads.refresh();
+      await s.bridge.runPromise(s.zoteroReads.refresh);
       const holds = async () =>
         (
           await s.bridge.runPromise(s.annotationRepository.read(attachmentKey))

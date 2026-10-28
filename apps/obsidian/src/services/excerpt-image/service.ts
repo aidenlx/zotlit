@@ -9,7 +9,6 @@ import {
 } from "effect";
 import type { Cause, PlatformError } from "effect";
 
-import { scopedBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { isScopeClosed } from "@/lib/effect-scope";
 
@@ -19,12 +18,14 @@ import {
   excerptKey,
 } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import type { ExcerptCacheWriteError } from "./error";
 import { ExcerptImageError } from "./error";
 import { openExcerptFile, pdfStamp, readBounded } from "./file";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import type { ExcerptOutcomeScope } from "./outcome-scope";
-import { ExcerptPdfQueue } from "./pdf-queue";
+import { makeExcerptPdfQueue } from "./pdf-queue";
+import type { ExcerptPdfQueue } from "./pdf-queue";
 import { usableExcerptPng } from "./png";
 import type { ExcerptReaderDocuments } from "./reader-borrow";
 import { ExcerptRenderer } from "./renderer";
@@ -54,7 +55,10 @@ export interface ExcerptEntry extends ExcerptImage {
 }
 export interface ExcerptCache {
   get(key: string, pdf?: PdfStamp): Promise<ExcerptEntry | undefined>;
-  put(key: string, entry: ExcerptEntry): Promise<void>;
+  put(
+    key: string,
+    entry: ExcerptEntry,
+  ): Effect.Effect<void, ExcerptCacheWriteError>;
   /**
    * The image one verified Annotation last displayed on this device, as the
    * reference that locates it. Absent from a cache that keeps no references.
@@ -188,13 +192,9 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const scope = yield* Scope.Scope;
-      const bridge = yield* scopedBridge;
       const pending = new Map<string, Pending>();
       const demands = new Map<string, ExcerptDemand>();
-      // p-queue keeps bounded preflight, admission, and PDF affinity. Its
-      // Promise callbacks enter through scopedBridge; Effect owns shared jobs,
-      // interruption, deadlines, and cleanup.
-      const queue = new ExcerptPdfQueue();
+      const queue = yield* makeExcerptPdfQueue();
       const clearing = Semaphore.makeUnsafe(1);
       let generation = 0;
       let operations = 0;
@@ -218,7 +218,7 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
       }
       // Jobs are forked after this finalizer: scope close interrupts and awaits
       // them before the queue drains and the resident document is released.
-      yield* Effect.addFinalizer(() => Effect.promise(() => queue.idle()));
+      yield* Effect.addFinalizer(() => queue.idle);
 
       const stamp = Effect.fnUntraced(function* (path: string, key: string) {
         const reading: Effect.Effect<
@@ -362,9 +362,7 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
                 .pipe(Effect.provideService(FileSystem.FileSystem, fs));
           evidence.pdf = pdf;
           if (pdf && context.generation === generation && persistent) {
-            const stored = yield* Effect.tryPromise(() =>
-              persistent.put(key, { ...image, pdf }),
-            ).pipe(
+            const stored = yield* persistent.put(key, { ...image, pdf }).pipe(
               Effect.as(true),
               Effect.catch((error) =>
                 debug("Excerpt cache write failed", { key, error }).pipe(
@@ -455,16 +453,9 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
             yield* Effect.acquireDisposable(
               Effect.sync(() => context.outcomes!.admit()),
             );
-          const checked = yield* Effect.tryPromise((signal) =>
-            queue.preflight(
-              () =>
-                bridge.runPromise(
-                  probe(request, context.key, context.outcomes),
-                  { signal },
-                ),
-              signal,
-            ),
-          ).pipe(Effect.timeout(EXCERPT_JOB_DEADLINE_MS));
+          const checked = yield* queue
+            .preflight(probe(request, context.key, context.outcomes))
+            .pipe(Effect.timeout(EXCERPT_JOB_DEADLINE_MS));
           evidence.pdf = checked.pdf;
           const identity: ExcerptIdentity = {
             key: context.key,
@@ -491,44 +482,20 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
             admitted,
             awaiting,
           });
-          return yield* Effect.gen(function* () {
-            const admission = yield* Effect.acquireRelease(
-              Effect.tryPromise((signal) => queue.reserve(signal)),
-              (admission) => Effect.sync(() => admission.release()),
-              { interruptible: true },
-            );
-            // The queue owns cleanup after caller cancellation. Keep admission
-            // charged until its callback and the renderer's finalizers settle.
-            let queued: Promise<ExcerptOutcome> | undefined;
-            return yield* Effect.tryPromise(
-              (signal) =>
-                (queued = admission.render(
-                  () =>
-                    bridge.runPromise(
-                      stalled
-                        ? Effect.succeed<ExcerptOutcome>(STALLED)
-                        : render(request, {
-                            ...context,
-                            probe: checked,
-                            identity,
-                            evidence,
-                          }).pipe(Effect.timeout(EXCERPT_JOB_DEADLINE_MS)),
-                      { signal },
-                    ),
-                  { pdf: request.pdfPath ?? "", sequence, signal },
-                )),
-            ).pipe(
-              Effect.ensuring(
-                Effect.promise(
-                  () =>
-                    queued?.then(
-                      () => undefined,
-                      () => undefined,
-                    ) ?? Promise.resolve(),
-                ),
-              ),
-            );
-          }).pipe(Effect.scoped);
+          const admission = yield* queue.reserve;
+          return yield* admission.render(
+            Effect.suspend(() =>
+              stalled
+                ? Effect.succeed<ExcerptOutcome>(STALLED)
+                : render(request, {
+                    ...context,
+                    probe: checked,
+                    identity,
+                    evidence,
+                  }).pipe(Effect.timeout(EXCERPT_JOB_DEADLINE_MS)),
+            ),
+            { pdf: request.pdfPath ?? "", sequence },
+          );
         }).pipe(Effect.scoped);
         const fiber = yield* Effect.acquireUseRelease(
           Effect.sync(() => {
@@ -610,17 +577,11 @@ export const layerExcerptImage = (deps: ExcerptDeps = {}) =>
               Effect.gen(function* () {
                 if (--operations !== 0) return;
                 const settled = !queue.busy;
-                const release = Effect.tryPromise(() =>
-                  queue.teardown(() =>
-                    bridge.runPromise(
-                      operations === 0 && renderer
-                        ? renderer.release
-                        : Effect.void,
-                    ),
-                  ),
-                ).pipe(
-                  Effect.catch((error) =>
-                    debug("Excerpt queued teardown did not run", { error }),
+                const release = queue.teardown(
+                  Effect.suspend(() =>
+                    operations === 0 && renderer
+                      ? renderer.release
+                      : Effect.void,
                   ),
                 );
                 const fiber = yield* release.pipe(

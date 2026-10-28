@@ -26,7 +26,7 @@ it.effect(
             message: "ENOENT: database is absent",
           }),
         );
-      const { service, plain } = yield* readsFixture(
+      const { service } = yield* readsFixture(
         inProcessClient(
           layerSource({
             initial: {
@@ -80,7 +80,7 @@ it.effect(
       yield* Effect.promise(() =>
         waitFor(() => expect(signals).toEqual(["db-file-missing"])),
       );
-      expect(plain.dbFileMissing).toBe(true);
+      expect((yield* service.current).dbFileMissing).toBe(true);
       expect(yield* Stream.runHead(service.changes)).toMatchObject({
         value: { dbFileMissing: true },
       });

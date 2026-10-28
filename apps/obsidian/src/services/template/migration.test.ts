@@ -12,6 +12,7 @@ import { MockVault, PluginStub } from "@/lib/__fixtures__/obsidian-host";
 import { layerHost } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import { buildRuntime } from "@/lib/effect-layer";
 import { buildSettings } from "@/services/settings/__fixtures__";
 import { defaults } from "@/services/settings/schema";
@@ -20,10 +21,8 @@ import type { PluginSettings } from "@/services/settings/service";
 import type { SettingsPatch } from "@/services/settings/service";
 
 import { buildTemplate, templateSettings } from "./__fixtures__";
-import { layerTemplateMigration } from "./migration";
+import { layerTemplateMigration, TemplateMigration } from "./migration";
 import type { TemplateMigrationOptions } from "./migration";
-import { plainTemplateMigration } from "./plain";
-import type { PlainTemplate } from "./plain";
 import { Template, templateFailure } from "./service";
 import type {
   ConvertedLegacyProfileDocument,
@@ -147,7 +146,7 @@ async function makeHarness(
             "templates/zotlit-content.liquid.md",
           ],
     ),
-    convertLegacyLiteratureNoteTemplates: vi.fn(async () =>
+    convertLegacyLiteratureNoteTemplates: vi.fn(async (_data?: unknown) =>
       stubService<ConvertedLegacyProfileDocument>(
         "ConvertedLegacyProfileDocument",
         {
@@ -167,7 +166,7 @@ async function makeHarness(
       (): LegacyTemplateDocuments =>
         options?.legacyDocuments ?? { citation: [], partials: [] },
     ),
-    convertLegacyTemplateDocuments: vi.fn(async () => ({
+    convertLegacyTemplateDocuments: vi.fn(async (_refs?: unknown) => ({
       documents: [] as { path: string; source: string }[],
       trashed: [] as string[],
       kept: [] as string[],
@@ -190,7 +189,25 @@ async function makeHarness(
       }),
       settings,
       bridge,
-      template,
+      template: stubService<Template["Service"]>("Template", {
+        refresh: Effect.promise(() => template.refresh()),
+        getLegacyLiteratureNoteTemplateFiles: Effect.sync(() =>
+          template.getLegacyLiteratureNoteTemplateFiles(),
+        ),
+        getLegacyTemplateDocuments: Effect.sync(() =>
+          template.getLegacyTemplateDocuments(),
+        ),
+        convertLegacyLiteratureNoteTemplates: (data) =>
+          Effect.tryPromise({
+            try: () => template.convertLegacyLiteratureNoteTemplates(data),
+            catch: templateFailure,
+          }),
+        convertLegacyTemplateDocuments: (refs) =>
+          Effect.tryPromise({
+            try: () => template.convertLegacyTemplateDocuments(refs),
+            catch: templateFailure,
+          }),
+      }),
       loadVerificationData: () =>
         Effect.succeed({
           note: { title: "Paper" },
@@ -212,7 +229,7 @@ async function makeHarness(
     files,
     layoutReady: async () => {
       workspace.layoutReady();
-      await service.whenSettled();
+      await service.bridge.runPromise(service.whenSettled);
     },
     openPrompt,
     bridge,
@@ -318,7 +335,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           Effect.tryPromise(async () => harness.service),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toEqual({
           outcome: "converted",
@@ -386,7 +405,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
 
         // Unload stops the waiting caller; the conversion itself finishes.
         const converting = expect(
-          harness.service.convert(),
+          harness.service.bridge.runPromise(harness.service.convert),
         ).rejects.toMatchObject({ name: "AbortError" });
         yield* Effect.promise(() => started.promise);
         const unloading = harness.service[Symbol.asyncDispose]();
@@ -426,7 +445,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         Effect.tryPromise(async () => harness.service),
       );
       harness.files.delete("templates/zotlit-content.liquid.md");
-      yield* Effect.promise(() => service.convert());
+      yield* Effect.promise(() => service.bridge.runPromise(service.convert));
       expect(
         harness.bridge.runSync(harness.settings.current)[
           "note.template-conversion-result"
@@ -452,7 +471,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         );
         failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
 
-        const result = yield* Effect.promise(() => service.convert());
+        const result = yield* Effect.promise(() =>
+          service.bridge.runPromise(service.convert),
+        );
 
         expect(result).toMatchObject({
           outcome: "converted",
@@ -494,9 +515,11 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           Effect.tryPromise(async () => failed.service),
         );
         failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
-        yield* Effect.promise(() => service.convert());
+        yield* Effect.promise(() => service.bridge.runPromise(service.convert));
 
-        const retried = yield* Effect.promise(() => service.retryCleanup());
+        const retried = yield* Effect.promise(() =>
+          service.bridge.runPromise(service.retryCleanup),
+        );
 
         expect(retried).toMatchObject({
           outcome: "converted",
@@ -561,7 +584,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         );
 
         yield* Effect.promise(() =>
-          expect(service.convert()).rejects.toThrow("Disk full"),
+          expect(service.bridge.runPromise(service.convert)).rejects.toThrow(
+            "Disk full",
+          ),
         );
 
         // Only the document this pass created goes back; every legacy file stays.
@@ -630,7 +655,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         );
         harness.settings.update.mockClear();
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toEqual({
           outcome: "refused",
@@ -675,7 +702,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           ),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toEqual({
           outcome: "refused",
@@ -704,7 +733,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
           Effect.tryPromise(async () => harness.service),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toMatchObject({
           outcome: "converted",
@@ -740,7 +771,9 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         Effect.tryPromise(async () => harness.service),
       );
 
-      const result = yield* Effect.promise(() => harness.service.convert());
+      const result = yield* Effect.promise(() =>
+        harness.service.bridge.runPromise(harness.service.convert),
+      );
 
       expect(result).toEqual({
         outcome: "refused",
@@ -858,7 +891,7 @@ async function makeVaultHarness(
   return {
     layoutReady: async () => {
       workspace.layoutReady();
-      await service.whenSettled();
+      await service.bridge.runPromise(service.whenSettled);
     },
     openPrompt,
     service,
@@ -896,7 +929,9 @@ describe("one-pass conversion of the 2.1.x cite and partial files", () => {
           ),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toEqual({
           outcome: "converted",
@@ -955,29 +990,39 @@ language: liquid
         );
         const refs = [{ citationKey: "smith2024" }];
         const before = {
-          main: harness.template.render(
-            "cite",
-            citekeysToCiteTemplateData(refs, "main"),
+          main: harness.template.bridge.runSync(
+            harness.template.render(
+              "cite",
+              citekeysToCiteTemplateData(refs, "main"),
+            ),
           ),
-          alt: harness.template.render(
-            "cite2",
-            citekeysToCiteTemplateData(refs, "alt"),
+          alt: harness.template.bridge.runSync(
+            harness.template.render(
+              "cite2",
+              citekeysToCiteTemplateData(refs, "alt"),
+            ),
           ),
         };
 
-        yield* Effect.promise(() => harness.service.convert());
+        yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
         yield* TestClock.adjust(500);
 
         expect(before).toEqual({
           main: "<[@smith2024]>\n",
           alt: "@smith2024!\n",
         });
-        expect(harness.template.renderCitation(refs, "main")).toBe(
-          "<[@smith2024]>",
-        );
-        expect(harness.template.renderCitation(refs, "alt")).toBe(
-          "@smith2024!",
-        );
+        expect(
+          harness.template.bridge.runSync(
+            harness.template.renderCitation(refs, "main"),
+          ),
+        ).toBe("<[@smith2024]>");
+        expect(
+          harness.template.bridge.runSync(
+            harness.template.renderCitation(refs, "alt"),
+          ),
+        ).toBe("@smith2024!");
       }),
   );
 
@@ -997,7 +1042,9 @@ language: liquid
         ),
       );
 
-      const result = yield* Effect.promise(() => harness.service.convert());
+      const result = yield* Effect.promise(() =>
+        harness.service.bridge.runPromise(harness.service.convert),
+      );
 
       expect(result).toMatchObject({ document: null, kept: [] });
       expect(
@@ -1025,7 +1072,9 @@ language: liquid
           ),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toMatchObject({
           outcome: "converted",
@@ -1068,7 +1117,9 @@ language: liquid
           ),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toMatchObject({
           outcome: "refused",
@@ -1150,7 +1201,9 @@ language: liquid
 
       expect(harness.openPrompt).not.toHaveBeenCalled();
       expect(
-        yield* Effect.promise(() => harness.service.convert()),
+        yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        ),
       ).toMatchObject({
         outcome: "refused",
         diagnostic: { code: "no-legacy-templates" },
@@ -1177,7 +1230,9 @@ language: liquid
           ),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toEqual({
           outcome: "refused",
@@ -1212,7 +1267,9 @@ language: liquid
           ),
         );
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toMatchObject({
           outcome: "refused",
@@ -1269,7 +1326,9 @@ describe("the one-shot conversion aborts before any write", () => {
         );
         harness.settings.update.mockClear();
 
-        const result = yield* Effect.promise(() => harness.service.convert());
+        const result = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(result).toEqual({
           outcome: "refused",
@@ -1357,9 +1416,14 @@ describe("layout-ready legacy conversion detection", () => {
         ).toBe(true);
         // The late inventory still renders through the legacy files.
         expect(
-          resumed.template.render(
-            "cite",
-            citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
+          resumed.template.bridge.runSync(
+            resumed.template.render(
+              "cite",
+              citekeysToCiteTemplateData(
+                [{ citationKey: "smith2024" }],
+                "main",
+              ),
+            ),
           ),
         ).toBe("<[@smith2024]>\n");
         expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
@@ -1387,7 +1451,9 @@ describe("repair and retry after a refusal", () => {
           ),
         );
 
-        const refused = yield* Effect.promise(() => harness.service.convert());
+        const refused = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(refused).toMatchObject({
           outcome: "refused",
@@ -1406,7 +1472,9 @@ describe("repair and retry after a refusal", () => {
         );
         yield* TestClock.adjust(500);
 
-        const retried = yield* Effect.promise(() => harness.service.convert());
+        const retried = yield* Effect.promise(() =>
+          harness.service.bridge.runPromise(harness.service.convert),
+        );
 
         expect(retried).toMatchObject({
           outcome: "converted",
@@ -1445,7 +1513,7 @@ describe("cleanup retry across restart", () => {
           first.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
 
           const converted = yield* Effect.promise(() =>
-            first.service.convert(),
+            first.service.bridge.runPromise(first.service.convert),
           );
 
           expect(converted).toMatchObject({
@@ -1480,7 +1548,7 @@ describe("cleanup retry across restart", () => {
         expect(resumed.openPrompt).not.toHaveBeenCalled();
 
         const retried = yield* Effect.promise(() =>
-          resumed.service.retryCleanup(),
+          resumed.service.bridge.runPromise(resumed.service.retryCleanup),
         );
 
         expect(retried).toMatchObject({
@@ -1503,18 +1571,13 @@ async function buildMigration(
     settings: PluginSettings["Service"];
     bridge: Pick<import("@/lib/effect-bridge").EffectBridge, "runSync">;
     template: Pick<
-      PlainTemplate,
+      Template["Service"],
       | "refresh"
       | "getLegacyLiteratureNoteTemplateFiles"
       | "getLegacyTemplateDocuments"
       | "convertLegacyTemplateDocuments"
-    > & {
-      convertLegacyLiteratureNoteTemplates: (data: {
-        note: object;
-        filename: object;
-        annotation?: object;
-      }) => Promise<{ source: string; legacyFiles: readonly string[] }>;
-    };
+      | "convertLegacyLiteratureNoteTemplates"
+    >;
   },
   context = Context.empty(),
 ) {
@@ -1533,30 +1596,7 @@ async function buildMigration(
       Layer.provide(
         Layer.succeed(
           Template,
-          stubService<Template["Service"]>("Template", {
-            refresh: Effect.promise(() => template.refresh()),
-            getLegacyLiteratureNoteTemplateFiles: Effect.sync(() =>
-              template.getLegacyLiteratureNoteTemplateFiles(),
-            ),
-            getLegacyTemplateDocuments: Effect.sync(() =>
-              template.getLegacyTemplateDocuments(),
-            ),
-            // The fake template converts to the fields migration reads only.
-            convertLegacyLiteratureNoteTemplates: (data) =>
-              Effect.tryPromise({
-                try: async (): Promise<ConvertedLegacyProfileDocument> =>
-                  stubService<ConvertedLegacyProfileDocument>(
-                    "ConvertedLegacyProfileDocument",
-                    await template.convertLegacyLiteratureNoteTemplates(data),
-                  ),
-                catch: templateFailure,
-              }),
-            convertLegacyTemplateDocuments: (refs) =>
-              Effect.tryPromise({
-                try: () => template.convertLegacyTemplateDocuments(refs),
-                catch: templateFailure,
-              }),
-          }),
+          stubService<Template["Service"]>("Template", template),
         ),
       ),
       Layer.provideMerge(Layer.succeedContext(context)),
@@ -1564,7 +1604,9 @@ async function buildMigration(
     stack,
   );
   await runtime.context();
-  const service = plainTemplateMigration(runtime);
+  const service = Object.assign(runtime.runSync(TemplateMigration), {
+    bridge: effectBridge(runtime),
+  });
   const lifetime = stack.move();
   return Object.assign(service, {
     [Symbol.asyncDispose]: () => lifetime.disposeAsync(),

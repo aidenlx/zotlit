@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect";
 import { unzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -13,6 +13,7 @@ import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { CitationParse } from "@/services/citation-parse/service";
+import { DbUnavailable } from "@/services/zotero-reads/rpc";
 
 import type { BibliographyFailure, BibliographyItemRef } from "./bibliography";
 import { createCitationEngine } from "./engine";
@@ -120,7 +121,7 @@ function ports(fixture: Fixture): ExportPorts & {
   });
   const fetchBibliography = vi.fn((refs: readonly BibliographyItemRef[]) => {
     if (fixture.bibliographyFailure) {
-      return Promise.resolve({ error: fixture.bibliographyFailure });
+      return Effect.succeed({ error: fixture.bibliographyFailure });
     }
     const items = new Map<string, CslItemData>();
     for (const [indexedKey, item] of Object.entries(fixture.items ?? {})) {
@@ -128,7 +129,7 @@ function ports(fixture: Fixture): ExportPorts & {
         items.set(indexedKey, item);
       }
     }
-    return Promise.resolve({ source: "local-api" as const, items });
+    return Effect.succeed({ source: "local-api" as const, items });
   });
   return {
     prepareDocument,
@@ -137,35 +138,38 @@ function ports(fixture: Fixture): ExportPorts & {
     engine: { prepareDocument, renderPrepared },
     dataDir: () => "/Zotero",
     resolveIndexedKey: (linkpath) => fixture.notes?.[linkpath] ?? null,
-    readLookup: async ({ citekeys }) => {
-      if (fixture.snapshotUnavailable)
-        throw new Error("citation worker unavailable");
-      const resolve = (citekey: string): CitekeyResolution => {
-        if (fixture.ambiguous?.includes(citekey)) {
-          return { kind: "ambiguous", candidates: [] };
-        }
-        const indexedKey = fixture.citekeys?.[citekey];
-        return indexedKey === undefined
-          ? { kind: "missing" }
-          : {
-              kind: "unique",
-              item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
-            };
-      };
-      return lookupAnswer(
-        Object.fromEntries(
-          citekeys.map((citekey) => [citekey, resolve(citekey)]),
-        ),
-      );
-    },
+    readLookup: ({ citekeys }) =>
+      Effect.gen(function* () {
+        if (fixture.snapshotUnavailable)
+          return yield* new DbUnavailable({
+            message: "Citation lookup is unavailable",
+          });
+        const resolve = (citekey: string): CitekeyResolution => {
+          if (fixture.ambiguous?.includes(citekey)) {
+            return { kind: "ambiguous", candidates: [] };
+          }
+          const indexedKey = fixture.citekeys?.[citekey];
+          return indexedKey === undefined
+            ? { kind: "missing" }
+            : {
+                kind: "unique",
+                item: { itemID: 1, libraryID: 1, key: indexedKey, indexedKey },
+              };
+        };
+        return lookupAnswer(
+          Object.fromEntries(
+            citekeys.map((citekey) => [citekey, resolve(citekey)]),
+          ),
+        );
+      }),
     readItemRefs: (indexedKeys) => {
-      if (fixture.databaseUnavailable) return Promise.resolve(null);
+      if (fixture.databaseUnavailable) return Effect.succeed(null);
       const placed = new Map<string, BibliographyItemRef>();
       for (const indexedKey of indexedKeys) {
         const item = fixture.placed?.[indexedKey];
         if (item) placed.set(indexedKey, item);
       }
-      return Promise.resolve(placed);
+      return Effect.succeed(placed);
     },
   };
 }
@@ -174,7 +178,9 @@ function ports(fixture: Fixture): ExportPorts & {
 const exportParsed = (...args: Parameters<typeof exportCitedDocument>) =>
   exportCitedDocument(...args).pipe(
     Effect.provide(
-      Layer.mock(CitationParse, { parse: inProcessParseClient.parse }),
+      Layer.mock(CitationParse, {
+        parse: (request) => inProcessParseClient.parse(request),
+      }),
     ),
   );
 
@@ -207,6 +213,30 @@ const CITED: Fixture = {
 };
 
 describe("exportCitedDocument", () => {
+  it.effect("interrupts a pending citation read before rendering (#1830)", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const wired = ports({ citedIds: ["zeta2020"] });
+      wired.readLookup = () =>
+        Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never));
+      const fiber = yield* exportParsed(
+        {
+          document: { sourcePath: SOURCE, links: [] },
+          markdown: "@zeta2020",
+          format: "html",
+        },
+        wired,
+      ).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(fiber);
+      const exit = yield* Fiber.await(fiber);
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+        true,
+      );
+      expect(wired.renderPrepared).not.toHaveBeenCalled();
+    }),
+  );
+
   it.effect.each([
     "[](zotero://open/library/items/ABCD2345?page=12&annotation=EFGH6789)",
     "[](<zotero://open/groups/7/items/ABCD2345?page=12&annotation=EFGH6789>)",

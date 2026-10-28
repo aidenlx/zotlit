@@ -38,7 +38,6 @@ import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { zoteroDataDirAtom } from "@/services/zotero-pref/atoms";
-import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActionDeps, AnnotActions } from "./actions";
@@ -56,7 +55,7 @@ import {
   editingCapabilityCommand,
   makeLibraryTagNamesCommand,
   makeExcerptRequestCommand,
-  makePrepareInsertCommand,
+  makeInsertCommand,
   copyCitationCommand,
   openExcerptDemandCommand,
   refreshExcerptDisplayCommand,
@@ -126,10 +125,8 @@ export interface AnnotationsLayoutDeps {
    * Opens an Attachment or one Annotation in it — the page chip, and the
    * Table's Attachment and Annotation links.
    */
-  opener: Pick<TargetOpener, "open">;
+  opener: Pick<TargetOpener["Service"], "open">;
   registry: ViewRegistryHandle;
-  /** The Query View still reads its filter choices through this legacy input. */
-  reads: { acquireRead(): Promise<ZoteroReadLease> };
 }
 
 /**
@@ -259,7 +256,7 @@ export class AnnotationsLayout extends Component {
   readonly #reads = new Map<string, Disposable>();
   readonly #holdAttachmentsCommand = makeHoldAttachmentsCommand();
   readonly #refreshCommand = makeRefreshCommand();
-  readonly #insertCommand = makePrepareInsertCommand();
+  readonly #insertCommand = makeInsertCommand();
   readonly #excerptCommand = makeExcerptRequestCommand();
   readonly #tagNamesCommand = makeLibraryTagNamesCommand();
   #reading: Promise<void> = Promise.resolve();
@@ -314,12 +311,15 @@ export class AnnotationsLayout extends Component {
 
     const insertDeps: Parameters<typeof createInsertHandler>[0] = {
       app: deps.app,
-      noteFeature: {
-        prepareAnnotationInsert: (input) =>
-          new Promise((resolve, reject) =>
-            deps.registry.set(this.#insertCommand, { input, resolve, reject }),
-          ),
-      },
+      execute: (input, signal) =>
+        new Promise((resolve, reject) =>
+          deps.registry.set(this.#insertCommand, {
+            input,
+            signal,
+            resolve,
+            reject,
+          }),
+        ),
       notify: (message) => void new BaseNotice(message),
       snapshot: (annotation) => {
         const state = this.store.getState();
@@ -1113,7 +1113,7 @@ export class AnnotationsLayout extends Component {
 
   // #endregion
 
-  /** The file inputs one record on screen resolves through ({@link savedExcerptRequest}). */
+  /** The file inputs one record on screen resolves through ({@link makeExcerptRequestCommand}). */
   #excerptRequest(input: {
     annotation: AnnotationRecord;
     source: AnnotationSource | null;

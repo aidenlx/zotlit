@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { open } from "node:fs/promises";
 // The live display read of one Annotation, as a card demands it and a saved
 // edit replaces it.
@@ -5,25 +6,21 @@ import type { FileHandle } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
 import { NodeExcerptImageFixture as ExcerptImageService } from "@/services/excerpt-image/__fixtures__/node-service";
-import {
-  queryClientsFixture,
-  taggedQueryClients,
-} from "@/services/query-client/__fixtures__";
-import type { PlainQueryClients } from "@/services/query-client/plain";
+import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 
+import { ExcerptDisplayFixture } from "./__fixtures__/display";
 import { settledDisplay } from "./__fixtures__/display-state";
 import { layerExcerptFiles } from "./__fixtures__/files";
 import { redPng } from "./__fixtures__/png";
 import { renderGate } from "./__fixtures__/render-gate";
 import type { GatedRender } from "./__fixtures__/render-gate";
 import { sizedWebp } from "./__fixtures__/webp";
-import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
+import { EXCERPT_DISPLAY } from "./display";
 import type { ExcerptDisplayDemand, ExcerptImageDisplay } from "./display";
 import { PNG_FORMAT, WEBP_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
@@ -99,9 +96,9 @@ function image(byte: number): ExcerptImage {
 
 /** What one live display harness hands a test. */
 interface Live extends AsyncDisposable {
-  readonly queries: PlainQueryClients;
+  readonly queries: ReturnType<typeof queryClientsFixture>;
   readonly service: ExcerptImageService;
-  readonly display: ExcerptDisplayService;
+  readonly display: ExcerptDisplayFixture;
   readonly renders: GatedRender[];
   /** The store's own view of the devices images: what is cached, and its references. */
   readonly entries: Map<string, ExcerptEntry>;
@@ -141,9 +138,10 @@ function harness(): Live {
       read: async () => redPng,
       cache: {
         get: async (key) => entries.get(key),
-        put: async (key, entry) => {
-          entries.set(key, entry);
-        },
+        put: (key, entry) =>
+          Effect.sync(() => {
+            entries.set(key, entry);
+          }),
         latest: async (identity) => references.get(identity),
         putLatest: async (identity, reference) => {
           references.set(identity, reference);
@@ -152,12 +150,10 @@ function harness(): Live {
     }),
   );
   const queries = stack.use(queryClientsFixture());
-  const bridge = stack.use(openTestBridge());
   const storedReads: Promise<void>[] = [];
   const display = stack.use(
-    new ExcerptDisplayService({
-      queries: taggedQueryClients(queries),
-      bridge,
+    new ExcerptDisplayFixture({
+      queries: queries,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored: (storedRequest) => {
@@ -325,11 +321,9 @@ function resident(): Resident {
     ),
   );
   const queries = stack.use(queryClientsFixture());
-  const bridge = stack.use(openTestBridge());
   const display = stack.use(
-    new ExcerptDisplayService({
-      queries: taggedQueryClients(queries),
-      bridge,
+    new ExcerptDisplayFixture({
+      queries: queries,
       resolve: (request, signal) => service.resolve(request, signal),
       stored: (storedRequest) => service.stored(storedRequest),
     }),
@@ -624,7 +618,9 @@ describe("Excerpt Image live display", () => {
     two.release();
     await live.cancelled(1);
     expect(live.renders[1]!.aborted).toBe(true);
-    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(
+      live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+    ).toEqual([]);
   });
 
   it("stops painting the cleared image on the cards mounted at clear time", async () => {
@@ -651,7 +647,9 @@ describe("Excerpt Image live display", () => {
     // it release the image they were painted from rather than going on painting
     // a display the clear released.
     live.display.clear();
-    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(
+      live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+    ).toEqual([]);
     expect(one.snapshot()).toEqual({
       image: null,
       current: false,
@@ -726,7 +724,9 @@ describe("Excerpt Image live display", () => {
     // The card goes and the display forgets the Held Read it held: what the
     // next card paints first is the device-local image, not the query cache.
     shown.release();
-    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(
+      live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+    ).toEqual([]);
 
     const returned = live.card();
     const saved = request("#00ff00");
@@ -749,11 +749,9 @@ describe("Excerpt Image live display", () => {
   it("leaves the stored fallback unread when the Held Read holds an image", async () => {
     await using service = new ExcerptImageService({ read: async () => redPng });
     await using queries = queryClientsFixture();
-    await using bridge = openTestBridge();
     const stored = vi.fn(async () => null);
-    await using display = new ExcerptDisplayService({
-      queries: taggedQueryClients(queries),
-      bridge,
+    await using display = new ExcerptDisplayFixture({
+      queries: queries,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
       stored,
@@ -800,7 +798,9 @@ describe("Excerpt Image live display", () => {
       const first = await settledDisplay(card, painted);
 
       await vi.advanceTimersByTimeAsync(30);
-      expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+      expect(
+        live.queries.bridge.runSync(live.queries.keysUnder([EXCERPT_DISPLAY])),
+      ).toEqual([]);
       // The card is still mounted and still demands the pixels it was painted
       // from; the Held Read behind it is what the client dropped.
       expect(card.snapshot().image).toBeNull();

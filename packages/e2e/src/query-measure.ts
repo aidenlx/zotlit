@@ -581,7 +581,9 @@ async function loadTier(items: number, groupItems?: number): Promise<void> {
   await obRun(
     vaultId,
     async ({ zotlit }) => {
-      await zotlit.services.citationLookup.whenResolved();
+      await zotlit.services.bridge.runPromise(
+        zotlit.services.citationLookup.whenResolved,
+      );
     },
     undefined,
     { timeoutMs: 600000 },

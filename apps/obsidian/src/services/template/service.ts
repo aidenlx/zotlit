@@ -2662,7 +2662,7 @@ type TemplateCoreOperations = Pick<
   | "setJavascriptTemplatesEnabled"
 >;
 
-/** The remaining Promise and synchronous callers enter through plain.ts. */
+/** The Promise and synchronous form of the Template operations, for callers outside Effect. */
 export type TemplateOperations = {
   [K in keyof TemplateCoreOperations]: TemplateCoreOperations[K] extends (
     ...args: infer Args

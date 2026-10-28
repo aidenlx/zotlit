@@ -13,6 +13,8 @@ import {
 } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import type { CitationLookupObservation } from "@/services/citation-index/lookup-service";
+
 import { prepareRunWindow } from "./background-throttling.ts";
 import { obRun } from "./obsidian-cli.ts";
 import { cli, waitFor } from "./obsidian-cli.ts";
@@ -68,7 +70,9 @@ async function preserveFixture(vaultId: string): Promise<AsyncDisposableStack> {
     await obRun(
       vaultId,
       async ({ zotlit }) => {
-        return await zotlit.services.zoteroReads.refresh().then(() => true);
+        return await zotlit.services.bridge
+          .runPromise(zotlit.services.zoteroReads.refresh)
+          .then(() => true);
       },
       undefined,
       { timeoutMs: 120000 },
@@ -146,7 +150,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
       async ({ zotlit }) => {
         const s = zotlit.services;
         await s.itemLookup.search("", { limit: 1 });
-        await s.citationLookup.read({});
+        await s.bridge.runPromise(s.citationLookup.read({}));
       },
       undefined,
       { timeoutMs: 120000 },
@@ -169,11 +173,14 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           publications = 0;
         using cleanup = new DisposableStack();
         cleanup.defer(
-          s.bridge.subscribe(s.zoteroReads.changed, () => publications++),
+          s.bridge.subscribe(s.zoteroReads.events, (event) => {
+            if (event._tag === "changed") publications++;
+          }),
         );
         cleanup.defer(
-          s.bridge.subscribe(s.zoteroReads.refreshing, (value) => {
-            if (value) active = true;
+          s.bridge.subscribe(s.zoteroReads.events, (event) => {
+            if (event._tag !== "refreshing") return;
+            if (event.active) active = true;
             else if (active) settled.resolve();
           }),
         );
@@ -181,7 +188,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
           setTimeout(() => settled.reject(Error("Push did not settle")), 10000),
           clearTimeout,
         );
-        s.zoteroReads.notifyExternalChange();
+        await s.bridge.runPromise(s.zoteroReads.notifyExternalChange);
         await settled.promise;
         const hits = await s.itemLookup.search(itemKey, { limit: 1 });
         return {
@@ -214,12 +221,14 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                 const key = itemKey,
                   expected = citationKey;
                 const request = { citekeys: [expected], indexedKeys: [key] };
-                const held = await lookup.read(request);
+                const held = await s.bridge.runPromise(lookup.read(request));
                 const first = Promise.withResolvers<void>();
-                let projection: ReturnType<typeof lookup.observe>;
-                projection = lookup.observe(() => {
-                  if (projection?.current) first.resolve();
-                });
+                let projection: CitationLookupObservation | undefined;
+                projection = s.bridge.runSync(
+                  lookup.observe(() => {
+                    if (projection?.current) first.resolve();
+                  }),
+                );
                 using _disposeProjection = projection;
                 projection.set(request);
                 await first.promise;
@@ -228,9 +237,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                 using cleanup = new DisposableStack();
                 const changed = Promise.withResolvers<void>();
                 cleanup.defer(
-                  s.bridge.subscribe(s.zoteroReads.changed, () =>
-                    changed.resolve(),
-                  ),
+                  s.bridge.subscribe(s.zoteroReads.events, (event) => {
+                    if (event._tag === "changed") changed.resolve();
+                  }),
                 );
                 const sample = () => {
                   const now = performance.now();
@@ -244,9 +253,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                   readsDuringRefresh = 0,
                   readsCorrect = true;
                 const refresh = (async () => {
-                  await s.zoteroReads.refresh();
+                  await s.bridge.runPromise(s.zoteroReads.refresh);
                   await changed.promise;
-                  return await lookup.read(request);
+                  return await s.bridge.runPromise(lookup.read(request));
                 })().finally(() => {
                   refreshing = false;
                 });
@@ -270,7 +279,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                 const citationReads = (async () => {
                   do {
                     const started = performance.now();
-                    await lookup.read(request);
+                    await s.bridge.runPromise(lookup.read(request));
                     citationReadMs.push(performance.now() - started);
                     // A held answer can resolve immediately; yield so refresh and search can progress.
                     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -415,9 +424,9 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                 using cleanup = new DisposableStack();
                 const changed = Promise.withResolvers<void>();
                 cleanup.defer(
-                  s.bridge.subscribe(s.zoteroReads.changed, () =>
-                    changed.resolve(),
-                  ),
+                  s.bridge.subscribe(s.zoteroReads.events, (event) => {
+                    if (event._tag === "changed") changed.resolve();
+                  }),
                 );
                 cleanup.adopt(
                   setTimeout(
@@ -434,7 +443,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
                 const settled = changed.promise.then(() => {
                   refreshed = true;
                 });
-                s.zoteroReads.notifyExternalChange();
+                await s.bridge.runPromise(s.zoteroReads.notifyExternalChange);
                 const deadline = performance.now() + 60000;
                 do {
                   const start = performance.now();
@@ -509,7 +518,7 @@ describe.skipIf(!reachable)("Citation Index renderer responsiveness", () => {
         const s = zotlit.services;
         let rejected = false;
         try {
-          await s.zoteroReads.refresh();
+          await s.bridge.runPromise(s.zoteroReads.refresh);
         } catch {
           rejected = true;
         }

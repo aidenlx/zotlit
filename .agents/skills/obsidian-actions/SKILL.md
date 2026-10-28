@@ -9,7 +9,7 @@ description: |
 
 # Commands and menus
 
-Every feature owns its commands and menu entries, colocated in `services/<domain>/` or `views/<view>/`, and `zt-main.ts` wires them in `onload()` after `buildServices`.
+Every feature owns its commands and menu entries, colocated in `services/<domain>/` or `views/<view>/`, and `zt-main.ts` wires them in `onload()` after `createPluginRuntime`.
 
 ## Commands
 

@@ -26,10 +26,12 @@ import {
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
 
+import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
+import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroReadsClient } from "@/services/zotero-reads/in-process";
@@ -44,7 +46,11 @@ import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps as TemplateWorkbenchDeps } from "./__fixtures__";
 import { createSharedPartialEffect } from "./partial-command";
 import { SAMPLE_ITEM_CHOICES } from "./selection-data";
-import { TemplateWorkbenchView, originatingNoteUpdateNotice } from "./view";
+import {
+  TemplateWorkbenchView,
+  originatingNoteUpdateNotice,
+  unpackedPartialNotices,
+} from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
   openWorkbenchLayout: vi.fn(async () => {}),
@@ -159,8 +165,9 @@ function setup(
     updateHeader: vi.fn(),
   });
   Object.defineProperty(leaf, "app", { value: app });
-  const host = makeWorkbenchHost(
-    stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
+  const host = makeWorkbenchHost({
+    app,
+    ...stubService<TemplateWorkbenchDeps>("TemplateWorkbenchDeps", {
       settings: stubService<TemplateWorkbenchDeps["settings"]>(
         "PluginSettings",
         {
@@ -195,7 +202,7 @@ function setup(
       }),
       ...deps,
     }),
-  );
+  });
   const view = new TestTemplateWorkbenchView(leaf, host.deps);
   host.own(() => view.close());
   leaf.view = view;
@@ -216,10 +223,11 @@ describe("TemplateWorkbenchView", () => {
     const waitUntilSettled = vi.fn(async () => "settled" as const);
     const profileOf: NonNullable<
       NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]
-    > = () => ({
-      ok: true,
-      profile: bindProfile(defaults, { selector: "default" }),
-    });
+    > = () =>
+      Effect.succeed({
+        ok: true,
+        profile: bindProfile(defaults, { selector: "default" }),
+      });
     const h = setup({
       runtime: testRuntime(),
       noteFeature: stubService<
@@ -371,10 +379,10 @@ describe("TemplateWorkbenchView", () => {
     );
     const error = new Error("write failed");
     h.updateNote.mockRejectedValueOnce(error);
-    expect(await h.view.updateOriginatingNote()).toEqual({
-      outcome: "failed",
-      name: "Original",
-      error,
+    await expect(h.view.updateOriginatingNote()).rejects.toMatchObject({
+      _tag: "OriginatingNoteUpdateError",
+      note: "Original",
+      cause: error,
     });
   });
 
@@ -387,13 +395,20 @@ describe("TemplateWorkbenchView", () => {
       if (stage === "write")
         h.updateNote.mockRejectedValueOnce(new AbortError());
       else h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
-      const updating = h.view.updateOriginatingNote();
+      // An abort, bare or as the cause of the typed failure, which the
+      // Notifier passes over without a notice.
+      const stopping = h.view.updateOriginatingNote().then(
+        () => null,
+        (error: unknown) => error,
+      );
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
       if (stage === "closed") await h.view.close();
       if (stage !== "write") waiting.reject(new AbortError());
-      const outcome = await updating;
-      expect.soft(outcome).toEqual({ outcome: "released" });
-      expect(originatingNoteUpdateNotice(h.app, outcome)).toBeNull();
+      const stopped: unknown = await stopping;
+      expect(
+        AbortError.test(stopped) ||
+          (stopped instanceof Error && AbortError.test(stopped.cause)),
+      ).toBe(true);
       expect(h.updateNote).toHaveBeenCalledTimes(stage === "write" ? 1 : 0);
     },
   );
@@ -477,6 +492,13 @@ describe("TemplateWorkbenchView", () => {
       outcome: "updated",
       name: "Original",
     });
+  });
+
+  it("names a launch note this editor cannot update", async () => {
+    const h = await originHarness();
+    h.getFileCache.mockReturnValue(null as never);
+    expect(await h.view.setOriginatingNote(h.file)).toBe("Original");
+    expect(h.view.originatingNote).toBeNull();
   });
 
   it("clears the action when the editor is opened without an originating note", async () => {
@@ -970,7 +992,7 @@ An annotation.
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: path,
+          defaultDocumentPath: Effect.succeed(path),
         },
       ),
     });
@@ -1032,16 +1054,20 @@ An annotation.
     const file = new TFile();
     file.path = "templates/zotlit-profile.default.md";
     const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
-    const materializeDefault = vi.fn(() => pending.promise);
+    const materializeDefault = vi.fn(() =>
+      Effect.promise(() => pending.promise),
+    );
     const { view, requestSave } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1082,17 +1108,28 @@ An annotation.
     const file = new TFile();
     const materializeDefault = vi
       .fn()
-      .mockRejectedValueOnce(new Error("Disk full"))
-      .mockResolvedValue({ file, created: true });
+      .mockReturnValueOnce(
+        Effect.fail(
+          new VaultError({
+            operation: "create",
+            path: "templates/zotlit-profile.default.md",
+            message: "Disk full",
+            cause: null,
+          }),
+        ),
+      )
+      .mockReturnValue(Effect.succeed({ file, created: true }));
     const { view, requestSave } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1117,10 +1154,12 @@ An annotation.
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault: async () => ({ file, created: false }),
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.succeed({ file, created: false }),
         },
       ),
     });
@@ -1137,18 +1176,27 @@ An annotation.
   });
 
   it("shows read-only source and one inline retry after the Customize action fails", async () => {
-    const materializeDefault = vi
-      .fn()
-      .mockRejectedValue(new Error("Disk full"));
+    const materializeDefault = vi.fn().mockReturnValue(
+      Effect.fail(
+        new VaultError({
+          operation: "create",
+          path: "templates/zotlit-profile.default.md",
+          message: "Disk full",
+          cause: null,
+        }),
+      ),
+    );
     const { view } = setup({
       runtime: testRuntime(),
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.suspend(materializeDefault),
         },
       ),
     });
@@ -1188,10 +1236,12 @@ An annotation.
       profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
         "Profile",
         {
-          defaultDocumentPath: "templates/zotlit-profile.default.md",
-          getSource: async () => SOURCE,
-          getBuiltInSource: () => SOURCE,
-          materializeDefault: () => pending.promise,
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed(SOURCE),
+          getBuiltInSource: Effect.succeed(SOURCE),
+          materializeDefault: Effect.promise(() => pending.promise),
         },
       ),
     });
@@ -1951,7 +2001,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
       "Profile",
       {
-        getBuiltInSource: () => builtin,
+        getBuiltInSource: Effect.succeed(builtin),
       },
     ),
   });
@@ -2381,7 +2431,7 @@ language: liquid
 
     // Both entries go — the written one and the one the reader's own file
     // answers — so the problem clears and neither name has two homes left.
-    expect(await view.unpackBundledPartials()).toBe(true);
+    await view.unpackBundledPartials();
     expect(unpacked).toEqual(["authors", "venue-line"]);
     expect(view.getViewData()).not.toContain("partials:");
     expect(view.getViewData()).toContain("filename: paper");
@@ -2394,6 +2444,48 @@ language: liquid
         .find((item) => item.title === m.template_workbench_partials())!
         .submenu?.items.map((item) => item.title),
     ).toEqual([m.workbench_partial_new()]);
+  });
+
+  it.each([true, false])(
+    "restores the built-in Default once the reader confirms: %s",
+    async (confirmed) => {
+      using _answer = answerConfirmation(confirmed);
+      const restoreDefault = vi.fn(() => Effect.void);
+      const { view, leaf } = setup({
+        runtime: testRuntime(),
+        profile: stubService<NonNullable<TemplateWorkbenchDeps["profile"]>>(
+          "Profile",
+          {
+            restoreDefault: Effect.suspend(restoreDefault),
+            getSource: () => Effect.succeed("Built-in Default"),
+          },
+        ),
+      });
+
+      const setViewState = vi.spyOn(leaf, "setViewState");
+
+      await view.restoreDefault();
+
+      expect(restoreDefault).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      expect(setViewState).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      expect(view.isDefaultDraft).toBe(confirmed);
+      expect(view.getViewData()).toBe(confirmed ? "Built-in Default" : SOURCE);
+    },
+  );
+
+  it("names each kind of unpacked partial in a notice of its own", () => {
+    expect(
+      unpackedPartialNotices({
+        written: ["authors", "title"],
+        kept: ["venue-line"],
+        otherCase: [],
+        refused: ["pages"],
+      }),
+    ).toEqual([
+      m.notice_partials_unpacked({ names: "authors, title" }),
+      m.notice_partials_kept({ names: "venue-line" }),
+      m.notice_partials_refused({ names: "pages" }),
+    ]);
   });
 
   it("names no partial while the template service is still scanning the folder", () => {
@@ -3006,7 +3098,7 @@ describe("Template Workbench Item choice", () => {
         }),
       },
     );
-    const { reads } = await zoteroReads.ready;
+    const { reads } = zoteroReads;
     const items = await Effect.runPromise(
       reads.ItemsByIndexedKeys({ indexedKeys: [FIRST] }),
     );
@@ -3014,7 +3106,7 @@ describe("Template Workbench Item choice", () => {
     gated = true;
     const { view, app } = setup({
       runtime: testRuntime(),
-      zoteroReads,
+      services: { zoteroReads },
       itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
         "ItemLookup",
         {

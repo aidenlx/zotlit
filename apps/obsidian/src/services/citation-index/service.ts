@@ -537,7 +537,7 @@ function makeCitationIndex(
       indexedKey: string,
       callback: (snapshot: CitedBySnapshot) => void,
       includeNote: (file: TFile) => boolean = () => true,
-    ) {
+    ): Effect.fn.Return<() => void> {
       if (stopped) return () => {};
       const observationScope = yield* Scope.fork(scope);
       let disposed = false;
@@ -591,14 +591,14 @@ function makeCitationIndex(
         );
       });
       yield* Effect.all([
-        forkEach(events, onChange),
-        forkEach(changes, onChange),
+        forkEach(events, () => Effect.sync(onChange)),
+        forkEach(changes, () => Effect.sync(onChange)),
         forkEach(
           lookupService.changes.pipe(
             Stream.map((value) => value.status),
             Stream.changes,
           ),
-          onChange,
+          () => Effect.sync(onChange),
         ),
       ]).pipe(Scope.provide(observationScope));
       yield* Scope.provide(

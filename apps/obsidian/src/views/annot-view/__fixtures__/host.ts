@@ -13,7 +13,6 @@ import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
 import { ExcerptDisplays } from "@/services/excerpt-image/display";
 import type {
-  ExcerptDisplayService,
   ExcerptImageDisplay,
 } from "@/services/excerpt-image/display";
 import { DEFAULT_LIBRARY_SCOPE } from "@/services/library-scope/scope";
@@ -50,7 +49,7 @@ export const ANNOT_PATHS: ZoteroPrefSnapshot = {
 export type AnnotHostOptions<R = never> = {
   annotations?: Partial<AnnotationRepository["Service"]>;
   holdCommands?: boolean;
-  display?: Partial<ExcerptDisplayService>;
+  display?: Partial<ExcerptDisplays["Service"]>;
   notes?: Partial<AnnotationNoteActions["Service"]>;
   reads?: Partial<ZoteroReads["Service"]>;
   pref?: Partial<ZoteroPref["Service"]>;
@@ -70,20 +69,20 @@ export function layerAnnotServices<R = never>(
   return Layer.mergeAll(
     Layer.mock(
       ExcerptDisplays,
-      stubService<ExcerptDisplayService>("ExcerptDisplays", {
-        open: () => ({
+      stubService<ExcerptDisplays["Service"]>("ExcerptDisplays", {
+        open: Effect.succeed({
           demand: () => {},
           release: () => {},
           subscribe: () => () => {},
           snapshot: () => absentImage,
         }),
-        refresh: () => {},
+        refresh: Effect.void,
         ...options.display,
       }),
     ),
     Layer.mock(AnnotationNoteActions, {
       citation: () => Effect.succeed({ kind: "not-in-database" }),
-      prepare: () => Effect.succeed(null),
+      insert: () => Effect.succeed({ kind: "cancelled" }),
       ...options.notes,
     }),
     Layer.mock(CapabilityNotices, {

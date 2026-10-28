@@ -35,3 +35,10 @@ distill it progressively, and surface old notes when they connect to current wor
 Ahrens showed that a slip-box — physical or digital — works because it externalises thinking
 into a network of permanent notes, each connected to its neighbours
 [@ahrensHowTakeSmartNotes2017].
+
+## Template Data Explorer permissions
+
+1. Open this note and run **ZotLit: Open template data explorer**. Choose a Zotero item. Open a field's **Template actions** menu. With JavaScript templates disabled, **Copy output** uses Liquid.
+2. Enable JavaScript templates in ZotLit's template settings, then open the same field menu. **Liquid** and **Eta** submenus are available.
+3. Disable JavaScript templates while the Explorer stays open, then open the field menu. **Copy output** uses Liquid and the Eta submenu is absent.
+4. Open a second Explorer and give each a different search. Change the permission again. Both field menus follow the permission, and each Explorer keeps its search. Close both leaves. Their data reads and permission subscriptions stop.

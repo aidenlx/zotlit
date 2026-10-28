@@ -29,7 +29,6 @@ import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { PluginSettings } from "@/services/settings/service";
-import type { PlainTemplate } from "@/services/template/plain";
 import {
   activeTemplateWorkbench,
   registerCompanionHistory,
@@ -82,7 +81,6 @@ export interface ExplorerViewDeps {
   itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
   bridge: Pick<EffectBridge, "runSync">;
-  templates: Pick<PlainTemplate, "javascriptTemplatesEnabled">;
   pluginVersion: string;
 }
 export class TemplateDataExplorerView extends ItemView {
@@ -495,10 +493,6 @@ export class TemplateDataExplorerView extends ItemView {
                   lookup={this.#deps.itemLookup}
                   explorer={{
                     copy: (text) => navigator.clipboard.writeText(text),
-                    engines: () =>
-                      this.#deps.templates.javascriptTemplatesEnabled
-                        ? ["liquid", "eta"]
-                        : ["liquid"],
                     onInsertNode: (node) => {
                       const editor = activeTemplateWorkbench(
                         this.app,

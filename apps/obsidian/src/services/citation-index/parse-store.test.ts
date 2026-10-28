@@ -40,24 +40,30 @@ it("discards schema v1 once, then restores current records without a read (#1691
         { "draft.md": body },
         options,
       );
-      expect(harness.index.citationKeys()).toEqual([]);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual([]);
       harness.workspace.layoutReady();
-      await harness.index.whenIndexed();
-      expect(harness.index.citationKeys()).toEqual(["doe2024"]);
+      await harness.index.bridge.runPromise(harness.index.whenIndexed);
+      expect(
+        harness.index.bridge.runSync(harness.index.citationKeys()),
+      ).toEqual(["doe2024"]);
     }
     {
       await using restored = await createCitationIndexHarness(
         { "draft.md": body },
         options,
       );
-      expect(restored.index.citationKeys()).toEqual(["doe2024"]);
+      expect(
+        restored.index.bridge.runSync(restored.index.citationKeys()),
+      ).toEqual(["doe2024"]);
       restored.workspace.layoutReady();
-      await restored.index.whenIndexed();
+      await restored.index.bridge.runPromise(restored.index.whenIndexed);
       expect(restored.vault.reads).toEqual([]);
       await restored.runtime.runPromise(
         CitationIndex.use((index) => index.reset),
       );
-      await restored.index.whenIndexed();
+      await restored.index.bridge.runPromise(restored.index.whenIndexed);
       expect(restored.vault.reads).toEqual(["draft.md"]);
     }
   } finally {

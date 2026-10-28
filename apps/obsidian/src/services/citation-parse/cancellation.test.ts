@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Queue } from "effect";
+import { Effect, Exit, Fiber, Queue } from "effect";
 import { expect, vi } from "vitest";
 
 import { cancellableParse, makeParseHarness } from "./__fixtures__";
@@ -13,19 +13,16 @@ it.effect(
     Effect.gen(function* () {
       const { runtime, parser } = yield* makeParseHarness();
       yield* runtime.disposeEffect;
-      yield* Effect.promise(() =>
-        expect(
-          parser.parse(
-            { path: "draft.md", generation: 1, text: "" },
-            new AbortController().signal,
-          ),
-        ).rejects.toBeInstanceOf(ParseFailed),
-      );
+      expect(
+        yield* Effect.flip(
+          parser.parse({ path: "draft.md", generation: 1, text: "" }),
+        ),
+      ).toBeInstanceOf(ParseFailed);
     }),
 );
 
 it.effect(
-  "aborts an in-flight parse through the plain facade without terminating the worker (#1705)",
+  "aborts an in-flight parse through the native service without terminating the worker (#1705)",
   () =>
     Effect.gen(function* () {
       const spawned = yield* Queue.make<
@@ -67,16 +64,15 @@ it.effect(
       layoutReady();
       const worker = yield* Queue.take(spawned);
       worker.dispatchEvent(new MessageEvent("message", { data: [0] }));
-      const { pending, cancel } = cancellableParse(parser, {
+      const pending = yield* cancellableParse(parser, {
         path: "draft.md",
         generation: 1,
         text: "",
       });
       yield* Queue.take(sent);
-      cancel();
-      yield* Effect.promise(() =>
-        expect(pending).rejects.toMatchObject({ name: "AbortError" }),
-      );
+      yield* Fiber.interrupt(pending);
+      const exit = yield* Fiber.await(pending);
+      expect(Exit.hasInterrupts(exit)).toBe(true);
       expect(worker.terminated).toBe(false);
     }),
 );

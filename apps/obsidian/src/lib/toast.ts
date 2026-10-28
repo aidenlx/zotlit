@@ -4,26 +4,6 @@ import { LazyNotice } from "./notice";
 
 const logger = getLogger("toast");
 
-export function cancellableLoading(
-  message: string,
-  ac: AbortController,
-  reason = "Cancelled",
-): DocumentFragment {
-  return createFragment((el) => {
-    const div = el.createDiv();
-    div.setText(message);
-    div.addEventListener(
-      "click",
-      (evt) => {
-        evt.stopPropagation();
-        evt.preventDefault();
-        ac.abort(new AbortError(reason));
-      },
-      { once: true },
-    );
-  });
-}
-
 interface ToastPromiseOptions<T> {
   loading?: string | DocumentFragment;
   success?:

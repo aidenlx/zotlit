@@ -8,6 +8,8 @@ import { build } from "vite";
 
 import { getPackageRoot, getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { effectEntry } from "@/../scripts/effect-entry";
+
 /** Set ZOTLIT_TEST_ELECTRON_PATH to an installed Electron executable to run these. */
 export const testElectron = process.env.ZOTLIT_TEST_ELECTRON_PATH;
 
@@ -45,6 +47,7 @@ export async function runInElectron(options: {
   );
   const output = await build({
     configFile: false,
+    plugins: [effectEntry("renderer")],
     logLevel: "silent",
     // The plugin's own build defines this, and the libraries a trial bundles —
     // TanStack Query Core among them — read it at runtime: without it a renderer

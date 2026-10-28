@@ -1,4 +1,4 @@
-// The ZoteroReads event Streams shared by the service and its plain adapter.
+// Named ZoteroReads event Streams for consumers of the native service.
 import { Stream } from "effect";
 import type { Stream as StreamType } from "effect";
 
@@ -43,8 +43,4 @@ export function refreshFailed(
 
 export function refreshing(source: EventsSource): StreamType.Stream<boolean> {
   return byTag(source, "refreshing").pipe(Stream.map((event) => event.active));
-}
-
-export function dbFileMissing(source: EventsSource): StreamType.Stream<void> {
-  return byTag(source, "db-file-missing").pipe(Stream.map(() => undefined));
 }

@@ -58,6 +58,85 @@ import { clearVault, e2eVaultDir } from "./vault-script.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
+  it("sets Citation Presentation and dismisses pending changes on cancel and unload (#1858)", async () => {
+    const result = await obRun(
+      run.vaultId,
+      async ({ app, page }, { title, confirmLabel, cancelLabel }) => {
+        const { until, press } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const file = app.vault.getFileByPath("citation-only-test.md")!;
+        const original = await app.vault.read(file);
+        cleanup.defer(() => app.vault.modify(file, original));
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(file);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const view = leaf.view as import("obsidian").MarkdownView;
+        const doc = view.containerEl.ownerDocument;
+        const dialog = () =>
+          [...doc.querySelectorAll<HTMLElement>(".modal")].find(
+            (el) =>
+              el.querySelector<HTMLElement>(".modal-title")?.textContent ===
+              title,
+          );
+        cleanup.defer(() =>
+          dialog()
+            ?.parentElement?.querySelector<HTMLElement>(".modal-bg")
+            ?.click(),
+        );
+        const open = async () => {
+          app.commands.executeCommandById("zotlit:set-citation-presentation");
+          return await until("Citation Presentation dialog", dialog);
+        };
+        const language = (modal: HTMLElement) =>
+          modal.querySelector<HTMLInputElement>("input[type=text]")!;
+        const button = (modal: HTMLElement, label: string) =>
+          [...modal.querySelectorAll<HTMLButtonElement>("button")].find(
+            (el) => el.textContent === label,
+          );
+        const setLanguage = (modal: HTMLElement, value: string) => {
+          const input = language(modal);
+          input.value = value;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        let modal = await open();
+        setLanguage(modal, "de-DE");
+        press(button(modal, confirmLabel), "Confirm");
+        await until(
+          "language written",
+          () =>
+            app.metadataCache.getFileCache(file)?.frontmatter?.lang === "de-DE",
+        );
+        const confirmed = view.getViewData();
+        modal = await open();
+        const reopened = language(modal).value;
+        setLanguage(modal, "fr-FR");
+        press(button(modal, cancelLabel), "Cancel");
+        const cancelled = view.getViewData() === confirmed;
+        modal = await open();
+        setLanguage(modal, "fr-FR");
+        cleanup.defer(() => app.plugins.enablePlugin("zotlit"));
+        await app.plugins.disablePlugin("zotlit");
+        await until("dialog closes after unload", () => !dialog(), 10000);
+        const closed = !dialog();
+        const unchanged = view.getViewData() === confirmed;
+        return { reopened, cancelled, closed, unchanged };
+      },
+      {
+        title: run.m.citation_presentation_title(),
+        confirmLabel: run.m.citation_presentation_confirm(),
+        cancelLabel: run.m.modal_cancel(),
+      },
+    );
+    expect(result).toEqual({
+      reopened: "de-DE",
+      cancelled: true,
+      closed: true,
+      unchanged: true,
+    });
+  });
+
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
     const freshPath = e2eVaultDir(workspaceRoot, "first-note-vault");
@@ -85,7 +164,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obRun(
         freshId,
         async ({ zotlit }) => {
-          return zotlit.services.profile.profiles.length;
+          return zotlit.services.bridge.runSync(
+            zotlit.services.profile.profiles,
+          ).length;
         },
         undefined,
       ),
@@ -100,7 +181,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       async ({ app, zotlit }) => {
         return (
           !!app.workspace.getActiveFile() &&
-          zotlit.services.noteIndex.getNotesByItemKey("RUGIER24").length === 1
+          zotlit.services.bridge.runSync(
+            zotlit.services.noteIndex.getNotesByItemKey("RUGIER24"),
+          ).length === 1
         );
       },
       undefined,
@@ -616,8 +699,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { createTargetItemKey }) => {
-        return zotlit.services.noteIndex.getNotesByItemKey(createTargetItemKey)
-          .length;
+        return zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getNotesByItemKey(createTargetItemKey),
+        ).length;
       },
       { createTargetItemKey: createTargetItem.key },
       {
@@ -635,8 +719,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { createTargetItemKey }) => {
-        return zotlit.services.noteIndex.getNotesByItemKey(createTargetItemKey)
-          .length;
+        return zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getNotesByItemKey(createTargetItemKey),
+        ).length;
       },
       { createTargetItemKey: createTargetItem.key },
       {
@@ -670,8 +755,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       run.vaultId,
       async ({ zotlit }) => {
         return (
-          zotlit.services.profile.resolveProfile("default")?.document ===
-          undefined
+          zotlit.services.bridge.runSync(
+            zotlit.services.profile.resolveProfile("default"),
+          )?.document === undefined
         );
       },
       undefined,
@@ -683,10 +769,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const seeded = (await obRun(
       run.vaultId,
       async ({ app, zotlit }, { itemKey }) => {
-        await zotlit.services.noteIndex.whenIndexed();
+        await zotlit.services.bridge.runPromise(
+          zotlit.services.noteIndex.whenIndexed,
+        );
         const notes = [];
-        for (const note of zotlit.services.noteIndex.getNotesByItemKey(
-          itemKey,
+        for (const note of zotlit.services.bridge.runSync(
+          zotlit.services.noteIndex.getNotesByItemKey(itemKey),
         )) {
           const file = app.vault.getFileByPath(note.path)!;
           notes.push({ path: note.path, text: await app.vault.read(file) });
@@ -724,8 +812,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ zotlit }, { childNoteKey }) => {
           return String(
-            zotlit.services.noteIndex.getImportedNoteByNoteKey(childNoteKey)
-              .length,
+            zotlit.services.bridge.runSync(
+              zotlit.services.noteIndex.getImportedNoteByNoteKey(childNoteKey),
+            ).length,
           );
         },
         { childNoteKey },
@@ -1540,7 +1629,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         return {
           hostname: settings["server.hostname"],
           port: services.bridge.runSync(services.localServer.effectivePort),
-          sourceId: services.zoteroPref.sourceId,
+          sourceId: services.bridge.runSync(services.zoteroPref.current)
+            .sourceId,
         };
       },
       undefined,
@@ -1757,9 +1847,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { articlesProfileId }) => {
-        return !zotlit.services.profile.profiles.some(
-          (p) => p.id === articlesProfileId,
-        );
+        return !zotlit.services.bridge
+          .runSync(zotlit.services.profile.profiles)
+          .some((p) => p.id === articlesProfileId);
       },
       { articlesProfileId: suite.articlesProfile.id },
       { what: "the articles Profile to be removed from the Profile list" },
@@ -2113,9 +2203,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obRunUntil(
       run.vaultId,
       async ({ zotlit }, { booksProfileId }) => {
-        return !zotlit.services.profile.profiles.some(
-          (p) => p.id === booksProfileId,
-        );
+        return !zotlit.services.bridge
+          .runSync(zotlit.services.profile.profiles)
+          .some((p) => p.id === booksProfileId);
       },
       { booksProfileId: booksProfile.id },
       {
@@ -2178,7 +2268,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           var settings = services.bridge.runSync(services.settings.current);
           return {
             port: services.bridge.runSync(services.localServer.effectivePort),
-            sourceId: services.zoteroPref.sourceId,
+            sourceId: services.bridge.runSync(services.zoteroPref.current)
+              .sourceId,
             workbench: settings["server.workbench"],
           };
         },
@@ -2281,7 +2372,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         run.vaultId,
         async ({ app, zotlit }) => {
           app.saveLocalStorage("zotlit-workbench-launch-approved", null);
-          app.saveLocalStorage("zotlit-profile-customization", "ask");
+          app.saveLocalStorage("zotlit-profile-customization", "native");
           zotlit.services.bridge.runSync(
             zotlit.services.settings.update({ "server.workbench": false }),
           );

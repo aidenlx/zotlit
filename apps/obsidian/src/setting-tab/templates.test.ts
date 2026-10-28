@@ -227,7 +227,6 @@ it.effect("closes settings only once Add partial has created a document", () =>
         getPartialDocuments: Effect.succeed([]),
         getReservedPartialFiles: Effect.succeed([]),
         getPartialNames: Effect.succeed([]),
-        getPartialDocument: () => Effect.succeed(AUTHORS),
         createPartial,
       },
       {
@@ -238,7 +237,7 @@ it.effect("closes settings only once Add partial has created a document", () =>
     const promptAnswers = (name: string | null) =>
       vi
         .mocked(openNewPartialPrompt)
-        .mockImplementationOnce((_app, _taken, settle) => {
+        .mockImplementationOnce((_app, _prompt, settle) => {
           settle(name);
           return stubService<Modal>("Modal", { close: () => {} });
         });
@@ -254,7 +253,7 @@ it.effect("closes settings only once Add partial has created a document", () =>
     promptAnswers("authors");
     list.addItem!.action(document.createElement("button"));
     yield* Queue.take(rebuilt);
-    expect(createPartial).toHaveBeenCalledWith("authors");
+    expect(createPartial).toHaveBeenCalledWith("authors", {});
     expect(close).toHaveBeenCalled();
     expect(openTemplateWorkbench).toHaveBeenCalledWith(ctx.app, partialFile, {
       explainUnsupported: false,

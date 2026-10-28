@@ -20,7 +20,7 @@ const logFailure =
 
 /**
  * Whether `scope` has closed: a released runtime or layer, which takes no new
- * work. Plain adapters check it before they run anything on their runtime.
+ * work. A caller checks it before it runs anything on that runtime.
  */
 export function isScopeClosed(scope: Scope.Scope): boolean {
   return scope.state._tag === "Closed";

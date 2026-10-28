@@ -47,15 +47,19 @@ export interface CreateSharedPartialOptions {
 }
 
 /**
- * Open the name prompt alone, for a caller that creates the partial itself.
- * `settle` gets the accepted name, or `null` when the prompt closes.
+ * Open the name prompt: `taken` are the names the rule refuses, and `seed`
+ * fills the field. `settle` gets the accepted name, or `null` when the prompt
+ * closes.
  */
 export function openNewPartialPrompt(
   app: App,
-  taken: readonly string[],
+  prompt: {
+    readonly taken: readonly string[];
+    readonly seed?: string | undefined;
+  },
   settle: (name: string | null) => void,
 ): Modal {
-  const modal = new NewPartialModal(app, taken, "");
+  const modal = new NewPartialModal(app, prompt.taken, prompt.seed ?? "");
   void modal.result.then(settle);
   modal.open();
   return modal;

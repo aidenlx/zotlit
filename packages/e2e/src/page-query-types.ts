@@ -2,6 +2,8 @@ import type { MarkdownView, WorkspaceLeaf, Modal } from "obsidian";
 
 import type { E2eServices } from "@zotlit/obsidian/e2e";
 
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
+
 export type CodeMirrorContent = HTMLElement & {
   cmTile: { root: { view: MarkdownView["editor"]["cm"] } };
 };
@@ -27,8 +29,8 @@ declare module "./page-helpers.ts" {
   interface PageScratch {
     zotlitE2EWorkers?: QueryWorkerRecord;
     __zotlitQuerySource?: {
-      lease: Awaited<ReturnType<E2eServices["zoteroReads"]["acquireRead"]>>;
-      previous: E2eServices["zoteroPref"]["dataDirOverride"];
+      lease: Awaited<ReturnType<E2eServices["acquireZoteroRead"]>>;
+      previous: ZoteroPrefSnapshot["dataDirOverride"];
     };
     zotlitE2EChanged?: number;
     zotlitE2EOffChanged?: () => void;

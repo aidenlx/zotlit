@@ -20,6 +20,7 @@ import { Vault } from "@/lib/obsidian-vault";
 import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { requireDialog } from "@/lib/require";
+import { UserCancelled } from "@/lib/user-cancel";
 import type { LibraryScope } from "@/services/library-scope/service";
 import { ProfileDocumentMissingError } from "@/services/local-bridge/reads";
 import { installedStyles } from "@/services/note-feature/creation-view";
@@ -39,6 +40,7 @@ import type { TemplateDataServices } from "@/services/template-workbench/data";
 import { readMigrationVerificationData } from "@/services/template/migration-data";
 import { Template } from "@/services/template/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
+import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { CreateProfileModal } from "./create-profile-modal";
@@ -95,8 +97,10 @@ export type ImportProfileDialog = (options?: {
 type DialogServices = Profile | Template | NoteFeature;
 
 /**
- * Runs a modal callback's Effect on the dialog's runner. It rejects with
- * an `AbortError` when the dialog's Scope stops the Effect.
+ * Runs a modal callback's Effect on the dialog's runner. When the dialog's
+ * Scope stops the Effect, it rejects with `UserCancelled` where the user
+ * closed the dialog, and with an `AbortError` where an interrupt, such as
+ * unload, closed it.
  */
 type DialogRun<R = DialogServices> = <A, E>(
   effect: Effect.Effect<A, E, R>,
@@ -113,8 +117,9 @@ interface DialogModal<A> extends ClosableModal {
 
 /**
  * The modal `open` builds, opened over a runner of the dialog's own, answered
- * with what its `result` settles with. An interrupt closes the modal, and the
- * dialog's Scope then interrupts the work its callbacks started.
+ * with what its `result` settles with. The dialog's Scope then interrupts the
+ * work its callbacks started: the user's close stops it with `UserCancelled`.
+ * An interrupt closes the modal, and stops that work as unload does.
  */
 function runDialog<A, R = DialogServices>(
   open: (run: DialogRun<R>) => DialogModal<A>,
@@ -122,16 +127,19 @@ function runDialog<A, R = DialogServices>(
   return Effect.scoped(
     Effect.gen(function* () {
       const runFork = yield* FiberSet.runtime(yield* FiberSet.make())<R>();
+      // Set once the modal answers, before the Scope stops the callbacks.
+      let answered = false;
       const run: DialogRun<R> = (effect) =>
         new Promise((resolve, reject) =>
           runFork(effect).addObserver((exit) => {
             if (Exit.isSuccess(exit)) resolve(exit.value);
-            else if (Cause.hasInterruptsOnly(exit.cause))
-              reject(new AbortError());
-            else reject(Cause.squash(exit.cause));
+            else if (!Cause.hasInterruptsOnly(exit.cause))
+              reject(Cause.squash(exit.cause));
+            else if (answered) reject(new UserCancelled());
+            else reject(new AbortError());
           }),
         );
-      return yield* awaitModal<A>((settle) => {
+      const answer = yield* awaitModal<A>((settle) => {
         const modal = open(run);
         void modal.result.then(settle);
         modal.open();
@@ -139,6 +147,8 @@ function runDialog<A, R = DialogServices>(
           close: () => (modal.teardown ? modal.teardown() : modal.close()),
         };
       });
+      answered = true;
+      return answer;
     }),
   );
 }
@@ -418,8 +428,10 @@ export const addProfileDestination = Effect.fn("addProfileDestination")(
         profileId: created.id,
         message: m.notice_profile_action_failed(),
       });
-    yield* portCall("open-template-workbench", () =>
-      openTemplateWorkbench(app, file, { tab: "name", customize: true }),
+    yield* explainWorkbenchOpen(
+      yield* portCall("open-template-workbench", () =>
+        openTemplateWorkbench(app, file, { tab: "name", customize: true }),
+      ),
     );
     yield* (yield* Notifier).show(
       m.notice_profile_created({ label: created.label }),

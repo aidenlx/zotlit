@@ -1,13 +1,13 @@
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Cause, Effect, Exit, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { TFile } from "obsidian";
 import type { CachedMetadata } from "obsidian";
 import { afterEach, describe, expect } from "vitest";
 
 import { effectTestParse } from "@/lib/__fixtures__/parse-client";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { subscribe } from "@/lib/effect-stream";
-import type { PlainCitationIndex } from "@/services/citation-index/plain";
 import { ParseFailed } from "@/services/citation-parse/client";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
 import { buildSeededSettings } from "@/services/settings/__fixtures__";
@@ -49,10 +49,11 @@ afterEach(async () => {
 });
 
 async function citationsOf(
-  index: PlainCitationIndex,
+  index: CitationIndex["Service"] & { bridge: EffectBridge },
   file: TFile,
 ): Promise<Citation[]> {
-  return (await index.getDocumentCitationSet(file)).citations;
+  return (await index.bridge.runPromise(index.getDocumentCitationSet(file)))
+    .citations;
 }
 
 /** Clears the stored scans and starts a new pass, through the CitationIndex service. */
@@ -74,14 +75,22 @@ describe("CitationIndex", () => {
           { settings: { "citation.wikilink-citations": true } },
         );
         harness.workspace.layoutReady();
-        await harness.index.whenIndexed();
-        const set = await harness.index.getDocumentCitationSet(harness.draft);
+        await harness.index.bridge.runPromise(harness.index.whenIndexed);
+        const set = await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
         expect(set.citations.map(({ indexedKey }) => indexedKey)).toEqual([
           KEY_A,
         ]);
         expect(set.occurrences[0]).toMatchObject({ raw: "Doe 2024" });
         expect(set.occurrences[0]?.fragment).toBe(fragment);
-        expect((await harness.index.getCitedBy(KEY_A)).groups).toMatchObject([
+        expect(
+          (
+            await harness.index.bridge.runPromise(
+              harness.index.getCitedBy(KEY_A),
+            )
+          ).groups,
+        ).toMatchObject([
           { path: "draft.md", occurrences: [{ raw: "Doe 2024" }] },
         ]);
       }),
@@ -95,15 +104,15 @@ describe("CitationIndex", () => {
           await makeHarness({ "draft.md": "@doe2024" });
         workspace.layoutReady();
         const snapshots: CitedBySnapshot[] = [];
-        const stop = index.observeCitedBy(KEY_A, (snapshot) =>
-          snapshots.push(snapshot),
+        const stop = index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
         );
         await expect.poll(() => snapshots.at(-1)?.groups.length).toBe(1);
         citekeys.error = new Error("unavailable");
         db.notifyChanged();
         await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
         metadataCache.change(draft, "@doe2024 @newKey");
-        await index.getFileScan(draft);
+        await index.bridge.runPromise(index.getFileScan(draft));
 
         expect(snapshots.at(-1)?.groups.map((group) => group.path)).toEqual([
           "draft.md",
@@ -124,9 +133,11 @@ describe("CitationIndex", () => {
         metadataCache.fileCache.set(draft.path, {
           links: [link("Doe 2024", 0)],
         } satisfies CachedMetadata);
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
         const held = db.holdLookup();
-        const pending = index.getDocumentCitationSet(draft);
+        const pending = index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
         await held.entered;
         metadataCache.fileCache.set("Doe 2024.md", {
           frontmatter: { "zotero-key": KEY_B },
@@ -216,7 +227,9 @@ describe("CitationIndex", () => {
           links: [link("Doe 2024", body.indexOf("[["))],
         } satisfies CachedMetadata);
 
-        const set = await index.getDocumentCitationSet(draft);
+        const set = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
 
         expect(set.occurrences.map(({ kind, raw }) => [kind, raw])).toEqual([
           ["citekey", "roe2025"],
@@ -254,7 +267,9 @@ describe("CitationIndex", () => {
           ],
         } satisfies CachedMetadata);
 
-        const set = await index.getDocumentCitationSet(draft);
+        const set = await index.bridge.runPromise(
+          index.getDocumentCitationSet(draft),
+        );
 
         expect(set.occurrences.map(({ raw }) => raw)).toEqual([
           "Doe 2024",
@@ -276,12 +291,26 @@ describe("CitationIndex", () => {
           links: [link("Doe 2024", body.indexOf("[["))],
         } satisfies CachedMetadata);
         let changed = 0;
-        subscribe(index.runtime, index["membership-changed"], () => changed++);
+        subscribe(
+          index.runtime,
+          index.events.pipe(
+            Stream.filter(
+              (
+                event,
+              ): event is Extract<
+                typeof event,
+                { type: "membership-changed" }
+              > => event.type === "membership-changed",
+            ),
+            Stream.map(() => undefined),
+          ),
+          () => changed++,
+        );
 
         expect(
-          (await index.getDocumentCitationSet(draft)).occurrences.map(
-            ({ kind }) => kind,
-          ),
+          (
+            await index.bridge.runPromise(index.getDocumentCitationSet(draft))
+          ).occurrences.map(({ kind }) => kind),
         ).toEqual(["citekey"]);
         settings.bridge!.runSync(
           settings.update({
@@ -290,9 +319,9 @@ describe("CitationIndex", () => {
           }),
         );
         expect(
-          (await index.getDocumentCitationSet(draft)).occurrences.map(
-            ({ kind }) => kind,
-          ),
+          (
+            await index.bridge.runPromise(index.getDocumentCitationSet(draft))
+          ).occurrences.map(({ kind }) => kind),
         ).toEqual(["wikilink"]);
 
         expect(changed).toBe(1);
@@ -311,33 +340,35 @@ describe("CitationIndex", () => {
       } satisfies CachedMetadata);
 
       expect(
-        (await index.getDocumentCitationSet(draft)).occurrences.map(
-          ({ kind }) => kind,
-        ),
+        (
+          await index.bridge.runPromise(index.getDocumentCitationSet(draft))
+        ).occurrences.map(({ kind }) => kind),
       ).toEqual(["citekey"]);
 
       settings.bridge!.runSync(
         settings.update({ "citation.wikilink-citations": true }),
       );
       expect(
-        (await index.getDocumentCitationSet(draft)).occurrences.map(
-          ({ kind }) => kind,
-        ),
+        (
+          await index.bridge.runPromise(index.getDocumentCitationSet(draft))
+        ).occurrences.map(({ kind }) => kind),
       ).toEqual(["citekey", "wikilink"]);
 
       settings.bridge!.runSync(
         settings.update({ "citation.pandoc-citations": false }),
       );
       expect(
-        (await index.getDocumentCitationSet(draft)).occurrences.map(
-          ({ kind }) => kind,
-        ),
+        (
+          await index.bridge.runPromise(index.getDocumentCitationSet(draft))
+        ).occurrences.map(({ kind }) => kind),
       ).toEqual(["wikilink"]);
 
       settings.bridge!.runSync(
         settings.update({ "citation.wikilink-citations": false }),
       );
-      expect(await index.getDocumentCitationSet(draft)).toMatchObject({
+      expect(
+        await index.bridge.runPromise(index.getDocumentCitationSet(draft)),
+      ).toMatchObject({
         occurrences: [],
         citations: [],
         errors: [],
@@ -351,7 +382,7 @@ describe("CitationIndex", () => {
       Effect.promise(async () => {
         const { index, settings } = await makeHarness({});
 
-        expect(index.syntaxes()).toEqual({
+        expect(index.bridge.runSync(index.syntaxes())).toEqual({
           citekey: "included",
           wikilink: "excluded",
           annotation: "excluded",
@@ -364,7 +395,7 @@ describe("CitationIndex", () => {
           }),
         );
 
-        expect(index.syntaxes()).toEqual({
+        expect(index.bridge.runSync(index.syntaxes())).toEqual({
           citekey: "excluded",
           wikilink: "included",
           annotation: "excluded",
@@ -391,15 +422,17 @@ describe("CitationIndex", () => {
           links: [link("Doe 2024", 5)],
         } satisfies CachedMetadata);
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         const summary = (
           syntaxes: CitationSyntax[] = ["citekey", "wikilink"],
         ) =>
-          [...index.citationsByPath(syntaxes)].map(([path, occurrences]) => [
-            path,
-            occurrences.map(({ kind, raw }) => `${kind}:${raw}`),
-          ]);
+          [...index.bridge.runSync(index.citationsByPath(syntaxes))].map(
+            ([path, occurrences]) => [
+              path,
+              occurrences.map(({ kind, raw }) => `${kind}:${raw}`),
+            ],
+          );
 
         expect(summary()).toEqual([
           [
@@ -440,7 +473,10 @@ describe("CitationIndex", () => {
           "draft.md": "As @doe2024 wrote.",
         });
 
-        expect(index.citationsByPath(["citekey", "wikilink"]).size).toBe(0);
+        expect(
+          index.bridge.runSync(index.citationsByPath(["citekey", "wikilink"]))
+            .size,
+        ).toBe(0);
       }),
   );
 
@@ -456,7 +492,9 @@ describe("CitationIndex", () => {
         links: [link("Doe 2024#cite:locator=", offset)],
       } satisfies CachedMetadata);
 
-      const set = await index.getDocumentCitationSet(draft);
+      const set = await index.bridge.runPromise(
+        index.getDocumentCitationSet(draft),
+      );
 
       expect(set.citations).toMatchObject([
         { indexedKey: KEY_B, refNumber: 1 },
@@ -496,7 +534,17 @@ describe("CitationIndex", () => {
       });
       await citationsOf(index, draft);
       let notified = 0;
-      subscribe(index.runtime, index["changed"], () => notified++);
+      subscribe(
+        index.runtime,
+        index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        () => notified++,
+      );
 
       metadataCache.change(draft, "As @doe2024 wrote.");
       await citationsOf(index, draft);
@@ -512,7 +560,17 @@ describe("CitationIndex", () => {
       });
       await citationsOf(index, draft);
       const changed: string[] = [];
-      subscribe(index.runtime, index["changed"], (path) => changed.push(path));
+      subscribe(
+        index.runtime,
+        index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        (path) => changed.push(path),
+      );
 
       metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
 
@@ -552,10 +610,9 @@ describe("CitationIndex", () => {
 
         await expect
           .poll(() =>
-            [...index.citationsByPath(["citekey"])].map(([path, found]) => [
-              path,
-              found.map(({ raw }) => raw),
-            ]),
+            [...index.bridge.runSync(index.citationsByPath(["citekey"]))].map(
+              ([path, found]) => [path, found.map(({ raw }) => raw)],
+            ),
           )
           .toEqual([["Notes/paper.md", ["roe2025"]]]);
       }),
@@ -575,10 +632,9 @@ describe("CitationIndex", () => {
 
         await expect
           .poll(() =>
-            [...index.citationsByPath(["citekey"])].map(([path, found]) => [
-              path,
-              found.map(({ raw }) => raw),
-            ]),
+            [...index.bridge.runSync(index.citationsByPath(["citekey"]))].map(
+              ([path, found]) => [path, found.map(({ raw }) => raw)],
+            ),
           )
           .toEqual([["Notes/paper.md", ["roe2025"]]]);
       }),
@@ -590,9 +646,19 @@ describe("CitationIndex", () => {
         "draft.md": "As @doe2024 wrote.",
       });
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       const changed: string[] = [];
-      subscribe(index.runtime, index["changed"], (path) => changed.push(path));
+      subscribe(
+        index.runtime,
+        index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        (path) => changed.push(path),
+      );
 
       vault.deleteFile(draft);
 
@@ -608,11 +674,13 @@ describe("CitationIndex", () => {
         "other.md": "As @roe2025 wrote.",
       });
       let backfilled = false;
-      void index.whenIndexed().then(() => (backfilled = true));
+      void index.bridge
+        .runPromise(index.whenIndexed)
+        .then(() => (backfilled = true));
 
       expect(backfilled).toBe(false);
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       const other = metadataCache.files.get("other.md")!;
       expect(await citationsOf(index, other)).toMatchObject([
@@ -626,15 +694,19 @@ describe("CitationIndex", () => {
       const { index, closeIndex } = await makeHarness({
         "draft.md": "As @doe2024 wrote.",
       });
-      const aborted = { name: "AbortError" };
-      const waiting = expect(index.whenIndexed()).rejects.toMatchObject(
-        aborted,
-      );
+      const waiting = index.bridge.runPromiseExit(index.whenIndexed);
 
       await closeIndex();
 
-      await waiting;
-      await expect(index.whenIndexed()).rejects.toMatchObject(aborted);
+      const interrupted = await waiting;
+      expect(
+        Exit.isFailure(interrupted) &&
+          Cause.hasInterruptsOnly(interrupted.cause),
+      ).toBe(true);
+
+      // A later caller finds the index stopped and settles at once.
+      expect(index.bridge.runSync(index.current).stopped).toBe(true);
+      expect(index.bridge.runSync(index.whenIndexed)).toBeUndefined();
     }),
   );
 
@@ -666,7 +738,9 @@ describe("CitationIndex", () => {
         { indexedKey: KEY_B, refNumber: 1 },
       ]);
       expect(
-        (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+        (
+          await lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] }))
+        ).resolve("doe2024"),
       ).toMatchObject({
         kind: "unique",
         item: { indexedKey: KEY_A },
@@ -688,10 +762,10 @@ describe("CitationIndex", () => {
         settings.update({ "citation.pandoc-citations": false }),
       );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       vault.reads.length = 0;
       await resetIndex(runtime);
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       expect(vault.reads).toContain("draft.md");
     }),
   );
@@ -705,7 +779,17 @@ describe("CitationIndex", () => {
       await citationsOf(index, draft);
       store.writes.length = 0;
       const changed: string[] = [];
-      subscribe(index.runtime, index["changed"], (path) => changed.push(path));
+      subscribe(
+        index.runtime,
+        index.events.pipe(
+          Stream.filter(
+            (event): event is Extract<typeof event, { type: "changed" }> =>
+              event.type === "changed",
+          ),
+          Stream.map((event) => event.path),
+        ),
+        (path) => changed.push(path),
+      );
 
       await closeIndex();
       metadataCache.change(draft, "As @roe2025 wrote.");
@@ -727,7 +811,7 @@ describe("CitationIndex persistence", () => {
         { store },
       );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       expect(vault.reads).toEqual([]);
       expect(await citationsOf(index, draft)).toMatchObject([
@@ -748,7 +832,7 @@ describe("CitationIndex persistence", () => {
           { store },
         );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         expect(vault.reads).toEqual(["draft.md"]);
         expect(await citationsOf(index, draft)).toMatchObject([
@@ -765,7 +849,7 @@ describe("CitationIndex persistence", () => {
           "other.md": "As @roe2025 wrote.",
         });
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       store.writes.length = 0;
 
       metadataCache.change(draft, "As @doe2024 and @roe2025 wrote.");
@@ -780,7 +864,7 @@ describe("CitationIndex persistence", () => {
         "draft.md": "As @doe2024 wrote.",
       });
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       vault.deleteFile(draft);
 
@@ -796,11 +880,11 @@ describe("CitationIndex persistence", () => {
         { store },
       );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       vault.reads.length = 0;
 
       await resetIndex(runtime);
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       expect(vault.reads).toContain("draft.md");
       expect(store.records.has("draft.md")).toBe(true);
@@ -826,7 +910,7 @@ describe("CitationIndex persistence", () => {
 
         vault.write(draft, "As @roe2025 wrote.");
         await resetIndex(runtime);
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         release();
 
         // The parked read still holds the pre-reset body; a later session must not
@@ -836,7 +920,7 @@ describe("CitationIndex persistence", () => {
           { store },
         );
         restored.workspace.layoutReady();
-        await restored.index.whenIndexed();
+        await restored.index.bridge.runPromise(restored.index.whenIndexed);
 
         expect(restored.vault.reads).toEqual([]);
         expect(await citationsOf(restored.index, restored.draft)).toMatchObject(
@@ -858,7 +942,9 @@ describe("CitationIndex resolution", () => {
         { indexedKey: KEY_A, linkpath: null },
       ]);
       expect(
-        (await lookup.read({ indexedKeys: [KEY_A] })).citekeyOf(KEY_A),
+        (
+          await lookup.bridge.runPromise(lookup.read({ indexedKeys: [KEY_A] }))
+        ).citekeyOf(KEY_A),
       ).toBe("doe2024");
     }),
   );
@@ -873,7 +959,7 @@ describe("CitationIndex resolution", () => {
         );
       citekeys.error = new Error("torn read");
       db.settle();
-      await lookup.whenResolved();
+      await lookup.bridge.runPromise(lookup.whenResolved);
       await expect(citationsOf(index, draft)).rejects.toThrow();
       citekeys.error = null;
       passCooldown();
@@ -893,7 +979,9 @@ describe("CitationIndex resolution", () => {
           "unresolved.md": "@missing.",
         });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
 
         await expect
           .poll(() => snapshots.at(-1))
@@ -903,7 +991,7 @@ describe("CitationIndex resolution", () => {
             groups: [],
           });
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1))
@@ -957,10 +1045,12 @@ describe("CitationIndex resolution", () => {
           },
         );
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
 
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() =>
@@ -985,7 +1075,9 @@ describe("CitationIndex resolution", () => {
         { settingsService: settings },
       );
       const snapshots: CitedBySnapshot[] = [];
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
 
       await expect
         .poll(() => snapshots)
@@ -1001,8 +1093,8 @@ describe("CitationIndex resolution", () => {
         { settingsService: settings },
       );
       const snapshots: CitedBySnapshot[] = [];
-      const stop = index.observeCitedBy(KEY_A, (snapshot) =>
-        snapshots.push(snapshot),
+      const stop = index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
       );
 
       stop();
@@ -1020,10 +1112,12 @@ describe("CitationIndex resolution", () => {
           { settings: { "citation.pandoc-citations": false } },
         );
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
 
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1))
@@ -1046,10 +1140,12 @@ describe("CitationIndex resolution", () => {
           links: [link("Doe 2024", body.indexOf("[["))],
         } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
 
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1))
@@ -1067,10 +1163,12 @@ describe("CitationIndex resolution", () => {
         { settings: { "citation.pandoc-citations": false } },
       );
       const snapshots: CitedBySnapshot[] = [];
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
 
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       await expect.poll(() => snapshots.at(-1)).toMatchObject({ groups: [] });
 
       settings.bridge!.runSync(
@@ -1095,7 +1193,9 @@ describe("CitationIndex resolution", () => {
       );
       const snapshots: CitedBySnapshot[] = [];
 
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
 
       await expect
         .poll(() => snapshots)
@@ -1111,10 +1211,12 @@ describe("CitationIndex resolution", () => {
       });
       vault.fail("z-bad.md");
       const snapshots: CitedBySnapshot[] = [];
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
 
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       await expect
         .poll(() => snapshots.at(-1))
@@ -1133,9 +1235,11 @@ describe("CitationIndex resolution", () => {
           "draft.md": "@doe2024.",
         });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1)?.groups)
@@ -1168,10 +1272,12 @@ describe("CitationIndex resolution", () => {
           links: [link("Doe 2024", body.indexOf("[["))],
         } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
 
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect
           .poll(() => snapshots.at(-1))
           .toMatchObject({
@@ -1181,7 +1287,7 @@ describe("CitationIndex resolution", () => {
 
         db.state = "degraded";
         pending.release();
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
 
         await expect
           .poll(() => snapshots.at(-1))
@@ -1198,9 +1304,11 @@ describe("CitationIndex resolution", () => {
         "draft.md": "@doe2024.",
       });
       const snapshots: CitedBySnapshot[] = [];
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       const release = vault.hold("draft.md");
 
       await resetIndex(runtime);
@@ -1208,7 +1316,7 @@ describe("CitationIndex resolution", () => {
       await expect.poll(() => snapshots.at(-1)?.coverage).toBe("indexing");
 
       release();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       await expect.poll(() => snapshots.at(-1)?.coverage).toBe("complete");
     }),
   );
@@ -1258,10 +1366,12 @@ describe("CitationIndex resolution", () => {
           ],
         } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
 
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1)?.groups)
@@ -1296,10 +1406,12 @@ describe("CitationIndex resolution", () => {
         links: [],
       } satisfies CachedMetadata);
       const snapshots: CitedBySnapshot[] = [];
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
 
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       await expect
         .poll(() => snapshots.at(-1)?.groups)
@@ -1349,9 +1461,11 @@ describe("CitationIndex resolution", () => {
           links: [link("Roe 2025", body.indexOf("[["))],
         } satisfies CachedMetadata);
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_B, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_B, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1)?.groups[0]?.occurrences)
@@ -1374,14 +1488,16 @@ describe("CitationIndex resolution", () => {
           "Skip/b.md": "@doe2024.",
         });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(
-          KEY_A,
-          (snapshot) => snapshots.push(snapshot),
-          (file) => file.path.startsWith("Keep/"),
+        index.bridge.runSync(
+          index.observeCitedBy(
+            KEY_A,
+            (snapshot) => snapshots.push(snapshot),
+            (file) => file.path.startsWith("Keep/"),
+          ),
         );
 
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         await expect
           .poll(() => snapshots.at(-1)?.groups.map(({ path }) => path))
@@ -1397,9 +1513,11 @@ describe("CitationIndex resolution", () => {
           "draft.md": "@doe2024.",
         });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
         const before = snapshots.length;
 
@@ -1427,9 +1545,11 @@ describe("CitationIndex resolution", () => {
           { settings: { "citation.wikilink-citations": true } },
         );
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         metadataCache.change(draft, body, [link("Doe 2024", 4)]);
 
@@ -1464,9 +1584,11 @@ describe("CitationIndex resolution", () => {
         } satisfies CachedMetadata);
         const target = metadataCache.files.get("Doe 2024.md")!;
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
 
         vault.rename(target, "Literature/Moved.md");
@@ -1491,9 +1613,11 @@ describe("CitationIndex resolution", () => {
           "draft.md": "@doe2024.",
         });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
 
         citekeys.rows = [
@@ -1518,9 +1642,11 @@ describe("CitationIndex resolution", () => {
         const { draft, index, metadataCache, runtime, vault, workspace } =
           await makeHarness({ "draft.md": "@doe2024." });
         const snapshots: CitedBySnapshot[] = [];
-        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+        );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         const release = vault.hold(draft.path);
 
         await resetIndex(runtime);
@@ -1531,7 +1657,7 @@ describe("CitationIndex resolution", () => {
         await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
 
         release();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect.poll(() => snapshots.at(-1)?.groups).toEqual([]);
       }),
   );
@@ -1544,16 +1670,18 @@ describe("CitationIndex resolution", () => {
           await makeHarness({ "draft.md": "@doe2024." });
         const snapshots: CitedBySnapshot[] = [];
         let observed: PromiseWithResolvers<void> | undefined;
-        index.observeCitedBy(
-          KEY_A,
-          (snapshot) => snapshots.push(snapshot),
-          () => {
-            observed?.resolve();
-            return true;
-          },
+        index.bridge.runSync(
+          index.observeCitedBy(
+            KEY_A,
+            (snapshot) => snapshots.push(snapshot),
+            () => {
+              observed?.resolve();
+              return true;
+            },
+          ),
         );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect.poll(() => snapshots.at(-1)?.groups).toHaveLength(1);
         observed = Promise.withResolvers<void>();
         vault.reads.length = 0;
@@ -1572,9 +1700,11 @@ describe("CitationIndex resolution", () => {
     Effect.promise(async () => {
       const { index, metadataCache, vault, workspace } = await makeHarness({});
       const snapshots: CitedBySnapshot[] = [];
-      index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot));
+      index.bridge.runSync(
+        index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
+      );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       const created = new TFile();
       created.path = "created.md";
@@ -1626,21 +1756,25 @@ describe("CitationIndex resolution", () => {
             },
           );
         let publications = 0;
-        index.observeCitedBy(KEY_A, () => {
-          throw new Error("observer failed");
-        });
-        index.observeCitedBy(
-          KEY_A,
-          () => publications++,
-          () => {
-            observed?.resolve();
-            return true;
-          },
+        index.bridge.runSync(
+          index.observeCitedBy(KEY_A, () => {
+            throw new Error("observer failed");
+          }),
+        );
+        index.bridge.runSync(
+          index.observeCitedBy(
+            KEY_A,
+            () => publications++,
+            () => {
+              observed?.resolve();
+              return true;
+            },
+          ),
         );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         await expect.poll(() => publications).toBeGreaterThan(0);
-        await lookup.read({ citekeys: ["doe2024"] });
+        await lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] }));
 
         const before = publications;
         scanStarted = Promise.withResolvers<void>();
@@ -1649,7 +1783,7 @@ describe("CitationIndex resolution", () => {
         metadataCache.change(draft, "@doe2024.");
 
         await scanStarted.promise;
-        await index.getFileScan(draft);
+        await index.bridge.runPromise(index.getFileScan(draft));
         await observed.promise;
         expect(publications).toBe(before);
       }),
@@ -1661,23 +1795,25 @@ describe("CitationIndex resolution", () => {
       Effect.promise(async () => {
         await using h = await createCitationIndexHarness({});
         const snapshots: CitedBySnapshot[] = [];
-        const stop = h.index.observeCitedBy(KEY_A, (snapshot) =>
-          snapshots.push(snapshot),
+        const stop = h.index.bridge.runSync(
+          h.index.observeCitedBy(KEY_A, (snapshot) => snapshots.push(snapshot)),
         );
         try {
           await expect.poll(() => snapshots.at(-1)?.resolution).toBe("fresh");
 
           h.citekeys.error = new Error("database read failed");
           h.db.notifyChanged();
-          await h.lookup.whenResolved();
+          await h.lookup.bridge.runPromise(h.lookup.whenResolved);
           await expect.poll(() => snapshots.at(-1)?.resolution).toBe("failed");
 
           stop();
           const before = snapshots.length;
           h.citekeys.error = null;
           h.db.notifyChanged();
-          await h.lookup.whenResolved();
-          expect(h.lookup.status).toBe("fresh");
+          await h.lookup.bridge.runPromise(h.lookup.whenResolved);
+          expect(h.lookup.bridge.runSync(h.lookup.current).status).toBe(
+            "fresh",
+          );
           expect(snapshots).toHaveLength(before);
         } finally {
           stop();
@@ -1691,15 +1827,17 @@ describe("CitationIndex resolution", () => {
         "draft.md": "@doe2024.",
       });
       let publications = 0;
-      const stop = index.observeCitedBy(KEY_A, () => publications++);
+      const stop = index.bridge.runSync(
+        index.observeCitedBy(KEY_A, () => publications++),
+      );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
       await expect.poll(() => publications).toBeGreaterThan(0);
       const before = publications;
 
       metadataCache.change(draft, "@roe2025.");
       stop();
-      await index.getFileScan(draft);
+      await index.bridge.runPromise(index.getFileScan(draft));
       expect(publications).toBe(before);
     }),
   );
@@ -1714,7 +1852,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           "draft.md": "Plain text.",
         });
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual([]);
       }),
   );
 
@@ -1727,7 +1867,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           { settings: { "citation.pandoc-citations": false } },
         );
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual(["citekey"]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual(["citekey"]);
       }),
   );
 
@@ -1742,9 +1884,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           links: [link("Doe 2024", 4)],
         } satisfies CachedMetadata);
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
-          "wikilink",
-        ]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual(["wikilink"]);
       }),
   );
 
@@ -1760,9 +1902,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           links: [link("Roe 2025", body.indexOf("[["))],
         } satisfies CachedMetadata);
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
-          "wikilink",
-        ]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual(["wikilink"]);
       }),
   );
 
@@ -1778,9 +1920,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
         } satisfies CachedMetadata);
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
-          "wikilink",
-        ]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual(["wikilink"]);
       }),
   );
 
@@ -1796,7 +1938,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           links: [link("ordinary", 4)],
         } satisfies CachedMetadata);
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual([]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual([]);
       }),
   );
 
@@ -1818,10 +1962,9 @@ describe("CitationIndex documentOmittedSyntaxes", () => {
           links: [link("Roe 2025", body.indexOf("[["))],
         } satisfies CachedMetadata);
 
-        expect(await index.documentOmittedSyntaxes(draft)).toEqual([
-          "citekey",
-          "wikilink",
-        ]);
+        expect(
+          await index.bridge.runPromise(index.documentOmittedSyntaxes(draft)),
+        ).toEqual(["citekey", "wikilink"]);
       }),
   );
 });
@@ -1835,12 +1978,16 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
           "draft.md": "@doe2024.",
         });
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
-        expect(await index.getCitedBy(KEY_A)).toMatchObject({
+        expect(
+          await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+        ).toMatchObject({
           groups: [{ path: "draft.md" }],
         });
-        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+        expect(
+          await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+        ).toEqual([]);
       }),
   );
 
@@ -1856,15 +2003,19 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
           links: [link("Doe 2024", body.indexOf("[["))],
         } satisfies CachedMetadata);
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         // The citekey occurrence still joins the group; the wikilink occurrence
         // of the same item does not, since wikilink citations are excluded by
         // default — the case a short answer must still name.
-        expect(await index.getCitedBy(KEY_A)).toMatchObject({
+        expect(
+          await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+        ).toMatchObject({
           groups: [{ path: "draft.md" }],
         });
-        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["wikilink"]);
+        expect(
+          await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+        ).toEqual(["wikilink"]);
       }),
   );
 
@@ -1874,10 +2025,14 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
         "draft.md": "@roe2025.",
       });
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
-      expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-      expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+      expect(
+        await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+      ).toMatchObject({ groups: [] });
+      expect(
+        await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+      ).toEqual([]);
     }),
   );
 
@@ -1890,10 +2045,14 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
           { settings: { "citation.pandoc-citations": false } },
         );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
-        expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual(["citekey"]);
+        expect(
+          await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+        ).toMatchObject({ groups: [] });
+        expect(
+          await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+        ).toEqual(["citekey"]);
       }),
   );
 
@@ -1909,12 +2068,16 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
           links: [link("Doe 2024#cite:locator=", body.indexOf("[["))],
         } satisfies CachedMetadata);
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         // The occurrence is malformed, so it never would have joined a group:
         // unlike a references answer, cited-by counts only eligible occurrences.
-        expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
+        expect(
+          await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+        ).toMatchObject({ groups: [] });
+        expect(
+          await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+        ).toEqual([]);
       }),
   );
 
@@ -1930,14 +2093,22 @@ describe("CitationIndex citedByOmittedSyntaxes", () => {
           links: [link("Roe 2025", body.indexOf("[["))],
         } satisfies CachedMetadata);
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
 
         // Wikilink citations is off, and an excluded wikilink cites KEY_B — but
         // the queried item is KEY_A, which nobody cites at all.
-        expect(await index.getCitedBy(KEY_A)).toMatchObject({ groups: [] });
-        expect(await index.citedByOmittedSyntaxes(KEY_A)).toEqual([]);
-        expect(await index.getCitedBy(KEY_B)).toMatchObject({ groups: [] });
-        expect(await index.citedByOmittedSyntaxes(KEY_B)).toEqual(["wikilink"]);
+        expect(
+          await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+        ).toMatchObject({ groups: [] });
+        expect(
+          await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A)),
+        ).toEqual([]);
+        expect(
+          await index.bridge.runPromise(index.getCitedBy(KEY_B)),
+        ).toMatchObject({ groups: [] });
+        expect(
+          await index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_B)),
+        ).toEqual(["wikilink"]);
       }),
   );
 });
@@ -1961,10 +2132,10 @@ describe("CitationIndex one-shot reads", () => {
           { db, settings: { "citation.pandoc-citations": enabled } },
         );
         workspace.layoutReady();
-        await index.whenIndexed();
+        await index.bridge.runPromise(index.whenIndexed);
         const pending = enabled
-          ? index.getCitedBy(KEY_A)
-          : index.citedByOmittedSyntaxes(KEY_A);
+          ? index.bridge.runPromise(index.getCitedBy(KEY_A))
+          : index.bridge.runPromise(index.citedByOmittedSyntaxes(KEY_A));
 
         metadataCache.change(draft, "@roe2025.");
         db.settle();
@@ -1980,9 +2151,11 @@ describe("CitationIndex one-shot reads", () => {
       });
 
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
-      expect(await index.getCitedBy(KEY_A)).toMatchObject({
+      expect(
+        await index.bridge.runPromise(index.getCitedBy(KEY_A)),
+      ).toMatchObject({
         coverage: "complete",
         resolution: "fresh",
         groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
@@ -1997,18 +2170,24 @@ describe("CitationIndex one-shot reads", () => {
         makeHarness({ "review.md": "@doe2024." }, { context }),
       );
       let outcome: string | undefined;
-      const pending = index.waitUntilSettled(60_000).then((value) => {
-        outcome = value;
-      });
+      const pending = index.bridge
+        .runPromise(index.waitUntilSettled(60_000))
+        .then((value) => {
+          outcome = value;
+        });
       yield* TestClock.adjust(60_001);
       expect(outcome).toBe("timeout");
       yield* Effect.promise(() => pending);
       workspace.layoutReady();
-      expect(yield* Effect.promise(() => index.waitUntilSettled(1_000))).toBe(
-        "settled",
-      );
       expect(
-        (yield* Effect.promise(() => index.getCitedBy(KEY_A))).coverage,
+        yield* Effect.promise(() =>
+          index.bridge.runPromise(index.waitUntilSettled(1_000)),
+        ),
+      ).toBe("settled");
+      expect(
+        (yield* Effect.promise(() =>
+          index.bridge.runPromise(index.getCitedBy(KEY_A)),
+        )).coverage,
       ).toBe("complete");
     }),
   );
@@ -2023,8 +2202,12 @@ describe("CitationIndex one-shot reads", () => {
       );
 
       workspace.layoutReady();
-      await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-      await expect(index.getCitedBy(KEY_A)).rejects.toThrow();
+      await expect(
+        index.bridge.runPromise(index.waitUntilSettled(1_000)),
+      ).resolves.toBe("settled");
+      await expect(
+        index.bridge.runPromise(index.getCitedBy(KEY_A)),
+      ).rejects.toThrow();
     }),
   );
 });
@@ -2089,8 +2272,8 @@ describe("CitationIndex parsed notes", () => {
           if (file.path === h.draft.path) entered.resolve();
           return reading;
         };
-        const reading = h.index
-          .getFileScan(h.draft)
+        const reading = h.index.bridge
+          .runPromise(h.index.getFileScan(h.draft))
           .catch((error: unknown) => error);
         await entered.promise;
         await h.closeIndex();
@@ -2106,7 +2289,7 @@ describe("CitationIndex parsed notes", () => {
         "draft.md": "See @doe2024.",
       });
 
-      const parsed = await index.getParsedNote(draft);
+      const parsed = await index.bridge.runPromise(index.getParsedNote(draft));
 
       expect(parsed.source).toBe("See @doe2024.");
       expect(
@@ -2124,7 +2307,9 @@ describe("CitationIndex parsed notes", () => {
       });
       vault.fail("draft.md");
 
-      await expect(index.getParsedNote(draft)).rejects.toThrow("read failed");
+      await expect(
+        index.bridge.runPromise(index.getParsedNote(draft)),
+      ).rejects.toThrow("read failed");
     }),
   );
 });
@@ -2158,10 +2343,12 @@ describe("CitationIndex ambiguous citation keys", () => {
         },
       );
       workspace.layoutReady();
-      await index.whenIndexed();
+      await index.bridge.runPromise(index.whenIndexed);
 
       for (const indexedKey of [KEY_A, GROUP_KEY]) {
-        expect((await index.getCitedBy(indexedKey)).groups).toMatchObject([
+        expect(
+          (await index.bridge.runPromise(index.getCitedBy(indexedKey))).groups,
+        ).toMatchObject([
           { path: draft.path, occurrences: [{ raw: "doe2024" }] },
         ]);
       }
@@ -2198,14 +2385,20 @@ describe("CitationIndex ambiguous citation keys", () => {
           { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
         );
         workspace.layoutReady();
-        await index.whenIndexed();
-        expect((await index.getCitedBy(GROUP_KEY)).groups).toHaveLength(1);
+        await index.bridge.runPromise(index.whenIndexed);
+        expect(
+          (await index.bridge.runPromise(index.getCitedBy(GROUP_KEY))).groups,
+        ).toHaveLength(1);
 
         libraryScope.select([personalLibrary()]);
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
 
-        expect((await index.getCitedBy(GROUP_KEY)).groups).toStrictEqual([]);
-        expect((await index.getCitedBy(KEY_A)).groups).toHaveLength(1);
+        expect(
+          (await index.bridge.runPromise(index.getCitedBy(GROUP_KEY))).groups,
+        ).toStrictEqual([]);
+        expect(
+          (await index.bridge.runPromise(index.getCitedBy(KEY_A))).groups,
+        ).toHaveLength(1);
       }),
   );
 });
@@ -2219,7 +2412,7 @@ async function warmVault(
     store,
   });
   workspace.layoutReady();
-  await index.whenIndexed();
+  await index.bridge.runPromise(index.whenIndexed);
   await closeIndex();
 }
 

@@ -5,8 +5,10 @@ import {
   Fiber,
   FiberSet,
   Layer,
+  PubSub,
   Result,
   Schema,
+  Stream,
 } from "effect";
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
@@ -49,8 +51,11 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import { pdfPickerReader } from "@/services/attachment-open/actions";
-import type { TargetOpener } from "@/services/attachment-open/open-target";
+import {
+  openGesture,
+  pdfPickerReader,
+} from "@/services/attachment-open/actions";
+import { TargetOpener } from "@/services/attachment-open/open-target";
 import { toObsidianOpenable } from "@/services/attachment-open/openable";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import { LocalServer } from "@/services/local-server/service";
@@ -85,6 +90,7 @@ import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
+import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { showProtocolOutcome } from "./notices";
@@ -98,6 +104,7 @@ export type ProtocolServices =
   | Notifier
   | ObsidianEnv
   | ProfileDialogServices
+  | TargetOpener
   | UseLedger
   | Vault
   | Workspace
@@ -106,17 +113,17 @@ export type ProtocolServices =
 
 /**
  * The legacy values the handlers still hold. The Profile dialogs run in the
- * handler's fiber; the note import view and the Attachment opener convert in
- * later slices.
+ * handler's fiber; the note import view converts in a later slice.
  */
 export interface ProtocolDeps extends InteractiveCreationPorts {
   webWorkbenchEnabled: boolean;
   /** The note import's classify, confirm and Profile modals. */
   noteImportView: NoteImportView;
-  /** Also runs the note import modal's callbacks, which unload interrupts. */
-  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
-  /** Opens the Attachment `open-attachment` names. */
-  opener: Pick<TargetOpener, "open">;
+  /**
+   * Also runs the note import modal's callbacks and the Attachment picker's
+   * opens, which unload interrupts.
+   */
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit" | "runAndForget">;
 }
 
 /**
@@ -189,17 +196,30 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
         handleProfileImportProtocol(data, deps),
       );
 
+    const outcomes = yield* PubSub.unbounded<ProtocolOutcome>();
+    const answered = (outcome: ProtocolOutcome | void) =>
+      outcome ? PubSub.publish(outcomes, outcome) : Effect.void;
     const localServer = yield* LocalServer;
     // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
     // runs the same interactive flow as the `update-many` protocol link. Each
     // run is a fiber of its own, so a long batch does not hold back the next
     // request.
     const updates = yield* forkEach(localServer.updateManyRequests, (event) =>
-      FiberSet.run(runs, updateManyRequested(event, deps)),
+      FiberSet.run(
+        runs,
+        Effect.flatMap(updateManyRequested(event, deps), (outcome) =>
+          answered(outcome),
+        ),
+      ),
     );
     // A batch import pushed over HTTP runs the same flow as the import-notes link.
     const imports = yield* forkEach(localServer.importNotesRequests, (event) =>
-      FiberSet.run(runs, importNotesRequested(event, deps)),
+      FiberSet.run(
+        runs,
+        Effect.flatMap(importNotesRequested(event, deps), (outcome) =>
+          answered(outcome),
+        ),
+      ),
     );
 
     const registration: ProtocolRegistration = {
@@ -207,6 +227,7 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
         Fiber.awaitAll([updates, imports]),
         FiberSet.awaitEmpty(runs),
       ),
+      outcomes: Stream.fromPubSub(outcomes),
     };
     return registration;
   },
@@ -253,12 +274,18 @@ export interface ProtocolRegistration {
    * closed) and no handler run or pushed request run is going.
    */
   readonly idle: Effect.Effect<void>;
+  /**
+   * The outcome of each pushed request, once its notice shows. A run that
+   * fails or is interrupted gives none.
+   */
+  readonly outcomes: Stream.Stream<ProtocolOutcome>;
 }
 
 const updateManyRequested = Effect.fn("protocol.updateManyRequested")(
   function* (event: UpdateManyRequest, deps: ProtocolDeps) {
     const outcome = yield* updateMany(deps, event.items, event);
     yield* showProtocolOutcome(outcome, deps);
+    return outcome;
   },
   logAndContinue("Pushed batch update failed", "protocol"),
 );
@@ -267,6 +294,7 @@ const importNotesRequested = Effect.fn("protocol.importNotesRequested")(
   function* (event: ImportNotesRequest, deps: ProtocolDeps) {
     const outcome = yield* importNotes(deps, event.mode, event.items);
     yield* showProtocolOutcome(outcome, deps);
+    return outcome;
   },
   logAndContinue("Pushed batch import failed", "protocol"),
 );
@@ -463,7 +491,12 @@ const handleOpenAttachmentProtocol = Effect.fn(
   });
 
   openAttachments(openable, {
-    reader: withPaneOverride(pdfPickerReader(deps.opener), query.paneType),
+    reader: withPaneOverride(
+      pdfPickerReader(
+        openGesture(yield* TargetOpener, deps.bridge.runAndForget),
+      ),
+      query.paneType,
+    ),
     app: deps.app,
   });
   return ProtocolOutcome.Opened();
@@ -650,8 +683,10 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* portCall("open-template-workbench", () =>
-      openTemplateWorkbench(deps.app, file, options),
+    yield* explainWorkbenchOpen(
+      yield* portCall("open-template-workbench", () =>
+        openTemplateWorkbench(deps.app, file, options),
+      ),
     );
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(
       Effect.annotateLogs({ path: profile.path }),

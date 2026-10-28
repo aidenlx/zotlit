@@ -28,6 +28,7 @@ import type { ViewRegistry } from "@/lib/view-atoms";
 import type { ZoteroHttp } from "@/lib/zotero-http";
 import { layerZoteroHttpNode } from "@/lib/zotero-http-node";
 import { layerAnnotationNoteActions } from "@/services/note-feature/view-actions";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
 import { layerSettingTab } from "@/setting-tab/layer";
 import { openLibraryView } from "@/views/library/register";
@@ -45,6 +46,10 @@ import type { AnnotationRepository } from "./annotation-repository/service";
 import { layerAttachmentSkipNotice } from "./attachment-import/notices";
 import { layerAttachmentImport } from "./attachment-import/service";
 import type { AttachmentImport } from "./attachment-import/service";
+import { openWithSystem } from "./attachment-open/capture";
+import { layerTargetOpener } from "./attachment-open/open-target";
+import type { TargetOpener } from "./attachment-open/open-target";
+import { pdfReader } from "./attachment-open/pdf-reader";
 import { layerAttachmentResolver } from "./attachment-resolver/service";
 import type { AttachmentResolver } from "./attachment-resolver/service";
 import { layerChineseSegmenter } from "./chinese-segmenter/service";
@@ -107,6 +112,7 @@ import type { InteractiveCreationPorts } from "./note-feature/creation-view";
 import { layerNoteFeatureNotices } from "./note-feature/notices";
 import { layerNoteFeature } from "./note-feature/service";
 import type { NoteFeature } from "./note-feature/service";
+import { layerNoteImportCommands } from "./note-import/commands";
 import { layerNoteImporter } from "./note-import/service";
 import type { NoteImporter } from "./note-import/service";
 import { layerNoteIndex } from "./note-index/service";
@@ -117,6 +123,12 @@ import { layerBibliographyRender } from "./pandoc/render-cache";
 import type { BibliographyRender } from "./pandoc/render-cache";
 import { layerPandocEngine } from "./pandoc/service";
 import type { PandocEngine } from "./pandoc/service";
+import { layerPdfAnnotationEditor } from "./pdf-annotation-editor/service";
+import type {
+  PdfAnnotationEditor,
+  PdfAnnotationEditorPorts,
+} from "./pdf-annotation-editor/service";
+import { layerProfileActions } from "./profile/actions";
 import { layerProfile } from "./profile/service";
 import type { Profile } from "./profile/service";
 import { layerProtocolHandlers } from "./protocol/register";
@@ -153,9 +165,8 @@ import type { ZoteroReads } from "./zotero-reads/service";
 import { workerClient } from "./zotero-reads/worker-client";
 
 /**
- * The graph `buildServices` builds before the container over `plugin`:
- * converted services, and the legacy services bridged into it with
- * `serviceLayer`. Settings and logging build first, so every other service
+ * The graph `createPluginRuntime` builds over `plugin`: every plugin
+ * service. Settings and logging build first, so every other service
  * logs from its first line and closes before them. Every service reads time
  * from the Effect Clock, which a test replaces. Each layer starts under its
  * service's name, so a defect during acquisition names what failed.
@@ -177,13 +188,18 @@ export function pluginLayer(
     excerpt,
     languagePack,
     protocol,
+    pdfEditor,
   }: {
     readonly capabilityNotices: CapabilityNoticePorts;
+    readonly pdfEditor: PdfAnnotationEditorPorts;
     readonly creation: InteractiveCreationPorts;
     /** The launch sheet, the browser and the native editor Customize opens. */
     readonly customize: CustomizePorts;
-    /** The note import's modals and the Attachment opener the protocol handlers call. */
-    readonly protocol: Pick<ProtocolDeps, "noteImportView" | "opener">;
+    /**
+     * The note import's modals, which the protocol handlers and the note
+     * import commands open.
+     */
+    readonly protocol: Pick<ProtocolDeps, "noteImportView">;
     readonly excerpt: {
       readonly openStore: () => Promise<ExcerptStore>;
       readonly readers: ExcerptReaderDocuments;
@@ -192,10 +208,12 @@ export function pluginLayer(
   },
 ): Layer.Layer<
   | GraphCitations
+  | PdfAnnotationEditor
   | LanguagePack
   | LocalBridge
   | Notifier
   | AnnotationRepository
+  | AnnotationNoteActions
   | CapabilityNotices
   | AnnotationPopover
   | CitekeyEditor
@@ -213,6 +231,7 @@ export function pluginLayer(
   | Profile
   | LibraryScope
   | AttachmentImport
+  | TargetOpener
   | AttachmentResolver
   | ZoteroReads
   | PluginSettings
@@ -282,6 +301,13 @@ export function pluginLayer(
         loadVerificationData: readMigrationVerificationData,
       }).pipe(startingAs("TemplateMigration")),
     ),
+    // Every ZotLit gesture that opens an Attachment, and File Link Capture
+    // for a link Obsidian rendered, decides through this one opener.
+    Layer.provideMerge(
+      layerTargetOpener({ reader: pdfReader, native: openWithSystem }).pipe(
+        startingAs("TargetOpener"),
+      ),
+    ),
     Layer.provideMerge(
       Layer.mergeAll(
         layerLibraryScope.pipe(startingAs("LibraryScope")),
@@ -341,7 +367,7 @@ export function pluginLayer(
         layerZoteroHttpNode.pipe(startingAs("ZoteroHttp")),
       ),
     ),
-    // The legacy note writers create and move through the tags (`build.ts`).
+    // The note writers (`note-feature/`) create and move notes through these tags.
     // The protocol handlers also open notes through the
     // Workspace and read the vault folder from the environment. The Customize
     // flow reads the active note's paper from the metadata cache.
@@ -396,7 +422,11 @@ export function pluginLayer(
     layerLibraryScopeCli.pipe(startingAs("LibraryScopeCli")),
     layerLibraryScopeNotices.pipe(startingAs("LibraryScopeNotices")),
     layerNoteFeatureNotices.pipe(startingAs("NoteFeatureNotices")),
+    layerNoteImportCommands({ view: protocol.noteImportView }).pipe(
+      startingAs("NoteImportCommands"),
+    ),
     layerPandocResolve.pipe(startingAs("PandocResolve")),
+    layerProfileActions.pipe(startingAs("ProfileActions")),
     layerProtocolHandlers({
       ...creation,
       ...protocol,
@@ -415,7 +445,7 @@ export function pluginLayer(
     ),
     layerTemplateWorkbenchCli.pipe(startingAs("TemplateWorkbenchCli")),
     layerViewRegistry.pipe(
-      Layer.provide(
+      Layer.provideMerge(
         Layer.mergeAll(layerTemplateDataReads, layerAnnotationNoteActions),
       ),
       startingAs("ViewRegistry"),
@@ -447,7 +477,13 @@ export function pluginLayer(
   // The Notifier is the one the layers share: the setting tab's Language Pack
   // toast shows through it.
   return registrations.pipe(
-    Layer.provideMerge(noteFeature),
+    Layer.provideMerge(
+      layerPdfAnnotationEditor(pdfEditor).pipe(
+        startingAs("PdfAnnotationEditor"),
+        Layer.provide(layerNotifier),
+        Layer.provideMerge(noteFeature),
+      ),
+    ),
     Layer.provideMerge(NodeFileSystem.layer),
     Layer.merge(layerNotifier),
   );

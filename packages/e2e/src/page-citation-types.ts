@@ -1,14 +1,10 @@
 import type { Profiler } from "node:inspector";
 import type { Editor, MarkdownView, TFile, WorkspaceLeaf } from "obsidian";
 
-import type { E2eServices } from "@zotlit/obsidian/e2e";
-
 import type { AnnotationView } from "@/views/annot-view/view";
 import type { ReferencesView } from "@/views/references/view";
 
-export type FileScan = NonNullable<
-  Awaited<ReturnType<E2eServices["citationIndex"]["getFileScan"]>>
->;
+export type { FileScan } from "@/services/citation-index/store";
 
 type WorkerAttached = { targetInfo: { title: string }; sessionId: string };
 export type DebugListener = (

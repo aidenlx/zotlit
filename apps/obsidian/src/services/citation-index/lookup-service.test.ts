@@ -1,8 +1,9 @@
 import { it } from "@effect/vitest";
-import { Duration, Effect, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Stream } from "effect";
 import { afterEach, describe, expect, vi } from "vitest";
 
 import { subscribe } from "@/lib/effect-stream";
+import * as lookupEvents from "@/services/citation-index/lookup-service";
 import { queryClientsFixture } from "@/services/query-client/__fixtures__";
 import { testReads } from "@/services/zotero-reads/__fixtures__";
 import { layerRcRef } from "@/services/zotero-reads/connection";
@@ -70,7 +71,13 @@ async function fixture(
     libraryScope,
     reads: {
       ...shared,
-      state: "ready",
+      current: Effect.succeed({
+        state: "ready" as const,
+        error: null,
+        moved: false,
+        dbFileMissing: false,
+        activeReadMode: null,
+      }),
     },
   });
   return {
@@ -79,7 +86,8 @@ async function fixture(
     libraryScope,
     async change(next: string) {
       key = next;
-      await shared.refresh();
+      await shared.ready;
+      await shared.bridge.runPromise(shared.refresh);
     },
   };
 }
@@ -100,19 +108,20 @@ it.effect("builds once at startup with ready dependencies and no events", () =>
       libraryScope: new LibraryScopeStub([personalLibrary()]),
       reads: {
         reads: ready.client,
-        state: "ready",
-        changed: Stream.empty,
-        degraded: Stream.empty,
-        "refresh-failed": Stream.empty,
-        refreshing: Stream.empty,
-        "db-file-missing": Stream.empty,
-        "refresh-requested": Stream.empty,
+        current: Effect.succeed({
+          state: "ready" as const,
+          error: null,
+          moved: false,
+          dbFileMissing: false,
+          activeReadMode: null,
+        }),
+        events: Stream.empty,
       },
     });
 
-    await reads.whenResolved();
+    await reads.bridge.runPromise(reads.whenResolved);
     expect(lookup).toHaveBeenCalledTimes(1);
-    expect(reads.status).toBe("fresh");
+    expect(reads.bridge.runSync(reads.current).status).toBe("fresh");
   }),
 );
 
@@ -126,7 +135,7 @@ it.effect(
       const changing = source.change("second");
       opening.resolve();
       await changing;
-      const answer = await reads.read(request);
+      const answer = await reads.bridge.runPromise(reads.read(request));
       expect(answer.resolve("first")).toEqual({ kind: "missing" });
       expect(answer.citekeyOf("ITEMKEY1")).toBe("second");
     }),
@@ -136,7 +145,7 @@ it.effect("refetches an observed answer when shared reads change", () =>
   Effect.promise(async () => {
     const source = await fixture();
     await using lookup = source.reads;
-    using view = lookup.observe(() => undefined);
+    using view = lookup.bridge.runSync(lookup.observe(() => undefined));
     view.set(request);
     await expect.poll(() => view.current?.status).toBe("fresh");
     const previous = view.current!.value;
@@ -151,15 +160,19 @@ it.effect("refetches an observed answer when shared reads change", () =>
 it.effect("marks observed answers failed when shared reads degrade", () =>
   Effect.promise(async () => {
     await using h = await createCitationIndexHarness({});
-    using view = h.lookup.observe(() => undefined);
+    using view = h.lookup.bridge.runSync(h.lookup.observe(() => undefined));
     view.set({ citekeys: ["doe2024"] });
     await expect.poll(() => view.current?.status).toBe("fresh");
     const previous = view.current!.value;
     h.db.degrade();
-    await expect.poll(() => h.lookup.status).toBe("failed");
+    await expect
+      .poll(() => h.lookup.bridge.runSync(h.lookup.current).status)
+      .toBe("failed");
     await expect.poll(() => view.current?.status).toBe("failed");
     expect(view.current!.value).toBe(previous);
-    await expect(h.lookup.read({ citekeys: ["doe2024"] })).rejects.toThrow();
+    await expect(
+      h.lookup.bridge.runPromise(h.lookup.read({ citekeys: ["doe2024"] })),
+    ).rejects.toThrow();
   }),
 );
 
@@ -192,7 +205,7 @@ it.effect(
       });
       const reads = source.reads;
       const abort = new AbortController();
-      const cancelled = reads.read(request, {
+      const cancelled = reads.bridge.runPromise(reads.read(request), {
         signal: abort.signal,
       });
       const rejection = expect(cancelled).rejects.toBeDefined();
@@ -200,14 +213,16 @@ it.effect(
       abort.abort();
       await rejection;
       expect(ended).toBe(1);
-      const pending = reads.read(request);
+      const pending = reads.bridge.runPromise(reads.read(request));
       const stopped = expect(pending).rejects.toBeDefined();
       await second.promise;
       await reads[Symbol.asyncDispose]();
       await stopped;
       expect(ended).toBe(2);
       await source.change("second");
-      await expect(reads.read(request)).rejects.toBeDefined();
+      await expect(
+        reads.bridge.runPromise(reads.read(request)),
+      ).rejects.toBeDefined();
     }),
 );
 
@@ -230,7 +245,7 @@ describe("Citation Lookup held reads", () => {
     () =>
       Effect.promise(async () => {
         const { lookup, citekeys, db } = await makeHarness({});
-        using view = lookup.observe(() => {});
+        using view = lookup.bridge.runSync(lookup.observe(() => {}));
         view.set({ citekeys: ["doe2024"] });
         await expect.poll(() => view.current?.status).toBe("fresh");
         const previous = view.current!.value;
@@ -252,9 +267,11 @@ describe("Citation Lookup held reads", () => {
         const db = new DatabaseStub({ readyImmediately: false });
         const { lookup } = await makeHarness({}, { db });
         let calls = 0;
-        const view = lookup.observe(() => {
-          calls += 1;
-        });
+        const view = lookup.bridge.runSync(
+          lookup.observe(() => {
+            calls += 1;
+          }),
+        );
         view.set({ citekeys: ["doe2024"] });
         view.set({ citekeys: ["roe2025"] });
         expect(view.current).toBeNull();
@@ -268,7 +285,7 @@ describe("Citation Lookup held reads", () => {
         view.set({ citekeys: ["doe2024"] });
         const beforeDispose = calls;
         view[Symbol.dispose]();
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
         expect(view.current).toBeNull();
         expect(calls).toBe(beforeDispose);
       }),
@@ -281,11 +298,13 @@ describe("Citation Lookup held reads", () => {
         const db = new DatabaseStub({ readyImmediately: false });
         const { lookup } = await makeHarness({}, { db });
         const controller = new AbortController();
-        const canceled = lookup.read(
-          { citekeys: ["doe2024"] },
+        const canceled = lookup.bridge.runPromise(
+          lookup.read({ citekeys: ["doe2024"] }),
           { signal: controller.signal },
         );
-        const current = lookup.read({ indexedKeys: [KEY_B] });
+        const current = lookup.bridge.runPromise(
+          lookup.read({ indexedKeys: [KEY_B] }),
+        );
         controller.abort();
         await expect(canceled).rejects.toThrow();
         db.settle();
@@ -298,10 +317,12 @@ describe("Citation Lookup held reads", () => {
     () =>
       Effect.promise(async () => {
         const { lookup } = await makeHarness({});
-        const answer = await lookup.read({
-          citekeys: ["doe2024", "absent"],
-          indexedKeys: [KEY_B],
-        });
+        const answer = await lookup.bridge.runPromise(
+          lookup.read({
+            citekeys: ["doe2024", "absent"],
+            indexedKeys: [KEY_B],
+          }),
+        );
         expect(answer.resolve("doe2024")).toMatchObject({
           kind: "unique",
           item: { indexedKey: KEY_A },
@@ -356,17 +377,23 @@ describe("Citation Lookup held reads", () => {
           },
         ];
         db.notifyChanged();
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
         expect(
-          (await lookup.read({ citekeys: ["shared"] })).resolve("shared"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["shared"] }),
+            )
+          ).resolve("shared"),
         ).toMatchObject({
           kind: "unique",
           item: { indexedKey: "GROUPKEYg7" },
         });
         expect(
-          (await lookup.read({ indexedKeys: ["NEWGROUPg12"] })).citekeyOf(
-            "NEWGROUPg12",
-          ),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ indexedKeys: ["NEWGROUPg12"] }),
+            )
+          ).citekeyOf("NEWGROUPg12"),
         ).toBe("newGroup");
       }),
   );
@@ -378,16 +405,20 @@ describe("Citation Lookup held reads", () => {
         const db = new DatabaseStub({ readyImmediately: false });
         const { lookup } = await makeHarness({}, { db, notes: false });
 
-        using observation = lookup.observe(() => {});
+        using observation = lookup.bridge.runSync(lookup.observe(() => {}));
         observation.set({ citekeys: ["doe2024"] });
         expect(observation.current).toBeNull();
-        const waiting = lookup.whenResolved();
+        const waiting = lookup.bridge.runPromise(lookup.whenResolved);
 
         db.settle();
         await waiting;
 
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024"),
         ).toEqual({
           kind: "unique",
           item: {
@@ -409,29 +440,47 @@ describe("Citation Lookup held reads", () => {
           { notes: false },
         );
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024")
-            ?.kind,
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024")?.kind,
         ).toBe("unique");
         expect(
-          (await lookup.read({ citekeys: ["doe2024b"] })).resolve("doe2024b")
-            ?.kind,
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024b"] }),
+            )
+          ).resolve("doe2024b")?.kind,
         ).toBe("missing");
 
         citekeys.rows = citekeys.rows.map((row) =>
           row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
         );
         let notified = 0;
-        subscribe(lookup.runtime, lookup["changed"], () => notified++);
+        subscribe(
+          lookup.runtime,
+          lookupEvents.lookupChanged(lookup),
+          () => notified++,
+        );
 
         db.notifyChanged();
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
 
         expect(notified).toBeGreaterThan(0);
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024"),
         ).toEqual({ kind: "missing" });
         expect(
-          (await lookup.read({ citekeys: ["doe2024b"] })).resolve("doe2024b"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024b"] }),
+            )
+          ).resolve("doe2024b"),
         ).toMatchObject({
           kind: "unique",
           item: { itemID: 1, indexedKey: KEY_A },
@@ -452,14 +501,19 @@ describe("Citation Lookup held reads", () => {
           { notes: false, libraryScope },
         );
         expect(
-          (await lookup.read({ citekeys: ["roe2025"] })).resolve("roe2025")
-            ?.kind,
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["roe2025"] }),
+            )
+          ).resolve("roe2025")?.kind,
         ).toBe("unique");
         libraryScope.select([personalLibrary()]);
-        const narrowed = await lookup.read({
-          citekeys: ["roe2025"],
-          indexedKeys: [KEY_B],
-        });
+        const narrowed = await lookup.bridge.runPromise(
+          lookup.read({
+            citekeys: ["roe2025"],
+            indexedKeys: [KEY_B],
+          }),
+        );
         expect(narrowed.resolve("roe2025")).toEqual({ kind: "missing" });
         expect(narrowed.citekeyOf(KEY_B)).toBe("roe2025");
       }),
@@ -486,20 +540,24 @@ describe("Citation Lookup held reads", () => {
           },
         ];
         expect(
-          (await lookup.read({ indexedKeys: ["GRP23456g7"] })).citekeyOf(
-            "GRP23456g7",
-          ),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ indexedKeys: ["GRP23456g7"] }),
+            )
+          ).citekeyOf("GRP23456g7"),
         ).toBeNull();
 
         // Library Scope settles its read after the database change, and a Library
         // outside the saved scope reaches the index through `libraries-changed`.
         libraryScope.holdLibraries([personalLibrary(), groupLibrary()]);
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
 
         expect(
-          (await lookup.read({ indexedKeys: ["GRP23456g7"] })).citekeyOf(
-            "GRP23456g7",
-          ),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ indexedKeys: ["GRP23456g7"] }),
+            )
+          ).citekeyOf("GRP23456g7"),
         ).toBe("grp2026");
       }),
   );
@@ -511,9 +569,11 @@ describe("Citation Lookup held reads", () => {
         const db = new DatabaseStub();
         db.state = "degraded";
         const { lookup } = await makeHarness({}, { db, notes: false });
-        await lookup.whenResolved();
-        await expect(lookup.read({ citekeys: ["doe2024"] })).rejects.toThrow();
-        expect(lookup.status).toBe("failed");
+        await lookup.bridge.runPromise(lookup.whenResolved);
+        await expect(
+          lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] })),
+        ).rejects.toThrow();
+        expect(lookup.bridge.runSync(lookup.current).status).toBe("failed");
       }),
   );
 
@@ -525,7 +585,7 @@ describe("Citation Lookup held reads", () => {
           {},
           { notes: false },
         );
-        using view = lookup.observe(() => {});
+        using view = lookup.bridge.runSync(lookup.observe(() => {}));
         view.set({ citekeys: ["doe2024"] });
         await expect.poll(() => view.current?.status).toBe("fresh");
         const held = view.current!.value;
@@ -533,9 +593,11 @@ describe("Citation Lookup held reads", () => {
         db.notifyChanged();
         await expect.poll(() => view.current?.status).toBe("failed");
         expect(view.current!.value).toBe(held);
-        await expect(lookup.read({ citekeys: ["doe2024"] })).rejects.toThrow();
+        await expect(
+          lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] })),
+        ).rejects.toThrow();
         citekeys.error = null;
-        await lookup.read({ citekeys: ["doe2024"] });
+        await lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] }));
         await expect.poll(() => view.current?.status).toBe("fresh");
       }),
   );
@@ -546,10 +608,12 @@ describe("Citation Lookup held reads", () => {
       const { lookup, citekeys } = await makeHarness({}, { db, notes: false });
       citekeys.error = new Error("torn read");
       db.settle();
-      await lookup.whenResolved();
+      await lookup.bridge.runPromise(lookup.whenResolved);
       citekeys.error = null;
       expect(
-        (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024")?.kind,
+        (
+          await lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] }))
+        ).resolve("doe2024")?.kind,
       ).toBe("unique");
     }),
   );
@@ -560,12 +624,20 @@ describe("Citation Lookup held reads", () => {
       Effect.promise(async () => {
         const db = new DatabaseStub({ readyImmediately: false });
         const { lookup } = await makeHarness({}, { db, notes: false });
-        const waiting = lookup.whenResolved();
+        const waiting = lookup.bridge.runPromiseExit(lookup.whenResolved);
 
         await lookup[Symbol.asyncDispose]();
 
-        await expect(waiting).resolves.toBeUndefined();
-        await expect(lookup.whenResolved()).resolves.toBeUndefined();
+        const interrupted = await waiting;
+        expect(
+          Exit.isFailure(interrupted) &&
+            Cause.hasInterruptsOnly(interrupted.cause),
+        ).toBe(true);
+
+        const later = await lookup.bridge.runPromiseExit(lookup.whenResolved);
+        expect(
+          Exit.isFailure(later) && Cause.hasInterruptsOnly(later.cause),
+        ).toBe(true);
       }),
   );
 
@@ -579,7 +651,11 @@ describe("Citation Lookup held reads", () => {
         );
 
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024"),
         ).toEqual({
           kind: "ambiguous",
           candidates: [
@@ -613,9 +689,9 @@ describe("Citation Lookup held reads", () => {
           },
         );
 
-        const resolved = (await lookup.read({ citekeys: ["doe2024"] })).resolve(
-          "doe2024",
-        );
+        const resolved = (
+          await lookup.bridge.runPromise(lookup.read({ citekeys: ["doe2024"] }))
+        ).resolve("doe2024");
         expect(resolved?.kind).toBe("ambiguous");
         expect(
           resolved?.kind === "ambiguous"
@@ -635,15 +711,22 @@ describe("Citation Lookup held reads", () => {
           { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
         );
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024")
-            ?.kind,
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024")?.kind,
         ).toBe("ambiguous");
 
         libraryScope.select([personalLibrary()]);
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
 
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024"),
         ).toMatchObject({
           kind: "unique",
           item: { indexedKey: KEY_A },
@@ -663,12 +746,18 @@ describe("Citation Lookup held reads", () => {
         );
 
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024"),
         ).toMatchObject({ kind: "unique" });
         expect(
-          (await lookup.read({ indexedKeys: [GROUP_KEY] })).citekeyOf(
-            GROUP_KEY,
-          ),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ indexedKeys: [GROUP_KEY] }),
+            )
+          ).citekeyOf(GROUP_KEY),
         ).toBe("doe2024");
       }),
   );
@@ -682,29 +771,47 @@ describe("Citation Lookup held reads", () => {
           { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
         );
         let notified = 0;
-        const original = await lookup.read({ citekeys: ["doe2024"] });
-        subscribe(lookup.runtime, lookup["changed"], () => notified++);
+        const original = await lookup.bridge.runPromise(
+          lookup.read({ citekeys: ["doe2024"] }),
+        );
+        subscribe(
+          lookup.runtime,
+          lookupEvents.lookupChanged(lookup),
+          () => notified++,
+        );
 
         db.notifyChanged();
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
         expect(notified).toBe(0);
-        expect((await lookup.read({ citekeys: ["doe2024"] })).revision).toBe(
-          original.revision,
-        );
+        expect(
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).revision,
+        ).toBe(original.revision);
 
         citekeys.rows = [
           { ...sameLibraryTwin, itemID: 1 },
           { ...myLibraryRow, itemID: 2 },
         ];
         db.notifyChanged();
-        await lookup.whenResolved();
+        await lookup.bridge.runPromise(lookup.whenResolved);
 
         expect(notified).toBe(1);
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).revision,
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).revision,
         ).not.toBe(original.revision);
         expect(
-          (await lookup.read({ citekeys: ["doe2024"] })).resolve("doe2024"),
+          (
+            await lookup.bridge.runPromise(
+              lookup.read({ citekeys: ["doe2024"] }),
+            )
+          ).resolve("doe2024"),
         ).toMatchObject({
           kind: "ambiguous",
           candidates: [{ indexedKey: TWIN_KEY }, { indexedKey: KEY_A }],
@@ -718,7 +825,7 @@ it.effect(
   () =>
     Effect.promise(async () => {
       await using h = await createCitationIndexHarness({});
-      using view = h.lookup.observe(() => undefined);
+      using view = h.lookup.bridge.runSync(h.lookup.observe(() => undefined));
       view.set({ citekeys: ["roe2025"], indexedKeys: [KEY_B] });
       await expect.poll(() => view.current?.status).toBe("fresh");
       const previous = view.current!.value;
@@ -750,7 +857,7 @@ it.live(
         }),
       });
       await using lookup = source.reads;
-      const view = lookup.observe(() => undefined);
+      const view = lookup.bridge.runSync(lookup.observe(() => undefined));
       view.set(request);
       await expect.poll(() => view.current?.status).toBe("fresh");
       vi.useFakeTimers();
@@ -765,9 +872,11 @@ it.live(
           Duration.toMillis(Duration.minutes(6)),
         );
         const delivered = Promise.withResolvers<void>();
-        using reopened = lookup.observe(() => {
-          if (reopened.current?.status === "fresh") delivered.resolve();
-        });
+        using reopened = lookup.bridge.runSync(
+          lookup.observe(() => {
+            if (reopened.current?.status === "fresh") delivered.resolve();
+          }),
+        );
         reopened.set(request);
         expect(reopened.current).toBeNull();
         await delivered.promise;
@@ -784,7 +893,7 @@ it.effect(
   () =>
     Effect.promise(async () => {
       await using h = await createCitationIndexHarness({});
-      using view = h.lookup.observe(() => undefined);
+      using view = h.lookup.bridge.runSync(h.lookup.observe(() => undefined));
       view.set({ citekeys: ["doe2024"] });
       await expect.poll(() => view.current?.status).toBe("fresh");
       const earlier = view.current!.value;
@@ -804,7 +913,9 @@ it.effect("captures the requested keys before waiting for the worker", () =>
     await using h = await createCitationIndexHarness({}, { db });
     const citekeys = ["doe2024", "doe2024"];
     const indexedKeys = [KEY_A];
-    const reading = h.lookup.read({ citekeys, indexedKeys });
+    const reading = h.lookup.bridge.runPromise(
+      h.lookup.read({ citekeys, indexedKeys }),
+    );
     citekeys.splice(0, citekeys.length, "roe2025");
     indexedKeys.splice(0, indexedKeys.length, KEY_B);
     db.settle();

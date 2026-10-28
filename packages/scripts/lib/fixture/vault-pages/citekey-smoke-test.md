@@ -118,3 +118,24 @@ Both syntaxes can appear in the same paragraph; Wikilink Citations must be enabl
 wikilink as an indexed citation too:
 
 According to @Hensher2011, the method compares with [[literatures/wangMutationalClinicalSpectrum2020a]].
+
+
+## Citation search and insertion
+
+Use the `all` Scope Case. In Source mode, put the cursor on a new line below
+this section. Repeat the following steps with the inline `[@` picker and the
+**ZotLit: Insert citation** command.
+
+| Case | Action | Expected outcome |
+| --- | --- | --- |
+| Cited Items | Open an empty search in this note. | Items cited in this note have priority over other Items. |
+| Main citation | Search for **Why Most Published Research Findings Are False**, then press Enter. | The main citation replaces the trigger or selected text once. The Item gains a cited Use. |
+| Alternate citation | Select the same Item with Shift+Enter. | The alternate citation is inserted once. The Item gains a cited Use. |
+| Citation-key collision | Search for `duplicateAcross2019` and select either result. | A notice explains the ambiguous key. The note stays unchanged and no Use is recorded. |
+| Changed destination | While the selection is resolving, change the note text. | The changed text stays intact and the insertion records no Use. |
+| Pending insertion at unload | While a selection is resolving, disable ZotLit. | The note stays unchanged, with no insertion notice and no new Use. |
+| Slow index | Open a picker while startup indexing is still pending. | Searching starts after at most the 150 ms index wait, without cited-item priority for that search session. |
+| Closed picker | Close a picker while the document read is pending, then reopen it. | The closed picker shows no late rows. The reopened picker reads the document again. |
+
+The timing cases also have deterministic coverage at the search and insertion
+interfaces; a warm local index can finish before these manual actions.

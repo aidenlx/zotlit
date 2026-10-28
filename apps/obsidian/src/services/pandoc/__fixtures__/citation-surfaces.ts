@@ -1,6 +1,11 @@
+import { missingStyleChanges } from "@/services/pandoc/render-cache";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
+import { Notifier } from "@/lib/notifier";
+import { ZoteroPref } from "@/services/zotero-pref/service";
+import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { delay } from "@std/async";
-import { DateTime, Effect, FileSystem, Layer, Stream } from "effect";
+import { Context, DateTime, Effect, FileSystem, Layer, Stream } from "effect";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -47,6 +52,7 @@ import {
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { CitationParse } from "@/services/citation-parse/service";
 import { citationPopoverFixture } from "@/services/citation-popover/__fixtures__";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { citationTextFixture } from "@/services/citation-text/__fixtures__";
@@ -66,10 +72,12 @@ import {
   buildSeededSettings,
 } from "@/services/settings/__fixtures__";
 import type { SettingsFixture } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
 import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
+import { ZoteroHttp } from "@/lib/zotero-http";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
@@ -381,13 +389,10 @@ export async function openCitationVault({
   const cache = stack.use(
     await bibliographyRenderFixture({
       profile: {
-        changed: Stream.merge(
-          settings.changes.pipe(
-            Stream.drop(1),
-            Stream.map(() => undefined),
-          ),
+        changes: Stream.merge(
+          settings.changes.pipe(Stream.drop(1)),
           profileChanged.stream,
-        ),
+        ).pipe(Stream.map(() => ({ loaded: true, profiles: [], diagnostics: [], defaultDocumentPath: "", templateStatus: { state: "loaded" as const, compileErrors: new Map() } }))),
       },
       db: harness.db,
       pandocEngine: pandocEngineHandle(engine),
@@ -398,7 +403,7 @@ export async function openCitationVault({
   );
   let vaultStyleMissing: string | null = null;
   stack.defer(
-    subscribe(cache.runtime, cache.missingStyle, (styleId) => {
+    subscribe(cache.runtime, missingStyleChanges(cache.changes), (styleId) => {
       vaultStyleMissing = styleId;
     }),
   );
@@ -516,10 +521,7 @@ export async function openCitationVault({
         }),
       },
       db: harness.db,
-      citationIndex: harness.index,
-      citationLookup: harness.lookup,
-      citationText,
-      bibliographyRender: cache,
+      services: { citationIndex: harness.index, citationLookup: harness.lookup, citationText, bibliographyRender: cache },
       libraryScope: harness.libraryScope,
     }),
   );
@@ -574,6 +576,7 @@ export async function openCitationVault({
     harness,
     settings,
     profileSettings,
+    notifier: await buildRuntime(testNotifier().layer, stack).runPromise(Notifier),
   });
 
   /** Wait until References acknowledges the change by withdrawing copy. */
@@ -594,9 +597,9 @@ export async function openCitationVault({
   const held = stack.move();
   return {
     async citationText(citekey = CITATION_KEY) {
-      let held = citationText.peek(harness.draft.path);
+      let held = citationText.bridge.runSync(citationText.peek(harness.draft.path));
       await settle(() => {
-        held = citationText.peek(harness.draft.path);
+        held = citationText.bridge.runSync(citationText.peek(harness.draft.path));
         return held !== null && held.status !== "revalidating";
       });
       const { formatted } = held!.value;
@@ -732,7 +735,9 @@ function exportAdapter({
   harness,
   settings,
   profileSettings,
+  notifier,
 }: {
+  notifier: Notifier["Service"];
   dataDir: string;
   engine: Awaited<ReturnType<typeof createCitationEngine>>;
   harness: CitationIndexHarness;
@@ -740,9 +745,6 @@ function exportAdapter({
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
-    citationParse: inProcessParseClient,
-    fileSystem: Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
-    profile: profileReader(profileSettings, harness.metadataCache),
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,
       vault: stubService<Vault>("Vault", {
@@ -752,22 +754,40 @@ function exportAdapter({
         cachedRead: (file: TFile) => harness.vault.cachedRead(file),
       }),
     }),
-    db: harness.db,
-    citationLookup: harness.lookup,
-    pandocEngine: pandocEngineHandle(engine),
-    zoteroPref: stubService<PandocExportDeps["zoteroPref"]>("ZoteroPref", {
-      dataDir,
-      // Zotero's default port; the fetch below answers in its place.
-      httpPort: 23119,
-      get: () => true,
-    }),
-    // The bibliography fetch is mocked, so nothing reaches Zotero.
-    zoteroHttp: fakeFetchClient(() => {
-      throw new Error("No Zotero in this fixture");
-    }),
-    settings,
     bridge: settings.bridge,
     openSettings: () => undefined,
+    context: Context.make(
+      ZoteroPref,
+      stubService<ZoteroPref["Service"]>("ZoteroPref", {
+        current: Effect.succeed(stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", { dataDir, httpPort: 23119 })),
+        get: () => Effect.succeed(true),
+      }),
+    ).pipe(
+      Context.add(ZoteroReads, stubService<ZoteroReads["Service"]>("ZoteroReads", { reads: harness.db.reads })),
+      Context.add(CitationLookup, harness.lookup.runtime.runSync(CitationLookup)),
+      Context.add(
+        Profile,
+        stubService<Profile["Service"]>("Profile", {
+          loaded: Effect.succeed(true),
+          profileOf: (file) => Effect.sync(() => profileReader(profileSettings, harness.metadataCache).profileOf(file)),
+        }),
+      ),
+      Context.add(CitationParse, inProcessParseClient),
+      Context.add(
+        FileSystem.FileSystem,
+        Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
+      ),
+      Context.add(Notifier, notifier),
+      Context.add(PandocEngine, pandocEngineHandle(engine).binary),
+      Context.add(PluginSettings, settings),
+      // The bibliography fetch is mocked, so nothing reaches Zotero.
+      Context.add(
+        ZoteroHttp,
+        fakeFetchClient(() => {
+          throw new Error("No Zotero in this fixture");
+        }),
+      ),
+    ),
   };
 }
 

@@ -1,73 +1,78 @@
-// The interruptible Shared Partial flow owned by a Workbench leaf.
+// The one Shared Partial create flow: the Workbench's entry points and the
+// Add partial settings row both run it.
 
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 import type { App } from "obsidian";
 
-import { AbortError } from "@/lib/abort-error";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
+import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier } from "@/lib/notifier";
+import { portCall } from "@/lib/legacy-port";
+import { withOutcome } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
-import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 
-import { NewPartialModal } from "./new-partial";
+import { openNewPartialPrompt } from "./new-partial";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import { openTemplateWorkbench } from "./register";
 
-/** A leaf holds this flow's command, so closing it also closes its prompt. */
+/**
+ * Ask a name under the shared rule and write `zotlit-partial.<name>.md`. An
+ * interrupt closes the prompt. Where the document opens is the caller's.
+ *
+ * @returns the created document and its name, or `null` when the reader
+ *   dismisses the prompt. Fails with the Template's failure.
+ */
+export const createSharedPartial = Effect.fn("SharedPartial.create")(function* (
+  app: App,
+  options: Omit<CreateSharedPartialOptions, "open"> = {},
+) {
+  const template = yield* Template;
+  const taken = yield* template.getPartialNames;
+  const name = yield* awaitModal<string | null>((settle) =>
+    openNewPartialPrompt(app, { taken, seed: options.name }, settle),
+  );
+  if (name === null) return null;
+  const file = yield* template.createPartial(name, {
+    ...(options.source === undefined ? {} : { source: options.source }),
+    ...(options.language === undefined ? {} : { language: options.language }),
+  });
+  return { name, file };
+});
+
+/**
+ * {@link createSharedPartial} for a Workbench entry point, which a leaf holds
+ * as a command, so closing the leaf also closes its prompt. The document opens
+ * as `options.open` says. A failure is logged and shows a notice, and answers
+ * `null` as a dismissal does.
+ *
+ * @returns the created name, or `null`.
+ */
 export const createSharedPartialEffect = Effect.fn(
   "TemplateWorkbench.createSharedPartial",
-)(
-  function* (app: App, options: CreateSharedPartialOptions = {}) {
-    const template = yield* Template;
-    const taken = yield* template.getPartialNames;
-    const name = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const modal = yield* Effect.acquireRelease(
-          Effect.sync(() => {
-            const modal = new NewPartialModal(app, taken, options.name ?? "");
-            modal.open();
-            return modal;
-          }),
-          (modal) => Effect.sync(() => modal.close()),
-        );
-        return yield* Effect.promise((signal) => {
-          signal.throwIfAborted();
-          return modal.result;
-        });
-      }),
-    );
-    if (name === null) return null;
-    const file = yield* template.createPartial(name, {
-      ...(options.source === undefined ? {} : { source: options.source }),
-      ...(options.language === undefined ? {} : { language: options.language }),
-    });
-    const open = options.open ?? "split";
-    if (open !== false) {
-      const leaf = yield* (yield* Workspace).getLeaf(
-        open === "split" ? "split" : "tab",
-      );
-      yield* Effect.tryPromise((signal) => {
-        signal.throwIfAborted();
-        return openTemplateWorkbench(app, file, {
-          leaf,
-          explainUnsupported: false,
-        });
-      });
-    }
-    return name;
-  },
-  Effect.catch((error) =>
+)(function* (app: App, options: CreateSharedPartialOptions = {}) {
+  return yield* withOutcome(
     Effect.gen(function* () {
-      const cause = Cause.isUnknownError(error)
-        ? error.cause
-        : plainTemplateError(error);
-      if (AbortError.test(cause)) return null;
-      yield* Effect.logError("Failed to create a Shared Partial", { error });
-      yield* (yield* Notifier).show(m.notice_partial_create_failed());
-      return null;
+      const { open = "split", ...create } = options;
+      const created = yield* createSharedPartial(app, create);
+      if (!created) return null;
+      if (open !== false) {
+        const leaf = yield* (yield* Workspace).getLeaf(
+          open === "split" ? "split" : "tab",
+        );
+        yield* portCall("open-template-workbench", () =>
+          openTemplateWorkbench(app, created.file, {
+            leaf,
+            explainUnsupported: false,
+          }),
+        );
+      }
+      return created.name;
     }),
-  ),
-  withLogCategory("template-workbench"),
-);
+    {
+      success: () => undefined,
+      error: () => m.notice_partial_create_failed(),
+    },
+  ).pipe(recover(() => Effect.void, Effect.succeed(null)));
+}, withLogCategory("template-workbench"));

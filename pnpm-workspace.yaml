@@ -69,7 +69,6 @@ catalog:
   oxc-parser: ^0.155.0
   oxfmt: ^0.74.0
   oxlint: 1.89.0
-  p-queue: ^9.3.3
   preact: 11.0.0-rc.2
   react: ^19.2.0
   react-dom: ^19.2.0
