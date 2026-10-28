@@ -1438,6 +1438,9 @@ it("records a read of the other Attachment an open names in a restored tab", asy
   ]);
 });
 
+/** Lets a page change at the reopen position see where the reader ends up. */
+const pageChangesSettled = () => new Promise((resolve) => setTimeout(resolve));
+
 /** A restored tab: a PDF view the workspace holds before its layout is ready. */
 async function restoredTab(reader: ReturnType<typeof pdfReader>) {
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -1472,6 +1475,7 @@ it("records no read for the page a restored reader reopens at", async () => {
 
   reader.setInitialView();
 
+  await pageChangesSettled();
   expect(recordRead).not.toHaveBeenCalled();
 });
 
@@ -1484,7 +1488,9 @@ it("records a read for a page turn after the restored reader's initial view", as
 
   reader.turnPage();
 
-  expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
+  await vi.waitFor(() =>
+    expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey),
+  );
 });
 
 // #1870: the plugin enabled over an open PDF tab attaches after the initial
@@ -1496,7 +1502,9 @@ it("records a read for the first page turn in a reader whose initial view stands
 
   reader.turnPage();
 
-  expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
+  await vi.waitFor(() =>
+    expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey),
+  );
 });
 
 // #1870: Obsidian reloads a changed file into the same reader. PDF.js closes the
@@ -1509,6 +1517,7 @@ it("records no read for the page a reader reopens at after its document reloads 
   reader.closeDocument();
   reader.setInitialView();
 
+  await pageChangesSettled();
   expect(recordRead).not.toHaveBeenCalled();
 });
 
@@ -1524,6 +1533,7 @@ it("records no read for the page PDF.js names after a restored reader's initial 
 
   reader.settle();
 
+  await pageChangesSettled();
   expect(recordRead).not.toHaveBeenCalled();
 });
 
@@ -1537,6 +1547,7 @@ it("records no read for the page PDF.js names after the initial view a binding a
 
   reader.settle();
 
+  await pageChangesSettled();
   expect(recordRead).not.toHaveBeenCalled();
 });
 
@@ -1549,5 +1560,22 @@ it("records a read for a page turn after PDF.js names the reopen page", async ()
 
   reader.turnPage();
 
-  expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
+  await vi.waitFor(() =>
+    expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey),
+  );
+});
+
+// A link or subpath turn names the new page before it scrolls there, so the
+// page change still finds the reader at the reopen position.
+it("records a read for a link turn away from a restored reader's reopen position", async () => {
+  const reader = openingReader();
+  const { service, recordRead } = await restoredTab(reader);
+  await using _ = service;
+  reader.setInitialView();
+
+  reader.navigate();
+
+  await vi.waitFor(() =>
+    expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey),
+  );
 });

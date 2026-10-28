@@ -277,6 +277,16 @@ export function pdfReader(page = pageView()) {
       }
     },
     /**
+     * A turn by a link or subpath: PDF.js names the new page first, and then
+     * scrolls to it in the same task.
+     */
+    navigate: () => {
+      for (const { event, listener } of listeners) {
+        if (event === "pagechanging") listener({});
+      }
+      container.scrollTop += 1200;
+    },
+    /**
      * What PDF.js's scroll update after `setInitialView` does: it names the
      * page the reopen position shows most of, with no scroll of its own.
      */

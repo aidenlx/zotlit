@@ -782,7 +782,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // PDF.js names the page that move shows on its next scroll update, which
     // can come after `documentinit`; that change leaves the reader where the
     // initial view put it. So the reopen position is kept until the reader
-    // leaves it, and a page change there is not a turn.
+    // leaves it, and a page change that leaves the reader there is not a
+    // turn. A link or subpath turn names its page before it scrolls in the
+    // same task, so the position is read once that task's work is done.
     let initialView = initialViewSet(controller);
     let reopenedAt = initialView ? scrollOffsetOf(controller) : null;
     this.#surfaces.use(
@@ -800,13 +802,19 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#surfaces.use(
       onPageChanged(controller, () => {
         if (!initialView) return;
-        if (reopenedAt) {
+        const turned = () => {
+          if (this.#attachment.kind === "resolved" && this.#pageProbed)
+            this.#reads?.record(this.#attachment, "page");
+        };
+        const reopened = reopenedAt;
+        if (!reopened) return turned();
+        queueMicrotask(() => {
+          if (this.#surfaces.disposed || reopenedAt !== reopened) return;
           const at = scrollOffsetOf(controller);
-          if (at?.top === reopenedAt.top && at.left === reopenedAt.left) return;
+          if (at?.top === reopened.top && at.left === reopened.left) return;
           reopenedAt = null;
-        }
-        if (this.#attachment.kind === "resolved" && this.#pageProbed)
-          this.#reads?.record(this.#attachment, "page");
+          turned();
+        });
       }),
     );
     this.#probePage(loadedPageOf(controller));
