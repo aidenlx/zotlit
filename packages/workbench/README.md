@@ -127,7 +127,7 @@ every component marks its parts with `data-part` and their state with
 `data-state`, and `WorkbenchThemeProvider` takes one optional class map, keyed
 by component and part (`WorkbenchParts` lists them), plus an icon renderer.
 Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
-`menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `hoverCard`, `notice`,
+`run`, `menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `notice`,
 `render`, `matchData`, `insertTarget`, `persistence`, `messages`, and
 `getLocale` — so
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
@@ -144,8 +144,8 @@ dispose the editor when it closes. The scheduler uses a 300 ms quiet time after 
 `pause()` for Stop, which lets a render already in flight finish, On demand read
 from the store, and a per-start stamp that drops a result naming a source,
 paper, annotation example, or preview mode the reader has moved past. It reads
-the document controller and the store itself; the editor calls `host.render`, which
-answers one request with a promise on the calling thread and whose rejection
+the document controller and the store itself; the editor forks `host.render`, an Effect
+for one request, on `host.run`; a newer request interrupts it, and its failure
 reads as a `render-error` diagnostic. An optional `mapResult` gives successful
 and failed results the host's own result shape. The host calls `setInput` with the
 paper, the annotation example, its own bundle, the `document` it is reading,
