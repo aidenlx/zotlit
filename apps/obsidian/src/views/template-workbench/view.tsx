@@ -616,8 +616,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const matchData = createMatchData(deps.registry);
     this.#cleanup.defer(() => matchData[Symbol.dispose]());
     // Closing the leaf interrupts every host Effect the tree still runs.
-    const runner = makeViewRunner(deps.registry);
-    this.#cleanup.defer(() => runner[Symbol.dispose]());
+    const runner = this.#cleanup.use(makeViewRunner(deps.registry));
     this.#host = createTemplateWorkbenchHost(
       this.app,
       {

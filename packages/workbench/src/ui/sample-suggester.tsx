@@ -75,6 +75,7 @@ export function SampleSuggester({
                 setOpen(false);
                 if (choice !== null) onSelect(choice);
               },
+              onFailure: () => setOpen(false),
             },
           );
         }}

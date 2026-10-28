@@ -103,16 +103,16 @@ it("interrupts its vocabulary, custom-field and Match reads when the pane goes",
   });
   mounted.host.hold = true;
   const { unmount } = render(mounted.ui);
-  await act(async () => {});
-  const kinds = mounted.host.held.map(({ kind }) => kind);
-  expect(kinds).toEqual(
-    expect.arrayContaining([
-      "tags",
-      "collections",
-      "libraries",
-      "customFields",
-      "matches",
-    ]),
+  await waitFor(() =>
+    expect(mounted.host.held.map(({ kind }) => kind)).toEqual(
+      expect.arrayContaining([
+        "tags",
+        "collections",
+        "libraries",
+        "customFields",
+        "matches",
+      ]),
+    ),
   );
   expect(mounted.host.held.some(({ interrupted }) => interrupted)).toBe(false);
 
@@ -135,11 +135,13 @@ it("interrupts the Match test for a filter the reader has moved past", async () 
   });
   mounted.host.hold = true;
   render(mounted.ui);
-  await act(async () => {});
-  const first = mounted.host.held.find(({ kind }) => kind === "matches")!;
+  const first = await waitFor(() => {
+    const held = mounted.host.held.find(({ kind }) => kind === "matches");
+    expect(held).toBeDefined();
+    return held!;
+  });
 
   act(() => void mounted.controller.setMatch({ and: [] }));
-  await act(async () => {});
 
-  expect(first.interrupted).toBe(true);
+  await waitFor(() => expect(first.interrupted).toBe(true));
 });

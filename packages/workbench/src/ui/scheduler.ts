@@ -1,3 +1,4 @@
+import type { WorkbenchRunner } from "#/language/host-effects";
 // A view-owned scheduler consumes values and interrupts work for superseded inputs.
 import type { CitationPreviewSelection } from "#/render/citation-examples";
 import type { PartialPreviewSelection } from "#/render/partial-preview";
@@ -14,7 +15,6 @@ import type { Effect } from "effect";
 
 import { WorkbenchHostError } from "./host";
 import { forkReported } from "./run";
-import type { WorkbenchRunner } from "./run";
 import type { PreviewMode } from "./store";
 
 import { captureRenderReport, engineEvidence } from "#/render/report";

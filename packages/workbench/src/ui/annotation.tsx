@@ -97,6 +97,7 @@ export function AnnotationSampleBar({
                   setOpen(false);
                   if (choice !== null) onSelect(choice);
                 },
+                onFailure: () => setOpen(false),
               },
             );
           }}

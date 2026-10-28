@@ -53,7 +53,7 @@ export {
   useWorkbenchHost,
 } from "./host";
 export { makeWorkbenchRunner } from "./run";
-export type { WorkbenchRunner } from "./run";
+export type { WorkbenchRunner } from "#/language/host-effects";
 export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,

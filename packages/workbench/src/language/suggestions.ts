@@ -3,7 +3,6 @@
 
 import { regex } from "arkregex";
 import { Effect } from "effect";
-import type { Fiber } from "effect";
 
 import type { ContractRoot } from "@zotlit/db";
 import type { ContractMember, ContractType } from "@zotlit/db/contract/ir";
@@ -26,6 +25,7 @@ import {
 } from "./contract";
 import { etaRange } from "./eta-syntax";
 import type { EtaRange } from "./eta-syntax";
+import type { WorkbenchHostError, WorkbenchRunner } from "./host-effects";
 import { jsonSuggestions, jsonHover } from "./json-e";
 import { liquidCodeRange, STRUCTURAL_TAGS } from "./liquid-ranges";
 import type { LiquidRange } from "./liquid-ranges";
@@ -36,14 +36,6 @@ import type { LiquidTagName } from "./tag-help";
 const JSDOC_LINK = regex("\\{@link (?<target>[^}]+)}", "g");
 const ANNOTATION_SHORTCUT_DETAIL =
   "Renders the Profile's final Annotation Section with the argument bound to zt. Outside a Profile, uses the named annotation partial. Missing or null data is an error.";
-
-/**
- * Forks an Effect and returns its Fiber, on a runner whose owner interrupts
- * what it still runs when the owner goes.
- */
-export type EffectRunner = <A, E>(
-  effect: Effect.Effect<A, E>,
-) => Fiber.Fiber<A, E>;
 
 export interface SuggestionConfig {
   /** The root the document renders against before any Annotation Section. */
@@ -69,9 +61,9 @@ export interface SuggestionConfig {
      * @returns the created name, which the editor writes as the call's
      *   argument, or `null` when the reader dismisses the prompt.
      */
-    run(query: string): Effect.Effect<string | null, unknown>;
+    run(query: string): Effect.Effect<string | null, WorkbenchHostError>;
     /** Forks `run`, so closing the pane's owner interrupts the flow. */
-    fork: EffectRunner;
+    fork: WorkbenchRunner;
   };
   /**
    * The Template data the root binds to `zt`, as a template reads it: link
@@ -128,9 +120,9 @@ export interface Suggestion {
    * source as it stands.
    */
   resolveInsert?: {
-    readonly insert: Effect.Effect<string | null, unknown>;
+    readonly insert: Effect.Effect<string | null, WorkbenchHostError>;
     /** The runner `insert` is forked on. */
-    readonly fork: EffectRunner;
+    readonly fork: WorkbenchRunner;
   };
 }
 export interface SuggestionResult {

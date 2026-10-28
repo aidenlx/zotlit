@@ -9,6 +9,7 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/controller";
 import type { SuggestionSource } from "#/language/completion";
+import type { WorkbenchRunner } from "#/language/host-effects";
 import type { RenderRequest } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -24,17 +25,11 @@ import { useUniqueId } from "@zotlit/ui";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import { WorkbenchMessagesProvider } from "./messages";
-import type { WorkbenchRunner } from "./run";
 import type { WorkbenchIcon } from "./theme";
 
-/**
- * Work the host could not do: a render, a read of the vault's Match
- * vocabulary, or a Shared Partial it could not create. `cause` is the host's
- * own failure, as the engine or the service threw it.
- */
-export class WorkbenchHostError extends Data.TaggedError("WorkbenchHostError")<{
-  readonly cause: unknown;
-}> {}
+import { WorkbenchHostError } from "#/language/host-effects";
+
+export { WorkbenchHostError };
 
 /** The system clipboard refused the text. */
 export class WorkbenchClipboardError extends Data.TaggedError(

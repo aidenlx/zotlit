@@ -1,10 +1,10 @@
+import type { WorkbenchRunner } from "#/language/host-effects";
 // The custom fields of the Zotero source, which an expression editor offers
 // quoted inside `custom[...]`: one interruptible read for every host.
 import type { Effect } from "effect";
 import { useState } from "react";
 
 import { useForkedEffect } from "./run";
-import type { WorkbenchRunner } from "./run";
 
 /**
  * The names of the source's custom fields, read by `read` on `run` each time

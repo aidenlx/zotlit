@@ -144,9 +144,8 @@ it.effect(
           customFieldNames,
         }),
       });
-      const data = yield* Effect.acquireRelease(
+      const data = yield* Effect.acquireDisposable(
         Effect.sync(() => createMatchData(host.registry)),
-        (data) => Effect.sync(() => data[Symbol.dispose]()),
       );
       const fiber = yield* Effect.forkChild(data.customFields);
       const running = yield* Effect.promise(() => started.promise);

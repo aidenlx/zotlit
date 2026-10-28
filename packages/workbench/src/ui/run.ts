@@ -1,17 +1,9 @@
+import type { WorkbenchRunner } from "#/language/host-effects";
 // Where the tree starts host Effects: forked on the runner the host supplies,
 // interrupted when the component that started one unmounts or asks again.
 import { Cause, Effect, Exit, FiberSet, Scope } from "effect";
-import type { Fiber } from "effect";
 import { useEffect, useRef, useState } from "react";
 import type { DependencyList } from "react";
-
-/**
- * Forks an Effect and returns its Fiber: the runner `FiberSet.makeRuntime`
- * returns. Closing the Scope it was made on interrupts every Fiber it forked.
- */
-export type WorkbenchRunner = <A, E>(
-  effect: Effect.Effect<A, E>,
-) => Fiber.Fiber<A, E>;
 
 /** What a started Effect reports. An interrupt-only end reports nothing. */
 export interface ForkHandlers<A, E> {

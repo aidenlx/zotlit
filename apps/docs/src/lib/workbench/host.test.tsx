@@ -138,9 +138,7 @@ describe("the web host", () => {
     await act(async () => {});
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
 
-    await act(
-      async () =>  (await Effect.runPromise(Fiber.interrupt(fiber))),
-    );
+    await act(async () => await Effect.runPromise(Fiber.interrupt(fiber)));
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });

@@ -290,8 +290,8 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
 
 /**
  * Promise work a Workbench mount hands the host, as a host Effect. An
- * interrupt stops waiting for it; the work under it stops through its own
- * leaf command.
+ * interrupt stops the wait only: the Promise command under it keeps running
+ * until ticket 04 makes that command an Effect.
  */
 export const hostPromise = <A,>(
   work: () => Promise<A>,

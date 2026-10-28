@@ -37,7 +37,8 @@ export function useViewCustomFields(
     () =>
       Effect.tryPromise((signal) => view.customFieldNames(signal)).pipe(
         Effect.catch((error) =>
-          Effect.logWarning("The custom fields could not be read", error).pipe(
+          Effect.logWarning("The custom fields could not be read").pipe(
+            Effect.annotateLogs({ error }),
             Effect.as<readonly string[]>([]),
           ),
         ),

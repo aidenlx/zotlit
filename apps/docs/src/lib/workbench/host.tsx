@@ -168,20 +168,30 @@ export function useWebHost({
   }, [data, notice, insertTarget]);
 
   // The runner belongs to this mount: unmounting the page interrupts every
-  // host Effect it still runs. A remount, as StrictMode makes, opens another.
+  // host Effect it still runs, and an Effect started after it is interrupted
+  // at once. A remount, as StrictMode makes, opens another.
   const runner = useRef<ReturnType<typeof makeWorkbenchRunner> | null>(null);
-  useEffect(
-    () => () => {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       runner.current?.close();
       runner.current = null;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const host = useMemo<WorkbenchHost>(
     () => ({
       messages: m,
-      run: (effect) => (runner.current ??= makeWorkbenchRunner()).run(effect),
+      run: (effect) => {
+        if (mounted.current)
+          return (runner.current ??= makeWorkbenchRunner()).run(effect);
+        const closed = makeWorkbenchRunner();
+        const fiber = closed.run(effect);
+        closed.close();
+        return fiber;
+      },
       getLocale,
       menu: setMenu,
       dialog(request) {
