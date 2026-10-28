@@ -46,13 +46,33 @@ export const hostedEditor: Extension = [
       const dispose = onEditorWindowMigrated(view, (win) =>
         follow(view, win.document),
       );
-      return { destroy: dispose };
+      // Obsidian tells of a move once the element shows, so an editor that
+      // moved inside a closed popover hears nothing. It takes the window it
+      // stands in as that popover opens, before the popover draws, so its
+      // styles show from the first frame there. The editor stands in the page
+      // only once its plugins are made.
+      let popover: HTMLElement | null = null;
+      let destroyed = false;
+      const opening = (event: Event) => {
+        if ((event as ToggleEvent).newState === "open")
+          follow(view, view.dom.ownerDocument);
+      };
+      queueMicrotask(() => {
+        if (destroyed) return;
+        popover = view.dom.closest<HTMLElement>("[popover]");
+        popover?.addEventListener("beforetoggle", opening);
+      });
+      return {
+        destroy() {
+          destroyed = true;
+          popover?.removeEventListener("beforetoggle", opening);
+          dispose();
+        },
+      };
     },
     {
-      // Obsidian tells of a move once the element shows, so an editor that
-      // moved inside a closed popover hears nothing; it takes the window it
-      // stands in when it takes focus, before CodeMirror reads its focus and
-      // caret there.
+      // An editor that moved unheard also takes the window it stands in when
+      // it takes focus, before CodeMirror reads its focus and caret there.
       eventHandlers: {
         focus(_event, view) {
           follow(view, view.dom.ownerDocument);
