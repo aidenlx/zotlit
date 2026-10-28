@@ -1,5 +1,5 @@
 // PDF.js supplies the geometry; the repository owns each Annotation write.
-import { Cause, Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Fiber, Schema } from "effect";
 
 import type {
   PdfPosition,
@@ -7,6 +7,7 @@ import type {
   TextSelection,
 } from "@zotlit/pdf-structure";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import type { Notifier } from "@/lib/notifier";
@@ -28,6 +29,45 @@ import type {
 } from "@/services/annotation-repository/write";
 
 import type { EditablePosition } from "./geometry-edit";
+
+/** One write a PDF view started on its own Scope. */
+export type WriteRun = Fiber.Fiber<unknown, never>;
+
+/**
+ * Forks a write onto a PDF view's own Scope, which the view's close closes: a
+ * write still running then is interrupted, or finishes where it is
+ * uninterruptible.
+ */
+export type BindingWrites = <A>(
+  effect: Effect.Effect<A>,
+) => Fiber.Fiber<A, never>;
+
+/**
+ * Settles when `run` has ended, however it ended: answered, interrupted by the
+ * view's close, or ended by unload. Settled for `null`. Never rejects.
+ */
+export function settledOf(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
+  run: WriteRun | null,
+): Promise<void> {
+  return run
+    ? bridge.runPromiseExit(Fiber.await(run)).then(() => undefined)
+    : Promise.resolve();
+}
+
+/**
+ * A keystroke asked to edit under a block: probe Zotero first, because the
+ * block may be one a probe clears, and report only what survives it.
+ */
+export const reportBlockedEdit = Effect.fn("PdfAnnotationEditor.editGesture")(
+  function* (
+    annotations: Pick<AnnotationRepository["Service"], "probe">,
+    report: () => void,
+  ) {
+    yield* annotations.probe;
+    report();
+  },
+);
 
 /** A PDF.js read that could not produce the geometry or text for a gesture. */
 class PdfStructureReadError extends Schema.TaggedError<

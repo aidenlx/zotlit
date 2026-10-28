@@ -1182,6 +1182,41 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
 });
 
+it("interrupts a blocked keystroke's probe when its PDF view closes, and says nothing", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf", pdfReader());
+  const annotations = annotationReads([], {
+    kind: "read-only",
+    reason: "zotero-unavailable",
+  });
+  const interrupted = vi.fn();
+  annotations.probeRuns.mockReturnValueOnce(
+    Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(interrupted))),
+  );
+  const gestures = capabilityGestures();
+  const open = [{ view }];
+  const { app, relayout } = workspace(open);
+
+  await using service = await PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: gestures,
+    ...(await standingDeps()),
+  });
+  const binding = service.bindings[0]!;
+  view.containerEl.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "h", bubbles: true }),
+  );
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
+
+  open.pop();
+  relayout();
+  await binding.gestured;
+
+  expect(interrupted).toHaveBeenCalledOnce();
+  expect(gestures.reportBlockedGesture).not.toHaveBeenCalled();
+});
+
 it("opens one Annotation History per Attachment and ends it with the last view", async () => {
   const first = pdfView("attachments/rougier-2014.pdf");
   const second = pdfView("attachments/rougier-2014.pdf");

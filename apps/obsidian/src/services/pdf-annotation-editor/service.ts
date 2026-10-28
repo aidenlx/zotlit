@@ -1,10 +1,14 @@
 // Keeps one guarded binding per open Obsidian PDF view on the layer's Scope.
 import {
+  Cause,
   Clock,
   Context,
   Effect,
+  Exit,
+  FiberSet,
   Layer,
   PubSub,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -100,6 +104,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       const notices = yield* CapabilityNotices;
       const notifier = yield* Notifier;
       const bridge = yield* scopedBridge;
+      const layerScope = yield* Effect.scope;
       const now = instantClock(yield* Clock.Clock);
       const events = yield* PubSub.unbounded<string>();
       const sessions = yield* SubscriptionRef.make<
@@ -108,6 +113,8 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       yield* Effect.addFinalizer(() => PubSub.shutdown(sessions.pubsub));
       yield* Effect.addFinalizer(() => PubSub.shutdown(events));
       const bindings = new Map<PDFFileView, PdfViewBinding>();
+      /** Each binding's own Scope, which its writes run on. */
+      const scopes = new Map<PdfViewBinding, Scope.Closeable>();
       const restoredViews = new WeakSet<PDFFileView>();
       let trackOpens = false;
       let retired = false;
@@ -131,16 +138,26 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
       });
       const showCapability = () =>
         bridge.runAndForget(notices.showEditingCapability);
-      const unbind = (
+      /**
+       * Closes a binding's Scope, which withdraws its surfaces and then ends
+       * its writes. The close waits on an uninterruptible write, so it runs on
+       * the layer's Scope rather than in the caller.
+       */
+      const unbind = Effect.fnUntraced(function* (
         view: PDFFileView,
         binding: PdfViewBinding,
         { open }: { open: boolean },
-      ) => {
+      ) {
         if (trackOpens) binding.close();
         if (!open || binding.filePath !== null) restoredViews.delete(view);
-        binding[Symbol.dispose]();
         bindings.delete(view);
-      };
+        const scope = scopes.get(binding);
+        scopes.delete(binding);
+        if (scope)
+          yield* Scope.close(scope, Exit.void).pipe(
+            Effect.forkIn(layerScope, { startImmediately: true }),
+          );
+      });
       const reconcile = Effect.gen(function* () {
         if (retired) return;
         const views = (yield* workspace.leavesOfType(PDF_VIEW_TYPE)).map(
@@ -154,12 +171,17 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             binding.filePath === (openFileOf(view)?.path ?? null)
           )
             continue;
-          unbind(view, binding, { open: open.has(view) });
+          yield* unbind(view, binding, { open: open.has(view) });
           changed = true;
         }
         for (const view of views) {
           if (bindings.has(view)) continue;
           if (!trackOpens) restoredViews.add(view);
+          const scope = yield* Scope.fork(bindingScopes);
+          const fork = yield* FiberSet.make().pipe(
+            Effect.flatMap((fibers) => FiberSet.runtime(fibers)<never>()),
+            Scope.provide(scope),
+          );
           const binding = new PdfViewBinding({
             view,
             adapter: {
@@ -168,6 +190,21 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             attachments,
             annotations,
             bridge,
+            // A write's own failures are its outcomes; what is left is a
+            // defect, logged here because the FiberSet keeps no failure.
+            writes: (effect) =>
+              fork(
+                effect.pipe(
+                  Effect.tapCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.void
+                      : Effect.logError("A PDF view's write died").pipe(
+                          Effect.annotateLogs({ error: Cause.squash(cause) }),
+                          withLogCategory("pdf-annotation-editor"),
+                        ),
+                  ),
+                ),
+              ),
             notifier,
             capabilityGestures: {
               reportBlockedGesture: (key) =>
@@ -190,7 +227,15 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             reads,
             openedAt: restoredViews.has(view) ? null : now(),
           });
+          // The surfaces go before the writes end, so the writes a disposal
+          // starts, a typed Text Draft's create among them, run on an open
+          // Scope.
+          yield* Scope.addFinalizer(
+            scope,
+            Effect.sync(() => binding[Symbol.dispose]()),
+          );
           bindings.set(view, binding);
+          scopes.set(binding, scope);
           changed = true;
           binding.load();
           if (binding.filePath) yield* PubSub.publish(events, binding.filePath);
@@ -220,7 +265,7 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
             bound: binding.historyAttachment,
           }),
         );
-        unbind(view, binding, { open: true });
+        yield* unbind(view, binding, { open: true });
         yield* reconcile;
       });
       const run = Effect.runSyncWith(yield* Effect.context<never>());
@@ -231,11 +276,14 @@ export const layerPdfAnnotationEditor = (ports: PdfAnnotationEditorPorts) =>
           }),
         ),
       );
+      // Every binding's Scope is a child of this one, which closes right after
+      // the finalizer below retires the layer.
+      const bindingScopes = yield* Scope.fork(layerScope);
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           retired = true;
-          for (const binding of bindings.values()) binding[Symbol.dispose]();
           bindings.clear();
+          scopes.clear();
         }),
       );
       const bindingFor = Effect.fn("PdfAnnotationEditor.bindingFor")(
