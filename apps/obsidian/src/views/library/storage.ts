@@ -133,6 +133,6 @@ export class LibraryViewStorage {
   close(): void {
     this.#release?.();
     this.#release = null;
-    for (const finish of [...this.#waiting]) finish();
+    for (const finish of this.#waiting) finish();
   }
 }

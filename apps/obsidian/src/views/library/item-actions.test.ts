@@ -32,7 +32,7 @@ import { waitFor } from "@/views/welcome/__fixtures__";
 
 import { makeLibraryHost } from "./__fixtures__";
 import { libraryItemCommand, itemActions } from "./item-actions";
-import type { ItemActionsDeps } from "./item-actions";
+import type { CitationTarget, ItemActionsDeps } from "./item-actions";
 
 const KEY = "ABCD2345";
 
@@ -221,8 +221,10 @@ async function setup(
       await idle(host.registry);
     };
   const actions = {
-    insertCitation: settle(raw.insertCitation),
-    copyCitationKey: settle(raw.copyCitationKey),
+    insertCitation: settle((key: string, target?: CitationTarget) =>
+      raw.insertCitation(key, target),
+    ),
+    copyCitationKey: settle((key: string) => raw.copyCitationKey(key)),
   };
   return { ...fixture, raw, actions, record, notifier, host };
 }

@@ -1,5 +1,6 @@
 // Welcome gestures run on the plugin's view registry; conversions belong to one banner.
 import { Cause, Effect } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
@@ -93,27 +94,32 @@ export const openReleaseNoteCommand = viewRuntime.fn(() =>
  * notice.
  */
 export const makeConversionCommand = () =>
-  viewRuntime.fn((request: { readonly retry: boolean }) =>
-    Effect.gen(function* () {
-      const migration = yield* TemplateMigration;
-      const result = yield* request.retry
-        ? migration.retryCleanup
-        : migration.convert;
-      yield* Notifier.use((notifier) =>
-        notifier.show(templateMigrationNotice(result)),
-      );
-      return { retry: request.retry, result };
-    }).pipe(
-      Effect.tapCauseIf(
-        (cause) => !Cause.hasInterruptsOnly(cause),
-        (error) =>
-          Effect.logWarning(
-            "The Welcome View banner could not convert the templates",
-            { error },
-          ),
+  Atom.setIdleTTL(
+    viewRuntime.fn((request: { readonly retry: boolean }) =>
+      Effect.gen(function* () {
+        const migration = yield* TemplateMigration;
+        const result = yield* request.retry
+          ? migration.retryCleanup
+          : migration.convert;
+        yield* Notifier.use((notifier) =>
+          notifier.show(templateMigrationNotice(result)),
+        );
+        return { retry: request.retry, result };
+      }).pipe(
+        Effect.tapCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (error) =>
+            Effect.logWarning(
+              "The Welcome View banner could not convert the templates",
+              { error },
+            ),
+        ),
+        withLogCategory("welcome", "banner"),
       ),
-      withLogCategory("welcome", "banner"),
     ),
+    // A closed banner stops the conversion at once, not after the registry's
+    // idle delay; the conversion's own writes still finish.
+    0,
   );
 
 /** What one run of the conversion command answered. */

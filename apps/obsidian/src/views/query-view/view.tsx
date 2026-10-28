@@ -721,7 +721,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#releaseCommand = null;
     this.#releaseTasks?.();
     this.#releaseTasks = null;
-    for (const finish of [...this.#taskWaiters]) finish();
+    for (const finish of this.#taskWaiters) finish();
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
     this.#release?.();

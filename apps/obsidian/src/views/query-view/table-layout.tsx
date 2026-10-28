@@ -116,8 +116,7 @@ function queried(
   return (parent, query) =>
     Effect.gen(function* () {
       const outcome = yield* query.run(request(parent.key));
-      if (outcome.kind !== "result")
-        return yield* Effect.fail(new Error(outcome.kind));
+      if (outcome.kind !== "result") return yield* Effect.fail(outcome);
       const rows =
         outcome.result.rows ??
         outcome.result.groups.flatMap((group) => group.rows);

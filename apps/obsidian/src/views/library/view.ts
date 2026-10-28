@@ -1103,7 +1103,7 @@ export class LibraryView extends ItemView {
     this.#storage.close();
     this.#release?.();
     this.#release = null;
-    for (const finish of [...this.#waiting]) finish();
+    for (const finish of this.#waiting) finish();
   }
 }
 
