@@ -444,10 +444,11 @@ export const layerWorkbenchConnection = Layer.effect(
       "WorkbenchConnection.followDependencies",
     )(function* ({ source, names }: DraftDependencies) {
       const { dependencies: handle } = yield* Ref.get(reads);
-      yield* FiberHandle.clear(handle);
       const { connection, resources } = yield* current;
-      if (connection.state !== "connected" || !resources) return;
+      if (connection.state !== "connected" || !resources)
+        return yield* FiberHandle.clear(handle);
       if (source === bundleSource) {
+        yield* FiberHandle.clear(handle);
         // The held bundle was read for these very bytes, so what they call is
         // what it answers, and an edit leaving that list alone needs no read.
         bundleDependencies = names;
@@ -455,11 +456,13 @@ export const layerWorkbenchConnection = Layer.effect(
         return;
       }
       if (bundleDependencies === names) {
+        yield* FiberHandle.clear(handle);
         yield* update(() => ({ resourcesStale: false }));
         return;
       }
       // Until the bundle for this draft lands, the held one answers another
-      // set of partials, so nothing is rendered against it.
+      // set of partials, so nothing is rendered against it. The run below
+      // interrupts the older read at once.
       yield* update(() => ({ resourcesStale: true }));
       yield* FiberHandle.run(
         handle,
@@ -481,7 +484,6 @@ export const layerWorkbenchConnection = Layer.effect(
       "WorkbenchConnection.followCitationStyle",
     )(function* (styleId: string | null | undefined) {
       const { citationStyle: handle } = yield* Ref.get(reads);
-      yield* FiberHandle.clear(handle);
       const { connection, resources } = yield* current;
       if (
         connection.state !== "connected" ||
@@ -489,7 +491,7 @@ export const layerWorkbenchConnection = Layer.effect(
         styleId === undefined ||
         loadedStyleId === styleId
       ) {
-        return;
+        return yield* FiberHandle.clear(handle);
       }
       yield* FiberHandle.run(
         handle,
