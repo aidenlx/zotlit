@@ -1,3 +1,9 @@
+// The standalone Template Workbench: one master Profile document behind a
+// header, three columns, and the result the reader would get. It folds twice:
+// under 1180 px the field column becomes the dialog the toolbar "Add a field"
+// button opens, and under 780 px the pane fills the screen with the result
+// behind a view switch.
+import type { Layer } from "effect";
 import {
   ArrowLeft,
   Download,
@@ -15,11 +21,6 @@ import {
   useRef,
   useState,
 } from "react";
-// The standalone Template Workbench: one master Profile document behind a
-// header, three columns, and the result the reader would get. It folds twice:
-// under 1180 px the field column becomes the dialog the toolbar "Add a field"
-// button opens, and under 780 px the pane fills the screen with the result
-// behind a view switch.
 import { useStore } from "zustand";
 
 import {
@@ -56,6 +57,8 @@ import {
   WorkbenchThemeProvider,
   createWorkbenchEditor,
   createWorkbenchStore,
+  useFork,
+  useForkedEffect,
   useRenderState,
   diagnosticText,
   fieldSnippet,
@@ -115,24 +118,42 @@ import {
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
 import { WebPreview } from "./preview";
+import { Rendering } from "./rendering";
+import { PageRuntime, usePageBridge } from "./runtime";
+import type { PageServices } from "./runtime";
 import { SampleBar } from "./sample-bar";
-import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
 import {
   downloadProfile,
   profileFileName,
-  openProfileInObsidian,
   createProfileHandoffSource,
+  Transfer,
 } from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
-import type { ProfileHydration } from "./use-workbench-connection";
 import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
+import type { ProfileHydration } from "./workbench-connection";
 
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
 
-export function Workbench() {
+/** The Workbench on a page runtime of its own, which closing the page disposes. */
+export function Workbench({
+  layer,
+}: {
+  /** The page's services; tests hand a layer over fakes. */
+  layer?: Layer.Layer<PageServices>;
+}) {
+  return (
+    <PageRuntime layer={layer}>
+      <WorkbenchPage />
+    </PageRuntime>
+  );
+}
+
+function WorkbenchPage() {
+  const bridge = usePageBridge();
+  const fork = useFork(bridge.run);
   const [controller, setController] = useState(
     () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
   );
@@ -245,7 +266,6 @@ export function Workbench() {
     save,
   } = useWorkbenchConnection({
     controller,
-    sample,
     onHydrate: openSelectedProfile,
     onItemLoaded: setSample,
     onSaved: ({ reference, source }) => drafts.rebase({ reference, source }),
@@ -328,9 +348,11 @@ export function Workbench() {
   );
   useEffect(() => setFileMessage(null), [revision]);
   useEffect(() => editor?.attach(controller), [editor, controller]);
-  useEffect(() => {
-    void ensureTemporal().then(() => setTemporal(true));
-  }, []);
+  useForkedEffect(
+    bridge.run,
+    () => bridge.provide(Rendering.use((rendering) => rendering.temporal)),
+    { deps: [bridge], onSuccess: () => setTemporal(true) },
+  );
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
   // reads as chosen.
@@ -764,13 +786,17 @@ export function Workbench() {
     setCaret(noteCaret.current);
   }
 
-  async function openInObsidian() {
-    try {
-      await openProfileInObsidian(handoffSource(controller.source));
-      setFileMessage(m.workbench_open_obsidian_copied());
-    } catch {
-      setFileMessage(m.workbench_open_obsidian_failed());
-    }
+  function openInObsidian() {
+    const source = handoffSource(controller.source);
+    fork(
+      bridge.provide(
+        Transfer.use((transfer) => transfer.openInObsidian(source)),
+      ),
+      {
+        onSuccess: () => setFileMessage(m.workbench_open_obsidian_copied()),
+        onFailure: () => setFileMessage(m.workbench_open_obsidian_failed()),
+      },
+    );
   }
 
   /** Download always returns the exact source, including an unfinished draft. */
@@ -796,11 +822,11 @@ export function Workbench() {
 
   function importFile(file: File | undefined) {
     if (!file) return;
-    void file.text().then(
-      (source) =>
+    fork(bridge.provide(Transfer.use((transfer) => transfer.readFile(file))), {
+      onSuccess: (source) =>
         replaceProfile(m.workbench_import(), () => openStandalone(source)),
-      () => setFileMessage(m.workbench_import_failed()),
-    );
+      onFailure: () => setFileMessage(m.workbench_import_failed()),
+    });
   }
 
   function openTab(id: WorkbenchTab) {
@@ -893,7 +919,7 @@ export function Workbench() {
         <ProfileHandoff
           reasons={unsupported}
           onDownload={download}
-          onOpenInObsidian={() => void openInObsidian()}
+          onOpenInObsidian={openInObsidian}
           onImport={openFile}
           onUndo={controller.canUndo ? () => controller.undo() : undefined}
           message={fileMessage}
@@ -942,7 +968,7 @@ export function Workbench() {
                   {m.workbench_reload_profile()}
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => void openInObsidian()}>
+              <DropdownMenuItem onClick={openInObsidian}>
                 <ExternalLink aria-hidden />
                 {m.workbench_open_obsidian()}
               </DropdownMenuItem>
@@ -955,9 +981,7 @@ export function Workbench() {
           <Button
             size="xs"
             disabled={saveBusy || (canSaveToVault && draft)}
-            onClick={
-              canSaveToVault ? () => void save(controller.source) : download
-            }
+            onClick={canSaveToVault ? () => save(controller.source) : download}
           >
             {canSaveToVault ? <Save aria-hidden /> : <Download aria-hidden />}
             {canSaveToVault
@@ -984,7 +1008,7 @@ export function Workbench() {
               reconnect();
             else replaceProfile(m.workbench_connection_reconnect(), reconnect);
           }}
-          onDisconnect={() => void disconnect()}
+          onDisconnect={disconnect}
         />
       }
       notifications={
@@ -1298,7 +1322,7 @@ export function Workbench() {
                 : {})}
               busy={itemBusy}
               onShow={setSample}
-              onLoad={() => void loadSelectedItem()}
+              onLoad={loadSelectedItem}
             />
           }
         />

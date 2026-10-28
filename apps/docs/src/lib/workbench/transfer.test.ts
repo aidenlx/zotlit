@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
@@ -6,13 +7,21 @@ import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
 import {
   clearDraft,
-  openProfileInObsidian,
   createProfileHandoffSource,
   downloadProfile,
   profileFileName,
   readDraft,
+  layerTransfer,
+  Transfer,
   writeDraft,
 } from "./transfer";
+
+const openProfileInObsidian = (source: string) =>
+  Effect.runPromise(
+    Transfer.use((transfer) => transfer.openInObsidian(source)).pipe(
+      Effect.provide(layerTransfer),
+    ),
+  );
 
 const STANDALONE = { reference: "standalone" };
 const KEY = `zotlit.workbench.draft.${STANDALONE.reference}`;
@@ -212,7 +221,10 @@ describe("Open in Obsidian", () => {
     using click = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
-    await expect(openProfileInObsidian("A paper")).rejects.toThrow("Denied");
+    await expect(openProfileInObsidian("A paper")).rejects.toMatchObject({
+      _tag: "WorkbenchClipboardError",
+      cause: new Error("Denied"),
+    });
     expect(click).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });

@@ -743,6 +743,78 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).toContain(m.workbench_retained_badge());
   });
 
+  it("stops a pending Item load when the reader disconnects", async () => {
+    const requests: BridgeRequest[] = [];
+    let item = SAMPLE_ITEMS[0]!;
+    let held: PromiseWithResolvers<void> | undefined;
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, {
+        item: () => item,
+        hold: (path) =>
+          path === LOCAL_BRIDGE_PATHS.selectedItem ? held?.promise : undefined,
+      }),
+    );
+    await using page = await launch();
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    await page.waitFor(() =>
+      expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title),
+    );
+
+    item = SAMPLE_ITEMS[1]!;
+    held = Promise.withResolvers();
+    page.press(m.workbench_refresh_item());
+    await page.waitFor(() =>
+      expect(
+        requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
+      ).toHaveLength(2),
+    );
+    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
+    press(document.body, m.workbench_connection_disconnect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_retained_badge()),
+    );
+    held.resolve();
+    await page.settle();
+
+    // The paper the reader asked for after disconnecting never arrives.
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);
+    expect(page.host.textContent).not.toContain(m.workbench_refresh_item());
+  });
+
+  it("stops the hydration a closed page started", async () => {
+    const requests: BridgeRequest[] = [];
+    const held = Promise.withResolvers<void>();
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, {
+        hold: (path) =>
+          path === LOCAL_BRIDGE_PATHS.templateDependencies
+            ? held.promise
+            : undefined,
+      }),
+    );
+    {
+      await using page = await launch();
+      await page.waitFor(() =>
+        expect(
+          requests.some(
+            ({ path }) => path === LOCAL_BRIDGE_PATHS.templateDependencies,
+          ),
+        ).toBe(true),
+      );
+    }
+    held.resolve();
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+
+    // The Item load that follows the bundle read belongs to the closed page.
+    expect(
+      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
+    ).toHaveLength(0);
+  });
+
   it("keeps standalone work separate from a connected profile draft", async () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
     keep(KEPT, SAMPLE_ITEMS[1]!);

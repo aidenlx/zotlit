@@ -372,6 +372,8 @@ export interface BridgeFixtureOptions {
   /** Answers the selected Item 401, the way a revoked credential does. */
   readonly revokeAfterConnect?: boolean;
   readonly save?: SaveSelectedProfileResponse;
+  /** Holds the answer to a request at `path` until the Promise it returns settles. */
+  readonly hold?: (path: string) => Promise<void> | undefined;
 }
 
 export function receiverName(receiver: unknown): string | undefined {
@@ -407,6 +409,7 @@ export function bridgeFetch(
       body,
       receiver: this,
     });
+    await options.hold?.(url.pathname);
 
     if (url.pathname === LOCAL_BRIDGE_PATHS.selectedItem) itemReads += 1;
 

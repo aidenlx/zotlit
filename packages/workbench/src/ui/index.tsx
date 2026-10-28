@@ -52,7 +52,7 @@ export {
   useTooltip,
   useWorkbenchHost,
 } from "./host";
-export { makeWorkbenchRunner } from "./run";
+export { useFork, useForkedEffect } from "./run";
 export type { WorkbenchRunner } from "#/language/host-effects";
 export type {
   WorkbenchConfirmRequest,
