@@ -26,7 +26,8 @@ export class UnloadAwarePlugin extends Plugin {
   }
 
   override unload(): void {
-    super.unload();
+    // Set first: a cleanup that throws ends Obsidian's unload early.
     this.#unloaded = true;
+    super.unload();
   }
 }
