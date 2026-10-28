@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { ItemView as MockItemView } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Deferred, Effect } from "effect";
 import type {
   App,
   EventRef,
@@ -12,6 +12,8 @@ import type {
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
+
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -22,6 +24,10 @@ import {
   activeTemplateWorkbench,
   subscribeActiveTemplateWorkbench,
 } from "@/views/note-preview/register";
+import {
+  workbenchItemChoice,
+  workbenchItemSearch,
+} from "@/views/template-workbench/item-choice";
 import type {
   TemplateAuthoringContext,
   TemplateWorkbenchView,
@@ -48,6 +54,17 @@ vi.mock("@/views/note-preview/register", () => ({
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
 }));
+vi.mock("@/views/template-workbench/item-choice", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/views/template-workbench/item-choice")
+    >();
+  return {
+    ...actual,
+    workbenchItemChoice: vi.fn(actual.workbenchItemChoice),
+    workbenchItemSearch: vi.fn(actual.workbenchItemSearch),
+  };
+});
 const read = vi.fn<NonNullable<ExplorerReads["read"]>>();
 let explorerHost: ExplorerHost;
 beforeEach(async () => {
@@ -566,4 +583,54 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     view.contentEl.remove();
   }
   expect(events.size).toBe(0);
+});
+
+it("closes an open Item chooser when a newer choice starts", async () => {
+  const { app, leaf } = host();
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
+  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
+    (_app, listener) => {
+      listener(null);
+      return () => {};
+    },
+  );
+  const chooserOpened = Promise.withResolvers<void>();
+  const answer = Deferred.makeUnsafe<WorkbenchItemChoice | null>();
+  let chooserClosed = false;
+  vi.mocked(workbenchItemChoice).mockReturnValueOnce(
+    Effect.suspend(() => {
+      chooserOpened.resolve();
+      return Deferred.await(answer);
+    }).pipe(
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          chooserClosed = true;
+        }),
+      ),
+    ),
+  );
+  const searchDismissed = Promise.withResolvers<void>();
+  vi.mocked(workbenchItemSearch).mockReturnValueOnce(
+    Effect.sync(() => {
+      searchDismissed.resolve();
+      return null;
+    }),
+  );
+  const view = new ExplorerView(leaf(), viewDeps());
+  Object.defineProperty(view, "app", { value: app });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => act(async () => view.close()));
+  await act(async () => view.open());
+  await act(async () => view.setState({}, { history: false }));
+  const choose = (view as unknown as MockItemView).actions.find(
+    (button) => button.getAttribute("aria-label") === m.workbench_choose_item(),
+  )!;
+  await act(async () => choose.click());
+  await chooserOpened.promise;
+  const search = [...view.contentEl.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes(m.workbench_search_zotero()),
+  )!;
+  await act(async () => search.click());
+  await searchDismissed.promise;
+  await vi.waitFor(() => expect(chooserClosed).toBe(true));
 });

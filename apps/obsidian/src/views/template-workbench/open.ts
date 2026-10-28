@@ -1,7 +1,7 @@
 // The launches that open a Template Workbench View, as Effects over the
 // Workspace and Vault tags. A leaf stays an edge: its view state is set
 // through the leaf itself.
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
 import { TFile } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
 
@@ -58,11 +58,15 @@ const revealWorkbench = Effect.fn("TemplateWorkbench.revealWorkbench")(
 );
 
 /**
- * Open a Profile document with an explicitly supplied launch Item.
- *
- * @returns what the open asks the reader to know, for the caller to show.
+ * One launch at a time in the workspace, so a later launch finds the leaf an
+ * earlier one opened and applies its own state after it. Obsidian skips a
+ * `setViewState` on a leaf that still applies another, so two launches into
+ * one leaf at once would keep the first launch's Item and note.
  */
-export const openTemplateWorkbench = Effect.fn(
+const launchTurn = Semaphore.makeUnsafe(1);
+
+/** {@link openTemplateWorkbench} inside a launch turn its caller holds. */
+const launchTemplateWorkbench = Effect.fn(
   "TemplateWorkbench.openTemplateWorkbench",
 )(function* (
   file: TFile,
@@ -123,11 +127,17 @@ export const openTemplateWorkbench = Effect.fn(
 });
 
 /**
- * Open a Profile file or the built-in Default draft in the native editor.
+ * Open a Profile document with an explicitly supplied launch Item.
  *
  * @returns what the open asks the reader to know, for the caller to show.
  */
-export const openNativeProfile = Effect.fn(
+export const openTemplateWorkbench: typeof launchTemplateWorkbench = (
+  file,
+  options,
+) => launchTurn.withPermit(launchTemplateWorkbench(file, options));
+
+/** {@link openNativeProfile} inside a launch turn its caller holds. */
+const launchNativeProfileEditor = Effect.fn(
   "TemplateWorkbench.openNativeProfile",
 )(function* (
   target: NativeProfileTarget,
@@ -158,7 +168,7 @@ export const openNativeProfile = Effect.fn(
         (target as Exclude<NativeProfileTarget, TFile>).getSource("default"),
       );
   if (file)
-    return yield* openTemplateWorkbench(file, {
+    return yield* launchTemplateWorkbench(file, {
       ...options,
       ...(target instanceof TFile ? {} : { defaultProfile: true }),
     });
@@ -169,7 +179,7 @@ export const openNativeProfile = Effect.fn(
     ? yield* findWorkbenchLayout({ file: null, defaultProfile: true })
     : null;
   if (workbench?.file) {
-    const opened = yield* openTemplateWorkbench(workbench.file, {
+    const opened = yield* launchTemplateWorkbench(workbench.file, {
       ...options,
       leaf: workbench.leaf,
       defaultProfile: true,
@@ -210,6 +220,16 @@ export const openNativeProfile = Effect.fn(
     ),
   } satisfies WorkbenchOpened;
 });
+
+/**
+ * Open a Profile file or the built-in Default draft in the native editor.
+ *
+ * @returns what the open asks the reader to know, for the caller to show.
+ */
+export const openNativeProfile: typeof launchNativeProfileEditor = (
+  target,
+  options,
+) => launchTurn.withPermit(launchNativeProfileEditor(target, options));
 
 /** What an open of a Profile in the native editor fails with. */
 export type NativeOpenError = Effect.Error<

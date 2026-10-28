@@ -356,6 +356,63 @@ Annotation`);
     },
   );
 
+  it("applies two quick Customize launches into one workbench in the order they came", async () => {
+    const { app, file, leaf } = setup();
+    const workbench = Object.assign(
+      Object.create(TemplateWorkbenchView.prototype),
+      { file, leaf },
+    ) as TemplateWorkbenchView;
+    Object.assign(leaf, { view: workbench });
+    vi.mocked(findWorkbenchLayout).mockReturnValue(Effect.succeed(workbench));
+    // As Obsidian 1.14.5's `WorkspaceLeaf.setViewState`: a call while the
+    // leaf still applies an earlier state returns at once and applies nothing.
+    const firstApplied = Promise.withResolvers<void>();
+    const applied: unknown[] = [];
+    let working = false;
+    const setViewState = vi.fn(async ({ state }: ViewState) => {
+      if (working) return;
+      working = true;
+      try {
+        if (applied.length === 0) await firstApplied.promise;
+        applied.push(state?.itemIndexedKey);
+      } finally {
+        working = false;
+      }
+    });
+    Object.assign(leaf, { setViewState });
+    const note = (basename: string) =>
+      Object.assign(new TFile(), {
+        path: `literatures/${basename}.md`,
+        basename,
+      });
+    const rougier = note("rougierTenSimpleRules2014");
+    const witt = note("wittNebulinRegulatesThin2006");
+    setOriginatingNote.mockClear();
+    const launches = launch(
+      app,
+      Effect.all(
+        [
+          openTemplateWorkbench(file, {
+            customize: true,
+            itemIndexedKey: "RUGIER24",
+            originatingNote: rougier,
+          }),
+          openTemplateWorkbench(file, {
+            customize: true,
+            itemIndexedKey: "WTTTNB26",
+            originatingNote: witt,
+          }),
+        ],
+        { concurrency: "unbounded" },
+      ),
+    );
+    await vi.waitFor(() => expect(setViewState).toHaveBeenCalled());
+    firstApplied.resolve();
+    await launches;
+    expect(applied).toEqual(["RUGIER24", "WTTTNB26"]);
+    expect(setOriginatingNote.mock.calls).toEqual([[rougier], [witt]]);
+  });
+
   it("binds an existing built-in Default workbench to the custom file before applying its launch Item", async () => {
     const { app, file, leaf, setViewState } = setup();
     file.path = "templates/zotlit-profile.default.md";
