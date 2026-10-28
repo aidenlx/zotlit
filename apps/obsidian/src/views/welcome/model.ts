@@ -15,6 +15,7 @@ import { Release } from "@/services/release/service";
 import { settingsAtom } from "@/services/settings/atoms";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 
+import { companionInstalledAtom } from "./companion";
 import { connectionAtom, connectionLoadAtom, unavailable } from "./connection";
 import { bannerSections } from "./presentation";
 import type { WelcomeState } from "./presentation";
@@ -76,6 +77,7 @@ export function makeWelcomeModel() {
       updatePending: s["release.update-pending"],
       noticesEnabled: s["release.notices-enabled"],
       connection: get(connectionAtom),
+      companionInstalled: get(companionInstalledAtom),
       notFound: unavailable({ reads: get(zoteroStateAtom) }),
       version: Option.getOrElse(
         AsyncResult.value(get(releaseVersionAtom)),
