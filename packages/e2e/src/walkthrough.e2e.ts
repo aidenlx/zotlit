@@ -872,11 +872,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const view = leaf.view as MarkdownView;
         cleanup.defer(() => view.hoverPopover?.hide());
         // The reading view formats the citation once its render settles and
-        // may draw it again meanwhile, so the hover goes to the citation that
-        // stands until a popover opens over it. A popover that opened and then
-        // hid itself fails the case rather than being hovered open again.
+        // may draw it again meanwhile, so each citation element that stands is
+        // hovered once, until a popover opens over one. Hovering one element
+        // again would restart the popover's opening delay. A popover that
+        // opened and then hid itself fails the case rather than being hovered
+        // open again.
         let opened = false;
-        return until(
+        let hovered: HTMLElement | null = null;
+        let hovers = 0;
+        // Awaited here, so the cleanup stack runs after the read.
+        return await until(
           "the Citation Popover entries of the hovered citation",
           () => {
             const popover = view.hoverPopover?.hoverEl.isConnected
@@ -886,10 +891,16 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               if (opened)
                 throw new Error("The Citation Popover opened and hid itself");
               const citation =
-                view.previewMode.containerEl.querySelector<HTMLElement>(
+                view.previewMode?.containerEl.querySelector<HTMLElement>(
                   ".zt-citation",
                 );
-              if (!citation?.textContent?.includes("Rougier")) return null;
+              if (
+                !citation?.textContent?.includes("Rougier") ||
+                citation === hovered
+              )
+                return null;
+              hovered = citation;
+              hovers++;
               const box = citation.getBoundingClientRect();
               citation.dispatchEvent(
                 new MouseEvent("mouseover", {
@@ -913,7 +924,15 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
             return blocks.length === 2 ? blocks : null;
           },
           30_000,
-        );
+        ).catch((error: unknown) => {
+          throw new Error(
+            `Citation hovers: ${hovers}; citation: ${
+              view.previewMode?.containerEl.querySelector(".zt-citation")
+                ?.textContent ?? "none"
+            }; popover: ${view.hoverPopover?.hoverEl.outerHTML.slice(0, 300) ?? "none"}`,
+            { cause: error },
+          );
+        });
       },
       undefined,
       { timeoutMs: 60_000 },
