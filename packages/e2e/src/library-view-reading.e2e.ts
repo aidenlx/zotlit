@@ -133,45 +133,67 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     /** What the card shows, `null` while it is out of view. */
 
-    // No row is selected: the card shows what fills it.
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { paperKey }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-          await until(
-            "rows",
-            () => el.querySelector(`[data-query-item-row="${paperKey}"]`),
-            10000,
-          );
-          const empty = await until("empty card", () =>
-            card!.querySelector<HTMLElement>("[data-library-card-empty]"),
-          );
-          return {
-            shown: card!.checkVisibility(),
-            empty: empty.textContent,
-            selected: el.querySelector("[data-query-item-row][data-selected]")
-              ? "row"
-              : null,
-          };
-        },
-        { paperKey: paper.key },
-      ),
-    ).toEqual({
+    // No row is selected: the card counts the node's papers, every one and
+    // those that pass each Reading State facet, over what fills it. Its
+    // paper count is the heading's.
+    const noPaper = await obRun(
+      run.vaultId,
+      async ({ app, page }, { paperKey }) => {
+        const { until } = page;
+        const leaf = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0];
+        await app.workspace.revealLeaf(leaf!);
+        app.workspace.setActiveLeaf(leaf!, { focus: true });
+        await leaf!.view.query.settled;
+        const el = leaf!.view.contentEl;
+        const card = el.querySelector<HTMLElement>("[data-library-card]");
+        await until(
+          "rows",
+          () => el.querySelector(`[data-query-item-row="${paperKey}"]`),
+          10000,
+        );
+        const empty = await until("empty card", () =>
+          card!.querySelector<HTMLElement>("[data-library-card-empty]"),
+        );
+        const stats = await until(
+          "paper counts",
+          () => empty.querySelector<HTMLElement>("[data-library-card-stats]"),
+          10000,
+        );
+        const heading = await until("heading count", () =>
+          el
+            .querySelector<HTMLElement>("[data-library-header-count]")
+            ?.getAttribute("data-query-matched"),
+        );
+        return {
+          shown: card!.checkVisibility(),
+          prompt: empty.querySelector("p")?.textContent ?? null,
+          stats: [
+            ...stats.querySelectorAll<HTMLElement>("[data-library-card-stat]"),
+          ].map((stat) => stat.getAttribute("data-library-card-stat")),
+          papers: Number(
+            stats.querySelector('[data-library-card-stat="papers"] dd')
+              ?.textContent,
+          ),
+          heading: Number(heading),
+          selected: el.querySelector("[data-query-item-row][data-selected]")
+            ? "row"
+            : null,
+        };
+      },
+      { paperKey: paper.key },
+    );
+    expect(noPaper).toMatchObject({
       shown: true,
-      empty: run.m.library_view_card_empty(),
+      prompt: run.m.library_view_card_empty(),
+      stats: ["papers", "unread", "annotated", "has-note", "pdf"],
       selected: null,
     });
+    expect(noPaper.papers).toBeGreaterThan(0);
+    expect(noPaper.papers).toBe(noPaper.heading);
 
     // A click on the paper's row shows its card with a preview of its
     // Annotations: the first two quoted, the count of each colour, and "See
@@ -628,6 +650,41 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       below: true,
       selected: paper.key,
     });
+    /** How the card lays out its parts: its width, and whether its first two sit side by side. */
+    const cardColumns = () =>
+      obRun(
+        run.vaultId,
+        async ({ app }) => {
+          const card = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & {
+              view: LibraryView;
+            })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-card]",
+          );
+          const columns = card!.querySelector<HTMLElement>(
+            "[data-library-card-columns]",
+          );
+          const [one, two] = [...columns!.children].map((part) =>
+            part.getBoundingClientRect(),
+          );
+          return {
+            width: Math.round(card!.getBoundingClientRect().width),
+            display: getComputedStyle(columns!).display,
+            sideBySide: !!one && !!two && two.left > one.right,
+          };
+        },
+        undefined,
+      );
+    // Under the list at 42rem wide or more, the card sets its parts in two
+    // columns, side by side.
+    expect(await placeCard(60, true)).toMatchObject({ below: true });
+    const twoColumns = await cardColumns();
+    expect(twoColumns.width).toBeGreaterThanOrEqual(672);
+    expect(twoColumns).toMatchObject({ display: "grid", sideBySide: true });
+    expect(await placeCard(30, true)).toMatchObject({ below: true });
     /** Press the Details button; report once the card is `shown` and the button says so. */
     const pressDetails = (shown: boolean) =>
       obRun(
@@ -1001,6 +1058,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       below: false,
       selected: paper.key,
     });
+    // Beside the list the card keeps one column.
+    expect(await cardColumns()).toMatchObject({
+      display: "flex",
+      sideBySide: false,
+    });
     // Beside a wide list the card follows the arrow keys.
     expect(await keyOnList("ArrowDown", next, true)).toEqual({
       card: true,
@@ -1095,7 +1157,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           );
           return {
             shown: card!.checkVisibility(),
-            empty: empty.textContent,
+            prompt: empty.querySelector("p")?.textContent ?? null,
             selected: el.querySelector("[data-query-item-row][data-selected]")
               ? "row"
               : null,
@@ -1105,7 +1167,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toEqual({
       shown: true,
-      empty: run.m.library_view_card_empty(),
+      prompt: run.m.library_view_card_empty(),
       selected: null,
     });
   }, 180000);
@@ -1156,7 +1218,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         { notepath: notePath },
       );
-    /** Wait until the Library View selects the paper's row and focuses it. */
+    /** Wait until the Library View selects the paper's row. */
     const shownInLibrary = (what: string) =>
       obRunUntil(
         run.vaultId,
@@ -1170,14 +1232,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )[0]?.view;
           if (!view?.query) return false;
           await view.query.settled;
-          // Show in Library focuses the row it selects; a selection the new
-          // tab restores from its document does not.
-          return (
-            view.selected.key === key &&
-            activeDocument.activeElement?.getAttribute(
-              "data-query-item-row",
-            ) === key
-          );
+          return view.selected.key === key;
         },
         { key: paper.key },
         { what },

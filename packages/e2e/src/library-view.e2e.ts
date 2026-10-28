@@ -2614,7 +2614,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   /** What the Library View shows that a reload must keep, once it settled. */
 
-  it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper in view with its Reading Card beside a wide list and under a narrow one, and the Welcome View banner they asked for, with Zotero closed", async () => {
+  it("puts the researcher back where they were after a window reload: the Collection left open and the Welcome View banner they asked for, with no paper selected and the item details counting the papers beside a wide list and under a narrow one, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
@@ -2663,7 +2663,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     });
     await suite.wideWindow(cleanup);
-    // The window is short, so the list scrolls under the banner.
     await obRun(
       run.vaultId,
       async () => {
@@ -2886,7 +2885,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     expect(before!.card).not.toBeNull();
 
-    // A reload right after the changes keeps every one of them.
+    // A reload right after the changes keeps the open Collection and the
+    // banner. The selected paper is session state: the view opens with no
+    // paper selected, and the item details count the papers instead.
     await reloadWindow();
     const after = await obRunUntil(
       run.vaultId,
@@ -2902,19 +2903,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await view.tree.settled;
         await new Promise((r) => setTimeout(r, 200));
         const el = view.contentEl;
-        const row = el.querySelector<HTMLElement>(
-          "[data-query-item-row][data-selected]",
-        );
         const card = el.querySelector<HTMLElement>("[data-library-card]");
-        let inView = false;
-        if (row) {
-          const r = row.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + r.width / 2,
-            r.top + r.height / 2,
-          );
-          inView = !!hit && row.contains(hit);
-        }
+        const empty = card?.querySelector<HTMLElement>(
+          "[data-library-card-empty]",
+        );
+        const papers = empty?.querySelector<HTMLElement>(
+          '[data-library-card-stat="papers"] dd',
+        );
         const action = view.containerEl.querySelector<HTMLElement>(value);
         return {
           phase: view.query.state.getState().phase,
@@ -2923,13 +2918,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               '[data-library-node][aria-expanded="true"]',
             ),
           ].map((n) => n.getAttribute("data-library-node")!),
-          selected: row?.getAttribute("data-query-item-row") ?? null,
-          card:
-            card && !card.hidden && card.checkVisibility()
-              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
-                  ?.textContent ?? "")
-              : null,
-          inView,
+          selected:
+            el
+              .querySelector<HTMLElement>(
+                "[data-query-item-row][data-selected]",
+              )
+              ?.getAttribute("data-query-item-row") ?? null,
+          shown: !!card && !card.hidden && card.checkVisibility(),
+          prompt: empty?.querySelector("p")?.textContent ?? null,
+          papers: papers ? Number(papers.textContent) : null,
           banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
           pressed: action?.getAttribute("aria-pressed") ?? null,
           rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
@@ -2942,34 +2939,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tries: 120,
         ready: (value) =>
           value !== null &&
-          ((kept) => kept.phase === "ready" && kept.selected !== null)(value),
+          ((kept) =>
+            kept.phase === "ready" && kept.papers !== null && kept.rows > 0)(
+            value,
+          ),
       },
     );
-    expect(after).toEqual({ ...before, inView: true });
-    // The list scrolled to the paper, which a fresh page would not show.
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app }) => {
-          const el = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0]!.view.contentEl;
-          let n = el.querySelector<HTMLElement>(
-            "[data-query-item-row][data-selected]",
-          );
-          for (; n && n !== el; n = n.parentElement)
-            if (n.scrollTop > 0) return "scrolled";
-          return "top";
-        },
-        undefined,
-      ),
-    ).toBe("scrolled");
+    expect(after).toMatchObject({
+      open: before!.open,
+      selected: null,
+      shown: true,
+      prompt: run.m.library_view_card_empty(),
+      banner: true,
+      pressed: "true",
+    });
+    expect(after!.papers).toBeGreaterThan(0);
 
-    // On a narrow pane the restored paper is selected as any selection is:
-    // its card shows under the tree and the list, with the row in view
-    // above it.
+    // On a narrow pane a reload also opens with no paper selected, and the
+    // details under the tree and the list count the papers.
     await obRun(
       run.vaultId,
       async () => {
@@ -2992,19 +2979,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await view.tree.settled;
         await new Promise((r) => setTimeout(r, 200));
         const el = view.contentEl;
-        const row = el.querySelector<HTMLElement>(
-          "[data-query-item-row][data-selected]",
-        );
         const card = el.querySelector<HTMLElement>("[data-library-card]");
-        let inView = false;
-        if (row) {
-          const r = row.getBoundingClientRect();
-          const hit = el.ownerDocument.elementFromPoint(
-            r.left + r.width / 2,
-            r.top + r.height / 2,
-          );
-          inView = !!hit && row.contains(hit);
-        }
+        const empty = card?.querySelector<HTMLElement>(
+          "[data-library-card-empty]",
+        );
+        const papers = empty?.querySelector<HTMLElement>(
+          '[data-library-card-stat="papers"] dd',
+        );
         const action = view.containerEl.querySelector<HTMLElement>(value);
         return {
           phase: view.query.state.getState().phase,
@@ -3013,13 +2994,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               '[data-library-node][aria-expanded="true"]',
             ),
           ].map((n) => n.getAttribute("data-library-node")!),
-          selected: row?.getAttribute("data-query-item-row") ?? null,
-          card:
-            card && !card.hidden && card.checkVisibility()
-              ? (card.querySelector<HTMLElement>("[data-library-card-title]")
-                  ?.textContent ?? "")
-              : null,
-          inView,
+          selected:
+            el
+              .querySelector<HTMLElement>(
+                "[data-query-item-row][data-selected]",
+              )
+              ?.getAttribute("data-query-item-row") ?? null,
+          shown: !!card && !card.hidden && card.checkVisibility(),
+          prompt: empty?.querySelector("p")?.textContent ?? null,
+          papers: papers ? Number(papers.textContent) : null,
           banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
           pressed: action?.getAttribute("aria-pressed") ?? null,
           rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
@@ -3033,15 +3016,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           value !== null &&
           ((kept) =>
-            kept.phase === "ready" && kept.selected !== null && !!kept.card)(
+            kept.phase === "ready" && kept.papers !== null && kept.rows > 0)(
             value,
           ),
       },
     );
     expect(narrow).toMatchObject({
-      selected: last,
-      card: before!.card,
-      inView: true,
+      open: before!.open,
+      selected: null,
+      shown: true,
+      prompt: run.m.library_view_card_empty(),
+      papers: after!.papers,
       banner: true,
       pressed: "true",
     });
@@ -4283,7 +4268,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             null,
           stored: doc?.cardWidth ?? null,
           closed: doc?.cardClosed ?? null,
-          kept: doc?.selected ?? null,
         };
       },
       undefined,
@@ -4347,7 +4331,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             null,
           stored: doc?.cardWidth ?? null,
           closed: doc?.cardClosed ?? null,
-          kept: doc?.selected ?? null,
         };
       },
       undefined,
@@ -4416,7 +4399,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4429,51 +4411,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toMatchObject({ shown: false, closed: true });
 
-    // A reload keeps it closed beside the restored selection.
-    await obRunUntil(
-      run.vaultId,
-      async ({ app, zotlit }) => {
-        const view = (
-          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
-            view: LibraryView;
-          })[]
-        )[0]?.view;
-        if (!view?.query) return null;
-        await view.query.settled;
-        await new Promise((r) =>
-          requestAnimationFrame(() => requestAnimationFrame(r)),
-        );
-        const el = view.contentEl;
-        const card = el.querySelector<HTMLElement>("[data-library-card]");
-        const doc = zotlit.services.bridge.runSync(
-          zotlit.services.settings.current,
-        )["library.document"] as StoredLibraryViewDocument | null;
-        return {
-          phase: view.query.state.getState().phase,
-          shown: !card!.hidden && card!.checkVisibility(),
-          width: Math.round(card!.getBoundingClientRect().width),
-          list: Math.round(
-            el
-              .querySelector<HTMLElement>("[data-library-search-row]")!
-              .parentElement!.getBoundingClientRect().width,
-          ),
-          selected: view.selected.key,
-          focused:
-            activeDocument.activeElement?.getAttribute("data-query-item-row") ??
-            null,
-          stored: doc?.cardWidth ?? null,
-          closed: doc?.cardClosed ?? null,
-          kept: doc?.selected ?? null,
-        };
-      },
-      undefined,
-      {
-        what: "Reading Card",
-        tries: 120,
-        ready: (value) =>
-          value !== null && ((shown) => shown.kept === second)(value),
-      },
-    );
+    // A reload keeps it closed; it opens with no paper selected.
     await reloadWindow();
     expect(
       await obRunUntil(
@@ -4510,7 +4448,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4518,13 +4455,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           what: "Reading Card",
           tries: 120,
           ready: (value) =>
-            value !== null &&
-            ((shown) => shown.phase === "ready" && shown.selected === second)(
-              value,
-            ),
+            value !== null && ((shown) => shown.phase === "ready")(value),
         },
       ),
-    ).toMatchObject({ shown: false, closed: true, stored: 400 });
+    ).toMatchObject({
+      shown: false,
+      closed: true,
+      stored: 400,
+      selected: null,
+    });
 
     // The Details button turns it on again, at its width.
     await obRun(
@@ -4581,7 +4520,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4595,6 +4533,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       width: 400,
       closed: null,
     });
+    // The researcher selects the second paper again.
+    await obRun(
+      run.vaultId,
+      async ({ app, page }, { rowKey }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const row = el.querySelector<HTMLElement>(
+          `[data-query-item-row="${rowKey}"]`,
+        );
+        press(row, "second paper");
+        await until("second paper selected", () =>
+          row!.hasAttribute("data-selected"),
+        );
+      },
+      { rowKey: second },
+    );
 
     // A drag 300px away from the list takes the card 156px under its
     // 288px minimum, past the 144px that collapses it while the pointer
@@ -4635,7 +4593,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4686,7 +4643,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4736,7 +4692,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4806,7 +4761,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -4856,7 +4810,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             null,
           stored: doc?.cardWidth ?? null,
           closed: doc?.cardClosed ?? null,
-          kept: doc?.selected ?? null,
         };
       },
       undefined,
@@ -4915,7 +4868,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ) ?? null,
             stored: doc?.cardWidth ?? null,
             closed: doc?.cardClosed ?? null,
-            kept: doc?.selected ?? null,
           };
         },
         undefined,
@@ -6180,8 +6132,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Library View in the sidebar.
     await obRun(
       run.vaultId,
-      async ({ app, zotlit, page }) => {
-        const { until } = page;
+      async ({ app }) => {
         (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
             view: LibraryView;
@@ -6191,30 +6142,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await leaf!.setViewState({ type: "zotlit-library", active: true });
         app.workspace.rightSplit.expand();
         await app.workspace.revealLeaf(leaf!);
-        // The tab selects again the row its document keeps and scrolls it
-        // into view once the list draws it, in the half of the pane the
-        // Reading Card leaves the list.
-        const view = leaf!.view as LibraryView;
-        await view.query.settled;
-        const selected =
-          (
-            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
-              "library.document"
-            ] as StoredLibraryViewDocument | null
-          )?.selected ?? null;
-        if (selected !== null) {
-          await until(
-            "restored row drawn",
-            () =>
-              view.contentEl.querySelector<HTMLElement>(
-                `[data-query-item-row="${selected}"][data-selected]`,
-              ),
-            10000,
-          );
-          await new Promise((r) =>
-            requestAnimationFrame(() => requestAnimationFrame(r)),
-          );
-        }
+        await (leaf!.view as LibraryView).query.settled;
       },
       undefined,
     );

@@ -458,9 +458,10 @@ export class LibraryView extends ItemView {
     column.append(this.welcome.el);
     // The tree and the list share the top of the shell, and the item
     // details sit beside them on a wide pane, or under both, across the
-    // whole pane, on a narrow one.
+    // whole pane, on a narrow one. The card is a container of its own, so
+    // what sits in it and asks the pane's width names the shell's.
     const shell = column.createDiv({
-      cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden",
+      cls: "zt:group zt:@container/library zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden",
       attr: { "data-library-shell": "" },
     });
     // The shell's own width query reaches only what it holds, so a frame
@@ -506,7 +507,7 @@ export class LibraryView extends ItemView {
         property: "--zt-library-card-width",
         fallback: CARD_WIDTH_DEFAULT,
         min: CARD_WIDTH_MIN,
-        cls: "zt:@max-4xl:hidden",
+        cls: "zt:@max-4xl/library:hidden",
         hint: m.library_view_card_resize_hint(),
         attr: "data-library-card-resizer",
       },
