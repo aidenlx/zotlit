@@ -161,10 +161,8 @@ export function latestSlot<R>(
     run: start,
     join: (effect, released) =>
       joinForked(Effect.sync(() => start(effect))).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.succeed(released)
-            : Effect.failCause(cause),
+        Effect.catchCauseIf(Cause.hasInterruptsOnly, () =>
+          Effect.succeed(released),
         ),
       ),
     interrupt,
