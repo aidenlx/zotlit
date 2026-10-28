@@ -1,10 +1,12 @@
 // The Library's document atom and its coalesced settings commands.
-import { Cause, Effect, Option } from "effect";
+import { Effect, Option } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import { viewRuntime } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { answerOf, makeViewRunner } from "@/lib/view-runner";
+import type { ViewRunner } from "@/lib/view-runner";
 import { PluginSettings } from "@/services/settings/service";
 
 import {
@@ -40,13 +42,9 @@ const updateDocumentCommand = viewRuntime.fn(
  * the write starts it finishes, even when the view closes:
  * `PluginSettings.flush` runs uninterruptible.
  */
-const flushDocumentCommand = viewRuntime.fn(
-  () =>
-    Effect.andThen(
-      Effect.yieldNow,
-      PluginSettings.use((settings) => settings.flush),
-    ),
-  { concurrent: true },
+const flushDocument = Effect.andThen(
+  Effect.yieldNow,
+  PluginSettings.use((settings) => settings.flush),
 );
 
 export class LibraryViewStorage {
@@ -57,6 +55,12 @@ export class LibraryViewStorage {
   readonly #registry;
   readonly #toolbar;
   #release: (() => void) | null;
+  /**
+   * Runs the writes. Its fibers stand apart from the registry's nodes, so a
+   * write's wait ends with the write even when the plugin disposes the
+   * registry first, as it does while a reload closes the view.
+   */
+  #runner: ViewRunner | null = null;
   #taken: string | null = null;
   /** What waits for a write; a close ends each wait. */
   readonly #waiting = new Set<() => void>();
@@ -68,12 +72,17 @@ export class LibraryViewStorage {
   }
 
   #hold(): () => void {
+    const runner = makeViewRunner(this.#registry);
+    this.#runner = runner;
     const releases = [
+      () => {
+        this.#runner = null;
+        runner[Symbol.dispose]();
+      },
       this.#registry.mount(this.model.document),
       this.#registry.mount(this.model.save),
       this.#registry.mount(savedDocumentAtom),
       this.#registry.mount(updateDocumentCommand),
-      this.#registry.mount(flushDocumentCommand),
       this.#registry.subscribe(this.model.save, (doc) => {
         if (doc) this.#registry.set(updateDocumentCommand, doc.document);
       }),
@@ -114,12 +123,18 @@ export class LibraryViewStorage {
    */
   async save(): Promise<void> {
     this.#registry.set(this.model.save, { document: this.document() });
-    this.#registry.set(flushDocumentCommand, undefined);
-    await waitForRead(this.#registry, flushDocumentCommand, this.#waiting);
-    if (!this.#release) return;
-    const result = this.#registry.get(flushDocumentCommand);
-    if (AsyncResult.isFailure(result) && !Cause.hasInterruptsOnly(result.cause))
-      throw Cause.squash(result.cause);
+    if (!this.#runner) return;
+    const written = answerOf(this.#runner.run(flushDocument), undefined);
+    let finish = () => {};
+    const closed = new Promise<void>((resolve) => {
+      finish = resolve;
+      this.#waiting.add(finish);
+    });
+    try {
+      await Promise.race([written, closed]);
+    } finally {
+      this.#waiting.delete(finish);
+    }
   }
 
   change(
