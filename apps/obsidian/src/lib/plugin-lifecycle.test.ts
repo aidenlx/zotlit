@@ -1,9 +1,13 @@
 import type { App, PluginManifest } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { getLogger } from "@/lib/log";
 
-import { UnloadAwarePlugin } from "./plugin-lifecycle";
+import {
+  PREVIOUS_RELEASE_WAIT_MS,
+  UnloadAwarePlugin,
+} from "./plugin-lifecycle";
 
 const manifest: PluginManifest = {
   id: "zotlit",
@@ -119,5 +123,59 @@ describe("UnloadAwarePlugin.waitForPreviousAndHoldRelease", () => {
       "second released",
       "third start-up",
     ]);
+  });
+});
+
+// A previous instance whose runtime never finishes closing must not keep
+// ZotLit from starting until the window reloads.
+describe("UnloadAwarePlugin.waitForPreviousAndHoldRelease bound", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function unloadedWithRelease(app: App): AsyncDisposableStack {
+    const previous = instanceOn(app);
+    const stack = new AsyncDisposableStack();
+    void previous.start(stack);
+    previous.unload();
+    return stack;
+  }
+
+  it("starts after the bound when the previous release never settles, and warns once", async () => {
+    vi.useFakeTimers();
+    using warn = vi.spyOn(getLogger("plugin-lifecycle"), "warn");
+    const app = stubService<App>("App", {});
+    unloadedWithRelease(app);
+    let startedUp = false;
+    const starting = instanceOn(app)
+      .start(new AsyncDisposableStack())
+      .then(() => {
+        startedUp = true;
+      });
+
+    await vi.advanceTimersByTimeAsync(PREVIOUS_RELEASE_WAIT_MS - 1);
+    expect(startedUp).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await starting;
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(expect.any(String), {
+      pluginId: "zotlit",
+      elapsedMs: PREVIOUS_RELEASE_WAIT_MS,
+    });
+  });
+
+  it("starts at once and logs nothing when the release comes before the bound", async () => {
+    vi.useFakeTimers();
+    using warn = vi.spyOn(getLogger("plugin-lifecycle"), "warn");
+    const app = stubService<App>("App", {});
+    const previousStack = unloadedWithRelease(app);
+    const starting = instanceOn(app).start(new AsyncDisposableStack());
+
+    await vi.advanceTimersByTimeAsync(PREVIOUS_RELEASE_WAIT_MS / 2);
+    await Promise.all([previousStack.disposeAsync(), starting]);
+    await vi.advanceTimersByTimeAsync(PREVIOUS_RELEASE_WAIT_MS);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,16 @@
 // interrupts.
 import { Plugin } from "obsidian";
 
+import { getLogger } from "@/lib/log";
 import { releaseKeyDescription } from "@/lib/plugin-release-key";
+
+const logger = getLogger("plugin-lifecycle");
+
+/**
+ * How long a start-up waits for the previous instance's release. A release
+ * that takes longer must not keep the plugin off until the window reloads.
+ */
+export const PREVIOUS_RELEASE_WAIT_MS = 10_000;
 
 /**
  * Where an unloaded instance leaves the promise of its release. Obsidian
@@ -43,6 +52,9 @@ export class UnloadAwarePlugin extends Plugin {
    * wait, the old runtime removes the new instance's commands by id, takes
    * zotlit:* names before it, and holds the Live Updates port (#1786). Call it
    * first on the onload stack: the stack disposes its own entries last.
+   *
+   * The wait ends after {@link PREVIOUS_RELEASE_WAIT_MS} at most; a start-up
+   * that goes on without the release logs a warning.
    */
   protected async waitForPreviousAndHoldRelease(
     stack: AsyncDisposableStack,
@@ -54,7 +66,24 @@ export class UnloadAwarePlugin extends Plugin {
       this.app,
       releaseKey(this.manifest.id),
     );
-    if (previous instanceof Promise) await previous;
+    if (!(previous instanceof Promise)) return;
+    let timer: number | undefined;
+    const timedOut = await Promise.race([
+      previous.then(() => false),
+      new Promise<boolean>((resolveTimeout) => {
+        timer = window.setTimeout(
+          () => resolveTimeout(true),
+          PREVIOUS_RELEASE_WAIT_MS,
+        );
+      }),
+    ]);
+    window.clearTimeout(timer);
+    if (timedOut)
+      logger.warn(
+        "Starting before the previous instance released what it held",
+        // The timer fired, so the wait took the whole bound.
+        { pluginId: this.manifest.id, elapsedMs: PREVIOUS_RELEASE_WAIT_MS },
+      );
   }
 
   override register(...[callback]: Parameters<Plugin["register"]>): void {
