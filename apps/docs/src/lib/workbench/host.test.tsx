@@ -11,17 +11,28 @@ import type { WorkbenchHost } from "@zotlit/workbench/ui";
 import { m } from "@/paraglide/messages.js";
 
 import { useWebHost } from "./host";
+import { PageRuntime } from "./runtime";
 
 let host!: WorkbenchHost;
 const notices: string[] = [];
 
-function Page({
-  insertTarget = () => ({ slice: "note", range: { from: 3, to: 3 } }),
-  snapshot = SAMPLE_ITEMS[0]!,
-}: {
+interface PageProps {
   insertTarget?: WorkbenchHost["insertTarget"];
   snapshot?: (typeof SAMPLE_ITEMS)[number];
-}) {
+}
+
+function Page(props: PageProps) {
+  return (
+    <PageRuntime>
+      <BoundPage {...props} />
+    </PageRuntime>
+  );
+}
+
+function BoundPage({
+  insertTarget = () => ({ slice: "note", range: { from: 3, to: 3 } }),
+  snapshot = SAMPLE_ITEMS[0]!,
+}: PageProps) {
   const bound = useWebHost({
     snapshot,
     notice: (text) => void notices.push(text),
@@ -84,7 +95,6 @@ describe("the web host", () => {
         ],
       }),
     );
-    await act(async () => {});
     expect(texts('[role="menuitem"]')).toEqual(["Duplicate", "Delete"]);
     const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
     act(() => item.click());
@@ -111,7 +121,6 @@ describe("the web host", () => {
         }),
       );
     });
-    await act(async () => {});
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Change the format?");
     expect(dialog.textContent).toContain("The old value stays one undo away.");
@@ -135,7 +144,6 @@ describe("the web host", () => {
         host.confirm({ title: "Replace?", body: "", confirm: "Replace" }),
       );
     });
-    await act(async () => {});
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
 
     await act(async () => await Effect.runPromise(Fiber.interrupt(fiber)));
@@ -167,7 +175,6 @@ describe("the web host", () => {
         }),
       );
     });
-    await act(async () => {});
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "This Item has no annotations.",
     );

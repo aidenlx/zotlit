@@ -102,7 +102,7 @@ export function useFork(
 
 /**
  * A runner over a Scope of its own, for a host whose mount has no Effect
- * Scope to lend: the web page and the test host.
+ * Scope to lend, such as the test host.
  */
 export function makeWorkbenchRunner(): {
   readonly run: WorkbenchRunner;
