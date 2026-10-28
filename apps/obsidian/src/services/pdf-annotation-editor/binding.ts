@@ -791,6 +791,16 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     );
     this.#surfaces.use(
       onPageChanged(controller, () => {
+        // #1870: PDF.js 5.3.34 sets the initial view from the `.catch` of
+        // `load` when its open handler throws, and `documentinit` never
+        // follows. A page change after PDF.js set its flag is that move or a
+        // later one, so the binding takes the view as set and counts from the
+        // next change. On the usual path this is the move `documentinit`
+        // follows in the same task, which stays uncounted.
+        if (!initialView && initialViewSet(controller)) {
+          initialView = true;
+          return;
+        }
         if (
           this.#attachment.kind === "resolved" &&
           this.#pageProbed &&
