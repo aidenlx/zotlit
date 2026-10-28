@@ -2,8 +2,8 @@
   "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.node26"],
   "compilerOptions": {
     "isolatedDeclarations": false,
-    // Read by the effecttsgo lint rules. The Local Bridge client sends
-    // through Effect's HTTP client on purpose.
+    // Read by the effecttsgo lint rules. The Fixture's Local Bridge test
+    // drives the client over Effect's HTTP client on purpose.
     "plugins": [
       {
         "name": "@effect/language-service",

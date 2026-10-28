@@ -144,7 +144,7 @@ it.effect("Disconnect stops the reads its connection started", () =>
       yield* Deferred.await(fake.started.item);
       yield* Deferred.await(fake.started.dependencies);
 
-      expect(yield* connection.disconnect).toBe(true);
+      yield* connection.disconnect;
 
       expect(yield* Fiber.await(load)).toSatisfy(Exit.hasInterrupts);
       return yield* connection.current;

@@ -446,33 +446,52 @@ it.effect("Disconnect ends the connection and drops the grant", () =>
   }),
 );
 
-it.effect("Disconnect drops the grant even when its request fails", () =>
-  Effect.gen(function* () {
-    const storage = memoryStorage();
-    const bridge = fakeBridge({
-      [LOCAL_BRIDGE_PATHS.disconnect]: () =>
-        Promise.reject(new TypeError("Failed to fetch")),
-    });
-    const state = yield* Effect.gen(function* () {
-      const client = yield* LocalBridgeClient;
-      yield* connect;
-      expect(yield* Effect.flip(client.disconnect)).toMatchObject({
-        _tag: "LocalBridgeConnectionError",
+it.effect.each([
+  {
+    met: "ZotLit not reachable",
+    answer: () => Promise.reject(new TypeError("Failed to fetch")),
+    tag: "LocalBridgeConnectionError",
+  },
+  {
+    met: "a revoked credential",
+    answer: () =>
+      json({ error: { code: "unauthorized", message: "Unknown." } }, 401),
+    tag: "LocalBridgeUnavailableError",
+  },
+  {
+    met: "a server error",
+    answer: () => json({}, 500),
+    tag: "LocalBridgeStatusError",
+  },
+])(
+  "Disconnect ends the connection and drops the grant after $met",
+  ({ answer, tag }) =>
+    Effect.gen(function* () {
+      const storage = memoryStorage();
+      const bridge = fakeBridge({ [LOCAL_BRIDGE_PATHS.disconnect]: answer });
+      const state = yield* Effect.gen(function* () {
+        const client = yield* LocalBridgeClient;
+        yield* connect;
+        expect(yield* Effect.flip(client.disconnect)).toMatchObject({
+          _tag: tag,
+        });
+        return yield* client.current;
+      }).pipe(Effect.provide(clientLayer(bridge.transport, storage)));
+      expect(state).toEqual({
+        connection: { state: "disconnected" },
+        resumable: false,
       });
-      return yield* client.current;
-    }).pipe(Effect.provide(clientLayer(bridge.transport, storage)));
-    expect(state.resumable).toBe(false);
-    expect(storage.getItem(KEPT_KEY)).toBeNull();
-    // A reload finds nothing to resume.
-    const returning = yield* Effect.flatMap(
-      LocalBridgeClient,
-      (client) => client.current,
-    ).pipe(Effect.provide(clientLayer(bridge.transport, storage)));
-    expect(returning).toEqual({
-      connection: { state: "disconnected" },
-      resumable: false,
-    });
-  }),
+      expect(storage.getItem(KEPT_KEY)).toBeNull();
+      // A reload finds nothing to resume.
+      const returning = yield* Effect.flatMap(
+        LocalBridgeClient,
+        (client) => client.current,
+      ).pipe(Effect.provide(clientLayer(bridge.transport, storage)));
+      expect(returning).toEqual({
+        connection: { state: "disconnected" },
+        resumable: false,
+      });
+    }),
 );
 
 it.effect(

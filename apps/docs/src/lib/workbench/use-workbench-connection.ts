@@ -101,12 +101,11 @@ export function useWorkbenchConnection({
     reconnect: () => fork(service.reconnect, {}),
     disconnect: () =>
       fork(service.disconnect, {
-        onSuccess: (ended) => {
-          if (ended)
-            toast.add({
-              title: m.workbench_connection_disconnect_complete(),
-              type: "info",
-            });
+        onSuccess: () => {
+          toast.add({
+            title: m.workbench_connection_disconnect_complete(),
+            type: "info",
+          });
         },
       }),
     reloadProfile: () => fork(service.reload, {}),

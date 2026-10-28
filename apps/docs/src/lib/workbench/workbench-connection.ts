@@ -112,8 +112,8 @@ export class WorkbenchConnection extends Context.Service<
     readonly reconnect: Effect.Effect<void>;
     /** Reads the selected Profile again over the connection held now. */
     readonly reload: Effect.Effect<void>;
-    /** Ends the connection; answers whether it ended. */
-    readonly disconnect: Effect.Effect<boolean>;
+    /** Ends the connection, even when the vault did not answer. */
+    readonly disconnect: Effect.Effect<void>;
     /** The selected Item, or null when the read failed. */
     readonly loadSelectedItem: Effect.Effect<SampleItem | null>;
     /** The saved revision, or null when the vault refused or the save failed. */
@@ -200,7 +200,7 @@ export const layerWorkbenchConnection = Layer.effect(
     const current = Effect.zipWith(
       bridge.current,
       SubscriptionRef.get(state),
-      (client, page): ConnectionState => ({ ...client, ...page }),
+      shown,
     );
     const update = (
       patch: (held: PageConnectionState) => Partial<PageConnectionState>,
@@ -369,14 +369,13 @@ export const layerWorkbenchConnection = Layer.effect(
       const ended = yield* Ref.getAndSet(reads, yield* openReads(layerScope));
       yield* Scope.close(ended.scope, Exit.void);
       yield* update(() => ({ connectionBusy: true }));
-      yield* bridge.disconnect;
+      // The client drops the grant whatever the vault answered, so the page
+      // has ended the connection either way; the vault ends a session it
+      // never heard about when the reader revokes it in Obsidian.
+      yield* Effect.ignore(bridge.disconnect);
       yield* forgetBundle;
       yield* update(() => ({ ...DISCONNECTED_RESOURCES, message: null }));
-      return true;
     }).pipe(
-      Effect.catch((failure) =>
-        connectionFailed(failure).pipe(Effect.as(false)),
-      ),
       Effect.ensuring(update(() => ({ connectionBusy: false }))),
       Effect.withSpan("WorkbenchConnection.disconnect"),
     );
@@ -522,7 +521,7 @@ export const layerWorkbenchConnection = Layer.effect(
       changes: Stream.zipLatestWith(
         bridge.changes,
         SubscriptionRef.changes(state),
-        (client, page): ConnectionState => ({ ...client, ...page }),
+        shown,
       ),
       start,
       reconnect: connect(resume).pipe(
@@ -570,6 +569,14 @@ function connectionFailureMessage(
     return m.workbench_connection_disconnected_notice();
   }
   return m.workbench_connection_failed({ message: failure.message });
+}
+
+/** What the page shows: the client's connection beside the page's own state. */
+function shown(
+  client: LocalBridgeState,
+  page: PageConnectionState,
+): ConnectionState {
+  return { ...client, ...page };
 }
 
 function expectedRevision(

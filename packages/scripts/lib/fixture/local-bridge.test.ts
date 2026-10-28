@@ -65,13 +65,15 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       Effect.gen(function* () {
         const fixture = yield* bridgeFixture;
         const port = yield* Effect.promise(() => getPort());
-        const bridge = startMockLocalBridge({
-          layout: fixture.layout,
-          allowedOrigin: ORIGIN,
-          port,
-        });
-        yield* Effect.addFinalizer(() =>
-          Effect.promise(() => closeServer(bridge.server)),
+        const bridge = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            startMockLocalBridge({
+              layout: fixture.layout,
+              allowedOrigin: ORIGIN,
+              port,
+            }),
+          ),
+          ({ server }) => Effect.promise(() => closeServer(server)),
         );
 
         const preflight = yield* HttpClient.execute(

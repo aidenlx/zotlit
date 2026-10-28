@@ -128,14 +128,14 @@ export type LocalBridgeError =
   | LocalBridgeConnectionError
   | LocalBridgeUnavailableError;
 
-/** Where the tab keeps its grant: the tab's session storage in a browser. */
+/**
+ * Where the tab keeps its grant: the tab's session storage in a browser. The
+ * members are the Web Storage methods themselves, synchronous as they are, so
+ * the page hands `sessionStorage` over as it is.
+ */
 export class LocalBridgeStorage extends Context.Service<
   LocalBridgeStorage,
-  {
-    getItem(key: string): string | null;
-    setItem(key: string, value: string): void;
-    removeItem(key: string): void;
-  }
+  Pick<Storage, "getItem" | "setItem" | "removeItem">
 >()("zotlit/workbench/LocalBridgeStorage") {}
 
 /** The tab's session storage, or a storage that keeps nothing when the tab has none. */
@@ -461,17 +461,12 @@ export const layerLocalBridgeClient = (compatibility: BridgeCompatibility) =>
           decode(disconnectRequestSchema, {}),
         );
       }).pipe(
-        // The page asked to end the connection, so the grant goes whatever the
-        // request answered; a failure still reports what the request met.
+        // The page asked to end the connection, so it ends and the grant
+        // goes whatever the request answered; a failure still reports what
+        // the request met.
         Effect.ensuring(
           clearCredential.pipe(
-            Effect.andThen(
-              SubscriptionRef.update(held, (now): Held =>
-                now.connection.state === "connected"
-                  ? { ...now, connection: { state: "disconnected" } }
-                  : now,
-              ),
-            ),
+            Effect.andThen(update({ connection: { state: "disconnected" } })),
           ),
         ),
         Effect.withSpan("LocalBridgeClient.disconnect"),

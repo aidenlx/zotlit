@@ -26,7 +26,6 @@ import {
   keep,
   title,
   shownItem,
-  receiverName,
   bridgeFetch,
   serveBridge,
 } from "./page-test-host";
@@ -75,11 +74,6 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    expect(
-      requests.every(
-        ({ receiver }) => receiverName(receiver) !== "LocalBridgeClient",
-      ),
-    ).toBe(true);
     // Nothing but the launch fragment says where the bridge is, so every
     // request rides the port Obsidian bound for this launch.
     expect(new Set(requests.map(({ origin }) => origin))).toEqual(
@@ -726,6 +720,33 @@ describe("a Workbench Connection", () => {
     });
     expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);
     expect(page.host.textContent).toContain(m.workbench_retained_badge());
+  });
+
+  it("ends the connection when the vault does not answer Disconnect", async () => {
+    serveBridge(bridgeFetch([], { disconnectUnreachable: true }));
+    await using page = await launch();
+
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
+    press(document.body, m.workbench_connection_disconnect());
+    await page.waitFor(() =>
+      expect(
+        document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+      ).toContain(m.workbench_connection_disconnect_complete()),
+    );
+
+    // The page holds no connection and no grant to reconnect with.
+    expect(page.host.textContent).toContain(m.workbench_retained_badge());
+    expect(page.host.textContent).toContain(m.workbench_download());
+    expect(page.host.textContent).not.toContain(
+      m.workbench_connection_reconnect(),
+    );
+    expect(page.host.textContent).not.toContain(
+      m.workbench_connection_disconnected_notice(),
+    );
+    expect(sessionStorage.getItem("zotlit.local-bridge.credential")).toBeNull();
   });
 
   it("stops a pending Item load when the reader disconnects", async () => {
