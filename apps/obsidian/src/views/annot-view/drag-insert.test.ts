@@ -354,6 +354,7 @@ it.effect.each(["switch", "close", "cancel"])(
       expect(await outcomeOf(operation)).toEqual(
         mode === "close" ? { kind: "cancelled" } : "interrupted",
       );
+      expect(f.notify).not.toHaveBeenCalled();
       expect(f.cm.state.doc.toString()).toBe("one two");
     }),
 );
@@ -621,6 +622,7 @@ it.effect.each(["escape", "overlap", "close", "new-drag"])(
       await f.cleaned;
       expect(f.listenerCount()).toBe(0);
       expect(f.cm.state.doc.toString()).not.toContain("LATE");
+      expect(f.notify).not.toHaveBeenCalled();
     }),
 );
 
