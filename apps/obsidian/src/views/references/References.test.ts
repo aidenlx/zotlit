@@ -38,6 +38,7 @@ const actions: ReferenceActions = {
   onSelect: () => undefined,
   onOpenNote: () => undefined,
   onOpenInZotero: () => undefined,
+  onShowInLibrary: () => undefined,
   onOpenAttachment: () => undefined,
   onOpenEngineSettings: () => undefined,
   onChangeStyle: vi.fn(),
@@ -239,7 +240,7 @@ describe("References", () => {
       [...row.querySelectorAll("[data-icon]")].map((el) =>
         el.getAttribute("data-icon"),
       ),
-    ).toStrictEqual(["file-text", "external-link", "chevron-right"]);
+    ).toStrictEqual(["file-text", "external-link", "library", "chevron-right"]);
   });
 
   it("shows the markup and the links a formatted entry carries", async () => {

@@ -226,6 +226,10 @@
           "type": ["string", "null"],
           "description": "Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library."
         },
+        "librarylink": {
+          "type": "string",
+          "description": "Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View."
+        },
         "authors": {
           "type": "array",
           "items": {
@@ -277,6 +281,7 @@
         "extra",
         "backlink",
         "weblink",
+        "librarylink",
         "authors",
         "authorsShort"
       ],
@@ -2192,6 +2197,10 @@
           "type": ["string", "null"],
           "description": "Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library."
         },
+        "librarylink": {
+          "type": "string",
+          "description": "Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View."
+        },
         "authors": {
           "type": "array",
           "items": {
@@ -2239,6 +2248,7 @@
         "extra",
         "backlink",
         "weblink",
+        "librarylink",
         "authors",
         "authorsShort"
       ],

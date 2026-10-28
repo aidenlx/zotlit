@@ -53,6 +53,7 @@ import {
 } from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -84,6 +85,8 @@ interface PopoverEdges {
    * ends with the visit. Resolves `null` once the visit ended under it.
    */
   runAction<A, E>(effect: Effect.Effect<A, E>): Promise<A | null>;
+  /** Open the Library View on the Item `indexedKey`. */
+  showInLibrary: (indexedKey: string) => void;
   log: (
     level: "debug" | "warn",
     message: string,
@@ -172,6 +175,7 @@ export const layerCitationPopover: Layer.Layer<
   | CitationText
   | BibliographyRender
   | Profile
+  | ShowInLibrary
 > = Layer.effect(
   CitationPopover,
   Effect.gen(function* () {
@@ -179,6 +183,7 @@ export const layerCitationPopover: Layer.Layer<
     const metadata = yield* MetadataCache;
     const lookup = yield* CitationLookup;
     const render = yield* BibliographyRender;
+    const showInLibrary = yield* ShowInLibrary;
     const bridge = yield* scopedBridge;
     const layerScope = yield* Effect.scope;
     const context = yield* Effect.context<PopoverServices>();
@@ -221,6 +226,8 @@ export const layerCitationPopover: Layer.Layer<
       const edges: PopoverEdges = {
         host,
         log,
+        showInLibrary: (indexedKey) =>
+          bridge.runAndForget(showInLibrary.show(indexedKey)),
         runAction: (effect) =>
           bridge.runPromise(
             Effect.forkIn(effect, scope).pipe(
@@ -392,6 +399,7 @@ const fill = Effect.fn("CitationPopover.fill")(function* (
           }
         : undefined,
     hide: () => popover.hide(),
+    showInLibrary: edges.showInLibrary,
     switchProfile: (path) => requestProfileSwitch(edges.host, path),
     log: edges.log,
   });

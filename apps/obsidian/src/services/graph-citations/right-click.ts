@@ -24,6 +24,8 @@ export interface NodeRightClickDeps extends NodeClickDeps {
   resolveCitekey: (citekey: string) => CitekeyResolution | null;
   /** Where the menu raises `zotlit:graph-cited-work-menu`. */
   workspace: Pick<Workspace, "trigger">;
+  /** Open the Library View on the Item `indexedKey`. */
+  showInLibrary: (indexedKey: string) => void;
 }
 
 /**
@@ -51,6 +53,7 @@ export function wrapNodeRightClick(
           resolution,
           open: deps.open,
           workspace: deps.workspace,
+          showInLibrary: deps.showInLibrary,
         }).showAtMouseEvent(evt);
       },
     }),
@@ -58,7 +61,9 @@ export function wrapNodeRightClick(
 }
 
 interface CitedWorkMenuContext
-  extends Pick<NodeClickDeps, "open">, Pick<NodeRightClickDeps, "workspace"> {
+  extends
+    Pick<NodeClickDeps, "open">,
+    Pick<NodeRightClickDeps, "workspace" | "showInLibrary"> {
   citekey: string;
   /** What the citekey names; `null` while the resolution snapshot is cold. */
   resolution: CitekeyResolution | null;
@@ -73,8 +78,8 @@ interface CitedWorkMenuContext
  *   shows and the open action reports what the warm snapshot holds — which may
  *   itself be nothing. A key already known missing names none, so the entry
  *   stays out rather than reporting a failure the click already reports.
- * - **Open in Zotero** selects one Item, so only a unique key says what to
- *   select.
+ * - **Open in Zotero** and **Show in Zotero library** select one Item, so only
+ *   a unique key says what to select.
  * - **Copy citation key** hands back the node's own label, whatever the key
  *   resolves to — which is what a mistyped key needs to be fixed.
  *
@@ -104,6 +109,13 @@ function citedWorkMenu(ctx: CitedWorkMenuContext): Menu {
         .onClick(() => {
           window.open(itemSelectUri(key, groupID));
         }),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection(SECTION.open)
+        .setTitle(m.library_view_show_in_library())
+        .setIcon("library")
+        .onClick(() => ctx.showInLibrary(indexedKey)),
     );
   }
   menu.addItem((item) =>

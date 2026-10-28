@@ -124,7 +124,7 @@ To write LaTeX source instead, pass the same \`zt.citations\` to the LaTeX forma
     types: ["TemplateCiteItemData"],
     sample: "citation.item",
     prefix: "item.",
-    lead: "Each cited item also carries every [item field](#item-fields) of its type. The note-root properties it leaves behind are `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`.",
+    lead: "Each cited item also carries every [item field](#item-fields) of its type. The note-root properties it leaves behind are `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `librarylink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`.",
   },
   {
     id: "locator-label-abbreviations",

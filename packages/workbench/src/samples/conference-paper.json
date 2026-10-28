@@ -202,6 +202,7 @@
       "notePath": null,
       "backlink": "zotero://select/library/items/CNPF226A",
       "weblink": null,
+      "librarylink": "obsidian://zotlit/show-in-library?item-key=CNPF226A",
       "authors": [
         {
           "family": "Rivera",
@@ -396,6 +397,7 @@
           },
           "backlink": "zotero://select/library/items/CNPF226A",
           "weblink": null,
+          "librarylink": "obsidian://zotlit/show-in-library?item-key=CNPF226A",
           "authors": [
             {
               "family": "Rivera",
@@ -516,6 +518,7 @@
           },
           "backlink": "zotero://select/library/items/CNPF226A",
           "weblink": null,
+          "librarylink": "obsidian://zotlit/show-in-library?item-key=CNPF226A",
           "authors": [
             {
               "family": "Rivera",
@@ -1068,5 +1071,5 @@
       ]
     ]
   },
-  "revision": "cf203d28bb3f4516e58c2356eae39b72d3efdec530616cd7f124d7cd444989f4"
+  "revision": "dda6f5165b070ae3dbbb3a91bc0f1b0671df0a9207872d0dec05b91a179254de"
 }

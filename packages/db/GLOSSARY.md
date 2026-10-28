@@ -67,6 +67,10 @@ _Avoid_: link, deep link (in prose), URI
 A Zotero **web library URL** pointing at the Item's page on zotero.org. Personal-library Items use the account **username slug** (`https://www.zotero.org/{slugify(username)}/items/{key}`, the form zotero.org serves and the Zotero dataserver emits); group-library Items use the numeric `groupID` (`.../groups/{groupID}/items/{key}`, which zotero.org redirects to the `groups/{id}/{slug}` form). Exposed as `zt.weblink` on the same surface as Backlink minus Annotations (the web library has no per-Annotation page). A synced account carries a username, so group-library Items always resolve and personal-library Items resolve once synced; a never-synced account has no username, so its personal-library Items are `null`.
 _Avoid_: online URL, web URL, url (that is the Item's own resource URL — see below)
 
+**Library Link**:
+An Obsidian link (`obsidian://zotlit/show-in-library?item-key=...`) that opens ZotLit's Library View on an Item. It names the Item by its Indexed Key, which every device that syncs the library shares, so a link written into a note opens the same Item on each of them. Exposed as `zt.librarylink` on the same surface as Weblink.
+_Avoid_: obsidian link, library URL
+
 **URL** _(field)_:
 An Item's own resource URL as recorded in Zotero's `url` field — the article's DOI landing page, the web page a snapshot was taken from, etc. Exposed as `zt.url`. Distinct from **Weblink**, which points at zotero.org rather than the source.
 

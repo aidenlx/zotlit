@@ -4,7 +4,7 @@ import type { App } from "obsidian";
 import { createContext, useContext } from "react";
 import type { MouseEvent } from "react";
 
-import { itemSelectUri } from "@zotlit/db";
+import { formatIndexedKey, itemSelectUri } from "@zotlit/db";
 
 import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import type { ClipboardRepresentation } from "@/lib/clipboard";
@@ -36,6 +36,7 @@ export interface ReferenceActions {
   onSelect: (entry: ReferenceEntry) => void;
   onOpenNote: (entry: ReferenceEntry) => void;
   onOpenInZotero: (source: ReferenceSource) => void;
+  onShowInLibrary: (source: ReferenceSource) => void;
   /**
    * Open the Item's Attachment in Zotero's reader. A single Attachment opens
    * straight away; several offer a menu at the click.
@@ -63,6 +64,8 @@ export interface ReferenceActionDeps {
   getSourcePath: () => string | null;
   /** Open the Literature Note of the Item an Indexed Key names, creating it first when it has none. */
   openIndexedKey: (indexedKey: string) => void;
+  /** Open the Library View on the Item an Indexed Key names. */
+  showInLibrary: (indexedKey: string) => void;
   openLinkText: (linkpath: string, sourcePath: string) => void;
   nextOccurrence: (id: string, count: number) => number;
   revealOccurrence: (
@@ -121,6 +124,9 @@ export function createReferenceActions(
     },
     onOpenInZotero(source) {
       window.open(itemSelectUri(source.itemKey, source.groupID));
+    },
+    onShowInLibrary(source) {
+      deps.showInLibrary(formatIndexedKey(source.itemKey, source.groupID));
     },
     onOpenAttachment(source, event) {
       openAttachments(source.attachments, {

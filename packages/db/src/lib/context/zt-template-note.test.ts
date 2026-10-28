@@ -137,6 +137,9 @@ describe("buildNoteContext", () => {
     });
 
     expect(ctx.backlink).toBe("zotero://select/library/items/ITEM2345");
+    expect(ctx.librarylink).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ITEM2345",
+    );
     expect(ctx.tags).toEqual([{ name: "zt", type: "manual" }]);
     expect(ctx.authorsShort).toBe("Smith et al.");
 
@@ -165,6 +168,7 @@ describe("buildNoteContext", () => {
     expect(annot.parentItem?.citationKey).toBe("smith2024");
     // annotations have no web page
     expect("weblink" in annot).toBe(false);
+    expect("librarylink" in annot).toBe(false);
 
     expect(ctx.authors.map((a) => a.family)).toEqual(["Smith"]);
   });
@@ -320,6 +324,9 @@ describe("buildNoteContext", () => {
       annotationImageLink: () => null,
     });
     expect(ctx.backlink).toBe("zotero://select/groups/99/items/ITEM2345");
+    expect(ctx.librarylink).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ITEM2345g99",
+    );
   });
 
   it("builds the username weblink for a personal-library item with a known username", () => {

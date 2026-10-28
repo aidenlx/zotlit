@@ -96,7 +96,7 @@ Each entry in `zt.citations`. Loop over them with `{% for citation in zt.citatio
 
 A cited item's data, in the same template vocabulary as the note root and narrowed to the fields both a live Zotero item and a note's embedded CSL-JSON snapshot supply. Vault and library context — tags, dates-added/modified, library identity, and the note resolvers — stays on the note root, which the embedded snapshot cannot express. An unresolved reference becomes a stub with every field null, so a citation template never null-checks the item itself.
 
-Each cited item also carries every [item field](#item-fields) of its type. The note-root properties it leaves behind are `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`.
+Each cited item also carries every [item field](#item-fields) of its type. The note-root properties it leaves behind are `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `librarylink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`.
 
 <ContractTable section="cited-item-fields" />
 

@@ -472,10 +472,13 @@
   "annot_view_name": "Zotero 标注",
   "command_open_library_view_name": "打开 Zotero 文库",
   "library_view_name": "Zotero 文库",
+  "library_view_show_in_library": "在 Zotero 文库中显示",
+  "command_show_in_library_name": "在 Zotero 文库中显示条目",
   "library_view_help_action": "欢迎与帮助",
   "library_view_papers_view_name": "文献",
   "library_view_tree_label": "文库",
   "library_view_recent": "最近",
+  "library_view_reveal_not_found": "在你的文库中找不到该 Zotero 条目。",
   "library_view_reveal_not_listed": [
     {
       "declarations": ["input limit", "local formatted = limit: number"],
@@ -1563,6 +1566,7 @@
   "workbench_field_related_items": "相关条目",
   "workbench_field_notes": "Zotero 笔记",
   "workbench_field_weblink": "Zotero 网页链接",
+  "workbench_field_librarylink": "Zotero 文库链接",
   "workbench_field_indexed_key": "跨文库 Zotero 标识符",
   "workbench_field_library_id": "文库 ID",
   "workbench_field_group_id": "群组 ID",

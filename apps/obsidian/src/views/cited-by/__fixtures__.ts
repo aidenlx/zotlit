@@ -14,6 +14,7 @@ import { buildRuntime } from "@/lib/effect-layer";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import { CitationIndex } from "@/services/citation-index/service";
 import type { CitedBySnapshot } from "@/services/citation-index/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 
 export interface CitedByHost {
   /** The view registry, with no idle delay: an unread observer stops at once. */
@@ -25,6 +26,8 @@ export interface CitedByHost {
   readonly started: readonly string[];
   /** Each key an observer stopped for, in order. */
   readonly stopped: readonly string[];
+  /** Each Indexed Key the sidebar showed in the Library View, in order. */
+  readonly shownInLibrary: readonly string[];
   /** Sends `snapshot` to the live observer of `key`; false with none. */
   publish(key: string, snapshot: CitedBySnapshot): boolean;
   /**
@@ -52,12 +55,19 @@ export async function makeCitedByHost(
   const workspace = new MemoryWorkspace({ layoutReady: true });
   const started: string[] = [];
   const stopped: string[] = [];
+  const shownInLibrary: string[] = [];
   const observers = new Map<string, (snapshot: CitedBySnapshot) => void>();
   const stack = new AsyncDisposableStack();
   const runtime = buildRuntime(
     Layer.mergeAll(
       layerUnreadViewServices,
       layerHost({ vault, metadataCache, workspace }),
+      Layer.mock(ShowInLibrary, {
+        show: (indexedKey) =>
+          Effect.sync(() => {
+            shownInLibrary.push(indexedKey);
+          }),
+      }),
       Layer.mock(CitationIndex, {
         getParsedNote:
           options.getParsedNote ??
@@ -90,6 +100,7 @@ export async function makeCitedByHost(
     workspace,
     started,
     stopped,
+    shownInLibrary,
     publish: (key, snapshot) => {
       const observer = observers.get(key);
       observer?.(snapshot);

@@ -37,6 +37,19 @@ const EMPTY: QueryViewOutcome = {
     rows: [],
   },
 };
+/** One Item that the Library holds, filed in no Collection. */
+const FILED_NOWHERE: QueryViewOutcome = {
+  kind: "result",
+  result: {
+    libraries: [{ type: "personal" }],
+    query: { filter: null, fields: [], sort: [], limit: null },
+    returnedCount: 1,
+    matchedCount: 1,
+    truncated: false,
+    warnings: [],
+    rows: [{ indexedKey: "BBBB2345", values: { collections: [] } }],
+  },
+};
 const LIBRARIES = [
   { selector: { type: "personal" as const }, libraryID: 1, name: null },
 ];
@@ -267,7 +280,8 @@ it.live(
                     const key = request.filter ?? "";
                     started.push(key);
                     return new Promise<QueryViewOutcome>((resolve) => {
-                      land.set(key, () => resolve(EMPTY));
+                      // The Item lands filed in no Collection.
+                      land.set(key, () => resolve(FILED_NOWHERE));
                       signal.addEventListener(
                         "abort",
                         () => {
