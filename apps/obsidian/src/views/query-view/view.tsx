@@ -17,10 +17,11 @@ import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
 import { PaneState } from "@/components/pane-state";
-import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
+import { reportOutcome } from "@/lib/notifier";
+import type { NoticeMessage } from "@/lib/notifier";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import { makeViewRunner } from "@/lib/view-runner";
@@ -497,8 +498,8 @@ export class QueryView extends Component implements HistorySurface {
   /** The file's text, the view on screen, the edits and their saves. */
   readonly #document: QueryFileDocument;
   readonly #runCommand = makeRunQueryCommand();
-  /** Runs the table's actions and reads; the leaf's close interrupts them. */
-  #tasks: ViewRunner | null = null;
+  /** Runs the table's actions and reads; the view's unload interrupts them. */
+  readonly #tasks: ViewRunner;
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
   /**
@@ -534,6 +535,7 @@ export class QueryView extends Component implements HistorySurface {
     this.registry = deps.registry;
     this.#release = holdQueryViewModel(this.registry, this.model);
     this.#releaseCommand = this.registry.mount(this.#runCommand);
+    this.#tasks = makeViewRunner(this.registry);
     this.state = queryStateHandle(this.registry, this.model);
     this.#host = host;
     this.#document = new QueryFileDocument(host, {
@@ -627,7 +629,7 @@ export class QueryView extends Component implements HistorySurface {
   get settled(): Promise<void> {
     return this.#settled
       .then(() => this.#layout.read)
-      .then(() => this.#tasks?.settled());
+      .then(() => this.#tasks.settled());
   }
 
   /**
@@ -672,7 +674,6 @@ export class QueryView extends Component implements HistorySurface {
     const subscriptions = new DisposableStack();
     this.#subscriptions = subscriptions;
     this.#releaseCommand ??= this.registry.mount(this.#runCommand);
-    this.#tasks ??= makeViewRunner(this.registry);
     subscriptions.defer(this.registry.mount(queryRevisionAtom));
     subscriptions.defer(
       this.registry.subscribe(queryRevisionAtom, () => {
@@ -720,8 +721,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#finishRun = null;
     this.#releaseCommand?.();
     this.#releaseCommand = null;
-    void this.#tasks?.[Symbol.asyncDispose]();
-    this.#tasks = null;
+    void this.#tasks[Symbol.asyncDispose]();
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
     this.#release?.();
@@ -741,7 +741,7 @@ export class QueryView extends Component implements HistorySurface {
     this.#layout.render(
       el,
       <ViewRegistryProvider registry={this.registry}>
-        <QueryTaskProvider value={(task) => this.runTask(task)}>
+        <QueryTaskProvider value={(task, failed) => this.runTask(task, failed)}>
           <QueryViewBody view={this} />
         </QueryTaskProvider>
       </ViewRegistryProvider>,
@@ -801,21 +801,25 @@ export class QueryView extends Component implements HistorySurface {
 
   /**
    * Run a table action or read on the leaf, beside the others; the leaf's
-   * close interrupts it. Returns what stops it sooner, as a collapsed row
-   * stops the read of the rows under it.
+   * close interrupts it. A failure shows the notice `failed` gives, if any,
+   * and is logged. Returns what stops it sooner, as a collapsed row stops the
+   * read of the rows under it.
    */
-  runTask(task: Effect.Effect<void, unknown, ViewServices>): () => void {
-    if (!this.#tasks) return () => {};
+  runTask(
+    task: Effect.Effect<void, unknown, ViewServices>,
+    failed: () => NoticeMessage | undefined = () => undefined,
+  ): () => void {
     const fiber = this.#tasks.run(
-      task.pipe(
-        recover(
-          (error) => Effect.logWarning("A Query View action failed", { error }),
-          Effect.void,
-        ),
+      reportOutcome(task, { success: () => undefined, error: failed }).pipe(
         withLogCategory("query-view"),
       ),
     );
     return () => fiber.interruptUnsafe();
+  }
+
+  /** Forks on the view services until the view unloads, for a host member. */
+  get run(): ViewRunner["run"] {
+    return this.#tasks.run;
   }
 
   /** The surface the host is, by what it binds to `this`. */

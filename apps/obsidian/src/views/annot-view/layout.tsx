@@ -16,6 +16,7 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import { makeViewRunner } from "@/lib/view-runner";
+import type { ViewRunner } from "@/lib/view-runner";
 import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import {
   annotationChangeAtom,
@@ -229,6 +230,8 @@ export class AnnotationsLayout extends Component {
   readonly store: AnnotStore;
   readonly #deps: AnnotationsLayoutDeps;
   readonly #host: AnnotationsLayoutHost;
+  /** Forks on the view services until the layout unloads. */
+  readonly #runner: ViewRunner;
   #actions: AnnotActions | null = null;
   #root: Root | null = null;
   #el: HTMLElement | null = null;
@@ -281,6 +284,7 @@ export class AnnotationsLayout extends Component {
     this.#deps = deps;
     this.#host = host;
     this.store = createAnnotStore(deps.registry);
+    this.#runner = makeViewRunner(deps.registry);
   }
 
   /** Settles once the cards show the last read the layout started. Never rejects. */
@@ -309,7 +313,7 @@ export class AnnotationsLayout extends Component {
     this.#subscriptions = subscriptions;
     const gestures = { ...NO_HOST_GESTURES, ...this.#host.gestures };
 
-    const { run } = subscriptions.use(makeViewRunner(deps.registry));
+    const { run } = this.#runner;
     const insertDeps: InsertDeps<ViewServices> = {
       app: deps.app,
       execute: annotationInsert,
@@ -408,6 +412,7 @@ export class AnnotationsLayout extends Component {
     this.#root = null;
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
+    this.#runner[Symbol.dispose]();
     this.#hold?.[Symbol.dispose]();
     this.#hold = null;
     this.#el = null;

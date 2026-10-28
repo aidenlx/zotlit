@@ -458,6 +458,7 @@ function NoteCell({
           notes
             .create(itemKey)
             .pipe(Effect.ensuring(Effect.sync(() => setCreating(false)))),
+          () => m.notice_create_note_failed(),
         );
       }}
     >

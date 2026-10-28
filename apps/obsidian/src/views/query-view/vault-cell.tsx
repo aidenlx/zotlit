@@ -29,7 +29,6 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
-import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -407,18 +406,8 @@ export function VaultEditCell(props: VaultCellProps) {
             if (message !== null) new BaseNotice(message);
           }),
         ),
-        recover(
-          (error) =>
-            Effect.logWarning(
-              "The Query View could not write a vault property",
-              { error, name },
-            ),
-          Effect.sync(
-            () =>
-              void new BaseNotice(m.query_view_vault_write_failed({ name })),
-          ),
-        ),
       ),
+      () => m.query_view_vault_write_failed({ name }),
     );
   /** Enter edit; at the list item `chip`, in place, where one is given. */
   const begin = (chip?: number) => {

@@ -118,7 +118,7 @@ import type { NativePreviewState } from "./session";
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 /** Which result the preview shows for the editor's current authoring context. */

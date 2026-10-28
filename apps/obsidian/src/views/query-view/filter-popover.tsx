@@ -35,7 +35,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import { useViewRunner } from "@/lib/view-runner";
+import type { ViewRun } from "@/lib/view-runner";
 import {
   createTemplateWorkbenchHost,
   refuseRender,
@@ -184,6 +184,8 @@ const filterTheme = {
 };
 
 export interface FilterEditorProps {
+  /** The runner of the view the filters belong to, for the host's Effects. */
+  run: ViewRun;
   /** The dataset of the view whose filters show. */
   dataset: QueryFileDataset;
   /** The dataset the filters for all views are written for. */
@@ -212,6 +214,7 @@ export interface FilterEditorProps {
 
 /** The two sections of a view's filters: for all views, and for this view. */
 export function FilterEditor({
+  run,
   dataset,
   allViewsDataset: shared,
   allViews,
@@ -226,8 +229,6 @@ export function FilterEditor({
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
-  // Unmounting the editor interrupts every host Effect it still runs.
-  const run = useViewRunner();
   const host = useMemo(() => {
     const created = createTemplateWorkbenchHost(app, {
       run,
@@ -431,6 +432,7 @@ export function FilterButton({ view }: { view: QueryView }) {
       onClose={() => setOpen(false)}
     >
       <FilterEditor
+        run={view.run}
         dataset={shown.from ?? "annotations"}
         allViewsDataset={allViewsDataset(file)}
         allViews={file.filters}

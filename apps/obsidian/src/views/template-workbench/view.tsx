@@ -647,7 +647,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#deps = deps;
     this.#release = holdWorkbenchModel(deps.registry, this.model);
     // Closing the leaf interrupts every Effect it still runs.
-    this.#runner = this.#cleanup.use(makeViewRunner(deps.registry));
+    this.#runner = makeViewRunner(deps.registry);
     this.#origins = latestSlot(this.#runner.run);
     this.#reads = latestSlot(this.#runner.run);
     this.#noteUpdates = inFlightSlot(
@@ -1632,7 +1632,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return true;
   }
 
-  protected override async onOpen(): Promise<void> {
+  protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdWorkbenchModel(this.registry, this.model);
     this.#cleanup.defer(
@@ -1720,19 +1720,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#root = createRoot(this.contentEl);
     this.#mount();
     this.startStylesRefresh();
+    return Promise.resolve();
   }
   /**
    * Obsidian's close. It waits for the write a running flow has started, such
    * as a save or the originating note's write, and interrupts the rest.
    */
-  protected override async onClose(): Promise<void> {
+  protected override onClose(): Promise<void> {
     this.#closed = true;
-    try {
-      await super.onClose();
-    } finally {
+    return super.onClose().finally(() => {
       this.#root?.unmount();
       this.#root = null;
       this.#cleanup.dispose();
+      // Interrupts what still runs before the host and the editor go.
+      const stopped = this.#runner[Symbol.asyncDispose]();
       this.preview?.[Symbol.dispose]();
       this.#editor[Symbol.dispose]();
       this.#host[Symbol.dispose]();
@@ -1740,8 +1741,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#unsubscribe = null;
       this.#release?.();
       this.#release = null;
-      await this.#runner[Symbol.asyncDispose]();
-    }
+      return stopped;
+    });
   }
 
   templateDataTarget(): TemplateDataExportTarget | null {

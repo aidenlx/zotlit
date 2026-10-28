@@ -460,7 +460,7 @@ export class TemplateDataExplorerView extends ItemView {
       onToggleSections: () => this.#toggleSections(),
       onRefresh: () => this.#update(refresh),
       canExport: () => this.#exportTarget() !== null,
-      onExport: () => void this.#export(),
+      onExport: () => this.#export(),
       exportLabel: () =>
         this.#state().root === "annotation" &&
         this.#exportTarget()?.root === "note"
@@ -605,7 +605,7 @@ export class TemplateDataExplorerView extends ItemView {
     const key = annotationIndexedKey(item.id, annotationId);
     return key ? { indexedKey: key, root } : null;
   }
-  async #export(): Promise<void> {
+  #export(): void {
     const target = this.#exportTarget();
     if (target)
       this.#deps.registry.set(this.#exportCommand, {

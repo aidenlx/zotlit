@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 
+import type { NoticeMessage } from "@/lib/notifier";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 
 import type { QueryView, QueryViewState } from "./view";
@@ -130,6 +131,7 @@ export function useQueryViewState<T>(
 /** Runs a table action on the leaf the component draws in; see `QueryView.runTask`. */
 export type QueryTaskRunner = (
   task: Effect.Effect<void, unknown, ViewServices>,
+  failed?: () => NoticeMessage | undefined,
 ) => () => void;
 
 const QueryTaskContext = createContext<QueryTaskRunner | null>(null);

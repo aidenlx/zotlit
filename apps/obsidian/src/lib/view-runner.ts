@@ -6,11 +6,9 @@
 // annotation insert that a cancelled drag stops, or an Item read that a newer
 // selection replaces. Closing the view interrupts every fiber still running.
 // What a component reads stays a view atom (ADR 0082).
-import { RegistryContext } from "@effect/atom-react";
 import { Cause, Effect, Fiber, FiberSet, Scope } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { useContext, useEffect, useState } from "react";
 
 import { joinForked, observeExit } from "@zotlit/workbench/ui";
 
@@ -66,18 +64,6 @@ export function makeViewRunner(
     [Symbol.dispose]: () => void dispose(),
     [Symbol.asyncDispose]: dispose,
   };
-}
-
-/**
- * A runner over the view services of the root's registry, for a component
- * that mounts the Workbench UI itself. Unmounting the component interrupts
- * every Effect it still runs.
- */
-export function useViewRunner(): ViewRun {
-  const registry = useContext(RegistryContext);
-  const [runner] = useState(() => makeViewRunner(registry));
-  useEffect(() => () => runner[Symbol.dispose](), [runner]);
-  return runner.run;
 }
 
 /**
