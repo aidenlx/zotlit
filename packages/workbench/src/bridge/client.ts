@@ -337,6 +337,9 @@ export const layerLocalBridgeClient = (compatibility: BridgeCompatibility) =>
               ),
             )
             .pipe(
+              // The bridge lists only the headers the page sends for a
+              // browser's preflight, so no trace header goes along.
+              Effect.provideService(HttpClient.TracerPropagationEnabled, false),
               Effect.mapError(
                 (cause) =>
                   new LocalBridgeConnectionError({

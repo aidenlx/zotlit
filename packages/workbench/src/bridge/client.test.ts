@@ -61,6 +61,8 @@ const PROFILE = {
 interface SentRequest {
   readonly url: string;
   readonly authorization: string | null;
+  /** The header names, which a browser preflight checks against the bridge's list. */
+  readonly headers: readonly string[];
   readonly body: unknown;
 }
 
@@ -86,6 +88,7 @@ function fakeBridge(answers: Partial<Record<string, Answer>> = {}) {
     sent.push({
       url: url.href,
       authorization: headers.get("Authorization"),
+      headers: [...headers.keys()].toSorted(),
       body,
     });
     const respond = answer[url.pathname];
@@ -157,11 +160,14 @@ it.effect(
         {
           url: `${localBridgeOrigin(PORT)}${LOCAL_BRIDGE_PATHS.codeBootstrap}`,
           authorization: null,
+          // Only headers the bridge lists for a browser's preflight.
+          headers: ["accept", "content-type"],
           body: { code: "code-1" },
         },
         {
           url: `${localBridgeOrigin(PORT)}${LOCAL_BRIDGE_PATHS.selectedProfile}`,
           authorization: "Bearer credential-1",
+          headers: ["accept", "authorization"],
           body: undefined,
         },
       ]);
