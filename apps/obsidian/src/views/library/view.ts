@@ -55,7 +55,6 @@ import {
   withFacets,
   withNode,
   withSearch,
-  withSelected,
   withTags,
   withTreeCollapsed,
   withTreeWidth,
@@ -142,10 +141,11 @@ export class LibraryView extends ItemView {
   /** What the search last found, which a facet change lists again. */
   #found: SearchFound = { text: "" };
   /**
-   * The selected row, by its Item's Indexed Key. A click, the arrow keys, a
-   * restored selection and "Show in Library" all select a row alone; the
-   * item details show the selected row while the researcher keeps them on
-   * (the document's `cardClosed` absent), at every pane width.
+   * The selected row, by its Item's Indexed Key, for this tab alone: a new
+   * tab opens with none. A click, the arrow keys and "Show in Library" all
+   * select a row alone; the item details show the selected row while the
+   * researcher keeps them on (the document's `cardClosed` absent), at every
+   * pane width.
    */
   readonly model = makeLibraryModel();
   readonly #itemNodeCommand = makeItemNodeCommand();
@@ -336,6 +336,7 @@ export class LibraryView extends ItemView {
       },
       // The card shows the header of an Item it is reading from its row.
       row: (key) => this.#rowValues(key),
+      stats: () => this.tree.model.stats,
       onEscape,
     });
     this.tree = new LibraryTree(deps, {
@@ -489,7 +490,7 @@ export class LibraryView extends ItemView {
     // The item details show while the researcher keeps them on: the
     // selected paper, or what fills them when none is selected.
     const cardEl = frame.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-1/2 zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
+      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-1/2 zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
@@ -696,68 +697,7 @@ export class LibraryView extends ItemView {
     this.tree.showFacets(doc.facets);
     this.tree.showTags(doc.tags);
     this.tree.refresh();
-    // The document keeps the selected paper, whatever selects it.
-    this.card.register(
-      this.#subscribeSelection(({ key }) => {
-        if (key !== this.#storage.document().selected) this.#keepSelected(key);
-      }),
-    );
-    this.#restoreSelection();
     await this.search.open(doc.search);
-  }
-
-  /**
-   * Select the paper the document kept and scroll its row into view, once the list first lands its rows. A paper the list
-   * no longer holds is let go of. A list that fails, as before Zotero's
-   * database is read, waits for one that lands; a selection the researcher
-   * made first stays.
-   */
-  #restoreSelection(): void {
-    const { selected } = this.#storage.document();
-    if (selected === null) return;
-    const off = this.query.state.subscribe(({ phase, results }) => {
-      if (phase !== "ready" || !results) return;
-      off();
-      if (this.selected.key !== null) return;
-      if (!results.rows.some((row) => row.indexedKey === selected)) {
-        this.#keepSelected(null);
-        return;
-      }
-      // As any selection does, the details show it while they are on.
-      this.#selectRow({ key: selected });
-      // The list draws its rows a frame or more after they land.
-      void this.#drawn(selected).then((row) => {
-        if (this.#release && this.selected.key === selected)
-          row?.scrollIntoView({ block: "nearest" });
-      });
-    });
-    this.query.register(off);
-  }
-
-  /**
-   * The row of the Item `key` once the list draws it, within half a second
-   * of its rows landing; `undefined` where it draws none by then.
-   */
-  async #drawn(key: string): Promise<HTMLElement | undefined> {
-    const win = this.contentEl.win;
-    for (let frame = 0; frame < 30; frame++) {
-      if (!this.#release) return undefined;
-      const row = this.#rowOf(key);
-      if (row) return row;
-      await new Promise((resolve) => win.requestAnimationFrame(resolve));
-    }
-    return undefined;
-  }
-
-  /** Keep the paper `key` as the selected one, or none. */
-  #keepSelected(key: string | null): void {
-    this.#storage
-      .change((doc) => withSelected(doc, key))
-      .catch((error: unknown) => {
-        logger.warn("The Library View could not keep the selected paper", {
-          error,
-        });
-      });
   }
 
   /** The researcher opened or closed tree nodes: show them, and keep them. */

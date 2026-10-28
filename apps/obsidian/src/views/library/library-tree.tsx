@@ -306,7 +306,7 @@ function TreeToggle({ tree }: { tree: LibraryTree }) {
     <>
       <span className="zt:flex zt:@xl:hidden">
         <IconButton
-          icon="library"
+          icon="panel-left"
           data-library-tree-toggle=""
           pressed={open}
           {...tooltipAttrs(m.library_view_show_tree())}
@@ -315,7 +315,7 @@ function TreeToggle({ tree }: { tree: LibraryTree }) {
       </span>
       <span className="zt:hidden zt:@xl:flex">
         <IconButton
-          icon="library"
+          icon="panel-left"
           data-library-tree-collapse=""
           pressed={!collapsed}
           {...tooltipAttrs(m.library_view_show_tree())}

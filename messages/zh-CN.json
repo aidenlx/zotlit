@@ -532,6 +532,7 @@
   "library_view_card_close": "关闭",
   "library_view_card_resize_hint": "拖动以调整条目详情的宽度，双击以重置",
   "library_view_details_toggle": "显示条目详情",
+  "library_view_card_stats_papers": "文献",
   "library_view_card_empty": "选择一篇文献以查看其详情。",
   "library_view_tree_resize_hint": "拖动以调整文库和分类的宽度，双击以重置",
   "library_view_card_failed": "无法读取此文献的标注。",

@@ -8,6 +8,9 @@
 //
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
+import { useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { Component, Scope } from "obsidian";
 import type { IconName } from "obsidian";
 import {
@@ -57,10 +60,13 @@ import {
 } from "./card-model";
 import type { CardSession } from "./card-model";
 import { FILTER_CHIP_LINE_CLASS, TAG_CHIP_CLASS } from "./chip";
+import { READING_STATE_FACETS } from "./document";
 import type { ReadingCardDisclosures } from "./document";
 import type { ItemActions } from "./item-actions";
+import { FACET_LABELS } from "./library-tree";
 import { waitForRead } from "./model";
 import type { MenuItem } from "./row-menu";
+import type { TreeModel } from "./tree-model";
 
 /** The Query File of the card: every Annotation of the Item `this` names. */
 function readingCardQueryText(): string {
@@ -98,6 +104,8 @@ export interface ReadingCardHost {
   selectTag: (name: string) => void;
   /** The values of the list's row of the Item `key`, where the list shows it. */
   row: (key: string) => Values | null;
+  /** The counts of the tree node's papers, which the card shows with none selected. */
+  stats: () => TreeModel["stats"];
   onEscape: NonNullable<QueryViewHost["layout"]>["onEscape"];
 }
 
@@ -453,22 +461,17 @@ function CardBody({ card }: { card: ReadingCard }) {
   // The height of what the last Item showed under its buttons, which the
   // next one keeps while its fields are read.
   const bodyRef = useRef<HTMLDivElement>(null);
+  const abstractRef = useRef<HTMLDivElement>(null);
   const bodyHeight = useRef(0);
   useLayoutEffect(() => {
     if (!loading && bodyRef.current)
-      bodyHeight.current = bodyRef.current.offsetHeight;
+      bodyHeight.current =
+        bodyRef.current.offsetHeight + (abstractRef.current?.offsetHeight ?? 0);
   });
-  // With no row selected the details keep their room and say what fills
-  // it, so the first click on a row moves nothing.
-  if (key === null)
-    return (
-      <div
-        className="zt:flex zt:h-full zt:items-center zt:justify-center zt:p-(--size-4-4) zt:text-center zt:text-(length:--font-ui-small) zt:text-(--text-muted)"
-        data-library-card-empty=""
-      >
-        {m.library_view_card_empty()}
-      </div>
-    );
+  // With no row selected the details keep their room, count the papers of
+  // the tree node and say what fills it, so the first click on a row moves
+  // nothing.
+  if (key === null) return <NoPaper stats={card.host.stats()} />;
   const { items, host, readers } = card;
   const hasInfo =
     !!item &&
@@ -481,13 +484,16 @@ function CardBody({ card }: { card: ReadingCard }) {
   // The card's 16 px inline padding keeps what ends a line, the close
   // button and the colour counts, clear of an overlay scrollbar, so the card
   // takes no `scroll-gutter`: on macOS that would cut its end padding to
-  // Obsidian's 12 px scrollbar width.
+  // Obsidian's 12 px scrollbar width. A card 42rem wide or more, under a
+  // narrow list or dragged wide, sets the paper's title page beside its
+  // info and Annotations, so it reads in two short columns, not one long.
   return (
     <section
-      className="zt:flex zt:h-full zt:min-h-0 zt:flex-col zt:overflow-y-auto zt:px-(--size-4-4) zt:pt-(--size-4-4) zt:pb-(--size-4-8)"
+      className="zt:relative zt:flex zt:h-full zt:min-h-0 zt:flex-col zt:overflow-y-auto zt:px-(--size-4-4) zt:pt-(--size-4-4) zt:pb-(--size-4-8) zt:@2xl/card:grid zt:@2xl/card:grid-cols-2 zt:@2xl/card:content-start zt:@2xl/card:items-start zt:@2xl/card:gap-x-(--size-4-8)"
       aria-labelledby={titleId}
+      data-library-card-columns=""
     >
-      <div className="zt:flex zt:flex-col">
+      <div className="zt:flex zt:min-w-0 zt:flex-col">
         <div className="zt:flex zt:min-h-(--icon-size) zt:items-center zt:gap-(--size-2-2)">
           {item?.type && (
             <div
@@ -507,7 +513,7 @@ function CardBody({ card }: { card: ReadingCard }) {
           {/* The details turn off here at every pane width, as the
               Details button turns them off, and the list takes their room
               until the researcher turns them on again. */}
-          <span className="zt:ms-auto zt:flex">
+          <span className="zt:ms-auto zt:flex zt:@2xl/card:absolute zt:@2xl/card:end-(--size-4-4) zt:@2xl/card:top-(--size-4-4)">
             <IconButton
               icon="x"
               data-library-card-close=""
@@ -629,6 +635,14 @@ function CardBody({ card }: { card: ReadingCard }) {
             onClick={() => host.openInSidebar(key)}
           />
         </div>
+        {!loading && item?.abstract && (
+          <div
+            ref={abstractRef}
+            className="zt:mt-(--size-4-4) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4)"
+          >
+            <Abstract abstract={item.abstract} />
+          </div>
+        )}
       </div>
       {loading ? (
         <div
@@ -638,18 +652,18 @@ function CardBody({ card }: { card: ReadingCard }) {
               "--zt-card-body-height": `${bodyHeight.current}px`,
             } as CSSProperties
           }
-          className="zt:mt-(--size-4-4) zt:min-h-(--zt-card-body-height) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4) zt:text-(length:--font-ui-small) zt:text-muted-foreground"
+          className="zt:mt-(--size-4-4) zt:min-h-(--zt-card-body-height) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4) zt:text-(length:--font-ui-small) zt:text-muted-foreground zt:@2xl/card:mt-0 zt:@2xl/card:border-t-0 zt:@2xl/card:pt-(--size-4-8)"
         >
           <span className={LOADING_TEXT}>{m.query_view_table_loading()}</span>
         </div>
       ) : (
-        // Sections parted by thin rules: the abstract, the info, and the
-        // Annotations; a part with nothing in it is left out with its rule.
+        // Sections parted by thin rules: the info and the Annotations; a
+        // part with nothing in it is left out with its rule. Beside the
+        // title page they start below the close button.
         <div
           ref={bodyRef}
-          className="zt:mt-(--size-4-4) zt:flex zt:flex-col zt:divide-y-(length:--border-width) zt:divide-(--background-modifier-border) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:empty:hidden zt:[&>*]:py-(--size-4-4) zt:[&>*:last-child]:pb-0"
+          className="zt:mt-(--size-4-4) zt:flex zt:min-w-0 zt:flex-col zt:divide-y-(length:--border-width) zt:divide-(--background-modifier-border) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:empty:hidden zt:@2xl/card:mt-0 zt:@2xl/card:border-t-0 zt:@2xl/card:pt-(--size-4-4) zt:[&>*]:py-(--size-4-4) zt:[&>*:last-child]:pb-0"
         >
-          {item?.abstract && <Abstract abstract={item.abstract} />}
           {item && hasInfo && (
             <div className="zt:flex zt:flex-col zt:gap-(--size-4-3)">
               {item.where.length > 0 && (
@@ -816,6 +830,52 @@ function CardBody({ card }: { card: ReadingCard }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** The order the counts show in: every paper, then each facet. */
+const STATS = ["papers", ...READING_STATE_FACETS] as const;
+
+/**
+ * The item details with no paper selected: the tree node's papers and those
+ * that pass each Reading State facet, as the tree's filters name them, over
+ * the line that asks for a paper. The counts wait out their read unseen.
+ */
+function NoPaper({ stats: atom }: { stats: TreeModel["stats"] }) {
+  const result = useAtomValue(atom);
+  const stats = Option.getOrNull(AsyncResult.value(result));
+  return (
+    <div
+      className="zt:flex zt:h-full zt:flex-col zt:items-center zt:justify-center zt:gap-(--size-4-4) zt:p-(--size-4-4) zt:text-center"
+      data-library-card-empty=""
+    >
+      {stats && (
+        <dl
+          className="zt:m-0 zt:grid zt:grid-cols-3 zt:gap-x-(--size-4-6) zt:gap-y-(--size-4-3) zt:@md/card:grid-cols-5"
+          data-library-card-stats=""
+        >
+          {STATS.map((name) => (
+            <div
+              key={name}
+              className="zt:flex zt:flex-col-reverse zt:items-center zt:gap-(--size-2-1)"
+              data-library-card-stat={name}
+            >
+              <dt className="zt:text-xs zt:text-muted-foreground">
+                {name === "papers"
+                  ? m.library_view_card_stats_papers()
+                  : FACET_LABELS[name]()}
+              </dt>
+              <dd className="zt:m-0 zt:text-(length:--font-ui-large) zt:font-(--font-semibold) zt:text-(--text-normal) zt:tabular-nums">
+                {m.library_view_tree_count({ count: stats[name] })}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <p className="zt:m-0 zt:text-(length:--font-ui-small) zt:text-(--text-muted)">
+        {m.library_view_card_empty()}
+      </p>
+    </div>
   );
 }
 

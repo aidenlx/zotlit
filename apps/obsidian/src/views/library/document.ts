@@ -3,7 +3,7 @@ import * as v from "valibot";
 // The Library View Document: what the Library View shows, as one plain value
 // that plugin data keeps per vault, and the one module that reads, changes
 // and derives it. Its transitions take a tree selection, the tree nodes
-// left open, the selected paper, the Reading Card's width, the facets, the search and a toolbar change; its derivations give the list's query (the
+// left open, the Reading Card's width, the facets, the search and a toolbar change; its derivations give the list's query (the
 // tree node, the facets and the selected tags become the filters for all views, Recent adds none
 // and reads the whole Library Scope, a search becomes its ranked key set, and
 // the sort passes through to the one Items view, always in the Papers
@@ -95,8 +95,6 @@ export interface LibraryViewDocument {
    * which shows its Collections until the researcher closes it.
    */
   readonly expanded: readonly string[];
-  /** The Indexed Key of the paper the Reading Card shows; `null` for none. */
-  readonly selected: string | null;
   /**
    * The Reading Card's width in pixels, as the researcher set it by its
    * inner edge; absent for the default, {@link CARD_WIDTH_DEFAULT}.
@@ -201,7 +199,6 @@ export type StoredLibraryViewDocument = {
   sort: v.InferOutput<typeof sortSchema>;
   card: { allFields: boolean; annotations: boolean };
   expanded: string[];
-  selected: string | null;
   cardWidth?: number;
   cardClosed?: boolean;
   treeWidth?: number;
@@ -227,7 +224,6 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
     sort: RECENT_SORT,
     card: CLOSED_CARD,
     expanded: [],
-    selected: null,
   } satisfies LibraryViewDocument,
 );
 
@@ -263,9 +259,9 @@ function openTo(expanded: readonly string[], node: LibraryNode): string[] {
  * build cannot read takes its default and the other fields stay; a facet it
  * does not know drops out, and so does a tag that is not a name. A document
  * of an earlier build has no tags, and selects none; nor does it hold open
- * nodes or a selected paper. The Collections above the selected node open
+ * nodes. The Collections above the selected node open
  * on read, as the tree shows a selection. A field it no longer reads, such
- * as the `layout` and `order` of an earlier build, is ignored. A card width
+ * as the `layout`, `order` and `selected` of an earlier build, is ignored. A card width
  * that is not a finite number is dropped, so the card takes its default; one
  * below {@link CARD_WIDTH_MIN} takes the minimum. The pane, which sets the
  * maximum, clamps it again as the view applies it. The tree width reads
@@ -308,11 +304,6 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
       ),
       node,
     ),
-    selected: field(
-      v.pipe(v.string(), v.nonEmpty()),
-      "selected",
-      defaults.selected,
-    ),
     ...(typeof cardWidth === "number" &&
       Number.isFinite(cardWidth) && { cardWidth: clampCardWidth(cardWidth) }),
     ...(stored.cardClosed === true && { cardClosed: true }),
@@ -352,8 +343,7 @@ function nodeSort(node: LibraryNode): readonly QueryFileSort[] | null {
 }
 
 /**
- * `doc` with `node` selected in the tree, the Collections above it open and
- * no paper selected, since the selected row leaves the list with its node.
+ * `doc` with `node` selected in the tree and the Collections above it open.
  * Recent writes its sort, and leaving it clears that sort, so the next node
  * opens unsorted; a sort the researcher changed while on Recent is theirs
  * and stays.
@@ -370,7 +360,6 @@ export function withNode(
     node,
     sort,
     expanded: openTo(doc.expanded, node),
-    selected: null,
   };
 }
 
@@ -429,14 +418,6 @@ export function withCardClosed(
 ): LibraryViewDocument {
   const { cardClosed: _, ...rest } = doc;
   return closed ? { ...rest, cardClosed: true } : rest;
-}
-
-/** `doc` with the paper `selected`, by its Indexed Key, or none. */
-export function withSelected(
-  doc: LibraryViewDocument,
-  selected: string | null,
-): LibraryViewDocument {
-  return { ...doc, selected };
 }
 
 /**
@@ -519,7 +500,6 @@ export function serializeLibraryViewDocument(
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),
     card: { ...doc.card },
     expanded: [...doc.expanded],
-    selected: doc.selected,
     ...(doc.cardWidth !== undefined && { cardWidth: doc.cardWidth }),
     ...(doc.cardClosed === true && { cardClosed: true }),
     ...(doc.treeWidth !== undefined && { treeWidth: doc.treeWidth }),
@@ -749,15 +729,35 @@ export function unreadCount(
   count: (rows: readonly QueryViewRow[]) => number;
 } | null {
   if (node.kind === "recent") return null;
-  const { filters, vault } = selectionConditions(node, ["unread"]);
+  return nodeCount(node, ["unread"], { scope: { mode: "all" }, notes });
+}
+
+/**
+ * How to count the Items of `node` that pass every one of `facets`, with
+ * no tag or search beside them, as the paper count reads them (ADR 0072):
+ * the request, and the rows of its answer the vault keeps. Recent counts
+ * the Library Scope it lists, `scope`.
+ */
+export function nodeCount(
+  node: LibraryNode,
+  facets: readonly ReadingStateFacet[],
+  {
+    scope,
+    notes,
+  }: { scope: LibraryScope; notes: Pick<LiteratureNotes, "find"> },
+): {
+  request: QueryViewRequest;
+  count: (rows: readonly QueryViewRow[]) => number;
+} {
+  const { filters, vault } = selectionConditions(node, facets);
   const pass = vaultPass(vault, notes);
   return {
     request: {
       from: "items",
       fields: [],
-      filter: filters.join(" && "),
+      ...(filters.length > 0 && { filter: filters.join(" && ") }),
       limit: null,
-      libraries: librariesOf(node, { mode: "all" }),
+      libraries: librariesOf(node, scope),
     },
     count: (rows) =>
       rows.filter(({ indexedKey }) => pass?.keeps(indexedKey) ?? true).length,

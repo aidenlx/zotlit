@@ -1897,6 +1897,46 @@ describe("Reading State facets", () => {
     expect(listed(view)).toEqual(["AAAAAAAA"]);
   });
 
+  it("counts the node's papers and those of each facet in the item details while no paper is selected, Recent over the Library Scope", async () => {
+    const { deps } = await pluginData();
+    const view = await openTab(deps);
+    const stats = () =>
+      [
+        ...view.contentEl.querySelectorAll<HTMLElement>(
+          "[data-library-card-stat]",
+        ),
+      ].map(
+        (el) =>
+          `${el.dataset.libraryCardStat} ${el.querySelector("dd")!.textContent}`,
+      );
+    // Recent lists My Library's A–E and Lab's F and G.
+    await vi.waitFor(() =>
+      expect(stats()).toEqual([
+        "papers 7",
+        "unread 4",
+        "annotated 2",
+        "has-note 2",
+        "pdf 2",
+      ]),
+    );
+    await press(view, row(view, MY_LIBRARY));
+    await vi.waitFor(() =>
+      expect(stats()).toEqual([
+        "papers 5",
+        "unread 2",
+        "annotated 2",
+        "has-note 2",
+        "pdf 2",
+      ]),
+    );
+    // A selected paper takes their place.
+    await act(async () => {
+      itemRow(view, A).click();
+      await view.card.settled;
+    });
+    expect(stats()).toEqual([]);
+  });
+
   it("counts the unread Items of the selection in the header, once the vault answers for their notes", async () => {
     const { deps, addNote } = await pluginData();
     const view = await openTab(deps);
@@ -2865,56 +2905,25 @@ it("lets go of the selected row once a search leaves it out, and the item detail
   expect(view.selected.key).toBeNull();
   expect(
     view.contentEl.querySelector("[data-library-card-empty]")?.textContent,
-  ).toBe(m.library_view_card_empty());
+  ).toContain(m.library_view_card_empty());
 });
 
-it("opens again on the paper the researcher selected, scrolled into view, with its Reading Card", async () => {
+it("opens a new tab with no paper selected, and keeps no selection in the document", async () => {
   const { deps, settings } = await pluginData();
   const first = await openTab(deps);
   await act(() => itemRow(first, C).click());
   await act(() => settings.bridge.runPromise(settings.flush));
+  // A click writes nothing to plugin data.
   expect(
-    settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
-  ).toBe(C);
+    settings.bridge.runSync(settings.current)?.["library.document"] ?? {},
+  ).not.toHaveProperty("selected");
   await act(() => first.close());
-  const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
-  cleanup.defer(() => scrolled.mockRestore());
   const view = await openTab(deps);
-  expect(itemRows(view).slice(0, 3)).toEqual([A, B, `${C} *`]);
-  // The item details show it, as they show any selection.
-  expect(view.selected).toEqual({ key: C });
-  expect(
-    view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
-  ).toBe(false);
-  // The list draws the row before it scrolls there.
-  await vi.waitFor(() =>
-    expect(scrolled.mock.contexts).toContain(itemRow(view, C)),
-  );
-});
-
-it("lets go of the selected paper in the document once the researcher picks another node", async () => {
-  const { deps, settings } = await pluginData();
-  const view = await openTab(deps);
-  await act(() => itemRow(view, A).click());
-  await press(view, row(view, MY_LIBRARY));
-  await act(() => settings.bridge.runPromise(settings.flush));
-  expect(
-    settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
-  ).toBeNull();
-});
-
-it("opens with no paper selected where the list no longer holds the one it kept, and forgets it", async () => {
-  const { deps, settings } = await pluginData({
-    node: { kind: "recent" },
-    selected: "1:ZZZZZZZZ",
-  });
-  const view = await openTab(deps);
-  expect(view.selected.key).toBeNull();
+  expect(view.selected).toEqual({ key: null });
   expect(itemRows(view).some((key) => key.endsWith("*"))).toBe(false);
-  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
-    settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
-  ).toBeNull();
+    view.contentEl.querySelector("[data-library-card-empty]"),
+  ).not.toBeNull();
 });
 
 describe("Reading Card", () => {

@@ -38,7 +38,6 @@ import {
   withExpanded,
   withNode,
   TREE_WIDTH_MIN,
-  withSelected,
   withTags,
   withText,
   withTreeCollapsed,
@@ -70,7 +69,6 @@ const CHAPTER: LibraryViewDocument = {
     JSON.stringify(["group:4200309", "Thesis"]),
     `closed:${JSON.stringify(["personal"])}`,
   ],
-  selected: "4200309:ABCD2345",
 };
 
 describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
@@ -130,9 +128,8 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       sort: [{ property: "lastActivity", direction: "DESC" }],
       // The Reading Card opens with All fields and Annotations closed.
       card: { allFields: false, annotations: false },
-      // No Collection open, and no paper selected.
+      // No Collection open.
       expanded: [],
-      selected: null,
     });
   });
 
@@ -160,16 +157,11 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     ).toEqual([other, thesis, chapter]);
   });
 
-  it("takes no selected paper and no open node where either cannot be read, and keeps the rest", () => {
+  it("takes no open node where it cannot read them, and ignores the selected paper an earlier build kept, keeping the rest", () => {
     const stored = serializeLibraryViewDocument(CHAPTER);
-    expect(parseLibraryViewDocument({ ...stored, selected: 42 })).toEqual({
-      ...CHAPTER,
-      selected: null,
-    });
-    expect(parseLibraryViewDocument({ ...stored, selected: "" })).toEqual({
-      ...CHAPTER,
-      selected: null,
-    });
+    expect(
+      parseLibraryViewDocument({ ...stored, selected: "4200309:ABCD2345" }),
+    ).toEqual(CHAPTER);
     expect(parseLibraryViewDocument({ ...stored, expanded: "Thesis" })).toEqual(
       {
         ...CHAPTER,
@@ -179,16 +171,12 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     );
   });
 
-  it("reads a document an earlier build stored, with no open nodes and no selected paper", () => {
-    const {
-      expanded: _expanded,
-      selected: _selected,
-      ...earlier
-    } = serializeLibraryViewDocument(CHAPTER);
+  it("reads a document an earlier build stored, with no open nodes", () => {
+    const { expanded: _expanded, ...earlier } =
+      serializeLibraryViewDocument(CHAPTER);
     expect(parseLibraryViewDocument(earlier)).toEqual({
       ...CHAPTER,
       expanded: [JSON.stringify(["group:4200309", "Thesis"])],
-      selected: null,
     });
   });
 
@@ -272,7 +260,6 @@ describe("withNode", () => {
     expect(withNode(CHAPTER, node)).toEqual({
       ...CHAPTER,
       node,
-      selected: null,
     });
   });
 
@@ -281,7 +268,6 @@ describe("withNode", () => {
       ...CHAPTER,
       node: { kind: "recent" },
       sort: [{ property: "lastActivity", direction: "DESC" }],
-      selected: null,
     });
   });
 
@@ -290,7 +276,6 @@ describe("withNode", () => {
     expect(withNode(recent, CHAPTER.node)).toEqual({
       ...CHAPTER,
       sort: [],
-      selected: null,
     });
   });
 
@@ -301,7 +286,6 @@ describe("withNode", () => {
       ...CHAPTER,
       node: MY_LIBRARY,
       sort,
-      selected: null,
     });
   });
 
@@ -311,7 +295,6 @@ describe("withNode", () => {
       ...CHAPTER,
       node: MY_LIBRARY,
       sort,
-      selected: null,
     });
   });
 
@@ -337,15 +320,6 @@ describe("withExpanded, withSelected and pruneExpanded", () => {
     expect(withExpanded(CHAPTER, [reading, reading])).toEqual({
       ...CHAPTER,
       expanded: [reading],
-    });
-  });
-
-  it("selects a paper, and lets go of it", () => {
-    const selected = withSelected(CHAPTER, "1:QRST6789");
-    expect(selected).toEqual({ ...CHAPTER, selected: "1:QRST6789" });
-    expect(withSelected(selected, null)).toEqual({
-      ...CHAPTER,
-      selected: null,
     });
   });
 
