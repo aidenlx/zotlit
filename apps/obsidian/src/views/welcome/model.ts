@@ -15,6 +15,8 @@ import { Release } from "@/services/release/service";
 import { settingsAtom } from "@/services/settings/atoms";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 
+import { makeConversionCommand } from "./atoms";
+import type { ConversionRun } from "./atoms";
 import { connectionAtom, connectionLoadAtom, unavailable } from "./connection";
 import { bannerSections } from "./presentation";
 import type { WelcomeState } from "./presentation";
@@ -84,7 +86,13 @@ export function makeWelcomeModel() {
     };
   });
   const shown = Atom.map(state, (s) => bannerSections(s) !== null);
-  return { session, state, shown, loaded: connectionLoadAtom };
+  return {
+    session,
+    state,
+    shown,
+    loaded: connectionLoadAtom,
+    conversion: makeConversionCommand(),
+  };
 }
 
 export type WelcomeModel = ReturnType<typeof makeWelcomeModel>;
@@ -108,14 +116,32 @@ export const setConverted =
   (state: WelcomeSession): WelcomeSession =>
     state.converted === converted ? state : { ...state, converted };
 
-const WelcomeModelContext = createContext<Pick<WelcomeModel, "state"> | null>(
-  null,
-);
+/** What the banner's tree reads: its state and its conversion's last run. */
+export interface WelcomeModelView {
+  readonly state: Atom.Atom<WelcomeState>;
+  readonly conversion: Atom.Atom<
+    AsyncResult.AsyncResult<ConversionRun, unknown>
+  >;
+}
+
+const WelcomeModelContext = createContext<WelcomeModelView | null>(null);
 export const WelcomeModelProvider = WelcomeModelContext.Provider;
 
-export function useWelcomeState<A>(select: (state: WelcomeState) => A): A {
+function useWelcomeModel(): WelcomeModelView {
   const model = useContext(WelcomeModelContext);
   if (!model)
     throw new Error("useWelcomeState must be used within WelcomeModelProvider");
-  return useAtomValue(model.state, select);
+  return model;
+}
+
+export function useWelcomeState<A>(select: (state: WelcomeState) => A): A {
+  return useAtomValue(useWelcomeModel().state, select);
+}
+
+/** The last run of the banner's template conversion, while it runs and after. */
+export function useConversion(): AsyncResult.AsyncResult<
+  ConversionRun,
+  unknown
+> {
+  return useAtomValue(useWelcomeModel().conversion);
 }

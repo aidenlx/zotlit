@@ -438,18 +438,19 @@ describe("literatureNotes vault property writes", () => {
         sources[of].emit();
       },
       notes: notesHost.notes,
+      write: notesHost.write,
       createNote,
     };
   }
 
   it("writes only the edited key of the Item's Literature Note", async () => {
-    const { host, notes } = await vault({
+    const { host, write } = await vault({
       "A.md":
         "---\nzotero-key: ITEMAAAA\ntitle: Rules\nstatus: unread\nrating: 3\n---\nBody\n",
     });
 
     await expect(
-      notes.write({
+      write({
         itemKey: "ITEMAAAA",
         name: "status",
         value: "read",
@@ -463,13 +464,13 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("writes an open note in its editor", async () => {
-    const { host, notes } = await vault({
+    const { host, write } = await vault({
       "A.md": "---\nzotero-key: ITEMAAAA\nstatus: unread\n---\nSaved\n",
     });
     const editor = openTextFileView(host, host.file("A.md"));
     editor.edit("---\nzotero-key: ITEMAAAA\nstatus: unread\n---\nTyped\n");
 
-    await notes.write({
+    await write({
       itemKey: "ITEMAAAA",
       name: "status",
       value: "read",
@@ -482,11 +483,11 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("keeps a cleared key, with no value", async () => {
-    const { host, notes } = await vault({
+    const { host, write } = await vault({
       "A.md": "---\nzotero-key: ITEMAAAA\nstatus: unread\nrating: 3\n---\n",
     });
 
-    await notes.write({
+    await write({
       itemKey: "ITEMAAAA",
       name: "status",
       value: null,
@@ -499,13 +500,13 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("writes the note that holds the view for its own Item", async () => {
-    const { host, notes } = await vault({
+    const { host, write } = await vault({
       // Written first, so the index ranks the newer A.md above it.
       "A (copy).md": "---\nzotero-key: ITEMAAAA\nstatus: unread\n---\n",
       "A.md": "---\nzotero-key: ITEMAAAA\nstatus: unread\n---\n",
     });
 
-    await notes.write({
+    await write({
       itemKey: "ITEMAAAA",
       name: "status",
       value: "read",
@@ -524,10 +525,10 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("creates the Literature Note of an Item with none, then writes the key to it", async () => {
-    const { host, notes, createNote } = await vault({});
+    const { host, write, createNote } = await vault({});
 
     await expect(
-      notes.write({
+      write({
         itemKey: "ITEMAAAA",
         name: "status",
         value: "read",
@@ -544,13 +545,13 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("creates the note but writes no key its Profile replaces", async () => {
-    const { host, notes } = await vault(
+    const { host, write } = await vault(
       {},
       { replaced: { "ITEMAAAA.md": ["status"] } },
     );
 
     await expect(
-      notes.write({
+      write({
         itemKey: "ITEMAAAA",
         name: "status",
         value: "read",
@@ -562,13 +563,13 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("writes no key the note's Profile replaces", async () => {
-    const { host, notes } = await vault(
+    const { host, write } = await vault(
       { "A.md": "---\nzotero-key: ITEMAAAA\nstatus: unread\n---\n" },
       { replaced: { "A.md": ["status"] } },
     );
 
     await expect(
-      notes.write({
+      write({
         itemKey: "ITEMAAAA",
         name: "status",
         value: "read",
@@ -582,10 +583,10 @@ describe("literatureNotes vault property writes", () => {
   });
 
   it("creates and writes nothing when the creation is cancelled", async () => {
-    const { host, notes, createNote } = await vault({}, { cancelled: true });
+    const { host, write, createNote } = await vault({}, { cancelled: true });
 
     await expect(
-      notes.write({
+      write({
         itemKey: "ITEMAAAA",
         name: "status",
         value: "read",

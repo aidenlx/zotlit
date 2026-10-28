@@ -17,6 +17,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
+import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { CitationLookupAnswer } from "@/services/citation-index/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { UseLedger } from "@/services/use-ledger/service";
@@ -27,6 +28,7 @@ import {
   seedWorksSql,
 } from "@/services/zotero-reads/test-utils";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
+import { waitFor } from "@/views/welcome/__fixtures__";
 
 import { makeLibraryHost } from "./__fixtures__";
 import { libraryItemCommand, itemActions } from "./item-actions";
@@ -198,7 +200,7 @@ async function setup(
     }),
   );
   cleanup.defer(host.registry.mount(libraryItemCommand));
-  const actions = itemActions(
+  const raw = itemActions(
     stubService<ItemActionsDeps>("ItemActionsDeps", {
       app,
       registry: host.registry,
@@ -211,8 +213,23 @@ async function setup(
       ),
     }),
   );
-  return { ...fixture, actions, record, notifier, host };
+  // Each gesture runs on the registry; the test waits for the commands to finish.
+  const settle =
+    <A extends unknown[]>(gesture: (...args: A) => void) =>
+    async (...args: A) => {
+      gesture(...args);
+      await idle(host.registry);
+    };
+  const actions = {
+    insertCitation: settle(raw.insertCitation),
+    copyCitationKey: settle(raw.copyCitationKey),
+  };
+  return { ...fixture, raw, actions, record, notifier, host };
 }
+
+/** Settles once no Item action runs on `registry`. */
+const idle = (registry: ViewRegistryHandle) =>
+  waitFor(() => expect(registry.get(libraryItemCommand).waiting).toBe(false));
 
 it("inserts a row's citation into the note active last before the Library View, and into the one before once that closes", async () => {
   const env = await setup();
@@ -362,12 +379,11 @@ effectIt.effect(
       const stop = host.registry.mount(libraryItemCommand);
       yield* Effect.addFinalizer(() => Effect.sync(stop));
       const released = vi.fn();
-      const result = Promise.withResolvers<void>();
-      host.registry.set(libraryItemCommand, {
-        result,
-        effect: Effect.acquireRelease(Effect.void, () => Effect.sync(released)),
-      });
-      yield* Effect.promise(() => result.promise);
+      host.registry.set(
+        libraryItemCommand,
+        Effect.acquireRelease(Effect.void, () => Effect.sync(released)),
+      );
+      yield* Effect.promise(() => idle(host.registry));
       expect(released).toHaveBeenCalledTimes(1);
     }),
 );
@@ -383,28 +399,26 @@ effectIt.effect(
       yield* Effect.addFinalizer(() => Effect.sync(stop));
       const started = Promise.withResolvers<void>();
       const finish = Promise.withResolvers<void>();
-      const first = Promise.withResolvers<void>();
       const released = vi.fn();
-      host.registry.set(libraryItemCommand, {
-        result: first,
-        effect: Effect.gen(function* () {
+      const second = vi.fn();
+      host.registry.set(
+        libraryItemCommand,
+        Effect.gen(function* () {
           yield* Effect.acquireRelease(Effect.void, () =>
             Effect.sync(released),
           );
           started.resolve();
           yield* Effect.promise(() => finish.promise);
         }),
-      });
+      );
       yield* Effect.promise(() => started.promise);
-      const second = Promise.withResolvers<void>();
-      host.registry.set(libraryItemCommand, {
-        result: second,
-        effect: Effect.void,
-      });
-      yield* Effect.promise(() => second.promise);
+      host.registry.set(libraryItemCommand, Effect.sync(second));
+      yield* Effect.promise(() =>
+        waitFor(() => expect(second).toHaveBeenCalledOnce()),
+      );
       expect(released).not.toHaveBeenCalled();
       finish.resolve();
-      yield* Effect.promise(() => first.promise);
+      yield* Effect.promise(() => idle(host.registry));
       expect(released).toHaveBeenCalledTimes(1);
     }),
 );
@@ -417,10 +431,9 @@ it("does not show a clipboard outcome after the registry closes", async () => {
     started.resolve();
     return copied.promise;
   });
-  const copying = env.actions.copyCitationKey(KEY);
+  env.raw.copyCitationKey(KEY);
   await started.promise;
   await env.host.close();
-  await copying;
   copied.resolve();
   await copied.promise;
   expect(env.notifier.notices).toEqual([]);

@@ -1,8 +1,9 @@
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 // Welcome onboarding banner: the header, the update of ZotLit, the checklist of setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the model decides, and the Help Links whatever it shows.
 import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
 import { useUniqueId } from "@zotlit/ui";
@@ -10,7 +11,6 @@ import { useUniqueId } from "@zotlit/ui";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import { passAborted } from "@/lib/abort-error";
 import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
@@ -29,7 +29,7 @@ import {
 } from "./links";
 import { ZotLitLockup } from "./lockup";
 import { templateMigrationNotice } from "./migration-notice";
-import { useWelcomeState } from "./model";
+import { useConversion, useWelcomeState } from "./model";
 import { bannerBadge, bannerSections } from "./presentation";
 
 /**
@@ -673,10 +673,15 @@ function UpdateCallout() {
 function ConversionOffer() {
   const actions = useWelcomeActions();
   const templateFolder = useWelcomeState((state) => state.templateFolder);
-  const [converting, setConverting] = useState(false);
+  const run = useConversion();
+  const converting = run.waiting;
   // The notice that names a refusal is transient; the banner keeps the same
   // sentence beside the button until the next attempt.
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const last = AsyncResult.isSuccess(run) && !run.waiting ? run.value : null;
+  const refusal =
+    last && !last.retry && last.result.outcome === "refused"
+      ? templateMigrationNotice(last.result)
+      : null;
   return (
     <Callout
       tone="accent"
@@ -686,20 +691,7 @@ function ConversionOffer() {
           icon="combine"
           loading={converting}
           disabled={converting}
-          onClick={() => {
-            setConverting(true);
-            setRefusal(null);
-            void actions
-              .convertLiteratureNoteTemplates()
-              .then((outcome) => {
-                if (outcome.outcome === "refused")
-                  setRefusal(templateMigrationNotice(outcome));
-              })
-              .finally(() => {
-                setConverting(false);
-              })
-              .catch(passAborted);
-          }}
+          onClick={actions.convertLiteratureNoteTemplates}
         >
           {m.welcome_template_conversion_action()}
         </Button>
@@ -723,7 +715,7 @@ function ConversionOffer() {
 function ConversionResult() {
   const actions = useWelcomeActions();
   const result = useWelcomeState((state) => state.templateConversionResult);
-  const [retrying, setRetrying] = useState(false);
+  const retrying = useConversion().waiting;
   if (!result) return null;
   const retained = result.pendingCleanup;
   return (
@@ -736,15 +728,7 @@ function ConversionResult() {
             icon="rotate-ccw"
             loading={retrying}
             disabled={retrying}
-            onClick={() => {
-              setRetrying(true);
-              void actions
-                .retryTemplateCleanup()
-                .finally(() => {
-                  setRetrying(false);
-                })
-                .catch(passAborted);
-            }}
+            onClick={actions.retryTemplateCleanup}
           >
             {m.welcome_template_cleanup_retry()}
           </Button>

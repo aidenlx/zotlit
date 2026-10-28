@@ -54,6 +54,7 @@ import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 // @vitest-environment happy-dom
 import { makeQueryHost } from "./__fixtures__/host";
 import { fakeQuery, requested } from "./__fixtures__/query-run";
+import { filterValuesAtom } from "./atoms";
 import { QueryCardFocus } from "./card-focus";
 import type { ContextSource } from "./context-hint";
 import { serializeQueryFile } from "./query-file";
@@ -294,13 +295,10 @@ async function mount(
       const path = host?.itemKey === itemKey ? host.path : notes[itemKey];
       return path !== undefined && (managed[path]?.includes(name) ?? false);
     },
-    write: vi.fn(
-      async ({
-        itemKey,
-        name,
-        value,
-        host,
-      }: VaultEdit): Promise<VaultWrite> => {
+    /** What each write answered, in order. */
+    written: [] as VaultWrite[],
+    write: vi.fn(({ itemKey, name, value, host }: VaultEdit) =>
+      Effect.sync((): VaultWrite => {
         let path = host?.itemKey === itemKey ? host.path : notes[itemKey];
         if (path === undefined) {
           if (creation === "cancelled") return "cancelled";
@@ -312,18 +310,24 @@ async function mount(
         frontmatter[path] = { ...frontmatter[path], [name]: value };
         notesChanged.emit("frontmatter-changed");
         return "written";
-      },
+      }).pipe(
+        Effect.tap((answer) =>
+          Effect.sync(() => literatureNotes.written.push(answer)),
+        ),
+      ),
     ),
     suggestions: vi.fn(
       (name: string, _type: VaultPropertyType) => values[name] ?? [],
     ),
     resolves: ({ target }: { target: string }) => notePaths.includes(target),
-    openLink: vi.fn(),
-    open: vi.fn(),
-    create: vi.fn(async (itemKey: string) => {
-      notes[itemKey] = `${itemKey}.md`;
-      notesChanged.emit("changed");
-    }),
+    openLink: vi.fn(() => Effect.void),
+    open: vi.fn(() => Effect.void),
+    create: vi.fn((itemKey: string) =>
+      Effect.sync(() => {
+        notes[itemKey] = `${itemKey}.md`;
+        notesChanged.emit("changed");
+      }),
+    ),
   };
   const readers = {
     open: vi.fn<QueryViewDeps["opener"]["open"]>(() =>
@@ -1690,15 +1694,28 @@ it("shows the query's diagnostic at the wrong condition in the Filter popover", 
 });
 
 it("offers the Tags and Collections of the Libraries the view reads", async () => {
-  const { view } = await mount([]);
-  await expect(view.filterValues()).resolves.toEqual({
-    tags: ["figure", "group", "method"],
-    collections: ["Thesis/Methods"],
-    libraries: [
-      { id: "personal", name: null },
-      { id: "group:4815", name: "Lab" },
-    ],
+  const { view, el, settle } = await mount([result([row("ANNOTBBB")])]);
+  await act(() => view.setText(FILE));
+  await settle();
+  // The popover reads the values while it is open.
+  await act(() => {
+    el.querySelector('[data-query-popover="filter"]')!.dispatchEvent(
+      Object.assign(new Event("toggle"), { newState: "open" }),
+    );
   });
+  await waitFor(() =>
+    expect(view.registry.get(filterValuesAtom)).toMatchObject({
+      _tag: "Success",
+      value: {
+        tags: ["figure", "group", "method"],
+        collections: ["Thesis/Methods"],
+        libraries: [
+          { id: "personal", name: null },
+          { id: "group:4815", name: "Lab" },
+        ],
+      },
+    }),
+  );
 });
 
 it("counts every match, and says how many of them the limit shows", async () => {
@@ -4399,9 +4416,9 @@ ${filters}
           host: null,
         });
         expect(vaultCells(el)[1]).toEqual(["value", "to read"]);
-        await expect(
-          literatureNotes.write.mock.results[0]!.value,
-        ).resolves.toBe("created");
+        await waitFor(() =>
+          expect(literatureNotes.written).toEqual(["created"]),
+        );
       });
 
       it("keeps the row with no note when the Profile prompt is cancelled", async () => {
@@ -4413,9 +4430,9 @@ ${filters}
         await type("to read");
         await press("Enter");
 
-        await expect(
-          literatureNotes.write.mock.results[0]!.value,
-        ).resolves.toBe("cancelled");
+        await waitFor(() =>
+          expect(literatureNotes.written).toEqual(["cancelled"]),
+        );
         expect(vaultCells(el)[1]).toEqual([
           "no-note",
           m.query_view_vault_no_note(),
@@ -6016,6 +6033,63 @@ ${sort}`;
         ?.hasAttribute("data-sort-unused"),
     ).toBe(false);
   });
+});
+
+it("stops the read of a row's children when the row collapses, and a note creation when the view closes", async () => {
+  const started: AbortSignal[] = [];
+  const cancelled: AbortSignal[] = [];
+  const { view, el, settle, literatureNotes } = await mount([], undefined, {
+    queryRead: (request, signal) =>
+      request.from === "attachments"
+        ? new Promise<QueryViewOutcome>((resolve) => {
+            started.push(signal);
+            signal.addEventListener(
+              "abort",
+              () => {
+                cancelled.push(signal);
+                resolve({ kind: "cancelled" });
+              },
+              { once: true },
+            );
+          })
+        : Promise.resolve(
+            result([
+              itemRow("ITEMAAAA", "Ten simple rules", ["PDFAAAAA"]),
+              itemRow("ITEMBBBB", "Deep learning"),
+            ]),
+          ),
+  });
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  const expander = () =>
+    el.querySelector<HTMLElement>('[data-query-expand="item:ITEMAAAA"]')!;
+  await act(() => expander().click());
+  await waitFor(() => expect(started).toHaveLength(1));
+  await act(() => expander().click());
+  await waitFor(() => expect(cancelled).toEqual(started));
+
+  let creating = false;
+  let stopped = false;
+  literatureNotes.create.mockImplementationOnce(() =>
+    Effect.sync(() => {
+      creating = true;
+    }).pipe(
+      Effect.andThen(Effect.never),
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          stopped = true;
+        }),
+      ),
+    ),
+  );
+  await act(() =>
+    el
+      .querySelector<HTMLElement>('[data-query-create-note="ITEMBBBB"]')!
+      .click(),
+  );
+  expect(creating).toBe(true);
+  await act(() => view.unload());
+  await waitFor(() => expect(stopped).toBe(true));
 });
 
 it("interrupts a query read when its host closes", async () => {

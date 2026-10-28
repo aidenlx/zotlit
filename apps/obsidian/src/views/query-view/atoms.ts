@@ -2,9 +2,12 @@
 import { Cause, Effect } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 
+import type { FilterValues } from "@zotlit/workbench/ui";
+
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { viewRuntime } from "@/lib/view-atoms";
-import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import type { ViewServices } from "@/lib/view-atoms";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
@@ -124,59 +127,63 @@ export const readFilterValues = Effect.gen(function* () {
   };
 }).pipe(Effect.scoped);
 
-/** Promise interfaces used by hosts retain commands until completion or host close. */
-export function makeQueryOperations(registry: ViewRegistryHandle) {
-  const pending = new Set<() => void>();
-  const results = new Set<Promise<unknown>>();
-  return {
-    run<A, E>(
-      effect: Effect.Effect<A, E, ViewServices>,
-      cancelled: A,
-      signal?: AbortSignal,
-    ): Promise<A> {
-      const result = new Promise<A>((resolve, reject) => {
-        const command = viewRuntime.fn((_input: void) =>
-          effect.pipe(
-            Effect.tap((value) => Effect.sync(() => resolve(value))),
-            Effect.catchCause((cause) =>
-              Effect.sync(() =>
-                Cause.hasInterruptsOnly(cause)
-                  ? resolve(cancelled)
-                  : reject(Cause.squash(cause)),
-              ),
-            ),
-            Effect.ensuring(Effect.sync(() => queueMicrotask(release))),
+/** The values a filter condition offers where they cannot be read. */
+const NO_FILTER_VALUES: FilterValues = {
+  tags: [],
+  collections: [],
+  libraries: [],
+};
+
+/**
+ * The values a filter condition offers, from the Libraries the plugin reads.
+ * A Filter popover reads it while it is open; the read stops once none does.
+ */
+export const filterValuesAtom = viewRuntime.atom(
+  readFilterValues.pipe(
+    recover(
+      (error) =>
+        Effect.logWarning("The filter values could not be read", { error }),
+      Effect.succeed(NO_FILTER_VALUES),
+    ),
+    withLogCategory("query-view"),
+  ),
+);
+
+/**
+ * The custom fields of the Zotero source, which `custom[...]` offers. An
+ * expression editor reads it while it reads custom fields; the read stops
+ * once none does.
+ */
+export const customFieldNamesAtom = viewRuntime.atom(
+  Effect.flatMap(QueryService, (query) => query.customFieldNames).pipe(
+    recover(
+      (error) =>
+        Effect.logWarning("The custom fields could not be read", { error }),
+      Effect.succeed<readonly string[]>([]),
+    ),
+    withLogCategory("query-view"),
+  ),
+);
+
+/**
+ * One leaf's table actions and reads: each runs beside the others, and the
+ * leaf's close interrupts them. A failure is logged here; a task that shows
+ * its own failure handles it first.
+ */
+export const makeQueryTaskCommand = () =>
+  Atom.setIdleTTL(
+    viewRuntime.fn(
+      (task: Effect.Effect<void, unknown, ViewServices>) =>
+        task.pipe(
+          recover(
+            (error) =>
+              Effect.logWarning("A Query View action failed", { error }),
+            Effect.void,
           ),
-        );
-        const unmount = registry.mount(command);
-        const abort = () => {
-          registry.set(command, Atom.Reset);
-          resolve(cancelled);
-          release();
-        };
-        const release = () => {
-          signal?.removeEventListener("abort", abort);
-          unmount();
-          pending.delete(close);
-        };
-        const close = () => abort();
-        pending.add(close);
-        signal?.addEventListener("abort", abort, { once: true });
-        if (signal?.aborted) close();
-        else registry.set(command, undefined);
-      });
-      results.add(result);
-      void result.then(
-        () => results.delete(result),
-        () => results.delete(result),
-      );
-      return result;
-    },
-    get settled(): Promise<void> {
-      return Promise.allSettled(results).then(() => {});
-    },
-    [Symbol.dispose]() {
-      for (const close of pending) close();
-    },
-  };
-}
+          withLogCategory("query-view"),
+        ),
+      { concurrent: true },
+    ),
+    // A closed leaf's tasks stop at once, not after the registry's idle delay.
+    0,
+  );

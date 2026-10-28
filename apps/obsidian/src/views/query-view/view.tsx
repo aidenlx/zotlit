@@ -5,7 +5,7 @@
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
-import { Effect } from "effect";
+import { Effect, Latch } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
@@ -19,7 +19,7 @@ import { useUniqueId } from "@zotlit/ui";
 import { PaneState } from "@/components/pane-state";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
@@ -51,23 +51,18 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import type { AnnotState } from "@/views/annot-view/store";
 import { viewTargetOpener } from "@/views/open-target";
 
-import {
-  makeQueryOperations,
-  makeRunQueryCommand,
-  readFilterValues,
-} from "./atoms";
+import { makeQueryTaskCommand, makeRunQueryCommand } from "./atoms";
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
 import { contextHint } from "./context-hint";
 import type { ContextSource } from "./context-hint";
 import { datasetSpec, grouping } from "./datasets";
 import { FilterButton } from "./filter-popover";
-import type { FilterValues } from "./filter-popover";
 import { GroupEditor } from "./group-control";
 import type { ItemRowGestures } from "./item-rows";
 import { annotationsLayoutOptions, layoutOf } from "./layouts";
 import { ListLayout } from "./list-layout";
-import { useQueryViewState } from "./model";
+import { QueryTaskProvider, useQueryViewState } from "./model";
 import {
   holdQueryViewModel,
   makeQueryViewModel,
@@ -105,6 +100,7 @@ import { SortEditor } from "./sort-control";
 import { resultTable } from "./table";
 import type { ResultTable } from "./table";
 import { TableLayout } from "./table-layout";
+import type { ChildQuery } from "./table-layout";
 import type { LiteratureNotes, VaultHost } from "./table-notes";
 import { ToolbarButton } from "./toolbar-button";
 import { ToolbarPopover } from "./toolbar-popover";
@@ -497,7 +493,11 @@ export class QueryView extends Component implements HistorySurface {
   /** The file's text, the view on screen, the edits and their saves. */
   readonly #document: QueryFileDocument;
   readonly #runCommand = makeRunQueryCommand();
-  readonly #operations: ReturnType<typeof makeQueryOperations>;
+  /** The table's actions and reads, which the leaf's close interrupts. */
+  readonly #tasks = makeQueryTaskCommand();
+  #releaseTasks: (() => void) | null = null;
+  /** What waits for the tasks; the leaf's close ends each wait. */
+  readonly #taskWaiters = new Set<() => void>();
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
   /**
@@ -531,7 +531,6 @@ export class QueryView extends Component implements HistorySurface {
     super();
     this.#deps = deps;
     this.registry = deps.registry;
-    this.#operations = makeQueryOperations(this.registry);
     this.#release = holdQueryViewModel(this.registry, this.model);
     this.#releaseCommand = this.registry.mount(this.#runCommand);
     this.state = queryStateHandle(this.registry, this.model);
@@ -591,7 +590,7 @@ export class QueryView extends Component implements HistorySurface {
    * its parent's Library; their notes; and the readers their links open.
    */
   get tableDeps(): {
-    query: Pick<QueryHandle, "run" | "on" | "customFieldNames">;
+    query: ChildQuery & Pick<QueryHandle, "on">;
     literatureNotes: LiteratureNotes;
     readers: TargetOpenGesture;
   } {
@@ -600,17 +599,12 @@ export class QueryView extends Component implements HistorySurface {
       query: {
         on: (_event, listener) =>
           this.registry.subscribe(queryRevisionAtom, listener),
-        run: (request, signal) => {
+        run: (request) => {
           const libraries = this.#host.libraries?.();
-          return this.#operations.run(
-            Effect.flatMap(QueryService, (query) =>
-              query.run(libraries ? { ...request, libraries } : request),
-            ),
-            { kind: "cancelled" },
-            signal,
+          return Effect.flatMap(QueryService, (query) =>
+            query.run(libraries ? { ...request, libraries } : request),
           );
         },
-        customFieldNames: (signal) => this.customFieldNames(signal),
       },
       literatureNotes,
       readers: viewTargetOpener(this.registry, opener),
@@ -632,7 +626,7 @@ export class QueryView extends Component implements HistorySurface {
   get settled(): Promise<void> {
     return this.#settled
       .then(() => this.#layout.read)
-      .then(() => this.#operations.settled);
+      .then(() => this.#tasksSettled());
   }
 
   /**
@@ -677,7 +671,7 @@ export class QueryView extends Component implements HistorySurface {
     const subscriptions = new DisposableStack();
     this.#subscriptions = subscriptions;
     this.#releaseCommand ??= this.registry.mount(this.#runCommand);
-    subscriptions.defer(() => this.#operations[Symbol.dispose]());
+    this.#releaseTasks ??= this.registry.mount(this.#tasks);
     subscriptions.defer(this.registry.mount(queryRevisionAtom));
     subscriptions.defer(
       this.registry.subscribe(queryRevisionAtom, () => {
@@ -725,6 +719,9 @@ export class QueryView extends Component implements HistorySurface {
     this.#finishRun = null;
     this.#releaseCommand?.();
     this.#releaseCommand = null;
+    this.#releaseTasks?.();
+    this.#releaseTasks = null;
+    for (const finish of [...this.#taskWaiters]) finish();
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
     this.#release?.();
@@ -744,7 +741,9 @@ export class QueryView extends Component implements HistorySurface {
     this.#layout.render(
       el,
       <ViewRegistryProvider registry={this.registry}>
-        <QueryViewBody view={this} />
+        <QueryTaskProvider value={(task) => this.runTask(task)}>
+          <QueryViewBody view={this} />
+        </QueryTaskProvider>
       </ViewRegistryProvider>,
     );
   }
@@ -800,22 +799,33 @@ export class QueryView extends Component implements HistorySurface {
     return this.#document.flush();
   }
 
-  /** The values a filter condition offers, from the Libraries the view reads. */
-  filterValues(): Promise<FilterValues> {
-    return this.#operations.run(readFilterValues, {
-      tags: [],
-      collections: [],
-      libraries: [],
-    });
+  /**
+   * Run a table action or read on the leaf, beside the others; the leaf's
+   * close interrupts it. Returns what stops it sooner, as a collapsed row
+   * stops the read of the rows under it.
+   */
+  runTask(task: Effect.Effect<void, unknown, ViewServices>): () => void {
+    if (!this.#releaseTasks) return () => {};
+    const stop = Latch.makeUnsafe(false);
+    this.registry.set(this.#tasks, Effect.raceFirst(task, stop.await));
+    return () => void stop.openUnsafe();
   }
 
-  /** The custom fields of the Zotero source, which `custom[...]` offers. */
-  customFieldNames(signal: AbortSignal): Promise<readonly string[]> {
-    return this.#operations.run(
-      Effect.flatMap(QueryService, (query) => query.customFieldNames),
-      [],
-      signal,
-    );
+  /** Settles once no task of {@link runTask} runs, or the leaf closes. */
+  #tasksSettled(): Promise<void> {
+    if (!this.#releaseTasks || !this.registry.get(this.#tasks).waiting)
+      return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = () => {
+        stop();
+        this.#taskWaiters.delete(finish);
+        resolve();
+      };
+      const stop = this.registry.subscribe(this.#tasks, (result) => {
+        if (!result.waiting) finish();
+      });
+      this.#taskWaiters.add(finish);
+    });
   }
 
   /** The surface the host is, by what it binds to `this`. */
