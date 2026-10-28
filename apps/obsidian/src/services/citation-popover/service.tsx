@@ -549,9 +549,7 @@ const readBlocks = Effect.fn("CitationPopover.readBlocks")(function* (
   // where the note's declared style or language cannot be rendered with.
   // `documentPresentation` is synchronous plain code: it reads the note's
   // metadata and Profile through this read's own services.
-  const run = Effect.runSyncWith(
-    yield* Effect.context<MetadataCache | Profile>(),
-  );
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
   const presented = documentCitationPresentation(
     documentPresentation(
       { getFileCache: (target) => run(metadata.fileCache(target)) },

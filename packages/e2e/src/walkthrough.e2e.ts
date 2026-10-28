@@ -875,8 +875,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         // may draw it again meanwhile, so each citation element that stands is
         // hovered once, until a popover opens over one. Hovering one element
         // again would restart the popover's opening delay. A popover that
-        // opened and then hid itself fails the case rather than being hovered
-        // open again.
+        // closed while its citation still stands hid itself and fails the
+        // case; one that closed with its citation drawn again is hovered again
+        // over the new element.
         let opened = false;
         let hovered: HTMLElement | null = null;
         let hovers = 0;
@@ -888,8 +889,11 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
               ? view.hoverPopover
               : null;
             if (!popover) {
-              if (opened)
-                throw new Error("The Citation Popover opened and hid itself");
+              if (opened) {
+                if (hovered?.isConnected)
+                  throw new Error("The Citation Popover opened and hid itself");
+                opened = false;
+              }
               const citation =
                 view.previewMode?.containerEl.querySelector<HTMLElement>(
                   ".zt-citation",
@@ -926,7 +930,7 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
           30_000,
         ).catch((error: unknown) => {
           throw new Error(
-            `Citation hovers: ${hovers}; citation: ${
+            `${error instanceof Error ? error.message : String(error)}; citation hovers: ${hovers}; citation: ${
               view.previewMode?.containerEl.querySelector(".zt-citation")
                 ?.textContent ?? "none"
             }; popover: ${view.hoverPopover?.hoverEl.outerHTML.slice(0, 300) ?? "none"}`,
