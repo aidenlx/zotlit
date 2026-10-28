@@ -167,7 +167,7 @@ async function openLibrary() {
     );
     await query.settled;
   });
-  return { query, plugin, saveData, storage };
+  return { query, plugin, saveData, storage, registry: host.registry };
 }
 
 /** The document plugin data holds now. */
@@ -306,4 +306,30 @@ it("finishes a write that has started when the view closes", async () => {
   await vi.waitFor(() =>
     expect(saved(plugin)).toMatchObject({ selected: "1:AAAA1111" }),
   );
+});
+
+it("settles a write when the plugin's registry closes under it, as a plugin reload does", async () => {
+  // Obsidian starts a view's close as the plugin unloads and does not wait
+  // for it; the plugin then disposes the registry while the close still
+  // waits for its write. The close must end, or the leaf keeps the old view.
+  const { plugin, saveData, storage, registry } = await openLibrary();
+  saveData.mockClear();
+  const disk = Promise.withResolvers<void>();
+  saveData.mockImplementationOnce(async (data) => {
+    await disk.promise;
+    plugin.data = data;
+  });
+  const saving = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+  registry.dispose();
+  disk.resolve();
+  await expect(saving).resolves.toBeUndefined();
+  expect(saved(plugin)).toMatchObject({ selected: "1:AAAA1111" });
+});
+
+it("settles a write that has not started when the plugin's registry closes", async () => {
+  const { storage, registry } = await openLibrary();
+  const saving = storage.change((doc) => withSelected(doc, "1:BBBB2222"));
+  registry.dispose();
+  await expect(saving).resolves.toBeUndefined();
 });
