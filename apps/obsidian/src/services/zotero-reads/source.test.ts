@@ -878,6 +878,9 @@ describe("ZoteroReads source", () => {
         expect(watchers.map((w) => w.path)).toContain(walPath),
       );
 
+      // On the parent code, red needs the stream to reach the hung WAL start
+      // within the poll interval of this wait; on the fixed code the case is
+      // deterministic.
       await emitDirEvent(watchers, "zotero.sqlite-wal");
       Effect.runSync(Deferred.succeed(hungStarts, undefined));
       await source.version();
