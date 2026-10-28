@@ -10,7 +10,7 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
+import { logLateRelease, UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
 
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
@@ -237,12 +237,14 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
 
     // Start once the instance a quick off and on unloaded has released its
     // commands, zotlit:* names and port.
-    await this.waitForPreviousAndHoldRelease(stack);
+    const lateRelease = await this.waitForPreviousAndHoldRelease(stack);
     if (this.unloaded) return;
 
     const services = await createPluginRuntime(this, stack, languagePack).catch(
       reportStartupFailure,
     );
+    // Logged now: the runtime's logging layer has given LogTape its sinks.
+    if (lateRelease) logLateRelease(this.manifest.id);
 
     // A disable during the build has already unloaded this instance: leave
     // now, and the stack releases the services the build acquired.

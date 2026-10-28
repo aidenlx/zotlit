@@ -1,10 +1,12 @@
+import { configureSync, resetSync } from "@logtape/logtape";
+import type { LogRecord } from "@logtape/logtape";
 import type { App, PluginManifest } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { getLogger } from "@/lib/log";
 
 import {
+  logLateRelease,
   PREVIOUS_RELEASE_WAIT_MS,
   UnloadAwarePlugin,
 } from "./plugin-lifecycle";
@@ -26,7 +28,7 @@ function loadedPlugin(): UnloadAwarePlugin {
 
 /** An instance whose start-up takes its turn after the instance before it. */
 class TurnTakingPlugin extends UnloadAwarePlugin {
-  start(stack: AsyncDisposableStack): Promise<void> {
+  start(stack: AsyncDisposableStack): Promise<boolean> {
     return this.waitForPreviousAndHoldRelease(stack);
   }
 }
@@ -66,7 +68,7 @@ describe("UnloadAwarePlugin.waitForPreviousAndHoldRelease", () => {
     const stack = new AsyncDisposableStack();
     await expect(
       instanceOn(stubService<App>("App", {})).start(stack),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
     await stack.disposeAsync();
   });
 
@@ -141,41 +143,64 @@ describe("UnloadAwarePlugin.waitForPreviousAndHoldRelease bound", () => {
     return stack;
   }
 
-  it("starts after the bound when the previous release never settles, and warns once", async () => {
+  it("goes on at the bound when the previous release never settles, and reports it", async () => {
     vi.useFakeTimers();
-    using warn = vi.spyOn(getLogger("plugin-lifecycle"), "warn");
     const app = stubService<App>("App", {});
     unloadedWithRelease(app);
-    let startedUp = false;
+    let boundEnded: boolean | undefined;
     const starting = instanceOn(app)
       .start(new AsyncDisposableStack())
-      .then(() => {
-        startedUp = true;
+      .then((ended) => {
+        boundEnded = ended;
       });
 
     await vi.advanceTimersByTimeAsync(PREVIOUS_RELEASE_WAIT_MS - 1);
-    expect(startedUp).toBe(false);
-    expect(warn).not.toHaveBeenCalled();
+    expect(boundEnded).toBeUndefined();
 
     await vi.advanceTimersByTimeAsync(1);
     await starting;
-    expect(warn).toHaveBeenCalledOnce();
-    expect(warn).toHaveBeenCalledWith(expect.any(String), {
-      pluginId: "zotlit",
-      elapsedMs: PREVIOUS_RELEASE_WAIT_MS,
-    });
+    expect(boundEnded).toBe(true);
   });
 
-  it("starts at once and logs nothing when the release comes before the bound", async () => {
+  it("goes on at once when the release comes before the bound, and reports no timeout", async () => {
     vi.useFakeTimers();
-    using warn = vi.spyOn(getLogger("plugin-lifecycle"), "warn");
     const app = stubService<App>("App", {});
     const previousStack = unloadedWithRelease(app);
     const starting = instanceOn(app).start(new AsyncDisposableStack());
 
     await vi.advanceTimersByTimeAsync(PREVIOUS_RELEASE_WAIT_MS / 2);
-    await Promise.all([previousStack.disposeAsync(), starting]);
-    await vi.advanceTimersByTimeAsync(PREVIOUS_RELEASE_WAIT_MS);
-    expect(warn).not.toHaveBeenCalled();
+    const [, boundEnded] = await Promise.all([
+      previousStack.disposeAsync(),
+      starting,
+    ]);
+    expect(boundEnded).toBe(false);
+  });
+});
+
+// The warning is written once LogTape has its sinks: in a production build
+// that is after the runtime's logging layer builds.
+describe("logLateRelease", () => {
+  afterEach(() => {
+    resetSync();
+  });
+
+  it("writes one warning under plugin-lifecycle with the plugin id and the elapsed time", () => {
+    const records: LogRecord[] = [];
+    configureSync({
+      reset: true,
+      sinks: { capture: (record) => records.push(record) },
+      loggers: [
+        { category: ["zotlit"], sinks: ["capture"], lowestLevel: "trace" },
+      ],
+    });
+
+    logLateRelease("zotlit");
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      level: "warning",
+      category: ["zotlit", "obsidian", "plugin-lifecycle"],
+      properties: { pluginId: "zotlit", elapsedMs: PREVIOUS_RELEASE_WAIT_MS },
+    });
   });
 });

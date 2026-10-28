@@ -14,6 +14,19 @@ const logger = getLogger("plugin-lifecycle");
 export const PREVIOUS_RELEASE_WAIT_MS = 10_000;
 
 /**
+ * Warn that `pluginId` started before the previous instance released what it
+ * held. Call it once the runtime's logging layer has built: until then a
+ * production build's LogTape has no sinks, and the record is lost.
+ */
+export function logLateRelease(pluginId: string): void {
+  // Only the bound ends the wait this way, so it took the whole bound.
+  logger.warn("Started before the previous instance released what it held", {
+    pluginId,
+    elapsedMs: PREVIOUS_RELEASE_WAIT_MS,
+  });
+}
+
+/**
  * Where an unloaded instance leaves the promise of its release. Obsidian
  * evaluates main.js anew for each load, so module state starts empty; the App
  * outlives every instance of the plugin.
@@ -53,12 +66,14 @@ export class UnloadAwarePlugin extends Plugin {
    * zotlit:* names before it, and holds the Live Updates port (#1786). Call it
    * first on the onload stack: the stack disposes its own entries last.
    *
-   * The wait ends after {@link PREVIOUS_RELEASE_WAIT_MS} at most; a start-up
-   * that goes on without the release logs a warning.
+   * The wait ends after {@link PREVIOUS_RELEASE_WAIT_MS} at most.
+   *
+   * @returns `true` when the bound ended the wait before the release came;
+   *   the caller reports it through {@link logLateRelease} once logging is up.
    */
   protected async waitForPreviousAndHoldRelease(
     stack: AsyncDisposableStack,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const { promise, resolve } = Promise.withResolvers<void>();
     stack.defer(resolve);
     this.#released = promise;
@@ -66,7 +81,7 @@ export class UnloadAwarePlugin extends Plugin {
       this.app,
       releaseKey(this.manifest.id),
     );
-    if (!(previous instanceof Promise)) return;
+    if (!(previous instanceof Promise)) return false;
     let timer: number | undefined;
     const timedOut = await Promise.race([
       previous.then(() => false),
@@ -78,12 +93,7 @@ export class UnloadAwarePlugin extends Plugin {
       }),
     ]);
     window.clearTimeout(timer);
-    if (timedOut)
-      logger.warn(
-        "Starting before the previous instance released what it held",
-        // The timer fired, so the wait took the whole bound.
-        { pluginId: this.manifest.id, elapsedMs: PREVIOUS_RELEASE_WAIT_MS },
-      );
+    return timedOut;
   }
 
   override register(...[callback]: Parameters<Plugin["register"]>): void {
