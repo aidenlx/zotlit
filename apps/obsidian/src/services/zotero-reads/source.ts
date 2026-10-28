@@ -21,6 +21,7 @@ import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { ZOTERO_DB_FILENAME, ZOTERO_WAL_FILENAME } from "@/lib/constants";
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log-category";
 import { readParentBeside } from "@/services/database/read-parent";
 import {
@@ -680,21 +681,25 @@ export function layerSource(
           })
           .pipe(
             Stream.runForEach((event) => Effect.sync(() => onEvent(event))),
-            Effect.exit,
-            Effect.flatMap((exit) => {
-              if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause))
-                return Effect.void;
-              const error = Cause.squash(exit.cause);
-              // A watch that never started fails `ready` for the caller to
-              // report; one that stops later reports here.
-              return Effect.flatMap(Deferred.fail(ready, error), (starting) =>
-                starting
-                  ? Effect.void
-                  : logWarningCause("A Zotero database watch failed", error, {
-                      path,
-                    }),
-              );
-            }),
+            // A watch that never started fails `ready` for the caller to
+            // report; one that stops later reports here, with its whole cause.
+            recover(
+              (cause) =>
+                Effect.flatMap(
+                  Deferred.fail(ready, Cause.squash(cause)),
+                  (starting) =>
+                    starting
+                      ? Effect.void
+                      : Effect.logWarning(
+                          "A Zotero database watch failed",
+                          cause,
+                        ).pipe(
+                          Effect.annotateLogs({ path }),
+                          withLogCategory("zotero-reads"),
+                        ),
+                ),
+              Effect.void,
+            ),
             Effect.forkScoped,
           );
         yield* Deferred.await(ready);
