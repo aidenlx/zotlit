@@ -43,6 +43,8 @@ export interface TreeSession {
   readonly all: boolean;
   readonly expanded: ReadonlySet<string>;
   readonly open: boolean;
+  /** Whether the researcher collapsed the tree beside a wide list. */
+  readonly collapsed: boolean;
   readonly facets: readonly ReadingStateFacet[];
   readonly tags: readonly string[];
   readonly tagFilter: string;
@@ -83,6 +85,7 @@ export function makeTreeModel() {
     all: false,
     expanded: new Set<string>(),
     open: false,
+    collapsed: false,
     facets: [],
     tags: [],
     tagFilter: "",

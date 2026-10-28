@@ -6,10 +6,9 @@ import type { ViewRegistryHandle } from "@/lib/view-atoms";
 
 export interface LibrarySelection {
   readonly key: string | null;
-  readonly card: boolean;
 }
 export const makeLibraryModel = () => ({
-  selection: Atom.make<LibrarySelection>({ key: null, card: false }),
+  selection: Atom.make<LibrarySelection>({ key: null }),
 });
 export const patchSelection =
   (patch: Partial<LibrarySelection>) =>

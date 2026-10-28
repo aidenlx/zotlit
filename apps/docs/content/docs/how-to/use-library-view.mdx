@@ -47,7 +47,7 @@ When your Zotero database holds libraries outside your library scope, <UiLabel n
 
 If you rename or delete the collection you had selected, the view selects its library instead.
 
-On a narrow pane the tree is hidden. Select <UiLabel name={m.library_view_show_tree()} /> beside the heading to open it over the list.
+Select <UiLabel name={m.library_view_show_tree()} /> next to the search box to hide the tree and give the list more room, and select it again to show the tree. ZotLit remembers your choice. To change the tree's width, drag its edge next to the list; double-click the edge to reset it. On a narrow pane the tree is hidden, and the same button opens it over the list.
 
 ### Recent [#recent]
 
@@ -145,6 +145,7 @@ Click a row to select it, and use the arrow keys to move the selection. A select
 | `Shift+Enter`                                   | Opens the paper's PDF in Obsidian.                                                                                                          |
 | `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new tab.                                                                                                                     |
 | Double-click                                    | Opens the paper's PDF in Obsidian.                                                                                                          |
+| `Space`                                         | Shows or hides the [Reading Card](#reading-card).                                                                                           |
 
 To cite a paper, drag its row into a note. ZotLit inserts the citation where you drop it.
 
@@ -167,7 +168,7 @@ To open a PDF in Obsidian from other places, see [Open an item's PDF in Obsidian
 
 ## Read a paper's Reading Card [#reading-card]
 
-When you select a row, the Reading Card opens on the right of the view. It shows what Zotero shows for the paper, but only reads it: the card never changes the paper in Zotero.
+When you select a row, the Reading Card shows it on the right of the view. It shows what Zotero shows for the paper, but only reads it: the card never changes the paper in Zotero.
 
 The card reads like the first page of the paper. From the top:
 
@@ -202,7 +203,7 @@ The rest of the card shows only what the paper has. A part with nothing in it is
 
 The card remembers whether <UiLabel name={m.library_view_card_all_fields()} /> and the annotations are open, and keeps them that way for the next paper you select.
 
-The card shows while a row is selected. On a narrow pane it opens under the list; select <UiLabel name={m.library_view_card_close()} /> or press `Escape` to put it away. When a search, a filter, or another tree selection takes the selected paper out of the list, the selection goes and the card hides.
+Select <UiLabel name={m.library_view_details_toggle()} /> at the end of the search box's row, or press `Space` on a selected row, to show or hide the card. <UiLabel name={m.library_view_card_close()} /> on the card hides it too, and ZotLit remembers your choice. While the card shows, it follows the paper you select, by a click or by the arrow keys; with no paper selected, it asks you to select one. On a narrow pane it opens under the tree and the list. When a search, a filter, or another tree selection takes the selected paper out of the list, the selection goes and the card shows no paper.
 
 ## Show a quick switcher result in the library [#show-in-library]
 

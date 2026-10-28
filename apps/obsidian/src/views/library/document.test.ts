@@ -37,9 +37,12 @@ import {
   withCardWidth,
   withExpanded,
   withNode,
+  TREE_WIDTH_MIN,
   withSelected,
   withTags,
   withText,
+  withTreeCollapsed,
+  withTreeWidth,
 } from "./document";
 import type { LibraryNode, LibraryViewDocument } from "./document";
 import { searchTerms, searchTokens } from "./search";
@@ -445,6 +448,42 @@ describe("the Reading Card closed", () => {
       ...CHAPTER,
       cardClosed: true,
     });
+  });
+});
+
+describe("the Library Tree's width and collapse", () => {
+  it("round-trips a width and a collapsed tree, and stores nothing for the defaults", () => {
+    const set = withTreeCollapsed(withTreeWidth(CHAPTER, 260), true);
+    expect(set).toEqual({ ...CHAPTER, treeWidth: 260, treeCollapsed: true });
+    expect(parseLibraryViewDocument(serializeLibraryViewDocument(set))).toEqual(
+      set,
+    );
+    expect(withTreeCollapsed(withTreeWidth(set, undefined), false)).toEqual(
+      CHAPTER,
+    );
+    expect(serializeLibraryViewDocument(CHAPTER)).not.toHaveProperty(
+      "treeWidth",
+    );
+    expect(serializeLibraryViewDocument(CHAPTER)).not.toHaveProperty(
+      "treeCollapsed",
+    );
+  });
+
+  it("keeps the tree at least 10rem, drops a width that is not a number, and reads it collapsed only where the field is true", () => {
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    expect(withTreeWidth(CHAPTER, 40).treeWidth).toBe(TREE_WIDTH_MIN);
+    expect(parseLibraryViewDocument({ ...stored, treeWidth: 40 })).toEqual({
+      ...CHAPTER,
+      treeWidth: TREE_WIDTH_MIN,
+    });
+    for (const treeWidth of ["240", Number.NaN, null])
+      expect(parseLibraryViewDocument({ ...stored, treeWidth })).toEqual(
+        CHAPTER,
+      );
+    for (const treeCollapsed of [false, "true", 1, null])
+      expect(parseLibraryViewDocument({ ...stored, treeCollapsed })).toEqual(
+        CHAPTER,
+      );
   });
 });
 

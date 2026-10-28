@@ -103,12 +103,22 @@ export interface LibraryViewDocument {
    */
   readonly cardWidth?: number;
   /**
-   * Whether the researcher closed the Reading Card, from its close button or
-   * by dragging its edge past the minimum; absent while it is not. A closed
-   * card stays off a wide pane as the selection moves, until a row click,
-   * Space or "Show in Library" opens it again.
+   * Whether the researcher turned the item details off, from the Details
+   * button, Space on the list, the card's close button or a drag of its edge
+   * past the minimum; absent while they show. While on, the details show the
+   * selected paper at every pane width.
    */
   readonly cardClosed?: boolean;
+  /**
+   * The Library Tree's width in pixels, as the researcher set it by its
+   * inner edge; absent for the default, {@link TREE_WIDTH_DEFAULT}.
+   */
+  readonly treeWidth?: number;
+  /**
+   * Whether the researcher collapsed the Library Tree on a pane wide enough
+   * to show it beside the list; absent while it shows.
+   */
+  readonly treeCollapsed?: boolean;
 }
 
 /** The Reading Card's width, in pixels, until the researcher sets one: 24rem. */
@@ -117,16 +127,24 @@ export const CARD_WIDTH_DEFAULT = 384;
 export const CARD_WIDTH_MIN = 288;
 /** The room the list keeps beside the Reading Card, in pixels: 20rem. */
 export const CARD_LIST_MIN = 320;
+/** The Library Tree's width, in pixels, until the researcher sets one: 14rem. */
+export const TREE_WIDTH_DEFAULT = 224;
+/** The narrowest the Library Tree can be, in pixels: 10rem. */
+export const TREE_WIDTH_MIN = 160;
 
 /**
- * The widths the Reading Card can take in a pane `pane` pixels wide. Beside
- * the list: at least {@link CARD_WIDTH_MIN}, and at most what leaves the list
- * {@link CARD_LIST_MIN}, unless the pane is too narrow for both.
+ * The widths a pane beside the list, the Reading Card or the Library Tree,
+ * can take where it and the list share `pane` pixels: at least `min`, and at
+ * most what leaves the list {@link CARD_LIST_MIN}, unless the room is too
+ * narrow for both.
  */
-export function cardWidthBounds(pane: number): { min: number; max: number } {
+export function cardWidthBounds(
+  pane: number,
+  min = CARD_WIDTH_MIN,
+): { min: number; max: number } {
   return {
-    min: CARD_WIDTH_MIN,
-    max: Math.max(CARD_WIDTH_MIN, Math.round(pane) - CARD_LIST_MIN),
+    min,
+    max: Math.max(min, Math.round(pane) - CARD_LIST_MIN),
   };
 }
 
@@ -134,8 +152,12 @@ export function cardWidthBounds(pane: number): { min: number; max: number } {
  * `width` within the {@link cardWidthBounds} of a pane `pane` pixels wide,
  * in whole pixels; `pane` absent takes the floor alone.
  */
-export function clampCardWidth(width: number, pane?: number): number {
-  const { min, max } = cardWidthBounds(pane ?? Number.POSITIVE_INFINITY);
+export function clampCardWidth(
+  width: number,
+  pane?: number,
+  floor = CARD_WIDTH_MIN,
+): number {
+  const { min, max } = cardWidthBounds(pane ?? Number.POSITIVE_INFINITY, floor);
   return Math.round(Math.min(max, Math.max(min, width)));
 }
 
@@ -182,6 +204,8 @@ export type StoredLibraryViewDocument = {
   selected: string | null;
   cardWidth?: number;
   cardClosed?: boolean;
+  treeWidth?: number;
+  treeCollapsed?: boolean;
 };
 
 /**
@@ -244,8 +268,10 @@ function openTo(expanded: readonly string[], node: LibraryNode): string[] {
  * as the `layout` and `order` of an earlier build, is ignored. A card width
  * that is not a finite number is dropped, so the card takes its default; one
  * below {@link CARD_WIDTH_MIN} takes the minimum. The pane, which sets the
- * maximum, clamps it again as the view applies it. The card is closed only
- * where `cardClosed` is `true`.
+ * maximum, clamps it again as the view applies it. The tree width reads
+ * the same way against {@link TREE_WIDTH_MIN}. The details are off only
+ * where `cardClosed` is `true`, and the tree collapsed only where
+ * `treeCollapsed` is `true`.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -264,6 +290,7 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const expanded = field(v.array(v.unknown()), "expanded", []);
   const node = field(nodeSchema, "node", defaults.node);
   const cardWidth = stored.cardWidth;
+  const treeWidth = stored.treeWidth;
   return {
     node,
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
@@ -289,6 +316,11 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     ...(typeof cardWidth === "number" &&
       Number.isFinite(cardWidth) && { cardWidth: clampCardWidth(cardWidth) }),
     ...(stored.cardClosed === true && { cardClosed: true }),
+    ...(typeof treeWidth === "number" &&
+      Number.isFinite(treeWidth) && {
+        treeWidth: clampCardWidth(treeWidth, undefined, TREE_WIDTH_MIN),
+      }),
+    ...(stored.treeCollapsed === true && { treeCollapsed: true }),
   };
 }
 
@@ -364,7 +396,33 @@ export function withCardWidth(
     : { ...rest, cardWidth: clampCardWidth(width) };
 }
 
-/** `doc` with the Reading Card closed, or open again. */
+/**
+ * `doc` with the Library Tree `width` pixels wide, at least
+ * {@link TREE_WIDTH_MIN}; `undefined` returns it to the default.
+ */
+export function withTreeWidth(
+  doc: LibraryViewDocument,
+  width: number | undefined,
+): LibraryViewDocument {
+  const { treeWidth: _, ...rest } = doc;
+  return width === undefined || !Number.isFinite(width)
+    ? rest
+    : {
+        ...rest,
+        treeWidth: clampCardWidth(width, undefined, TREE_WIDTH_MIN),
+      };
+}
+
+/** `doc` with the Library Tree collapsed beside the list, or shown again. */
+export function withTreeCollapsed(
+  doc: LibraryViewDocument,
+  collapsed: boolean,
+): LibraryViewDocument {
+  const { treeCollapsed: _, ...rest } = doc;
+  return collapsed ? { ...rest, treeCollapsed: true } : rest;
+}
+
+/** `doc` with the item details off, or on again. */
 export function withCardClosed(
   doc: LibraryViewDocument,
   closed: boolean,
@@ -464,6 +522,8 @@ export function serializeLibraryViewDocument(
     selected: doc.selected,
     ...(doc.cardWidth !== undefined && { cardWidth: doc.cardWidth }),
     ...(doc.cardClosed === true && { cardClosed: true }),
+    ...(doc.treeWidth !== undefined && { treeWidth: doc.treeWidth }),
+    ...(doc.treeCollapsed === true && { treeCollapsed: true }),
   };
 }
 

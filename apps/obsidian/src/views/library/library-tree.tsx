@@ -60,6 +60,8 @@ export interface LibraryTreeHost {
   expand: (expanded: readonly string[]) => void;
   /** A read of the tree landed: the open nodes it does not `know` are gone. */
   prune: (know: (key: string) => boolean) => void;
+  /** The researcher collapsed the tree beside a wide list, or showed it. */
+  collapse: (collapsed: boolean) => void;
 }
 
 export class LibraryTree extends Component {
@@ -230,6 +232,16 @@ export class LibraryTree extends Component {
     this.#patch({ open });
   }
 
+  /** Show the tree collapsed beside a wide list, or shown. */
+  showCollapsed(collapsed: boolean): void {
+    this.#patch({ collapsed });
+  }
+
+  /** The researcher collapsed the tree beside a wide list, or showed it. */
+  setCollapsed(collapsed: boolean): void {
+    this.#host.collapse(collapsed);
+  }
+
   /** The count of the selected node; `null` while unknown. */
   get count(): number | null {
     const { libraries, node } = this.state;
@@ -251,8 +263,8 @@ export class LibraryTree extends Component {
   }
 
   /**
-   * Draw into `el` the button that shows the tree over a narrow pane. It
-   * hides on a pane wide enough to show the tree beside the list.
+   * Draw into `el` the button that shows and hides the tree: over the list
+   * on a narrow pane, and beside it on a wide one.
    */
   renderToggle(el: HTMLElement): void {
     this.#mount(el, <TreeToggle tree={this} />);
@@ -286,18 +298,31 @@ export function nodeLabel(
 
 function TreeToggle({ tree }: { tree: LibraryTree }) {
   const open = useTreeState((s) => s.open);
+  const collapsed = useTreeState((s) => s.collapsed);
   return (
-    // Obsidian's own rule shows a clickable icon, so the narrow pane shows
-    // and hides a wrapper.
-    <span className="zt:flex zt:@xl:hidden">
-      <IconButton
-        icon="library"
-        data-library-tree-toggle=""
-        pressed={open}
-        {...tooltipAttrs(m.library_view_show_tree())}
-        onClick={() => tree.setOpen(!open)}
-      />
-    </span>
+    // Obsidian's own rule shows a clickable icon, so each pane width shows
+    // and hides a wrapper: a narrow pane shows the tree over the list for a
+    // while, and a wide one keeps it beside the list or collapsed.
+    <>
+      <span className="zt:flex zt:@xl:hidden">
+        <IconButton
+          icon="library"
+          data-library-tree-toggle=""
+          pressed={open}
+          {...tooltipAttrs(m.library_view_show_tree())}
+          onClick={() => tree.setOpen(!open)}
+        />
+      </span>
+      <span className="zt:hidden zt:@xl:flex">
+        <IconButton
+          icon="library"
+          data-library-tree-collapse=""
+          pressed={!collapsed}
+          {...tooltipAttrs(m.library_view_show_tree())}
+          onClick={() => tree.setCollapsed(!collapsed)}
+        />
+      </span>
+    </>
   );
 }
 

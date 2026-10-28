@@ -458,7 +458,17 @@ function CardBody({ card }: { card: ReadingCard }) {
     if (!loading && bodyRef.current)
       bodyHeight.current = bodyRef.current.offsetHeight;
   });
-  if (key === null) return null;
+  // With no row selected the details keep their room and say what fills
+  // it, so the first click on a row moves nothing.
+  if (key === null)
+    return (
+      <div
+        className="zt:flex zt:h-full zt:items-center zt:justify-center zt:p-(--size-4-4) zt:text-center zt:text-(length:--font-ui-small) zt:text-(--text-muted)"
+        data-library-card-empty=""
+      >
+        {m.library_view_card_empty()}
+      </div>
+    );
   const { items, host, readers } = card;
   const hasInfo =
     !!item &&
@@ -494,9 +504,9 @@ function CardBody({ card }: { card: ReadingCard }) {
               <span className="zt:truncate">{item.type}</span>
             </div>
           )}
-          {/* The card puts itself away here at every pane width: over a
-              narrow list it uncovers the list, and beside a wide one the
-              list takes its room until a row is asked for again. */}
+          {/* The details turn off here at every pane width, as the
+              Details button turns them off, and the list takes their room
+              until the researcher turns them on again. */}
           <span className="zt:ms-auto zt:flex">
             <IconButton
               icon="x"
