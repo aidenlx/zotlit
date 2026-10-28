@@ -8000,6 +8000,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("takes an undo and a redo pressed together one after the other", async () => {
+          await selectMark();
+          await pickRed();
+
+          // Both presses reach the reader before Zotero answers the first.
+          await obRun(
+            vaultId!,
+            async ({ zotlit }, { attachmentPath }) => {
+              const services = zotlit.services;
+              const binding = services.bridge
+                .runSync(services.pdfAnnotationEditor.bindings)
+                .find((candidate) => candidate.filePath === attachmentPath)!;
+              binding.stepHistory("undo");
+              binding.stepHistory("redo");
+            },
+            { attachmentPath },
+          );
+          await stepSettled();
+
+          // The redo waited for the undo and took it back: a redo taken first
+          // or dropped would leave the seed colour.
+          expect(
+            await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+          expect(
+            await waitFor(() => readerAnnotationColor(rdp, historyKey, picked)),
+          ).toBe(true);
+        }, 120000);
+
         it("leaves a colour Zotero changed alone, and says why", async () => {
           await selectMark();
           await pickRed();

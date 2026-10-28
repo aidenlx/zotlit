@@ -229,7 +229,7 @@ it.effect.each([
   ],
 ] as const)(
   "Release update %s opens nothing and marks no update",
-  (_, versions) =>
+  ([, versions]) =>
     Effect.gen(function* () {
       const { update, openFirstScreen } = yield* runCheck({
         origin: "current",
