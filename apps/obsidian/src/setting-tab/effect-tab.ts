@@ -16,6 +16,7 @@ import { withLogCategory } from "@/lib/effect-log-category";
 import { Notifier } from "@/lib/notifier";
 import type { FileManager } from "@/lib/obsidian-file-manager";
 import type { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import type { PluginHost } from "@/lib/plugin-host";
 import { formatErrorMessage } from "@/lib/toast";
 import type { CapabilityNotices } from "@/services/annotation-repository/notices";
@@ -68,6 +69,7 @@ export type SettingTabEnv =
   | NoteFeature
   | NoteIndex
   | Vault
+  | Workspace
   | FileManager
   | FileSystem.FileSystem
   | PluginHost;

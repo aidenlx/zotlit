@@ -30,7 +30,7 @@ import {
   openWorkbenchLayout,
 } from "@/views/note-preview/register";
 
-import { makeWorkbenchHost } from "./__fixtures__";
+import { makeWorkbenchHost, workbenchActionContext } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
 
 type RegistrationHostDeps = WorkbenchHostDeps & {
@@ -48,10 +48,10 @@ const defaultTarget = (
   getSource: (selector) => Effect.runPromise(profile.getSource(selector)),
 });
 
+import type { WorkbenchActionServices } from "./actions";
+import { openNativeProfile, openTemplateWorkbench } from "./open";
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
-  openNativeProfile,
-  openTemplateWorkbench,
   registerTemplateWorkbenchView,
   templateWorkbenchFileMenu,
 } from "./register";
@@ -64,8 +64,8 @@ vi.mock("@/views/note-preview/register", () => ({
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const setOriginatingNote = vi.fn<
-  (file: TFile | null) => Promise<string | null>
->(async () => null);
+  (file: TFile | null) => Effect.Effect<string | null>
+>(() => Effect.succeed(null));
 beforeEach(() => {
   vi.spyOn(
     TemplateWorkbenchView.prototype,
@@ -77,6 +77,33 @@ afterEach(() => {
   resetMockPlatform();
   vi.mocked(findWorkbenchLayout).mockReset().mockResolvedValue(null);
 });
+
+/** The workspace and vault a launch reads, over the test's App. */
+function appContext(app: App) {
+  return workbenchActionContext(testNotifier().service, {
+    vault: {
+      cachedRead: (file) => Effect.promise(() => app.vault.cachedRead(file)),
+      getFileByPath: (path) => Effect.sync(() => app.vault.getFileByPath(path)),
+    },
+    workspace: {
+      leavesOfType: (type) =>
+        Effect.sync(() => app.workspace.getLeavesOfType(type)),
+      getLeaf: (pane) => Effect.sync(() => app.workspace.getLeaf(pane)),
+      openPopoutLeaf: (size) =>
+        Effect.sync(() => app.workspace.openPopoutLeaf({ size })),
+      revealLeaf: (leaf) =>
+        Effect.promise(async () => app.workspace.revealLeaf(leaf)),
+    },
+  });
+}
+
+/** Run the launch `open` over the workspace and vault of `app`. */
+function launch<A, E>(
+  app: App,
+  open: Effect.Effect<A, E, WorkbenchActionServices>,
+): Promise<A> {
+  return Effect.runPromise(open.pipe(Effect.provideContext(appContext(app))));
+}
 
 /** A bridge over an empty runtime, closed when the test ends. */
 function testBridge() {
@@ -203,7 +230,7 @@ function register(plugin: Plugin, deps: RegistrationHostDeps): void {
     ...makeWorkbenchHost(deps).deps,
     customize: "customize" in deps ? deps.customize : async () => {},
     bridge: testBridge(),
-    notifier: testNotifier().service,
+    context: appContext(plugin.app),
     webWorkbenchEnabled: deps.webWorkbenchEnabled,
     defaultProfile: defaultTarget(deps.profile),
   };
@@ -216,17 +243,20 @@ describe("Template Workbench entry points", () => {
     "opens a new %s Customize editor directly in a popout",
     async (target) => {
       const { app, workspace, file, setViewState } = setup();
-      await openNativeProfile(
+      await launch(
         app,
-        target === "file"
-          ? file
-          : defaultTarget({
-              defaultDocumentPath: Effect.succeed(
-                "templates/zotlit-profile.default.md",
-              ),
-              getSource: () => Effect.succeed("Built-in source"),
-            }),
-        { customize: true },
+        openNativeProfile(
+          app,
+          target === "file"
+            ? file
+            : defaultTarget({
+                defaultDocumentPath: Effect.succeed(
+                  "templates/zotlit-profile.default.md",
+                ),
+                getSource: () => Effect.succeed("Built-in source"),
+              }),
+          { customize: true },
+        ),
       );
 
       expect(workspace.getLeaf).not.toHaveBeenCalled();
@@ -286,11 +316,14 @@ Annotation`);
         workbenchLeaf,
       ]);
       vi.mocked(findWorkbenchLayout).mockResolvedValueOnce(workbench);
-      await openNativeProfile(app, file, {
-        customize: true,
-        itemIndexedKey: "MAIN2345",
-        originatingNote: file,
-      });
+      await launch(
+        app,
+        openNativeProfile(app, file, {
+          customize: true,
+          itemIndexedKey: "MAIN2345",
+          originatingNote: file,
+        }),
+      );
       expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
         file: file.path,
         defaultProfile: false,
@@ -320,13 +353,16 @@ Annotation`);
     Object.assign(leaf, { view: workbench });
     vi.mocked(findWorkbenchLayout).mockResolvedValueOnce(workbench);
     vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
-    await openNativeProfile(
+    await launch(
       app,
-      defaultTarget({
-        defaultDocumentPath: Effect.succeed(file.path),
-        getSource: vi.fn(),
-      }),
-      { customize: true, itemIndexedKey: "MAIN2345" },
+      openNativeProfile(
+        app,
+        defaultTarget({
+          defaultDocumentPath: Effect.succeed(file.path),
+          getSource: vi.fn(),
+        }),
+        { customize: true, itemIndexedKey: "MAIN2345" },
+      ),
     );
     expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
       file: file.path,
@@ -347,21 +383,24 @@ Annotation`);
 
   it("routes explicit Default customization through the ready inspection view", async () => {
     const { app, leaf, setViewState } = setup();
-    const customizeDefault = vi.fn(async () => {});
+    const customizeDefault = vi.fn(() => Effect.void);
     Object.assign(leaf, {
       view: Object.assign(Object.create(TemplateWorkbenchView.prototype), {
         customizeDefault,
       }),
     });
-    await openNativeProfile(
+    await launch(
       app,
-      defaultTarget({
-        defaultDocumentPath: Effect.succeed(
-          "templates/zotlit-profile.default.md",
-        ),
-        getSource: () => Effect.succeed("Built-in source"),
-      }),
-      { customize: true, itemIndexedKey: "0:ABCDEFGH" },
+      openNativeProfile(
+        app,
+        defaultTarget({
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource: () => Effect.succeed("Built-in source"),
+        }),
+        { customize: true, itemIndexedKey: "0:ABCDEFGH" },
+      ),
     );
     expect(setViewState).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -377,7 +416,7 @@ Annotation`);
       TemplateWorkbenchView.prototype,
     ) as TemplateWorkbenchView;
     Object.assign(leaf, { view });
-    await openNativeProfile(app, file, { customize: true });
+    await launch(app, openNativeProfile(app, file, { customize: true }));
     expect(openWorkbenchLayout).toHaveBeenCalledWith(app, view);
   });
 
@@ -389,16 +428,19 @@ Annotation`);
       const revealLeaf = vi
         .spyOn(app.workspace, "revealLeaf")
         .mockReturnValue(reveal.promise);
-      const opening = openNativeProfile(
+      const opening = launch(
         app,
-        target === "file"
-          ? file
-          : defaultTarget({
-              defaultDocumentPath: Effect.succeed(
-                "templates/zotlit-profile.default.md",
-              ),
-              getSource: () => Effect.succeed("Configured built-in document"),
-            }),
+        openNativeProfile(
+          app,
+          target === "file"
+            ? file
+            : defaultTarget({
+                defaultDocumentPath: Effect.succeed(
+                  "templates/zotlit-profile.default.md",
+                ),
+                getSource: () => Effect.succeed("Configured built-in document"),
+              }),
+        ),
       );
       await vi.waitFor(() => expect(revealLeaf).toHaveBeenCalledWith(leaf));
       expect(focusWindow).not.toHaveBeenCalled();
@@ -427,7 +469,7 @@ Annotation`);
       getContainer: () => existingContainer,
     });
 
-    await openTemplateWorkbench(app, file, { leaf: existing });
+    await launch(app, openTemplateWorkbench(app, file, { leaf: existing }));
 
     expect(revealLeaf).toHaveBeenCalledWith(existing);
     expect(focusExistingWindow).toHaveBeenCalledOnce();
@@ -674,7 +716,7 @@ Annotation`);
       const { app, file, setViewState } = setup();
       const source = `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`;
       vi.spyOn(app.vault, "cachedRead").mockResolvedValue(source);
-      expect(await openNativeProfile(app, file)).toEqual({
+      expect(await launch(app, openNativeProfile(app, file))).toEqual({
         nativeRequired: true,
         unavailableNote: null,
       });
@@ -689,7 +731,10 @@ Annotation`);
         "---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\nlanguage: eta\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n",
       );
       expect(
-        await openTemplateWorkbench(app, file, { explainUnsupported }),
+        await launch(
+          app,
+          openTemplateWorkbench(app, file, { explainUnsupported }),
+        ),
       ).toEqual({ nativeRequired: explainUnsupported, unavailableNote: null });
     },
   );
@@ -698,7 +743,10 @@ Annotation`);
     async (preference) => {
       const { app, loadLocalStorage, file, setViewState } = setup();
       loadLocalStorage.mockReturnValue(preference);
-      await openNativeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" });
+      await launch(
+        app,
+        openNativeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" }),
+      );
       expect(setViewState).toHaveBeenCalledWith({
         type: TEMPLATE_WORKBENCH_VIEW_TYPE,
         state: { file: file.path, itemIndexedKey: "0:ABCDEFGH" },
@@ -713,16 +761,19 @@ Annotation`);
       vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
         frontmatter: { "zotero-key": "MAIN2345" },
       });
-      await openNativeProfile(
+      await launch(
         app,
-        kind === "file"
-          ? file
-          : defaultTarget({
-              defaultDocumentPath: Effect.succeed(
-                "templates/zotlit-profile.default.md",
-              ),
-              getSource: () => Effect.succeed("Configured built-in document"),
-            }),
+        openNativeProfile(
+          app,
+          kind === "file"
+            ? file
+            : defaultTarget({
+                defaultDocumentPath: Effect.succeed(
+                  "templates/zotlit-profile.default.md",
+                ),
+                getSource: () => Effect.succeed("Configured built-in document"),
+              }),
+        ),
       );
       expect(setViewState).toHaveBeenCalledWith({
         type: TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -740,14 +791,17 @@ Annotation`);
     const getSource = vi.fn(() =>
       Effect.succeed("Configured built-in document"),
     );
-    await openNativeProfile(
+    await launch(
       app,
-      defaultTarget({
-        defaultDocumentPath: Effect.succeed(
-          "templates/zotlit-profile.default.md",
-        ),
-        getSource,
-      }),
+      openNativeProfile(
+        app,
+        defaultTarget({
+          defaultDocumentPath: Effect.succeed(
+            "templates/zotlit-profile.default.md",
+          ),
+          getSource,
+        }),
+      ),
     );
     expect(getSource).toHaveBeenCalledWith("default");
     expect(setViewState).toHaveBeenCalledWith({
@@ -768,7 +822,7 @@ Annotation`);
   });
   it("opens the requested Match tab in Basic mode", async () => {
     const { app, file, setViewState } = setup();
-    await openTemplateWorkbench(app, file, { tab: "match" });
+    await launch(app, openTemplateWorkbench(app, file, { tab: "match" }));
     expect(setViewState).toHaveBeenCalledWith({
       type: TEMPLATE_WORKBENCH_VIEW_TYPE,
       state: { file: file.path, tab: "match", advanced: false },

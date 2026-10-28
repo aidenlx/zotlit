@@ -17,8 +17,8 @@ import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
 import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 import { createSharedPartial } from "@/views/template-workbench/partial-command";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { appendCompileError } from "./compile-error";
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -232,7 +232,7 @@ function openPartial(ctx: SettingTabContext, path: string) {
   return Effect.gen(function* () {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
-    yield* leaveSettingsFor("open-template-workbench", () =>
+    yield* leaveSettingsFor(
       openTemplateWorkbench(ctx.app, file, { explainUnsupported: false }),
     );
   });

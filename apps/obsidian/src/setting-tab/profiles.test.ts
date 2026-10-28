@@ -40,16 +40,16 @@ import { Template } from "@/services/template/service";
 import {
   openNativeProfile,
   openTemplateWorkbench,
-} from "@/views/template-workbench/register";
+} from "@/views/template-workbench/open";
 
 import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingTabContext } from "./context";
 import { profileControlValue, setProfileControlValue } from "./controls";
 import { literatureNoteItems, profilesPage } from "./profiles";
 
-vi.mock("@/views/template-workbench/register", () => ({
-  openNativeProfile: vi.fn(async () => {}),
-  openTemplateWorkbench: vi.fn(async () => {}),
+vi.mock("@/views/template-workbench/open", () => ({
+  openNativeProfile: vi.fn(() => Effect.void),
+  openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
 const books = "Bk3Qn7XvT2Lp" as ProfileId;

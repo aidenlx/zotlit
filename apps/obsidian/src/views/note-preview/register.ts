@@ -13,6 +13,10 @@ import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
 import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 import {
+  openNotePreviewEffect,
+  openWorkbenchLayoutEffect,
+} from "@/views/template-workbench/open";
+import {
   TEMPLATE_WORKBENCH_VIEW_TYPE,
   TemplateWorkbenchView,
 } from "@/views/template-workbench/view";
@@ -166,8 +170,10 @@ export function registerNotePreview(
       const editor = activeTemplateWorkbench(app);
       if (!editor) return false;
       if (!checking)
-        startTemplateWorkbenchAction(deps, "open-workbench", () =>
-          openWorkbenchLayout(app, editor),
+        startTemplateWorkbenchAction(
+          deps,
+          "open-workbench",
+          openWorkbenchLayoutEffect(editor, app),
         );
       return true;
     },
@@ -179,8 +185,10 @@ export function registerNotePreview(
       const editor = activeTemplateWorkbench(app);
       if (!editor) return false;
       if (!checking)
-        startTemplateWorkbenchAction(deps, "open-preview", () =>
-          openNotePreview(app, editor),
+        startTemplateWorkbenchAction(
+          deps,
+          "open-preview",
+          openNotePreviewEffect(editor, app),
         );
       return true;
     },

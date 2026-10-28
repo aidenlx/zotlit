@@ -219,11 +219,12 @@ const harness = Effect.fnUntraced(function* ({
       return { close: () => closedSheets.push(details) };
     },
     openExternal: (url) => opened.push(url),
-    openNative: async (_request, target: NativeProfileTarget) => {
-      openedFiles.push(
-        target instanceof TFile ? target.path : target.defaultDocumentPath,
-      );
-    },
+    openNative: (_request, target: NativeProfileTarget) =>
+      Effect.sync(() => {
+        openedFiles.push(
+          target instanceof TFile ? target.path : target.defaultDocumentPath,
+        );
+      }),
     preference: () => profileCustomization(deviceStore),
     rememberPreference: (value) => saveProfileCustomization(deviceStore, value),
   };

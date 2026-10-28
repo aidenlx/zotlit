@@ -1,7 +1,7 @@
 // Native overlays and Markdown lifecycle for the shared Template Workbench tree.
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import {
   AbstractInputSuggest,
   Component,
@@ -36,6 +36,7 @@ import type {
   WorkbenchSuggesterRequest,
   WorkbenchSuggesterOption,
   WorkbenchInputSuggestionsRequest,
+  WorkbenchRunner,
 } from "@zotlit/workbench/ui";
 
 import { Toggle } from "@/components/obsidian/toggle";
@@ -48,6 +49,7 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
+import { answerOf } from "@/lib/view-runner";
 import {
   CurrentAnswer,
   takeEnter,
@@ -134,14 +136,15 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
 export interface NativeWorkbenchSuggesterRequest extends WorkbenchSuggesterRequest {
   readonly searchItems?: (
     query: string,
-  ) => Promise<readonly WorkbenchSuggesterOption[]>;
+  ) => Effect.Effect<readonly WorkbenchSuggesterOption[]>;
 }
 
 type NativeSuggestion = WorkbenchSuggesterOption & { group: string };
 
 class EditorSuggester extends SuggestModal<NativeSuggestion> {
   #revision = 0;
-  #latest: NativeSuggestion[] | Promise<NativeSuggestion[]> = [];
+  /** The latest query's answer, or the search that answers it. */
+  #latest: NativeSuggestion[] | Fiber.Fiber<NativeSuggestion[]> = [];
   readonly #current = new CurrentAnswer<NativeSuggestion>(
     this.resultContainerEl,
   );
@@ -149,13 +152,19 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
   #picked = false;
   #search = prepareSimpleSearch("");
   readonly #request: NativeWorkbenchSuggesterRequest;
+  readonly #run: WorkbenchRunner;
   constructor(
     app: App,
     request: NativeWorkbenchSuggesterRequest,
-    settle: (answer: string | null) => void,
+    answer: {
+      /** Runs the typed searches on the host's leaf. */
+      run: WorkbenchRunner;
+      settle: (answer: string | null) => void;
+    },
   ) {
     super(app);
-    this.#settle = settle;
+    this.#run = answer.run;
+    this.#settle = answer.settle;
     takeEnter(this);
     this.setTitle(request.title);
     this.#request = request;
@@ -184,26 +193,33 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
             `${option.label} ${option.hint ?? ""} ${option.group}`,
           ) !== null,
       );
-    if (!query.trim() || !this.#request.searchItems)
+    const search = this.#request.searchItems;
+    if (!query.trim() || !search)
       return this.#current.track((this.#latest = choices));
-    this.#latest = this.#request
-      .searchItems(query)
-      .then((items): NativeSuggestion[] | Promise<NativeSuggestion[]> => {
-        if (revision !== this.#revision) return this.#latest;
-        const shown = new Set(choices.map(({ id }) => id));
-        return [
-          ...choices,
-          ...items
-            .filter(({ id }) => !shown.has(id))
-            .map((item) => ({ ...item, group: "" })),
-        ];
-      })
-      .catch(() => {
-        if (revision !== this.#revision) return this.#latest;
-        new BaseNotice(m.workbench_item_search_failed());
-        return choices;
-      });
-    return this.#current.track(this.#latest);
+    /** The answer of a newer query, for a search it outran. */
+    const newer = Effect.suspend(() => {
+      const latest = this.#latest;
+      return Array.isArray(latest)
+        ? Effect.succeed(latest)
+        : Fiber.join(latest);
+    });
+    const shown = new Set(choices.map(({ id }) => id));
+    const searching = this.#run(
+      search(query).pipe(
+        Effect.flatMap((items) =>
+          revision !== this.#revision
+            ? newer
+            : Effect.succeed([
+                ...choices,
+                ...items
+                  .filter(({ id }) => !shown.has(id))
+                  .map((item) => ({ ...item, group: "" })),
+              ]),
+        ),
+      ),
+    );
+    this.#latest = searching;
+    return this.#current.track(answerOf(searching, choices));
   }
   /**
    * A row reads the way a citation row reads: the name in the title slot,
@@ -398,7 +414,9 @@ export function createTemplateWorkbenchHost(
         // The list's keys, on the keymap as Obsidian's suggesters take them.
         obsidianPopupKeys(app),
         templateHover(read, hoverParent),
-        extractPartial ? extractPartialMenu(read, extractPartial) : [],
+        extractPartial
+          ? extractPartialMenu(read, extractPartial, rest.run)
+          : [],
       ];
     },
     menu({ anchor, pointerEvent, items, submenus }) {
@@ -454,9 +472,12 @@ export function createTemplateWorkbenchHost(
       }),
     suggester: (request) =>
       awaitModal<string | null>((settle) => {
-        const modal = new EditorSuggester(app, request, (answer) => {
-          open.delete(close);
-          settle(answer);
+        const modal = new EditorSuggester(app, request, {
+          run: rest.run,
+          settle: (answer) => {
+            open.delete(close);
+            settle(answer);
+          },
         });
         const close = track(() => modal.close());
         modal.open();

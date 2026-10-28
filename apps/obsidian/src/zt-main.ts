@@ -397,8 +397,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     const templateWorkbenchDeps = {
       registry: services.viewRegistry,
       bridge: services.bridge,
-      notifier: services.notifier,
-      noteFeature: services.noteFeature,
+      context: services.workbenchActionContext,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       defaultProfile: services.defaultProfile,
@@ -423,7 +422,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       registry: services.viewRegistry,
       bridge: services.bridge,
-      notifier: services.notifier,
+      context: services.workbenchActionContext,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });

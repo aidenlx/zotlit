@@ -20,12 +20,13 @@ import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
+import { answerOf } from "@/lib/view-runner";
+import type { ViewRun } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 
-import type { NativeWorkbenchSuggesterRequest } from "./host";
+import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
 import {
   getSampleItem,
   getSampleItemType,
@@ -128,23 +129,6 @@ export async function recentItemChoices(
   }
 }
 
-/**
- * The chooser's answer, opened on the host's runner. Closing the leaf
- * interrupts the chooser, which reads as a dismissal.
- */
-function chooseOn(
-  host: WorkbenchHost,
-  request: NativeWorkbenchSuggesterRequest,
-): Promise<string | null> {
-  return new Promise((resolve) => {
-    host
-      .run(host.suggester(request))
-      .addObserver((exit) =>
-        resolve(exit._tag === "Success" ? exit.value : null),
-      );
-  });
-}
-
 export async function searchWorkbenchItem(
   deps: ItemSearchDeps,
 ): Promise<WorkbenchItemChoice | null> {
@@ -157,102 +141,32 @@ export async function searchWorkbenchItem(
     : null;
 }
 
-export async function chooseWorkbenchItem(
-  host: WorkbenchHost,
-  deps: ItemSearchDeps & { lookup: Pick<ItemLookupHandle, "search"> },
+/**
+ * {@link workbenchItemChoice} on the view's runner, for a caller that awaits a
+ * Promise. Closing the view interrupts the chooser, which reads as a
+ * dismissal.
+ */
+export function chooseWorkbenchItem(
+  view: { run: ViewRun; host: WorkbenchHost },
+  deps: ItemSearchDeps,
   selected?: WorkbenchItemChoice,
 ): Promise<WorkbenchItemChoice | null> {
-  const recent = await recentItemChoices(deps.lookup);
-  const choices = [...SAMPLE_ITEM_CHOICES, ...recent];
-  const retained =
-    selected && !choices.some(({ id }) => id === selected.id) ? [selected] : [];
-  const found = new Map<string, WorkbenchItemChoice>();
-  // The chooser's typed searches; the recent Items above stay one-shot.
-  using session = deps.lookup.openSession();
-  const request: NativeWorkbenchSuggesterRequest = {
-    title: m.workbench_choose_item(),
-    selected: selected?.id,
-    groups: [
-      {
-        label: "",
-        options: [
-          {
-            id: "search-zotero",
-            label: m.workbench_search_zotero(),
-            icon: "choose-sample",
-          },
-        ],
-      },
-      ...retained.map((item) => ({
-        label: m.workbench_selected_label(),
-        options: [{ id: item.id, label: item.title ?? item.id }],
-      })),
-      {
-        label: m.workbench_sample_examples(),
-        options: SAMPLE_ITEM_CHOICES.map((item) => ({
-          id: item.id,
-          label: sampleTypeLabel(item.id),
-          hint: item.title ?? undefined,
-        })),
-      },
-      {
-        label: m.workbench_recently_updated(),
-        options: recent.map((item) => ({
-          id: item.id,
-          label: item.title ?? item.id,
-        })),
-      },
-    ],
-    searchItems: async (query) => {
-      const hits = await session.search(query, { limit: DEFAULT_LIMIT });
-      return hits.flatMap(({ item }) => {
-        if (isChildItemFields(item.fields)) return [];
-        const choice = {
-          id: item.indexedKey,
-          title: itemSummary(item, item.fields).formatted,
-        };
-        found.set(choice.id, choice);
-        return [{ id: choice.id, label: choice.title }];
-      });
-    },
-  };
-  const id = await chooseOn(host, request);
-  return id === "search-zotero"
-    ? searchWorkbenchItem(deps)
-    : ([...retained, ...choices].find((item) => item.id === id) ??
-        (id ? found.get(id) : null) ??
-        null);
+  return answerOf(
+    view.run(workbenchItemChoice(view.host, deps, selected)),
+    null,
+  );
 }
 
-export async function chooseWorkbenchAnnotation(
+/** {@link workbenchAnnotationChoice} for a caller that awaits a Promise. */
+export function chooseWorkbenchAnnotation(
   host: WorkbenchHost,
   current: readonly AnnotationChoice[],
   selected: string | null,
 ): Promise<string | null> {
-  const options = (examples: readonly AnnotationChoice[]) =>
-    examples.map((example) => {
-      const option = annotationOption(workbenchM, example);
-      return {
-        id: option.value,
-        label: option.label,
-        hint: option.description,
-      };
-    });
-  return chooseOn(host, {
-    title: m.workbench_choose_annotation(),
-    selected: selected ?? undefined,
-    groups: [
-      {
-        label: m.workbench_annotation_from_item(),
-        options: options(current),
-        empty: m.workbench_annotation_empty(),
-      },
-      {
-        label: m.workbench_sample_examples(),
-        options: options(SAMPLE_ANNOTATIONS),
-      },
-    ],
-  });
+  return answerOf(
+    host.run(workbenchAnnotationChoice(host, current, selected)),
+    null,
+  );
 }
 
 /** The selected data's own name, which a pane shows wherever its header cannot. */

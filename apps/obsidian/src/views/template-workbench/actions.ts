@@ -1,10 +1,12 @@
 import { Effect } from "effect";
+import type { Context } from "effect";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { Notifier, reportOutcome } from "@/lib/notifier";
+import type { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 
 /**
  * Run a Template Workbench action and report its outcome: a failure is logged
@@ -47,10 +49,14 @@ export const explainWorkbenchOpen = Effect.fn(
     );
 });
 
+/** The services a Workbench launch reads. */
+export type WorkbenchActionServices = Notifier | Vault | Workspace;
+
 /** What a plain Obsidian callback needs to start a Workbench action. */
 export interface WorkbenchActionDeps {
   readonly bridge: Pick<EffectBridge, "runAndForget">;
-  readonly notifier: Notifier["Service"];
+  /** The plugin's services that a launch runs with. */
+  readonly context: Context.Context<WorkbenchActionServices>;
 }
 
 /**
@@ -58,17 +64,15 @@ export interface WorkbenchActionDeps {
  * command or a menu entry, on the plugin's bridge: unload stops it quietly.
  * What the open asks the reader to know shows as a notice.
  */
-export function startTemplateWorkbenchAction(
+export function startTemplateWorkbenchAction<E>(
   deps: WorkbenchActionDeps,
   operation: string,
-  open: () => Promise<WorkbenchOpened | void>,
+  open: Effect.Effect<WorkbenchOpened | void, E, WorkbenchActionServices>,
 ): void {
   deps.bridge.runAndForget(
     templateWorkbenchAction(
       operation,
-      portCall(operation, open).pipe(
-        Effect.flatMap((opened) => explainWorkbenchOpen(opened)),
-      ),
-    ).pipe(Effect.provideService(Notifier, deps.notifier)),
+      open.pipe(Effect.flatMap((opened) => explainWorkbenchOpen(opened))),
+    ).pipe(Effect.provideContext(deps.context)),
   );
 }
