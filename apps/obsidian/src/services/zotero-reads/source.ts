@@ -705,6 +705,40 @@ export function layerSource(
         yield* Deferred.await(ready);
       });
 
+      /**
+       * Start `watches` on a new scope and store the scope in `holder`, or log
+       * `failure` and close it when a watch cannot start.
+       *
+       * #1798: nothing else holds the scope until `holder` does, so only the
+       * wait for the watches can be interrupted, and an interrupt there
+       * closes the scope.
+       */
+      const bindWatches = (
+        holder: Ref.Ref<Scope.Closeable | null>,
+        watches: Effect.Effect<void, unknown, Scope.Scope>,
+        failure: { message: string; annotations?: Record<string, unknown> },
+      ) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const scope = yield* Scope.make();
+            const result = yield* Effect.result(
+              restore(watches.pipe(Scope.provide(scope))).pipe(
+                Effect.onInterrupt(() => Scope.close(scope, Exit.void)),
+              ),
+            );
+            if (result._tag === "Failure") {
+              yield* Scope.close(scope, Exit.void);
+              yield* logWarningCause(
+                failure.message,
+                result.failure,
+                failure.annotations,
+              );
+              return;
+            }
+            yield* Ref.set(holder, scope);
+          }),
+        );
+
       const syncWalWatcher = Effect.fnUntraced(function* () {
         const current = yield* Ref.get(state);
         if (!current.sourcePath || current.readMode === "immutable") {
@@ -717,30 +751,10 @@ export function layerSource(
           return;
         }
         if (yield* Ref.get(walWatcherScope)) return;
-        // #1798: nothing else holds the scope until `walWatcherScope` does, so
-        // only the wait for the watch can be interrupted, and an interrupt
-        // there closes the scope.
-        yield* Effect.uninterruptibleMask((restore) =>
-          Effect.gen(function* () {
-            const scope = yield* Scope.make();
-            const result = yield* Effect.result(
-              restore(
-                watchPath(walPath, () =>
-                  enqueueWatchSignal({ trusted: false }),
-                ).pipe(Scope.provide(scope)),
-              ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void))),
-            );
-            if (result._tag === "Failure") {
-              yield* Scope.close(scope, Exit.void);
-              yield* logWarningCause(
-                "Failed to watch Zotero WAL",
-                result.failure,
-                { walPath },
-              );
-              return;
-            }
-            yield* Ref.set(walWatcherScope, scope);
-          }),
+        yield* bindWatches(
+          walWatcherScope,
+          watchPath(walPath, () => enqueueWatchSignal({ trusted: false })),
+          { message: "Failed to watch Zotero WAL", annotations: { walPath } },
         );
       });
 
@@ -749,46 +763,27 @@ export function layerSource(
         Queue.offerUnsafe(watchSignals, signal);
       };
 
-      const acquireMainWatchers = Effect.fnUntraced(function* (current: {
+      const bindMainWatchers = (current: {
         sourcePath: string;
         readMode: EffectiveReadMode;
-      }) {
-        const parent = dirname(current.sourcePath);
-        // #1798: nothing else holds the scope until `mainWatcherScope` does, so
-        // only the wait for the watches can be interrupted, and an interrupt
-        // there closes the scope.
-        yield* Effect.uninterruptibleMask((restore) =>
+      }) =>
+        bindWatches(
+          mainWatcherScope,
           Effect.gen(function* () {
-            const scope = yield* Scope.make();
-            const result = yield* Effect.result(
-              restore(
-                Effect.gen(function* () {
-                  yield* watchPath(parent, (event) => {
-                    const name = event.path;
-                    if (!watchedFilename(name)) return;
-                    enqueueWatchSignal({
-                      trusted: false,
-                      ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
-                    });
-                  });
-                  yield* watchPath(current.sourcePath, () =>
-                    enqueueWatchSignal({ trusted: false }),
-                  );
-                }).pipe(Scope.provide(scope)),
-              ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void))),
+            yield* watchPath(dirname(current.sourcePath), (event) => {
+              const name = event.path;
+              if (!watchedFilename(name)) return;
+              enqueueWatchSignal({
+                trusted: false,
+                ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
+              });
+            });
+            yield* watchPath(current.sourcePath, () =>
+              enqueueWatchSignal({ trusted: false }),
             );
-            if (result._tag === "Failure") {
-              yield* Scope.close(scope, Exit.void);
-              yield* logWarningCause(
-                "Failed to watch the Zotero database",
-                result.failure,
-              );
-              return;
-            }
-            yield* Ref.set(mainWatcherScope, scope);
           }),
+          { message: "Failed to watch the Zotero database" },
         );
-      });
 
       const rebindWatchers = Effect.fnUntraced(function* () {
         yield* closeWatcherScopes;
@@ -798,7 +793,7 @@ export function layerSource(
           return;
         }
         if (!current.sourcePath || !current.readMode) return;
-        yield* acquireMainWatchers({
+        yield* bindMainWatchers({
           sourcePath: current.sourcePath,
           readMode: current.readMode,
         });

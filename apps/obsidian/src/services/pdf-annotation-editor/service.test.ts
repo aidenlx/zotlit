@@ -1500,8 +1500,8 @@ it("records a read for the first page turn in a reader whose initial view stands
 });
 
 // #1870: PDF.js sets the initial view from the `.catch` of `load` when its
-// document-open handler throws, and `documentinit` never follows. The move to
-// the waiting bookmark is still PDF.js's own; the page turns after it count.
+// document-open handler throws, and `documentinit` never follows. A move to
+// another page is still PDF.js's own; the page turns after it count.
 it("records a read for a page turn after an initial view set without documentinit", async () => {
   const reader = openingReader();
   const { service, recordRead } = await restoredTab(reader);
@@ -1514,9 +1514,9 @@ it("records a read for a page turn after an initial view set without documentini
   expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
 });
 
-// #1870: with no bookmark to move to, the first page change after that initial
-// view is the one that shows the view is set: it is not counted, and the page
-// turns after it are.
+// #1870: when that initial view changes no page (no bookmark, or one on the
+// page already showing), the first page change after it is the one that shows
+// the view is set: it is not counted, and the page turns after it are.
 it("records reads from the second page turn after an initial view set without a move or documentinit", async () => {
   const reader = openingReader();
   const { service, recordRead } = await restoredTab(reader);
