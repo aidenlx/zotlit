@@ -220,6 +220,7 @@ export function pdfReader(page = pageView()) {
     // closes it and nulls it — see `closeViewer` below.
     pdfViewer: {
       eventBus: {},
+      isInitialViewSet: true,
       pdfDocument: {
         numPages: 1,
         getPage: vi.fn(async () => page.pdfPage),
@@ -247,6 +248,26 @@ export function pdfReader(page = pageView()) {
       page.renderingState = 3;
       for (const { event, listener } of listeners) {
         if (event === "pagerendered") listener({ pageNumber: 1, source: page });
+      }
+    },
+    /** What PDF.js dispatches when its current page number changes. */
+    turnPage: () => {
+      for (const { event, listener } of listeners) {
+        if (event === "pagechanging") listener({});
+      }
+    },
+    /**
+     * What PDF.js's `setInitialView` does on a reader still opening: it marks
+     * the view set, moves to the position the document reopens at, which
+     * dispatches `pagechanging`, and then dispatches `documentinit`.
+     */
+    setInitialView: () => {
+      (child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
+        true;
+      for (const name of ["pagechanging", "documentinit"]) {
+        for (const { event, listener } of listeners) {
+          if (event === name) listener({});
+        }
       }
     },
     /**

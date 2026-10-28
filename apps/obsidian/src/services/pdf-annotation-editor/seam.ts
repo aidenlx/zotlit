@@ -253,6 +253,29 @@ export function onPageChanged(
 }
 
 /**
+ * Whether PDF.js has set the view the document opens at. A viewer without the
+ * flag counts as set, so its page changes stay reads.
+ */
+export function initialViewSet(controller: PDFViewerController): boolean {
+  return controller.pdfViewer?.isInitialViewSet !== false;
+}
+
+/**
+ * Subscribes to `documentinit`, which PDF.js dispatches once `setInitialView`
+ * has moved the reader to the position the document opens at.
+ */
+export function onInitialView(
+  controller: PDFViewerController,
+  listener: () => void,
+): Disposable {
+  controller.on("documentinit", listener);
+  return disposable(() => {
+    if (!viewerOpen(controller, "remove an initial-view listener")) return;
+    controller.off("documentinit", listener);
+  });
+}
+
+/**
  * The reader's right toolbar slot, which P10 guards, and `null` once the child
  * holding it unloaded — Obsidian nulls the toolbar there, and a binding
  * disposing after that has nothing left to take out of it.

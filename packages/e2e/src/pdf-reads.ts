@@ -441,6 +441,23 @@ export async function verifyPdfReads(
         },
         20000,
       );
+      // The restored reader settles: PDF.js moves it to the position the
+      // document reopens at, then paints that page.
+      const reader = (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      ).find((l) => l.view.file?.path === notePath)!.view.viewer.child;
+      await until(
+        "restored PDF settled",
+        () =>
+          reader.pdfViewer.isInitialViewSet === true &&
+          reader.getPage(reader.pdfViewer.pdfViewer.currentPageNumber)
+            ?.renderingState === 3,
+        20000,
+      );
     },
     { notePath: path, attachmentKey },
   );

@@ -616,12 +616,19 @@ declare module "obsidian" {
     pdfViewer: {
       eventBus: unknown;
       pdfDocument?: PDFDocumentProxy | null;
+      /**
+       * PDF.js's flag for the view a document opens at. It turns true before
+       * `setInitialView` moves to that position.
+       */
+      isInitialViewSet?: boolean;
     } | null;
     /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
     on(event: "pagerendered", listener: PDFPageRenderedListener): void;
     off(event: "pagerendered", listener: PDFPageRenderedListener): void;
     on(event: "pagechanging", listener: () => void): void;
     off(event: "pagechanging", listener: () => void): void;
+    on(event: "documentinit", listener: () => void): void;
+    off(event: "documentinit", listener: () => void): void;
     /** The PDF.js page view for a one-based page number, once that page is built. */
     getPage(pageNumber: number): PDFPageView | undefined;
     /** Applies an Obsidian PDF subpath such as `#page=3`. */
