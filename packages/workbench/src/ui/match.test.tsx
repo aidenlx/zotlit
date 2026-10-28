@@ -8,6 +8,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Effect } from "effect";
 import { afterEach, expect, it } from "vitest";
 
 import { useWorkbenchController } from "./editor";
@@ -144,4 +145,24 @@ it("interrupts the Match test for a filter the reader has moved past", async () 
   act(() => void mounted.controller.setMatch({ and: [] }));
 
   await waitFor(() => expect(first.interrupted).toBe(true));
+});
+
+it("shows the failed state when the host's Match test dies", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  mounted.host.matchData = {
+    ...mounted.host.matchData,
+    matches: () => Effect.die(new Error("Query worker crashed")),
+  };
+  render(mounted.ui);
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toContain(
+      m.workbench_example_failed(),
+    ),
+  );
 });

@@ -401,6 +401,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
+      defaultProfile: services.defaultProfile,
       itemLookup: services.itemLookup,
       settings: services.settings,
       nativePreview: {

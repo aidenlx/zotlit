@@ -288,18 +288,11 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
   }
 }
 
-/**
- * Promise work a Workbench mount hands the host, as a host Effect. An
- * interrupt stops the wait only: the Promise command under it keeps running
- * until ticket 04 makes that command an Effect.
- */
-export const hostPromise = <A,>(
-  work: () => Promise<A>,
+/** A mount's own Effect as a host member: its failure becomes a host failure. */
+export const hostEffect = <A, E>(
+  effect: Effect.Effect<A, E>,
 ): Effect.Effect<A, WorkbenchHostError> =>
-  Effect.tryPromise({
-    try: work,
-    catch: (cause) => new WorkbenchHostError({ cause }),
-  });
+  Effect.mapError(effect, (cause) => new WorkbenchHostError({ cause }));
 
 /** The render of a mount that renders no template: each one fails with `reason`. */
 export const refuseRender =

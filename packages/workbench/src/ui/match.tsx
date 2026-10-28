@@ -304,7 +304,8 @@ export function MatchPane({
 
 /**
  * The host's test of the Item `indexedKey` against `filter`: `undefined`
- * while it runs, and `failed` when the host could not answer. A filter or an
+ * while it runs, and `failed` when the host could not answer, by a failure
+ * or a defect. A filter or an
  * Item of `null` is not tested. A new `revision` tests again.
  */
 function useMatchTest(
@@ -328,7 +329,10 @@ function useMatchTest(
         ? null
         : host.matchData.matches(indexedKey, filter).pipe(
             Effect.map((value) => ({ key, value })),
-            Effect.orElseSucceed(() => ({ key, value: "failed" as const })),
+            // A defect fails the test as a failure does.
+            Effect.catchCause(() =>
+              Effect.succeed({ key, value: "failed" as const }),
+            ),
           ),
     {
       deps: [host.matchData, key, indexedKey, filter],

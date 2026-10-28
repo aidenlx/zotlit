@@ -1,11 +1,11 @@
 // Where a view's plain code (an Obsidian callback, a menu item) forks Effect
 // work on the view services for as long as the view stands.
 //
-// A view runs most gestures as commands (ADR 0082). A command keeps one run
-// per atom: the latest wins, or the run is held while the atom is mounted. A
-// gesture that its caller must interrupt or supersede on its own, such as one
-// annotation insert that a cancelled drag stops, needs its own fiber: the
-// runner forks each gesture and answers its Fiber.
+// The runner forks each gesture on a FiberSet of the view's own and answers
+// its Fiber, so the caller can interrupt or supersede that one gesture: an
+// annotation insert that a cancelled drag stops, or an Item read that a newer
+// selection replaces. Closing the view interrupts every fiber still running.
+// What a component reads stays a view atom (ADR 0082).
 import { RegistryContext } from "@effect/atom-react";
 import { Effect, Exit, FiberSet, Scope } from "effect";
 import type { Fiber } from "effect";
@@ -24,6 +24,14 @@ export type ViewRun = <A, E>(
 
 export interface ViewRunner extends Disposable, AsyncDisposable {
   readonly run: ViewRun;
+  /**
+   * `effect` with the view services provided, for a seam that takes an Effect
+   * with no requirements, such as a Workbench host member. Its fiber runs on
+   * whichever runner forks it.
+   */
+  readonly provide: <A, E>(
+    effect: Effect.Effect<A, E, ViewServices>,
+  ) => Effect.Effect<A, E>;
   /** Settles once no fiber of {@link run} is running; at once after disposal. */
   readonly settled: () => Promise<void>;
 }
@@ -52,6 +60,7 @@ export function makeViewRunner(
   const dispose = () => (closing ??= close().finally(unmount));
   return {
     run,
+    provide: Effect.provideContext(context),
     settled: () => Effect.runPromiseWith(context)(FiberSet.awaitEmpty(fibers)),
     [Symbol.dispose]: () => void dispose(),
     [Symbol.asyncDispose]: dispose,
@@ -78,4 +87,14 @@ export function onFiberSuccess<A, E>(
   fiber.addObserver((exit) => {
     if (Exit.isSuccess(exit)) answer(exit.value);
   });
+}
+
+/**
+ * How `fiber` ended, for a view flow that still awaits a Promise. An
+ * interrupt-only Exit means the view closed or a newer run superseded it.
+ */
+export function exitOf<A, E>(
+  fiber: Fiber.Fiber<A, E>,
+): Promise<Exit.Exit<A, E>> {
+  return new Promise((resolve) => fiber.addObserver(resolve));
 }
