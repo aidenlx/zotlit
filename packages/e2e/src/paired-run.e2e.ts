@@ -263,6 +263,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     await clearNotices(vaultId!);
     await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
     let recorded: { instant: string } | null;
+    // The Local API reads the item from memory: while Zotero commits the
+    // read's PATCH, the record shows the new lastRead at the old version. The
+    // write has landed once both have moved.
+    let stored = attachmentBefore;
     expect(
       await waitFor(async () => {
         recorded = await obRun(
@@ -282,21 +286,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           undefined,
         );
         if (!recorded) return false;
-        const item = await readItem(attachment.key);
+        stored = await readItem(attachment.key);
         return (
-          item.data.lastRead ===
-          Math.floor(
-            Temporal.Instant.from(recorded.instant).epochMilliseconds / 1000,
-          )
+          stored.data.lastRead ===
+            Math.floor(
+              Temporal.Instant.from(recorded.instant).epochMilliseconds / 1000,
+            ) && stored.version > attachmentBefore.version
         );
       }),
     ).toBe(true);
     expect((await readItem("RUGIER24")).data.dateModified).toBe(
       before.data.dateModified,
     );
-    expect((await readItem(attachment.key)).version).toBeGreaterThan(
-      attachmentBefore.version,
-    );
+    expect(stored.version).toBeGreaterThan(attachmentBefore.version);
     await verifyPdfReadSource(vaultId!, {
       vaultPath: environment!.vaultPath,
       api,
