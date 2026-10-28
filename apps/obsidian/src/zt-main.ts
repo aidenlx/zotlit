@@ -9,7 +9,6 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { ViewRegistry } from "@/lib/view-atoms";
 
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
@@ -313,7 +312,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       app: this.app,
       attachments: services.literatureNoteAttachments,
       lookup: services.itemLookup,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       creation: {
         app: this.app,
         createProfile: (options) => createProfileDialog(this.app, options),
@@ -327,12 +326,12 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     const queryCardFocus = new QueryCardFocus(this.app);
     const queryViewDeps: QueryViewDeps = {
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       runtime: services.runtime,
       app: this.app,
       cardFocus: queryCardFocus,
       literatureNotes: literatureNotes({
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
         app: this.app,
         creation: {
           app: this.app,
@@ -350,17 +349,17 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       bridge: services.bridge,
       itemLookup: services.itemLookup,
       settings: services.settings,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
     registerLibraryView(this, {
       ...queryViewDeps,
       welcome: {
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
         setupActions: createSetupActions({
           app: this.app,
-          registry: services.runtime.runSync(ViewRegistry),
+          registry: services.viewRegistry,
           pluginId: this.manifest.id,
         }),
       },
@@ -370,7 +369,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
           createProfile: (options) => createProfileDialog(this.app, options),
           importProfile: (options) => importProfileDialog(this.app, options),
         },
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
         app: this.app,
         noteFeature: services.noteFeature,
         opener: services.targetOpener,
@@ -396,7 +395,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     const templateWorkbenchDeps = {
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       bridge: services.bridge,
       notifier: services.notifier,
       noteFeature: services.noteFeature,
@@ -406,7 +405,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       settings: services.settings,
       nativePreview: {
         app: this.app,
-        registry: services.runtime.runSync(ViewRegistry),
+        registry: services.viewRegistry,
       },
     };
     registerTemplateWorkbenchView(this, templateWorkbenchDeps);
@@ -414,14 +413,14 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     registerTemplateDataExplorer(this, {
       bridge: services.bridge,
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });
 
     registerNotePreview(this, {
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
       bridge: services.bridge,
       notifier: services.notifier,
       itemLookup: services.itemLookup,
@@ -430,21 +429,17 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerReferencesView(this, {
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
 
     registerCitedByView(this, {
       app: this.app,
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
 
     registerPandocExport(this, {
-      fileSystem: services.fileSystem,
-      citationParse: services.citationParse,
       app: this.app,
-      ...services.pandocExportServices,
-      zoteroHttp: services.zoteroHttp,
-      settings: services.settings,
+      context: services.pandocExportContext,
       bridge: services.bridge,
       openSettings: () => {
         this.app.setting.open();
@@ -490,7 +485,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     );
 
     registerWelcomeView(this, {
-      registry: services.runtime.runSync(ViewRegistry),
+      registry: services.viewRegistry,
     });
 
     // The companion's Freshness Signal means the database changed and its

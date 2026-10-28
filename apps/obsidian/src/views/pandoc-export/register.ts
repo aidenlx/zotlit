@@ -13,12 +13,12 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { Notifier, withProgress } from "@/lib/notifier";
+import { withProgress } from "@/lib/notifier";
+import type { Notifier } from "@/lib/notifier";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
 import { CitationParse } from "@/services/citation-parse/service";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
   fetchBibliography,
@@ -35,10 +35,11 @@ import {
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
 import type { ExportPorts } from "@/services/pandoc/export";
+import { PandocEngine } from "@/services/pandoc/service";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
 import { Profile } from "@/services/profile/service";
-import type { PluginSettings } from "@/services/settings/service";
+import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
@@ -47,26 +48,25 @@ import { openPandocExportModal } from "./modal";
 import { engineMissingMessage, exportFailureMessage } from "./notices";
 import type { ExportProblem } from "./notices";
 
-/** The services an export reads. */
+/**
+ * The services an export reads. `ZoteroHttp` is the loopback client the
+ * bibliography is fetched over.
+ */
 export type PandocExportServices =
   | CitationLookup
+  | CitationParse
+  | FileSystem.FileSystem
+  | Notifier
+  | PandocEngine
+  | PluginSettings
   | Profile
+  | ZoteroHttp
   | ZoteroPref
   | ZoteroReads;
 
 export interface PandocExportDeps {
-  citationParse: Pick<CitationParse["Service"], "parse">;
   app: App;
-  fileSystem: FileSystem.FileSystem;
-  pandocEngine: Pick<
-    ManagedBinaryApi<CitationEngine>,
-    "getStatus" | "getEngine"
-  >;
-  /** The `ZoteroHttp` loopback client the bibliography is fetched over. */
-  zoteroHttp: ZoteroHttp["Service"];
-  settings: Pick<PluginSettings["Service"], "current">;
   bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
-  notifier: Notifier["Service"];
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
   /** The services the command callback runs each export with. */
@@ -148,7 +148,6 @@ export function runPandocExport(
           },
         ),
       ),
-      Effect.provideService(Notifier, deps.notifier),
       Effect.provideContext(deps.context),
     ),
   );
@@ -177,7 +176,12 @@ const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
   never,
   PandocExportServices
 > {
-  const { app, bridge, fileSystem, pandocEngine, settings } = deps;
+  const { app, bridge } = deps;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const pandocEngine = yield* PandocEngine;
+  const settings = yield* PluginSettings;
+  const citationParse = yield* CitationParse;
+  const zoteroHttp = yield* ZoteroHttp;
   const zoteroPref = yield* ZoteroPref;
   const citationLookup = yield* CitationLookup;
   const db = yield* ZoteroReads;
@@ -249,7 +253,7 @@ const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
 
   // A style Zotero cannot supply stops the run, whichever place selected it:
   // the run never falls back to another style.
-  const style = yield* exportPresentation(deps, pref.dataDir, {
+  const style = yield* exportPresentation(pref.dataDir, {
     styleId: choices.styleId,
     locale: effective.locale,
   });
@@ -296,8 +300,9 @@ const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
             localApiEnabled,
             citationLookup,
             db,
+            zoteroHttp,
           }),
-        ).pipe(Effect.provideService(CitationParse, deps.citationParse));
+        ).pipe(Effect.provideService(CitationParse, citationParse));
       }).pipe(
         // This outcome keeps the engine's actual detail; its fallback depends
         // on the cause rather than the fixed fallback that recover accepts.
@@ -355,14 +360,8 @@ const prepareExport = Effect.fn("PandocExport.prepareExport")(function* (
  *   in another style.
  */
 const exportPresentation = Effect.fn("PandocExport.exportPresentation")(
-  function* (
-    deps: PandocExportDeps,
-    dataDir: string,
-    request: CslStyleRequest,
-  ) {
-    const style = yield* resolveInstalledStyle(dataDir, request).pipe(
-      Effect.provideService(FileSystem.FileSystem, deps.fileSystem),
-    );
+  function* (dataDir: string, request: CslStyleRequest) {
+    const style = yield* resolveInstalledStyle(dataDir, request);
     if (style.kind === "installed")
       return { styleXml: style.xml, title: style.title };
     if (style.kind === "failed") return null;
@@ -380,6 +379,8 @@ function exportPorts(
     /** Resolves the literal citation keys of the exported document. */
     citationLookup: CitationLookup["Service"];
     db: ZoteroReads["Service"];
+    /** The loopback client the bibliography is fetched over. */
+    zoteroHttp: ZoteroHttp["Service"];
   },
 ): ExportPorts {
   const { app } = deps;
@@ -395,7 +396,7 @@ function exportPorts(
       fetchBibliography(refs, {
         httpPort: pref.httpPort,
         localApiEnabled: pref.localApiEnabled,
-      }).pipe(Effect.provideService(ZoteroHttp, deps.zoteroHttp)),
+      }).pipe(Effect.provideService(ZoteroHttp, pref.zoteroHttp)),
   };
 }
 

@@ -2,14 +2,14 @@
 // answers them.
 
 import { Cause, Effect } from "effect";
-import type { ManagedRuntime } from "effect";
 
 import { resolveIndexedKeyLibraryIn } from "@zotlit/db";
 
-import { effectBridge, valueOr } from "@/lib/effect-bridge";
+import { valueOr } from "@/lib/effect-bridge";
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
-import { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ZoteroReads } from "@/services/zotero-reads/service";
 
 /**
  * The tag names in use in the Annotation's Library, which the tag editor
@@ -52,10 +52,9 @@ export const libraryTagNames = (
  * that unload stops or that starts after it answers no tags.
  */
 export function libraryTagNamesOf(
-  runtime: ManagedRuntime.ManagedRuntime<ZoteroReads, never>,
+  reads: Pick<ZoteroReads["Service"], "current" | "snapshot">,
+  bridge: Pick<EffectBridge, "runPromiseExit">,
 ): (annotationKey: string) => Promise<readonly string[]> {
-  const reads = runtime.runSync(ZoteroReads);
-  const bridge = effectBridge(runtime);
   return async (annotationKey) =>
     valueOr(
       await bridge.runPromiseExit(libraryTagNames(reads, annotationKey)),
