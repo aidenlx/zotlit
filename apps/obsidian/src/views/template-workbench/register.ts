@@ -6,7 +6,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type {
-  CustomizeAction,
   DefaultProfileTarget,
   NativeProfileTarget,
 } from "@/services/local-bridge/customize";
@@ -31,7 +30,6 @@ import type { TemplateWorkbenchDeps } from "./view";
 type RegistrationDeps = TemplateWorkbenchDeps &
   WorkbenchActionDeps & {
     webWorkbenchEnabled: boolean;
-    customize: CustomizeAction;
     /** The Default Profile, which a note on the Default Profile opens. */
     defaultProfile: DefaultProfileTarget;
   };
@@ -85,7 +83,7 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
         ...options,
         customize: true,
       });
-    return customizeProfile(deps.customize, {
+    return customizeProfile({
       profileId,
       ...(options.destination ? { destination: options.destination } : {}),
       ...(options.itemIndexedKey

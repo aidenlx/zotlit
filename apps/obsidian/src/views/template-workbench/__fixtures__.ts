@@ -22,6 +22,7 @@ import { ItemLookup } from "@/services/item-lookup/service";
 import type { SearchOptions } from "@/services/item-lookup/service";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { QueryService } from "@/services/item-query/service";
+import { Customize } from "@/services/local-bridge/customize";
 import { NoteWriteAborted } from "@/services/note-feature/errors";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
 import { NoteFeature } from "@/services/note-feature/service";
@@ -120,14 +121,17 @@ export type WorkbenchHostDeps = Omit<
   };
 
 /**
- * The services a Workbench launch runs with: `notifier`, and a vault and a
- * workspace whose members each test supplies when its launch reads them.
+ * The services a Workbench launch runs with: `notifier`, and a vault, a
+ * workspace, the Customize flow and the Profile service whose members each
+ * test supplies when its launch reads them.
  */
 export function workbenchActionContext(
   notifier: Notifier["Service"] = testNotifier().service,
   services: {
     vault?: Partial<Vault["Service"]>;
     workspace?: Partial<Workspace["Service"]>;
+    customize?: Partial<Customize["Service"]>;
+    profile?: Partial<Profile["Service"]>;
   } = {},
 ): Context.Context<WorkbenchActionServices> {
   return Context.make(Notifier, notifier).pipe(
@@ -138,6 +142,14 @@ export function workbenchActionContext(
     Context.add(
       Workspace,
       stubService<Workspace["Service"]>("Workspace", services.workspace ?? {}),
+    ),
+    Context.add(
+      Customize,
+      stubService<Customize["Service"]>("Customize", services.customize ?? {}),
+    ),
+    Context.add(
+      Profile,
+      stubService<Profile["Service"]>("Profile", services.profile ?? {}),
     ),
   );
 }

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
+import { it as effectIt } from "@effect/vitest";
 import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import { MarkdownView, TFile } from "obsidian";
 import type {
   App,
@@ -27,9 +28,11 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
 import type {
-  CustomizeAction,
+  Customize,
+  CustomizeRequest,
   DefaultProfileTarget,
 } from "@/services/local-bridge/customize";
+import { ProfileOperationError } from "@/services/profile/service";
 import type { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import {
@@ -42,21 +45,34 @@ import type { WorkbenchHostDeps } from "./__fixtures__";
 
 type RegistrationHostDeps = WorkbenchHostDeps & {
   webWorkbenchEnabled: boolean;
-  customize: CustomizeAction;
+  customize: (request: CustomizeRequest) => void;
   profile: Profile["Service"];
 };
 /** The Default Profile as the plugin runtime hands it over, read from `profile`. */
 const defaultTarget = (
-  profile: Pick<Profile["Service"], "defaultDocumentPath" | "getSource">,
+  profile: Pick<Profile["Service"], "defaultDocumentPath">,
 ): DefaultProfileTarget => ({
   get defaultDocumentPath() {
     return Effect.runSync(profile.defaultDocumentPath);
   },
-  getSource: (selector) => Effect.runPromise(profile.getSource(selector)),
+});
+/** The built-in Default Profile, whose document is missing. */
+const builtInDefault = defaultTarget({
+  defaultDocumentPath: Effect.succeed("templates/zotlit-profile.default.md"),
 });
 
+/** The Customize flow and the Profile service a launch reads, as a test supplies them. */
+type LaunchServices = {
+  customize?: Partial<Customize["Service"]>;
+  profile?: Partial<Profile["Service"]>;
+};
+
 import type { WorkbenchActionServices } from "./actions";
-import { openNativeProfile, openTemplateWorkbench } from "./open";
+import {
+  customizeProfile,
+  openNativeProfile,
+  openTemplateWorkbench,
+} from "./open";
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
   registerTemplateWorkbenchView,
@@ -92,8 +108,9 @@ afterEach(() => {
 });
 
 /** The workspace and vault a launch reads, over the test's App. */
-function appContext(app: App) {
+function appContext(app: App, services: LaunchServices = {}) {
   return workbenchActionContext(testNotifier().service, {
+    ...services,
     vault: {
       cachedRead: (file) => Effect.promise(() => app.vault.cachedRead(file)),
       getFileByPath: (path) => Effect.sync(() => app.vault.getFileByPath(path)),
@@ -114,8 +131,11 @@ function appContext(app: App) {
 function launch<A, E>(
   app: App,
   open: Effect.Effect<A, E, WorkbenchActionServices>,
+  services?: LaunchServices,
 ): Promise<A> {
-  return Effect.runPromise(open.pipe(Effect.provideContext(appContext(app))));
+  return Effect.runPromise(
+    open.pipe(Effect.provideContext(appContext(app, services))),
+  );
 }
 
 /** A bridge over an empty runtime, closed when the test ends. */
@@ -241,9 +261,16 @@ function setup() {
 function register(plugin: Plugin, deps: RegistrationHostDeps): void {
   const options = {
     ...makeWorkbenchHost(deps).deps,
-    customize: "customize" in deps ? deps.customize : async () => {},
     bridge: testBridge(),
-    context: appContext(plugin.app),
+    context: appContext(plugin.app, {
+      profile: deps.profile,
+      customize: {
+        open: (request) =>
+          Effect.sync(() => {
+            if ("customize" in deps) deps.customize(request);
+          }),
+      },
+    }),
     webWorkbenchEnabled: deps.webWorkbenchEnabled,
     defaultProfile: defaultTarget(deps.profile),
   };
@@ -258,17 +285,10 @@ describe("Template Workbench entry points", () => {
       const { app, workspace, file, setViewState } = setup();
       await launch(
         app,
-        openNativeProfile(
-          target === "file"
-            ? file
-            : defaultTarget({
-                defaultDocumentPath: Effect.succeed(
-                  "templates/zotlit-profile.default.md",
-                ),
-                getSource: () => Effect.succeed("Built-in source"),
-              }),
-          { customize: true },
-        ),
+        openNativeProfile(target === "file" ? file : builtInDefault, {
+          customize: true,
+        }),
+        { profile: { getSource: () => Effect.succeed("Built-in source") } },
       );
 
       expect(workspace.getLeaf).not.toHaveBeenCalled();
@@ -429,10 +449,7 @@ Annotation`);
     await launch(
       app,
       openNativeProfile(
-        defaultTarget({
-          defaultDocumentPath: Effect.succeed(file.path),
-          getSource: vi.fn(),
-        }),
+        defaultTarget({ defaultDocumentPath: Effect.succeed(file.path) }),
         { customize: true, itemIndexedKey: "MAIN2345" },
       ),
     );
@@ -463,15 +480,11 @@ Annotation`);
     });
     await launch(
       app,
-      openNativeProfile(
-        defaultTarget({
-          defaultDocumentPath: Effect.succeed(
-            "templates/zotlit-profile.default.md",
-          ),
-          getSource: () => Effect.succeed("Built-in source"),
-        }),
-        { customize: true, itemIndexedKey: "0:ABCDEFGH" },
-      ),
+      openNativeProfile(builtInDefault, {
+        customize: true,
+        itemIndexedKey: "0:ABCDEFGH",
+      }),
+      { profile: { getSource: () => Effect.succeed("Built-in source") } },
     );
     expect(setViewState).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -501,16 +514,12 @@ Annotation`);
         .mockReturnValue(reveal.promise);
       const opening = launch(
         app,
-        openNativeProfile(
-          target === "file"
-            ? file
-            : defaultTarget({
-                defaultDocumentPath: Effect.succeed(
-                  "templates/zotlit-profile.default.md",
-                ),
-                getSource: () => Effect.succeed("Configured built-in document"),
-              }),
-        ),
+        openNativeProfile(target === "file" ? file : builtInDefault),
+        {
+          profile: {
+            getSource: () => Effect.succeed("Configured built-in document"),
+          },
+        },
       );
       await vi.waitFor(() => expect(revealLeaf).toHaveBeenCalledWith(leaf));
       expect(focusWindow).not.toHaveBeenCalled();
@@ -594,7 +603,7 @@ Annotation`);
         ...deps.profile,
         defaultDocumentPath: Effect.succeed(file.path),
       };
-      deps.customize = vi.fn(async () => {});
+      deps.customize = vi.fn();
       register(plugin, deps);
       expect(
         commands.find((entry) => entry.id === id)!.checkCallback?.(false),
@@ -615,7 +624,7 @@ Annotation`);
     const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
     file.path = "templates/zotlit-citation.md";
     file.basename = "zotlit-citation";
-    deps.customize = vi.fn(async () => {});
+    deps.customize = vi.fn();
     register(plugin, deps);
 
     const command = commands.find(
@@ -642,7 +651,7 @@ Annotation`);
     const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
     file.path = "templates/zotlit-partial.authors.md";
     file.basename = "zotlit-partial.authors";
-    deps.customize = vi.fn(async () => {});
+    deps.customize = vi.fn();
     register(plugin, deps);
 
     const command = commands.find(
@@ -669,7 +678,7 @@ Annotation`);
       ...deps.profile,
       defaultDocumentPath: Effect.succeed(file.path),
     };
-    deps.customize = vi.fn(async () => {});
+    deps.customize = vi.fn();
     register(plugin, deps);
 
     fileMenu()
@@ -693,7 +702,7 @@ Annotation`);
       ...deps.profile,
       profiles: Effect.succeed([{ id: "paper", path: file.path }]),
     } as unknown as typeof deps.profile;
-    deps.customize = vi.fn(async () => {});
+    deps.customize = vi.fn();
     register(plugin, deps);
 
     const command = commands.find(
@@ -721,7 +730,7 @@ Annotation`);
       ...deps.profile,
       profiles: Effect.succeed([{ id: "paper", path: file.path }]),
     } as unknown as typeof deps.profile;
-    deps.customize = vi.fn(async () => {});
+    deps.customize = vi.fn();
     register(plugin, deps);
 
     fileMenu()
@@ -741,7 +750,7 @@ Annotation`);
   it("opens the current Literature Note's resolved Default with that paper selected", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { app, file, deps, plugin, commands, setViewState } = setup();
-    deps.customize = vi.fn(async () => {});
+    deps.customize = vi.fn();
     file.path = "Literature/Figures.md";
     file.basename = "Figures";
     // The note's Profile resolves through the vault, by path.
@@ -830,16 +839,12 @@ Annotation`);
       });
       await launch(
         app,
-        openNativeProfile(
-          kind === "file"
-            ? file
-            : defaultTarget({
-                defaultDocumentPath: Effect.succeed(
-                  "templates/zotlit-profile.default.md",
-                ),
-                getSource: () => Effect.succeed("Configured built-in document"),
-              }),
-        ),
+        openNativeProfile(kind === "file" ? file : builtInDefault),
+        {
+          profile: {
+            getSource: () => Effect.succeed("Configured built-in document"),
+          },
+        },
       );
       expect(setViewState).toHaveBeenCalledWith({
         type: TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -857,17 +862,9 @@ Annotation`);
     const getSource = vi.fn(() =>
       Effect.succeed("Configured built-in document"),
     );
-    await launch(
-      app,
-      openNativeProfile(
-        defaultTarget({
-          defaultDocumentPath: Effect.succeed(
-            "templates/zotlit-profile.default.md",
-          ),
-          getSource,
-        }),
-      ),
-    );
+    await launch(app, openNativeProfile(builtInDefault), {
+      profile: { getSource },
+    });
     expect(getSource).toHaveBeenCalledWith("default");
     expect(setViewState).toHaveBeenCalledWith({
       type: TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -875,6 +872,48 @@ Annotation`);
       active: true,
     });
   });
+  it("fails the launch with the Profile service's own error when the built-in Default cannot be read", async () => {
+    const { app, setViewState } = setup();
+    const failure = new ProfileOperationError({
+      message: "The Default Profile does not parse",
+      cause: undefined,
+    });
+    const error = await launch(
+      app,
+      Effect.flip(openNativeProfile(builtInDefault)),
+      {
+        profile: { getSource: () => Effect.fail(failure) },
+      },
+    );
+    expect(error).toBe(failure);
+    expect(setViewState).not.toHaveBeenCalled();
+  });
+  effectIt.effect(
+    "interrupts the Customize flow when its launch is interrupted",
+    () =>
+      Effect.gen(function* () {
+        const { app } = setup();
+        const started = yield* Deferred.make<void>();
+        const interrupted = vi.fn();
+        const fiber = yield* customizeProfile({ profileId: "default" }).pipe(
+          Effect.provideContext(
+            appContext(app, {
+              customize: {
+                open: () =>
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                    Effect.onInterrupt(() => Effect.sync(interrupted)),
+                  ),
+              },
+            }),
+          ),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.await(started);
+        yield* Fiber.interrupt(fiber);
+        expect(interrupted).toHaveBeenCalledOnce();
+      }),
+  );
   it("stores the preference on this device and treats unknown values as Ask", () => {
     const { app, loadLocalStorage, saveLocalStorage } = setup();
     loadLocalStorage.mockReturnValue("obsolete");

@@ -82,15 +82,14 @@ export type ConfirmLaunch = (
 
 /**
  * The document the native editor opens: a Profile's own file, or the Default
- * Profile, whose document may not exist yet. `getSource` answers the Default
- * Profile's text.
+ * Profile, whose document may not exist yet. The editor reads the Default
+ * Profile's text from the `Profile` service when the document is missing.
  */
 export type NativeProfileTarget = TFile | DefaultProfileTarget;
 
-/** The Default Profile's document path, and its text for a missing document. */
+/** The Default Profile's document path. */
 export interface DefaultProfileTarget {
   readonly defaultDocumentPath: string;
-  readonly getSource: (selector: typeof DEFAULT_PROFILE) => Promise<string>;
 }
 
 /** What the flow reaches outside the services: the build, the UI and the device. */
@@ -110,7 +109,7 @@ export interface CustomizePorts {
   ) => Effect.Effect<
     WorkbenchOpened | void,
     NativeOpenError,
-    Workspace | Vault
+    Workspace | Vault | Profile
   >;
   /** The destination this device remembers (`views/template-workbench/preferences`). */
   readonly preference: () => ProfileCustomization;
@@ -279,19 +278,8 @@ const nativeTarget = Effect.fn("LocalBridge.nativeTarget")(function* (
 ) {
   const profile = yield* Profile;
   if (profileId === DEFAULT_PROFILE) {
-    const defaultDocumentPath = yield* profile.defaultDocumentPath;
-    // The editor opens a saved document as written, so one that does not
-    // parse stays open for repair. Only the draft that stands in for a missing
-    // document needs the source.
-    const saved = yield* (yield* Vault).getFileByPath(defaultDocumentPath);
-    const source = saved ? null : yield* profile.getSource(DEFAULT_PROFILE);
     const target: NativeProfileTarget = {
-      defaultDocumentPath,
-      getSource: async () => {
-        if (source === null)
-          throw new Error(`${defaultDocumentPath} was removed while opening`);
-        return source;
-      },
+      defaultDocumentPath: yield* profile.defaultDocumentPath,
     };
     return target;
   }
