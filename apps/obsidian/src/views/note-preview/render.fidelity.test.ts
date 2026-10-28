@@ -23,8 +23,8 @@ import {
   createRenderFixture,
   PROFILE_SOURCE,
   SAVED_NOTE,
+  renderNativeProfile,
 } from "./__fixtures__/render";
-import { renderNativeProfile } from "./render";
 
 const LITERATURE_FOLDER = "notes";
 

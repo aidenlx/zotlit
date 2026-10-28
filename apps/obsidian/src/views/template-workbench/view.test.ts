@@ -72,25 +72,19 @@ vi.mock("@/views/note-preview/render", async (importOriginal) => {
     await importOriginal<typeof import("@/views/note-preview/render")>();
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
-  const stub = () =>
-    vi.fn<typeof actual.renderNativeTemplate>(async (_deps, request) =>
-      actual.nativeResult(
-        failedRender(renderIdentity(request), {
-          code: "render-error",
-        }),
-      ),
-    );
   return {
     ...actual,
-    renderNativeTemplate: stub(),
     makeNativeRenderer: (
       deps: Parameters<typeof actual.makeNativeRenderer>[0],
     ) => ({
       ...actual.makeNativeRenderer(deps),
-      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
-        stub()(deps, request),
+      render: (request: import("@zotlit/workbench/render").RenderRequest) =>
+        Effect.succeed(
+          actual.nativeResult(
+            failedRender(renderIdentity(request), { code: "render-error" }),
+          ),
+        ),
     }),
-    renderNativeProfile: stub(),
   };
 });
 
@@ -373,8 +367,8 @@ describe("TemplateWorkbenchView", () => {
       name: "Original",
       result: { bodyUpdated: false, noManagedBlock: true },
     });
-    expect(originatingNoteUpdateNotice(h.app, result)).toContain("Original");
-    expect(originatingNoteUpdateNotice(h.app, result)).toContain(
+    expect(originatingNoteUpdateNotice(h.app, result!)).toContain("Original");
+    expect(originatingNoteUpdateNotice(h.app, result!)).toContain(
       m.notice_updated_note_no_managed_block(),
     );
     const error = new Error("write failed");
@@ -395,20 +389,22 @@ describe("TemplateWorkbenchView", () => {
       if (stage === "write")
         h.updateNote.mockRejectedValueOnce(new AbortError());
       else h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
-      // An abort, bare or as the cause of the typed failure, which the
-      // Notifier passes over without a notice.
+      // A settlement abort, bare or as the cause of the typed failure, which
+      // the Notifier passes over without a notice; an interrupt answers `null`.
       const stopping = h.view.updateOriginatingNote().then(
-        () => null,
+        (outcome) => outcome,
         (error: unknown) => error,
       );
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
       if (stage === "closed") await h.view.close();
       if (stage !== "write") waiting.reject(new AbortError());
       const stopped: unknown = await stopping;
-      expect(
+      const aborted =
         AbortError.test(stopped) ||
-          (stopped instanceof Error && AbortError.test(stopped.cause)),
-      ).toBe(true);
+        (stopped instanceof Error && AbortError.test(stopped.cause));
+      expect(aborted ? "aborted" : stopped).toBe(
+        stage === "settlement" ? "aborted" : null,
+      );
       expect(h.updateNote).toHaveBeenCalledTimes(stage === "write" ? 1 : 0);
     },
   );
@@ -427,7 +423,7 @@ describe("TemplateWorkbenchView", () => {
     h.updateNote.mockResolvedValueOnce(result);
     const outcome = await h.view.updateOriginatingNote();
     expect(outcome).toEqual({ outcome: "refused", name: "Original", result });
-    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
       m.notice_literature_note_template_missing({ document: "missing.md" }),
     );
   });
@@ -476,7 +472,7 @@ describe("TemplateWorkbenchView", () => {
     });
     const outcome = await h.view.updateOriginatingNote();
     expect(outcome).toEqual({ outcome: "unavailable", name: "Original" });
-    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
       m.template_workbench_update_unavailable({ name: "Original" }),
     );
   });
@@ -3062,6 +3058,67 @@ language: liquid
 describe("Template Workbench Item choice", () => {
   const FIRST = "FIRST234";
   const LATER = "LATER234";
+
+  /** A ZoteroReads fake whose Item reads hold until they are interrupted. */
+  function heldReads() {
+    const started: string[] = [];
+    const interrupted: string[] = [];
+    const zoteroReads = stubService<TemplateWorkbenchDeps["zoteroReads"]>(
+      "ZoteroReads",
+      {
+        state: "ready",
+        reads: stubService<TemplateWorkbenchDeps["zoteroReads"]["reads"]>(
+          "ZoteroReadsApi",
+          {
+            ItemsByIndexedKeys: ({ indexedKeys }) =>
+              Effect.callback<never>(() => {
+                const key = indexedKeys[0]!;
+                started.push(key);
+                return Effect.sync(() => interrupted.push(key));
+              }),
+          },
+        ),
+      },
+    );
+    return { zoteroReads, started, interrupted };
+  }
+
+  it("interrupts the older Item read when a newer selection starts", async () => {
+    const reads = heldReads();
+    const { view } = setup({
+      runtime: testRuntime(),
+      zoteroReads: reads.zoteroReads,
+    });
+    const first = view.selectItem({ id: FIRST, title: "First" });
+    await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
+    void view.selectItem({ id: LATER, title: "Later" });
+    await vi.waitFor(() => expect(reads.started).toEqual([FIRST, LATER]));
+    await expect(first).resolves.toBe(false);
+    // The later read still runs.
+    expect(reads.interrupted).toEqual([FIRST]);
+  });
+
+  it("interrupts every pending command when the view closes", async () => {
+    const reads = heldReads();
+    const prompts: string[] = [];
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.never.pipe(
+        Effect.onInterrupt(() => Effect.sync(() => prompts.push("closed"))),
+      ),
+    );
+    const { view } = setup({
+      runtime: testRuntime(),
+      zoteroReads: reads.zoteroReads,
+    });
+    const selecting = view.selectItem({ id: FIRST, title: "First" });
+    const creating = view.createPartial("venue");
+    await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
+    await view.close();
+    await vi.waitFor(() => expect(reads.interrupted).toEqual([FIRST]));
+    await vi.waitFor(() => expect(prompts).toEqual(["closed"]));
+    await expect(selecting).resolves.toBe(false);
+    await expect(creating).resolves.toBeNull();
+  });
 
   it("keeps a later selection and leaves the outrun choice unpublished", async () => {
     // The read that confirms the chosen Item holds until the test lets it go.

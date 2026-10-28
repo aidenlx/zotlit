@@ -6,11 +6,11 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type {
   CustomizeAction,
+  DefaultProfileTarget,
   NativeProfileTarget,
 } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -26,7 +26,6 @@ import {
 
 import { startTemplateWorkbenchAction } from "./actions";
 import type { WorkbenchActionDeps, WorkbenchOpened } from "./actions";
-import { makeDefaultSourceCommand } from "./atoms";
 import { templateDocumentKind } from "./document-kind";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
@@ -35,6 +34,8 @@ type RegistrationDeps = TemplateWorkbenchDeps &
   WorkbenchActionDeps & {
     webWorkbenchEnabled: boolean;
     customize: CustomizeAction;
+    /** The Default Profile, which a note on the Default Profile opens. */
+    defaultProfile: DefaultProfileTarget;
   };
 /**
  * What the Workbench's commands, header action, and file-menu entries ask of a
@@ -63,14 +64,14 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
       fileProfileValueAtom((file as TFile).path),
     );
     if (!resolved?.ok) return null;
-    if (resolved.profile.selector === "default") return deps.registry;
+    if (resolved.profile.selector === "default") return deps.defaultProfile;
     const profile = (state()?.profiles ?? []).find(
       (entry) => entry.id === resolved.profile.selector,
     );
     return profile ? app.vault.getFileByPath(profile.path) : null;
   };
   const customizeTarget = (
-    target: TFile | ViewRegistryHandle,
+    target: NativeProfileTarget,
     options: { itemIndexedKey?: string; destination?: "web" | "native" } = {},
   ) => {
     const profileId =
@@ -189,7 +190,7 @@ export function registerTemplateWorkbenchView(
       startTemplateWorkbenchAction(deps, "open-workbench", () =>
         file
           ? openTemplateWorkbench(plugin.app, file, options)
-          : openNativeProfile(plugin.app, deps.registry, options),
+          : openNativeProfile(plugin.app, deps.defaultProfile, options),
       );
     }),
   );
@@ -342,7 +343,7 @@ const OPENED: WorkbenchOpened = {
  */
 export async function openNativeProfile(
   app: App,
-  target: NativeProfileTarget | ViewRegistryHandle,
+  target: NativeProfileTarget,
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
@@ -354,11 +355,7 @@ export async function openNativeProfile(
   } = {},
 ): Promise<WorkbenchOpened> {
   const path =
-    target instanceof TFile
-      ? target.path
-      : "get" in target
-        ? target.get(profileStateAtom)?.defaultDocumentPath
-        : target.defaultDocumentPath;
+    target instanceof TFile ? target.path : target.defaultDocumentPath;
   const file =
     target instanceof TFile
       ? target
@@ -368,11 +365,7 @@ export async function openNativeProfile(
   let source: string;
   if (file) source = await app.vault.cachedRead(file);
   else if (target instanceof TFile) return OPENED;
-  else if (!("get" in target)) source = await target.getSource("default");
-  else {
-    using command = makeDefaultSourceCommand(target);
-    source = await command.run();
-  }
+  else source = await target.getSource("default");
   if (file)
     return openTemplateWorkbench(app, file, {
       ...options,

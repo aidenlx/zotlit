@@ -85,12 +85,13 @@ export type ConfirmLaunch = (
  * Profile, whose document may not exist yet. `getSource` answers the Default
  * Profile's text.
  */
-export type NativeProfileTarget =
-  | TFile
-  | {
-      readonly defaultDocumentPath: string;
-      readonly getSource: (selector: typeof DEFAULT_PROFILE) => Promise<string>;
-    };
+export type NativeProfileTarget = TFile | DefaultProfileTarget;
+
+/** The Default Profile's document path, and its text for a missing document. */
+export interface DefaultProfileTarget {
+  readonly defaultDocumentPath: string;
+  readonly getSource: (selector: typeof DEFAULT_PROFILE) => Promise<string>;
+}
 
 /** What the flow reaches outside the services: the build, the UI and the device. */
 export interface CustomizePorts {
