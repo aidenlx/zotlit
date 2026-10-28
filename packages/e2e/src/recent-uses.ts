@@ -25,8 +25,6 @@ export async function verifyRecentUses(
   vaultPath: string,
   reloadWindow: () => Promise<void>,
 ) {
-  const m = await import("@obsidian-messages");
-
   const originalNote = await readFile(join(vaultPath, targetPath), "utf8");
   const saved = await obRun(
     vaultId,
@@ -583,95 +581,10 @@ export async function verifyRecentUses(
     },
   );
   await first(target, "cited");
-  await obRun(
-    vaultId,
-    async (
-      { app, zotlit, page },
-      {
-        sourcepath,
-        choice,
-        target,
-        enabled,
-        targettitle,
-        mCitation_suggester_cited_in_noteResult,
-      },
-    ) => {
-      const { until } = page;
-      const s = zotlit.services;
-      const leaf = (
-        app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-          view: MarkdownView;
-        })[]
-      ).find((l) => l.view.file?.path === sourcepath);
-      await app.workspace.revealLeaf(leaf!);
-      app.workspace.setActiveLeaf(leaf!, { focus: true });
-      const editor = leaf!.view.editor;
-      editor.setValue(choice);
-      await leaf!.view.save();
-      if (enabled) {
-        await until("document citations", async () =>
-          (
-            await s.bridge.runPromise(
-              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
-            )
-          ).citations.some((c) => c.indexedKey === `${target}`),
-        );
-      } else {
-      }
-      editor.setCursor(editor.offsetToPos(editor.getValue().length));
-      editor.focus();
-      const cm = editor.cm;
-      cm.dispatch(cm.state.replaceSelection("[@"), { userEvent: "input.type" });
-      const popup = await until("Citation Suggester", () =>
-        [
-          ...activeDocument.querySelectorAll<HTMLElement>(
-            ".suggestion-container",
-          ),
-        ].at(-1),
-      );
-      const row = await until("first citation", () =>
-        popup.querySelector<HTMLElement>(".suggestion-item"),
-      );
-      if (!row.textContent.includes(targettitle))
-        throw Error(
-          `Empty Citation Suggester did not put Alpha first: ${row.textContent}`,
-        );
-      if (enabled) {
-        if (
-          ![
-            ...row.querySelectorAll<HTMLElement>(
-              ".zt-suggestion-flair-inline,.zt-suggestion-flair-text",
-            ),
-          ].some(
-            (el) =>
-              el.checkVisibility() &&
-              el.textContent === mCitation_suggester_cited_in_noteResult,
-          )
-        )
-          throw Error("Cited paper has no visible label");
-      } else {
-      }
-      activeWindow.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          code: "Escape",
-          keyCode: 27,
-          which: 27,
-          bubbles: true,
-        }),
-      );
-      await until("Citation Suggester closes", () => !popup.isConnected);
-    },
-    {
-      sourcepath: sourcePath,
-      choice: "",
-      target: target,
-      enabled: false,
-      targettitle: targetTitle,
-      mCitation_suggester_cited_in_noteResult:
-        m.citation_suggester_cited_in_note(),
-    },
-  );
+  await expectEmptyCitationFirst(vaultId, {
+    noteBody: "",
+    cited: false,
+  });
   await obRun(
     vaultId,
     async ({ app }) => {
@@ -694,95 +607,10 @@ export async function verifyRecentUses(
     },
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
-  await obRun(
-    vaultId,
-    async (
-      { app, zotlit, page },
-      {
-        sourcepath,
-        choice,
-        target,
-        enabled,
-        targettitle,
-        mCitation_suggester_cited_in_noteResult,
-      },
-    ) => {
-      const { until } = page;
-      const s = zotlit.services;
-      const leaf = (
-        app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-          view: MarkdownView;
-        })[]
-      ).find((l) => l.view.file?.path === sourcepath);
-      await app.workspace.revealLeaf(leaf!);
-      app.workspace.setActiveLeaf(leaf!, { focus: true });
-      const editor = leaf!.view.editor;
-      editor.setValue(choice);
-      await leaf!.view.save();
-      if (enabled) {
-        await until("document citations", async () =>
-          (
-            await s.bridge.runPromise(
-              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
-            )
-          ).citations.some((c) => c.indexedKey === `${target}`),
-        );
-      } else {
-      }
-      editor.setCursor(editor.offsetToPos(editor.getValue().length));
-      editor.focus();
-      const cm = editor.cm;
-      cm.dispatch(cm.state.replaceSelection("[@"), { userEvent: "input.type" });
-      const popup = await until("Citation Suggester", () =>
-        [
-          ...activeDocument.querySelectorAll<HTMLElement>(
-            ".suggestion-container",
-          ),
-        ].at(-1),
-      );
-      const row = await until("first citation", () =>
-        popup.querySelector<HTMLElement>(".suggestion-item"),
-      );
-      if (!row.textContent.includes(targettitle))
-        throw Error(
-          `Empty Citation Suggester did not put Alpha first: ${row.textContent}`,
-        );
-      if (enabled) {
-        if (
-          ![
-            ...row.querySelectorAll<HTMLElement>(
-              ".zt-suggestion-flair-inline,.zt-suggestion-flair-text",
-            ),
-          ].some(
-            (el) =>
-              el.checkVisibility() &&
-              el.textContent === mCitation_suggester_cited_in_noteResult,
-          )
-        )
-          throw Error("Cited paper has no visible label");
-      } else {
-      }
-      activeWindow.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          code: "Escape",
-          keyCode: 27,
-          which: 27,
-          bubbles: true,
-        }),
-      );
-      await until("Citation Suggester closes", () => !popup.isConnected);
-    },
-    {
-      sourcepath: sourcePath,
-      choice: `[@${targetCitekey}]\n\n`,
-      target: target,
-      enabled: true,
-      targettitle: targetTitle,
-      mCitation_suggester_cited_in_noteResult:
-        m.citation_suggester_cited_in_note(),
-    },
-  );
+  await expectEmptyCitationFirst(vaultId, {
+    noteBody: `[@${targetCitekey}]\n\n`,
+    cited: true,
+  });
 
   // Dragging a Library row into the note runs the same successful insert
   // decision. The Use is visible through Recent and an empty suggester.
@@ -848,95 +676,10 @@ export async function verifyRecentUses(
     { sourcepath: sourcePath, target: target, value: `[@${targetCitekey}]` },
   );
   await first(target, "cited");
-  await obRun(
-    vaultId,
-    async (
-      { app, zotlit, page },
-      {
-        sourcepath,
-        choice,
-        target,
-        enabled,
-        targettitle,
-        mCitation_suggester_cited_in_noteResult,
-      },
-    ) => {
-      const { until } = page;
-      const s = zotlit.services;
-      const leaf = (
-        app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
-          view: MarkdownView;
-        })[]
-      ).find((l) => l.view.file?.path === sourcepath);
-      await app.workspace.revealLeaf(leaf!);
-      app.workspace.setActiveLeaf(leaf!, { focus: true });
-      const editor = leaf!.view.editor;
-      editor.setValue(choice);
-      await leaf!.view.save();
-      if (enabled) {
-        await until("document citations", async () =>
-          (
-            await s.bridge.runPromise(
-              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
-            )
-          ).citations.some((c) => c.indexedKey === `${target}`),
-        );
-      } else {
-      }
-      editor.setCursor(editor.offsetToPos(editor.getValue().length));
-      editor.focus();
-      const cm = editor.cm;
-      cm.dispatch(cm.state.replaceSelection("[@"), { userEvent: "input.type" });
-      const popup = await until("Citation Suggester", () =>
-        [
-          ...activeDocument.querySelectorAll<HTMLElement>(
-            ".suggestion-container",
-          ),
-        ].at(-1),
-      );
-      const row = await until("first citation", () =>
-        popup.querySelector<HTMLElement>(".suggestion-item"),
-      );
-      if (!row.textContent.includes(targettitle))
-        throw Error(
-          `Empty Citation Suggester did not put Alpha first: ${row.textContent}`,
-        );
-      if (enabled) {
-        if (
-          ![
-            ...row.querySelectorAll<HTMLElement>(
-              ".zt-suggestion-flair-inline,.zt-suggestion-flair-text",
-            ),
-          ].some(
-            (el) =>
-              el.checkVisibility() &&
-              el.textContent === mCitation_suggester_cited_in_noteResult,
-          )
-        )
-          throw Error("Cited paper has no visible label");
-      } else {
-      }
-      activeWindow.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          code: "Escape",
-          keyCode: 27,
-          which: 27,
-          bubbles: true,
-        }),
-      );
-      await until("Citation Suggester closes", () => !popup.isConnected);
-    },
-    {
-      sourcepath: sourcePath,
-      choice: "",
-      target: target,
-      enabled: false,
-      targettitle: targetTitle,
-      mCitation_suggester_cited_in_noteResult:
-        m.citation_suggester_cited_in_note(),
-    },
-  );
+  await expectEmptyCitationFirst(vaultId, {
+    noteBody: "",
+    cited: false,
+  });
   await obRun(
     vaultId,
     async ({ app }, { sourcepath, sourcetext }) => {
@@ -1105,5 +848,95 @@ export async function verifyRecentUses(
   expect(afterOpen[0]?.indexedKey).toBe(target);
   expect(afterOpen[0]?.values.lastActivity).not.toBe(
     beforeUpdate[0]?.values.lastActivity,
+  );
+}
+
+/**
+ * Checks that the empty Citation Suggester puts the target paper first, then
+ * closes it with Escape.
+ *
+ * @param vaultId - The vault window to drive.
+ * @param options.noteBody - The text the source note holds, saved before `[@` is typed after it.
+ * @param options.cited - Whether `noteBody` cites the target. A cited note waits for the Document
+ * Citation Set to hold the target and expects the "cited in note" label on the first suggestion.
+ */
+async function expectEmptyCitationFirst(
+  vaultId: string,
+  { noteBody, cited }: { noteBody: string; cited: boolean },
+) {
+  const m = await import("@obsidian-messages");
+  await obRun(
+    vaultId,
+    async (
+      { app, zotlit, page },
+      { sourcePath, noteBody, target, cited, targetTitle, citedLabel },
+    ) => {
+      const { until } = page;
+      const s = zotlit.services;
+      const leaf = (
+        app.workspace.getLeavesOfType("markdown") as (WorkspaceLeaf & {
+          view: MarkdownView;
+        })[]
+      ).find((l) => l.view.file?.path === sourcePath);
+      await app.workspace.revealLeaf(leaf!);
+      app.workspace.setActiveLeaf(leaf!, { focus: true });
+      const editor = leaf!.view.editor;
+      editor.setValue(noteBody);
+      await leaf!.view.save();
+      if (cited) {
+        await until("document citations", async () =>
+          (
+            await s.bridge.runPromise(
+              s.citationIndex.getDocumentCitationSet(leaf!.view.file!),
+            )
+          ).citations.some((c) => c.indexedKey === target),
+        );
+      }
+      editor.setCursor(editor.offsetToPos(editor.getValue().length));
+      editor.focus();
+      const cm = editor.cm;
+      cm.dispatch(cm.state.replaceSelection("[@"), { userEvent: "input.type" });
+      const popup = await until("Citation Suggester", () =>
+        [
+          ...activeDocument.querySelectorAll<HTMLElement>(
+            ".suggestion-container",
+          ),
+        ].at(-1),
+      );
+      const row = await until("first citation", () =>
+        popup.querySelector<HTMLElement>(".suggestion-item"),
+      );
+      if (!row.textContent.includes(targetTitle))
+        throw Error(
+          `Empty Citation Suggester did not put Alpha first: ${row.textContent}`,
+        );
+      if (
+        cited &&
+        ![
+          ...row.querySelectorAll<HTMLElement>(
+            ".zt-suggestion-flair-inline,.zt-suggestion-flair-text",
+          ),
+        ].some((el) => el.checkVisibility() && el.textContent === citedLabel)
+      )
+        throw Error("Cited paper has no visible label");
+      activeWindow.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+        }),
+      );
+      await until("Citation Suggester closes", () => !popup.isConnected);
+    },
+    {
+      sourcePath,
+      noteBody,
+      target,
+      cited,
+      targetTitle,
+      citedLabel: m.citation_suggester_cited_in_note(),
+    },
   );
 }

@@ -1,12 +1,23 @@
 // PDF.js supplies the geometry; the repository owns each Annotation write.
-import { Cause, Effect, Exit, Schema } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Schema,
+  Semaphore,
+} from "effect";
+import type { Scope } from "effect";
 
 import type {
   PdfPosition,
   PdfTextStructure,
+  SelectedText,
   TextSelection,
 } from "@zotlit/pdf-structure";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import type { Notifier } from "@/lib/notifier";
@@ -19,7 +30,10 @@ import type {
   HistoryOutcome,
   WriteRunFailed,
 } from "@/services/annotation-repository/service";
-import { groupFailureMessages } from "@/services/annotation-repository/write";
+import {
+  groupFailureMessages,
+  writeFailureReason,
+} from "@/services/annotation-repository/write";
 import type {
   AnnotationDraft,
   GeometryInput,
@@ -28,6 +42,70 @@ import type {
 } from "@/services/annotation-repository/write";
 
 import type { EditablePosition } from "./geometry-edit";
+
+/** One write a PDF view started on its own Scope. */
+export type WriteRun = Fiber.Fiber<unknown, never>;
+
+/**
+ * Forks a write onto a PDF view's own Scope, which the view's close closes: a
+ * write still running then is interrupted, or finishes where it is
+ * uninterruptible.
+ */
+export type BindingWrites = <A>(
+  effect: Effect.Effect<A>,
+) => Fiber.Fiber<A, never>;
+
+/**
+ * The write runner of one PDF view, over a `FiberSet` on the Scope it is
+ * built in. A write's own failures are its outcomes; what is left is a
+ * defect, logged here because the FiberSet keeps no failure.
+ */
+export const bindingWrites: Effect.Effect<BindingWrites, never, Scope.Scope> =
+  Effect.map(
+    Effect.flatMap(FiberSet.make(), (fibers) =>
+      FiberSet.runtime(fibers)<never>(),
+    ),
+    (fork) => (effect) =>
+      fork(
+        effect.pipe(
+          Effect.tapCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.void
+              : Effect.logError("A PDF view's write died").pipe(
+                  Effect.annotateLogs({ error: Cause.squash(cause) }),
+                  withLogCategory("pdf-annotation-editor"),
+                ),
+          ),
+        ),
+      ),
+  );
+
+/**
+ * Settles when `run` has ended, however it ended: answered, interrupted by the
+ * view's close, or ended by unload. Settled for `null`. Never rejects.
+ */
+export function settledOf(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
+  run: WriteRun | null,
+): Promise<void> {
+  return run
+    ? bridge.runPromiseExit(Fiber.await(run)).then(() => undefined)
+    : Promise.resolve();
+}
+
+/**
+ * A keystroke asked to edit under a block: probe Zotero first, because the
+ * block may be one a probe clears, and report only what survives it.
+ */
+export const reportBlockedEdit = Effect.fn(
+  "PdfAnnotationEditor.reportBlockedEdit",
+)(function* (
+  annotations: Pick<AnnotationRepository["Service"], "probe">,
+  report: () => void,
+) {
+  yield* annotations.probe;
+  report();
+});
 
 /** A PDF.js read that could not produce the geometry or text for a gesture. */
 class PdfStructureReadError extends Schema.TaggedError<
@@ -41,16 +119,54 @@ const UNKNOWN_OUTCOME = {
   failure: { kind: "unknown-outcome" },
 } as const satisfies MutationState;
 
-/** Read both placement fields before asking the repository to create a mark. */
+/** One committed create, answering the created key or `null`. */
+export type CreateWrite = Effect.Effect<string | null>;
+
+/** What one create does on the creation surfaces around its write. */
+export interface CreateSeam {
+  /** The create is on its way. */
+  begin: () => void;
+  /**
+   * Zotero created the Annotation. What the seam does after it is logged when
+   * it fails, and the create keeps its key.
+   */
+  created: (annotationKey: string) => void;
+  /** The create made nothing, for `reason`; the seam says why. */
+  failed: (reason: string) => void;
+  /** However the create ended: the created key, or `null`. */
+  end: (annotationKey: string | null) => void;
+  /** The clock a cooldown's remaining seconds are read against. */
+  now: () => CopyInstant;
+}
+
+/**
+ * One create the researcher committed: read both placement fields, then ask
+ * the repository to create the mark, with the Attachment's list held from
+ * start to end. A create that made nothing says why through the seam; one
+ * that failed or died before Zotero answered is one whose outcome ZotLit
+ * never learned, so no committed draft goes without a notice.
+ *
+ * The read is interruptible: a reader closed or unloaded while PDF.js places
+ * the mark sends nothing. From the send on, the create and what the seam does
+ * with its answer are uninterruptible, so a close waits for Zotero's answer.
+ *
+ * @param create.uninterruptible whether the read is uninterruptible too: a
+ *   Text Draft's typed text is created even when the view's close finished it.
+ * @returns the created Annotation's Indexed Key, or `null`.
+ */
 export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
   function* (
-    annotations: Pick<AnnotationRepository["Service"], "createAnnotation">,
+    annotations: Pick<
+      AnnotationRepository["Service"],
+      "createAnnotation" | "hold"
+    >,
     {
       attachmentKey,
       structure,
       draft,
       previous,
       group,
+      uninterruptible = false,
     }: {
       attachmentKey: string;
       structure: PdfTextStructure;
@@ -59,38 +175,129 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
       };
       previous: { pageLabel: string; pageIndex: number }[];
       group?: string;
+      uninterruptible?: boolean;
     },
+    seam: CreateSeam,
   ) {
-    const [sortIndex, pageLabel] = yield* Effect.tryPromise({
-      try: () =>
-        Promise.all([
-          structure.sortIndex(draft.position),
-          structure.pageLabel(draft.position.pageIndex, previous),
-        ]),
-      catch: (cause) => new PdfStructureReadError({ cause }),
-    });
-    return yield* annotations.createAnnotation(
-      attachmentKey,
-      { ...draft, sortIndex, pageLabel },
-      { group },
-    );
-  },
-  // A create that failed before Zotero answered is one whose outcome ZotLit
-  // never learned.
-  (operation, _annotations, { draft }) =>
-    operation.pipe(
-      recover(
-        (cause) =>
+    const unknown = () =>
+      seam.failed(writeFailureReason(UNKNOWN_OUTCOME.failure, seam.now()));
+    let key: string | null = null;
+    return yield* Effect.uninterruptibleMask((restore) => {
+      const read = Effect.tryPromise({
+        try: () =>
+          Promise.all([
+            structure.sortIndex(draft.position),
+            structure.pageLabel(draft.position.pageIndex, previous),
+          ]),
+        catch: (cause) => new PdfStructureReadError({ cause }),
+      });
+      const send = Effect.gen(function* () {
+        const [sortIndex, pageLabel] = yield* uninterruptible
+          ? read
+          : restore(read);
+        return yield* annotations.createAnnotation(
+          attachmentKey,
+          { ...draft, sortIndex, pageLabel },
+          { group },
+        );
+      }).pipe(
+        Effect.catch((error) =>
           Effect.logWarning("An Annotation was not created").pipe(
-            Effect.annotateLogs({
-              type: draft.type,
-              error: Cause.squash(cause),
-            }),
+            Effect.annotateLogs({ type: draft.type, error }),
             withLogCategory("pdf-annotation-editor"),
+            Effect.as<CreateOutcome>(UNKNOWN_OUTCOME),
           ),
-        Effect.succeed<CreateOutcome>(UNKNOWN_OUTCOME),
+        ),
+      );
+      // The list stays held until the create settles: a draft the view's
+      // close finishes is created after the view let go of its own hold, and
+      // a list dropped under the create leaves it no Zotero source to write
+      // to.
+      return Effect.acquireUseRelease(
+        annotations
+          .hold([attachmentKey])
+          .pipe(Effect.tap(() => Effect.sync(() => seam.begin()))),
+        () =>
+          Effect.flatMap(send, (outcome) => {
+            if (outcome.kind === "failed") {
+              seam.failed(writeFailureReason(outcome.failure, seam.now()));
+              return Effect.succeed(null);
+            }
+            const created = outcome.annotationKey;
+            key = created;
+            return Effect.try(() => seam.created(created)).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("An Annotation create did not finish").pipe(
+                  Effect.annotateLogs({ type: draft.type, error: error.cause }),
+                  withLogCategory("pdf-annotation-editor"),
+                ),
+              ),
+              Effect.as(created),
+            );
+          }),
+        (held, exit) =>
+          Effect.sync(() => {
+            if (
+              key === null &&
+              Exit.isFailure(exit) &&
+              !Cause.hasInterruptsOnly(exit.cause)
+            )
+              unknown();
+            seam.end(key);
+            held[Symbol.dispose]();
+          }),
+      );
+    });
+  },
+);
+
+/** The writes of one reader that run one at a time, in the order asked. */
+export const oneAtATime = (): Semaphore.Semaphore => Semaphore.makeUnsafe(1);
+
+/**
+ * A write that waits for the writes asked before it in `queue`, then runs as
+ * `make` builds it then; `null` from `make` is a write that cannot run. A
+ * close ends the wait, so a write still waiting is never built.
+ */
+export const queued = <A>(
+  queue: Semaphore.Semaphore,
+  make: () => Effect.Effect<A> | null,
+): Effect.Effect<A | void> =>
+  queue.withPermits(1)(Effect.suspend(() => make() ?? Effect.void));
+
+/**
+ * Place a settled text selection on the Structured Characters of its pages,
+ * then hand the placement on. A read that failed, or a selection that maps
+ * onto no character, places nothing.
+ */
+export const placeSelection = Effect.fn("PdfAnnotationEditor.placeSelection")(
+  function* (
+    structure: PdfTextStructure,
+    selection: TextSelection,
+    place: (captured: SelectedText) => void,
+  ) {
+    const captured = yield* captureText(structure, selection).pipe(
+      Effect.catchTag("PdfStructureReadError", (error) =>
+        Effect.logWarning(
+          "Could not place the text selection on the page",
+        ).pipe(
+          Effect.annotateLogs({ error }),
+          withLogCategory("pdf-annotation-editor"),
+          Effect.as(null),
+        ),
       ),
-    ),
+    );
+    if (captured) place(captured);
+    else
+      yield* Effect.logDebug(
+        "Text selection maps onto no character of its pages",
+      ).pipe(
+        Effect.annotateLogs({
+          pageIndexes: selection.pages.map(({ pageIndex }) => pageIndex),
+        }),
+        withLogCategory("pdf-annotation-editor"),
+      );
+  },
 );
 
 /** A settled DOM selection waits for PDF.js inside the reader's scope. */
@@ -102,50 +309,81 @@ export const captureText = Effect.fn("PdfAnnotationEditor.captureText")(
     }),
 );
 
-/** Recompute the released position's Sort Index before its geometry write. */
+/**
+ * Save a released Geometry Edit: recompute its Sort Index, write it, and say
+ * through the Notifier why it did not land. A read or a write that failed is
+ * an outcome ZotLit never learned.
+ *
+ * The read is interruptible: a reader closed while the index is computed
+ * sends nothing, and its mark goes with it. From the send on, the write and
+ * its notice are uninterruptible, so a close waits for Zotero's answer and a
+ * refused edit is still told.
+ *
+ * @param options.end ends the adjustment the mark draws: called once the
+ *   index is read, and again however the save ended.
+ * @param options.message the notice for one failure.
+ */
 export const saveGeometry = Effect.fn("PdfAnnotationEditor.saveGeometry")(
   function* (
     annotations: Pick<AnnotationRepository["Service"], "patchGeometry">,
-    readSortIndex: (position: PdfPosition) => Promise<string | null>,
+    notifier: Pick<Notifier["Service"], "show">,
     {
+      readSortIndex,
       key,
       proposal,
       text,
       input,
-      onRead,
+      end,
+      now,
+      message,
     }: {
+      readSortIndex: (position: PdfPosition) => Promise<string | null>;
       key: string;
       proposal: EditablePosition;
       text?: string;
       input: GeometryInput;
-      onRead: () => void;
+      end: () => void;
+      now: () => CopyInstant;
+      message: FailureMessage;
     },
   ) {
-    const sortIndex = yield* Effect.tryPromise({
-      try: () => readSortIndex(proposal),
-      catch: (cause) => new PdfStructureReadError({ cause }),
+    const save = Effect.fnUntraced(function* (
+      restore: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
+    ) {
+      const sortIndex = yield* restore(
+        Effect.tryPromise({
+          try: () => readSortIndex(proposal),
+          catch: (cause) => new PdfStructureReadError({ cause }),
+        }),
+      );
+      if (sortIndex === null) return { kind: "idle" } as const;
+      end();
+      return yield* annotations.patchGeometry(
+        key,
+        { position: proposal, sortIndex, ...(text !== undefined && { text }) },
+        input,
+      );
     });
-    if (sortIndex === null) return { kind: "idle" } as const;
-    onRead();
-    return yield* annotations.patchGeometry(
-      key,
-      { position: proposal, sortIndex, ...(text !== undefined && { text }) },
-      input,
-    );
-  },
-  (operation) =>
-    operation.pipe(
-      Effect.catchTag(["PdfStructureReadError", "WriteRunFailed"], (error) =>
-        Effect.logWarning("An Annotation geometry edit did not finish").pipe(
-          Effect.annotateLogs({ error }),
-          withLogCategory("pdf-annotation-editor"),
-          Effect.as<MutationState>({
-            kind: "failed",
-            failure: { kind: "unknown-outcome" },
-          }),
+    return yield* Effect.uninterruptibleMask((restore) =>
+      reportWrite(
+        notifier,
+        save(restore).pipe(
+          Effect.catchTag(
+            ["PdfStructureReadError", "WriteRunFailed"],
+            (error) =>
+              Effect.logWarning(
+                "An Annotation geometry edit did not finish",
+              ).pipe(
+                Effect.annotateLogs({ error }),
+                withLogCategory("pdf-annotation-editor"),
+                Effect.as<MutationState>(UNKNOWN_OUTCOME),
+              ),
+          ),
         ),
+        { verb: "edit", now, message },
       ),
-    ),
+    ).pipe(Effect.ensuring(Effect.sync(end)));
+  },
 );
 
 /** The notice for one write that did not land. */
@@ -247,8 +485,11 @@ export const eraseMarks = (
  * land, or one that put an Annotation back under a new creator. A step that
  * failed before Zotero answered is one whose outcome ZotLit never learned.
  *
- * @param options.speaks whether the reader that asked still stands to hear the
- *   answer; a closed one says nothing.
+ * The step itself is uninterruptible: the repository moves the step to the
+ * other stack only once its writes answered, so a reader closed under it
+ * waits for that answer. What the reader is told runs after, and the close
+ * ends it.
+ *
  * @param options.now the clock a cooldown's remaining seconds are read against.
  */
 export const stepMarkHistory = Effect.fn("PdfAnnotationEditor.stepHistory")(
@@ -258,35 +499,51 @@ export const stepMarkHistory = Effect.fn("PdfAnnotationEditor.stepHistory")(
     {
       attachmentKey,
       direction,
-      speaks,
       now,
     }: {
       attachmentKey: string;
       direction: HistoryDirection;
-      speaks: () => boolean;
       now: () => CopyInstant;
     },
   ) {
-    const outcome = yield* (
-      direction === "undo"
+    const outcome = yield* Effect.uninterruptible(
+      (direction === "undo"
         ? annotations.undo(attachmentKey)
         : annotations.redo(attachmentKey)
-    ).pipe(
-      recover(
-        (cause) =>
-          Effect.logWarning(
-            "A History Step failed before Zotero answered",
-          ).pipe(
-            Effect.annotateLogs({ direction, error: Cause.squash(cause) }),
-            withLogCategory("pdf-annotation-editor"),
-          ),
-        Effect.succeed<HistoryOutcome>(UNKNOWN_OUTCOME),
+      ).pipe(
+        recover(
+          (cause) =>
+            Effect.logWarning(
+              "A History Step failed before Zotero answered",
+            ).pipe(
+              Effect.annotateLogs({ direction, error: Cause.squash(cause) }),
+              withLogCategory("pdf-annotation-editor"),
+            ),
+          Effect.succeed<HistoryOutcome>(UNKNOWN_OUTCOME),
+        ),
       ),
     );
-    if (!speaks()) return outcome;
     const notice = historyOutcomeNotice(outcome, now());
     if (notice !== null) yield* notifier.show(notice);
     return outcome;
+  },
+);
+
+/**
+ * One Annotation History press of a reader: its step, then the landing on
+ * what the step changed, once the presses before it have landed.
+ */
+export const pressHistory = Effect.fn("PdfAnnotationEditor.pressHistory")(
+  function* (
+    presses: Semaphore.Semaphore,
+    step: Effect.Effect<HistoryOutcome>,
+    land: (outcome: HistoryOutcome) => Promise<void> | void,
+  ) {
+    yield* presses.withPermits(1)(
+      Effect.flatMap(step, (outcome) =>
+        Effect.promise(async () => land(outcome)),
+      ),
+    );
   },
 );
 
