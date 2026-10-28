@@ -850,6 +850,89 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ]);
   });
 
+  it("shows the entries of every work a hovered citation names in its popover", async () => {
+    const notePath = "Citation hover.md";
+    await obRun(
+      vaultId,
+      async ({ app: host }, { notePath }) => {
+        const app = host as WalkthroughApp;
+        const file = await app.vault.create(
+          notePath,
+          "Figures and trust [@rougier2014; @ioannidis2005].\n",
+        );
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(file, { state: { mode: "preview" } });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      { notePath },
+    );
+    // The reading view formats the citation once its render settles and may
+    // draw it again meanwhile, so each try hovers the citation that stands
+    // until a popover is open over it.
+    const entries = await obRunUntil(
+      vaultId,
+      async ({ page }, { notePath }) => {
+        const view = page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === notePath)?.view;
+        if (!view) return [];
+        const popover = view.hoverPopover?.hoverEl.isConnected
+          ? view.hoverPopover
+          : null;
+        if (!popover) {
+          const citation =
+            view.previewMode.containerEl.querySelector<HTMLElement>(
+              ".zt-citation",
+            );
+          if (citation?.textContent?.includes("Rougier")) {
+            const box = citation.getBoundingClientRect();
+            citation.dispatchEvent(
+              new MouseEvent("mouseover", {
+                clientX: box.x + box.width / 2,
+                clientY: box.y + box.height / 2,
+                bubbles: true,
+                view: citation.ownerDocument.defaultView,
+              }),
+            );
+          }
+          return [];
+        }
+        return [
+          ...popover.hoverEl.querySelectorAll<HTMLElement>(
+            ".zt-citation-popover-content [data-citation-popover-block]",
+          ),
+        ].map((block) => ({
+          citekey: block.dataset.citationPopoverBlock ?? "",
+          text: block.textContent ?? "",
+        }));
+      },
+      { notePath },
+      {
+        what: "the Citation Popover entries of the hovered citation",
+        ready: (entries) => entries.length === 2,
+      },
+    );
+    await obRun(
+      vaultId,
+      async ({ app, page }, { notePath }) => {
+        const leaf = page
+          .leavesOfType("markdown")
+          .find((leaf) => leaf.view.file?.path === notePath)!;
+        leaf.view.hoverPopover?.hide();
+        leaf.detach();
+        await app.vault.delete(app.vault.getFileByPath(notePath)!);
+      },
+      { notePath },
+    );
+
+    expect(entries.map(({ citekey }) => citekey)).toEqual([
+      "rougier2014",
+      "ioannidis2005",
+    ]);
+    expect(entries[0]!.text).toContain("Rougier");
+    expect(entries[1]!.text).toContain("Ioannidis");
+  });
+
   it("keeps citation suggestions for full words and inserts from both pickers", async () => {
     await obRunUntil(
       vaultId,
