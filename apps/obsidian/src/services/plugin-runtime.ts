@@ -11,7 +11,6 @@ import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { revealSetting } from "@/lib/open-settings";
 import { ViewRegistry } from "@/lib/view-atoms";
-import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
   createProfileDialog,
@@ -42,7 +41,6 @@ import { AttachmentResolver } from "./attachment-resolver/service";
 import { ChineseSegmenter } from "./chinese-segmenter/service";
 import { CitationLookup } from "./citation-index/lookup-service";
 import { CitationIndex } from "./citation-index/service";
-import { CitationParse } from "./citation-parse/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
@@ -282,7 +280,6 @@ export async function createPluginRuntime(
     template: runtime.runSync(Template),
     noteIndex: runtime.runSync(NoteIndex),
     localServer: runtime.runSync(LocalServer),
-    zoteroHttp: runtime.runSync(ZoteroHttp),
     chineseSegmenter: bindManagedBinary(
       bridge,
       runtime.runSync(ChineseSegmenter),
@@ -333,14 +330,11 @@ export async function createPluginRuntime(
       },
     ),
     citationLookup,
-    citationParse: runtime.runSync(CitationParse),
     citationIndex,
     citationSuggestServices: { citationLookup, citationIndex, useLedger },
-    pandocExportServices: {
-      pandocEngine,
-      notifier,
-      context: runtime.runSync(Effect.context<PandocExportServices>()),
-    },
+    pandocExportContext: runtime.runSync(
+      Effect.context<PandocExportServices>(),
+    ),
     pandocEngine: bindManagedBinary(bridge, pandocEngine),
     citationText: runtime.runSync(CitationText),
     citationPopover: runtime.runSync(CitationPopover),

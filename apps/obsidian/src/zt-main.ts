@@ -438,12 +438,8 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     });
 
     registerPandocExport(this, {
-      fileSystem: services.fileSystem,
-      citationParse: services.citationParse,
       app: this.app,
-      ...services.pandocExportServices,
-      zoteroHttp: services.zoteroHttp,
-      settings: services.settings,
+      context: services.pandocExportContext,
       bridge: services.bridge,
       openSettings: () => {
         this.app.setting.open();
