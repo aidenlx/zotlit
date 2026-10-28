@@ -8879,8 +8879,30 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             position: { pageIndex: 0, rects: [[100, 560, 300, 580]] },
           };
 
-          const createDraft = () =>
-            obRun(
+          /**
+           * Creates the draft once the reopened view has read the Attachment's
+           * list. Until that read binds the Attachment to its database, the
+           * capability reads `server-changed` and a create answers `db-source`.
+           */
+          const createDraft = async () => {
+            await obRunUntil(
+              vaultId!,
+              async (
+                { zotlit },
+                { attachmentKey }: { attachmentKey: string },
+              ) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                return bridge.runSync(repository.capabilityFor(attachmentKey))
+                  .kind;
+              },
+              { attachmentKey: attachment.key },
+              {
+                ready: (value) => value === "writable",
+                what: "the attachment's annotation capability to report writable",
+              },
+            );
+            return obRun(
               vaultId!,
               async (
                 { zotlit },
@@ -8908,6 +8930,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               },
               { attachmentKey: attachment.key, draft },
             );
+          };
 
           const eraseThrough = (annotationKey: string) =>
             obRun(
