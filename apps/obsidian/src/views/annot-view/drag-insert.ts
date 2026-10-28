@@ -4,9 +4,10 @@ import { MarkdownView } from "obsidian";
 import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent } from "react";
 
+import { observeExit } from "@zotlit/workbench/ui";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
-import { onFiberSuccess } from "@/lib/view-runner";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
   AnnotationInsertOutcome,
@@ -51,7 +52,7 @@ function insertSlot(report: (outcome: AnnotationInsertOutcome) => void) {
       fiber.addObserver(() => {
         if (pending === fiber) pending = null;
       });
-      onFiberSuccess(fiber, report);
+      observeExit(fiber, { onSuccess: report });
       return fiber;
     },
   };

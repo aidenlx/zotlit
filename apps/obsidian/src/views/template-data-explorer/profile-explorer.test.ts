@@ -15,7 +15,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import { answerOf } from "@/lib/view-runner";
+import { answerOf, makeViewRunner } from "@/lib/view-runner";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
 import { workbenchAnnotationChoice } from "@/views/template-workbench/item-choice";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
@@ -275,6 +275,7 @@ it("switches annotation data locally through the annotation chooser", async () =
     Effect.succeed<string | null>("ANNT2346g42"),
   );
   await using cleanup = new AsyncDisposableStack();
+  const { run } = cleanup.use(makeViewRunner(host.registry));
   const container = cleanup.adopt(document.createElement("div"), (element) =>
     element.remove(),
   );
@@ -293,7 +294,7 @@ it("switches annotation data locally through the annotation chooser", async () =
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,
-            run: Effect.runFork,
+            run,
           }),
         },
         withModel(
@@ -307,7 +308,7 @@ it("switches annotation data locally through the annotation chooser", async () =
               const state = session.state();
               const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
                 suggester,
-                run: Effect.runFork,
+                run,
               });
               const id = await answerOf(
                 chooser.run(

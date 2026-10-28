@@ -7,10 +7,12 @@
 // selection replaces. Closing the view interrupts every fiber still running.
 // What a component reads stays a view atom (ADR 0082).
 import { RegistryContext } from "@effect/atom-react";
-import { Cause, Effect, Exit, Fiber, FiberSet, Scope } from "effect";
+import { Effect, Fiber, FiberSet, Scope } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext, useEffect, useState } from "react";
+
+import { joinForked, observeExit } from "@zotlit/workbench/ui";
 
 import { openScope } from "./effect-scope";
 import { viewRuntime } from "./view-atoms";
@@ -78,16 +80,6 @@ export function useViewRunner(): ViewRun {
   return runner.run;
 }
 
-/** Call `answer` with the value `fiber` succeeds with; an interrupt calls nothing. */
-export function onFiberSuccess<A, E>(
-  fiber: Fiber.Fiber<A, E>,
-  answer: (value: A) => void,
-): void {
-  fiber.addObserver((exit) => {
-    if (Exit.isSuccess(exit)) answer(exit.value);
-  });
-}
-
 /**
  * `effect` run on the view's runner and joined, for a caller outside the view,
  * such as a launch that opens the view. The view's close interrupts the run,
@@ -97,14 +89,7 @@ export function joinOnView<A, E>(
   run: ViewRun,
   effect: Effect.Effect<A, E, ViewServices>,
 ): Effect.Effect<A, E> {
-  // The fork and the finalizer are set up before an interrupt can land, so a
-  // caller interrupted as the run starts still interrupts the run.
-  return Effect.uninterruptibleMask((restore) => {
-    const fiber = run(effect);
-    return restore(Fiber.join(fiber)).pipe(
-      Effect.onInterrupt(() => Fiber.interrupt(fiber)),
-    );
-  });
+  return joinForked(Effect.sync(() => run(effect)));
 }
 
 /**
@@ -138,13 +123,12 @@ export function inFlightSlot<A, E>(
     if (current) return current;
     const fiber = run(effect);
     current = fiber;
-    // A run that ended while it forked frees the slot at once.
+    onChange();
+    // A run that has ended already, as on a closed view, ends here at once.
     fiber.addObserver(() => {
-      if (current !== fiber) return;
       current = null;
       onChange();
     });
-    if (current === fiber) onChange();
     return fiber;
   };
   return {
@@ -152,16 +136,6 @@ export function inFlightSlot<A, E>(
     start: () => void begin(),
     running: () => current !== null,
   };
-}
-
-/**
- * How `fiber` ended, for a test that reads the Exit. An interrupt-only Exit
- * means the view closed or a newer run superseded it.
- */
-export function exitOf<A, E>(
-  fiber: Fiber.Fiber<A, E>,
-): Promise<Exit.Exit<A, E>> {
-  return new Promise((resolve) => fiber.addObserver(resolve));
 }
 
 /**
@@ -175,10 +149,10 @@ export function answerOf<A, E>(
   released: A,
 ): Promise<A> {
   return new Promise((resolve, reject) =>
-    fiber.addObserver((exit) => {
-      if (Exit.isSuccess(exit)) resolve(exit.value);
-      else if (Cause.hasInterruptsOnly(exit.cause)) resolve(released);
-      else reject(Cause.squash(exit.cause));
+    observeExit(fiber, {
+      onSuccess: resolve,
+      onInterrupt: () => resolve(released),
+      onFailure: reject,
     }),
   );
 }

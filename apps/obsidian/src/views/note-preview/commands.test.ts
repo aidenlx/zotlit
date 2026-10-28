@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Fiber } from "effect";
 import { vi } from "vitest";
 
-import { makeViewRunner } from "@/lib/view-runner";
+import { scopedViewRunner } from "@/lib/__fixtures__/view-runner";
 import type { ZoteroReadLease } from "@/services/zotero-reads/service";
 import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 import { getSampleItem } from "@/views/template-workbench/selection-data";
@@ -20,7 +20,7 @@ describe("preview render commands", () => {
       const acquire = vi
         .spyOn(fixture.deps.zoteroReads, "acquireRead")
         .mockImplementation(() => pending.promise);
-      const runner = makeViewRunner(fixture.deps.registry);
+      const runner = yield* scopedViewRunner(fixture.deps.registry);
       const render = runner.run(
         makeNativeRenderer(fixture.deps).render({
           source: PROFILE_SOURCE,
@@ -43,9 +43,7 @@ describe("preview render commands", () => {
       const fixture = yield* Effect.acquireDisposable(
         Effect.promise(() => createRenderFixture()),
       );
-      const runner = yield* Effect.acquireDisposable(
-        Effect.sync(() => makeViewRunner(fixture.deps.registry)),
-      );
+      const runner = yield* scopedViewRunner(fixture.deps.registry);
       const renderer = makeNativeRenderer(fixture.deps);
       const snapshot = getSampleItem("sample:book")!;
       const first = yield* Fiber.join(

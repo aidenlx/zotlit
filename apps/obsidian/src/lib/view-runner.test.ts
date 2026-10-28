@@ -7,6 +7,7 @@ import {
   layerUnreadViewServices,
   scopedViewRegistry,
 } from "@/lib/__fixtures__/view-atoms";
+import { scopedViewRunner } from "@/lib/__fixtures__/view-runner";
 import { Release } from "@/services/release/service";
 
 import {
@@ -81,12 +82,12 @@ it.effect(
 );
 
 /** A runner over the test services, closed with the test's Scope. */
-const scopedRunner = Effect.gen(function* () {
-  const registry = yield* scopedViewRegistry(yield* Layer.build(layerServices));
-  return yield* Effect.acquireDisposable(
-    Effect.sync(() => makeViewRunner(registry)),
-  );
-});
+const scopedRunner = Effect.flatMap(
+  Effect.flatMap(Layer.build(layerServices), (context) =>
+    scopedViewRegistry(context),
+  ),
+  (registry) => scopedViewRunner(registry),
+);
 
 it.effect("interrupts the run on the view when its caller is interrupted", () =>
   Effect.gen(function* () {
@@ -163,6 +164,25 @@ it.effect("shares one run between the callers that join while it runs", () =>
     yield* Effect.forkChild(slot.join);
     yield* Effect.yieldNow;
     expect(runs).toBe(2);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("frees the slot of a run the closed view ends at once", () =>
+  Effect.gen(function* () {
+    const registry = yield* scopedViewRegistry(
+      yield* Layer.build(layerServices),
+    );
+    const runner = makeViewRunner(registry);
+    yield* Effect.promise(() => runner[Symbol.asyncDispose]());
+    const changes: boolean[] = [];
+    let running = () => false;
+    const slot = inFlightSlot(runner.run, Effect.void, () =>
+      changes.push(running()),
+    );
+    running = slot.running;
+    slot.start();
+    expect(changes).toEqual([true, false]);
+    expect(slot.running()).toBe(false);
   }).pipe(Effect.scoped),
 );
 

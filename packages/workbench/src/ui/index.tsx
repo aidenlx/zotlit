@@ -53,7 +53,8 @@ export {
   useWorkbenchHost,
 } from "./host";
 export { useFork, useForkedEffect } from "./run";
-export type { WorkbenchRunner } from "#/language/host-effects";
+export { joinForked, observeExit } from "#/language/host-effects";
+export type { ExitHandlers, WorkbenchRunner } from "#/language/host-effects";
 export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,

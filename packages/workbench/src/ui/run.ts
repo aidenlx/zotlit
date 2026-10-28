@@ -1,9 +1,12 @@
 import type { WorkbenchRunner } from "#/language/host-effects";
 // Where the tree starts host Effects: forked on the runner the host supplies,
 // interrupted when the component that started one unmounts or asks again.
-import { Cause, Effect, Exit, FiberSet, Scope } from "effect";
+import { Effect, Exit, FiberSet, Scope } from "effect";
+import type { Cause, Fiber } from "effect";
 import { useEffect, useRef, useState } from "react";
 import type { DependencyList } from "react";
+
+import { observeExit } from "#/language/host-effects";
 
 /** What a started Effect reports. An interrupt-only end reports nothing. */
 export interface ForkHandlers<A, E> {
@@ -21,11 +24,7 @@ export function forkReported<A, E>(
   handlers: ForkHandlers<A, E>,
 ): () => void {
   const fiber = run(effect);
-  const unobserve = fiber.addObserver((exit) => {
-    if (Exit.isSuccess(exit)) handlers.onSuccess?.(exit.value);
-    else if (!Cause.hasInterruptsOnly(exit.cause))
-      handlers.onFailure?.(Cause.squash(exit.cause), exit.cause);
-  });
+  const unobserve = observeExit(fiber, handlers);
   return () => {
     unobserve();
     fiber.interruptUnsafe();
@@ -68,35 +67,21 @@ export function useForkedEffect<A, E>(
 export function useFork(
   run: WorkbenchRunner | undefined,
 ): <A, E>(effect: Effect.Effect<A, E>, handlers: ForkHandlers<A, E>) => void {
-  const [running] = useState(() => new Set<() => void>());
+  const [running] = useState(() => new Set<Fiber.Fiber<unknown, unknown>>());
   useEffect(
     () => () => {
-      for (const interrupt of running) interrupt();
+      for (const fiber of running) fiber.interruptUnsafe();
       running.clear();
     },
     [running],
   );
   return (effect, handlers) => {
     if (run === undefined) return;
-    // An Effect that ends before `run` returns reports first, so the entry
-    // it removes is the one added below or none.
-    let done = false;
-    let interrupt: (() => void) | undefined;
-    const settled = () => {
-      done = true;
-      if (interrupt) running.delete(interrupt);
-    };
-    interrupt = forkReported(run, effect, {
-      onSuccess: (value) => {
-        settled();
-        handlers.onSuccess?.(value);
-      },
-      onFailure: (error, cause) => {
-        settled();
-        handlers.onFailure?.(error, cause);
-      },
-    });
-    if (!done) running.add(interrupt);
+    const fiber = run(effect);
+    running.add(fiber);
+    // A Fiber that has ended already leaves the set at once.
+    fiber.addObserver(() => running.delete(fiber));
+    observeExit(fiber, handlers);
   };
 }
 
