@@ -161,11 +161,12 @@ async function obEval(code: string, target?: string): Promise<string> {
  * then calls `blur`, which there orders the window behind them.
  *
  * The listener also turns the window's background throttling off before its
- * page loads. Chromium runs the renderer of a window that other apps' windows
- * cover at macOS background priority. On a busy machine that renderer then gets
- * so little CPU that the vault's startup, Restricted Mode exit, and reload pass
- * the 30-second CLI bound, and the call reports a live window as unreachable
- * (#1868). The setting lasts through the window's reloads.
+ * page loads. With throttling on, the renderer of a window that is not in
+ * front can drop to macOS background priority under load and run about ten
+ * times slower; the vault's startup, Restricted Mode exit, and reload then
+ * pass the 30-second CLI bound, and the call reports a live window as
+ * unreachable (#1868). With throttling off, the renderer stays at normal
+ * priority. The setting lasts through the window's reloads.
  */
 function vaultOpenCode(abs: string): string {
   const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
