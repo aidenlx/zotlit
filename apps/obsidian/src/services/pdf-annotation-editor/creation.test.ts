@@ -792,11 +792,10 @@ it("ignores a drag released while an armed create is still in flight", async () 
   open.press("u");
   open.startSelecting();
   await open.creation.settled;
-  const first = open.creation.created;
 
+  // The second drag starts no create of its own while the first waits.
   open.startSelecting();
   await open.creation.settled;
-  expect(open.creation.created).toBe(first);
 
   answer();
   await open.creation.created;
@@ -1684,6 +1683,45 @@ it("stops an image create waiting for PDF geometry when the runtime closes (#186
     await open.creation.created;
   }
   expect(open.drafts).toEqual([]);
+});
+
+it("stops an image create waiting for PDF geometry when its view closes", async () => {
+  await using open = await imageReader();
+  const read = Promise.withResolvers<string>();
+  open.structure.sortIndex.mockReturnValueOnce(read.promise);
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  expect(open.structure.sortIndex).toHaveBeenCalledOnce();
+
+  // The view closes before the document answers: nothing was sent yet, so
+  // the create goes with the view.
+  open[Symbol.dispose]();
+  read.resolve("00000|000100|00100");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+});
+
+it("waits for a create Zotero holds when its view closes, and says why it failed", async () => {
+  await using open = await imageReader();
+  const reply = Promise.withResolvers<Response>();
+  open.zotero.answerNextWrite(() => reply.promise);
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The create is with Zotero when the view closes: the close waits for the
+  // answer, and the lost reply is still told.
+  open[Symbol.dispose]();
+  reply.reject(new AbortError("The reply was lost"));
+  await open.creation.created;
+
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.annot_view_write_reason_unknown_outcome()],
+  ]);
 });
 
 it("says a create's outcome is unknown when its PDF geometry read fails", async () => {

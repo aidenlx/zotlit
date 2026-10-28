@@ -62,7 +62,7 @@ import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
 import {
-  historyPresses,
+  oneAtATime,
   pressHistory,
   readMarks,
   reportBlockedEdit,
@@ -370,7 +370,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** The last Editing Capability gesture's run; `null` while none has run. */
   #gesturing: WriteRun | null = null;
   /** This reader's Annotation History presses, answered one at a time. */
-  readonly #presses = historyPresses();
+  readonly #presses = oneAtATime();
   /** The last Annotation History press's run; `null` while none has run. */
   #stepping: WriteRun | null = null;
 
@@ -933,6 +933,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       surfaceState: state,
       annotations: this.#annotations,
       bridge: this.#bridge,
+      writes: this.#writes,
       now: this.#now,
     });
     this.#creation = creation;

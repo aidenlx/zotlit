@@ -672,6 +672,7 @@ export function readerSurfaces({
     surfaceState: store,
     annotations,
     bridge,
+    writes,
     now: () => READER_NOW,
   });
   const selection = new MarkSelection({
