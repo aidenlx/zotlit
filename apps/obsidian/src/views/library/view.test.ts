@@ -3204,6 +3204,43 @@ describe("Reading Card", () => {
     expect(items.openPdf).not.toHaveBeenCalled();
   });
 
+  it("opens under a narrow list at once on a row it leaves uncovered, and waits out a double click on a row it would cover", async () => {
+    const { deps } = await pluginData();
+    const view = await openTab(deps);
+    // A narrow pane: the card takes the lower half of an 800px column.
+    card(view).style.setProperty("--zt-library-card-place", "below");
+    const column = card(view).parentElement!.parentElement!;
+    vi.spyOn(column, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 400, 800),
+    );
+    const click = (key: string, clientY: number) =>
+      act(() => {
+        itemRow(view, key).dispatchEvent(
+          new MouseEvent("click", { bubbles: true, detail: 1, clientY }),
+        );
+      });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    cleanup.defer(() => void vi.useRealTimers());
+    // A row above the half the card takes opens it at once.
+    await click(A, 100);
+    expect(view.selected).toEqual({ key: A, card: true });
+    // While the card shows, nothing moves: any row opens at once.
+    await click(B, 700);
+    expect(view.selected).toEqual({ key: B, card: true });
+    await act(() =>
+      card(view)
+        .querySelector<HTMLElement>("[data-library-card-close]")!
+        .click(),
+    );
+    // A row the card would cover waits out a double click first.
+    await click(C, 700);
+    expect(view.selected).toEqual({ key: C, card: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(view.selected).toEqual({ key: C, card: true });
+  });
+
   /** The parts the card shows under its buttons, in order. */
   const parts = (view: LibraryView) =>
     [
