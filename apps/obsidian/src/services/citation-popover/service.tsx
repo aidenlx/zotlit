@@ -1,13 +1,19 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
-import { Cause, Context, Effect, Layer } from "effect";
-import type {
-  HoverParent,
-  MetadataCache as ObsidianMetadataCache,
-  TFile,
-} from "obsidian";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  FiberHandle,
+  Layer,
+  Scope,
+} from "effect";
+import type { HoverParent } from "obsidian";
 import type { ReactNode } from "react";
 
-import { scopedBridge, valueOr } from "@/lib/effect-bridge";
+import { scopedBridge } from "@/lib/effect-bridge";
+import { recover } from "@/lib/effect-cause";
 import { bridgeLog, withLogCategory } from "@/lib/effect-log";
 import { filterTag } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
@@ -20,29 +26,17 @@ import {
   describeCandidatesEffect,
   describeJoinedCandidates,
 } from "@/services/citation-index/ambiguity";
-import type { AmbiguousCandidate } from "@/services/citation-index/ambiguity";
-import type {
-  CitationLookupAnswer,
-  CitationLookupRequest,
-} from "@/services/citation-index/lookup";
 import {
   CitationLookup,
   lookupChanged,
   lookupStatusChanged,
 } from "@/services/citation-index/lookup-service";
-import type { CitationLookupStatus } from "@/services/citation-index/lookup-service";
 import { CitationIndex } from "@/services/citation-index/service";
 import { readReferenceSources } from "@/services/citation-index/service";
-import type { DocumentCitationSet } from "@/services/citation-index/service";
-import type {
-  CitekeyResolution,
-  SnapshotItem,
-} from "@/services/citation-index/service";
+import type { CitekeyResolution } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
 import { CitationText } from "@/services/citation-text/service";
-import type { DocumentCitations } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
-import type { ResolvedLibraryScope } from "@/services/library-scope/scope";
 import { LibraryScope } from "@/services/library-scope/service";
 import type { Inlines } from "@/services/pandoc/ast";
 import {
@@ -57,16 +51,8 @@ import {
   BibliographyRender,
   renderInvalidated,
 } from "@/services/pandoc/render-cache";
-import type {
-  BibliographyRenderOutcome,
-  BibliographyRenderResult,
-  ReadOptions,
-  RenderPresentation,
-} from "@/services/pandoc/render-cache";
 import { Profile } from "@/services/profile/service";
-import type { ProfileReader } from "@/services/profile/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
-import type { ZoteroReadsState } from "@/services/zotero-reads/service";
 import { ShowInLibrary } from "@/views/library/show-in-library";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
@@ -78,64 +64,34 @@ import { CitationPopoverContent } from "./content";
 import { HoverVisits } from "./visits";
 import type { HoverVisit } from "./visits";
 
-/** What one popover read reaches outside Effect. */
-interface PopoverReads {
+/** The services one popover read yields. */
+type PopoverServices =
+  | Vault
+  | MetadataCache
+  | ZoteroReads
+  | CitationLookup
+  | CitationIndex
+  | LibraryScope
+  | CitationText
+  | BibliographyRender
+  | Profile;
+
+/** What the plain code a read hands its entries to reaches outside the read. */
+interface PopoverEdges {
   /** The workspace the popover raises its menu and Profile switch events on. */
   host: WorkspaceEventHost;
-  /** The vault's file at `path`, `null` when it holds none. */
-  fileAt(path: string): TFile | null;
-  /** The metadata cache reads the hovered note's Citation Presentation takes. */
-  metadataCache: Pick<ObsidianMetadataCache, "getFileCache">;
-  databaseState(): ZoteroReadsState["state"];
-  readSources(
-    citations: Parameters<typeof readReferenceSources>[1],
-  ): Promise<Effect.Success<ReturnType<typeof readReferenceSources>>>;
-  lookupStatus(): CitationLookupStatus;
-  readLookup(
-    request: CitationLookupRequest,
-    options: { signal: AbortSignal },
-  ): Promise<CitationLookupAnswer>;
-  getDocumentCitationSet(
-    file: TFile,
-    options: Parameters<
-      CitationIndex["Service"]["getDocumentCitationSet"]
-    >[1] & {
-      signal: AbortSignal;
-    },
-  ): Promise<DocumentCitationSet>;
-  /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
-  libraryScope: {
-    readonly current: ResolvedLibraryScope | null;
-  };
+  /**
+   * Runs an entry action's fresh Item read on the visit's Scope, so the read
+   * ends with the visit. Resolves `null` once the visit ended under it.
+   */
+  runAction<A, E>(effect: Effect.Effect<A, E>): Promise<A | null>;
   /** Open the Library View on the Item `indexedKey`. */
   showInLibrary: (indexedKey: string) => void;
-  /** The candidates of one Ambiguous Citation Key; none once unload interrupts the read. */
-  describeCandidates(
-    candidates: readonly SnapshotItem[],
-  ): Promise<AmbiguousCandidate[]>;
-  /** The formatted citations of the hovered document, read for this popover. */
-  readText(
-    path: string,
-    options: { signal: AbortSignal },
-  ): Promise<DocumentCitations | null>;
-  profile: Pick<ProfileReader, "loaded" | "profileOf">;
-  /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
-  vaultPresentation(): Effect.Success<
-    BibliographyRender["Service"]["state"]
-  >["vaultPresentation"];
-  renderBibliography(
-    items: Parameters<BibliographyRender["Service"]["render"]>[0],
-    presentation: RenderPresentation,
-  ): Promise<BibliographyRenderOutcome>;
-  readBibliography(
-    items: Parameters<BibliographyRender["Service"]["readBibliography"]>[0],
-    options: ReadOptions & { signal: AbortSignal },
-  ): Promise<BibliographyRenderResult | null>;
-  log(
+  log: (
     level: "debug" | "warn",
     message: string,
     fields: Record<string, unknown>,
-  ): void;
+  ) => void;
 }
 
 /** One work shown independently of a document or citation occurrence. */
@@ -157,7 +113,6 @@ type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
 
 /** What one hovered target's popover reads and shows. */
 interface CitationVisitState {
-  reading: AbortController | null;
   content: ReactNode;
 }
 
@@ -224,20 +179,15 @@ export const layerCitationPopover: Layer.Layer<
 > = Layer.effect(
   CitationPopover,
   Effect.gen(function* () {
-    const vault = yield* Vault;
     const workspace = yield* Workspace;
     const metadata = yield* MetadataCache;
-    const reads = yield* ZoteroReads;
     const lookup = yield* CitationLookup;
-    const index = yield* CitationIndex;
-    const libraries = yield* LibraryScope;
-    const text = yield* CitationText;
     const render = yield* BibliographyRender;
-    const profiles = yield* Profile;
     const showInLibrary = yield* ShowInLibrary;
     const bridge = yield* scopedBridge;
+    const layerScope = yield* Effect.scope;
+    const context = yield* Effect.context<PopoverServices>();
     const visits = new HoverVisits<CitationVisitState>(() => ({
-      reading: null,
       content: null,
     }));
     yield* Effect.addFinalizer(() =>
@@ -247,129 +197,76 @@ export const layerCitationPopover: Layer.Layer<
     );
 
     const logs = bridgeLog(bridge, "citation-popover");
-    const log = (
-      level: "debug" | "warn",
-      message: string,
-      fields: Record<string, unknown>,
-    ) => logs[level](message, fields);
-    // Keep each service's read contract after the plugin closes.
-    const held = async <A, E>(
-      effect: Effect.Effect<A, E>,
-      released: A,
-      options?: { signal?: AbortSignal },
-    ): Promise<A> =>
-      valueOr(await bridge.runPromiseExit(effect, options), released);
-    const lookupReleased = () =>
-      new DOMException("Citation Lookup released", "AbortError");
-    const deps: PopoverReads = {
-      host: { workspace: workspaceTrigger(workspace, bridge.runSync) },
-      fileAt: (path) => bridge.runSync(vault.getFileByPath(path)),
-      metadataCache: {
-        getFileCache: (file) => bridge.runSync(metadata.fileCache(file)),
-      },
-      databaseState: () => bridge.runSync(reads.current).state,
-      readSources: (citations) =>
-        bridge.runPromise(readReferenceSources(reads, citations)),
-      lookupStatus: () => bridge.runSync(lookup.current).status,
-      async readLookup(request, { signal }) {
-        if (bridge.closed()) throw lookupReleased();
-        const selected = {
-          citekeys: [...(request.citekeys ?? [])],
-          indexedKeys: [...(request.indexedKeys ?? [])],
-          annotationKeys: [...(request.annotationKeys ?? [])],
-        };
-        const answer = await held(lookup.read(selected), undefined, {
-          signal,
-        }).catch((error: unknown) => {
-          // A failure after unload is the release, like an interrupt.
-          throw bridge.closed() ? lookupReleased() : error;
-        });
-        if (answer === undefined) throw lookupReleased();
-        return answer;
-      },
-      async getDocumentCitationSet(file, { signal, ...options }) {
-        const result = await held(
-          index.getDocumentCitationSet(file, options),
-          undefined,
-          { signal },
-        ).catch((error: unknown) => {
-          // The read is a `tryPromise`: throw what the index rejected with.
-          throw Cause.isUnknownError(error) ? error.cause : error;
-        });
-        if (result === undefined)
-          throw new DOMException("Citation Index released", "AbortError");
-        return result;
-      },
-      libraryScope: {
-        get current() {
-          return bridge.runSync(libraries.current);
-        },
-      },
-      showInLibrary: (indexedKey) =>
-        bridge.runAndForget(showInLibrary.show(indexedKey)),
-      describeCandidates: (candidates) =>
-        held(
-          describeCandidatesEffect(
-            {
-              db: reads,
-              libraryScope: { current: bridge.runSync(libraries.current) },
-            },
-            candidates,
-          ),
-          [],
-        ),
-      async readText(path, { signal }) {
-        if (bridge.closed()) return null;
-        return held(
-          // The read is a `tryPromise`: reject with what the read rejected with.
-          text.read(path).pipe(Effect.mapError(({ cause }) => cause)),
-          null,
-          { signal },
-        );
-      },
-      vaultPresentation: () => bridge.runSync(render.state).vaultPresentation,
-      async renderBibliography(items, presentation) {
-        return held(render.render(items, presentation), {
-          kind: "unavailable",
-          reason: "failed",
-        } as const);
-      },
-      async readBibliography(items, { signal }) {
-        const result = await held(render.readBibliography(items), undefined, {
-          signal,
-        });
-        if (result === undefined)
-          throw new DOMException("Held read released", "AbortError");
-        return result;
-      },
-      profile: profileReaderOf(profiles, bridge.runSync),
-      log,
+    const host: WorkspaceEventHost = {
+      workspace: workspaceTrigger(workspace, bridge.runSync),
     };
-    function showVisit(request: PopoverRequest): Promise<void> {
-      if (bridge.closed()) return Promise.resolve();
+    const log: PopoverEdges["log"] = (level, message, fields) =>
+      logs[level](message, fields);
+
+    /**
+     * Opens the visit `request` hovers, with a Scope of its own that hiding or
+     * moving the popover closes. Each read of the visit is a fiber on that
+     * Scope, and the next read interrupts the one before it.
+     *
+     * @returns the fiber of the visit's first read; none after release.
+     */
+    const showVisit = Effect.fn("CitationPopover.showVisit")(function* (
+      request: PopoverRequest,
+    ) {
+      if (bridge.closed()) return undefined;
       const currentVisit = visits.open(request.hoverParent, request.targetEl);
-      const { popover, subscriptions, state } = currentVisit;
-      subscriptions.defer(() => state.reading?.abort());
-      const read = (): Promise<void> => {
-        state.reading?.abort();
-        const reading = new AbortController();
-        state.reading = reading;
-        return fill(deps, currentVisit, {
-          request,
-          signal: reading.signal,
-        });
+      const { popover, subscriptions } = currentVisit;
+      const scope = yield* Scope.fork(layerScope);
+      subscriptions.defer(() =>
+        bridge.runAndForget(Scope.close(scope, Exit.void)),
+      );
+      const reading = yield* FiberHandle.make<void, never>().pipe(
+        Scope.provide(scope),
+      );
+      const edges: PopoverEdges = {
+        host,
+        log,
+        showInLibrary: (indexedKey) =>
+          bridge.runAndForget(showInLibrary.show(indexedKey)),
+        runAction: (effect) =>
+          bridge.runPromise(
+            Effect.forkIn(effect, scope).pipe(
+              Effect.flatMap((fiber) => Fiber.await(fiber)),
+              Effect.flatMap((exit) =>
+                Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+                  ? Effect.succeed(null)
+                  : exit,
+              ),
+            ),
+          ),
       };
+      const read = FiberHandle.run(
+        reading,
+        fill(edges, currentVisit, request).pipe(
+          // A read that fails after its entries were read, such as a draw
+          // that throws, still reaches the log.
+          Effect.tapCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.void
+              : Effect.logError(
+                  "Cannot show the entries of a hovered citation",
+                ).pipe(Effect.annotateLogs({ error: Cause.squash(cause) })),
+          ),
+          Effect.provideContext(context),
+          withLogCategory("citation-popover"),
+        ),
+      );
       const draw = (): void => {
-        void read();
+        bridge.runSync(read);
       };
       subscriptions.defer(bridge.subscribe(renderInvalidated(render), draw));
       if (!("work" in request) || request.work.kind === "citekey") {
         subscriptions.defer(bridge.subscribe(lookupChanged(lookup), draw));
-        let freshness = deps.lookupStatus();
+        let freshness = (yield* lookup.current).status;
         subscriptions.defer(
           bridge.subscribe(lookupStatusChanged(lookup), () => {
             const previous = freshness;
-            freshness = deps.lookupStatus();
+            freshness = bridge.runSync(lookup.current).status;
             if (freshness === "failed") showFailure(currentVisit);
             else if (freshness === "fresh" && previous === "failed") draw();
           }),
@@ -393,18 +290,22 @@ export const layerCitationPopover: Layer.Layer<
           ),
         );
       }
-      return read();
-    }
+      return yield* read;
+    });
 
     return CitationPopover.of({
-      show: Effect.fn("CitationPopover.show")((request) =>
-        Effect.sync(() => {
-          void showVisit(request);
-        }),
-      ),
-      showWork: Effect.fn("CitationPopover.showWork")((request) =>
-        Effect.promise(() => showVisit(request)),
-      ),
+      show: Effect.fn("CitationPopover.show")(function* (request) {
+        yield* showVisit(request);
+      }),
+      showWork: Effect.fn("CitationPopover.showWork")(function* (request) {
+        const first = yield* showVisit(request);
+        if (!first) return;
+        // A later hover or hide dropping the first read completes the show; any
+        // other failure is the caller's.
+        const exit = yield* Fiber.await(first);
+        if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
+          return yield* Effect.failCause(exit.cause);
+      }),
       hide: Effect.fn("CitationPopover.hide")((parent, targetEl) =>
         Effect.sync(() => visits.hide(parent, targetEl)),
       ),
@@ -412,28 +313,40 @@ export const layerCitationPopover: Layer.Layer<
   }).pipe(withLogCategory("citation-popover")),
 );
 
-/** A superseded request draws nothing and hides nothing. */
-async function fill(
-  deps: PopoverReads,
+/** What a failed read carries, unwrapped from the `tryPromise` it came through. */
+function failureOf(cause: Cause.Cause<unknown>): unknown {
+  const error = Cause.squash(cause);
+  return Cause.isUnknownError(error) ? error.cause : error;
+}
+
+/**
+ * Reads the hover's entries and draws them. An interrupted read draws nothing
+ * and hides nothing: the next read of the visit, the hidden popover, or the
+ * released plugin ended it.
+ */
+const fill = Effect.fn("CitationPopover.fill")(function* (
+  edges: PopoverEdges,
   visit: PopoverVisit,
-  { request, signal }: { request: PopoverRequest; signal: AbortSignal },
-): Promise<void> {
+  request: PopoverRequest,
+): Effect.fn.Return<void, never, PopoverServices> {
   const { popover } = visit;
-  let read: PopoverRead;
-  try {
-    read = await ("work" in request
-      ? readWork(deps, request, signal)
-      : readBlocks(deps, request, signal));
-  } catch (error) {
-    if (signal.aborted) return;
-    deps.log("warn", "Cannot read the entries of a hovered citation", {
-      path: "sourcePath" in request ? request.sourcePath : undefined,
-      error,
-    });
-    showFailure(visit);
-    return;
-  }
-  if (signal.aborted) return;
+  const reads = yield* ZoteroReads;
+  const read = yield* (
+    "work" in request ? readWork(request) : readBlocks(request)
+  ).pipe(
+    recover(
+      (cause) =>
+        Effect.logWarning("Cannot read the entries of a hovered citation").pipe(
+          Effect.annotateLogs({
+            path: "sourcePath" in request ? request.sourcePath : undefined,
+            error: failureOf(cause),
+          }),
+          Effect.andThen(Effect.sync(() => showFailure(visit))),
+        ),
+      Effect.succeed(null),
+    ),
+  );
+  if (read === null) return;
   if (read.unavailable === "database" && visit.state.content) {
     showFailure(visit);
     return;
@@ -446,7 +359,7 @@ async function fill(
     return;
   }
   const actions = createCitationPopoverActions({
-    host: deps.host,
+    host: edges.host,
     open: (block, pane) => {
       if ("work" in request) {
         if (read.indexedKey) request.open(read.indexedKey, pane);
@@ -457,12 +370,15 @@ async function fill(
     prepare:
       "work" in request && read.indexedKey
         ? async (block) => {
-            const { sources, database } = await deps.readSources([
-              { indexedKey: read.indexedKey!, linkpath: null },
-            ]);
+            const join = await edges.runAction(
+              readReferenceSources(reads, [
+                { indexedKey: read.indexedKey!, linkpath: null },
+              ]),
+            );
             // The popover moved on to another visit while the read ran: this
             // action neither runs nor touches what the popover shows now.
-            if (signal.aborted) return null;
+            if (join === null) return null;
+            const { sources, database } = join;
             const source = sources.get(read.indexedKey!);
             if (database === "unreadable" || !source) {
               popover.render(
@@ -483,9 +399,9 @@ async function fill(
           }
         : undefined,
     hide: () => popover.hide(),
-    showInLibrary: deps.showInLibrary,
-    switchProfile: (path) => requestProfileSwitch(deps.host, path),
-    log: deps.log,
+    showInLibrary: edges.showInLibrary,
+    switchProfile: (path) => requestProfileSwitch(edges.host, path),
+    log: edges.log,
   });
   visit.state.content = (
     <CitationPopoverContent
@@ -498,19 +414,23 @@ async function fill(
     />
   );
   const shown = popover.render(visit.state.content);
-  deps.log("debug", "Citation popover entries read", {
-    path: "sourcePath" in request ? request.sourcePath : undefined,
-    blocks: blocks.length,
-    note: note !== undefined && note.length > 0,
-    shown,
-  });
-}
+  yield* Effect.logDebug("Citation popover entries read").pipe(
+    Effect.annotateLogs({
+      path: "sourcePath" in request ? request.sourcePath : undefined,
+      blocks: blocks.length,
+      note: note !== undefined && note.length > 0,
+      shown,
+    }),
+  );
+});
 
-async function readWork(
-  deps: PopoverReads,
+const readWork = Effect.fn("CitationPopover.readWork")(function* (
   request: WorkHoverRequest,
-  signal: AbortSignal,
-): Promise<PopoverRead> {
+): Effect.fn.Return<PopoverRead, unknown, PopoverServices> {
+  const reads = yield* ZoteroReads;
+  const lookup = yield* CitationLookup;
+  const libraries = yield* LibraryScope;
+  const render = yield* BibliographyRender;
   const work = request.work;
   const empty: PopoverRead = {
     blocks: [],
@@ -518,9 +438,9 @@ async function readWork(
     profileFailure: undefined,
     pending: false,
   };
-  if (deps.databaseState() === "degraded")
+  if ((yield* reads.current).state === "degraded")
     return { ...empty, unavailable: "database" };
-  if (work.kind === "citekey" && deps.lookupStatus() === "pending") {
+  if (work.kind === "citekey" && (yield* lookup.current).status === "pending") {
     return {
       ...empty,
       pending: true,
@@ -529,15 +449,11 @@ async function readWork(
   }
   let indexedKey: string;
   if (work.kind === "citekey") {
-    let resolution: CitekeyResolution;
-    try {
-      resolution = (
-        await deps.readLookup({ citekeys: [work.citekey] }, { signal })
-      ).resolve(work.citekey);
-    } catch (error) {
-      if (signal.aborted) throw error;
-      return { ...empty, unavailable: "database" };
-    }
+    const answer = yield* lookup
+      .read({ citekeys: [work.citekey], indexedKeys: [], annotationKeys: [] })
+      .pipe(recover(() => Effect.void, Effect.succeed(null)));
+    if (answer === null) return { ...empty, unavailable: "database" };
+    const resolution: CitekeyResolution = answer.resolve(work.citekey);
     if (resolution.kind !== "unique") {
       return {
         ...empty,
@@ -546,7 +462,13 @@ async function readWork(
             ? {
                 kind: "ambiguous",
                 citekey: work.citekey,
-                candidates: await deps.describeCandidates(
+                candidates: yield* describeCandidatesEffect(
+                  {
+                    db: reads,
+                    libraryScope: {
+                      current: yield* libraries.current,
+                    },
+                  },
                   resolution.candidates,
                 ),
               }
@@ -558,7 +480,7 @@ async function readWork(
   } else {
     indexedKey = work.indexedKey;
   }
-  const { sources, database } = await deps.readSources([
+  const { sources, database } = yield* readReferenceSources(reads, [
     { indexedKey, linkpath: null },
   ]);
   if (database === "unreadable") return { ...empty, unavailable: "database" };
@@ -566,16 +488,17 @@ async function readWork(
   if (!source) return { ...empty, unavailable: "item" };
   // Read through to the render that stands: the popover shows one entry and
   // has no stale list of its own to keep on screen meanwhile.
-  const bibliography = await deps
-    .readBibliography([source.csl], { signal })
-    .catch((error: unknown) => {
-      if (signal.aborted) return null;
-      deps.log("warn", "Cannot format source-less Item", {
-        indexedKey,
-        error,
-      });
-      return null;
-    });
+  const bibliography = yield* render
+    .readBibliography([source.csl])
+    .pipe(
+      recover(
+        (cause) =>
+          Effect.logWarning("Cannot format source-less Item").pipe(
+            Effect.annotateLogs({ indexedKey, error: Cause.squash(cause) }),
+          ),
+        Effect.succeed(null),
+      ),
+    );
   const entry = bibliography?.entries.find(
     (entry) => entry.id === String(source.csl.id),
   );
@@ -596,18 +519,24 @@ async function readWork(
       },
     ],
   };
-}
+});
 
-async function readBlocks(
-  deps: PopoverReads,
+const readBlocks = Effect.fn("CitationPopover.readBlocks")(function* (
   request: CitationHoverRequest,
-  signal: AbortSignal,
-): Promise<PopoverRead> {
-  const file = deps.fileAt(request.sourcePath);
+): Effect.fn.Return<PopoverRead, unknown, PopoverServices> {
+  const vault = yield* Vault;
+  const metadata = yield* MetadataCache;
+  const index = yield* CitationIndex;
+  const lookupService = yield* CitationLookup;
+  const render = yield* BibliographyRender;
+  const text = yield* CitationText;
+  const libraryScope = yield* LibraryScope;
+  const profiles = yield* Profile;
+  const file = yield* vault.getFileByPath(request.sourcePath);
   if (!file) {
-    deps.log("debug", "Hovered citation sits in no note", {
-      path: request.sourcePath,
-    });
+    yield* Effect.logDebug("Hovered citation sits in no note").pipe(
+      Effect.annotateLogs({ path: request.sourcePath }),
+    );
     return {
       blocks: [],
       note: undefined,
@@ -616,28 +545,32 @@ async function readBlocks(
     };
   }
   const citekeys = request.works.map(({ citekey }) => citekey);
-  const { citations, lookup, sources } = await deps.getDocumentCitationSet(
+  const { citations, lookup, sources } = yield* index.getDocumentCitationSet(
     file,
-    {
-      signal,
-      include: { citekeys },
-    },
+    { include: { citekeys } },
   );
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
-  const pending = deps.lookupStatus() === "pending";
+  const pending = (yield* lookupService.current).status === "pending";
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
+  // `documentPresentation` is synchronous plain code: it reads the note's
+  // metadata and Profile through this read's own services.
+  const run = Effect.runSyncWith(yield* Effect.context<never>());
   const presented = documentCitationPresentation(
-    documentPresentation(deps.metadataCache, file, deps.profile),
-    deps.vaultPresentation(),
+    documentPresentation(
+      { getFileCache: (target) => run(metadata.fileCache(target)) },
+      file,
+      profileReaderOf(profiles, run),
+    ),
+    (yield* render.state).vaultPresentation,
     { citations, works: sources },
   );
   const outcome =
     presented.kind === "unusable"
       ? null
-      : await deps.renderBibliography(presented.items, presented.presentation);
+      : yield* render.render(presented.items, presented.presentation);
   const entries = buildReferenceEntries(citations, {
     bibliography:
       outcome?.kind === "held"
@@ -650,9 +583,9 @@ async function readBlocks(
   // The document's own citations as they stand now, rather than as the hover
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
-  const text = await deps.readText(file.path, { signal });
+  const documentText = yield* text.read(file.path);
   const libraries = new Map(
-    (deps.libraryScope.current?.available ?? []).map((library) => [
+    ((yield* libraryScope.current)?.available ?? []).map((library) => [
       library.libraryID,
       library,
     ]),
@@ -668,12 +601,12 @@ async function readBlocks(
   // formatted text of the very occurrence the pointer is on, and from no other
   // occurrence once an edit has moved the one the hover stands on.
   const formatted =
-    request.shown && text
-      ? shownCitationContent(request.shown, text)
+    request.shown && documentText
+      ? shownCitationContent(request.shown, documentText)
       : undefined;
   return {
     blocks: citationPopoverBlocks(request.works, entries, {
-      serials: text?.entrySerials ?? false,
+      serials: documentText?.entrySerials ?? false,
       ambiguous,
     }),
     note: formatted ? noteContent(formatted.text.content) : undefined,
@@ -683,7 +616,7 @@ async function readBlocks(
         : undefined,
     pending,
   };
-}
+});
 
 /** The formatted entries by CSL id, which is the item identity they are joined under. */
 function renderedEntries(

@@ -30,6 +30,11 @@
 // its `window.focus()`. The run thus leaves the OS focus to the developer and to
 // runs in other worktrees.
 //
+// A vault window that `vaultScript` opens starts with throttling already off:
+// the `--inactive` open hook in `obsidian-vault.ts` turns it off before the page
+// loads, so the renderer keeps normal priority through startup and the
+// Restricted Mode reload (#1868). This module keeps it off from then on.
+//
 // Both settings belong to a window's `webContents` and last until Obsidian
 // restarts. A popout is its own window that inherits nothing, so the vault's
 // windows are covered again whenever the workspace opens one.
@@ -53,7 +58,10 @@ import { obRun } from "./obsidian-cli.ts";
  * opens, shows each popout it opens behind other apps' windows and without the
  * OS focus, and moves focus emulation to the window `window.focus()` or
  * `electronWindow.focus()` last raised, starting with the main window. Calling
- * it again replaces the earlier call's hooks.
+ * it again replaces the earlier call's hooks. Its restore, which
+ * `reloadWindow` (`window-reload.ts`) runs before a reload, gives the main
+ * window the throttling value it found: off for a window that the `--inactive`
+ * open hook set up, so the window keeps normal priority through the reload.
  */
 export async function prepareRunWindow(vaultId: string): Promise<void> {
   await installMemoryClipboard(vaultId);

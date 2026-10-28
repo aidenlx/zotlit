@@ -51,20 +51,10 @@ export interface RenderingResult {
   };
 }
 
-interface SemanticImage {
-  width: number;
-  height: number;
-  foreground: number;
-  quadrants: number[];
-  annotationColor?: number;
-  foregroundBox: number[] | null;
-  annotationBox?: number[] | null;
-}
-
 type RendererPhase = "pdf-reading" | "document-loading" | "page-rendering";
 
 interface ProbeResult {
-  outcome: { kind?: string; name?: string };
+  outcome: { kind?: string; name?: string } | null;
   before: ProcessMemory;
   after: ProcessMemory | null;
   snapshot: {
@@ -105,87 +95,83 @@ async function resolveDigest(
   vaultId: string,
   index: number,
 ): Promise<PixelResult> {
-  return JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ app, zotlit }, { entry, relative, caseIndex }) => {
-        const outcome = await zotlit.services.bridge.runPromise(
-          zotlit.services.excerptImage.resolve(
-            (() => {
-              const file = app.vault.getAbstractFileByPath(relative);
-              if (!file)
-                throw new Error(
-                  "Excerpt acceptance PDF missing from Fixture Vault",
-                );
-              return ((
-                entry: FixtureExcerptCase,
-                index: number,
-                pdfPath: string,
-              ): ExcerptRequest => ({
-                annotation: {
-                  key: `EXCERPT${String(index).padStart(2, "0")}`,
-                  parentKey: "EXCERPT1",
-                  type: entry.type,
-                  color: "#ff0000",
-                  comment: null,
-                  text: null,
-                  pageLabel: String(entry.pageIndex + 1),
-                  tags: [],
-                  version: null,
-                  sortIndex: "",
-                  lock: null,
-                  position:
-                    entry.type === "image"
-                      ? {
-                          kind: "pdf-rects",
-                          pageIndex: entry.pageIndex,
-                          rects: [[...entry.rect!]],
-                        }
-                      : {
-                          kind: "pdf-ink",
-                          pageIndex: entry.pageIndex,
-                          width: entry.width!,
-                          paths: entry.paths!.map((path) => [...path]),
-                        },
-                },
-                source: {
-                  kind: "zotero-local-api",
-                  serverID: "excerpt-acceptance",
-                },
-                sourceScope: "excerpt-acceptance",
-                attachmentKey: "EXCERPT1",
-                libraryID: 1,
-                pdfPath,
-                zoteroPngPath: null,
-              }))(
-                entry,
-                caseIndex,
-                (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
+  return await obRun(
+    vaultId,
+    async ({ app, zotlit }, { entry, relative, caseIndex }) => {
+      const outcome = await zotlit.services.bridge.runPromise(
+        zotlit.services.excerptImage.resolve(
+          (() => {
+            const file = app.vault.getAbstractFileByPath(relative);
+            if (!file)
+              throw new Error(
+                "Excerpt acceptance PDF missing from Fixture Vault",
               );
-            })(),
-          ),
-        );
-        return JSON.stringify(
-          outcome.kind === "available"
-            ? {
-                kind: outcome.kind,
-                provenance: outcome.provenance,
-                bytes: outcome.bytes.length,
-                sha256: require("crypto")
-                  .createHash("sha256")
-                  .update(outcome.bytes)
-                  .digest("hex"),
-              }
-            : { kind: outcome.kind },
-        );
-      },
-      {
-        entry: EXCERPT_RENDERING_CASES[index]!,
-        relative: relativePdf,
-        caseIndex: index,
-      },
-    ),
-  ) as PixelResult;
+            return ((
+              entry: FixtureExcerptCase,
+              index: number,
+              pdfPath: string,
+            ): ExcerptRequest => ({
+              annotation: {
+                key: `EXCERPT${String(index).padStart(2, "0")}`,
+                parentKey: "EXCERPT1",
+                type: entry.type,
+                color: "#ff0000",
+                comment: null,
+                text: null,
+                pageLabel: String(entry.pageIndex + 1),
+                tags: [],
+                version: null,
+                sortIndex: "",
+                lock: null,
+                position:
+                  entry.type === "image"
+                    ? {
+                        kind: "pdf-rects",
+                        pageIndex: entry.pageIndex,
+                        rects: [[...entry.rect!]],
+                      }
+                    : {
+                        kind: "pdf-ink",
+                        pageIndex: entry.pageIndex,
+                        width: entry.width!,
+                        paths: entry.paths!.map((path) => [...path]),
+                      },
+              },
+              source: {
+                kind: "zotero-local-api",
+                serverID: "excerpt-acceptance",
+              },
+              sourceScope: "excerpt-acceptance",
+              attachmentKey: "EXCERPT1",
+              libraryID: 1,
+              pdfPath,
+              zoteroPngPath: null,
+            }))(
+              entry,
+              caseIndex,
+              (app.vault.adapter as FileSystemAdapter).getFullPath(relative),
+            );
+          })(),
+        ),
+      );
+      return outcome.kind === "available"
+        ? {
+            kind: outcome.kind,
+            provenance: outcome.provenance,
+            bytes: outcome.bytes.length,
+            sha256: require("crypto")
+              .createHash("sha256")
+              .update(outcome.bytes)
+              .digest("hex"),
+          }
+        : { kind: outcome.kind };
+    },
+    {
+      entry: EXCERPT_RENDERING_CASES[index]!,
+      relative: relativePdf,
+      caseIndex: index,
+    },
+  );
 }
 
 async function disposeRenderProbe(vaultId: string): Promise<void> {
@@ -218,35 +204,33 @@ async function disposeRenderProbe(vaultId: string): Promise<void> {
       what: "the excerpt render probe to settle with no job active",
     },
   );
-  const released = JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ page: helpers }) => {
-        const state = helpers.scratch.__zotlitExcerptProbe!;
-        if (!state)
-          return JSON.stringify({
-            snapshot: {
-              phase: "idle",
-              jobActive: false,
-              fileOpen: false,
-              renderTaskActive: false,
-              canvas: null,
-              lastCanvas: null,
-            },
-            toBlobRestored: true,
-          });
-        const snapshot = state.diagnostics.snapshot();
-        const value = {
-          snapshot,
-          toBlobRestored:
-            HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+  const released = await obRun(
+    vaultId,
+    async ({ page: helpers }) => {
+      const state = helpers.scratch.__zotlitExcerptProbe!;
+      if (!state)
+        return {
+          snapshot: {
+            phase: "idle",
+            jobActive: false,
+            fileOpen: false,
+            renderTaskActive: false,
+            canvas: null,
+            lastCanvas: null,
+          },
+          toBlobRestored: true,
         };
-        delete helpers.scratch.__zotlitExcerptProbe;
-        return JSON.stringify(value);
-      },
-      undefined,
-    ),
-  ) as Pick<ProbeResult, "snapshot" | "toBlobRestored">;
+      const snapshot = state.diagnostics.snapshot();
+      const value = {
+        snapshot,
+        toBlobRestored:
+          HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+      };
+      delete helpers.scratch.__zotlitExcerptProbe;
+      return value;
+    },
+    undefined,
+  );
   expect(released.toBlobRestored).toBe(true);
   expect(released.snapshot).toMatchObject({
     phase: "idle",
@@ -275,13 +259,13 @@ async function startRenderProbe(
   await using stack = new AsyncDisposableStack();
   stack.defer(() => disposeRenderProbe(vaultId));
   if (
-    (await obRun(
+    await obRun(
       vaultId,
       async ({ page: helpers }) => {
-        return String(!!helpers.scratch.__zotlitExcerptProbe);
+        return !!helpers.scratch.__zotlitExcerptProbe;
       },
       undefined,
-    )) === "true"
+    )
   )
     await disposeRenderProbe(vaultId);
   // The resolution ends by destroying its PDF.js document, which terminates
@@ -426,44 +410,36 @@ async function startRenderProbe(
         undefined,
       );
     },
-    snapshot: async () =>
-      JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page: helpers }) => {
-            return JSON.stringify(
-              helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot(),
-            );
-          },
-          undefined,
-        ),
+    snapshot: () =>
+      obRun(
+        vaultId,
+        async ({ page: helpers }) => {
+          return helpers.scratch.__zotlitExcerptProbe!.diagnostics.snapshot();
+        },
+        undefined,
       ),
-    retry: async () =>
-      JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page: helpers }) => {
-            const state = helpers.scratch.__zotlitExcerptProbe!;
-            state.diagnostics.release();
-            const outcome = await state.bridge.runPromise(
-              state.service.resolve(state.request),
-            );
-            return JSON.stringify(
-              outcome.kind === "available"
-                ? {
-                    kind: outcome.kind,
-                    provenance: outcome.provenance,
-                    bytes: outcome.bytes.length,
-                    sha256: require("crypto")
-                      .createHash("sha256")
-                      .update(outcome.bytes)
-                      .digest("hex"),
-                  }
-                : { kind: outcome.kind },
-            );
-          },
-          undefined,
-        ),
+    retry: () =>
+      obRun(
+        vaultId,
+        async ({ page: helpers }) => {
+          const state = helpers.scratch.__zotlitExcerptProbe!;
+          state.diagnostics.release();
+          const outcome = await state.bridge.runPromise(
+            state.service.resolve(state.request),
+          );
+          return outcome.kind === "available"
+            ? {
+                kind: outcome.kind,
+                provenance: outcome.provenance,
+                bytes: outcome.bytes.length,
+                sha256: require("crypto")
+                  .createHash("sha256")
+                  .update(outcome.bytes)
+                  .digest("hex"),
+              }
+            : { kind: outcome.kind };
+        },
+        undefined,
       ),
     result: async () => {
       await obRunUntil(
@@ -481,22 +457,20 @@ async function startRenderProbe(
           what: "the excerpt render probe to settle again with no job active",
         },
       );
-      return JSON.parse(
-        await obRun(
-          vaultId,
-          async ({ page: helpers }) => {
-            const state = helpers.scratch.__zotlitExcerptProbe!;
-            return JSON.stringify({
-              outcome: state.outcome,
-              before: state.before,
-              after: state.after,
-              snapshot: state.diagnostics.snapshot(),
-              toBlobRestored:
-                HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
-            });
-          },
-          undefined,
-        ),
+      return obRun(
+        vaultId,
+        async ({ page: helpers }) => {
+          const state = helpers.scratch.__zotlitExcerptProbe!;
+          return {
+            outcome: state.outcome,
+            before: state.before,
+            after: state.after,
+            snapshot: state.diagnostics.snapshot(),
+            toBlobRestored:
+              HTMLCanvasElement.prototype.toBlob === state.originalToBlob,
+          };
+        },
+        undefined,
       );
     },
     [Symbol.asyncDispose]: () => ownership.disposeAsync(),
@@ -811,18 +785,18 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       what: "the excerpt acceptance run to settle",
     },
   );
-  const result = JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ page: helpers }) => {
-        const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
-        if (!acceptance) throw new Error("Excerpt acceptance missing");
-        if (acceptance.error) throw new Error(acceptance.error);
-        return JSON.stringify(acceptance.result);
-      },
-      undefined,
-    ),
-  ) as RenderingResult;
+  const result = await obRun(
+    vaultId,
+    async ({ page: helpers }) => {
+      const acceptance = helpers.scratch.__zotlitExcerptAcceptance;
+      if (!acceptance) throw new Error("Excerpt acceptance missing");
+      if (acceptance.error) throw new Error(acceptance.error);
+      if (!acceptance.result)
+        throw new Error("Excerpt acceptance produced no result");
+      return acceptance.result;
+    },
+    undefined,
+  );
 
   // The batch's own numbers, emitted as soon as they exist: the probes below
   // read host capabilities this environment does not always answer, and a
@@ -910,15 +884,13 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     expect(
       Math.max(active.canvas!.width, active.canvas!.height),
     ).toBeLessThanOrEqual(8192);
-    const during = JSON.parse(
-      await obRun(
-        vaultId,
-        async () => {
-          return await process.getProcessMemoryInfo().then(JSON.stringify);
-        },
-        undefined,
-      ),
-    ) as ProcessMemory;
+    const during = await obRun(
+      vaultId,
+      async () => {
+        return await process.getProcessMemoryInfo();
+      },
+      undefined,
+    );
     await probe.release();
     const measured = await probe.result();
     expect(measured.outcome).toEqual({ kind: "available" });
@@ -1048,203 +1020,194 @@ export async function verifyZoteroExcerptParity(
   vaultId: string,
 ): Promise<void> {
   const keys = ["FDRFQ7C2", "TYY6Z6ZF", "4PE492KU"];
-  const result = JSON.parse(
-    await obRun(
-      vaultId,
-      async ({ app, zotlit }, { keys }) => {
-        const services = zotlit.services;
-        await services.bridge.runPromise(services.zoteroReads.refresh);
-        const list = await services.bridge.runPromise(
-          services.annotationRepository.read("RGRPDF24"),
+  const result = await obRun(
+    vaultId,
+    async ({ app, zotlit }, { keys }) => {
+      const services = zotlit.services;
+      await services.bridge.runPromise(services.zoteroReads.refresh);
+      const list = await services.bridge.runPromise(
+        services.annotationRepository.read("RGRPDF24"),
+      );
+      if (!list) throw new Error("Fixture annotations unavailable");
+      const pdfPath = (app.vault.adapter as FileSystemAdapter).getFullPath(
+        "attachments/rougier-2014.pdf",
+      );
+      const summarize = async (
+        bytes: Uint8Array,
+        type: string,
+        color?: string | null,
+      ) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type }),
         );
-        if (!list) throw new Error("Fixture annotations unavailable");
-        const pdfPath = (app.vault.adapter as FileSystemAdapter).getFullPath(
-          "attachments/rougier-2014.pdf",
-        );
-        const summarize = async (
-          bytes: Uint8Array,
-          type: string,
-          color?: string | null,
-        ) => {
-          const bitmap = await createImageBitmap(
-            new Blob([new Uint8Array(bytes)], { type }),
-          );
-          let canvas;
-          try {
-            canvas = document.createElement("canvas");
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            const context = canvas.getContext("2d");
-            if (!context) throw new Error("Parity canvas unavailable");
-            context.drawImage(bitmap, 0, 0);
-            const data = context.getImageData(
-              0,
-              0,
-              bitmap.width,
-              bitmap.height,
-            ).data;
-            const counts = [0, 0, 0, 0];
-            let foreground = 0;
-            let annotationColor = 0;
-            const foregroundBounds: [number, number, number, number] = [
-              bitmap.width,
-              bitmap.height,
-              -1,
-              -1,
-            ];
-            const annotationBounds: [number, number, number, number] = [
-              bitmap.width,
-              bitmap.height,
-              -1,
-              -1,
-            ];
-            const mark = (
-              bounds: [number, number, number, number],
-              x: number,
-              y: number,
-            ) => {
-              bounds[0] = Math.min(bounds[0], x);
-              bounds[1] = Math.min(bounds[1], y);
-              bounds[2] = Math.max(bounds[2], x);
-              bounds[3] = Math.max(bounds[3], y);
-            };
-            const normalized = (bounds: [number, number, number, number]) =>
-              bounds[2] < 0
-                ? null
-                : [
-                    bounds[0] / bitmap.width,
-                    bounds[1] / bitmap.height,
-                    (bounds[2] + 1) / bitmap.width,
-                    (bounds[3] + 1) / bitmap.height,
-                  ];
-            const rgb = color
-              ? color
-                  .match(/[0-9a-f]{2}/gi)!
-                  .map((value) => Number.parseInt(value, 16))
-              : null;
-            const isColor = (x: number, y: number) => {
-              if (
-                !rgb ||
-                x < 0 ||
-                y < 0 ||
-                x >= bitmap.width ||
-                y >= bitmap.height
-              )
-                return false;
-              const offset = (y * bitmap.width + x) * 4;
-              return (
-                Math.abs(data[offset]! - rgb[0]!) < 48 &&
-                Math.abs(data[offset + 1]! - rgb[1]!) < 48 &&
-                Math.abs(data[offset + 2]! - rgb[2]!) < 48
-              );
-            };
-            for (let y = 0; y < bitmap.height; y++)
-              for (let x = 0; x < bitmap.width; x++) {
-                const offset = (y * bitmap.width + x) * 4;
-                const marked =
-                  data[offset]! < 245 ||
-                  data[offset + 1]! < 245 ||
-                  data[offset + 2]! < 245;
-                if (marked) {
-                  foreground++;
-                  mark(foregroundBounds, x, y);
-                  counts[
-                    (y >= bitmap.height / 2 ? 2 : 0) +
-                      (x >= bitmap.width / 2 ? 1 : 0)
-                  ]!++;
-                }
-                if (
-                  isColor(x, y) &&
-                  [
-                    [1, 0],
-                    [-1, 0],
-                    [0, 1],
-                    [0, -1],
-                    [1, 1],
-                    [1, -1],
-                    [-1, 1],
-                    [-1, -1],
-                  ].filter(([dx, dy]) => isColor(x + dx!, y + dy!)).length >= 4
-                ) {
-                  annotationColor++;
-                  mark(annotationBounds, x, y);
-                }
-              }
-            return {
-              width: bitmap.width,
-              height: bitmap.height,
-              foreground: foreground / (bitmap.width * bitmap.height),
-              quadrants: counts.map((value) =>
-                foreground ? value / foreground : 0,
-              ),
-              annotationColor: rgb
-                ? annotationColor / (bitmap.width * bitmap.height)
-                : undefined,
-              foregroundBox: normalized(foregroundBounds),
-              annotationBox: rgb ? normalized(annotationBounds) : undefined,
-            };
-          } finally {
-            if (canvas) {
-              canvas.width = 0;
-              canvas.height = 0;
-            }
-            bitmap.close();
-          }
-        };
-        await services.bridge.runPromise(services.excerptImage.clear);
-        const output = [];
-        for (const key of keys) {
-          const annotation = list.annotations.find(
-            (value) => value.key === key,
-          );
-          if (!annotation) throw new Error(`Missing Fixture annotation ${key}`);
-          const fallback = require("path").join(
-            services.bridge.runSync(services.zoteroPref.current).dataDir,
-            "cache",
-            "library",
-            `${key}.png`,
-          );
-          const request = {
-            annotation,
-            source: list.source,
-            sourceScope: services.bridge.runSync(services.zoteroPref.current)
-              .dataDir,
-            attachmentKey: "RGRPDF24",
-            libraryID: 1,
-            pdfPath,
-            zoteroPngPath: fallback,
+        let canvas;
+        try {
+          canvas = document.createElement("canvas");
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Parity canvas unavailable");
+          context.drawImage(bitmap, 0, 0);
+          const data = context.getImageData(
+            0,
+            0,
+            bitmap.width,
+            bitmap.height,
+          ).data;
+          const counts = [0, 0, 0, 0];
+          let foreground = 0;
+          let annotationColor = 0;
+          const foregroundBounds: [number, number, number, number] = [
+            bitmap.width,
+            bitmap.height,
+            -1,
+            -1,
+          ];
+          const annotationBounds: [number, number, number, number] = [
+            bitmap.width,
+            bitmap.height,
+            -1,
+            -1,
+          ];
+          const mark = (
+            bounds: [number, number, number, number],
+            x: number,
+            y: number,
+          ) => {
+            bounds[0] = Math.min(bounds[0], x);
+            bounds[1] = Math.min(bounds[1], y);
+            bounds[2] = Math.max(bounds[2], x);
+            bounds[3] = Math.max(bounds[3], y);
           };
-          const outcome = await services.bridge.runPromise(
-            services.excerptImage.resolve(request),
-          );
-          if (outcome.kind !== "available" || outcome.provenance !== "rendered")
-            throw new Error(`PDF render unavailable for ${key}`);
-          const reference = await require("fs").promises.readFile(fallback);
-          output.push({
-            key,
-            type: annotation.type,
-            rendered: await summarize(
-              outcome.bytes,
-              outcome.format.mimeType,
-              annotation.type === "ink" ? annotation.color : null,
+          const normalized = (bounds: [number, number, number, number]) =>
+            bounds[2] < 0
+              ? null
+              : [
+                  bounds[0] / bitmap.width,
+                  bounds[1] / bitmap.height,
+                  (bounds[2] + 1) / bitmap.width,
+                  (bounds[3] + 1) / bitmap.height,
+                ];
+          const rgb = color
+            ? color
+                .match(/[0-9a-f]{2}/gi)!
+                .map((value) => Number.parseInt(value, 16))
+            : null;
+          const isColor = (x: number, y: number) => {
+            if (
+              !rgb ||
+              x < 0 ||
+              y < 0 ||
+              x >= bitmap.width ||
+              y >= bitmap.height
+            )
+              return false;
+            const offset = (y * bitmap.width + x) * 4;
+            return (
+              Math.abs(data[offset]! - rgb[0]!) < 48 &&
+              Math.abs(data[offset + 1]! - rgb[1]!) < 48 &&
+              Math.abs(data[offset + 2]! - rgb[2]!) < 48
+            );
+          };
+          for (let y = 0; y < bitmap.height; y++)
+            for (let x = 0; x < bitmap.width; x++) {
+              const offset = (y * bitmap.width + x) * 4;
+              const marked =
+                data[offset]! < 245 ||
+                data[offset + 1]! < 245 ||
+                data[offset + 2]! < 245;
+              if (marked) {
+                foreground++;
+                mark(foregroundBounds, x, y);
+                counts[
+                  (y >= bitmap.height / 2 ? 2 : 0) +
+                    (x >= bitmap.width / 2 ? 1 : 0)
+                ]!++;
+              }
+              if (
+                isColor(x, y) &&
+                [
+                  [1, 0],
+                  [-1, 0],
+                  [0, 1],
+                  [0, -1],
+                  [1, 1],
+                  [1, -1],
+                  [-1, 1],
+                  [-1, -1],
+                ].filter(([dx, dy]) => isColor(x + dx!, y + dy!)).length >= 4
+              ) {
+                annotationColor++;
+                mark(annotationBounds, x, y);
+              }
+            }
+          return {
+            width: bitmap.width,
+            height: bitmap.height,
+            foreground: foreground / (bitmap.width * bitmap.height),
+            quadrants: counts.map((value) =>
+              foreground ? value / foreground : 0,
             ),
-            zotero: await summarize(
-              reference,
-              "image/png",
-              annotation.type === "ink" ? annotation.color : null,
-            ),
-          });
+            annotationColor: rgb
+              ? annotationColor / (bitmap.width * bitmap.height)
+              : undefined,
+            foregroundBox: normalized(foregroundBounds),
+            annotationBox: rgb ? normalized(annotationBounds) : undefined,
+          };
+        } finally {
+          if (canvas) {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
+          bitmap.close();
         }
-        return JSON.stringify(output);
-      },
-      { keys },
-    ),
-  ) as {
-    key: string;
-    type: string;
-    rendered: SemanticImage;
-    zotero: SemanticImage;
-  }[];
+      };
+      await services.bridge.runPromise(services.excerptImage.clear);
+      const output = [];
+      for (const key of keys) {
+        const annotation = list.annotations.find((value) => value.key === key);
+        if (!annotation) throw new Error(`Missing Fixture annotation ${key}`);
+        const fallback = require("path").join(
+          services.bridge.runSync(services.zoteroPref.current).dataDir,
+          "cache",
+          "library",
+          `${key}.png`,
+        );
+        const request = {
+          annotation,
+          source: list.source,
+          sourceScope: services.bridge.runSync(services.zoteroPref.current)
+            .dataDir,
+          attachmentKey: "RGRPDF24",
+          libraryID: 1,
+          pdfPath,
+          zoteroPngPath: fallback,
+        };
+        const outcome = await services.bridge.runPromise(
+          services.excerptImage.resolve(request),
+        );
+        if (outcome.kind !== "available" || outcome.provenance !== "rendered")
+          throw new Error(`PDF render unavailable for ${key}`);
+        const reference = await require("fs").promises.readFile(fallback);
+        output.push({
+          key,
+          type: annotation.type,
+          rendered: await summarize(
+            outcome.bytes,
+            outcome.format.mimeType,
+            annotation.type === "ink" ? annotation.color : null,
+          ),
+          zotero: await summarize(
+            reference,
+            "image/png",
+            annotation.type === "ink" ? annotation.color : null,
+          ),
+        });
+      }
+      return output;
+    },
+    { keys },
+  );
 
   console.info("Zotero excerpt parity evidence", JSON.stringify(result));
   expect(result.map(({ key }) => key)).toEqual(keys);

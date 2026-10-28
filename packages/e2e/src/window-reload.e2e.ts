@@ -184,3 +184,115 @@ describe.skipIf(!reachable)("Window reload", () => {
     });
   }, 120000);
 });
+
+describe.skipIf(!reachable)("Plugin start-up", () => {
+  const vaultPath = e2eVaultDir(workspaceRoot, "plugin-startup-vault");
+  let vaultId = "";
+
+  beforeAll(async () => {
+    await clearVault(runVaultScript, vaultPath);
+    const created = await runVaultScript(["create", vaultPath]);
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await prepareRunWindow(vaultId);
+  }, 180000);
+
+  afterAll(async () => {
+    await runVaultScript(["remove", vaultPath, "--purge"]);
+  }, 120000);
+
+  it("releases a start-up that a disable interrupts, so the next enable starts (#1786)", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(vaultId, async ({ app }) => {
+        if (!app.plugins.plugins.zotlit)
+          await app.plugins.enablePlugin("zotlit");
+      });
+    });
+    const proof = await obRun(vaultId, async ({ app, zotlit, page }) => {
+      const { bridge, localServer } = zotlit.services;
+      // The cancelled start-up binds the port the running instance frees.
+      const port = bridge.runSync(localServer.effectivePort);
+      // The database workers made from here on that nothing has terminated.
+      const NativeWorker = window.Worker;
+      const databaseWorkers = new Set<Worker>();
+      window.Worker = class extends NativeWorker {
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          if (options?.name === "zotlit-zotero-reads")
+            databaseWorkers.add(this);
+        }
+        override terminate() {
+          databaseWorkers.delete(this);
+          super.terminate();
+        }
+      };
+      try {
+        const registered = () => ({
+          commands: Object.keys(app.commands.commands).filter((id) =>
+            id.startsWith("zotlit:"),
+          ).length,
+          cli: [...app.cli.handlers.keys()].filter((name) =>
+            name.startsWith("zotlit:"),
+          ).length,
+          protocol: [...app.workspace.protocolHandler.handlers.keys()].filter(
+            (action) => action.startsWith("zotlit"),
+          ).length,
+          views: Object.keys(app.viewRegistry.viewByType).filter((type) =>
+            type.startsWith("zotlit"),
+          ).length,
+          // ZotLit's Live Updates listener: a Node server on its port.
+          liveUpdates: process._getActiveHandles().filter((handle) => {
+            const server = handle as {
+              listening?: boolean;
+              address?: () => { port: number } | string | null;
+            };
+            const address = server.listening ? server.address?.() : null;
+            return typeof address === "object" && address?.port === port;
+          }).length,
+          databaseWorkers: databaseWorkers.size,
+        });
+        const started = () => {
+          try {
+            return app.plugins.plugins.zotlit?.services !== undefined;
+          } catch {
+            return false;
+          }
+        };
+        await app.plugins.disablePlugin("zotlit");
+        const enabling = app.plugins.enablePlugin("zotlit");
+        // Loaded but not started: onload still waits for its services.
+        await page.until(
+          "onload in progress",
+          () => app.plugins.plugins.zotlit?._loaded === true && !started(),
+          10000,
+        );
+        await app.plugins.disablePlugin("zotlit");
+        await enabling;
+        const afterInterruptedStart = registered();
+        await app.plugins.enablePlugin("zotlit");
+        return {
+          port: typeof port === "number",
+          afterInterruptedStart,
+          restarted: started(),
+          afterRestart: registered(),
+        };
+      } finally {
+        window.Worker = NativeWorker;
+      }
+    });
+    expect(proof).toMatchObject({
+      port: true,
+      afterInterruptedStart: {
+        commands: 0,
+        cli: 0,
+        protocol: 0,
+        views: 0,
+        liveUpdates: 0,
+        databaseWorkers: 0,
+      },
+      restarted: true,
+      // The counts see what a start-up leaves when it runs.
+      afterRestart: { liveUpdates: 1, databaseWorkers: 1 },
+    });
+  }, 120000);
+});

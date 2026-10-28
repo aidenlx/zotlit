@@ -1,13 +1,29 @@
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Logger, Queue, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Logger,
+  PlatformError,
+  Queue,
+  Stream,
+} from "effect";
 import { TestClock } from "effect/testing";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect } from "vitest";
 
-import { systemCallError } from "@/lib/errno";
-
 import { zoteroPrefFixture } from "./__fixtures__";
+
+/** The failure `FileSystem` gives for a file the process may not read. */
+const unreadable = (path: string) =>
+  PlatformError.systemError({
+    _tag: "PermissionDenied",
+    module: "FileSystem",
+    method: "readFile",
+    pathOrDescriptor: path,
+  });
 
 // #1705: stalled external I/O releases startup and still publishes a late read.
 it.effect(
@@ -206,7 +222,7 @@ it.effect(
           return Effect.succeed(
             'user_pref("extensions.zotero.useDataDir", true);\nuser_pref("extensions.zotero.dataDir", "/research-data");\nuser_pref("extensions.zotero.httpServer.port", 45678);',
           );
-        return Effect.fail(systemCallError(new Error("unreadable")));
+        return Effect.fail(unreadable(path));
       }, null);
       yield* Stream.runHead(
         Stream.filter(f.pref.changes, (s) => s.state === "ready"),
@@ -257,7 +273,7 @@ it.effect("passes an interrupted profile list through without a warning", () =>
     const f = yield* zoteroPrefFixture((path) =>
       path.endsWith("profiles.ini")
         ? Effect.interrupt
-        : Effect.fail(systemCallError(new Error("unreadable"))),
+        : Effect.fail(unreadable(path)),
     );
     const logged: unknown[] = [];
     const exit = yield* f.pref.listProfiles.pipe(

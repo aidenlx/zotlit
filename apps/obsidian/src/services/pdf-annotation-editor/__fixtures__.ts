@@ -220,6 +220,7 @@ export function pdfReader(page = pageView()) {
     // closes it and nulls it — see `closeViewer` below.
     pdfViewer: {
       eventBus: {},
+      isInitialViewSet: true,
       pdfDocument: {
         numPages: 1,
         getPage: vi.fn(async () => page.pdfPage),
@@ -249,6 +250,38 @@ export function pdfReader(page = pageView()) {
         if (event === "pagerendered") listener({ pageNumber: 1, source: page });
       }
     },
+    /** What PDF.js dispatches when its current page number changes. */
+    turnPage: () => {
+      for (const { event, listener } of listeners) {
+        if (event === "pagechanging") listener({});
+      }
+    },
+    /**
+     * What PDF.js's `setInitialView` does on a reader still opening: it marks
+     * the view set, moves to the position the document reopens at, which
+     * dispatches `pagechanging`, and then dispatches `documentinit`.
+     */
+    setInitialView: () => {
+      (child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
+        true;
+      for (const name of ["pagechanging", "documentinit"]) {
+        for (const { event, listener } of listeners) {
+          if (event === name) listener({});
+        }
+      }
+    },
+    /**
+     * What PDF.js's `close` does when Obsidian reloads a changed file into the
+     * same reader: `setDocument(null)` dispatches `pagesdestroy`, and then the
+     * initial view is unset for the document that opens next.
+     */
+    closeDocument: () => {
+      for (const { event, listener } of listeners) {
+        if (event === "pagesdestroy") listener({});
+      }
+      (child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
+        false;
+    },
     /**
      * What the child's `unload` does before a closing leaf reaches ZotLit's
      * disposal: the viewer is closed, and every listener goes with it.
@@ -259,6 +292,14 @@ export function pdfReader(page = pageView()) {
       child.toolbar = null;
     },
   };
+}
+
+/** A reader whose page one is loaded and whose initial view is not set yet. */
+export function openingReader() {
+  const reader = pdfReader();
+  (reader.child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
+    false;
+  return reader;
 }
 
 /** Obsidian's deferred viewer host, resolved on the child it was given. */

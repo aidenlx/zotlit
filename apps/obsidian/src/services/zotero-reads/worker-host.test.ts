@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
 // The worker adapter's lifetime: degraded on a worker death, a new worker on Refresh, termination on scope end.
 import {
@@ -98,6 +99,7 @@ function fakeWorkers(
       );
       const served = yield* makeInProcessClient().pipe(
         Effect.provideContext(context),
+        Effect.provide(NodeFileSystem.layer),
       );
       const mode = options.readMode?.(n);
       const answering: ZoteroReadsClient = mode
