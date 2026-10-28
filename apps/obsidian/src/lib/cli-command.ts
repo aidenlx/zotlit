@@ -1,11 +1,13 @@
-// A zotlit:* command whose handler is an Effect. The plugin's ManagedRuntime
-// runs it, as any call from Obsidian into Effect code; unloading the plugin
-// interrupts a run still in flight. ZotLitPlugin.registerCliHandler then
-// turns a failure into the text Obsidian prints (`cli-rejection.ts`).
+// A zotlit:* command whose handler is an Effect. The plugin's bridge runs it,
+// as any call from Obsidian into Effect code; unloading the plugin interrupts
+// a run still in flight, and stops one that starts after it at its first
+// pause. ZotLitPlugin.registerCliHandler then turns a failure into the text
+// Obsidian prints (`cli-rejection.ts`).
 
-import type { Effect, ManagedRuntime } from "effect";
+import type { Effect } from "effect";
 import type { CliData, CliFlags, PluginManifest } from "obsidian";
 
+import type { EffectBridge } from "./effect-bridge";
 import { settleAtEdge } from "./signal-edge";
 
 /** A command's answer to the caller's parameters: the text it prints. */
@@ -30,20 +32,20 @@ export type VersionedCliHost = CliHost & {
   readonly manifest: Pick<PluginManifest, "version">;
 };
 
-/** Runs one command's Effect; `plugin-runtime.ts` makes it from the plugin's runtime. */
+/** Runs one command's Effect; `plugin-runtime.ts` makes it from the plugin's bridge. */
 export type CliRunner = (
   effect: Effect.Effect<string, unknown>,
 ) => Promise<string>;
 
 /**
- * A runner over `runtime` whose runs `signal` interrupts. A failure rejects
+ * A runner over `bridge` whose runs `signal` interrupts. A failure rejects
  * with its squashed cause; a run that unload interrupts rejects with the
  * signal's reason, as a command that read the signal itself did.
  */
-export function cliRunner<R>(
-  runtime: ManagedRuntime.ManagedRuntime<R, never>,
+export function cliRunner(
+  bridge: Pick<EffectBridge, "runPromiseExit">,
   signal: AbortSignal,
 ): CliRunner {
   return async (effect) =>
-    settleAtEdge(await runtime.runPromiseExit(effect, { signal }), signal);
+    settleAtEdge(await bridge.runPromiseExit(effect, { signal }), signal);
 }

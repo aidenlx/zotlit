@@ -52,6 +52,7 @@ import {
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
 import { inProcessParseClient } from "@/services/citation-parse/in-process";
+import { CitationParse } from "@/services/citation-parse/service";
 import { citationPopoverFixture } from "@/services/citation-popover/__fixtures__";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { citationTextFixture } from "@/services/citation-text/__fixtures__";
@@ -71,10 +72,12 @@ import {
   buildSeededSettings,
 } from "@/services/settings/__fixtures__";
 import type { SettingsFixture } from "@/services/settings/__fixtures__";
+import { PluginSettings } from "@/services/settings/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 type ProfileFixture = Pick<Settings, "profiles" | "defaultDocument">;
 import { fakeFetchClient } from "@/lib/__fixtures__/fake-fetch";
+import { ZoteroHttp } from "@/lib/zotero-http";
 import { OpenDocumentsStub } from "@/lib/__fixtures__/open-documents";
 import { seedWorksSql } from "@/services/zotero-reads/test-utils";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
@@ -742,9 +745,6 @@ function exportAdapter({
   profileSettings: () => Settings;
 }): PandocExportDeps {
   return {
-    citationParse: inProcessParseClient,
-    fileSystem: Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
-    notifier,
     app: stubService<App>("App", {
       metadataCache: harness.metadataCache as unknown as MetadataCache,
       vault: stubService<Vault>("Vault", {
@@ -754,12 +754,6 @@ function exportAdapter({
         cachedRead: (file: TFile) => harness.vault.cachedRead(file),
       }),
     }),
-    pandocEngine: pandocEngineHandle(engine).binary,
-    // The bibliography fetch is mocked, so nothing reaches Zotero.
-    zoteroHttp: fakeFetchClient(() => {
-      throw new Error("No Zotero in this fixture");
-    }),
-    settings,
     bridge: settings.bridge,
     openSettings: () => undefined,
     context: Context.make(
@@ -776,6 +770,21 @@ function exportAdapter({
         stubService<Profile["Service"]>("Profile", {
           loaded: Effect.succeed(true),
           profileOf: (file) => Effect.sync(() => profileReader(profileSettings, harness.metadataCache).profileOf(file)),
+        }),
+      ),
+      Context.add(CitationParse, inProcessParseClient),
+      Context.add(
+        FileSystem.FileSystem,
+        Effect.runSync(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))),
+      ),
+      Context.add(Notifier, notifier),
+      Context.add(PandocEngine, pandocEngineHandle(engine).binary),
+      Context.add(PluginSettings, settings),
+      // The bibliography fetch is mocked, so nothing reaches Zotero.
+      Context.add(
+        ZoteroHttp,
+        fakeFetchClient(() => {
+          throw new Error("No Zotero in this fixture");
         }),
       ),
     ),
