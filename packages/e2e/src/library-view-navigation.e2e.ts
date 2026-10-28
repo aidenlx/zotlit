@@ -49,7 +49,7 @@ import type {} from "./page-library-types.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
-  it("swaps the Reading Card from one paper to the next in one step, by the arrow keys and by a click, beside a wide list and over a narrow one, with its Annotations closed and open, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
+  it("swaps the Reading Card from one paper to the next in one step, by the arrow keys, by a click beside a wide list and as Show in Library moves it under a narrow one, with its Annotations closed and open, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -119,6 +119,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       cards: string[];
       /** Whether the card shows at all. */
       shown: boolean;
+      /** Whether the card says what fills it with no row selected. */
+      empty: boolean;
     }
     interface Switch {
       from: string;
@@ -168,19 +170,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             card!.querySelector<HTMLElement>("[data-library-card-title]");
           await until("rows", () => row(toInput), 10000);
           if (condition) {
-            view.card.registry.set(view.model.selection, {
-              key: null,
-              card: false,
-            });
-            await until("no card", () => !card!.checkVisibility(), 10000);
+            view.card.registry.set(view.model.selection, { key: null });
+            await until(
+              "empty card",
+              () =>
+                card!.checkVisibility() &&
+                card!.querySelector("[data-library-card-empty]"),
+              10000,
+            );
             await view.card.settled;
             await frame();
             await frame();
           } else {
-            view.card.registry.set(view.model.selection, {
-              key: fromInput,
-              card: true,
-            });
+            view.card.registry.set(view.model.selection, { key: fromInput });
             await until(
               "card",
               () => card!.checkVisibility() && title()?.textContent,
@@ -208,6 +210,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ),
               ].map((n) => n.getAttribute("data-zotero-annotation-key")!),
               shown: card!.checkVisibility(),
+              empty: !!card!.querySelector("[data-library-card-empty]"),
             };
           };
           const mutations: Switch["mutations"] = [];
@@ -274,10 +277,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               press(row(toInput), "row");
             }
             if (how === "show") {
-              view.card.registry.set(view.model.selection, {
-                key: toInput,
-                card: true,
-              });
+              view.card.registry.set(view.model.selection, { key: toInput });
             }
             const start = performance.now();
             while (performance.now() - start < delay + 600) {
@@ -330,9 +330,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect.soft(step.from, what).toBeTruthy();
       expect.soft(step.to, what).toBeTruthy();
       expect.soft(step.from, what).not.toBe(step.to);
-      // Over a narrow list a click puts the card away while it waits out a
-      // double click: the frames it is away count for nothing.
-      const frames = step.frames.filter(({ shown }) => shown);
+      // The card stays in view through the switch.
+      const frames = step.frames;
+      expect
+        .soft(
+          frames.filter(({ shown }) => !shown),
+          what,
+        )
+        .toEqual([]);
       expect
         .soft(
           frames.filter(({ title }) => !title),
@@ -382,16 +387,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     };
 
     /**
-     * The card opens on the paper whole: no frame shows it without its
-     * title, and its buttons stay where its header puts them.
+     * The card goes from what fills it with no selection to the paper whole:
+     * every frame shows it, either empty or with the paper's title, and its
+     * buttons stay where its header puts them.
      */
     const opens = (what: string, step: Switch) => {
-      const frames = step.frames.filter(({ shown }) => shown);
+      const frames = step.frames;
       expect.soft(step.to, what).toBeTruthy();
-      expect.soft(step.frames[0]!.shown, what).toBe(false);
+      expect.soft(frames[0]!.empty, what).toBe(true);
       expect
         .soft(
-          frames.filter(({ title }) => !title),
+          frames.filter(
+            ({ shown, empty, title }) => !shown || (!empty && !title),
+          ),
           what,
         )
         .toEqual([]);
@@ -399,8 +407,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         list.filter((value, at) => at === 0 || value !== list[at - 1]);
       expect
         .soft(seen(frames.map(({ title }) => title)), what)
-        .toEqual([step.to]);
-      expect.soft(seen(frames.map(({ top }) => top)), what).toHaveLength(1);
+        .toEqual([null, step.to]);
+      expect
+        .soft(
+          seen(frames.filter(({ title }) => title).map(({ top }) => top)),
+          what,
+        )
+        .toHaveLength(1);
     };
 
     /** The keys of the first rows of the list, and the row of the paper with Annotations. */
@@ -434,41 +447,34 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )) as { rows: string[]; listed: string | null };
     expect(listed).not.toBeNull();
 
-    const switches = async (where: string, narrow: boolean) => {
+    const switches = async (where: string, how: "click" | "show") => {
       for (const delay of [0, 400]) {
         const pace = delay === 0 ? "fast read" : "slow read";
         // From no selection, the card opens on the paper.
         opens(
           `${where}, opens on 3, ${pace}`,
-          await switchCard(narrow ? "show" : "click", [null, rows[3]!], delay),
+          await switchCard(how, [null, rows[3]!], delay),
         );
-        // Down the first rows by the arrow keys, then by a click; over a
-        // narrow list those put the card away, so the selection moves as
-        // "Show in Library" moves it.
-        if (!narrow)
-          for (let at = 0; at + 1 < 5; at++)
-            oneStep(
-              `${where}, ↓ ${at}, ${pace}`,
-              await switchCard("key", [rows[at]!, rows[at + 1]!], delay),
-            );
+        // Down the first rows by the arrow keys, then by `how`.
+        for (let at = 0; at + 1 < 5; at++)
+          oneStep(
+            `${where}, ↓ ${at}, ${pace}`,
+            await switchCard("key", [rows[at]!, rows[at + 1]!], delay),
+          );
         for (const [a, b] of [
           [4, 1],
           [1, 2],
           [2, 6],
         ] as const)
           oneStep(
-            `${where}, ${narrow ? "show" : "click"} ${a} → ${b}, ${pace}`,
-            await switchCard(
-              narrow ? "show" : "click",
-              [rows[a]!, rows[b]!],
-              delay,
-            ),
+            `${where}, ${how} ${a} → ${b}, ${pace}`,
+            await switchCard(how, [rows[a]!, rows[b]!], delay),
           );
       }
     };
 
     // Beside a wide list, with the Annotations closed.
-    await switches("wide", false);
+    await switches("wide", "click");
 
     // With the Annotations open, to and from the paper that has some.
     const other = rows.find((key) => key !== listed)!;
@@ -519,7 +525,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { enabled: false },
     );
 
-    // Over a narrow list.
+    // Under a narrow pane, where the card spans the tree and the list, the
+    // selection moves as "Show in Library" moves it.
     await obRun(
       run.vaultId,
       async ({ app, page }, { value }) => {
@@ -536,21 +543,26 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const card = leaf!.view.contentEl.querySelector<HTMLElement>(
           "[data-library-card]",
         );
+        const shell = leaf!.view.contentEl.querySelector<HTMLElement>(
+          "[data-library-shell]",
+        );
         leaf!.view.card.registry.set(leaf!.view.model.selection, {
           key: value!,
-          card: true,
         });
         await until(
-          "card over the list",
+          "card under the tree and the list",
           () =>
             card!.checkVisibility() &&
-            getComputedStyle(card!).position === "absolute",
+            Math.abs(
+              card!.getBoundingClientRect().width -
+                shell!.getBoundingClientRect().width,
+            ) < 2,
           5000,
         );
       },
       { value: rows[0] },
     );
-    await switches("narrow", true);
+    await switches("narrow", "show");
   }, 240000);
 
   it("swaps the sidebar Annotation View from one Item to the next in one step, as it follows the active tab from one Literature Note to another and as the Item picker pins another Item, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
@@ -3068,8 +3080,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )!;
 
     // The Library View on My Library, and beside it a note to cite into, in
-    // a window wide enough that the Reading Card, which shows over a
-    // narrow list, leaves the start of each row in reach.
+    // a window wide enough that the Reading Card, which shows under the
+    // tree and the list on a narrow pane, leaves the rows above it in reach.
     await suite.wideWindow(cleanup);
     await obRun(
       run.vaultId,
@@ -3103,7 +3115,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     /**
      * Run `script` with the Library View's tab active and `el` its content.
      * `pressRow` presses a row near its start, where a reader clicks while
-     * the Reading Card over a narrow list covers the row's far end: it
+     * the Reading Card under a narrow pane covers the rows below it: it
      * presses what stands at that point, inside the row, through `press`.
      */
 

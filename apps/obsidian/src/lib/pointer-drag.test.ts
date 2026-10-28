@@ -45,7 +45,7 @@ function start() {
   const app = keymapApp();
   pointerDrag({
     app,
-    press: { pointerId: 1, clientX: 100 },
+    press: { pointerId: 1, clientX: 100, clientY: 0 },
     handle,
     cursor: CURSOR,
     controller,
@@ -120,4 +120,31 @@ it("ends without a drop when its controller aborts, as a closing view does", () 
   runFrames();
   pointer("pointerup", 120);
   expect(calls).toEqual([["end"]]);
+});
+
+it("follows the pointer along y when the drag says so, and leaves a move along x alone", () => {
+  const handle = document.body.createDiv();
+  const calls: unknown[][] = [];
+  pointerDrag({
+    app: keymapApp(),
+    press: { pointerId: 1, clientX: 100, clientY: 300 },
+    axis: "y",
+    handle,
+    cursor: CURSOR,
+    controller: new AbortController(),
+    move: (delta) => calls.push(["move", delta]),
+    drop: (delta) => calls.push(["drop", delta]),
+    end: () => calls.push(["end"]),
+  });
+  const move = (type: string, clientX: number, clientY: number) =>
+    window.dispatchEvent(
+      new PointerEvent(type, { bubbles: true, clientX, clientY, pointerId: 1 }),
+    );
+  move("pointermove", 160, 300);
+  runFrames();
+  expect(calls).toEqual([]);
+  move("pointermove", 160, 260);
+  runFrames();
+  move("pointerup", 160, 260);
+  expect(calls).toEqual([["move", -40], ["drop", -40], ["end"]]);
 });

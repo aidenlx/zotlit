@@ -35,9 +35,15 @@ import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 
 import { makeItemNodeCommand } from "./atoms";
-import { CardWidth } from "./card-width";
+import { DetailsToggle } from "./details-toggle";
 import {
+  CARD_HEIGHT_DEFAULT,
+  CARD_HEIGHT_MIN,
+  CARD_WIDTH_DEFAULT,
+  CARD_WIDTH_MIN,
   LIBRARY_LAYOUTS,
+  TREE_WIDTH_DEFAULT,
+  TREE_WIDTH_MIN,
   libraryViewDefaults,
   libraryViewQuery,
   libraryViewQueryFileLeftOut,
@@ -47,12 +53,14 @@ import {
   withCardClosed,
   withCardDisclosure,
   withCardWidth,
+  withCardHeight,
   withExpanded,
   withFacets,
   withNode,
   withSearch,
-  withSelected,
   withTags,
+  withTreeCollapsed,
+  withTreeWidth,
 } from "./document";
 import type {
   LibraryNode,
@@ -69,6 +77,7 @@ import { FACET_LABELS, LibraryTree } from "./library-tree";
 import { makeLibraryModel, patchSelection } from "./model";
 import type { LibrarySelection } from "./model";
 import { ZoteroNotFound } from "./not-found";
+import { PaneWidth } from "./pane-width";
 import { ReadingCard } from "./reading-card";
 import { recentReason, RECENT_REASON_FIELDS } from "./reason";
 import { rowMenu } from "./row-menu";
@@ -105,13 +114,6 @@ const OWN_KEYS =
  * What Enter does on the selected row, by its modifiers, as in the quick
  * switcher: Mod opens in a new tab.
  */
-/**
- * How long a click on a row waits before it opens the Reading Card over a
- * narrow list, so the second click of a double click still lands on the row
- * (ADR 0074): the usual double-click time of macOS and Windows.
- */
-const DOUBLE_CLICK_MS = 500;
-
 const ENTER_ACTIONS: readonly (readonly [
   Modifier[],
   (items: ItemActions, key: string) => unknown,
@@ -142,12 +144,11 @@ export class LibraryView extends ItemView {
   /** What the search last found, which a facet change lists again. */
   #found: SearchFound = { text: "" };
   /**
-   * The selected row, by its Item's Indexed Key, and whether the researcher
-   * asked for its Reading Card: a click on the row or Space on it does, the
-   * arrow keys do not. A narrow pane shows the card over the list only
-   * while it is asked for; a wide pane shows it beside the list for every
-   * selected row, unless the researcher closed it (the document's
-   * `cardClosed`), when it too waits to be asked for.
+   * The selected row, by its Item's Indexed Key, for this tab alone: a new
+   * tab opens with none. A click, the arrow keys and "Show in Library" all
+   * select a row alone; the item details show the selected row while the
+   * researcher keeps them on (the document's `cardClosed` absent), at every
+   * pane width.
    */
   readonly model = makeLibraryModel();
   readonly #itemNodeCommand = makeItemNodeCommand();
@@ -179,12 +180,14 @@ export class LibraryView extends ItemView {
   }
   /** The Reading Card's pane, once the tab has opened. */
   #cardEl: HTMLElement | null = null;
-  /** The box of the tree, the list and the card, once the tab has opened. */
-  #shell: HTMLElement | null = null;
   /** The Reading Card's resizable inner edge, once the tab has opened. */
-  #cardWidth: CardWidth | null = null;
-  /** The click that waits out a double click before it opens the card. */
-  #cardTimer: number | null = null;
+  #cardWidth: PaneWidth | null = null;
+  /** The Reading Card's top edge under a narrow list, once the tab has opened. */
+  #cardHeight: PaneWidth | null = null;
+  /** The Library Tree's resizable inner edge, once the tab has opened. */
+  #treeWidth: PaneWidth | null = null;
+  /** The Details button, once the tab has opened. */
+  #details: DetailsToggle | null = null;
   /** The write of the search text that the box last asked for. */
   #saving: Promise<void> = Promise.resolve();
   /** Keep the search text once typing pauses. */
@@ -244,29 +247,18 @@ export class LibraryView extends ItemView {
           });
         },
       },
-      click: (key, event) => this.#click(key, event),
-      // The keyboard entering the list, or a link or button in the row,
-      // selects the row, as the arrow keys do; the Reading Card stays as
-      // it was.
-      select: (key) =>
-        this.#selectRow((now) => ({
-          key,
-          card: now.key === key && now.card,
-        })),
+      // A click, the keyboard entering the list, or a link or button in
+      // the row selects the row, as the arrow keys do.
+      click: (key) => this.#selectRow({ key }),
+      select: (key) => this.#selectRow({ key }),
       first: () =>
         this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
       open: (key, event) => {
-        this.#cancelCard();
         void deps.items.openPdf(key, Keymap.isModEvent(event));
       },
-      // The menu acts on the row it opens over, which it selects; the
-      // Reading Card stays as it was.
+      // The menu acts on the row it opens over, which it selects.
       menu: (key, event) => {
-        this.#cancelCard();
-        this.#selectRow((now) => ({
-          key,
-          card: now.key === key && now.card,
-        }));
+        this.#selectRow({ key });
         const values = this.#rowValues(key);
         menuOf({
           indexedKey: key,
@@ -277,14 +269,10 @@ export class LibraryView extends ItemView {
     };
     this.register(() => drag.cancel());
     this.#registerRowKeys();
-    // Escape puts away a card that shows over the list, from the list as
-    // from the card. Otherwise Obsidian moves focus to the last navigable
-    // leaf, which in the main area switches the tab away from this view.
+    // Escape stays in the tab: otherwise Obsidian moves focus to the last
+    // navigable leaf, which in the main area switches the tab away from
+    // this view.
     const onEscape = () => {
-      if (this.#cardOverList()) {
-        this.#closeCard();
-        return false as const;
-      }
       const { leftSplit, rightSplit } = deps.app.workspace;
       const root = this.leaf.getRoot();
       if (root === leftSplit || root === rightSplit) return;
@@ -336,7 +324,7 @@ export class LibraryView extends ItemView {
     this.card = new ReadingCard(deps, {
       menu: (item, button) => showMenuAtButton(menuOf(item), button),
       openInSidebar: (key) => void showItemInAnnotView(deps.app, key),
-      close: () => this.#closeCard({ keep: true }),
+      close: () => this.#setDetails(false),
       // A disclosure is a view state the document keeps; a failed write
       // leaves it open on screen and says nothing in the toolbar.
       keepDisclosure: (name, open) => {
@@ -353,6 +341,7 @@ export class LibraryView extends ItemView {
       },
       // The card shows the header of an Item it is reading from its row.
       row: (key) => this.#rowValues(key),
+      stats: () => this.tree.model.stats,
       onEscape,
     });
     this.tree = new LibraryTree(deps, {
@@ -365,6 +354,7 @@ export class LibraryView extends ItemView {
         if (pruneExpanded(doc, know) !== doc)
           this.#expand((now) => pruneExpanded(now, know));
       },
+      collapse: (collapsed) => this.#collapseTree(collapsed),
     });
     this.search = new LibrarySearch(deps, {
       node: () => this.tree.state.node,
@@ -471,48 +461,72 @@ export class LibraryView extends ItemView {
       attr: { "data-library-column": "" },
     });
     column.append(this.welcome.el);
+    // The tree and the list share the top of the shell, and the item
+    // details sit beside them on a wide pane, or under both, across the
+    // whole pane, on a narrow one. The card is a container of its own, so
+    // what sits in it and asks the pane's width names the shell's.
     const shell = column.createDiv({
-      cls: "zt:group zt:@container zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden",
+      cls: "zt:group zt:@container/library zt:relative zt:flex zt:min-h-[min(20rem,100%)] zt:flex-1 zt:overflow-hidden",
+      attr: { "data-library-shell": "" },
     });
-    const treePane = shell.createDiv({
-      cls: "zt:hidden zt:w-56 zt:shrink-0 zt:flex-col zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:flex zt:group-data-tree-open:flex zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
+    // The shell's own width query reaches only what it holds, so a frame
+    // inside it turns the row into a column.
+    const frame = shell.createDiv({
+      cls: "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:@max-4xl:flex-col",
+    });
+    const top = frame.createDiv({
+      cls: "zt:relative zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1",
+    });
+    // Beside a wide list the tree shows unless the researcher collapsed it;
+    // over a narrow one it shows while it is open.
+    const treePane = top.createDiv({
+      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-tree-width,14rem)] zt:shrink-0 zt:flex-col zt:border-e-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@xl:flex zt:@xl:group-data-tree-collapsed:hidden zt:@max-xl:group-data-tree-open:flex zt:@max-xl:absolute zt:@max-xl:inset-y-0 zt:@max-xl:start-0 zt:@max-xl:max-w-[85%] zt:@max-xl:z-(--layer-popover) zt:@max-xl:shadow-(--shadow-s)",
       attr: { "data-library-tree": "" },
     });
     const treeEl = treePane.createDiv({
       cls: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:scroll-gutter",
     });
-    const main = shell.createDiv({
-      cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
+    const main = top.createDiv({
+      cls: "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col",
     });
     // Where ZotLit cannot read Zotero's database, the tree and the list say
     // so in place of what they hold; the search box and the header's count
     // go with them.
     const hidden = "zt:group-data-zotero-missing:hidden";
-    // The Reading Card shows while a row is selected: beside the list on a
-    // wide pane, and over it on a narrow one, as the tree does, once the
-    // researcher asks for it. A card the researcher closed is hidden, so a
-    // wide pane too waits for it to be asked for.
-    const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
+    // The item details show while the researcher keeps them on: the
+    // selected paper, or what fills them when none is selected.
+    const cardEl = frame.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
+      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-[var(--zt-library-card-height,16rem)] zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
-    this.#shell = shell;
-    // The card's inner edge sets its width; the card itself renders beside
-    // it, in a box of its own.
-    this.#cardWidth = new CardWidth(
+    // Each pane's inner edge sets its width beside the list; under a narrow
+    // list the details span the pane, and their top edge sets their height
+    // instead, and over a narrow one the tree keeps its own room.
+    // A drag past the minimum hides the details while the pointer stays
+    // there, and turns them off on release.
+    const collapseCard = (collapsed: boolean) => {
+      if (collapsed) cardEl.hidden = true;
+      else this.#showCard();
+    };
+    this.#cardWidth = new PaneWidth(
       cardEl,
-      { list: main, pane: shell },
+      {
+        list: main,
+        shell,
+        side: "start",
+        property: "--zt-library-card-width",
+        fallback: CARD_WIDTH_DEFAULT,
+        min: CARD_WIDTH_MIN,
+        cls: "zt:@max-4xl/library:hidden",
+        hint: m.library_view_card_resize_hint(),
+        attr: "data-library-card-resizer",
+      },
       {
         app: this.#deps.app,
         stored: () => this.#storage.document().cardWidth,
-        // A drag past the minimum hides the card while the pointer stays
-        // there, and closes it on release.
-        collapse: (collapsed) => {
-          if (collapsed) cardEl.hidden = true;
-          else this.#showCard();
-        },
-        close: () => this.#closeCard({ keep: true }),
+        collapse: collapseCard,
+        close: () => this.#setDetails(false),
         keep: (width) => {
           this.#storage
             .change((doc) => withCardWidth(doc, width))
@@ -524,21 +538,88 @@ export class LibraryView extends ItemView {
         },
       },
     );
+    this.#cardHeight = new PaneWidth(
+      cardEl,
+      {
+        list: top,
+        shell,
+        side: "top",
+        property: "--zt-library-card-height",
+        fallback: CARD_HEIGHT_DEFAULT,
+        min: CARD_HEIGHT_MIN,
+        cls: "zt:@4xl/library:hidden",
+        hint: m.library_view_card_resize_hint(),
+        attr: "data-library-card-height-resizer",
+      },
+      {
+        app: this.#deps.app,
+        stored: () => this.#storage.document().cardHeight,
+        collapse: collapseCard,
+        close: () => this.#setDetails(false),
+        keep: (height) => {
+          this.#storage
+            .change((doc) => withCardHeight(doc, height))
+            .catch((error: unknown) => {
+              logger.warn("The Library View could not keep the card's height", {
+                error,
+              });
+            });
+        },
+      },
+    );
+    this.#treeWidth = new PaneWidth(
+      treePane,
+      {
+        list: main,
+        shell,
+        side: "end",
+        property: "--zt-library-tree-width",
+        fallback: TREE_WIDTH_DEFAULT,
+        min: TREE_WIDTH_MIN,
+        cls: "zt:@max-xl:hidden",
+        hint: m.library_view_tree_resize_hint(),
+        attr: "data-library-tree-resizer",
+      },
+      {
+        app: this.#deps.app,
+        stored: () => this.#storage.document().treeWidth,
+        // A drag past the minimum hides the tree while the pointer stays
+        // there, and collapses it on release.
+        collapse: (collapsed) =>
+          shell.toggleAttribute(
+            "data-tree-collapsed",
+            collapsed || this.tree.state.collapsed,
+          ),
+        close: () => this.#collapseTree(true),
+        keep: (width) => {
+          this.#storage
+            .change((doc) => withTreeWidth(doc, width))
+            .catch((error: unknown) => {
+              logger.warn("The Library View could not keep the tree's width", {
+                error,
+              });
+            });
+        },
+      },
+    );
     const cardBody = cardEl.createDiv({
       cls: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col",
     });
-    // The tree toggle shares the search box's row, so it never takes a row
-    // of its own above the heading. While
-    // Zotero is not found the toggle stays, so a narrow pane still opens the
-    // tree and its not-found part; a wide pane, with no toggle, drops the row.
+    // The tree toggle and the Details button share the search box's row, so
+    // neither takes a row of its own above the heading. While Zotero is not
+    // found the tree toggle stays, so the tree's not-found part still shows.
     const searchRow = main.createDiv({
-      cls: "zt:flex zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2) zt:@xl:group-data-zotero-missing:hidden",
+      cls: "zt:flex zt:items-center zt:gap-(--size-2-2) zt:ps-(--zt-query-toolbar-inset-start) zt:pe-(--zt-query-toolbar-inset-end) zt:pt-(--size-4-2)",
       attr: { "data-library-search-row": "" },
     });
     const toggleEl = searchRow.createDiv({ cls: "zt:contents" });
     const searchEl = searchRow.createDiv({
       cls: `zt:min-w-0 zt:flex-1 ${hidden}`,
     });
+    this.#details = new DetailsToggle(
+      searchRow.createDiv({ cls: `zt:flex ${hidden}` }),
+      () => this.#setDetails(this.#storage.document().cardClosed === true),
+    );
     const note = main.createDiv();
     const header = main.createDiv();
     // The search row, the note and the header stay at their own height above
@@ -581,11 +662,17 @@ export class LibraryView extends ItemView {
     this.query.register(() => heading.unmount());
     this.search.load();
     this.search.render(searchEl);
-    // On a narrow pane the tree shows over the list while it is open.
+    // On a narrow pane the tree shows over the list while it is open, and
+    // on a wide one beside it unless collapsed: the list's room changes, so
+    // both edges clamp again.
     this.tree.register(
-      this.tree.subscribe(({ open }) =>
-        shell.toggleAttribute("data-tree-open", open),
-      ),
+      this.tree.subscribe(({ open, collapsed }) => {
+        shell.toggleAttribute("data-tree-open", open);
+        shell.toggleAttribute("data-tree-collapsed", collapsed);
+        this.#treeWidth?.apply();
+        this.#cardWidth?.apply();
+        this.#cardHeight?.apply();
+      }),
     );
     this.#holdTreeKeys(treePane);
     // A press on the list beside it puts the tree away.
@@ -608,13 +695,7 @@ export class LibraryView extends ItemView {
     this.card.load();
     this.card.render(cardBody);
     this.card.register(
-      this.#subscribeSelection(({ key, card }) => {
-        this.card.show(key);
-        // Asking for the card opens a card the researcher closed.
-        if (card && this.#storage.document().cardClosed)
-          this.#keepClosed(false);
-        this.#showCard();
-      }),
+      this.#subscribeSelection(({ key }) => this.card.show(key)),
     );
     // A selected row that leaves the list takes its selection with it, so
     // the Reading Card never shows an Item the list does not hold.
@@ -623,7 +704,7 @@ export class LibraryView extends ItemView {
         const { key } = this.selected;
         if (phase !== "ready" || key === null) return;
         if (!results?.rows.some((row) => row.indexedKey === key))
-          this.#selectRow({ key: null, card: false });
+          this.#selectRow({ key: null });
       }),
     );
     this.query.register(
@@ -644,6 +725,9 @@ export class LibraryView extends ItemView {
     await this.#storage.load();
     const doc = this.#storage.document();
     this.#cardWidth?.load();
+    this.#cardHeight?.load();
+    this.#treeWidth?.load();
+    this.tree.showCollapsed(doc.treeCollapsed === true);
     this.#showCard();
     this.card.showDisclosures(doc.card);
     this.tree.show(doc.node);
@@ -651,70 +735,7 @@ export class LibraryView extends ItemView {
     this.tree.showFacets(doc.facets);
     this.tree.showTags(doc.tags);
     this.tree.refresh();
-    // The document keeps the selected paper, whatever selects it.
-    this.card.register(
-      this.#subscribeSelection(({ key }) => {
-        if (key !== this.#storage.document().selected) this.#keepSelected(key);
-      }),
-    );
-    this.#restoreSelection();
     await this.search.open(doc.search);
-  }
-
-  /**
-   * Select the paper the document kept and scroll its row into view, once the list first lands its rows. A paper the list
-   * no longer holds is let go of. A list that fails, as before Zotero's
-   * database is read, waits for one that lands; a selection the researcher
-   * made first stays.
-   */
-  #restoreSelection(): void {
-    const { selected } = this.#storage.document();
-    if (selected === null) return;
-    const off = this.query.state.subscribe(({ phase, results }) => {
-      if (phase !== "ready" || !results) return;
-      off();
-      if (this.selected.key !== null) return;
-      if (!results.rows.some((row) => row.indexedKey === selected)) {
-        this.#keepSelected(null);
-        return;
-      }
-      // As the arrow keys select a row: the card shows beside a wide list
-      // and stays off a narrow one until the researcher asks for it, as it
-      // does off a wide one the researcher closed it on.
-      this.#selectRow({ key: selected, card: false });
-      // The list draws its rows a frame or more after they land.
-      void this.#drawn(selected).then((row) => {
-        if (this.#release && this.selected.key === selected)
-          row?.scrollIntoView({ block: "nearest" });
-      });
-    });
-    this.query.register(off);
-  }
-
-  /**
-   * The row of the Item `key` once the list draws it, within half a second
-   * of its rows landing; `undefined` where it draws none by then.
-   */
-  async #drawn(key: string): Promise<HTMLElement | undefined> {
-    const win = this.contentEl.win;
-    for (let frame = 0; frame < 30; frame++) {
-      if (!this.#release) return undefined;
-      const row = this.#rowOf(key);
-      if (row) return row;
-      await new Promise((resolve) => win.requestAnimationFrame(resolve));
-    }
-    return undefined;
-  }
-
-  /** Keep the paper `key` as the selected one, or none. */
-  #keepSelected(key: string | null): void {
-    this.#storage
-      .change((doc) => withSelected(doc, key))
-      .catch((error: unknown) => {
-        logger.warn("The Library View could not keep the selected paper", {
-          error,
-        });
-      });
   }
 
   /** The researcher opened or closed tree nodes: show them, and keep them. */
@@ -737,91 +758,61 @@ export class LibraryView extends ItemView {
   }
 
   /**
-   * Show the Reading Card as the selection and the document have it: hidden
-   * while no row is selected or the researcher closed it, and over a narrow
-   * pane only while it is asked for.
+   * Show the item details as the document has them: on unless the
+   * researcher turned them off, with the Details button pressed while they
+   * show. The list's room changes, so the tree's edge clamps again.
    */
   #showCard(): void {
     const el = this.#cardEl;
     if (!el) return;
-    const { key, card } = this.selected;
-    el.hidden = key === null || this.#storage.document().cardClosed === true;
-    this.#shell?.toggleAttribute("data-card-open", card);
+    const on = this.#storage.document().cardClosed !== true;
+    el.hidden = !on;
+    this.#details?.show(on);
     this.#cardWidth?.apply();
+    this.#cardHeight?.apply();
+    this.#treeWidth?.apply();
   }
 
-  /** Keep the Reading Card closed, or open again. */
-  #keepClosed(closed: boolean): void {
+  /**
+   * Turn the item details on or off, and keep it. Turned on, they take room
+   * from the list, which keeps its selected row in view; turned off, the
+   * selected row takes the focus back.
+   */
+  #setDetails(on: boolean): void {
     this.#storage
-      .change((doc) => withCardClosed(doc, closed))
+      .change((doc) => withCardClosed(doc, !on))
       .catch((error: unknown) => {
-        logger.warn("The Library View could not keep the card closed", {
+        logger.warn("The Library View could not keep the item details", {
           error,
         });
       });
-  }
-
-  /** Whether the Reading Card shows over the list, as on a narrow pane. */
-  #cardOverList(): boolean {
-    return !!this.#cardEl && !this.#cardEl.hidden && this.#cardIsOverlay();
-  }
-
-  /** Whether the Reading Card goes over the list once it shows. */
-  #cardIsOverlay(): boolean {
-    const el = this.#cardEl;
-    return !!el && el.win.getComputedStyle(el).position === "absolute";
-  }
-
-  /**
-   * A click on the row `key` selects it and asks for its Reading Card. Over
-   * a narrow list the card waits out a double click first, as it would
-   * cover the row the second click aims at; the second click of a double
-   * click asks for no card.
-   */
-  #click(key: string, event: MouseEvent): void {
-    this.#cancelCard();
-    if (event.detail <= 1 && !this.#cardIsOverlay()) {
-      this.#selectRow({ key, card: true });
-      return;
-    }
-    const now = this.selected;
-    this.#selectRow({ key, card: now.key === key && now.card });
-    if (event.detail > 1) return;
-    this.#cardTimer = this.contentEl.win.setTimeout(() => {
-      this.#cardTimer = null;
-      if (this.selected.key === key) this.#selectRow({ card: true });
-    }, DOUBLE_CLICK_MS);
-  }
-
-  /** The click that waited out a double click opens no card. */
-  #cancelCard(): void {
-    if (this.#cardTimer !== null)
-      this.contentEl.win.clearTimeout(this.#cardTimer);
-    this.#cardTimer = null;
-  }
-
-  /**
-   * Put the Reading Card away; the row stays selected and takes the focus
-   * back. Escape over a narrow list puts it away alone; the close button and
-   * a drag of its edge past the minimum also keep it closed, so a wide pane
-   * stops showing it as the selection moves.
-   */
-  #closeCard({ keep = false }: { keep?: boolean } = {}): void {
-    this.#cancelCard();
-    if (keep) this.#keepClosed(true);
-    this.#selectRow({ card: false });
-    // A wide pane shows the card for a selection it was not asked for, so
-    // the store may not change; the closed state hides it all the same.
     this.#showCard();
-    this.#selectedRow()?.focus();
+    const row = this.#selectedRow();
+    if (on) row?.scrollIntoView({ block: "nearest" });
+    else row?.focus();
+  }
+
+  /**
+   * Collapse the tree beside a wide list, or show it again, and keep it. A
+   * tree shown over a narrow list goes with it.
+   */
+  #collapseTree(collapsed: boolean): void {
+    this.#storage
+      .change((doc) => withTreeCollapsed(doc, collapsed))
+      .catch((error: unknown) => {
+        logger.warn("The Library View could not keep the tree collapsed", {
+          error,
+        });
+      });
+    this.tree.setOpen(false);
+    this.tree.showCollapsed(collapsed);
   }
 
   /**
    * The row keys of the quick switcher (ADR 0074): ↑ and ↓ move the
    * selection; Enter opens the selected row's Literature Note, or writes it,
-   * Mod+Enter in a new pane; Shift+Enter opens its PDF. Space opens the
-   * selected row's Reading Card, which a narrow pane shows over the list
-   * (ADR 0071).
+   * Mod+Enter in a new pane; Shift+Enter opens its PDF. Space turns the
+   * item details on or off (ADR 0071).
    */
   #registerRowKeys(): void {
     for (const [key, step] of [
@@ -842,7 +833,7 @@ export class LibraryView extends ItemView {
       });
     this.scope.register([], " ", (event) => {
       if (!this.#onList(event.target) || !this.#selectedRow()) return;
-      this.#selectRow({ card: true });
+      this.#setDetails(this.#storage.document().cardClosed === true);
       return false;
     });
   }
@@ -914,11 +905,7 @@ export class LibraryView extends ItemView {
       at === -1
         ? rows[0]!
         : rows[Math.min(Math.max(at + step, 0), rows.length - 1)]!;
-    this.#cancelCard();
-    this.#selectRow({
-      key: next.getAttribute(ITEM_ROW_ATTRIBUTE),
-      card: false,
-    });
+    this.#selectRow({ key: next.getAttribute(ITEM_ROW_ATTRIBUTE) });
     this.#focus(next);
     return true;
   }
@@ -970,11 +957,12 @@ export class LibraryView extends ItemView {
       .getState()
       .results?.rows.some((row) => row.indexedKey === indexedKey);
     if (!listed) {
-      this.#selectRow({ key: null, card: false });
+      this.#selectRow({ key: null });
       return "not-listed";
     }
-    // Show in Library asks for the Reading Card, as a click does.
-    this.#selectRow({ key: indexedKey, card: true });
+    // Show in Library selects the row, as a click does: the details show it
+    // while they are on.
+    this.#selectRow({ key: indexedKey });
     const row = this.#rowOf(indexedKey);
     if (row) {
       this.#focus(row);
@@ -1004,7 +992,7 @@ export class LibraryView extends ItemView {
       });
     this.tree.showExpanded(this.#storage.document().expanded);
     // The selected row leaves the list with its node.
-    this.#selectRow({ key: null, card: false });
+    this.#selectRow({ key: null });
     this.search.narrow();
     void this.search.run();
   }
@@ -1105,8 +1093,10 @@ export class LibraryView extends ItemView {
 
   protected override async onClose(): Promise<void> {
     if (!this.#release) return;
-    this.#cancelCard();
     this.#cardWidth?.unload();
+    this.#cardHeight?.unload();
+    this.#treeWidth?.unload();
+    this.#details?.unmount();
     this.#keep.run();
     await this.#saving;
     this.search.unload();
