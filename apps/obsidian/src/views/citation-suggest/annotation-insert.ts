@@ -40,6 +40,11 @@ export async function insertAnnotation(
     range,
     workspace: deps.workspace,
   });
+  // This plain edge stops a bridge run only through a signal, so the
+  // destination's cancel aborts one.
+  const cancelled = new AbortController();
+  using cleanup = new DisposableStack();
+  cleanup.defer(target.onCancel(() => cancelled.abort()));
   const outcome = valueOr(
     await deps.bridge.runPromiseExit(
       deps.annotationNotes.insert({
@@ -48,7 +53,7 @@ export async function insertAnnotation(
         notePath: file.path,
         placement: { replacesTrigger: true },
       }),
-      { signal: target.signal },
+      { signal: cancelled.signal },
     ),
     undefined,
   );

@@ -9,12 +9,15 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as confirmation from "@/lib/confirm";
 import { toInstant } from "@/lib/effect-clock";
 import * as m from "@/lib/i18n/generated/messages";
+import { makeViewRunner } from "@/lib/view-runner";
 import type {
   AnnotationRepository,
   AnnotationRecord,
   TagDraft,
   TextFieldDraft,
 } from "@/services/annotation-repository/service";
+import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
+import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 
 import { makeAnnotHost } from "./__fixtures__/host";
@@ -22,6 +25,7 @@ import { createAnnotActions } from "./actions";
 import type { AnnotActionDeps as ActionDeps } from "./actions";
 type AnnotActionDeps = ActionDeps & {
   annotations: AnnotationRepository["Service"];
+  notes?: Partial<AnnotationNoteActions["Service"]>;
 };
 import { hasQuotedText } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
@@ -63,9 +67,16 @@ afterEach(async () => {
   await hosts.disposeAsync();
   hosts = new AsyncDisposableStack();
 });
-function testActions(deps: AnnotActionDeps) {
-  const host = hosts.use(makeAnnotHost({ annotations: deps.annotations }));
-  return createAnnotActions({ ...deps, registry: host.registry });
+/** The actions over a test host; disposing `view` closes the view's runner. */
+function testActions(deps: AnnotActionDeps, view = hosts) {
+  const host = hosts.use(
+    makeAnnotHost({
+      annotations: deps.annotations,
+      ...("notes" in deps && { notes: deps.notes }),
+    }),
+  );
+  const { run } = view.use(makeViewRunner(host.registry));
+  return createAnnotActions({ ...deps, registry: host.registry, run });
 }
 
 function inertActionDeps(): Partial<AnnotActionDeps> {
@@ -476,6 +487,82 @@ describe("copying the text of cards", () => {
     expect(rightClick(actions, FIRST)).not.toContain(
       m.annot_view_menu_copy_text(),
     );
+  });
+});
+
+describe("copying a card's citation", () => {
+  /** The actions, whose citation read for each key waits on the test. */
+  function citing() {
+    const answers = new Map<
+      string,
+      ReturnType<typeof Promise.withResolvers<AnnotationCitation>>
+    >();
+    const reads = new Map<string, AbortSignal>();
+    const view = new AsyncDisposableStack();
+    const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
+      ...inertActionDeps(),
+      annotations: stubService<AnnotActionDeps["annotations"]>(
+        "AnnotationRepository",
+        {},
+      ),
+      app: stubService<App>("App", {
+        workspace: stubService<App["workspace"]>("Workspace", {
+          trigger: () => {},
+        }),
+      }),
+      controls: () => ({
+        color: LIVE,
+        comment: LIVE,
+        tags: LIVE,
+        delete: LIVE,
+        text: LIVE,
+      }),
+      notes: {
+        citation: (key: string) =>
+          Effect.promise((signal) => {
+            const answer = Promise.withResolvers<AnnotationCitation>();
+            answers.set(key, answer);
+            reads.set(key, signal);
+            return answer.promise;
+          }),
+      },
+    });
+    const actions = testActions(deps, view);
+    const copy = (card: AnnotationRecord) =>
+      entry(openMenu(actions, card), m.annot_view_menu_copy_citation()).click();
+    return { answers, reads, copy, close: () => view.disposeAsync() };
+  }
+
+  it("finishes two copies started from two menus", async () => {
+    using write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    const f = citing();
+
+    f.copy(QUOTED);
+    f.copy(COMMENTED);
+    await vi.waitFor(() => expect(f.answers.size).toBe(2));
+    f.answers.get(COMMENTED.key)!.resolve({ kind: "citation", text: "[@b]" });
+    f.answers.get(QUOTED.key)!.resolve({ kind: "citation", text: "[@a]" });
+
+    await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    expect(write.mock.calls).toEqual([["[@b]"], ["[@a]"]]);
+    await f.close();
+  });
+
+  it("copies nothing once the view closes during the read", async () => {
+    using write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue(undefined);
+    const f = citing();
+
+    f.copy(QUOTED);
+    await vi.waitFor(() => expect(f.answers.size).toBe(1));
+    await f.close();
+
+    expect(f.reads.get(QUOTED.key)!.aborted).toBe(true);
+    f.answers.get(QUOTED.key)!.resolve({ kind: "citation", text: "[@a]" });
+    expect(write).not.toHaveBeenCalled();
   });
 });
 

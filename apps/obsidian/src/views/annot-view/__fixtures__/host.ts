@@ -29,7 +29,6 @@ import {
   annotationWriteCommand,
   openExcerptDemandCommand,
   refreshExcerptDisplayCommand,
-  copyCitationCommand,
 } from "@/views/annot-view/atoms";
 import { createAnnotStore } from "@/views/annot-view/model";
 
@@ -155,7 +154,6 @@ export function makeAnnotHost<R = never>(options: AnnotHostOptions<R> = {}) {
     annotationWriteCommand,
     openExcerptDemandCommand,
     refreshExcerptDisplayCommand,
-    copyCitationCommand,
   ];
   if (options.holdCommands !== false)
     for (const command of commands) registry.mount(command);

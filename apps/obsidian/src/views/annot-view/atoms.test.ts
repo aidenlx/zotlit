@@ -2,7 +2,6 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 
-import { AbortError } from "@/lib/abort-error";
 import {
   scopedStack,
   writable,
@@ -10,11 +9,6 @@ import {
 } from "@/services/annotation-repository/__fixtures__";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { HistoryOutcome } from "@/services/annotation-repository/service";
-import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
-import type {
-  AnnotationInsertRequest,
-  AnnotationInsertOutcome,
-} from "@/services/note-feature/insert-action";
 import { annotation } from "@/services/pdf-annotation-editor/__fixtures__";
 import { readsAnswering } from "@/services/zotero-reads/__fixtures__";
 import { waitFor } from "@/views/welcome/__fixtures__";
@@ -26,8 +20,6 @@ import {
   makeExcerptRequestCommand,
   makeLibraryTagNamesCommand,
   editingCapabilityCommand,
-  copyCitationCommand,
-  makeInsertCommand,
   makeTargetRead,
 } from "./atoms";
 import { observeRead } from "./model";
@@ -265,190 +257,6 @@ it.effect("resolves suggestions for two tag editors at the same time", () =>
     expect(yield* Effect.promise(() => a.promise)).toEqual(["first"]);
   }),
 );
-
-it.effect("copies two card citations at the same time", () =>
-  Effect.gen(function* () {
-    const first = Promise.withResolvers<AnnotationCitation>();
-    const second = Promise.withResolvers<AnnotationCitation>();
-    const started: string[] = [];
-    const host = yield* Effect.acquireDisposable(
-      Effect.sync(() =>
-        makeAnnotHost({
-          notes: {
-            citation: (key) =>
-              Effect.promise((_signal) => {
-                started.push(key);
-                return key === "FIRSTAAA" ? first.promise : second.promise;
-              }),
-          },
-        }),
-      ),
-    );
-    const a = Promise.withResolvers<AnnotationCitation>();
-    const b = Promise.withResolvers<AnnotationCitation>();
-    host.registry.set(copyCitationCommand, {
-      key: "FIRSTAAA",
-      resolve: a.resolve,
-      reject: a.reject,
-    });
-    host.registry.set(copyCitationCommand, {
-      key: "SECNDBBB",
-      resolve: b.resolve,
-      reject: b.reject,
-    });
-    expect(started).toEqual(["FIRSTAAA", "SECNDBBB"]);
-    second.resolve({ kind: "citation", text: "second" });
-    expect(yield* Effect.promise(() => b.promise)).toEqual({
-      kind: "citation",
-      text: "second",
-    });
-    first.resolve({ kind: "citation", text: "first" });
-    expect(yield* Effect.promise(() => a.promise)).toEqual({
-      kind: "citation",
-      text: "first",
-    });
-  }),
-);
-
-it.effect(
-  "ends a pending citation with AbortError when the plugin unloads",
-  () =>
-    Effect.gen(function* () {
-      const started = Promise.withResolvers<void>();
-      const host = yield* Effect.acquireDisposable(
-        Effect.sync(() =>
-          makeAnnotHost({
-            notes: {
-              citation: () =>
-                Effect.gen(function* () {
-                  started.resolve();
-                  return yield* Effect.never;
-                }),
-            },
-          }),
-        ),
-      );
-      const answer = Promise.withResolvers<AnnotationCitation>();
-      const aborted = answer.promise.catch(AbortError.test);
-      host.registry.set(copyCitationCommand, {
-        key: "FIRSTAAA",
-        resolve: answer.resolve,
-        reject: answer.reject,
-      });
-      yield* Effect.promise(() => started.promise);
-      host.registry.dispose();
-      expect(yield* Effect.promise(() => aborted)).toBe(true);
-    }),
-);
-
-it.effect("runs two captured inserts at the same time", () =>
-  Effect.gen(function* () {
-    const first = Promise.withResolvers<AnnotationInsertOutcome>();
-    const second = Promise.withResolvers<AnnotationInsertOutcome>();
-    const started: string[] = [];
-    const host = yield* Effect.acquireDisposable(
-      Effect.sync(() =>
-        makeAnnotHost({
-          notes: {
-            insert: (request) =>
-              Effect.promise((_signal) => {
-                const key =
-                  "annotation" in request
-                    ? request.annotation.key
-                    : request.hit.key;
-                started.push(key);
-                return key === "FIRSTAAA" ? first.promise : second.promise;
-              }),
-          },
-        }),
-      ),
-    );
-    const command = makeInsertCommand();
-    const release = host.registry.mount(command);
-    yield* Effect.addFinalizer(() => Effect.sync(release));
-    const signal = yield* Effect.abortSignal;
-    const input = insertInput("FIRSTAAA", signal);
-    const a = Promise.withResolvers<AnnotationInsertOutcome | undefined>();
-    const b = Promise.withResolvers<AnnotationInsertOutcome | undefined>();
-    host.registry.set(command, {
-      input,
-      signal,
-      resolve: a.resolve,
-      reject: a.reject,
-    });
-    host.registry.set(command, {
-      input: insertInput("SECNDBBB", signal),
-      signal,
-      resolve: b.resolve,
-      reject: b.reject,
-    });
-    expect(started).toEqual(["FIRSTAAA", "SECNDBBB"]);
-    second.resolve({ kind: "cancelled" });
-    expect(yield* Effect.promise(() => b.promise)).toEqual({
-      kind: "cancelled",
-    });
-    first.resolve({ kind: "cancelled" });
-    expect(yield* Effect.promise(() => a.promise)).toEqual({
-      kind: "cancelled",
-    });
-  }),
-);
-
-it.effect("interrupts an insert when its leaf releases the command", () =>
-  Effect.gen(function* () {
-    const started = Promise.withResolvers<void>();
-    const cancelled = Promise.withResolvers<void>();
-    const host = yield* Effect.acquireDisposable(
-      Effect.sync(() =>
-        makeAnnotHost({
-          notes: {
-            insert: () =>
-              Effect.promise((signal) => {
-                signal.addEventListener("abort", () => cancelled.resolve());
-                started.resolve();
-                return new Promise<never>(() => {});
-              }),
-          },
-        }),
-      ),
-    );
-    const command = makeInsertCommand();
-    const release = host.registry.mount(command);
-    const answer = Promise.withResolvers<AnnotationInsertOutcome | undefined>();
-    const result = answer.promise;
-    const signal = yield* Effect.abortSignal;
-    host.registry.set(command, {
-      input: insertInput("FIRSTAAA", signal),
-      signal,
-      resolve: answer.resolve,
-      reject: answer.reject,
-    });
-    yield* Effect.promise(() => started.promise);
-    release();
-    yield* Effect.promise(() => cancelled.promise);
-    expect(yield* Effect.promise(() => result)).toBeUndefined();
-  }),
-);
-
-function insertInput(
-  key: string,
-  signal: AbortSignal,
-): AnnotationInsertRequest {
-  return {
-    annotation: annotation(key, "highlight", { pageIndex: 0, rects: [] }),
-    snapshot: {
-      source: {
-        kind: "zotero-db",
-        database: { userID: 1, localUserKey: "LOCALKEY", serverID: null },
-        libraryID: 1,
-        libraryRevision: 0,
-      },
-      sourceScope: "/zotero",
-    },
-    notePath: "note.md",
-    target: { valid: () => !signal.aborted, commit: () => true },
-  };
-}
 
 it.effect("finishes a submitted card write after the last leaf closes", () =>
   Effect.gen(function* () {
