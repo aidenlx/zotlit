@@ -1,9 +1,15 @@
 // Per-host Query View state, held in the plugin registry, and its pure transitions.
 import { Option, Schema } from "effect";
+import type { Effect } from "effect";
 import * as Atom from "effect/reactivity/Atom";
-import { useMemo, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 
 import type { QueryView, QueryViewState } from "./view";
 
@@ -119,4 +125,20 @@ export function useQueryViewState<T>(
     () => view.registry.get(selected),
     () => view.registry.get(selected),
   );
+}
+
+/** Runs a table action on the leaf the component draws in; see `QueryView.runTask`. */
+export type QueryTaskRunner = (
+  task: Effect.Effect<void, unknown, ViewServices>,
+) => () => void;
+
+const QueryTaskContext = createContext<QueryTaskRunner | null>(null);
+export const QueryTaskProvider = QueryTaskContext.Provider;
+
+/** The leaf's task runner, for a part that acts on the vault or the workspace. */
+export function useQueryTask(): QueryTaskRunner {
+  const run = useContext(QueryTaskContext);
+  if (!run)
+    throw new Error("useQueryTask must be used within QueryTaskProvider");
+  return run;
 }

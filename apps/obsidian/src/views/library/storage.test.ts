@@ -288,3 +288,22 @@ it("writes the Reading Card's width to disk at once, and drops it on a reset", a
   expect(saved(plugin)).not.toHaveProperty("cardWidth");
   expect(storage.document()).not.toHaveProperty("cardWidth");
 });
+
+it("finishes a write that has started when the view closes", async () => {
+  const { plugin, saveData, storage } = await openLibrary();
+  saveData.mockClear();
+  const disk = Promise.withResolvers<void>();
+  saveData.mockImplementationOnce(async (data) => {
+    await disk.promise;
+    plugin.data = data;
+  });
+  const saving = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+  storage.close();
+  // The close ends the wait at once; the write goes on to disk.
+  await saving;
+  disk.resolve();
+  await vi.waitFor(() =>
+    expect(saved(plugin)).toMatchObject({ selected: "1:AAAA1111" }),
+  );
+});

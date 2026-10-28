@@ -6,13 +6,15 @@
 //
 // @see apps/obsidian/docs/adr/0074-library-view-rows-act-as-quick-switcher-results.md
 import type { Scope } from "effect";
-import { Cause, Effect, Exit } from "effect";
+import { Effect, Exit } from "effect";
 import type { Editor, MarkdownFileInfo, PaneType } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
 import { openAttachments, withFixedPane } from "@/lib/attachment-open";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -33,20 +35,22 @@ import { viewTargetOpener } from "@/views/open-target";
 
 import { lastEditor } from "./last-note";
 
+/**
+ * Runs one Item action at a time per call, beside the others. A failure is
+ * logged here, where the gesture that started it has nothing to show.
+ */
 export const libraryItemCommand = viewRuntime.fn(
-  (request: {
-    readonly effect: Effect.Effect<void, unknown, ViewServices | Scope.Scope>;
-    readonly result: PromiseWithResolvers<void>;
-  }) =>
-    request.effect.pipe(
+  (effect: Effect.Effect<void, unknown, ViewServices | Scope.Scope>) =>
+    effect.pipe(
       Effect.scoped,
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-            request.result.reject(Cause.squash(exit.cause));
-          else request.result.resolve();
-        }),
+      recover(
+        (error) =>
+          Effect.logWarning("The Library View could not run an Item action", {
+            error,
+          }),
+        Effect.void,
       ),
+      withLogCategory("library-view"),
     ),
   { concurrent: true },
 );
@@ -73,12 +77,12 @@ export interface CitationTarget {
 /** What a row of the Library View can do with its Item, by Indexed Key. */
 export interface ItemActions {
   /** Open the Literature Note, or write it through the Profile selection. */
-  openNote(indexedKey: string, pane: PaneType | boolean): Promise<void>;
+  openNote(indexedKey: string, pane: PaneType | boolean): void;
   /** Open the PDF in Obsidian. */
-  openPdf(indexedKey: string, pane: PaneType | boolean): Promise<void>;
+  openPdf(indexedKey: string, pane: PaneType | boolean): void;
   /** Insert the Item's citation into `target`, or the note the researcher was last in. */
-  insertCitation(indexedKey: string, target?: CitationTarget): Promise<void>;
-  copyCitationKey(indexedKey: string): Promise<void>;
+  insertCitation(indexedKey: string, target?: CitationTarget): void;
+  copyCitationKey(indexedKey: string): void;
   /** Select the Item in Zotero, which the system starts where it is closed. */
   showInZotero(indexedKey: string): void;
 }
@@ -86,11 +90,7 @@ export interface ItemActions {
 export function itemActions(deps: ItemActionsDeps): ItemActions {
   const run = (
     effect: Effect.Effect<void, unknown, ViewServices | Scope.Scope>,
-  ): Promise<void> => {
-    const result = Promise.withResolvers<void>();
-    deps.registry.set(libraryItemCommand, { effect, result });
-    return result.promise;
-  };
+  ): void => deps.registry.set(libraryItemCommand, effect);
   const resolveCitation = (item: Item) =>
     Effect.gen(function* () {
       const citationKey =
