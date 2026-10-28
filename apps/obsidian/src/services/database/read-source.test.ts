@@ -1,4 +1,5 @@
-import { Effect } from "effect";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Effect, FileSystem, Layer, PlatformError } from "effect";
 import { appendFile, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -6,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
+import { nodeFileSystemCall } from "@/lib/errno";
 
 import { planReadParents } from "./read-parent";
 import type { ReadParentPlan } from "./read-parent";
@@ -23,14 +25,6 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
-    copyFile: (...args: Parameters<typeof actual.copyFile>) =>
-      copyFile(...args),
-    async mkdir(...args: Parameters<typeof actual.mkdir>) {
-      if (String(args[0]) === mkdirFault.path) {
-        throw Object.assign(new Error("EACCES"), { code: "EACCES" });
-      }
-      await actual.mkdir(...args);
-    },
     async stat(...args: Parameters<typeof actual.stat>) {
       if (String(args[0]) === statSignal.path) {
         statSignal.calls += 1;
@@ -51,6 +45,33 @@ const journalMagic = Buffer.from([
 ]);
 /** Overridable so one test can make a copy fail the way a full volume does. */
 let copyFile: typeof import("node:fs/promises").copyFile;
+
+/**
+ * The Node file system, where a copy runs `copyFile` and the directory at
+ * `mkdirFault.path` refuses to be created.
+ */
+const testFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...fs,
+      copyFile: (from, to) =>
+        nodeFileSystemCall("copyFile", to, () => copyFile(from, to)),
+      makeDirectory: (path, options) =>
+        path === mkdirFault.path
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "makeDirectory",
+                pathOrDescriptor: path,
+              }),
+            )
+          : fs.makeDirectory(path, options),
+    });
+  }),
+).pipe(Layer.provide(NodeFileSystem.layer));
 
 let dir: string;
 let source: string;
@@ -91,12 +112,16 @@ function inspectPrepared<A>(
   inspect: (prepared: PreparedRead) => A,
 ): Promise<A> {
   return Effect.runPromise(
-    Effect.scoped(Effect.map(preparation, (prepared) => inspect(prepared))),
+    Effect.scoped(
+      Effect.map(preparation, (prepared) => inspect(prepared)),
+    ).pipe(Effect.provide(testFileSystem)),
   );
 }
 
 function runPrepared(preparation: ReturnType<typeof prepareRead>) {
-  return Effect.runPromise(Effect.scoped(preparation));
+  return Effect.runPromise(
+    Effect.scoped(preparation).pipe(Effect.provide(testFileSystem)),
+  );
 }
 
 describe("prepareRead placement", () => {

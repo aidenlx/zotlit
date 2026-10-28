@@ -1,7 +1,5 @@
-import { Effect } from "effect";
-import { stat } from "node:fs/promises";
+import { Effect, FileSystem } from "effect";
 
-import type { Attachment } from "@zotlit/db";
 import { attachmentAbsPath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 import type { ResolveAttachmentFile } from "@zotlit/item-query";
@@ -11,31 +9,31 @@ export interface AttachmentFile {
   readonly exists: boolean;
 }
 
-type Stat = (path: string) => Promise<unknown>;
-
 /**
  * Resolve Attachment files for one Query Job. One resolver belongs to one
  * query, so every Attachment is probed at most once across all of its rows.
+ * A file the probe cannot reach reads as missing.
  */
-export function makeAttachmentFileResolver(
+export const makeAttachmentFileResolver = Effect.fnUntraced(function* (
   paths: AttachmentPathContext,
-  options: { stat?: Stat } = {},
-): ResolveAttachmentFile {
-  const probe = options.stat ?? stat;
-  const memo = new Map<number, Promise<AttachmentFile>>();
-  const resolve = (attachment: Attachment): Promise<AttachmentFile> => {
+): Effect.fn.Return<ResolveAttachmentFile, never, FileSystem.FileSystem> {
+  const fs = yield* FileSystem.FileSystem;
+  const memo = new Map<number, Effect.Effect<AttachmentFile>>();
+  const probe = (path: string | null): Effect.Effect<AttachmentFile> =>
+    path === null
+      ? Effect.succeed({ path: null, exists: false })
+      : fs.exists(path).pipe(
+          Effect.orElseSucceed(() => false),
+          Effect.map((exists) => ({ path, exists })),
+        );
+  // Per Attachment row of a query: untraced.
+  return Effect.fnUntraced(function* (attachment) {
     const cached = memo.get(attachment.itemID);
-    if (cached) return cached;
-    const path = attachmentAbsPath(attachment, paths);
-    const resolved =
-      path === null
-        ? Promise.resolve({ path: null, exists: false } as const)
-        : probe(path).then(
-            () => ({ path, exists: true }) as const,
-            () => ({ path, exists: false }) as const,
-          );
+    if (cached) return yield* cached;
+    const resolved = yield* Effect.cached(
+      probe(attachmentAbsPath(attachment, paths)),
+    );
     memo.set(attachment.itemID, resolved);
-    return resolved;
-  };
-  return (attachment) => Effect.promise(() => resolve(attachment));
-}
+    return yield* resolved;
+  });
+});

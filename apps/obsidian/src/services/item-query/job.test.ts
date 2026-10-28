@@ -1,9 +1,17 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  FileSystem,
+  Layer,
+  PlatformError,
+} from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
-import { describe, expect, vi } from "vitest";
+import { describe, expect } from "vitest";
 
 import {
   BULK_LIBRARY,
@@ -22,25 +30,32 @@ import { runQueryJob } from "./job";
 import type { QueryJob } from "./worker-protocol";
 
 /** The next close of a file that `open` gives fails with this error. */
-const closeFailure = vi.hoisted(() => ({
-  next: undefined as Error | undefined,
-}));
+let closeFailure: PlatformError.PlatformError | undefined;
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const fs = await importOriginal<typeof import("node:fs/promises")>();
-  const open: typeof fs.open = async (...args) => {
-    const handle = await fs.open(...args);
-    const close = handle.close.bind(handle);
-    handle.close = async () => {
-      await close();
-      const failure = closeFailure.next;
-      closeFailure.next = undefined;
-      if (failure) throw failure;
-    };
-    return handle;
-  };
-  return { ...fs, open, default: { ...fs, open } };
-});
+/**
+ * The Node file system, where the close of an opened file fails as
+ * `closeFailure` says: `FileSystem` makes a failed close a defect of the
+ * scope that opened the file.
+ */
+const testFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({
+      ...fs,
+      open: (path, options) =>
+        fs.open(path, options).pipe(
+          Effect.tap(() =>
+            Effect.addFinalizer(() => {
+              const failure = closeFailure;
+              closeFailure = undefined;
+              return failure ? Effect.die(failure) : Effect.void;
+            }),
+          ),
+        ),
+    });
+  }),
+).pipe(Layer.provide(NodeFileSystem.layer));
 
 const IDENTITY = {
   vault: { name: "Research", path: "/vaults/research" },
@@ -73,11 +88,13 @@ function jobOf(params: CliData, stagePath?: string): QueryJob {
 }
 
 const run = (scenario: ScenarioDatabase, job: QueryJob) =>
-  runQueryJob(job, {
-    client: scenario.db,
-    identity: IDENTITY,
-    attachmentFiles: makeAttachmentFileResolver(job.attachmentPaths),
-  });
+  Effect.gen(function* () {
+    return yield* runQueryJob(job, {
+      client: scenario.db,
+      identity: IDENTITY,
+      attachmentFiles: yield* makeAttachmentFileResolver(job.attachmentPaths),
+    });
+  }).pipe(Effect.provide(testFileSystem));
 
 /** The scenario database, held for the case's scope. */
 const scenarioOf = (options?: Parameters<typeof openScenarioDatabase>[0]) =>
@@ -175,11 +192,16 @@ describe("Query Job", () => {
         const { output, stagePath } = exportPaths(scenario);
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
-            closeFailure.next = undefined;
+            closeFailure = undefined;
           }),
         );
-        closeFailure.next = Object.assign(new Error("EIO: i/o error, close"), {
-          code: "EIO",
+        closeFailure = PlatformError.systemError({
+          _tag: "Unknown",
+          module: "FileSystem",
+          method: "open",
+          cause: Object.assign(new Error("EIO: i/o error, close"), {
+            code: "EIO",
+          }),
         });
 
         const answer = yield* run(
@@ -187,7 +209,7 @@ describe("Query Job", () => {
           jobOf({ output, filter: 'tags != "absent"' }, stagePath),
         );
 
-        expect(closeFailure.next).toBeUndefined();
+        expect(closeFailure).toBeUndefined();
         expect(answer.receipt).toEqual({ kind: "inline" });
         expect(JSON.parse(answer.answer)).toMatchObject({
           ok: false,
@@ -236,8 +258,11 @@ describe("Query Job", () => {
           runQueryJob(jobOf({ ...BULK, output }, stagePath), {
             client: scenario.db,
             identity: IDENTITY,
-            attachmentFiles: makeAttachmentFileResolver(ATTACHMENT_PATHS),
+            attachmentFiles: yield* makeAttachmentFileResolver(
+              ATTACHMENT_PATHS,
+            ).pipe(Effect.provide(testFileSystem)),
           }).pipe(
+            Effect.provide(testFileSystem),
             Effect.provideService(ItemQuerySliceObserver, {
               paused: () => {
                 events.push("pause");

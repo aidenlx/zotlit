@@ -40,7 +40,6 @@ it.effect(
             ports: {
               snapshotSource: missing,
               prepareRead: missing,
-              existsSync: () => false,
               reapReadClones: () => Effect.void,
             },
           }).pipe(Layer.provide(FileSystem.layerNoop({}))),

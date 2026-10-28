@@ -1,4 +1,5 @@
 // Test support: ZoteroReads over `:memory:` fixture databases, for the service and its consumers.
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect, Layer, Stream } from "effect";
 import type { Scope } from "effect";
 
@@ -15,12 +16,17 @@ import { makeInProcessClient } from "./in-process";
 import type { ZoteroReadsClient } from "./in-process";
 import type { SnapshotId } from "./rpc";
 
-/** The handler layer on this runtime over `connection`, for the caller's scope. */
+/**
+ * The handler layer on this runtime over `connection` and the Node file
+ * system, for the caller's scope.
+ */
 export const inProcessClient = Effect.fnUntraced(function* (
   connection: Layer.Layer<Connection>,
   options?: HandlersOptions,
 ): Effect.fn.Return<ZoteroReadsClient, never, Scope.Scope> {
-  const services = yield* Layer.build(connection);
+  const services = yield* Layer.build(
+    Layer.merge(connection, NodeFileSystem.layer),
+  );
   return yield* Effect.provideContext(makeInProcessClient(options), services);
 });
 

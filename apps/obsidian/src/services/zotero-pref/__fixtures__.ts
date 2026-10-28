@@ -1,16 +1,18 @@
 import { Context, Effect, Layer } from "effect";
+import type { PlatformError } from "effect";
 import type { App } from "obsidian";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { buildRuntime } from "@/lib/effect-layer";
-import type { SystemCallError } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import { layerZoteroPref, ZoteroPref, ZoteroPrefFiles } from "./service";
 
 /** The real preference layer over device storage and file-system fakes. */
 export const zoteroPrefFixture = Effect.fn("zoteroPrefFixture")(function* (
-  read: (path: string) => Effect.Effect<string, SystemCallError> = () =>
+  read: (
+    path: string,
+  ) => Effect.Effect<string, PlatformError.PlatformError> = () =>
     Effect.succeed(""),
   overrides: unknown = { profileDir: "/profile" },
   onSave: () => void = () => undefined,

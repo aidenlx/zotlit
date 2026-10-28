@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import {
   Deferred,
   Effect,
@@ -5,6 +6,8 @@ import {
   FileSystem,
   Layer,
   Option,
+  PlatformError,
+  Queue,
   Ref,
   Scope,
   Stream,
@@ -34,14 +37,64 @@ import type { ChangeEvent, ReadsConfig } from "./rpc";
 import { layerSource } from "./source";
 import type { SourceOptions, SourcePorts } from "./source";
 
-/** The source over a file system that holds nothing: the tests stub every port that reads it. */
+/** The watches the source holds, newest last; reset for each case. */
+let watchers: FakeWatcher[] = [];
+/** Paths whose watch fails to start, as a path that is gone does. */
+let unwatchable = new Set<string>();
+
+/** A watch that records its listener for the case to call instead of watching. */
+const fakeWatch = (
+  path: string,
+  options?: FileSystem.WatchOptions,
+): Stream.Stream<FileSystem.WatchEvent, PlatformError.PlatformError> =>
+  unwatchable.has(path)
+    ? Stream.fail(
+        PlatformError.systemError({
+          _tag: "NotFound",
+          module: "FileSystem",
+          method: "stat",
+          pathOrDescriptor: path,
+        }),
+      )
+    : Stream.callback<FileSystem.WatchEvent>((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            const watcher: FakeWatcher = {
+              path,
+              listener: (_event, filename) =>
+                Queue.offerUnsafe(queue, { _tag: "Update", path: filename }),
+              pending: () => Queue.sizeUnsafe(queue),
+              closed: false,
+            };
+            watchers.push(watcher);
+            return watcher;
+          }),
+          (watcher) =>
+            Effect.sync(() => {
+              watcher.closed = true;
+            }),
+        ).pipe(Effect.tap(() => Effect.sync(() => options?.onReady?.()))),
+      );
+
+/** The Node file system, with watches the case drives. */
+const testFileSystem = Layer.effect(
+  FileSystem.FileSystem,
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return FileSystem.FileSystem.of({ ...fs, watch: fakeWatch });
+  }),
+).pipe(Layer.provide(NodeFileSystem.layer));
+
+/** The source over the test file system, which it also provides. */
 const testSource = (options?: SourceOptions) =>
-  layerSource(options).pipe(Layer.provide(FileSystem.layerNoop({})));
+  layerSource(options).pipe(Layer.provideMerge(testFileSystem));
 
 let dir: string;
 let dbPath: string;
 
 beforeEach(async () => {
+  watchers = [];
+  unwatchable = new Set();
   dir = join(tmpdir(), `zotlit-reads-source-test-${crypto.randomUUID()}`);
   await mkdir(dir, { recursive: true });
   dbPath = join(dir, "zotero.sqlite");
@@ -87,17 +140,18 @@ function config(patch: Partial<ReadsConfig> = {}): ReadsConfig {
 
 interface FakeWatcher {
   readonly path: string;
-  readonly listener: (event: string, filename: string | null) => void;
+  readonly listener: (event: string, filename: string) => void;
+  /** The events the source has not taken yet. */
+  readonly pending: () => number;
   closed: boolean;
 }
 
 /**
  * Ports over the real file system and SQLite, with spies a test can steer:
  * `prepareRead` and `snapshotSource` call through to the real functions until
- * a test overrides a call, and `watch` records listeners instead of watching.
+ * a test overrides a call. `watchers` holds the watches of the case.
  */
 function testPorts() {
-  const watchers: FakeWatcher[] = [];
   const reads: PreparedRead[] = [];
   const releases: PreparedRead[] = [];
   const releaseGate = Ref.makeUnsafe<{
@@ -127,19 +181,6 @@ function testPorts() {
         ),
     ),
     snapshotSource: vi.fn<SourcePorts["snapshotSource"]>(snapshotSource),
-    watch: vi.fn((path: string, _options: unknown, listener: unknown) => {
-      const watcher: FakeWatcher = {
-        path,
-        listener: listener as FakeWatcher["listener"],
-        closed: false,
-      };
-      watchers.push(watcher);
-      return {
-        close: () => {
-          watcher.closed = true;
-        },
-      };
-    }),
     reapReadClones: vi.fn<SourcePorts["reapReadClones"]>(() => Effect.void),
   } satisfies Partial<SourcePorts>;
   return { ports, watchers, reads, releases, releaseGate };
@@ -243,10 +284,15 @@ async function gatesDecided(
   await source.version();
 }
 
-function emitDirEvent(watchers: FakeWatcher[], filename: string): void {
+/** Emit a directory event and wait until the source has taken it. */
+async function emitDirEvent(
+  watchers: FakeWatcher[],
+  filename: string,
+): Promise<void> {
   const bound = watchers.filter((w) => w.path === dir && !w.closed).at(-1);
   expect(bound, "a bound directory watcher").toBeDefined();
   bound!.listener("change", filename);
+  await vi.waitFor(() => expect(bound!.pending()).toBe(0));
 }
 
 /** A held `prepareRead`: it waits for `release`, then reads for real. */
@@ -755,6 +801,20 @@ describe("ZoteroReads source", () => {
     });
   });
 
+  describe("watch start", () => {
+    it("serves and closes the watches it bound when the database watch cannot start", async () => {
+      unwatchable.add(dbPath);
+      const { ports } = testPorts();
+      await using source = await startSource(config(), ports);
+
+      await expect(source.version()).resolves.toBe(1);
+      expect(watchers.map((w) => [w.path, w.closed])).toEqual([[dir, true]]);
+      writeLibrary(dbPath, 2);
+      await source.run(source.reads.Refresh());
+      await expect(source.version()).resolves.toBe(2);
+    });
+  });
+
   describe("watcher self-echo gate", () => {
     /**
      * Regression: every refresh re-armed the watchers that started the next
@@ -765,8 +825,8 @@ describe("ZoteroReads source", () => {
       await using source = await startSource(config(), ports);
       await source.version();
 
-      emitDirEvent(watchers, "zotero.sqlite");
-      emitDirEvent(watchers, "zotero.sqlite-wal");
+      await emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite-wal");
       await source.elapse();
       await vi.waitFor(() =>
         expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
@@ -782,7 +842,7 @@ describe("ZoteroReads source", () => {
       await source.version();
 
       writeLibrary(dbPath, 2);
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
 
       await vi.waitFor(async () => expect(await source.version()).toBe(2));
@@ -796,7 +856,7 @@ describe("ZoteroReads source", () => {
       );
       await source.version();
 
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
 
       await vi.waitFor(() =>
@@ -810,7 +870,7 @@ describe("ZoteroReads source", () => {
       await using source = await startSource(immutable, ports);
       await source.version();
 
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.run(
         source.reads.Configure({ ...immutable, autoRefresh: false }),
       );
@@ -983,7 +1043,7 @@ describe("ZoteroReads source", () => {
       ports.snapshotSource.mockImplementationOnce(() =>
         Effect.fail(new DbUnavailable({ message: "EIO" })),
       );
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
 
       await vi.waitFor(() =>
@@ -1006,7 +1066,7 @@ describe("ZoteroReads source", () => {
 
       // Zotero writes, and its tick arms the debounce mid-refresh. The rebind
       // after the swap must keep that tick, or the write stays unseen.
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       held.release();
       await refresh;
       writeLibrary(dbPath, 2);
@@ -1027,7 +1087,7 @@ describe("ZoteroReads source", () => {
       await source.elapse();
       await source.sawTags(["refreshing", "changed", "refreshing"], before);
 
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
       await vi.waitFor(() =>
         expect(ports.snapshotSource).toHaveBeenCalledTimes(3),
@@ -1059,7 +1119,7 @@ describe("ZoteroReads source", () => {
       await source.version();
 
       writeLibrary(dbPath, 2);
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.run(source.reads.Configure(config({ autoRefresh: false })));
       await source.elapse();
       await gatesDecided(ports, source);
@@ -1078,7 +1138,7 @@ describe("ZoteroReads source", () => {
       const gate = Deferred.makeUnsafe<SourceFingerprint, never>();
       ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       writeLibrary(dbPath, 2);
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
       await vi.waitFor(() =>
         expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
@@ -1103,7 +1163,7 @@ describe("ZoteroReads source", () => {
       const gate = Deferred.makeUnsafe<SourceFingerprint, never>();
       ports.snapshotSource.mockImplementationOnce(() => awaitFingerprint(gate));
       writeLibrary(dbPath, 2);
-      emitDirEvent(watchers, "zotero.sqlite");
+      await emitDirEvent(watchers, "zotero.sqlite");
       await source.elapse();
       await vi.waitFor(() =>
         expect(ports.snapshotSource).toHaveBeenCalledTimes(2),
@@ -1122,7 +1182,7 @@ describe("ZoteroReads source", () => {
       const { ports, watchers } = testPorts();
       const source = await startSource(config(), ports);
       await source.version();
-      const boundAtStartup = ports.watch.mock.calls.length;
+      const boundAtStartup = watchers.length;
 
       const acquired = Deferred.makeUnsafe<PreparedRead>();
       const late = Deferred.makeUnsafe<void>();
@@ -1148,7 +1208,7 @@ describe("ZoteroReads source", () => {
         code: "ENOENT",
       });
 
-      expect(ports.watch).toHaveBeenCalledTimes(boundAtStartup);
+      expect(watchers).toHaveLength(boundAtStartup);
       expect(watchers.every((w) => w.closed)).toBe(true);
       expect(tagsSince(source.events, before)).not.toContain("changed");
     });

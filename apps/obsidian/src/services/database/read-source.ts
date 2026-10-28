@@ -32,13 +32,15 @@ import {
   Deferred,
   Duration,
   Effect,
+  FileSystem,
+  PlatformError,
   Ref,
   Schedule,
   Schema,
 } from "effect";
 import type { Scope } from "effect";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, open, rm, stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -46,8 +48,7 @@ import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log-category";
-import { isErrno, systemCallError } from "@/lib/errno";
-import type { SystemCallError } from "@/lib/errno";
+import { isErrno, nodeFileSystemCall } from "@/lib/errno";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import type { ZoteroReadMode } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -178,10 +179,24 @@ function toDbUnavailable(cause: unknown): DbUnavailable {
   });
 }
 
-/** Run one Node filesystem operation at the database port. */
-function fsCall<A>(run: () => Promise<A>): Effect.Effect<A, SystemCallError> {
-  // boundary: node:fs/promises is Promise-based; wrap each call once.
-  return Effect.tryPromise({ try: run, catch: systemCallError });
+/** Whether `error` is the `PlatformError` of a missing file. */
+function isNotFound(error: unknown): boolean {
+  return (
+    PlatformError.isPlatformError(error) && error.reason._tag === "NotFound"
+  );
+}
+
+/**
+ * Whether `error` is a `PlatformError` over the Node.js errno `code`. The
+ * errnos read here have no reason of their own, so the code is in the cause.
+ */
+function isPlatformErrno(error: unknown, code: string): boolean {
+  return PlatformError.isPlatformError(error) && isErrno(error.cause, code);
+}
+
+/** A bigint `stat`, for the nanosecond times `FileSystem` does not give. */
+function bigintStat(path: string) {
+  return nodeFileSystemCall("stat", path, () => stat(path, { bigint: true }));
 }
 
 export function buildSqliteUri(
@@ -211,7 +226,11 @@ export const prepareRead = Effect.fnUntraced(function* (
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
   owner?: string,
-): Effect.fn.Return<PreparedRead, DbUnavailable, Scope.Scope> {
+): Effect.fn.Return<
+  PreparedRead,
+  DbUnavailable,
+  Scope.Scope | FileSystem.FileSystem
+> {
   const pending = yield* makePendingRead();
   yield* Effect.addFinalizer(() => pending.cancel);
   yield* Effect.forkDetach(
@@ -269,7 +288,7 @@ function acquireRead(
   configuredMode: ConfiguredReadMode,
   sourcePath: string,
   owner?: string,
-): Effect.Effect<AcquiredRead, PrepareReadError> {
+): Effect.Effect<AcquiredRead, PrepareReadError, FileSystem.FileSystem> {
   return Effect.gen(function* () {
     if (configuredMode === "immutable") {
       const fallbackReason = yield* staleWalReason(sourcePath);
@@ -361,7 +380,7 @@ const prepareTempRead = Effect.fnUntraced(function* (
   const plan = yield* planParents(sourcePath);
   const tryParent = (
     index: number,
-  ): Effect.Effect<AcquiredRead, PrepareReadError> => {
+  ): Effect.Effect<AcquiredRead, PrepareReadError, FileSystem.FileSystem> => {
     const parent = plan.parents[index];
     if (parent === undefined)
       return Effect.fail(
@@ -421,7 +440,7 @@ type PrepareReadError =
   | ReadSnapshotError
   | ReflinkUnsupportedError
   | SnapshotParentError
-  | SystemCallError;
+  | PlatformError.PlatformError;
 
 const planParents = Effect.fnUntraced(function* (sourcePath: string) {
   const [tempDevice, databaseDevice] = yield* Effect.all([
@@ -437,7 +456,7 @@ const planParents = Effect.fnUntraced(function* (sourcePath: string) {
 
 /** `0n` — the plan's "unknown" — where the volume cannot be identified. */
 const deviceId = Effect.fnUntraced(function* (path: string) {
-  return yield* fsCall(() => stat(path, { bigint: true })).pipe(
+  return yield* bigintStat(path).pipe(
     Effect.map((stats) => stats.dev),
     Effect.catch((error) =>
       logDebug("Failed to read a volume id", { error, path }).pipe(
@@ -533,6 +552,7 @@ const cloneAttempt = Effect.fnUntraced(function* (
     immutable: boolean;
   },
 ) {
+  const fs = yield* FileSystem.FileSystem;
   const path = join(dir, basename(sourcePath));
   const walPath = `${sourcePath}-wal`;
   const journalPath = `${sourcePath}-journal`;
@@ -591,7 +611,9 @@ const cloneAttempt = Effect.fnUntraced(function* (
       uriOptions,
       effectiveMode: (immutable ? "immutable" : mode) as EffectiveReadMode,
     },
-    release: removeReadDir(dir),
+    release: removeReadDir(dir).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+    ),
   };
 });
 
@@ -607,16 +629,13 @@ const createSnapshotDir = Effect.fnUntraced(function* (
   parent: string,
   owner: string | undefined,
 ) {
-  return yield* fsCall(() => mkdir(parent, { recursive: true })).pipe(
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.makeDirectory(parent, { recursive: true }).pipe(
     Effect.andThen(
-      fsCall(() =>
-        mkdtemp(
-          join(
-            parent,
-            `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-${owner ? `${owner}-` : ""}`,
-          ),
-        ),
-      ),
+      fs.makeTempDirectory({
+        directory: parent,
+        prefix: `${ZOTERO_DB_READ_TEMP_PREFIX}${process.pid}-${owner ? `${owner}-` : ""}`,
+      }),
     ),
     Effect.mapError((cause) => new SnapshotParentError({ parent, cause })),
   );
@@ -632,7 +651,7 @@ const createSnapshotDir = Effect.fnUntraced(function* (
 const PARENT_WRITE_ERRNOS: readonly string[] = ["ENOSPC", "EDQUOT", "EROFS"];
 
 function isParentWriteFailure(error: unknown): boolean {
-  return PARENT_WRITE_ERRNOS.some((code) => isErrno(error, code));
+  return PARENT_WRITE_ERRNOS.some((code) => isPlatformErrno(error, code));
 }
 
 const copySource = Effect.fnUntraced(function* (
@@ -640,17 +659,19 @@ const copySource = Effect.fnUntraced(function* (
   sourcePath: string,
   targetPath: string,
 ) {
-  if (mode === "copy")
-    return yield* fsCall(() => copyFile(sourcePath, targetPath)).pipe(
-      Effect.asVoid,
-    );
+  if (mode === "copy") {
+    const fs = yield* FileSystem.FileSystem;
+    return yield* fs.copyFile(sourcePath, targetPath);
+  }
   // `reflink` rejects with its own `ReflinkUnsupportedError`, which the
   // fallback reads by class; anything else is the system call's failure.
-  return yield* Effect.tryPromise({
-    try: () => reflink(sourcePath, targetPath),
-    catch: (error) =>
-      error instanceof ReflinkUnsupportedError ? error : systemCallError(error),
-  });
+  return yield* nodeFileSystemCall("reflink", targetPath, () =>
+    reflink(sourcePath, targetPath),
+  ).pipe(
+    Effect.mapError((error) =>
+      error.cause instanceof ReflinkUnsupportedError ? error.cause : error,
+    ),
+  );
 });
 
 /**
@@ -750,7 +771,7 @@ const mainIdentity = Effect.fnUntraced(function* (path: string) {
     }),
   ).pipe(
     Effect.catchIf(
-      (error) => isErrno(error, "ENOENT"),
+      (error) => isNotFound(error),
       () => Effect.succeed({ exists: false as const }),
     ),
   );
@@ -818,7 +839,7 @@ const walGeneration = Effect.fnUntraced(function* (path: string) {
   ).pipe(
     Effect.catch((error) =>
       Effect.succeed(
-        isErrno(error, "ENOENT")
+        isNotFound(error)
           ? { state: "absent" as const }
           : { state: "unstable" as const },
       ),
@@ -837,7 +858,7 @@ function walGenerationsEqual(a: WalGeneration, b: WalGeneration): boolean {
 const journalGeneration = Effect.fnUntraced(function* (path: string) {
   return yield* Effect.scoped(
     Effect.gen(function* () {
-      const pathBefore = yield* fsCall(() => stat(path, { bigint: true }));
+      const pathBefore = yield* bigintStat(path);
       const file = yield* openFile(path);
       const before = yield* fileStat(file);
       const header = Buffer.alloc(JOURNAL_HEADER_BYTES);
@@ -845,7 +866,7 @@ const journalGeneration = Effect.fnUntraced(function* (path: string) {
       const firstRead = yield* fileRead(file, header, 0);
       const secondRead = yield* fileRead(file, verification, 0);
       const after = yield* fileStat(file);
-      const pathAfter = yield* fsCall(() => stat(path, { bigint: true }));
+      const pathAfter = yield* bigintStat(path);
       if (
         !sameFileState(pathBefore, before) ||
         !sameFileState(before, after) ||
@@ -873,7 +894,7 @@ const journalGeneration = Effect.fnUntraced(function* (path: string) {
   ).pipe(
     Effect.catch((error) =>
       Effect.succeed(
-        isErrno(error, "ENOENT")
+        isNotFound(error)
           ? { state: "absent" as const }
           : { state: "unstable" as const },
       ),
@@ -929,9 +950,9 @@ function sameFileState(
 
 function openFile(path: string) {
   return Effect.acquireRelease(
-    fsCall(() => open(path, "r")),
+    nodeFileSystemCall("open", path, () => open(path, "r")),
     (file) =>
-      fsCall(() => file.close()).pipe(
+      nodeFileSystemCall("close", path, () => file.close()).pipe(
         Effect.catch((error) =>
           logWarning("Failed to close a read source file", error, { path }),
         ),
@@ -939,12 +960,17 @@ function openFile(path: string) {
   );
 }
 
+/** The bigint `stat` of an open file, for its nanosecond times. */
 function fileStat(file: FileHandle) {
-  return fsCall(() => file.stat({ bigint: true }));
+  return nodeFileSystemCall("stat", String(file.fd), () =>
+    file.stat({ bigint: true }),
+  );
 }
 
 function fileRead(file: FileHandle, buffer: Buffer, position: number) {
-  return fsCall(() => file.read(buffer, 0, buffer.byteLength, position));
+  return nodeFileSystemCall("read", String(file.fd), () =>
+    file.read(buffer, 0, buffer.byteLength, position),
+  );
 }
 
 const fileDigest = Effect.fnUntraced(function* (file: FileHandle) {
@@ -978,24 +1004,30 @@ function isNativeCloneCapabilityError(error: unknown): boolean {
     return true;
   }
   return (
-    isErrno(error, "EXDEV") ||
-    isErrno(error, "ENOTSUP") ||
-    isErrno(error, "EOPNOTSUPP")
+    isPlatformErrno(error, "EXDEV") ||
+    isPlatformErrno(error, "ENOTSUP") ||
+    isPlatformErrno(error, "EOPNOTSUPP")
   );
 }
 
 const removeReadDir = Effect.fnUntraced(function* (path: string) {
-  yield* fsCall(() => rm(path, { recursive: true, force: true })).pipe(
-    Effect.catch((error) =>
-      logWarning("Failed to remove database read temp", error, { path }),
-    ),
-  );
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs
+    .remove(path, { recursive: true, force: true })
+    .pipe(
+      Effect.catch((error) =>
+        logWarning("Failed to remove database read temp", error, { path }),
+      ),
+    );
 });
 
 const removeAttemptDir = Effect.fnUntraced(function* (path: string) {
-  yield* fsCall(() => rm(path, { recursive: true, force: true })).pipe(
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.remove(path, { recursive: true, force: true }).pipe(
     Effect.catch((error) =>
-      logWarning("Failed to remove failed database read temp", error, { path }),
+      logWarning("Failed to remove failed database read temp", error, {
+        path,
+      }),
     ),
   );
 });

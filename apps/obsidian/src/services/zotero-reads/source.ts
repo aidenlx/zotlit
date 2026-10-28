@@ -13,8 +13,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { existsSync, watch } from "node:fs";
-import type { WatchListener, WatchOptionsWithStringEncoding } from "node:fs";
+import type { PlatformError } from "effect";
 import { dirname, join } from "node:path";
 
 import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
@@ -58,8 +57,6 @@ const WATCH_DEBOUNCE_MS = 1200;
 // Freshness Signal only after its Checkpoint attempt settles. Nothing here
 // waits on another application; the debounce only coalesces event bursts.
 const IMMUTABLE_WATCH_DEBOUNCE_MS = 300;
-// `persistent: false` so no watcher keeps the event loop alive on its own.
-const WATCH_OPTIONS: WatchOptionsWithStringEncoding = { persistent: false };
 
 const logDebug = (message: string, annotations: Record<string, unknown> = {}) =>
   Effect.logDebug(message).pipe(
@@ -92,27 +89,20 @@ const logWarningCause = (
     withLogCategory("zotero-reads"),
   );
 
-/** A watcher the source can close; the part of `fs.FSWatcher` it uses. */
-interface Watcher {
-  close(): void;
-}
-
 /** The file-system and SQLite operations the source runs; tests swap them. */
 export interface SourcePorts {
   prepareRead: (
     mode: ReadsConfig["readMode"],
     path: string,
-  ) => Effect.Effect<PreparedRead, DbUnavailable, Scope.Scope>;
+  ) => Effect.Effect<
+    PreparedRead,
+    DbUnavailable,
+    Scope.Scope | FileSystem.FileSystem
+  >;
   snapshotSource: (
     path: string,
   ) => Effect.Effect<SourceFingerprint, DbUnavailable>;
   createClient: (uri: string) => NodeDatabaseClient;
-  watch: (
-    path: string,
-    options: WatchOptionsWithStringEncoding,
-    listener: WatchListener<string>,
-  ) => Watcher;
-  existsSync: (path: string) => boolean;
   reapReadClones: (options: {
     parent: string;
   }) => Effect.Effect<unknown, DbUnavailable, FileSystem.FileSystem>;
@@ -122,8 +112,6 @@ const defaultPorts: SourcePorts = {
   prepareRead,
   snapshotSource,
   createClient: (uri) => createClient(uri, { jit: true }),
-  watch,
-  existsSync,
   reapReadClones,
 };
 
@@ -141,7 +129,7 @@ interface WatchSignal {
    * Its source fingerprint is checked inside the refresh lane.
    */
   trusted: boolean;
-  /** The file name an `fs.watch` callback reported. */
+  /** The file name a watch event reported. */
   filename?: string;
 }
 
@@ -154,7 +142,7 @@ interface RefreshRequest {
 
 /**
  * A {@link Connection} that owns the Zotero database source: it selects the
- * Read Mode, fingerprints the source, binds `fs.watch` with the self-echo
+ * Read Mode, fingerprints the source, binds file watches with the self-echo
  * gate, and runs every refresh through one debounced, single-flight lane. A
  * refresh validates the new source before it swaps; a failed one keeps the
  * previous client serving.
@@ -402,8 +390,7 @@ export function layerSource(
         path: string,
       ) {
         const current = yield* Ref.get(state);
-        // boundary: the source port owns the synchronous existsSync check.
-        const exists = yield* Effect.sync(() => ports.existsSync(path));
+        const exists = yield* fileExists(path);
         if (current.missingDbSignalled || exists) return;
         yield* Ref.update(state, (previous) => ({
           ...previous,
@@ -458,7 +445,10 @@ export function layerSource(
                     const prepared = yield* restore(
                       ports
                         .prepareRead(configuredMode, databasePath)
-                        .pipe(Scope.provide(readScope)),
+                        .pipe(
+                          Scope.provide(readScope),
+                          Effect.provideService(FileSystem.FileSystem, fs),
+                        ),
                     );
                     return yield* openClient(readScope, prepared, databasePath);
                   }),
@@ -669,6 +659,41 @@ export function layerSource(
         );
       };
 
+      /** Like `existsSync`: a path the process cannot reach reads as absent. */
+      const fileExists = (path: string) =>
+        fs.exists(path).pipe(Effect.orElseSucceed(() => false));
+
+      /**
+       * Watch `path` for the scope, calling `onEvent` for each event. Fails
+       * when the watch cannot start; a watch that fails later logs and stops.
+       */
+      const watchPath = Effect.fnUntraced(function* (
+        path: string,
+        onEvent: (event: FileSystem.WatchEvent) => void,
+      ) {
+        const ready = yield* Deferred.make<void, PlatformError.PlatformError>();
+        yield* fs
+          .watch(path, {
+            onReady: () => Deferred.doneUnsafe(ready, Exit.void),
+          })
+          .pipe(
+            Stream.runForEach((event) => Effect.sync(() => onEvent(event))),
+            // A watch that never started fails `ready` for the caller to
+            // report; one that stops later reports here.
+            Effect.catch((error) =>
+              Effect.flatMap(Deferred.fail(ready, error), (starting) =>
+                starting
+                  ? Effect.void
+                  : logWarningCause("A Zotero database watch failed", error, {
+                      path,
+                    }),
+              ),
+            ),
+            Effect.forkScoped,
+          );
+        yield* Deferred.await(ready);
+      });
+
       const syncWalWatcher = Effect.fnUntraced(function* () {
         const current = yield* Ref.get(state);
         if (!current.sourcePath || current.readMode === "immutable") {
@@ -676,38 +701,29 @@ export function layerSource(
           return;
         }
         const walPath = join(dirname(current.sourcePath), ZOTERO_WAL_FILENAME);
-        // boundary: the source port owns the synchronous existsSync check.
-        if (!(yield* Effect.sync(() => ports.existsSync(walPath)))) {
+        if (!(yield* fileExists(walPath))) {
           yield* closeWalWatcher;
           return;
         }
         if (yield* Ref.get(walWatcherScope)) return;
         const scope = yield* Scope.make();
         const result = yield* Effect.result(
-          Effect.acquireRelease(
-            // boundary: fs.watch is an external callback API.
-            Effect.try(() =>
-              ports.watch(walPath, WATCH_OPTIONS, () =>
-                enqueueWatchSignal({ trusted: false }),
-              ),
-            ),
-            (watcher) => Effect.sync(() => watcher.close()),
-          ).pipe(Scope.provide(scope)),
+          watchPath(walPath, () => enqueueWatchSignal({ trusted: false })).pipe(
+            Scope.provide(scope),
+          ),
         );
         if (result._tag === "Failure") {
           yield* Scope.close(scope, Exit.void);
-          yield* logWarningCause(
-            "Failed to watch Zotero WAL",
-            result.failure.cause,
-            { walPath },
-          );
+          yield* logWarningCause("Failed to watch Zotero WAL", result.failure, {
+            walPath,
+          });
           return;
         }
         yield* Ref.set(walWatcherScope, scope);
       });
 
       const enqueueWatchSignal = (signal: WatchSignal): void => {
-        // boundary: fs.watch invokes listeners synchronously; bridge into Effect once.
+        // boundary: a watch event calls back synchronously; bridge into Effect once.
         Queue.offerUnsafe(watchSignals, signal);
       };
 
@@ -719,28 +735,16 @@ export function layerSource(
         const scope = yield* Scope.make();
         const result = yield* Effect.result(
           Effect.gen(function* () {
-            yield* Effect.acquireRelease(
-              // boundary: fs.watch is an external callback API.
-              Effect.try(() =>
-                ports.watch(parent, WATCH_OPTIONS, (_event, filename) => {
-                  const name = filename?.toString();
-                  if (!watchedFilename(name)) return;
-                  enqueueWatchSignal({
-                    trusted: false,
-                    ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
-                  });
-                }),
-              ),
-              (watcher) => Effect.sync(() => watcher.close()),
-            );
-            yield* Effect.acquireRelease(
-              // boundary: fs.watch is an external callback API.
-              Effect.try(() =>
-                ports.watch(current.sourcePath, WATCH_OPTIONS, () =>
-                  enqueueWatchSignal({ trusted: false }),
-                ),
-              ),
-              (watcher) => Effect.sync(() => watcher.close()),
+            yield* watchPath(parent, (event) => {
+              const name = event.path;
+              if (!watchedFilename(name)) return;
+              enqueueWatchSignal({
+                trusted: false,
+                ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
+              });
+            });
+            yield* watchPath(current.sourcePath, () =>
+              enqueueWatchSignal({ trusted: false }),
             );
           }).pipe(Scope.provide(scope)),
         );
@@ -748,7 +752,7 @@ export function layerSource(
           yield* Scope.close(scope, Exit.void);
           yield* logWarningCause(
             "Failed to watch the Zotero database",
-            result.failure.cause,
+            result.failure,
           );
           return null;
         }

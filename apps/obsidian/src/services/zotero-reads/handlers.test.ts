@@ -1,5 +1,6 @@
-import { Effect, Fiber, Layer } from "effect";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { Effect, Fiber, FileSystem, Layer } from "effect";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -35,6 +36,31 @@ const ATTACHMENT_PATHS = {
   dataDir: "/zotero",
   baseAttachmentPath: null,
 };
+
+/** An Attachment file resolver over the Node file system, with `probe` spying on each probe. */
+function resolverWith(
+  paths: Parameters<typeof makeAttachmentFileResolver>[0],
+  probe: (path: string) => void,
+) {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      return yield* makeAttachmentFileResolver(paths).pipe(
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.FileSystem.of({
+            ...fs,
+            exists: (path) =>
+              Effect.andThen(
+                Effect.sync(() => probe(path)),
+                fs.exists(path),
+              ),
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+  );
+}
 
 function attachment(
   itemID: number,
@@ -241,11 +267,8 @@ describe("ZoteroReads Attachment files", () => {
       writeFile(importedPath, "imported"),
       writeFile(linkedPath, "linked"),
     ]);
-    const probe = vi.fn(stat);
-    const resolve = makeAttachmentFileResolver(
-      { dataDir, baseAttachmentPath },
-      { stat: probe },
-    );
+    const probe = vi.fn<(path: string) => void>();
+    const resolve = await resolverWith({ dataDir, baseAttachmentPath }, probe);
     const imported = attachment(10, {
       key: "IMPRT223",
       path: "storage:paper.pdf",
@@ -298,10 +321,10 @@ describe("ZoteroReads Attachment files", () => {
   });
 
   it("does not probe a linked file when its base directory is unset", async () => {
-    const probe = vi.fn(stat);
-    const resolve = makeAttachmentFileResolver(
+    const probe = vi.fn<(path: string) => void>();
+    const resolve = await resolverWith(
       { dataDir: "/zotero", baseAttachmentPath: null },
-      { stat: probe },
+      probe,
     );
 
     await expect(
