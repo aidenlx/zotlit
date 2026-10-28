@@ -12,7 +12,6 @@ import type { WelcomeActions, WelcomeBannerHost } from "./actions";
 import {
   dismissWelcomeCommand,
   keepWelcomeCommand,
-  makeConversionCommand,
   openReleaseNoteCommand,
 } from "./atoms";
 import {
@@ -33,7 +32,6 @@ export interface WelcomeBannerDeps {
 
 export class WelcomeBanner extends Component {
   readonly model = makeWelcomeModel();
-  readonly #conversion = makeConversionCommand();
   readonly #deps;
   readonly #host;
   readonly el: HTMLElement;
@@ -124,21 +122,14 @@ export class WelcomeBanner extends Component {
       openReleaseNoteCommand,
     ])
       stack.defer(registry.mount(command));
-    stack.defer(registry.mount(this.#conversion));
+    stack.defer(registry.mount(this.model.conversion));
     stack.defer(holdSetupCommands(registry));
     const convert = (retry: boolean) => {
       if (!retry) registry.update(this.model.session, setConverted(true));
-      const result =
-        Promise.withResolvers<
-          Awaited<ReturnType<WelcomeActions["convertLiteratureNoteTemplates"]>>
-        >();
-      registry.set(this.#conversion, { retry, result });
-      return result.promise;
+      registry.set(this.model.conversion, { retry });
     };
     const actions: WelcomeActions = {
-      retryTemplateCleanup: async () => {
-        await convert(true);
-      },
+      retryTemplateCleanup: () => convert(true),
       convertLiteratureNoteTemplates: () => convert(false),
       openExternal: (url) => window.open(url),
       dismiss: () => this.dismiss(),

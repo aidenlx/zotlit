@@ -1,8 +1,6 @@
 // UI action bindings for the Welcome View banner, exposed to the presentational tree via context.
 import { createContext, useContext } from "react";
 
-import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
-
 import type { SetupActions } from "./setup-actions";
 
 /** What the view that hosts the banner does for it. */
@@ -22,9 +20,10 @@ export interface WelcomeActions extends SetupActions, WelcomeBannerHost {
   showSteps: (shown: boolean) => void;
   /** Open the Release Note of the running version, acknowledging its update. */
   openReleaseNote: () => void;
-  retryTemplateCleanup: () => Promise<void>;
-  /** Resolves with the outcome so the banner can keep a refusal in view. */
-  convertLiteratureNoteTemplates: () => Promise<LiteratureNoteTemplateMigrationResult>;
+  /** Retry the cleanup of the converted templates; the banner reads the run. */
+  retryTemplateCleanup: () => void;
+  /** Convert the templates; the banner reads the run, to keep a refusal in view. */
+  convertLiteratureNoteTemplates: () => void;
 }
 
 export const WelcomeActionsContext = createContext<WelcomeActions | null>(null);

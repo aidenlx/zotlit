@@ -48,3 +48,28 @@ it.effect("interrupts every running Effect when the view closes", () =>
     }
   }).pipe(Effect.scoped),
 );
+
+it.effect(
+  "settles once no Effect it runs is running, and at once after the view closes",
+  () =>
+    Effect.gen(function* () {
+      const registry = yield* scopedViewRegistry(
+        yield* Layer.build(layerServices),
+      );
+      const runner = makeViewRunner(registry);
+      const finish = yield* Deferred.make<void>();
+      runner.run(Deferred.await(finish));
+      let settled = false;
+      const waiting = runner.settled().then(() => {
+        settled = true;
+      });
+      yield* Effect.yieldNow;
+      expect(settled).toBe(false);
+      yield* Deferred.succeed(finish, undefined);
+      yield* Effect.promise(() => waiting);
+      expect(settled).toBe(true);
+      runner.run(Effect.never);
+      yield* Effect.promise(() => runner[Symbol.asyncDispose]());
+      yield* Effect.promise(() => runner.settled());
+    }).pipe(Effect.scoped),
+);

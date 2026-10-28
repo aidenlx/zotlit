@@ -32,6 +32,8 @@ export interface ViewRunner extends Disposable, AsyncDisposable {
   readonly provide: <A, E>(
     effect: Effect.Effect<A, E, ViewServices>,
   ) => Effect.Effect<A, E>;
+  /** Settles once no fiber of {@link run} is running; at once after disposal. */
+  readonly settled: () => Promise<void>;
 }
 
 /**
@@ -48,14 +50,18 @@ export function makeViewRunner(
   // answers at once.
   const context = AsyncResult.getOrThrow(registry.get(viewRuntime));
   const { scope, close } = openScope();
+  const fibers = Effect.runSyncWith(context)(
+    FiberSet.make().pipe(Scope.provide(scope)),
+  );
   const run = Effect.runSyncWith(context)(
-    FiberSet.makeRuntime<ViewServices>().pipe(Scope.provide(scope)),
+    FiberSet.runtime(fibers)<ViewServices>(),
   );
   let closing: Promise<void> | null = null;
   const dispose = () => (closing ??= close().finally(unmount));
   return {
     run,
     provide: Effect.provideContext(context),
+    settled: () => Effect.runPromiseWith(context)(FiberSet.awaitEmpty(fibers)),
     [Symbol.dispose]: () => void dispose(),
     [Symbol.asyncDispose]: dispose,
   };

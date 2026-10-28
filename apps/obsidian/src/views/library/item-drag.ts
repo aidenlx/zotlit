@@ -52,7 +52,7 @@ export function createItemDrag(deps: ItemDragDeps) {
         { x: dropEvent.clientX, y: dropEvent.clientY },
         false,
       );
-      void deps.actions.insertCitation(indexedKey, { editor, info, at });
+      deps.actions.insertCitation(indexedKey, { editor, info, at });
     });
     active = cleanup;
     win.addEventListener("dragend", cleanup, { once: true });

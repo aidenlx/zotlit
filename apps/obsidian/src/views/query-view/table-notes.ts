@@ -7,6 +7,7 @@
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { Effect, Option } from "effect";
+import type { Cause } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -26,15 +27,19 @@ import {
   vaultTags,
 } from "@/lib/obsidian-private/property-values";
 import { Workspace } from "@/lib/obsidian-workspace";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { OpenLinkFailed } from "@/lib/obsidian-workspace";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import type { ItemQueryError } from "@/services/item-query/service";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
 import { noteIndexSnapshotAtom } from "@/services/note-index/atoms";
 import { profileRevisionAtom } from "@/services/profile/atoms";
+import type { ProfileOperationError } from "@/services/profile/service";
 import { templateRevisionAtom } from "@/services/template/atoms";
+import type { TemplateFailure } from "@/services/template/service";
+import type { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { makeQueryOperations } from "./atoms";
 import { replacedKeysAtom } from "./note-atoms";
 import { LITERATURE_NOTE } from "./query-file";
 
@@ -121,6 +126,16 @@ export interface VaultLinkRef {
   readonly host: VaultHost | null;
 }
 
+/**
+ * How the usual creation of an Item's Literature Note fails: the Zotero read
+ * of the Item, the Profile selection, or the template render.
+ */
+export type NoteCreationFailure =
+  | DbUnavailable
+  | ItemQueryError
+  | ProfileOperationError
+  | TemplateFailure;
+
 /** What the "Literature note" column and the vault properties read and do. */
 export interface LiteratureNotes {
   /** The Literature Note of an Item, by its Indexed Key; `null` where it has none. */
@@ -169,7 +184,13 @@ export interface LiteratureNotes {
    * Profile when more than one fits. A key the note's Profile replaces, as
    * {@link managed} tells, is not written.
    */
-  write(edit: VaultEdit): Promise<VaultWrite>;
+  write(
+    edit: VaultEdit,
+  ): Effect.Effect<
+    VaultWrite,
+    NoteCreationFailure | Cause.UnknownError,
+    ViewServices
+  >;
   /**
    * The values the vault holds for the property `name`, each once, which an
    * edit of it suggests: the vault's tags for a property of tags.
@@ -178,11 +199,19 @@ export interface LiteratureNotes {
   /** Whether a link in a vault property reaches a note. */
   resolves(link: VaultLinkRef): boolean;
   /** Open a link in a vault property; a Cmd/Ctrl press opens a new tab. */
-  openLink(link: VaultLinkRef, event: MouseEvent): void;
+  openLink(
+    link: VaultLinkRef,
+    event: MouseEvent,
+  ): Effect.Effect<void, OpenLinkFailed, ViewServices>;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
-  open(note: LiteratureNoteLink, event: MouseEvent): void;
+  open(
+    note: LiteratureNoteLink,
+    event: MouseEvent,
+  ): Effect.Effect<void, OpenLinkFailed, ViewServices>;
   /** Create the Item's Literature Note, as the usual creation does. */
-  create(itemKey: string): Promise<void>;
+  create(
+    itemKey: string,
+  ): Effect.Effect<void, NoteCreationFailure, ViewServices>;
 }
 
 export interface LiteratureNotesDeps {
@@ -211,7 +240,6 @@ interface VaultEvents {
 /** The column's Literature Notes, from the Note Index and the usual creation. */
 export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
   const { registry } = deps;
-  const operations = makeQueryOperations(registry);
   const memoAtom = Atom.map(noteIndexSnapshotAtom, () => freshMemo());
   const events = createNanoEvents<VaultEvents>();
   let listeners = 0;
@@ -365,27 +393,24 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
       );
     },
     write: (edit) =>
-      operations.run(
-        Effect.gen(function* () {
-          const { itemKey, name, value, host } = edit;
-          const found = fileOf(itemKey, host);
-          const file = found ?? (yield* createNote(itemKey));
-          if (file === null) return "cancelled" as const;
-          const keys = yield* AtomRegistry.getResult(
-            registry,
-            replacedKeysAtom(file.path),
-            { suspendOnWaiting: true },
-          );
-          if (keys.has(name)) return "managed" as const;
-          yield* Effect.tryPromise(() =>
-            processLiveFrontMatter(deps.app, file, (frontmatter) => {
-              frontmatter[name] = value;
-            }),
-          );
-          return found === null ? ("created" as const) : ("written" as const);
-        }),
-        "cancelled",
-      ),
+      Effect.gen(function* () {
+        const { itemKey, name, value, host } = edit;
+        const found = fileOf(itemKey, host);
+        const file = found ?? (yield* createNote(itemKey));
+        if (file === null) return "cancelled" as const;
+        const keys = yield* AtomRegistry.getResult(
+          registry,
+          replacedKeysAtom(file.path),
+          { suspendOnWaiting: true },
+        );
+        if (keys.has(name)) return "managed" as const;
+        yield* Effect.tryPromise(() =>
+          processLiveFrontMatter(deps.app, file, (frontmatter) => {
+            frontmatter[name] = value;
+          }),
+        );
+        return found === null ? ("created" as const) : ("written" as const);
+      }),
     suggestions: (name, type) =>
       type === "tags" ? vaultTags(deps.app) : propertyValues(deps.app, name),
     resolves: ({ target, itemKey, host }) =>
@@ -393,28 +418,19 @@ export function literatureNotes(deps: LiteratureNotesDeps): LiteratureNotes {
         parseLinktext(target).path,
         pathOf(itemKey, host) ?? "",
       ) !== null,
-    openLink: ({ target, itemKey, host }, event) => {
-      void operations.run(
-        Effect.flatMap(Workspace, (workspace) =>
-          workspace.openLinkText(target, pathOf(itemKey, host) ?? "", {
-            newLeaf: Keymap.isModEvent(event),
-          }),
-        ),
-        undefined,
-      );
-    },
-    open: (note, event) => {
-      void operations.run(
-        Effect.flatMap(Workspace, (workspace) =>
-          workspace.openLinkText(note.path, "", {
-            newLeaf: Keymap.isModEvent(event),
-          }),
-        ),
-        undefined,
-      );
-    },
-    create: (itemKey) =>
-      operations.run(Effect.asVoid(createNote(itemKey)), undefined),
+    openLink: ({ target, itemKey, host }, event) =>
+      Effect.flatMap(Workspace, (workspace) =>
+        workspace.openLinkText(target, pathOf(itemKey, host) ?? "", {
+          newLeaf: Keymap.isModEvent(event),
+        }),
+      ),
+    open: (note, event) =>
+      Effect.flatMap(Workspace, (workspace) =>
+        workspace.openLinkText(note.path, "", {
+          newLeaf: Keymap.isModEvent(event),
+        }),
+      ),
+    create: (itemKey) => Effect.asVoid(createNote(itemKey)),
   };
 }
 
