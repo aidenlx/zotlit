@@ -5765,12 +5765,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // The seed's right edge, 570, moves out to 575; nothing else moves.
           const expected = [48.75, 395.509, 575, 743.723];
+          // The Local API reads the item from memory: while Zotero commits a
+          // PATCH, the record shows the new position at the old version. The
+          // write has landed once both have moved.
+          let stored = await image.stored();
           expect(
-            await waitFor(async () =>
-              rectIs((await image.stored()).data.annotationPosition, expected),
-            ),
+            await waitFor(async () => {
+              stored = await image.stored();
+              return (
+                rectIs(stored.data.annotationPosition, expected) &&
+                stored.version > version
+              );
+            }),
           ).toBe(true);
-          const stored = await image.stored();
           expect(stored.version).toBeGreaterThan(version);
           expect(stored.data.annotationSortIndex).toBe(
             await recomputedSortIndex(vaultId!, {
