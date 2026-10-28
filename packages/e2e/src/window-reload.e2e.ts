@@ -295,4 +295,118 @@ describe.skipIf(!reachable)("Plugin start-up", () => {
       afterRestart: { liveUpdates: 1, databaseWorkers: 1 },
     });
   }, 120000);
+
+  // Off and on again while the old instance still builds: the old start-up is
+  // held at its settings read until the new instance exists, so the two
+  // runtimes overlap as far as the new instance lets them.
+  it("starts a new instance only after the old one has released its commands, zotlit:* names and port (#1786)", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(vaultId, async ({ app }) => {
+        if (!app.plugins.plugins.zotlit)
+          await app.plugins.enablePlugin("zotlit");
+      });
+    });
+    const proof = await obRun(vaultId, async ({ app, zotlit, page }) => {
+      const { bridge, localServer } = zotlit.services;
+      const port = bridge.runSync(localServer.effectivePort);
+      const commandIds = () =>
+        Object.keys(app.commands.commands).filter((id) =>
+          id.startsWith("zotlit:"),
+        );
+      const cliNames = () =>
+        [...app.cli.handlers.keys()].filter((name) =>
+          name.startsWith("zotlit:"),
+        );
+      // Node servers by port: ZotLit's Live Updates listener is one of them.
+      const serverPorts = () =>
+        process._getActiveHandles().flatMap((handle) => {
+          const server = handle as {
+            listening?: boolean;
+            address?: () => { port: number } | string | null;
+          };
+          const address = server.listening ? server.address?.() : null;
+          return typeof address === "object" && address ? [address.port] : [];
+        });
+      const failureNotices = () =>
+        page
+          .windowDocuments()
+          .flatMap((doc) => [...doc.querySelectorAll<HTMLElement>(".notice")])
+          .map((notice) => notice.textContent ?? "")
+          .filter((text) => text.toLowerCase().includes("zotlit"));
+      const started = () => {
+        try {
+          return app.plugins.plugins.zotlit?.services !== undefined;
+        } catch {
+          return false;
+        }
+      };
+      const before = {
+        commands: commandIds(),
+        cli: cliNames(),
+        servers: serverPorts().toSorted((a, b) => a - b),
+      };
+      const noticesBefore = new Set(failureNotices());
+      const readPluginData = app.vault.readPluginData.bind(app.vault);
+      try {
+        await app.plugins.disablePlugin("zotlit");
+        let reads = 0;
+        app.vault.readPluginData = async (dir) => {
+          if (++reads === 1) {
+            const oldInstance = app.plugins.plugins.zotlit;
+            // Hold the old start-up until the new instance exists. Then a
+            // build that does not wait for the old instance overtakes it and
+            // starts; a build that does waits for the release the old
+            // instance left on the App.
+            await page.until(
+              "new instance started, or waiting for the old one",
+              () =>
+                app.plugins.plugins.zotlit !== undefined &&
+                app.plugins.plugins.zotlit !== oldInstance &&
+                (started() ||
+                  Object.getOwnPropertySymbols(app).some(
+                    (key) =>
+                      key.description === "zotlit/obsidian/release/zotlit",
+                  )),
+              30000,
+            );
+          }
+          return readPluginData(dir);
+        };
+        const oldEnable = app.plugins.enablePlugin("zotlit");
+        await page.until(
+          "old start-up at its settings read",
+          () => app.plugins.plugins.zotlit !== undefined && reads === 1,
+          10000,
+        );
+        await app.plugins.disablePlugin("zotlit");
+        await Promise.all([oldEnable, app.plugins.enablePlugin("zotlit")]);
+        await page.until("new instance started", started, 30000);
+        // `zotlit.services` reads the instance running now.
+        const now = zotlit.services;
+        return {
+          port: now.bridge.runSync(now.localServer.effectivePort) === port,
+          missingCommands: before.commands.filter(
+            (id) => !commandIds().includes(id),
+          ),
+          missingCli: before.cli.filter((name) => !cliNames().includes(name)),
+          servers:
+            serverPorts()
+              .toSorted((a, b) => a - b)
+              .join(",") === before.servers.join(","),
+          notices: failureNotices().filter((text) => !noticesBefore.has(text)),
+        };
+      } finally {
+        // The override is an own property over Obsidian's method.
+        Reflect.deleteProperty(app.vault, "readPluginData");
+      }
+    });
+    expect(proof).toEqual({
+      port: true,
+      missingCommands: [],
+      missingCli: [],
+      servers: true,
+      notices: [],
+    });
+  }, 120000);
 });

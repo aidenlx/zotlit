@@ -235,6 +235,11 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
+    // Start once the instance a quick off and on unloaded has released its
+    // commands, zotlit:* names and port.
+    await this.afterPreviousInstance(stack);
+    if (this.unloaded) return;
+
     const services = await createPluginRuntime(this, stack, languagePack).catch(
       reportStartupFailure,
     );

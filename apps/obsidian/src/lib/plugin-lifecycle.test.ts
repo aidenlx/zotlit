@@ -20,6 +20,19 @@ function loadedPlugin(): UnloadAwarePlugin {
   return plugin;
 }
 
+/** An instance whose start-up takes its turn after the instance before it. */
+class TurnTakingPlugin extends UnloadAwarePlugin {
+  start(stack: AsyncDisposableStack): Promise<void> {
+    return this.afterPreviousInstance(stack);
+  }
+}
+
+function instanceOn(app: App): TurnTakingPlugin {
+  const plugin = new TurnTakingPlugin(app, manifest);
+  plugin.load();
+  return plugin;
+}
+
 describe("UnloadAwarePlugin", () => {
   it("keeps a registration's cleanup until the plugin unloads", () => {
     const plugin = loadedPlugin();
@@ -38,5 +51,64 @@ describe("UnloadAwarePlugin", () => {
     const cleanup = vi.fn();
     plugin.register(cleanup);
     expect(cleanup).toHaveBeenCalledOnce();
+  });
+});
+
+// A user who turns ZotLit off and on again while the old instance still
+// builds or closes its runtime: the new instance's commands, zotlit:* names
+// and Live Updates port must not meet the old instance's (#1786).
+describe("UnloadAwarePlugin.afterPreviousInstance", () => {
+  it("starts at once when no instance came before", async () => {
+    const stack = new AsyncDisposableStack();
+    await expect(
+      instanceOn(stubService<App>("App", {})).start(stack),
+    ).resolves.toBeUndefined();
+    await stack.disposeAsync();
+  });
+
+  it("lets a start-up go on once the unloaded instance has released all it held (#1786)", async () => {
+    const app = stubService<App>("App", {});
+    const steps: string[] = [];
+    const oldInstance = instanceOn(app);
+    const oldStack = new AsyncDisposableStack();
+    await oldInstance.start(oldStack);
+    oldStack.defer(() => {
+      steps.push("old runtime closed");
+    });
+    oldInstance.unload();
+
+    // Obsidian makes the new instance as soon as it has unloaded the old one.
+    const starting = instanceOn(app)
+      .start(new AsyncDisposableStack())
+      .then(() => steps.push("new start-up"));
+    await Promise.resolve();
+    expect(steps).toEqual([]);
+
+    await oldStack.disposeAsync();
+    await starting;
+    expect(steps).toEqual(["old runtime closed", "new start-up"]);
+  });
+
+  it("hands on the wait of an instance unloaded while it waited", async () => {
+    const app = stubService<App>("App", {});
+    const steps: string[] = [];
+    const first = instanceOn(app);
+    const firstStack = new AsyncDisposableStack();
+    await first.start(firstStack);
+    first.unload();
+
+    const second = instanceOn(app);
+    const secondStack = new AsyncDisposableStack();
+    const secondWaits = second.start(secondStack);
+    second.unload();
+    // The second's onload sees the unload once its wait ends, and leaves.
+    void secondWaits.then(() => secondStack.disposeAsync());
+
+    const third = instanceOn(app)
+      .start(new AsyncDisposableStack())
+      .then(() => steps.push("third start-up"));
+    await firstStack.disposeAsync().then(() => steps.push("first released"));
+    await third;
+    expect(steps).toEqual(["first released", "third start-up"]);
   });
 });
