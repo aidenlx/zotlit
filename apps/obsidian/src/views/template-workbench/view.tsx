@@ -146,7 +146,7 @@ import { Template } from "@/services/template/service";
 import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
-import { openWorkbenchLayout } from "@/views/note-preview/layout";
+import { openWorkbenchLayout, setLeafState } from "@/views/note-preview/layout";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
 import type {
   NativeRenderDeps,
@@ -186,7 +186,7 @@ import {
   readWorkbenchNumber,
 } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
-import { openTemplateWorkbench, setLeafState } from "./open";
+import { openTemplateWorkbench } from "./open";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
 import {
@@ -1796,9 +1796,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_citation())
         .setIcon("quote")
-        .onClick(() =>
-          this.#start(Effect.ignore(reportCitationTemplateOpen(this.app))),
-        ),
+        .onClick(() => this.#start(Effect.ignore(reportCitationTemplateOpen))),
     );
     if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     const target = this.templateDataTarget();
@@ -1881,13 +1879,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 
   #openPartial(path: string): void {
-    const app = this.app;
     this.#act(
       "open-partial",
       Effect.gen(function* () {
         const file = yield* (yield* Vault).getFileByPath(path);
         if (file)
-          yield* openTemplateWorkbench(app, file, {
+          yield* openTemplateWorkbench(file, {
             explainUnsupported: false,
           });
       }),

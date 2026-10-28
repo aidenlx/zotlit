@@ -3,7 +3,7 @@
 // through the leaf itself.
 import { Effect } from "effect";
 import { TFile } from "obsidian";
-import type { App, ViewState, WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
@@ -18,6 +18,8 @@ import type {
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
+  setLeafState,
+  WORKBENCH_WINDOW,
 } from "@/views/note-preview/layout";
 
 import type { WorkbenchOpened } from "./actions";
@@ -29,9 +31,6 @@ const OPENED: WorkbenchOpened = {
   unavailableNote: null,
 };
 
-/** The size of the window a Customize launch opens the Workbench in. */
-const WORKBENCH_WINDOW = { width: 1440, height: 900 } as const;
-
 export function requiresNative(source: string): boolean {
   const manifest = new WorkbenchDocumentController(source, {
     runtime: "native",
@@ -42,10 +41,6 @@ export function requiresNative(source: string): boolean {
     !!manifest?.frontmatter?.some((field) => "js" in field)
   );
 }
-
-/** Obsidian's `setViewState` on `leaf`: a leaf stays an edge of the tags. */
-export const setLeafState = (leaf: WorkspaceLeaf, state: ViewState) =>
-  Effect.tryPromise(() => leaf.setViewState(state));
 
 /** Customize on the reader's chosen surface, through the Local Bridge launch. */
 export const customizeProfile = (
@@ -70,7 +65,6 @@ const revealWorkbench = Effect.fn("TemplateWorkbench.revealWorkbench")(
 export const openTemplateWorkbench = Effect.fn(
   "TemplateWorkbench.openTemplateWorkbench",
 )(function* (
-  app: App,
   file: TFile,
   options: {
     leaf?: WorkspaceLeaf;
@@ -136,7 +130,6 @@ export const openTemplateWorkbench = Effect.fn(
 export const openNativeProfile = Effect.fn(
   "TemplateWorkbench.openNativeProfile",
 )(function* (
-  app: App,
   target: NativeProfileTarget,
   options: {
     leaf?: WorkspaceLeaf;
@@ -165,7 +158,7 @@ export const openNativeProfile = Effect.fn(
         (target as Exclude<NativeProfileTarget, TFile>).getSource("default"),
       );
   if (file)
-    return yield* openTemplateWorkbench(app, file, {
+    return yield* openTemplateWorkbench(file, {
       ...options,
       ...(target instanceof TFile ? {} : { defaultProfile: true }),
     });
@@ -176,7 +169,7 @@ export const openNativeProfile = Effect.fn(
     ? yield* findWorkbenchLayout({ file: null, defaultProfile: true })
     : null;
   if (workbench?.file) {
-    const opened = yield* openTemplateWorkbench(app, workbench.file, {
+    const opened = yield* openTemplateWorkbench(workbench.file, {
       ...options,
       leaf: workbench.leaf,
       defaultProfile: true,

@@ -2,7 +2,14 @@
 import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { Effect } from "effect";
 import { MarkdownView, TFile } from "obsidian";
-import type { App, Command, EventRef, Plugin, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  Command,
+  EventRef,
+  Plugin,
+  ViewState,
+  WorkspaceLeaf,
+} from "obsidian";
 import {
   beforeEach,
   afterEach,
@@ -57,7 +64,11 @@ import {
 } from "./register";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
+// The real leaf edges stand in: the layout module imports this view.
 vi.mock("@/views/note-preview/layout", () => ({
+  setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
+    Effect.tryPromise(() => leaf.setViewState(state)),
+  WORKBENCH_WINDOW: { width: 1440, height: 900 },
   openWorkbenchLayout: vi.fn(() => Effect.void),
   findWorkbenchLayout: vi.fn(() => Effect.succeed(null)),
 }));
@@ -248,7 +259,6 @@ describe("Template Workbench entry points", () => {
       await launch(
         app,
         openNativeProfile(
-          app,
           target === "file"
             ? file
             : defaultTarget({
@@ -322,7 +332,7 @@ Annotation`);
       );
       await launch(
         app,
-        openNativeProfile(app, file, {
+        openNativeProfile(file, {
           customize: true,
           itemIndexedKey: "MAIN2345",
           originatingNote: file,
@@ -362,7 +372,6 @@ Annotation`);
     await launch(
       app,
       openNativeProfile(
-        app,
         defaultTarget({
           defaultDocumentPath: Effect.succeed(file.path),
           getSource: vi.fn(),
@@ -398,7 +407,6 @@ Annotation`);
     await launch(
       app,
       openNativeProfile(
-        app,
         defaultTarget({
           defaultDocumentPath: Effect.succeed(
             "templates/zotlit-profile.default.md",
@@ -422,7 +430,7 @@ Annotation`);
       TemplateWorkbenchView.prototype,
     ) as TemplateWorkbenchView;
     Object.assign(leaf, { view });
-    await launch(app, openNativeProfile(app, file, { customize: true }));
+    await launch(app, openNativeProfile(file, { customize: true }));
     expect(openWorkbenchLayout).toHaveBeenCalledWith(view);
   });
 
@@ -437,7 +445,6 @@ Annotation`);
       const opening = launch(
         app,
         openNativeProfile(
-          app,
           target === "file"
             ? file
             : defaultTarget({
@@ -475,7 +482,7 @@ Annotation`);
       getContainer: () => existingContainer,
     });
 
-    await launch(app, openTemplateWorkbench(app, file, { leaf: existing }));
+    await launch(app, openTemplateWorkbench(file, { leaf: existing }));
 
     expect(revealLeaf).toHaveBeenCalledWith(existing);
     expect(focusExistingWindow).toHaveBeenCalledOnce();
@@ -722,7 +729,7 @@ Annotation`);
       const { app, file, setViewState } = setup();
       const source = `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`;
       vi.spyOn(app.vault, "cachedRead").mockResolvedValue(source);
-      expect(await launch(app, openNativeProfile(app, file))).toEqual({
+      expect(await launch(app, openNativeProfile(file))).toEqual({
         nativeRequired: true,
         unavailableNote: null,
       });
@@ -737,10 +744,7 @@ Annotation`);
         "---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\nlanguage: eta\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n",
       );
       expect(
-        await launch(
-          app,
-          openTemplateWorkbench(app, file, { explainUnsupported }),
-        ),
+        await launch(app, openTemplateWorkbench(file, { explainUnsupported })),
       ).toEqual({ nativeRequired: explainUnsupported, unavailableNote: null });
     },
   );
@@ -751,7 +755,7 @@ Annotation`);
       loadLocalStorage.mockReturnValue(preference);
       await launch(
         app,
-        openNativeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" }),
+        openNativeProfile(file, { itemIndexedKey: "0:ABCDEFGH" }),
       );
       expect(setViewState).toHaveBeenCalledWith({
         type: TEMPLATE_WORKBENCH_VIEW_TYPE,
@@ -770,7 +774,6 @@ Annotation`);
       await launch(
         app,
         openNativeProfile(
-          app,
           kind === "file"
             ? file
             : defaultTarget({
@@ -800,7 +803,6 @@ Annotation`);
     await launch(
       app,
       openNativeProfile(
-        app,
         defaultTarget({
           defaultDocumentPath: Effect.succeed(
             "templates/zotlit-profile.default.md",
@@ -828,7 +830,7 @@ Annotation`);
   });
   it("opens the requested Match tab in Basic mode", async () => {
     const { app, file, setViewState } = setup();
-    await launch(app, openTemplateWorkbench(app, file, { tab: "match" }));
+    await launch(app, openTemplateWorkbench(file, { tab: "match" }));
     expect(setViewState).toHaveBeenCalledWith({
       type: TEMPLATE_WORKBENCH_VIEW_TYPE,
       state: { file: file.path, tab: "match", advanced: false },

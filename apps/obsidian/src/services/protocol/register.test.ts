@@ -734,7 +734,7 @@ describe("clipboard Profile protocol handoff", () => {
         yield* Deferred.succeed(consent, imported(file.path));
         if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
         yield* Fiber.join(fiber);
-        expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {});
+        expect(openTemplateWorkbench).toHaveBeenCalledWith(file, {});
       }),
   );
 
@@ -758,7 +758,7 @@ describe("clipboard Profile protocol handoff", () => {
       });
 
       expect(workspace.leafRequests).toEqual(["split"]);
-      expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {
+      expect(openTemplateWorkbench).toHaveBeenCalledWith(file, {
         leaf: expect.anything(),
       });
     }),

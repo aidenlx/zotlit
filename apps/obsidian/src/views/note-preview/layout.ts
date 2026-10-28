@@ -34,9 +34,21 @@ const editorOpenings = new WeakMap<
   Deferred.Deferred<void, Cause.UnknownError>
 >();
 
-/** Obsidian's `setViewState` on `leaf`: a leaf stays an edge of the tag. */
-const setViewState = (leaf: WorkspaceLeaf, state: ViewState) =>
+/** Obsidian's `setViewState` on `leaf`: a leaf stays an edge of the tags. */
+export const setLeafState = (leaf: WorkspaceLeaf, state: ViewState) =>
   Effect.tryPromise(() => leaf.setViewState(state));
+
+/** The size of the window a workbench opens in or moves into. */
+export const WORKBENCH_WINDOW = { width: 1440, height: 900 } as const;
+
+/** Each open Template data explorer and Note Preview leaf, in every window. */
+const companionLeaves = Effect.fn("NotePreview.companionLeaves")(function* () {
+  const workspace = yield* Workspace;
+  return [
+    ...(yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)),
+    ...(yield* workspace.leavesOfType(NOTE_PREVIEW_VIEW_TYPE)),
+  ];
+});
 
 /** Resolve restored leaves before deciding whether this Profile already has a workbench. */
 export const findWorkbenchLayout = Effect.fn("NotePreview.findWorkbenchLayout")(
@@ -47,12 +59,8 @@ export const findWorkbenchLayout = Effect.fn("NotePreview.findWorkbenchLayout")(
       requesting?.leaf.group &&
       requesting.leaf.getContainer() !== rootSplit
     ) {
-      const companions = [
-        ...(yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)),
-        ...(yield* workspace.leavesOfType(NOTE_PREVIEW_VIEW_TYPE)),
-      ];
       if (
-        companions.some(
+        (yield* companionLeaves()).some(
           (leaf) =>
             leaf.group === requesting.leaf.group &&
             leaf.getContainer() === requesting.leaf.getContainer(),
@@ -94,12 +102,14 @@ export const findWorkbenchLayout = Effect.fn("NotePreview.findWorkbenchLayout")(
 export const openWorkbenchLayout = (
   editor: TemplateWorkbenchView,
 ): Effect.Effect<void, Cause.UnknownError, Workspace> =>
-  Effect.suspend(() => {
+  // The entry and its release are set up before an interrupt can land, so an
+  // open interrupted as it starts still frees the editor for the next open.
+  Effect.uninterruptibleMask((restore) => {
     const pending = editorOpenings.get(editor);
-    if (pending) return Deferred.await(pending);
+    if (pending) return restore(Deferred.await(pending));
     const opening = Deferred.makeUnsafe<void, Cause.UnknownError>();
     editorOpenings.set(editor, opening);
-    return inLayoutTurn(arrangeWorkbench(editor)).pipe(
+    return restore(inLayoutTurn(arrangeWorkbench(editor))).pipe(
       Effect.onExit((exit) =>
         Effect.sync(() => {
           editorOpenings.delete(editor);
@@ -107,9 +117,6 @@ export const openWorkbenchLayout = (
       ),
     );
   });
-
-/** The size of the window a workbench moves into. */
-const WORKBENCH_WINDOW = { width: 1440, height: 900 } as const;
 
 const arrangeWorkbench = Effect.fn("NotePreview.arrangeWorkbench")(function* (
   editor: TemplateWorkbenchView,
@@ -124,7 +131,7 @@ const arrangeWorkbench = Effect.fn("NotePreview.arrangeWorkbench")(function* (
   );
   if (existing && existing !== editor) {
     if (editor.file && !existing.file && existing.isDefaultProfile) {
-      yield* setViewState(existing.leaf, {
+      yield* setLeafState(existing.leaf, {
         type: TEMPLATE_WORKBENCH_VIEW_TYPE,
         state: {
           ...existing.getState(),
@@ -133,18 +140,14 @@ const arrangeWorkbench = Effect.fn("NotePreview.arrangeWorkbench")(function* (
         },
       });
     }
-    yield* revealWorkbench(existing);
+    yield* focusWorkbench(existing);
     return;
   }
   const container = editor.leaf.getContainer();
   const otherEditor = (yield* workspace.leavesOfType(
     TEMPLATE_WORKBENCH_VIEW_TYPE,
   )).some((leaf) => leaf !== editor.leaf && leaf.getContainer() === container);
-  const companions = [
-    ...(yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)),
-    ...(yield* workspace.leavesOfType(NOTE_PREVIEW_VIEW_TYPE)),
-  ];
-  const unrelatedCompanion = companions.some(
+  const unrelatedCompanion = (yield* companionLeaves()).some(
     (leaf) =>
       leaf.getContainer() === container &&
       (!editor.leaf.group || leaf.group !== editor.leaf.group),
@@ -159,10 +162,11 @@ const arrangeWorkbench = Effect.fn("NotePreview.arrangeWorkbench")(function* (
   }
   yield* openCompanion(editor, EXPLORER_VIEW_TYPE);
   yield* openCompanion(editor, NOTE_PREVIEW_VIEW_TYPE);
-  yield* revealWorkbench(editor);
+  yield* focusWorkbench(editor);
 });
 
-const revealWorkbench = Effect.fn("NotePreview.revealWorkbench")(function* (
+/** Reveal `editor`'s leaf and give it the focus. */
+const focusWorkbench = Effect.fn("NotePreview.focusWorkbench")(function* (
   editor: TemplateWorkbenchView,
 ) {
   const workspace = yield* Workspace;
@@ -174,13 +178,8 @@ const revealWorkbench = Effect.fn("NotePreview.revealWorkbench")(function* (
 const hasWorkbenchPanes = Effect.fn("NotePreview.hasWorkbenchPanes")(function* (
   editor: TemplateWorkbenchView,
 ) {
-  const workspace = yield* Workspace;
   const container = editor.leaf.getContainer();
-  const companions = [
-    ...(yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)),
-    ...(yield* workspace.leavesOfType(NOTE_PREVIEW_VIEW_TYPE)),
-  ];
-  return companions.some((leaf) => {
+  return (yield* companionLeaves()).some((leaf) => {
     if (leaf.getContainer() !== container) return false;
     if (editor.leaf.group && leaf.group === editor.leaf.group) return true;
     const state = leaf.view.getState();
@@ -228,6 +227,6 @@ const openCompanion = Effect.fn("NotePreview.openCompanion")(function* (
     type === EXPLORER_VIEW_TYPE,
   );
   leaf.setGroupMember(editor.leaf);
-  yield* setViewState(leaf, { type, active: false });
+  yield* setLeafState(leaf, { type, active: false });
   return leaf;
 });

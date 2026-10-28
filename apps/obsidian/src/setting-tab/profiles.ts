@@ -341,9 +341,7 @@ function openDocument(ctx: SettingTabContext, path: string) {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
     yield* explainWorkbenchOpen(
-      yield* leaveSettingsFor(
-        openNativeProfile(ctx.app, file, { customize: true }),
-      ),
+      yield* leaveSettingsFor(openNativeProfile(file, { customize: true })),
     );
   });
 }

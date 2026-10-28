@@ -48,10 +48,8 @@ import { viewTargetOpener } from "@/views/open-target";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
-import {
-  openTemplateDataExplorer,
-  startExplorerOpen,
-} from "@/views/template-data-explorer/register";
+import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
+import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 
 import type { AnnotActions } from "./actions";
@@ -287,8 +285,9 @@ export class AnnotationView extends ItemView implements HistorySurface {
         fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;
-          startExplorerOpen(
+          startTemplateWorkbenchAction(
             this.#deps.explorer,
+            "open-template-data-explorer",
             openTemplateDataExplorer(this.#deps.app, {
               itemIndexedKey: this.#itemKey,
               anchorAnnotationKey: annotationKey,

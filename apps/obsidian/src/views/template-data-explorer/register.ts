@@ -13,6 +13,7 @@ import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
 import { inLayoutTurn, openProfileExplorer } from "@/views/note-preview/layout";
 import { activeTemplateWorkbench } from "@/views/note-preview/register";
+import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
@@ -47,7 +48,11 @@ export function registerTemplateDataExplorer(
     id: "open-template-data-explorer",
     name: m.command_open_template_data_explorer_name(),
     callback: () =>
-      startExplorerOpen(deps, openTemplateDataExplorer(plugin.app)),
+      startTemplateWorkbenchAction(
+        deps,
+        "open-template-data-explorer",
+        openTemplateDataExplorer(plugin.app),
+      ),
   });
 }
 
@@ -102,17 +107,6 @@ const openExplorerLeaf = Effect.fn("TemplateDataExplorer.openLeaf")(function* (
   yield* workspace.revealLeaf(leaf);
 });
 
-/**
- * Start an open of the explorer from a plain Obsidian callback, such as a
- * command or a menu entry, on the plugin's bridge: unload stops it.
- */
-export function startExplorerOpen(
-  deps: WorkbenchActionDeps,
-  open: Effect.Effect<void, unknown, Workspace>,
-): void {
-  deps.bridge.runAndForget(Effect.provideContext(open, deps.context));
-}
-
 /** "Explore template data" on a Literature Note's file menu. */
 export function explorerFileMenu(
   app: App,
@@ -126,8 +120,9 @@ export function explorerFileMenu(
         .setTitle(m.template_data_explorer_menu_explore())
         .setIcon("braces")
         .onClick(() => {
-          startExplorerOpen(
+          startTemplateWorkbenchAction(
             deps,
+            "open-template-data-explorer",
             openTemplateDataExplorer(app, { itemIndexedKey: itemKey }),
           );
         }),

@@ -60,7 +60,7 @@ export const createSharedPartialEffect = Effect.fn(
         const leaf = yield* (yield* Workspace).getLeaf(
           open === "split" ? "split" : "tab",
         );
-        yield* openTemplateWorkbench(app, created.file, {
+        yield* openTemplateWorkbench(created.file, {
           leaf,
           explainUnsupported: false,
         });

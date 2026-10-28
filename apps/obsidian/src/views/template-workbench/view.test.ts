@@ -8,7 +8,7 @@ import type {
 import { Cause, Effect, Exit } from "effect";
 import { Stream } from "effect";
 import { SuggestModal, TFile } from "obsidian";
-import type { App, WorkspaceLeaf } from "obsidian";
+import type { App, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +51,11 @@ import {
   unpackedPartialNotices,
 } from "./view";
 
+// The real leaf edges stand in: the layout module imports this view.
 vi.mock("@/views/note-preview/layout", () => ({
+  setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
+    Effect.tryPromise(() => leaf.setViewState(state)),
+  WORKBENCH_WINDOW: { width: 1440, height: 900 },
   openWorkbenchLayout: vi.fn(() => Effect.void),
 }));
 

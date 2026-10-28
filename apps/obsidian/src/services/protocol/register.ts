@@ -680,9 +680,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* explainWorkbenchOpen(
-      yield* openTemplateWorkbench(deps.app, file, options),
-    );
+    yield* explainWorkbenchOpen(yield* openTemplateWorkbench(file, options));
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(
       Effect.annotateLogs({ path: profile.path }),
     );

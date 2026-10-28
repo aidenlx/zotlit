@@ -135,7 +135,6 @@ it("folds the typed name, names the file, and opens the partial in a split", asy
   await expect(flow).resolves.toBe("venue-line");
   expect(template.createPartial).toHaveBeenCalledWith("venue-line", {});
   expect(openTemplateWorkbench).toHaveBeenCalledWith(
-    app,
     { path: "templates/zotlit-partial.venue-line.md" },
     { leaf: split, explainUnsupported: false },
   );
