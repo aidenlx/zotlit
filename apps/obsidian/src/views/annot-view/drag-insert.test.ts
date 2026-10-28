@@ -1,7 +1,7 @@
 import { history, undo } from "@codemirror/commands";
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Cause, Effect, Exit, Fiber, FiberSet, Scope } from "effect";
 import { MarkdownView } from "obsidian";
 import { TFile } from "obsidian";
 import type {
@@ -16,8 +16,7 @@ import type { DragEvent as ReactDragEvent } from "react";
 import { expect, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { effectBridge, valueOr } from "@/lib/effect-bridge";
-import { buildRuntime } from "@/lib/effect-layer";
+import { openScope } from "@/lib/effect-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { annotationAction } from "@/services/note-feature/__fixtures__/annotation-actions";
@@ -51,9 +50,55 @@ const card: AnnotationRecord = {
   position: { kind: "pdf-rects", pageIndex: 0, rects: [[1, 2, 3, 4]] },
 };
 type Result = AnnotationInsert;
+
+/**
+ * A runner over a Scope the test closes, as the view's runner is over the
+ * view's lifetime, and the inserts it ran: each one's controlled render and
+ * whether it was interrupted.
+ */
+function insertRunner() {
+  const resource = openScope();
+  const run = Effect.runSync(
+    FiberSet.makeRuntime<never>().pipe(Scope.provide(resource.scope)),
+  );
+  const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
+  const interrupted: boolean[] = [];
+  const execute = vi.fn((input: AnnotationInsertRequest) =>
+    Effect.suspend(() => {
+      const index = pending.length;
+      const request = Promise.withResolvers<Result>();
+      pending.push(request);
+      interrupted.push(false);
+      void request.promise.catch(() => {});
+      return annotationAction(
+        input,
+        Effect.tryPromise({
+          try: () => request.promise,
+          catch: (error) => templateFailure(error),
+        }),
+      ).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted[index] = true;
+          }),
+        ),
+      );
+    }),
+  );
+  return { run, execute, pending, interrupted, close: resource.close };
+}
+
+/** The outcome an insert answered, or `"interrupted"` when it was stopped. */
+async function outcomeOf(
+  fiber: Fiber.Fiber<AnnotationInsertOutcome>,
+): Promise<AnnotationInsertOutcome | "interrupted"> {
+  const exit = await Effect.runPromise(Fiber.await(fiber));
+  if (Exit.isSuccess(exit)) return exit.value;
+  if (Cause.hasInterruptsOnly(exit.cause)) return "interrupted";
+  throw Cause.squash(exit.cause);
+}
 function fixture() {
-  const stack = new AsyncDisposableStack();
-  const bridge = effectBridge(buildRuntime(Layer.empty, stack));
+  const runner = insertRunner();
   const cm = stateEditor({
     doc: "one two",
     selection: { anchor: 4, head: 7 },
@@ -109,33 +154,13 @@ function fixture() {
       if (callback) callback.callback();
     }
   };
-  const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
-  const prepare = vi.fn(
-    (input: AnnotationInsertRequest, signal: AbortSignal) => {
-      const request = Promise.withResolvers<Result>();
-      pending.push(request);
-      void request.promise.catch(() => {});
-      return bridge
-        .runPromiseExit(
-          annotationAction(
-            input,
-            Effect.tryPromise({
-              try: (signal) => {
-                signal.throwIfAborted();
-                return request.promise;
-              },
-              catch: (error) => templateFailure(error),
-            }),
-          ),
-          { signal },
-        )
-        .then((exit) => valueOr(exit, undefined));
-    },
-  );
+  const { pending, interrupted } = runner;
+  const prepare = runner.execute;
   const notify = vi.fn();
   const insert = createInsertHandler({
     app: stubService<App>("App", { workspace }),
     execute: prepare,
+    run: runner.run,
     notify,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
@@ -149,11 +174,12 @@ function fixture() {
     prepare,
     insert,
     pending,
+    interrupted,
     notify,
-    unload: () => stack.disposeAsync(),
+    unload: runner.close,
     changed,
     async [Symbol.asyncDispose]() {
-      await stack.disposeAsync();
+      await runner.close();
       insert.cancel();
       cm.destroy();
     },
@@ -173,7 +199,7 @@ it.effect(
       const operation = f.insert(card);
       expect(f.prepare).toHaveBeenCalledOnce();
       f.pending[0]!.resolve(result("EXCERPT"));
-      expect(await operation).toEqual({
+      expect(await outcomeOf(operation)).toEqual({
         kind: "inserted",
         summary: { zotero: 0, unchecked: 0, unavailable: 0 },
       });
@@ -193,7 +219,7 @@ it.effect("offers no insert into a note in Reading view", () =>
     f.workspace.getMostRecentLeaf = () => leaf;
 
     expect(f.insert.offer()).toBeNull();
-    expect(await f.insert(card)).toEqual({ kind: "no-note" });
+    expect(await outcomeOf(f.insert(card))).toEqual({ kind: "no-note" });
     expect(f.prepare).not.toHaveBeenCalled();
     expect(f.cm.state.doc.toString()).toBe("one two");
   }),
@@ -215,7 +241,7 @@ it.effect(
           editor: stubService<Editor>("Editor", {}),
         },
       );
-      await offered!(card);
+      expect(offered!(card)).toBeNull();
       expect(f.prepare).not.toHaveBeenCalled();
       expect(f.cm.state.doc.toString()).toBe("one two");
     }),
@@ -236,7 +262,7 @@ it.effect("keeps the established text fallback for a Profile error", () =>
         hint: "Restore the document",
       }),
     );
-    expect(await operation).toMatchObject({
+    expect(await outcomeOf(operation)).toMatchObject({
       kind: "profile-error",
       landed: true,
     });
@@ -251,7 +277,26 @@ it.effect(
       await using f = fixture();
       const operation = f.insert(card);
       f.pending[0]!.reject(new Error("private failure detail"));
-      expect(await operation).toEqual({ kind: "failed" });
+      expect(await outcomeOf(operation)).toEqual({ kind: "failed" });
+      expect(f.notify).toHaveBeenCalledExactlyOnceWith(
+        m.annot_view_insert_failed(),
+      );
+      expect(f.cm.state.doc.toString()).toBe("one two");
+    }),
+);
+
+it.effect(
+  "reports a failed insert where the insert fails outside its outcome",
+  () =>
+    Effect.promise(async () => {
+      await using f = fixture();
+      f.prepare.mockImplementationOnce(() =>
+        Effect.die(new Error("database closed")),
+      );
+      expect(await outcomeOf(f.insert(card))).toEqual({ kind: "failed" });
+      expect(f.notify).toHaveBeenCalledExactlyOnceWith(
+        m.annot_view_insert_failed(),
+      );
       expect(f.cm.state.doc.toString()).toBe("one two");
     }),
 );
@@ -261,7 +306,8 @@ it.effect("stays silent and inserts nothing when unload ends the insert", () =>
     await using f = fixture();
     const operation = f.insert(card);
     await f.unload();
-    expect(await operation).toBeUndefined();
+    expect(await outcomeOf(operation)).toBe("interrupted");
+    expect(f.interrupted).toEqual([true]);
     expect(f.notify).not.toHaveBeenCalled();
     expect(f.cm.state.doc.toString()).toBe("one two");
   }),
@@ -272,12 +318,12 @@ it.effect("supersedes the pending action and inserts once with one undo", () =>
     await using f = fixture();
     const first = f.insert(card);
     const second = f.insert(card);
-    expect(f.prepare.mock.calls[0]?.[1].aborted).toBe(true);
+    await vi.waitFor(() => expect(f.interrupted[0]).toBe(true));
     f.cm.dispatch({ changes: { from: 0, insert: "user " } });
     f.pending[1]!.resolve(result("EXCERPT"));
-    expect(await second).toMatchObject({ kind: "inserted" });
+    expect(await outcomeOf(second)).toMatchObject({ kind: "inserted" });
     f.pending[0]!.resolve(result("STALE"));
-    expect(await first).toBeUndefined();
+    expect(await outcomeOf(first)).toBe("interrupted");
     expect(f.cm.state.doc.toString()).toBe("user one EXCERPT ");
     undo(f.cm);
     expect(f.cm.state.doc.toString()).toBe("user one two");
@@ -305,8 +351,8 @@ it.effect.each(["switch", "close", "cancel"])(
       if (mode === "close") f.cm.dom.remove();
       if (mode === "cancel") f.insert.cancel();
       f.pending[0]!.resolve(result("late"));
-      expect(await operation).toEqual(
-        mode === "close" ? { kind: "cancelled" } : undefined,
+      expect(await outcomeOf(operation)).toEqual(
+        mode === "close" ? { kind: "cancelled" } : "interrupted",
       );
       expect(f.cm.state.doc.toString()).toBe("one two");
     }),
@@ -319,7 +365,7 @@ it.effect("inserts an unavailable-image result", () =>
       text: "Image unavailable [Zotero](zotero://open)",
       summary: { zotero: 0, unchecked: 0, unavailable: 1 },
     });
-    expect(await operation).toEqual({
+    expect(await outcomeOf(operation)).toEqual({
       kind: "inserted",
       summary: { zotero: 0, unchecked: 0, unavailable: 1 },
     });
@@ -363,8 +409,7 @@ it.each([
 );
 
 function dragFixture() {
-  const stack = new AsyncDisposableStack();
-  const bridge = effectBridge(buildRuntime(Layer.empty, stack));
+  const runner = insertRunner();
   const cm = stateEditor({ doc: "one two", extensions: [history()] });
   const file = new TFile();
   file.path = "Drop.md";
@@ -409,34 +454,17 @@ function dragFixture() {
       if (callback) callback.callback(...(args as never[]));
     }
   };
-  const pending: ReturnType<typeof Promise.withResolvers<Result>>[] = [];
-  const prepare = vi.fn(
-    (input: AnnotationInsertRequest, signal: AbortSignal) => {
-      preparing = true;
-      const request = Promise.withResolvers<Result>();
-      pending.push(request);
-      void request.promise.catch(() => {});
-      return bridge
-        .runPromiseExit(
-          annotationAction(
-            input,
-            Effect.tryPromise({
-              try: (signal) => {
-                signal.throwIfAborted();
-                return request.promise;
-              },
-              catch: (error) => templateFailure(error),
-            }),
-          ),
-          { signal },
-        )
-        .then((exit) => valueOr(exit, undefined));
-    },
-  );
+  const { pending, interrupted } = runner;
+  const dragNotify = vi.fn();
+  const prepare = vi.fn((input: AnnotationInsertRequest) => {
+    preparing = true;
+    return runner.execute(input);
+  });
   const handler = createDragInsertHandler({
     app: stubService<App>("App", { workspace }),
     execute: prepare,
-    notify: () => undefined,
+    run: runner.run,
+    notify: dragNotify,
     snapshot: () => ({
       source: { kind: "zotero-local-api", serverID: "SERVER000001" },
       sourceScope: "/zotero",
@@ -480,6 +508,9 @@ function dragFixture() {
     source,
     prepare,
     pending,
+    interrupted,
+    notify: dragNotify,
+    unload: runner.close,
     cleaned: cleaned.promise,
     listenerCount: () =>
       [...listeners.values()].reduce(
@@ -491,7 +522,7 @@ function dragFixture() {
     emit,
     handler,
     async [Symbol.asyncDispose]() {
-      await stack.disposeAsync();
+      await runner.close();
       handler.cancel();
       cm.destroy();
       source.remove();
@@ -575,7 +606,6 @@ it.effect.each(["escape", "overlap", "close", "new-drag"])(
       vi.spyOn(f.cm, "posAtCoords").mockReturnValue(4);
       const first = f.start();
       f.drop(first.dataTransfer);
-      const signal = f.prepare.mock.calls[0]![1];
       if (mode === "escape")
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       if (mode === "overlap")
@@ -585,11 +615,30 @@ it.effect.each(["escape", "overlap", "close", "new-drag"])(
         f.emit("layout-change");
       }
       if (mode === "new-drag") f.start();
-      expect(signal.aborted).toBe(true);
+      await vi.waitFor(() => expect(f.interrupted[0]).toBe(true));
       f.pending[0]!.resolve(result("LATE"));
       if (mode === "new-drag") window.dispatchEvent(new DragEvent("dragend"));
       await f.cleaned;
       expect(f.listenerCount()).toBe(0);
       expect(f.cm.state.doc.toString()).not.toContain("LATE");
+    }),
+);
+
+it.effect(
+  "stops a dropped insert quietly when the annotation view closes",
+  () =>
+    Effect.promise(async () => {
+      await using f = dragFixture();
+      vi.spyOn(f.cm, "posAtCoords").mockReturnValue(4);
+      const drag = f.start();
+      f.drop(drag.dataTransfer);
+      expect(f.prepare).toHaveBeenCalledOnce();
+      await f.unload();
+      expect(f.interrupted).toEqual([true]);
+      f.pending[0]!.resolve(result("LATE"));
+      await f.cleaned;
+      expect(f.listenerCount()).toBe(0);
+      expect(f.notify).not.toHaveBeenCalled();
+      expect(f.cm.state.doc.toString()).toBe("one two");
     }),
 );

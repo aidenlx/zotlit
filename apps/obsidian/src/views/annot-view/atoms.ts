@@ -1,11 +1,10 @@
 // Annotation reads and gestures on the plugin's view runtime.
-import { Cause, Effect, Option } from "effect";
+import { Cause, Effect, Exit, Option } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import { isChildItemFields } from "@zotlit/db";
 
-import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -26,10 +25,7 @@ import { savedExcerptRequestFor } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { readerTargetAtom } from "@/services/local-server/atoms";
 import type { AnnotationCitation } from "@/services/note-feature/annotation-citation";
-import type {
-  AnnotationInsertRequest,
-  AnnotationInsertOutcome,
-} from "@/services/note-feature/insert-action";
+import type { AnnotationInsertRequest } from "@/services/note-feature/insert-action";
 import { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { PluginSettings } from "@/services/settings/service";
 import { plainTemplateError } from "@/services/template/errors";
@@ -374,65 +370,36 @@ export const refreshExcerptDisplayCommand = viewRuntime.fn(() =>
   Effect.flatMap(ExcerptDisplays, (display) => display.refresh),
 );
 
-/** Two card menus can copy citations without cancelling each other's read. */
-export const copyCitationCommand = viewRuntime.fn(
-  (request: {
-    key: string;
-    resolve: (citation: AnnotationCitation) => void;
-    reject: (error: unknown) => void;
-  }) =>
-    Effect.flatMap(AnnotationNoteActions, (notes) =>
-      notes.citation(request.key),
-    ).pipe(
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (exit._tag === "Success") request.resolve(exit.value);
-          else
-            request.reject(
-              Cause.hasInterruptsOnly(exit.cause)
-                ? new AbortError()
-                : plainTemplateError(Cause.squash(exit.cause)),
-            );
-        }),
-      ),
-    ),
-  { concurrent: true },
-);
+/** The insert an editor gesture runs on the view's runner. */
+export const insertAnnotation = (request: AnnotationInsertRequest) =>
+  Effect.flatMap(AnnotationNoteActions, (notes) => notes.insert(request));
 
-/** Each editor gesture runs the shared insertion on the view's lifetime. */
-export const makeInsertCommand = () =>
-  viewRuntime.fn(
-    (request: {
-      input: AnnotationInsertRequest;
-      signal: AbortSignal;
-      resolve: (outcome: AnnotationInsertOutcome | undefined) => void;
-      reject: (error: unknown) => void;
-    }) =>
-      Effect.gen(function* () {
-        const { signal } = request;
-        if (signal.aborted) return yield* Effect.interrupt;
-        const cancelled = Effect.callback<never>((resume) => {
-          const interrupt = () => resume(Effect.interrupt);
-          if (signal.aborted) {
-            interrupt();
-            return;
-          }
-          signal.addEventListener("abort", interrupt, { once: true });
-          return Effect.sync(() =>
-            signal.removeEventListener("abort", interrupt),
-          );
-        });
-        const notes = yield* AnnotationNoteActions;
-        return yield* Effect.raceFirst(notes.insert(request.input), cancelled);
-      }).pipe(
-        Effect.onExit((exit) =>
-          Effect.sync(() => {
-            if (exit._tag === "Success") request.resolve(exit.value);
-            else if (Cause.hasInterruptsOnly(exit.cause))
-              request.resolve(undefined);
-            else request.reject(Cause.squash(exit.cause));
-          }),
-        ),
-      ),
-    { concurrent: true },
+/** What a citation read answered: the citation, or the error it failed with. */
+export type CitationRead =
+  | { kind: "read"; citation: AnnotationCitation }
+  | { kind: "failed"; error: unknown };
+
+/**
+ * Read one Annotation's citation and hand the read to `answer`. An interrupt,
+ * such as the view's close, ends the read with no answer.
+ */
+export const readCitation = (
+  key: string,
+  answer: (read: CitationRead) => void,
+) =>
+  Effect.flatMap(AnnotationNoteActions, (notes) => notes.citation(key)).pipe(
+    Effect.exit,
+    Effect.flatMap((exit) => {
+      if (Exit.isSuccess(exit))
+        return Effect.sync(() =>
+          answer({ kind: "read", citation: exit.value }),
+        );
+      if (Cause.hasInterruptsOnly(exit.cause)) return Effect.interrupt;
+      return Effect.sync(() =>
+        answer({
+          kind: "failed",
+          error: plainTemplateError(Cause.squash(exit.cause)),
+        }),
+      );
+    }),
   );

@@ -40,6 +40,10 @@ export async function insertAnnotation(
     range,
     workspace: deps.workspace,
   });
+  // The bridge takes a signal at this EditorSuggest edge.
+  const cancelled = new AbortController();
+  const release = target.onCancel(() => cancelled.abort());
+  using _listener = { [Symbol.dispose]: release };
   const outcome = valueOr(
     await deps.bridge.runPromiseExit(
       deps.annotationNotes.insert({
@@ -48,7 +52,7 @@ export async function insertAnnotation(
         notePath: file.path,
         placement: { replacesTrigger: true },
       }),
-      { signal: target.signal },
+      { signal: cancelled.signal },
     ),
     undefined,
   );

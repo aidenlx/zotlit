@@ -14,7 +14,8 @@ import { AppContext } from "@/lib/app-context";
 import { registerKeymap } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import { makeViewRunner } from "@/lib/view-runner";
 import { historyOutcomeNotice } from "@/services/annotation-repository/actions";
 import {
   annotationChangeAtom,
@@ -55,10 +56,9 @@ import {
   editingCapabilityCommand,
   makeLibraryTagNamesCommand,
   makeExcerptRequestCommand,
-  makeInsertCommand,
-  copyCitationCommand,
   openExcerptDemandCommand,
   refreshExcerptDisplayCommand,
+  insertAnnotation,
   resultValue,
   requireResult,
 } from "./atoms";
@@ -78,6 +78,7 @@ import type {
 } from "./card-selection";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
+import type { InsertDeps } from "./drag-insert";
 import { CARD_SELECTOR, mountCardHistoryKeys } from "./history";
 import { AnnotStoreProvider, createAnnotStore, observeRead } from "./model";
 import type { AnnotStore } from "./model";
@@ -256,7 +257,6 @@ export class AnnotationsLayout extends Component {
   readonly #reads = new Map<string, Disposable>();
   readonly #holdAttachmentsCommand = makeHoldAttachmentsCommand();
   readonly #refreshCommand = makeRefreshCommand();
-  readonly #insertCommand = makeInsertCommand();
   readonly #excerptCommand = makeExcerptRequestCommand();
   readonly #tagNamesCommand = makeLibraryTagNamesCommand();
   #reading: Promise<void> = Promise.resolve();
@@ -309,17 +309,11 @@ export class AnnotationsLayout extends Component {
     this.#subscriptions = subscriptions;
     const gestures = { ...NO_HOST_GESTURES, ...this.#host.gestures };
 
-    const insertDeps: Parameters<typeof createInsertHandler>[0] = {
+    const { run } = subscriptions.use(makeViewRunner(deps.registry));
+    const insertDeps: InsertDeps<ViewServices> = {
       app: deps.app,
-      execute: (input, signal) =>
-        new Promise((resolve, reject) =>
-          deps.registry.set(this.#insertCommand, {
-            input,
-            signal,
-            resolve,
-            reject,
-          }),
-        ),
+      execute: insertAnnotation,
+      run,
       notify: (message) => void new BaseNotice(message),
       snapshot: (annotation) => {
         const state = this.store.getState();
@@ -342,6 +336,7 @@ export class AnnotationsLayout extends Component {
       opener: deps.opener,
       excerptImageRequest: (target) => this.#excerptRequest(target),
       registry: deps.registry,
+      run,
       controls: (annot) => this.#cardControls(annot),
       selectedCards: () => this.#selectedCards(),
       libraryTagNames: (annot) =>
@@ -375,7 +370,7 @@ export class AnnotationsLayout extends Component {
           const current = this.store
             .getState()
             .annotations?.find(({ key }) => key === annotation.key);
-          void offered(current ?? annotation);
+          offered(current ?? annotation);
         };
       },
       renderComment: createCommentRenderer({
@@ -389,8 +384,6 @@ export class AnnotationsLayout extends Component {
     const commands: import("effect/reactivity/Atom").Atom<unknown>[] = [
       annotationDraftCommand,
       annotationWriteCommand,
-      copyCitationCommand,
-      this.#insertCommand,
       openExcerptDemandCommand,
       refreshExcerptDisplayCommand,
       this.#excerptCommand,
