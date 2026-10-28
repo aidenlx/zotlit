@@ -42,9 +42,10 @@ let watchers: FakeWatcher[] = [];
 /**
  * Paths whose watch cannot start, and how: `fail` as a path that is gone
  * does, `die` as `fs.watch` throwing inside `NodeFileSystem` does (inotify
- * out of watches, too many open files).
+ * out of watches, too many open files), `hang` as a watch that opens and is
+ * still starting.
  */
-let unwatchable = new Map<string, "fail" | "die">();
+let unwatchable = new Map<string, "fail" | "die" | "hang">();
 
 /** A watch that records its listener for the case to call instead of watching. */
 const fakeWatch = (
@@ -88,7 +89,13 @@ const fakeWatch = (
               Effect.sync(() => {
                 watcher.closed = true;
               }),
-          ).pipe(Effect.tap(() => Effect.sync(() => options?.onReady?.()))),
+          ).pipe(
+            Effect.tap(() =>
+              unwatchable.get(path) === "hang"
+                ? Effect.void
+                : Effect.sync(() => options?.onReady?.()),
+            ),
+          ),
         );
 
 /** The Node file system, with watches the case drives. */
@@ -823,6 +830,30 @@ describe("ZoteroReads source", () => {
         writeLibrary(dbPath, 2);
         await source.run(source.reads.Refresh());
         await expect(source.version()).resolves.toBe(2);
+      },
+    );
+  });
+
+  describe("watch start interrupted", () => {
+    // #1798: the source made the watch's scope and stored it only after the
+    // watch was ready, so a close while it waited left the watch open.
+    it.each(["zotero.sqlite", "zotero.sqlite-wal"])(
+      "closes a %s watch still starting when the source closes",
+      async (filename) => {
+        const path = join(dir, filename);
+        if (filename === "zotero.sqlite-wal") await writeFile(path, "");
+        unwatchable.set(path, "hang");
+        const { ports } = testPorts();
+        const source = await startSource(config(), ports);
+        await vi.waitFor(() =>
+          expect(watchers.map((w) => w.path)).toContain(path),
+        );
+
+        await source.close();
+
+        expect(watchers.map((w) => [w.path, w.closed])).toEqual(
+          watchers.map((w) => [w.path, true]),
+        );
       },
     );
   });
