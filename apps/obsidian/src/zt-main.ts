@@ -350,6 +350,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
       itemLookup: services.itemLookup,
       settings: services.settings,
       registry: services.viewRegistry,
+      explorer: {
+        bridge: services.bridge,
+        context: services.workbenchActionContext,
+      },
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
@@ -412,6 +416,7 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
 
     registerTemplateDataExplorer(this, {
       bridge: services.bridge,
+      context: services.workbenchActionContext,
       app: this.app,
       registry: services.viewRegistry,
       itemLookup: services.itemLookup,
@@ -478,7 +483,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
             ),
         }),
         indexedKeyFileMenu(),
-        explorerFileMenu(this.app),
+        explorerFileMenu(this.app, {
+          bridge: services.bridge,
+          context: services.workbenchActionContext,
+        }),
         queryFileFileMenu(this.app),
       ],
       [queryFileFolderMenu(this.app)],

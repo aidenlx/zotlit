@@ -146,6 +146,7 @@ import { Template } from "@/services/template/service";
 import type { PartialUnpackOutcome } from "@/services/template/service";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
+import { openWorkbenchLayout } from "@/views/note-preview/layout";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
 import type {
   NativeRenderDeps,
@@ -185,11 +186,7 @@ import {
   readWorkbenchNumber,
 } from "./model";
 import type { CreateSharedPartialOptions } from "./new-partial";
-import {
-  openTemplateWorkbench,
-  openWorkbenchLayoutEffect,
-  setLeafState,
-} from "./open";
+import { openTemplateWorkbench, setLeafState } from "./open";
 import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { createSharedPartialEffect } from "./partial-command";
 import {
@@ -1776,9 +1773,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setSection(MENU_SECTION.open)
         .setTitle(m.template_workbench_open_layout())
         .setIcon("panels-top-left")
-        .onClick(() =>
-          this.#act("open-workbench", openWorkbenchLayoutEffect(this)),
-        ),
+        .onClick(() => this.#act("open-workbench", openWorkbenchLayout(this))),
     );
     menu.addItem((item) =>
       item
@@ -2112,7 +2107,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         }),
       );
       this.#mount();
-      yield* openWorkbenchLayoutEffect(this);
+      yield* openWorkbenchLayout(this);
     }).pipe(
       recover(
         (cause) =>

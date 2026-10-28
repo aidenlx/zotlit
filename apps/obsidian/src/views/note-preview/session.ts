@@ -113,23 +113,29 @@ export class NativePreviewSession implements Disposable {
     this.#cleanup = cleanup.move();
     this.#feed();
   }
-  /** Resolves once the paper a render reads is loaded. */
-  get ready(): Promise<void> {
-    if (this.#closed) return Promise.resolve();
-    const registry = this.#deps.registry;
-    const loaded = this.state.model.loaded;
-    if (!registry.get(loaded).waiting) return Promise.resolve();
-    return new Promise((resolve) => {
+  /**
+   * Completes once the paper a render reads is loaded, or the session closes.
+   * Interrupting the wait drops its registry subscription.
+   */
+  get ready(): Effect.Effect<void> {
+    return Effect.callback<void>((resume) => {
+      const registry = this.#deps.registry;
+      const loaded = this.state.model.loaded;
+      if (this.#closed || !registry.get(loaded).waiting) {
+        resume(Effect.void);
+        return;
+      }
       const unsubscribe = registry.subscribe(loaded, (result) => {
         if (!result.waiting && !AsyncResult.isInitial(result)) {
           unsubscribe();
-          resolve();
+          resume(Effect.void);
         }
       });
       this.#cleanup.defer(() => {
         unsubscribe();
-        resolve();
+        resume(Effect.void);
       });
+      return Effect.sync(unsubscribe);
     });
   }
   /** Data choice remains live even while template execution is on demand. */
@@ -264,7 +270,7 @@ export class NativePreviewSession implements Disposable {
     PreviewItemMissing | PartialPreviewFailed,
     ViewServices
   > {
-    return Effect.promise(() => this.ready).pipe(
+    return this.ready.pipe(
       Effect.flatMap(
         (): Effect.Effect<
           string,

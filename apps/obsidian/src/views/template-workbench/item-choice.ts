@@ -103,19 +103,26 @@ export const workbenchItemChoice = (
         ),
     };
     const id = yield* host.suggester(request);
-    if (id === "search-zotero") {
-      const hit = yield* awaitItem(
-        deps,
-        m.template_data_explorer_pick_placeholder(),
-      );
-      return hit ? (itemChoices([hit])[0] ?? null) : null;
-    }
+    if (id === "search-zotero") return yield* workbenchItemSearch(deps);
     return (
       [...retained, ...choices].find((item) => item.id === id) ??
       (id ? found.get(id) : null) ??
       null
     );
   }).pipe(Effect.scoped);
+
+/**
+ * Ask the reader to search the Zotero library for an Item.
+ *
+ * @returns the chosen parent Item, or `null` when the reader dismisses the
+ *   search or picks a child Item.
+ */
+export const workbenchItemSearch = (
+  deps: ItemSearchDeps,
+): Effect.Effect<WorkbenchItemChoice | null> =>
+  awaitItem(deps, m.template_data_explorer_pick_placeholder()).pipe(
+    Effect.map((hit) => (hit ? (itemChoices([hit])[0] ?? null) : null)),
+  );
 
 /**
  * Ask the reader for the annotation a preview renders: the selected Item's

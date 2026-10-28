@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { App, PaneType, Plugin } from "obsidian";
 
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -5,14 +6,14 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import "./style.css";
 import { MENU_SECTION } from "@/lib/menu-section";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { PluginSettings } from "@/services/settings/service";
-import {
-  activeTemplateWorkbench,
-  openProfileExplorer,
-} from "@/views/note-preview/register";
+import { inLayoutTurn, openProfileExplorer } from "@/views/note-preview/layout";
+import { activeTemplateWorkbench } from "@/views/note-preview/register";
+import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
@@ -26,12 +27,12 @@ export interface ExplorerRegistrationDeps {
   registry: ViewRegistryHandle;
   itemLookup: ItemLookupHandle;
   settings: Pick<PluginSettings["Service"], "current" | "changes">;
-  bridge: Pick<EffectBridge, "runSync">;
+  bridge: Pick<EffectBridge, "runSync" | "runAndForget">;
 }
 
 export function registerTemplateDataExplorer(
   plugin: ExplorerPlugin,
-  deps: ExplorerRegistrationDeps,
+  deps: ExplorerRegistrationDeps & WorkbenchActionDeps,
 ): void {
   plugin.registerView(
     EXPLORER_VIEW_TYPE,
@@ -45,50 +46,78 @@ export function registerTemplateDataExplorer(
   plugin.addCommand({
     id: "open-template-data-explorer",
     name: m.command_open_template_data_explorer_name(),
-    callback: () => void openTemplateDataExplorer(plugin.app),
+    callback: () =>
+      startExplorerOpen(deps, openTemplateDataExplorer(plugin.app)),
   });
 }
 
 /**
- * Every in-vault entry point delegates to this function.
+ * Every in-vault entry point delegates to this function. Two opens at once
+ * open one pane.
  *
  * @param options.paneType a pane the caller asks for, in Obsidian's URI
  *   vocabulary. Absent keeps the explorer's usual placement: the reusable
  *   sidebar leaf.
  */
-export async function openTemplateDataExplorer(
-  app: App,
-  state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
-  options: { paneType?: PaneType } = {},
-): Promise<void> {
-  const { paneType } = options;
-  const editor = activeTemplateWorkbench(app);
-  if (!state && editor) return openProfileExplorer(app, editor);
-  const { workspace } = app;
+export const openTemplateDataExplorer = Effect.fn("TemplateDataExplorer.open")(
+  function* (
+    app: App,
+    state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
+    options: { paneType?: PaneType } = {},
+  ) {
+    const editor = activeTemplateWorkbench(app);
+    if (!state && editor) return yield* openProfileExplorer(editor);
+    yield* inLayoutTurn(openExplorerLeaf(state, options.paneType));
+  },
+);
+
+const openExplorerLeaf = Effect.fn("TemplateDataExplorer.openLeaf")(function* (
+  state: { itemIndexedKey: string; anchorAnnotationKey?: string } | undefined,
+  paneType: PaneType | undefined,
+) {
+  const workspace = yield* Workspace;
   const launch = state ? { ...state, zotlitLaunch: true } : undefined;
   // A named pane always gets a fresh leaf; without one the explorer reuses the
   // free sidebar leaf it already has.
   const reused = paneType
     ? undefined
-    : workspace
-        .getLeavesOfType(EXPLORER_VIEW_TYPE)
-        .find((leaf) => !leaf.group && !leaf.pinned);
+    : (yield* workspace.leavesOfType(EXPLORER_VIEW_TYPE)).find(
+        (leaf) => !leaf.group && !leaf.pinned,
+      );
   const leaf =
     reused ??
-    (paneType ? workspace.getLeaf(paneType) : workspace.getRightLeaf(true));
+    (paneType
+      ? yield* workspace.getLeaf(paneType)
+      : yield* workspace.getRightLeaf(true));
   if (!leaf) return;
   if (!reused || launch) {
-    await leaf.setViewState({
-      type: EXPLORER_VIEW_TYPE,
-      active: true,
-      state: launch,
-    });
+    yield* Effect.tryPromise(() =>
+      leaf.setViewState({
+        type: EXPLORER_VIEW_TYPE,
+        active: true,
+        state: launch,
+      }),
+    );
   }
-  void workspace.revealLeaf(leaf);
+  yield* workspace.revealLeaf(leaf);
+});
+
+/**
+ * Start an open of the explorer from a plain Obsidian callback, such as a
+ * command or a menu entry, on the plugin's bridge: unload stops it.
+ */
+export function startExplorerOpen(
+  deps: WorkbenchActionDeps,
+  open: Effect.Effect<void, unknown, Workspace>,
+): void {
+  deps.bridge.runAndForget(Effect.provideContext(open, deps.context));
 }
 
 /** "Explore template data" on a Literature Note's file menu. */
-export function explorerFileMenu(app: App): FileMenuSegment {
+export function explorerFileMenu(
+  app: App,
+  deps: WorkbenchActionDeps,
+): FileMenuSegment {
   return (menu, { itemKey }) => {
     if (!itemKey) return;
     menu.addItem((item) =>
@@ -97,7 +126,10 @@ export function explorerFileMenu(app: App): FileMenuSegment {
         .setTitle(m.template_data_explorer_menu_explore())
         .setIcon("braces")
         .onClick(() => {
-          void openTemplateDataExplorer(app, { itemIndexedKey: itemKey });
+          startExplorerOpen(
+            deps,
+            openTemplateDataExplorer(app, { itemIndexedKey: itemKey }),
+          );
         }),
     );
   };

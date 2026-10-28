@@ -278,6 +278,7 @@ export default defineConfig({
       // A file moves off the list when its view reads the tags.
       files: [
         "src/views/annot-view/view.tsx",
+        "src/views/note-preview/view.tsx",
         "src/views/references/view.tsx",
         "src/views/template-data-explorer/view.tsx",
         "src/views/template-workbench/view.tsx",

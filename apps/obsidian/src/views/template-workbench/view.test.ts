@@ -51,8 +51,8 @@ import {
   unpackedPartialNotices,
 } from "./view";
 
-vi.mock("@/views/note-preview/register", () => ({
-  openWorkbenchLayout: vi.fn(async () => {}),
+vi.mock("@/views/note-preview/layout", () => ({
+  openWorkbenchLayout: vi.fn(() => Effect.void),
 }));
 
 // The create flow is #1046's own, driven end to end by new-partial.test.ts.

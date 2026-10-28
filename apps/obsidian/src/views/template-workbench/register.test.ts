@@ -28,7 +28,7 @@ import { defaults } from "@/services/settings/schema";
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
-} from "@/views/note-preview/register";
+} from "@/views/note-preview/layout";
 
 import { makeWorkbenchHost, workbenchActionContext } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
@@ -57,9 +57,9 @@ import {
 } from "./register";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
-vi.mock("@/views/note-preview/register", () => ({
-  openWorkbenchLayout: vi.fn(async () => {}),
-  findWorkbenchLayout: vi.fn(async () => null),
+vi.mock("@/views/note-preview/layout", () => ({
+  openWorkbenchLayout: vi.fn(() => Effect.void),
+  findWorkbenchLayout: vi.fn(() => Effect.succeed(null)),
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
@@ -75,7 +75,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   resetMockPlatform();
-  vi.mocked(findWorkbenchLayout).mockReset().mockResolvedValue(null);
+  vi.mocked(findWorkbenchLayout)
+    .mockReset()
+    .mockReturnValue(Effect.succeed(null));
 });
 
 /** The workspace and vault a launch reads, over the test's App. */
@@ -315,7 +317,9 @@ Annotation`);
         compactLeaf,
         workbenchLeaf,
       ]);
-      vi.mocked(findWorkbenchLayout).mockResolvedValueOnce(workbench);
+      vi.mocked(findWorkbenchLayout).mockReturnValueOnce(
+        Effect.succeed(workbench),
+      );
       await launch(
         app,
         openNativeProfile(app, file, {
@@ -324,7 +328,7 @@ Annotation`);
           originatingNote: file,
         }),
       );
-      expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
+      expect(findWorkbenchLayout).toHaveBeenCalledWith({
         file: file.path,
         defaultProfile: false,
       });
@@ -335,7 +339,7 @@ Annotation`);
       });
       expect(compactSetState).not.toHaveBeenCalled();
       expect(workspace.openPopoutLeaf).not.toHaveBeenCalled();
-      expect(openWorkbenchLayout).toHaveBeenLastCalledWith(app, workbench);
+      expect(openWorkbenchLayout).toHaveBeenLastCalledWith(workbench);
       expect(setOriginatingNote).toHaveBeenLastCalledWith(file);
       expect(chooseWorkbenchItem).not.toHaveBeenCalled();
       expect(chooseCompactItem).not.toHaveBeenCalled();
@@ -351,7 +355,9 @@ Annotation`);
       { file: null, leaf, chooseItem },
     ) as TemplateWorkbenchView;
     Object.assign(leaf, { view: workbench });
-    vi.mocked(findWorkbenchLayout).mockResolvedValueOnce(workbench);
+    vi.mocked(findWorkbenchLayout).mockReturnValueOnce(
+      Effect.succeed(workbench),
+    );
     vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
     await launch(
       app,
@@ -364,7 +370,7 @@ Annotation`);
         { customize: true, itemIndexedKey: "MAIN2345" },
       ),
     );
-    expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
+    expect(findWorkbenchLayout).toHaveBeenCalledWith({
       file: file.path,
       defaultProfile: true,
     });
@@ -377,7 +383,7 @@ Annotation`);
       },
       active: true,
     });
-    expect(openWorkbenchLayout).toHaveBeenLastCalledWith(app, workbench);
+    expect(openWorkbenchLayout).toHaveBeenLastCalledWith(workbench);
     expect(chooseItem).not.toHaveBeenCalled();
   });
 
@@ -417,7 +423,7 @@ Annotation`);
     ) as TemplateWorkbenchView;
     Object.assign(leaf, { view });
     await launch(app, openNativeProfile(app, file, { customize: true }));
-    expect(openWorkbenchLayout).toHaveBeenCalledWith(app, view);
+    expect(openWorkbenchLayout).toHaveBeenCalledWith(view);
   });
 
   it.each(["file", "built-in Default"])(

@@ -43,7 +43,6 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
-import { portCall } from "@/lib/legacy-port";
 import type { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
@@ -447,15 +446,13 @@ const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
     const ref = yield* resolveProtocolItem(query.success, action);
     if (Result.isFailure(ref)) return ref.failure;
 
-    yield* portCall("open-template-data-explorer", () =>
-      openTemplateDataExplorer(
-        deps.app,
-        {
-          itemIndexedKey: ref.success.indexedKey,
-          anchorAnnotationKey: query.success.annotation,
-        },
-        { paneType: query.success.paneType },
-      ),
+    yield* openTemplateDataExplorer(
+      deps.app,
+      {
+        itemIndexedKey: ref.success.indexedKey,
+        anchorAnnotationKey: query.success.annotation,
+      },
+      { paneType: query.success.paneType },
     );
     return ProtocolOutcome.Opened();
   },
