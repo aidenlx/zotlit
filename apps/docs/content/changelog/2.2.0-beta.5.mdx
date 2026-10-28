@@ -1,10 +1,11 @@
 ---
 version: "2.2.0-beta.5"
-date: "2026-10-23"
-description: "Default note body is written once, child notes import only on request"
+date: "2026-10-29"
+description: "Default note body written once, annotation link previews, Show in Library everywhere"
 ---
 
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
@@ -37,3 +38,62 @@ In a template, `noteLink` links to the imported file when one exists. Otherwise 
 Notes you already have don't change. A note with the managed markers keeps them, and an update still refreshes the text between them. To stop that, delete the two marker lines. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
 
 If you customized or duplicated the Default profile, its document now has no managed block. Updating an older note with markers then shows <UiLabel name={m.notice_updated_note_no_managed_block()} /> To keep refreshing that region, add a `{% managed %}` block to the profile document.
+
+## What's New
+
+### Annotation links open the annotation on any computer
+
+Every annotation ZotLit writes into a note now links to Zotero with a `zotero://open` link that names the annotation. The link works on every computer where you open the vault. Before, the link pointed to a local file and worked only where that file path existed. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links).
+
+When you click the link on a computer that has the PDF, the PDF opens in Obsidian's PDF reader with the annotation selected. Otherwise, Zotero opens it. To send these links to Zotero every time, turn off <UiLabel name={m.settings_reader_open_annotation_links_name()} /> under <SettingsPath page={m.settings_page_reader()} />. It is on by default. See [Open a PDF from a link in a note](/docs/how-to/open-pdf-in-obsidian#file-links).
+
+Hover over an annotation link in Live Preview, Source mode, or Reading view to see a popover. It shows the quote, your comment, the page, and the highlight color. For an image or ink annotation, it shows the image. The <UiLabel name={m.settings_citation_hover_action_name()} /> setting under <SettingsPath page={m.settings_page_citations()} /> controls this popover. Set it to <UiLabel name={m.settings_citation_hover_action_off()} /> to turn it off.
+
+The default annotation template has a new layout. The paper's citation now follows the quote, and the page label is the link. When the annotation has no page label, the link reads "[Zotero]". If you use the default template, annotations you insert from now on look different from your older ones. Custom templates keep their output. See [Default templates](/docs/reference/templates/defaults).
+
+A new <UiLabel name={m.settings_citation_annotation_citations_name()} /> setting under <SettingsPath page={m.settings_page_citations()} /> is off by default. Turn it on to count an annotation link as a citation of its paper. The paper then appears in the <UiLabel name={m.references_view_name()} /> sidebar and the other citation features. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+
+### Show any paper in the Zotero library view
+
+<UiLabel name={m.library_view_show_in_library()} /> now appears wherever ZotLit
+shows a paper. You find it on rows in the
+<UiLabel name={m.references_view_name()} /> sidebar and in the
+<UiLabel name={m.cited_by_view_name()} /> toolbar. It is also in the citation
+hover popover, in the graph menu of a cited work, and in a literature note's
+file menu. The new <Command inline name={m.command_show_in_library_name()} />
+command does the same. Before, only `Alt+Enter` in the quick switcher did this.
+See [Show a paper in the
+library](/docs/how-to/use-library-view#show-in-library).
+
+The Library View clears its search and filters so nothing hides the paper, then flashes the paper's row. When the paper is in none of your libraries, the view keeps your search and filters and shows <UiLabel name={m.library_view_reveal_not_found()} />
+
+Templates have a new `zt.librarylink` variable. It gives an `obsidian://zotlit/show-in-library` link that works on every device you sync the vault to. It is available on the note's item, its parent item, and its related items. See [Template data](/docs/reference/templates/data).
+
+### Other improvements
+
+- The item details in the Library View now show and hide on request. Use the <UiLabel name={m.library_view_details_toggle()} /> button at the end of the search row, press `Space` on a row, or select <UiLabel name={m.library_view_card_close()} /> on the card. ZotLit remembers your choice. A click or an arrow key now only selects a row, so the selection responds at once. With no paper selected, the details show counts for the library or collection. On a narrow pane, the details sit under the list at full width, and you can resize them. You can collapse and resize the library tree, and wide details use two columns. See [Read a paper's Reading Card](/docs/how-to/use-library-view#reading-card).
+- Filter expression editors now color the code and put a wavy underline under errors. This covers the Query View filter, Formula fields, and Profile match. They also complete field and function names (press `Tab` or `Enter` to accept). A hint shows a function's arguments as you type. See [Filter the rows](/docs/how-to/use-query-files#filter).
+- The citation suggester and <Command inline name={m.command_insert_citation_name()} /> list the papers the note already cites first when you have typed nothing yet. Those rows show <UiLabel name={m.citation_suggester_cited_in_note()} />. See [Insert citations](/docs/how-to/insert-citations).
+- The welcome checklist has an optional, recommended step: <UiLabel name={m.welcome_step_companion_title()} />. The step shows <UiLabel name={m.welcome_step_companion_installed()} /> once Zotero has the Companion. See [Install ZotLit Companion](/docs/install-companion).
+- The page chip on a card in the <UiLabel name={m.annot_view_name()} /> view opens the PDF in Obsidian when the file is on this computer, and in Zotero otherwise. Before, it always opened Zotero. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian).
+- An annotation you insert from the <UiLabel name={m.annot_view_name()} /> view, by the card menu or by drag, now gets correct spacing. It gets a space before it after a word and a space after it before the next word. It gets no space before closing punctuation. Stray line breaks around a one-line quote are removed.
+- <Command inline name={m.command_update_all_notes_name()} /> is much faster in
+  large libraries. For 10,000 new notes, the confirmation appears in about one
+  second instead of about ten.
+- Notes with many citations open and update faster.
+
+## Bug Fixes
+
+- If you pressed `Enter` or clicked right after typing in a picker, the picker could act on an earlier search. This affected the quick switcher, <Command inline name={m.command_insert_citation_name()} />, the item chooser, and the citation suggester. It could insert the wrong citation or create the wrong note. Now `Enter` waits for the results of what you typed.
+- A search for an eight-letter word, such as "thinking" or "kahneman", found nothing. Now it finds the matches.
+- The <UiLabel name={m.annot_view_name()} /> view could stay on <UiLabel name={m.annot_view_loading()} /> after you switched to a paper whose annotations load slowly. It stayed there until you clicked into it. Now the cards load.
+- A citation inside the prefix or suffix of another citation, such as `[@a with [[Note]]]`, broke the Pandoc export of the outer citation. Now the inner citation exports as text, and its work still appears in the bibliography. See [Export a note with citations](/docs/how-to/export-note-with-citations).
+- After a reload, a restored PDF tab could count as a read with no page turn. The paper then moved up in Recent and in Zotero's Recently Read list. Now only real page turns count. See [Keep the read time in Zotero](/docs/how-to/open-pdf-in-obsidian#recently-read).
+- If you turned ZotLit off and on quickly, commands could go missing or a start-up error notice could appear. Now ZotLit starts cleanly.
+- In the Query View filter, property names shrank to an icon or were cut off, and tag chips broke mid-word. Now they show in full.
+- Keyboard fixes:
+  - `Escape` that cancels a resize no longer clears the selection.
+  - In the item menu of a list cell, `Delete` no longer removes the item, and `Escape` closes only the menu.
+  - `Escape` closes the tag editor.
+  - Undo works in the match expression field.
+- Fast typing in a filter expression could move focus away and drop keys. Now every key reaches the field.
