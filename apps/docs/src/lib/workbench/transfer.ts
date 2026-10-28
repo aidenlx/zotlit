@@ -24,6 +24,7 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { WorkbenchClipboardError } from "@zotlit/workbench/ui";
 
 import type { SampleItem } from "./fields";
+import type { PageBridge } from "./runtime";
 
 /**
  * What one visit left behind: the source being edited, and the paper it was
@@ -202,6 +203,12 @@ const copy = Effect.fn("Transfer.copy")((text: string) =>
     catch: (cause) => new WorkbenchClipboardError({ cause }),
   }),
 );
+
+/** The clipboard copy a host member and the field list hand the Workbench UI. */
+export const copyThrough =
+  (bridge: Pick<PageBridge, "provide">) =>
+  (text: string): Effect.Effect<void, WorkbenchClipboardError> =>
+    bridge.provide(Transfer.use((transfer) => transfer.copy(text)));
 
 export const layerTransfer = Layer.succeed(
   Transfer,

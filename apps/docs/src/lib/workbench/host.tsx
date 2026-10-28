@@ -53,7 +53,7 @@ import { ResultSheet } from "./result-sheet";
 import { usePageBridge } from "./runtime";
 import type { PageBridge } from "./runtime";
 import { WEB_THEME } from "./theme";
-import { Transfer } from "./transfer";
+import { copyThrough } from "./transfer";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
 /** This site's own community page, which Ask the community opens. */
@@ -185,8 +185,7 @@ export function useWebHost({
         }),
       tooltip: (text) => ({ title: text }),
       notice: (text) => latest.current.notice(text),
-      copy: (text) =>
-        bridge.provide(Transfer.use((transfer) => transfer.copy(text))),
+      copy: copyThrough(bridge),
       communityUrl: COMMUNITY_URL,
       render: (request) =>
         bridge.provide(Rendering.use((rendering) => rendering.render(request))),

@@ -150,6 +150,24 @@ interface ConnectionReads {
   readonly citationStyle: FiberHandle.FiberHandle;
 }
 
+/**
+ * What the held bundle was read for: the exact draft, the partial names that
+ * draft turned out to call, and the style its resources render under. They are
+ * how a bundle is known to answer the document on screen rather than the one
+ * the vault holds.
+ */
+interface HeldBundle {
+  readonly source: string | null;
+  readonly dependencies: string | null;
+  readonly styleId: string | null | undefined;
+}
+
+const NO_BUNDLE: HeldBundle = {
+  source: null,
+  dependencies: null,
+  styleId: undefined,
+};
+
 const openReads = (parent: Scope.Scope) =>
   Effect.gen(function* () {
     const scope = yield* Scope.fork(parent);
@@ -176,6 +194,7 @@ export const layerWorkbenchConnection = Layer.effect(
       message: null,
       hydration: null,
     });
+    // Ends every `changes` subscription when the page closes.
     yield* Effect.addFinalizer(() => PubSub.shutdown(state.pubsub));
     const reads = yield* Ref.make<ConnectionReads>(
       yield* openReads(layerScope),
@@ -185,22 +204,10 @@ export const layerWorkbenchConnection = Layer.effect(
       patch: (held: ConnectionState) => Partial<ConnectionState>,
     ) => SubscriptionRef.update(state, (held) => ({ ...held, ...patch(held) }));
 
-    let started = false;
-    let loadedLaunchItem = false;
-    // The style the held resources render under.
-    let loadedStyleId: string | null | undefined;
-    // The exact draft the held bundle was read for, and the partial names that
-    // draft turned out to call. Both are how a bundle is known to answer the
-    // document on screen rather than the one the vault holds.
-    let bundleSource: string | null = null;
-    let bundleDependencies: string | null = null;
-
-    const forgetBundle = () =>
-      Effect.sync(() => {
-        loadedStyleId = undefined;
-        bundleSource = null;
-        bundleDependencies = null;
-      });
+    const started = yield* Ref.make(false);
+    const launchItemLoaded = yield* Ref.make(false);
+    const bundle = yield* Ref.make(NO_BUNDLE);
+    const forgetBundle = Ref.set(bundle, NO_BUNDLE);
 
     /** Takes what the client holds now as what the page shows. */
     const settle = (connection?: LocalBridgeConnection) =>
@@ -214,7 +221,7 @@ export const layerWorkbenchConnection = Layer.effect(
       Effect.gen(function* () {
         const next = yield* bridge.connection;
         const resumable = yield* bridge.resumable;
-        if (next.state !== "connected") yield* forgetBundle();
+        if (next.state !== "connected") yield* forgetBundle;
         yield* update(() => ({
           ...(next.state === "connected" ? {} : DISCONNECTED_RESOURCES),
           connection: next,
@@ -251,6 +258,7 @@ export const layerWorkbenchConnection = Layer.effect(
         return null;
       }
       return yield* bridge.listCitationStyles.pipe(
+        // Ticket 08 turns this check of what the client threw into a failure tag.
         Effect.catchIf(
           (failure) => failure.cause instanceof LocalBridgeProtocolError,
           () => Effect.succeed(null),
@@ -289,18 +297,20 @@ export const layerWorkbenchConnection = Layer.effect(
       // a late response cannot replace the snapshot the reader just restored.
       let snapshot: SampleItem | null = null;
       let itemFailure: LocalBridgeFailure | undefined;
-      if (!loadedLaunchItem && grant.selectedItem) {
+      if (!(yield* Ref.get(launchItemLoaded)) && grant.selectedItem) {
         const loaded = yield* Effect.result(bridge.loadSelectedItem);
         if (loaded._tag === "Success") {
           snapshot = loaded.success;
-          loadedLaunchItem = true;
+          yield* Ref.set(launchItemLoaded, true);
         } else itemFailure = loaded.failure;
       }
       // The bundle answers these exact bytes; `followDependencies` reads it
       // again as soon as the draft on screen calls another set of partials.
-      bundleSource = selected.source;
-      bundleDependencies = null;
-      loadedStyleId = styleId;
+      yield* Ref.set(bundle, {
+        source: selected.source,
+        dependencies: null,
+        styleId,
+      });
       yield* update(() => ({
         resources: { dependencies, citationStyle },
         citationStyles: styles,
@@ -344,9 +354,8 @@ export const layerWorkbenchConnection = Layer.effect(
       ),
     );
 
-    const start = Effect.suspend(() => {
-      if (started) return Effect.void;
-      started = true;
+    const start = Effect.gen(function* () {
+      if (yield* Ref.getAndSet(started, true)) return;
       const fragment = window.location.hash;
       if (new URLSearchParams(fragment.slice(1)).has(CONNECT_FRAGMENT_CODE)) {
         window.history.replaceState(
@@ -354,26 +363,23 @@ export const layerWorkbenchConnection = Layer.effect(
           "",
           `${window.location.pathname}${window.location.search}`,
         );
-        return connect(bridge.connectFromFragment(fragment));
+        return yield* connect(bridge.connectFromFragment(fragment));
       }
       // The restored grant records the versions and capabilities in force when
       // it was issued, so a reload presents the kept credential to the bridge
       // running now and is measured against what it answers.
-      return bridge.connection.pipe(
-        Effect.flatMap((kept) =>
-          kept.state === "connected" ? connect(resume) : Effect.void,
-        ),
-      );
+      const kept = yield* bridge.connection;
+      if (kept.state === "connected") yield* connect(resume);
     }).pipe(Effect.withSpan("WorkbenchConnection.start"));
 
     const disconnect = Effect.gen(function* () {
-      // The reads this connection started end with it.
-      const ended = yield* Ref.get(reads);
+      // The reads this connection started end with it; a read started from
+      // here on runs among the next connection's.
+      const ended = yield* Ref.getAndSet(reads, yield* openReads(layerScope));
       yield* Scope.close(ended.scope, Exit.void);
-      yield* Ref.set(reads, yield* openReads(layerScope));
       yield* update(() => ({ connectionBusy: true }));
       yield* bridge.disconnect;
-      yield* forgetBundle();
+      yield* forgetBundle;
       yield* update(() => ({ ...DISCONNECTED_RESOURCES, message: null }));
       yield* settle();
       return true;
@@ -447,15 +453,16 @@ export const layerWorkbenchConnection = Layer.effect(
       const { connection, resources } = yield* current;
       if (connection.state !== "connected" || !resources)
         return yield* FiberHandle.clear(handle);
-      if (source === bundleSource) {
+      const held = yield* Ref.get(bundle);
+      if (source === held.source) {
         yield* FiberHandle.clear(handle);
         // The held bundle was read for these very bytes, so what they call is
         // what it answers, and an edit leaving that list alone needs no read.
-        bundleDependencies = names;
+        yield* Ref.set(bundle, { ...held, dependencies: names });
         yield* update(() => ({ resourcesStale: false }));
         return;
       }
-      if (bundleDependencies === names) {
+      if (held.dependencies === names) {
         yield* FiberHandle.clear(handle);
         yield* update(() => ({ resourcesStale: false }));
         return;
@@ -467,14 +474,22 @@ export const layerWorkbenchConnection = Layer.effect(
       yield* FiberHandle.run(
         handle,
         bridge.readTemplateDependencies({ source }).pipe(
-          Effect.flatMap((dependencies) => {
-            bundleSource = source;
-            bundleDependencies = names;
-            return update((held) => ({
-              resources: held.resources && { ...held.resources, dependencies },
+          Effect.tap(() =>
+            Ref.update(bundle, (read) => ({
+              ...read,
+              source,
+              dependencies: names,
+            })),
+          ),
+          Effect.flatMap((dependencies) =>
+            update((shown) => ({
+              resources: shown.resources && {
+                ...shown.resources,
+                dependencies,
+              },
               resourcesStale: false,
-            }));
-          }),
+            })),
+          ),
           Effect.catch(connectionFailed),
         ),
       );
@@ -489,19 +504,24 @@ export const layerWorkbenchConnection = Layer.effect(
         connection.state !== "connected" ||
         !resources ||
         styleId === undefined ||
-        loadedStyleId === styleId
+        (yield* Ref.get(bundle)).styleId === styleId
       ) {
         return yield* FiberHandle.clear(handle);
       }
       yield* FiberHandle.run(
         handle,
         bridge.readSelectedCitationStyle({ styleId }).pipe(
-          Effect.flatMap((citationStyle) => {
-            loadedStyleId = styleId;
-            return update((held) => ({
-              resources: held.resources && { ...held.resources, citationStyle },
-            }));
-          }),
+          Effect.tap(() =>
+            Ref.update(bundle, (read) => ({ ...read, styleId })),
+          ),
+          Effect.flatMap((citationStyle) =>
+            update((shown) => ({
+              resources: shown.resources && {
+                ...shown.resources,
+                citationStyle,
+              },
+            })),
+          ),
           Effect.catch(connectionFailed),
         ),
       );
@@ -527,6 +547,7 @@ export const layerWorkbenchConnection = Layer.effect(
   }),
 );
 
+// Ticket 08 turns these checks of what the client threw into failure tags.
 function connectionFailureMessage(
   error: unknown,
   connection: LocalBridgeConnection,

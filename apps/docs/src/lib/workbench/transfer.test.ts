@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { Effect } from "effect";
+import { layer } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
@@ -15,13 +16,6 @@ import {
   Transfer,
   writeDraft,
 } from "./transfer";
-
-const openProfileInObsidian = (source: string) =>
-  Effect.runPromise(
-    Transfer.use((transfer) => transfer.openInObsidian(source)).pipe(
-      Effect.provide(layerTransfer),
-    ),
-  );
 
 const STANDALONE = { reference: "standalone" };
 const KEY = `zotlit.workbench.draft.${STANDALONE.reference}`;
@@ -194,40 +188,54 @@ async function capture(
   return { name: names[0]!, text: await blobs[0]!.text() };
 }
 
-describe("Open in Obsidian", () => {
-  it("waits for the exact source to reach the clipboard before opening the URI", async () => {
-    const clipboard = Promise.withResolvers<void>();
-    const writeText = vi.fn(() => clipboard.promise);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
-    const opened: string[] = [];
-    using _click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(function (this: HTMLAnchorElement) {
-        opened.push(this.href);
+layer(layerTransfer)("Open in Obsidian", (it) => {
+  it.effect(
+    "waits for the exact source to reach the clipboard before opening the URI",
+    () =>
+      Effect.gen(function* () {
+        const clipboard = Promise.withResolvers<void>();
+        const writeText = vi.fn(() => clipboard.promise);
+        vi.stubGlobal("navigator", { clipboard: { writeText } });
+        const opened: string[] = [];
+        using _click = vi
+          .spyOn(HTMLAnchorElement.prototype, "click")
+          .mockImplementation(function (this: HTMLAnchorElement) {
+            opened.push(this.href);
+          });
+        const transfer = yield* Transfer;
+        const source = "---\r\nid: Research1234\r\n---\r\nA paper.";
+        const handoff = yield* Effect.forkChild(
+          transfer.openInObsidian(source),
+          { startImmediately: true },
+        );
+        expect(writeText).toHaveBeenCalledWith(source);
+        expect(opened).toEqual([]);
+        clipboard.resolve();
+        yield* Fiber.join(handoff);
+        expect(opened).toEqual([
+          "obsidian://zotlit/import-profile?clipboard=true",
+        ]);
+        vi.unstubAllGlobals();
+      }),
+  );
+  it.effect("keeps Obsidian closed when copying fails", () =>
+    Effect.gen(function* () {
+      vi.stubGlobal("navigator", {
+        clipboard: { writeText: () => Promise.reject(new Error("Denied")) },
       });
-    const source = "---\r\nid: Research1234\r\n---\r\nA paper.";
-    const handoff = openProfileInObsidian(source);
-    expect(writeText).toHaveBeenCalledWith(source);
-    expect(opened).toEqual([]);
-    clipboard.resolve();
-    await handoff;
-    expect(opened).toEqual(["obsidian://zotlit/import-profile?clipboard=true"]);
-    vi.unstubAllGlobals();
-  });
-  it("keeps Obsidian closed when copying fails", async () => {
-    vi.stubGlobal("navigator", {
-      clipboard: { writeText: () => Promise.reject(new Error("Denied")) },
-    });
-    using click = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
-    await expect(openProfileInObsidian("A paper")).rejects.toMatchObject({
-      _tag: "WorkbenchClipboardError",
-      cause: new Error("Denied"),
-    });
-    expect(click).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
-  });
+      using click = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+      const transfer = yield* Transfer;
+      const failure = yield* Effect.flip(transfer.openInObsidian("A paper"));
+      expect(failure).toMatchObject({
+        _tag: "WorkbenchClipboardError",
+        cause: new Error("Denied"),
+      });
+      expect(click).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    }),
+  );
 });
 
 it("hands Default off as one repeatable copy while preserving source and later edits", () => {
