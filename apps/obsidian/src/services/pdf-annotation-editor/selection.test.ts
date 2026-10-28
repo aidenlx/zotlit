@@ -1254,6 +1254,52 @@ it("moves the selected image by its body", async () => {
   });
 });
 
+it("sends nothing for a Geometry Edit whose view closes while its Sort Index is read", async () => {
+  await using h = await figureSelected();
+  const { promise, resolve } = Promise.withResolvers<string>();
+  h.sortIndex.mockReturnValueOnce(promise);
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  pointer(h.containerEl, "pointermove", { x: 230, y: 382 });
+  pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
+  expect(h.sortIndex).toHaveBeenCalledOnce();
+  // The view closes before the document answers, and the save goes with it.
+  h[Symbol.dispose]();
+  resolve("00000|000012|00517");
+  await h.selection.adjusted;
+  await reread(h);
+
+  expect(h.writes()).toEqual([]);
+  expect(h.notices).toEqual([]);
+});
+
+it("tells a Geometry Edit Zotero refused after its view closed", async () => {
+  await using h = await figureSelected();
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const patch = vi.spyOn(h.service, "patchGeometry").mockReturnValueOnce(
+    Effect.promise(() => promise).pipe(
+      Effect.as<MutationState>({
+        kind: "failed",
+        failure: { kind: "not-found" },
+      }),
+    ),
+  );
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  pointer(h.containerEl, "pointermove", { x: 230, y: 382 });
+  pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
+  await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+  // The edit is with Zotero when the view closes: the close waits for its
+  // answer, and the refusal is still told.
+  h[Symbol.dispose]();
+  resolve();
+  await h.selection.adjusted;
+
+  expect(h.notices.map(({ messages }) => messages)).toEqual([
+    [m.pdf_adjust_failed({ reason: m.annot_view_write_reason_deleted() })],
+  ]);
+});
+
 it("moves the selected ink by its body, from anywhere in its padded stroke box", async () => {
   // One stroke from (100, 300) to (200, 400) in PDF points: client (100, 492)
   // to (200, 392), its box padded five points out on every side.

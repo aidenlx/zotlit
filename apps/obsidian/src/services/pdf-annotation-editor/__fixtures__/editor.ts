@@ -37,13 +37,15 @@ interface EditorFixtureOptions {
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   now?: () => DateTime.Utc;
   recordUse?: (itemKey: string) => void;
+  /** Where the editor's notices go; a fresh recording one unless given. */
+  notifier?: ReturnType<typeof testNotifier>;
 }
 
 /** The actual layer; only its external services have typed test substitutes. */
 export function editorFixtureLayer(options: EditorFixtureOptions) {
   const deps = Layer.mergeAll(
     layerWorkspaceFrom(options.workspace ?? options.app.workspace),
-    testNotifier().layer,
+    (options.notifier ?? testNotifier()).layer,
     Layer.mock(Vault, {
       fullPath: (path) =>
         Effect.sync(() =>

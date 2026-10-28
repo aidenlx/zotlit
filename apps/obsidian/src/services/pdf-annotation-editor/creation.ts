@@ -26,7 +26,6 @@ import type { ReactNode, RefObject } from "react";
 
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
-import { AbortError } from "@/lib/abort-error";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -40,10 +39,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
-import {
-  blockedReason,
-  writeFailureReason,
-} from "@/services/annotation-repository/write";
+import { blockedReason } from "@/services/annotation-repository/write";
 import type {
   InkPosition,
   TextPosition,
@@ -77,7 +73,14 @@ import { CLICK_SLOP, distance } from "./hit-test";
 import type { Point } from "./hit-test";
 import { InkStroke } from "./ink-stroke";
 import type { MarkPopupHost } from "./mark-popup-host";
-import { captureText, createMark } from "./operations";
+import {
+  createMark,
+  oneAtATime,
+  placeSelection,
+  queued,
+  settledOf,
+} from "./operations";
+import type { BindingWrites, CreateWrite, WriteRun } from "./operations";
 import {
   appendPendingStroke,
   arm,
@@ -247,6 +250,21 @@ interface MarkDraft {
     | (TextPosition & { rects: SelectedText["rects"] });
 }
 
+/** How one create runs, beside the draft it writes. */
+interface CreateOptions extends Pick<SelectOptions, "commenting"> {
+  /** The text structure to read, in place of the one the viewer holds now. */
+  structure?: PdfTextStructure | null;
+  /**
+   * What joins this create to the others of one gesture in the Annotation
+   * History, where one gesture created several Annotations.
+   */
+  group?: string;
+  /** Whether the placement read is uninterruptible too, as a Text Draft's is. */
+  uninterruptible?: boolean;
+  /** Takes the create's answer: the created key, or `null` for none. */
+  settle?: (annotationKey: string | null) => void;
+}
+
 /**
  * What a create does around its write, by the tool it creates for. A
  * foreground create holds the reader until Zotero answers — no second
@@ -316,7 +334,9 @@ export interface MarkCreationDeps {
   /** What this view's surfaces draw from; the toolbar redraws off it alone. */
   surfaceState: ReaderSurfaceStore;
   annotations: AnnotationCreates;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromiseExit">;
+  /** Starts a create, or a selection's placement, on the view's own Scope. */
+  writes: BindingWrites;
   now: () => Temporal.Instant;
 }
 
@@ -335,8 +355,10 @@ export class MarkCreation implements CreationGestures, Disposable {
    * ink create holds nothing.
    */
   #writing = false;
-  #creating: Promise<unknown> = Promise.resolve();
-  #settling = Promise.resolve();
+  /** The last create's run; `null` while none has run. */
+  #creating: WriteRun | null = null;
+  /** The last selection placement's run; `null` while none has run. */
+  #settling: WriteRun | null = null;
   /** Counts gestures, so a selection placed late never outlives its own. */
   #gesture = 0;
   #pressedOnPage = false;
@@ -360,8 +382,8 @@ export class MarkCreation implements CreationGestures, Disposable {
    * finger of a pinch — which draws nothing of its own.
    */
   #pinching: number | null = null;
-  /** The ink creates, run one at a time in release order. Never rejects. */
-  #inking = Promise.resolve();
+  /** The ink creates, run one at a time in release order. */
+  readonly #inking = oneAtATime();
   /** Tells one Pending Stroke from another. */
   #strokeSerial = 0;
   /**
@@ -402,8 +424,8 @@ export class MarkCreation implements CreationGestures, Disposable {
    * Settles when the last create this surface started has run to its end.
    * Already settled while none has run. Never rejects.
    */
-  get created(): Promise<unknown> {
-    return this.#creating;
+  get created(): Promise<void> {
+    return settledOf(this.#deps.bridge, this.#creating);
   }
 
   /**
@@ -412,7 +434,7 @@ export class MarkCreation implements CreationGestures, Disposable {
    * rejects.
    */
   get settled(): Promise<void> {
-    return this.#settling;
+    return settledOf(this.#deps.bridge, this.#settling);
   }
 
   /**
@@ -490,9 +512,12 @@ export class MarkCreation implements CreationGestures, Disposable {
     // The press that began this gesture bumped the count; a later press or
     // the disposal bumps it again, which leaves this placement stale.
     const gesture = this.#gesture;
-    this.#settling = this.#capture().then(
-      (placed) => {
-        if (!placed || gesture !== this.#gesture || this.#writing) return;
+    const read = this.#readSelection();
+    if (!read) return;
+    const { structure, text, pages } = read;
+    this.#settling = this.#deps.writes(
+      placeSelection(structure, { text, pages }, (captured) => {
+        if (gesture !== this.#gesture || this.#writing) return;
         // The selection can collapse while the page's characters load.
         if (selectionCollapsed(this.#deps.containerEl)) return;
         const { armed, colors } = this.#state();
@@ -505,22 +530,14 @@ export class MarkCreation implements CreationGestures, Disposable {
             type: armed,
             color: colors[armed],
             comment: "",
-            ...selectionDraft(placed.captured),
+            ...selectionDraft(captured),
           });
           return;
         }
-        if (placed.anchorAt)
-          captureSelection(this.#deps.surfaceState, {
-            captured: placed.captured,
-            anchorAt: placed.anchorAt,
-          });
-      },
-      (error: unknown) => {
-        if (AbortError.test(error)) return;
-        logger.warn("Could not place the text selection on the page", {
-          error,
-        });
-      },
+        const anchorAt = anchorFractionOf(pages, captured.pageIndex);
+        if (anchorAt)
+          captureSelection(this.#deps.surfaceState, { captured, anchorAt });
+      }),
     );
   }
 
@@ -895,13 +912,13 @@ export class MarkCreation implements CreationGestures, Disposable {
    *
    * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js#L3104-L3122
    */
-  async #createNote(pageIndex: number, [x, y]: PdfPoint): Promise<void> {
+  #createNote(pageIndex: number, [x, y]: PdfPoint): WriteRun | null {
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
-      return;
+      return null;
     }
     const half = NOTE_SIZE / 2;
-    await this.#create(
+    return this.#create(
       {
         type: "note",
         color: this.#state().colors.note,
@@ -979,10 +996,10 @@ export class MarkCreation implements CreationGestures, Disposable {
    * holds the record takes its place; a create that fails or cannot run takes
    * it off the page and says why.
    */
-  async #createText(
+  #createText(
     draft: TextDraft,
     structure: PdfTextStructure | null,
-  ): Promise<void> {
+  ): WriteRun | null {
     const store = this.#deps.surfaceState;
     // The typed text is lost, so a lapse names the create that failed.
     const capability = this.#capability();
@@ -991,9 +1008,13 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#deps.reportCreateFailure(
         blockedReason(capability, this.#deps.now()),
       );
-      return;
+      return null;
     }
-    const key = await this.#create(
+    const settle = (key: string | null) => {
+      if (key === null) dropTextDraft(store);
+      else settleTextDraft(store, key);
+    };
+    const run = this.#create(
       {
         type: "text",
         color: draft.color,
@@ -1001,10 +1022,12 @@ export class MarkCreation implements CreationGestures, Disposable {
         text: "",
         position: textDraftPosition(draft),
       },
-      { structure },
+      // The typed text has no other copy, so its create runs whole even when
+      // the view's close finished the draft.
+      { structure, uninterruptible: true, settle },
     );
-    if (key === null) dropTextDraft(store);
-    else settleTextDraft(store, key);
+    if (run === null) settle(null);
+    return run;
   }
 
   /**
@@ -1013,13 +1036,13 @@ export class MarkCreation implements CreationGestures, Disposable {
    * The capability can lapse while the pointer is down, and that release is
    * told why it created nothing.
    */
-  async #createImage(pageIndex: number, rect: PdfRect): Promise<void> {
+  #createImage(pageIndex: number, rect: PdfRect): WriteRun | null {
     if (!editingLive(this.#capability())) {
       cancelCapture(this.#deps.surfaceState);
       this.#deps.reportBlockedGesture();
-      return;
+      return null;
     }
-    await this.#create({
+    return this.#create({
       type: "image",
       color: this.#state().colors.image,
       comment: "",
@@ -1031,30 +1054,32 @@ export class MarkCreation implements CreationGestures, Disposable {
   /**
    * One create through the Zotero Local API, with the Sort Index and the Page
    * Label from the text structure, and the effects {@link CREATE_EFFECTS}
-   * gives its tool. A create that made nothing says why, a create that threw
-   * included. Never rejects.
+   * gives its tool, started on the view's own Scope.
    *
-   * @param options.commenting whether the new mark's popup opens on its
-   *   comment editor.
-   * @param options.structure the text structure to read, in place of the
-   *   one the viewer holds now.
-   * @param options.group what joins this create to the others of one gesture
-   *   in the Annotation History, where one gesture created several
-   *   Annotations.
-   * @returns the created Annotation's Indexed Key, or `null` for a create
-   *   that did not run or did not land.
+   * @returns the create's run, or `null` for a create that cannot run.
    */
-  async #create(
+  #create(draft: MarkDraft, options: CreateOptions = {}): WriteRun | null {
+    const write = this.#createWrite(draft, options);
+    return write && this.#deps.writes(write);
+  }
+
+  /**
+   * The write of {@link MarkCreation.#create}, for the caller that starts it.
+   * A create that made nothing says why, a create that died included.
+   *
+   * @returns `null` for a create that cannot run: editing is not live, or no
+   *   text structure stands, which says why.
+   */
+  #createWrite(
     { type, color, comment, text, position }: MarkDraft,
     {
       structure: given,
       group,
+      uninterruptible,
+      settle,
       ...reveal
-    }: Pick<SelectOptions, "commenting"> & {
-      structure?: PdfTextStructure | null;
-      group?: string;
-    } = {},
-  ): Promise<string | null> {
+    }: CreateOptions = {},
+  ): CreateWrite | null {
     const structure = given ?? this.#deps.structure();
     // A blocked gesture is answered by the binding's own edit-gesture listener,
     // which hears every key of the shared edit keymap.
@@ -1065,56 +1090,46 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#deps.reportCreateFailure(m.pdf_create_reason_no_document());
       return null;
     }
-    // The list stays held until the create settles: a draft the view's close
-    // finishes is created after the view let go of its own hold, and a list
-    // dropped under the create leaves it no Zotero source to write to.
-    using _held = this.#deps.bridge.runSync(
-      this.#deps.annotations.hold([this.#deps.attachmentKey]),
-    );
     const { foreground, disarm } = CREATE_EFFECTS[type];
-    if (foreground) {
-      this.#writing = true;
-      setInFlight(this.#deps.surfaceState, true);
-    }
-    let created = false;
-    try {
-      const outcome = await this.#deps.bridge.runPromise(
-        createMark(this.#deps.annotations, {
-          attachmentKey: this.#deps.attachmentKey,
-          structure,
-          draft: { type, color, comment, text, position },
-          previous: previousAnnotations(this.#deps.records()),
-          group,
-        }),
-      );
-      if (outcome.kind === "failed") {
-        this.#deps.reportCreateFailure(
-          writeFailureReason(outcome.failure, this.#deps.now()),
-        );
-        return null;
-      }
-      created = true;
-      recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-      if (foreground) this.#deps.reveal(outcome.annotationKey, reveal);
-      if (disarm) this.#arm(null);
-      return outcome.annotationKey;
-    } catch (error) {
-      // The create's own failure is an outcome; this is what came after it.
-      if (!AbortError.test(error))
-        logger.warn("An Annotation create did not finish", { type, error });
-      return null;
-    } finally {
-      if (foreground) {
-        this.#writing = false;
-        setInFlight(this.#deps.surfaceState, false);
-        // The rectangle stays drawn until Zotero answered, whatever it said.
-        cancelCapture(this.#deps.surfaceState);
-      }
-      if (created && foreground) {
-        this.#clear();
-        this.#collapse();
-      }
-    }
+    const store = this.#deps.surfaceState;
+    return createMark(
+      this.#deps.annotations,
+      {
+        attachmentKey: this.#deps.attachmentKey,
+        structure,
+        draft: { type, color, comment, text, position },
+        previous: previousAnnotations(this.#deps.records()),
+        group,
+        uninterruptible,
+      },
+      {
+        begin: () => {
+          if (!foreground) return;
+          this.#writing = true;
+          setInFlight(store, true);
+        },
+        created: (annotationKey) => {
+          recordColorUse(store, this.#deps.colors, color);
+          if (foreground) this.#deps.reveal(annotationKey, reveal);
+          if (disarm) this.#arm(null);
+        },
+        failed: (reason) => this.#deps.reportCreateFailure(reason),
+        end: (annotationKey) => {
+          if (foreground) {
+            this.#writing = false;
+            setInFlight(store, false);
+            // The rectangle stays drawn until Zotero answered, whatever it said.
+            cancelCapture(store);
+          }
+          if (annotationKey !== null && foreground) {
+            this.#clear();
+            this.#collapse();
+          }
+          settle?.(annotationKey);
+        },
+        now: () => this.#deps.now(),
+      },
+    );
   }
 
   /**
@@ -1212,37 +1227,44 @@ export class MarkCreation implements CreationGestures, Disposable {
       pageIndex: pending.pageIndex,
       points: path.length / 2,
     });
-    this.#inking = this.#inking.then(() => this.#createInk(pending, group));
-    this.#creating = this.#inking;
+    this.#creating = this.#deps.writes(
+      queued(this.#inking, () => this.#createInk(pending, group)),
+    );
   }
 
   /**
    * One ink create; its Pending Stroke goes once Zotero answered, and a create
    * that made nothing says why. The capability can lapse while the stroke
-   * waits behind the creates released before it. Never rejects.
+   * waits behind the creates released before it.
+   *
+   * @returns the write, or `null` for a create that cannot run.
    */
-  async #createInk(
+  #createInk(
     pending: PendingStroke,
     group: string | undefined,
-  ): Promise<void> {
+  ): CreateWrite | null {
     const { id, pageIndex, width, color, paths } = pending;
-    let key: string | null = null;
-    if (editingLive(this.#capability())) {
-      key = await this.#create(
-        {
-          type: "ink",
-          color,
-          comment: "",
-          text: "",
-          position: { pageIndex, width, paths },
-        },
-        { group },
-      );
-    } else {
+    const settle = (key: string | null) => {
+      if (key === null) dropPendingStroke(this.#deps.surfaceState, id);
+      else settlePendingStroke(this.#deps.surfaceState, { id, key });
+    };
+    if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
+      settle(null);
+      return null;
     }
-    if (key === null) dropPendingStroke(this.#deps.surfaceState, id);
-    else settlePendingStroke(this.#deps.surfaceState, { id, key });
+    const write = this.#createWrite(
+      {
+        type: "ink",
+        color,
+        comment: "",
+        text: "",
+        position: { pageIndex, width, paths },
+      },
+      { group, settle },
+    );
+    if (write === null) settle(null);
+    return write;
   }
 
   /** Takes back the stroke in progress, drawing and creating nothing for it. */
@@ -1314,17 +1336,18 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
-   * What the live window selection quotes, placed on the Structured
-   * Characters of the pages it reaches, with the anchor the popup hangs from.
-   * `null` for a selection this reader cannot place.
+   * The live window selection and the pages it reaches, for its placement on
+   * their Structured Characters. `null` for a selection this reader cannot
+   * place.
    *
-   * The DOM is read before the first wait, so the result stands for the
+   * The DOM is read here, before any wait, so the placement stands for the
    * selection as it was when the gesture settled.
    */
-  async #capture(): Promise<{
-    captured: SelectedText;
-    anchorAt: AnchorAt | null;
-  } | null> {
+  #readSelection(): {
+    structure: PdfTextStructure;
+    text: string;
+    pages: SelectionPage[];
+  } | null {
     const selection = this.#deps.containerEl.win.getSelection();
     if (!selection || selection.rangeCount !== 1 || selection.isCollapsed) {
       return null;
@@ -1332,20 +1355,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     const pages = selectionPagesOf(selection.getRangeAt(0), this.#deps.pages());
     const structure = this.#deps.structure();
     if (!pages.length || !structure) return null;
-    const text = selection.toString();
-    const captured = await this.#deps.bridge.runPromise(
-      captureText(structure, { text, pages }),
-    );
-    if (!captured) {
-      logger.debug("Text selection maps onto no character of its pages", {
-        pageIndexes: pages.map(({ pageIndex }) => pageIndex),
-      });
-      return null;
-    }
-    return {
-      captured,
-      anchorAt: anchorFractionOf(pages, captured.pageIndex),
-    };
+    return { structure, text: selection.toString(), pages };
   }
 
   /**
