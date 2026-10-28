@@ -6,14 +6,13 @@ import type { Fiber } from "effect";
 
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
   AnnotationInsertOutcome,
   AnnotationInsertRequest,
-  AnnotationSnapshot,
+  AnnotationInsertSubject,
 } from "@/services/note-feature/insert-action";
 
-import type { captureInsertion } from "./async-insert";
+import type { Placement, captureInsertion } from "./async-insert";
 
 /** An insert in flight; interrupting it stops the insert with no outcome. */
 export type InsertFiber = Fiber.Fiber<AnnotationInsertOutcome>;
@@ -32,32 +31,32 @@ export interface InsertRunner<R> {
 }
 
 /**
- * Captures the destination for the insert of `annotation` and runs it,
+ * Captures the destination for the insert of an annotation (`annotation` and
+ * `snapshot`, or a search `hit`) and runs it,
  * interrupted when the destination is cancelled (Escape, an overlapping edit,
  * a switch of note). A failure the insert did not fold into its outcome is
  * logged and answers a failed insert.
  */
 export function startInsert<R>(
   runner: InsertRunner<R>,
-  options: {
-    annotation: AnnotationRecord;
-    snapshot: AnnotationSnapshot;
+  options: AnnotationInsertSubject & {
     notePath: string;
+    placement?: Placement;
     capture: () => ReturnType<typeof captureInsertion>;
   },
 ): InsertFiber {
-  const { annotation, snapshot, notePath } = options;
+  const { capture, ...request } = options;
+  const annotationKey =
+    "hit" in request ? request.hit.key : request.annotation.key;
   return runner.run(
     Effect.gen(function* () {
-      const target = yield* Effect.acquireDisposable(
-        Effect.sync(options.capture),
-      );
+      const target = yield* Effect.acquireDisposable(Effect.sync(capture));
       const cancelled = Effect.callback<never>((resume) => {
         const release = target.onCancel(() => resume(Effect.interrupt));
         return Effect.sync(release);
       });
       return yield* Effect.raceFirst(
-        runner.execute({ annotation, snapshot, target, notePath }),
+        runner.execute({ ...request, target }),
         cancelled,
       );
     }).pipe(
@@ -66,7 +65,7 @@ export function startInsert<R>(
         (cause) =>
           Effect.logWarning("Annotation insert failed").pipe(
             Effect.annotateLogs({
-              annotationKey: annotation.key,
+              annotationKey,
               error: Cause.squash(cause),
             }),
           ),

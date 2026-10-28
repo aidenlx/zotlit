@@ -1,5 +1,5 @@
 // Composes the plugin's Effect runtime and binds the services the plugin shell and debug surface read.
-import { Effect, FileSystem } from "effect";
+import { Effect, FiberSet, FileSystem, Scope } from "effect";
 
 import { cliRunner } from "@/lib/cli-command";
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
@@ -17,6 +17,7 @@ import {
   importProfileDialog,
 } from "@/setting-tab/profile-dialogs";
 import { blockedNotice } from "@/views/annot-view/card-verbs";
+import type { InsertRunner } from "@/views/annot-view/insert-run";
 import {
   annotationCardShown,
   revealAnnotationInView,
@@ -265,12 +266,24 @@ export async function createPluginRuntime(
       ),
     );
   bindProtocolViews({ noteImportView });
+  // The Annotation Suggester belongs to the plugin, not a view: its inserts
+  // fork on the runtime's Scope, so unload interrupts each one still running.
+  const annotationNotes = runtime.runSync(AnnotationNoteActions);
+  const annotationInsertRunner: InsertRunner<never> = {
+    execute: (request) => annotationNotes.insert(request),
+    run: runtime.runSync(
+      FiberSet.make().pipe(
+        Effect.flatMap((fibers) => FiberSet.runtime(fibers)<never>()),
+        Scope.provide(runtime.scope),
+      ),
+    ),
+  };
 
   return {
     runtime,
     bridge,
     viewRegistry: runtime.runSync(ViewRegistry),
-    annotationNotes: runtime.runSync(AnnotationNoteActions),
+    annotationInsertRunner,
     workspace: runtime.runSync(Workspace),
     metadataCache: runtime.runSync(MetadataCache),
     notifier,

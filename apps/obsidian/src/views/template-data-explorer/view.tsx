@@ -48,9 +48,11 @@ import {
   copyToClipboard,
   createTemplateWorkbenchHost,
 } from "@/views/template-workbench/host";
+import type { RecentItems } from "@/views/template-workbench/item-choice";
 import {
   workbenchAnnotationChoice,
   workbenchItemChoice,
+  recentItemChoices,
   workbenchItemSearch,
 } from "@/views/template-workbench/item-choice";
 import {
@@ -108,6 +110,8 @@ export class TemplateDataExplorerView extends ItemView {
   #host: ReturnType<typeof createTemplateWorkbenchHost> | null = null;
   /** Forks on this leaf's view services; the close interrupts it. */
   readonly #runner: ViewRunner;
+  /** The read of the recent Items, as the Item list runs it on the host. */
+  readonly #recentItems: RecentItems;
   /** The Item chooser; a second request while it is open joins it. */
   readonly #choosingItem: InFlightSlot<void, never>;
   /** The annotation chooser; a second request while it is open joins it. */
@@ -123,6 +127,7 @@ export class TemplateDataExplorerView extends ItemView {
     // Obsidian sets the layout state before the view opens.
     this.#release = holdExplorerModel(deps.registry, this.#model);
     this.#runner = makeViewRunner(deps.registry);
+    this.#recentItems = this.#runner.provide(recentItemChoices);
     this.#choices = latestSlot(this.#runner.run);
     this.#choosingItem = inFlightSlot(
       this.#choices.run,
@@ -535,7 +540,7 @@ export class TemplateDataExplorerView extends ItemView {
                   onChooseAnnotation={() => this.#choosingAnnotation.start()}
                   onSelectItem={(item) => this.#selectItem(item)}
                   onSearchItem={() => this.#choices.run(this.#searchItem())}
-                  lookup={this.#deps.itemLookup}
+                  recentItems={this.#recentItems}
                   explorer={{
                     copy: copyToClipboard,
                     onInsertNode: (node) => {

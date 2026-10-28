@@ -36,6 +36,18 @@ const itemChoices = (hits: readonly SearchHit[]): WorkbenchItemChoice[] =>
         ],
   );
 
+/** A read of the recent Items, with the services it needs provided. */
+export type RecentItems = Effect.Effect<readonly WorkbenchItemChoice[]>;
+
+/** The recently updated parent Items, at most three. */
+export const recentItemChoices: Effect.Effect<
+  readonly WorkbenchItemChoice[],
+  never,
+  ItemLookup
+> = Effect.flatMap(ItemLookup, (lookup) =>
+  lookup.search("", { limit: 3 }),
+).pipe(Effect.map((hits) => itemChoices(hits)));
+
 /**
  * Ask the reader for an Item: the Sample Items, the recently updated Items,
  * and a search of the Zotero library.
@@ -49,7 +61,7 @@ export const workbenchItemChoice = (
 ): Effect.Effect<WorkbenchItemChoice | null, never, ItemLookup> =>
   Effect.gen(function* () {
     const lookup = yield* ItemLookup;
-    const recent = itemChoices(yield* lookup.search("", { limit: 3 }));
+    const recent = yield* recentItemChoices;
     const choices = [...SAMPLE_ITEM_CHOICES, ...recent];
     const retained =
       selected && !choices.some(({ id }) => id === selected.id)

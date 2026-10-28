@@ -1,9 +1,9 @@
 // Native selection shares examples, search, and labels across independent views.
 import "./selection.css";
 import type { ItemView, WorkspaceLeaf } from "obsidian";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { isChildItemFields, isPageNumber } from "@zotlit/db";
+import { isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
@@ -12,16 +12,19 @@ import type {
   CitationExampleId,
   PartialChoice,
 } from "@zotlit/workbench/render";
-import { annotationOption } from "@zotlit/workbench/ui";
+import {
+  annotationOption,
+  useForkedEffect,
+  useWorkbenchHost,
+} from "@zotlit/workbench/ui";
 import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
-import { itemSummary } from "@/lib/item-summary";
-import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 
+import type { RecentItems } from "./item-choice";
 import {
   getSampleItem,
   getSampleItemType,
@@ -101,26 +104,6 @@ export function sampleTypeLabel(id: string): string {
       return m.workbench_sample_type_thesis();
     default:
       return m.workbench_example_item();
-  }
-}
-
-export async function recentItemChoices(
-  lookup: Pick<ItemLookupHandle, "search">,
-): Promise<readonly WorkbenchItemChoice[]> {
-  try {
-    const hits = await lookup.search("", { limit: 3 });
-    return hits.flatMap(({ item }) =>
-      isChildItemFields(item.fields)
-        ? []
-        : [
-            {
-              id: item.indexedKey,
-              title: itemSummary(item, item.fields).formatted,
-            },
-          ],
-    );
-  } catch {
-    return [];
   }
 }
 
@@ -249,24 +232,21 @@ function SelectionOption({
 }
 
 export function ItemSelectionList({
-  lookup,
+  recentItems,
   onSelect,
   onSearch,
 }: {
-  lookup: Pick<ItemLookupHandle, "search">;
+  /** The read of the recent Items, with the services it needs provided. */
+  recentItems: RecentItems;
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {
   const [recent, setRecent] = useState<readonly WorkbenchItemChoice[]>([]);
-  useEffect(() => {
-    let active = true;
-    void recentItemChoices(lookup).then((items) => {
-      if (active) setRecent(items);
-    });
-    return () => {
-      active = false;
-    };
-  }, [lookup]);
+  // The host's runner interrupts the read when the list unmounts.
+  useForkedEffect(useWorkbenchHost().run, () => recentItems, {
+    deps: [recentItems],
+    onSuccess: setRecent,
+  });
   return (
     <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">

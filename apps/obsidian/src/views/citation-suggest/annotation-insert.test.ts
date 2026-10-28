@@ -3,10 +3,12 @@
 // Where the text goes and how it is spaced is `captureInsertion`'s, tested in
 // `views/annot-view/async-insert.test.ts`; a landed insert and its Use are
 // proven in the running app by `packages/e2e/src/annotation-links.e2e.ts`.
+// The insert is one fiber on the plugin's runner: a cancelled destination or
+// an unload interrupts it.
 import type { EditorView } from "@codemirror/view";
 // @vitest-environment happy-dom
 import { it } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, FiberSet, Scope } from "effect";
 import { TFile } from "obsidian";
 import type { App, Editor, MarkdownFileInfo } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -14,12 +16,15 @@ import { describe, expect, vi } from "vitest";
 import type { HostSources } from "@/lib/__fixtures__/obsidian-host-app";
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { openScope } from "@/lib/effect-scope";
+import { answerOf } from "@/lib/view-runner";
 import { setup as repositorySetup } from "@/services/annotation-repository/__fixtures__";
 import { annotationAction } from "@/services/note-feature/__fixtures__/annotation-actions";
 import type { AnnotationInsert } from "@/services/note-feature/insert-annotation";
 import { buildUseLedger, ledgerHost } from "@/services/use-ledger/__fixtures__";
 import { UseLedger } from "@/services/use-ledger/service";
 import { stateEditor } from "@/views/annot-view/__fixtures__/editor";
+import type { InsertRunner } from "@/views/annot-view/insert-run";
 
 import { insertAnnotation } from "./annotation-insert";
 import type { AnnotationHit } from "./annotation-search";
@@ -68,7 +73,7 @@ async function harness(
   doc: string,
   { whileRendering }: { whileRendering?: (cm: EditorView) => void } = {},
 ) {
-  const { service: repository, bridge } = await repositorySetup(stack);
+  const { service: repository } = await repositorySetup(stack);
   const { sources, app } = host();
   const useLedger = buildUseLedger(sources, stack);
   const cm = stateEditor({ doc });
@@ -83,44 +88,61 @@ async function harness(
     editor,
     file,
   });
-  const prepare = vi.fn<() => Promise<AnnotationInsert>>(async () => {
-    whileRendering?.(cm);
-    return {
-      text: "quote",
-      summary: {
-        zotero: 0,
-        unchecked: 0,
-        unavailable: 0,
-      },
-    };
-  });
-  const insert = (target: AnnotationHit, from: number, to: number) =>
-    insertAnnotation(
-      {
-        app,
-        workspace: app.workspace,
-        bridge,
-        annotationNotes: {
-          insert: (request) =>
-            annotationAction(
-              request,
-              Effect.tryPromise((signal) => {
-                signal.throwIfAborted();
-                return prepare();
-              }),
-              {
-                repository,
-                serverID: "A8sf5Zsz8ySw",
-                ledger: useLedger.runtime.runSync(UseLedger),
-              },
-            ),
+  const prepare = vi.fn<(signal: AbortSignal) => Promise<AnnotationInsert>>(
+    async () => {
+      whileRendering?.(cm);
+      return {
+        text: "quote",
+        summary: {
+          zotero: 0,
+          unchecked: 0,
+          unavailable: 0,
         },
-        notify: () => {},
-      },
+      };
+    },
+  );
+  // The plugin's runner: its fibers sit on a Scope that unload closes.
+  const { scope, close } = openScope();
+  stack.defer(close);
+  const runner: InsertRunner<never> = {
+    execute: (request) =>
+      annotationAction(
+        request,
+        Effect.tryPromise((signal) => {
+          signal.throwIfAborted();
+          return prepare(signal);
+        }),
+        {
+          repository,
+          serverID: "A8sf5Zsz8ySw",
+          ledger: useLedger.runtime.runSync(UseLedger),
+        },
+      ),
+    run: Effect.runSync(
+      FiberSet.make().pipe(
+        Effect.flatMap((fibers) => FiberSet.runtime(fibers)<never>()),
+        Scope.provide(scope),
+      ),
+    ),
+  };
+  const notify = vi.fn<(message: string | DocumentFragment) => void>();
+  const start = (target: AnnotationHit, from: number, to: number) => {
+    const fiber = insertAnnotation(
+      { app, workspace: app.workspace, runner, notify },
       { hit: target, info, isCurrent: () => true, range: { from, to } },
     );
+    if (!fiber) throw new Error("The insert did not start.");
+    return fiber;
+  };
+  /** The outcome of the insert, or `undefined` where it was interrupted. */
+  const insert = (target: AnnotationHit, from: number, to: number) =>
+    answerOf(start(target, from, to), undefined);
   return {
     insert,
+    start,
+    cm,
+    unload: close,
+    notify,
     prepare,
     useLedger,
     text: () => cm.state.doc.toString(),
@@ -141,6 +163,7 @@ describe("insertAnnotation", () => {
         expect(await h.insert(hit, 9, 19)).toBeUndefined();
 
         expect(h.prepare).toHaveBeenCalledOnce();
+        expect(h.notify).not.toHaveBeenCalled();
         expect(h.text()).toBe("As shown typed here");
         expect(h.useLedger.runtime.runSync(h.useLedger.current)).toEqual({});
       }),
@@ -157,10 +180,54 @@ describe("insertAnnotation", () => {
           kind: "unavailable",
         });
 
+        expect(h.notify).toHaveBeenCalledOnce();
         expect(h.text()).toBe("[>message]");
         expect(h.prepare).not.toHaveBeenCalled();
         expect(h.useLedger.runtime.runSync(h.useLedger.current)).toEqual({});
       }),
+  );
+
+  it.effect("interrupts the render when an edit cancels the destination", () =>
+    Effect.promise(async () => {
+      await using stack = new AsyncDisposableStack();
+      const h = await harness(stack, "As shown [>message] here");
+      const rendering = Promise.withResolvers<AbortSignal>();
+      h.prepare.mockImplementation((signal) => {
+        rendering.resolve(signal);
+        return new Promise<AnnotationInsert>(() => {});
+      });
+      const answer = answerOf(h.start(hit, 9, 19), undefined);
+
+      const signal = await rendering.promise;
+      expect(signal.aborted).toBe(false);
+      h.cm.dispatch({ changes: { from: 9, to: 19, insert: "typed" } });
+
+      expect(await answer).toBeUndefined();
+      expect(signal.aborted).toBe(true);
+      expect(h.text()).toBe("As shown typed here");
+      expect(h.notify).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("interrupts the render when the plugin unloads", () =>
+    Effect.promise(async () => {
+      await using stack = new AsyncDisposableStack();
+      const h = await harness(stack, "As shown [>message] here");
+      const rendering = Promise.withResolvers<AbortSignal>();
+      h.prepare.mockImplementation((signal) => {
+        rendering.resolve(signal);
+        return new Promise<AnnotationInsert>(() => {});
+      });
+      const answer = answerOf(h.start(hit, 9, 19), undefined);
+
+      const signal = await rendering.promise;
+      await h.unload();
+
+      expect(await answer).toBeUndefined();
+      expect(signal.aborted).toBe(true);
+      expect(h.text()).toBe("As shown [>message] here");
+      expect(h.notify).not.toHaveBeenCalled();
+    }),
   );
 });
 
