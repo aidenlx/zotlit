@@ -276,6 +276,21 @@ export function onInitialView(
 }
 
 /**
+ * Subscribes to `pagesdestroy`, which PDF.js dispatches as it closes the open
+ * document, before the next one sets its initial view.
+ */
+export function onDocumentClosed(
+  controller: PDFViewerController,
+  listener: () => void,
+): Disposable {
+  controller.on("pagesdestroy", listener);
+  return disposable(() => {
+    if (!viewerOpen(controller, "remove a document-close listener")) return;
+    controller.off("pagesdestroy", listener);
+  });
+}
+
+/**
  * The reader's right toolbar slot, which P10 guards, and `null` once the child
  * holding it unloaded — Obsidian nulls the toolbar there, and a binding
  * disposing after that has nothing left to take out of it.

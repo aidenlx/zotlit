@@ -314,6 +314,11 @@ export async function verifyPdfReads(
         })[]
       )[0]!.view;
       const reader = view.viewer.child;
+      // PDF.js's own move to the reopen position belongs to its initial view.
+      await until(
+        "PDF initial view",
+        () => reader.pdfViewer.isInitialViewSet === true,
+      );
       page.scratch.pageChanges = 0;
       reader.on("pagechanging", () => page.scratch.pageChanges!++);
       const from = reader.pdfViewer.pdfViewer.currentPageNumber;
@@ -322,8 +327,9 @@ export async function verifyPdfReads(
       try {
         await until("real page change", () => page.scratch.pageChanges! > 0);
       } catch (error) {
+        const now = reader.pdfViewer.pdfViewer.currentPageNumber;
         throw new Error(
-          `No pagechanging from page ${from} to ${target}: now on page ${reader.pdfViewer.pdfViewer.currentPageNumber}, ${page.scratch.pageChanges} events`,
+          `No pagechanging from page ${from} to ${target}: now on page ${now} (renderingState ${reader.getPage(now)?.renderingState}), isInitialViewSet ${reader.pdfViewer.isInitialViewSet}, ${page.scratch.pageChanges} events`,
           { cause: error },
         );
       }
@@ -450,12 +456,14 @@ export async function verifyPdfReads(
           view: PagePdfView;
         })[]
       ).find((l) => l.view.file?.path === notePath)!.view.viewer.child;
+      // PDF.js `RenderingStates.FINISHED`.
+      const RENDERING_FINISHED = 3;
       await until(
         "restored PDF settled",
         () =>
           reader.pdfViewer.isInitialViewSet === true &&
           reader.getPage(reader.pdfViewer.pdfViewer.currentPageNumber)
-            ?.renderingState === 3,
+            ?.renderingState === RENDERING_FINISHED,
         20000,
       );
     },

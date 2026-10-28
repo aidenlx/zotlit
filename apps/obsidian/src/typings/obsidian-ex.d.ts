@@ -629,6 +629,8 @@ declare module "obsidian" {
     off(event: "pagechanging", listener: () => void): void;
     on(event: "documentinit", listener: () => void): void;
     off(event: "documentinit", listener: () => void): void;
+    on(event: "pagesdestroy", listener: () => void): void;
+    off(event: "pagesdestroy", listener: () => void): void;
     /** The PDF.js page view for a one-based page number, once that page is built. */
     getPage(pageNumber: number): PDFPageView | undefined;
     /** Applies an Obsidian PDF subpath such as `#page=3`. */

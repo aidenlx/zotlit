@@ -28,6 +28,7 @@ import {
   dispatchKey,
   failedIn,
   markGestures,
+  openingReader,
   pageView,
   pdfReader,
   readerSettings,
@@ -1461,13 +1462,11 @@ async function restoredTab(reader: ReturnType<typeof pdfReader>) {
   return { service, recordRead };
 }
 
-// PDF.js reopens a document at its last position, and the move to it is a page
-// change. A binding can attach before that move: the reader's page one is
-// loaded, and its initial view is not set yet.
+// #1870: PDF.js reopens a document at its last position, and the move to it is
+// a page change. A binding can attach before that move: the reader's page one
+// is loaded, and its initial view is not set yet.
 it("records no read for the page a restored reader reopens at", async () => {
-  const reader = pdfReader();
-  (reader.child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
-    false;
+  const reader = openingReader();
   const { service, recordRead } = await restoredTab(reader);
   await using _ = service;
 
@@ -1476,10 +1475,9 @@ it("records no read for the page a restored reader reopens at", async () => {
   expect(recordRead).not.toHaveBeenCalled();
 });
 
+// #1870: the page turns that follow the initial view are the researcher's.
 it("records a read for a page turn after the restored reader's initial view", async () => {
-  const reader = pdfReader();
-  (reader.child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
-    false;
+  const reader = openingReader();
   const { service, recordRead } = await restoredTab(reader);
   await using _ = service;
   reader.setInitialView();
@@ -1489,7 +1487,8 @@ it("records a read for a page turn after the restored reader's initial view", as
   expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
 });
 
-// The plugin enabled over an open PDF tab attaches after the initial view.
+// #1870: the plugin enabled over an open PDF tab attaches after the initial
+// view.
 it("records a read for the first page turn in a reader whose initial view stands", async () => {
   const reader = pdfReader();
   const { service, recordRead } = await restoredTab(reader);
@@ -1498,4 +1497,17 @@ it("records a read for the first page turn in a reader whose initial view stands
   reader.turnPage();
 
   expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
+});
+
+// #1870: Obsidian reloads a changed file into the same reader. PDF.js closes the
+// document and sets the initial view of the new one again, with its own move.
+it("records no read for the page a reader reopens at after its document reloads in place", async () => {
+  const reader = pdfReader();
+  const { service, recordRead } = await restoredTab(reader);
+  await using _ = service;
+
+  reader.closeDocument();
+  reader.setInitialView();
+
+  expect(recordRead).not.toHaveBeenCalled();
 });
