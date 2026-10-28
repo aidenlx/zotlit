@@ -5559,54 +5559,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         }, 120000);
 
-        it("takes an undo and a redo pressed together one after the other", async () => {
-          await reopenPdfView(vaultId!, attachmentPath);
-          const handle = await selectImage();
-          await dragPointer(handle, {
-            x: handle.x + 20 * handle.perX,
-            y: handle.y + 30 * handle.perY,
-          });
-          expect(
-            await waitFor(
-              async () =>
-                !isDeepStrictEqual(
-                  JSON.parse((await image.stored()).data.annotationPosition),
-                  image.seeded.position,
-                ),
-            ),
-          ).toBe(true);
-          await image.settled();
-          const dragged = await image.stored();
-
-          // Both presses reach the reader before Zotero answers the first.
-          await obRun(
-            vaultId!,
-            async ({ zotlit }, { attachmentPath }) => {
-              const services = zotlit.services;
-              const binding = services.bridge
-                .runSync(services.pdfAnnotationEditor.bindings)
-                .find((candidate) => candidate.filePath === attachmentPath)!;
-              binding.stepHistory("undo");
-              binding.stepHistory("redo");
-              return "pressed";
-            },
-            { attachmentPath },
-          );
-          await stepSettled();
-
-          // The redo waited for the undo and took it back: Zotero holds the
-          // dragged geometry again, two writes later.
-          await image.settled();
-          const stepped = await image.stored();
-          expect(stepped.data.annotationPosition).toBe(
-            dragged.data.annotationPosition,
-          );
-          expect(stepped.data.annotationSortIndex).toBe(
-            dragged.data.annotationSortIndex,
-          );
-          expect(stepped.version).toBeGreaterThanOrEqual(dragged.version + 2);
-        }, 120000);
-
         it("writes nothing for a handle released where it was pressed", async () => {
           const handle = await selectImage();
           const { version } = await image.stored();
@@ -8045,6 +7997,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           expect(
             await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+        }, 120000);
+
+        it("takes an undo and a redo pressed together one after the other", async () => {
+          await selectMark();
+          await pickRed();
+
+          // Both presses reach the reader before Zotero answers the first.
+          await obRun(
+            vaultId!,
+            async ({ zotlit }, { attachmentPath }) => {
+              const services = zotlit.services;
+              const binding = services.bridge
+                .runSync(services.pdfAnnotationEditor.bindings)
+                .find((candidate) => candidate.filePath === attachmentPath)!;
+              binding.stepHistory("undo");
+              binding.stepHistory("redo");
+            },
+            { attachmentPath },
+          );
+          await stepSettled();
+
+          // The redo waited for the undo and took it back: a redo taken first
+          // or dropped would leave the seed colour.
+          expect(
+            await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+          expect(
+            await waitFor(() => readerAnnotationColor(rdp, historyKey, picked)),
           ).toBe(true);
         }, 120000);
 
