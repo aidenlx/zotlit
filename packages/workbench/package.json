@@ -88,6 +88,7 @@
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
+    "@effect/vitest": "catalog:",
     "@lezer/generator": "1.8.0",
     "@testing-library/dom": "catalog:",
     "@testing-library/preact": "catalog:",

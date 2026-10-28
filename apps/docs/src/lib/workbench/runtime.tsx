@@ -10,16 +10,23 @@ import {
   ManagedRuntime,
   Stream,
 } from "effect";
+import { FetchHttpClient } from "effect/http";
+import type { HttpClient } from "effect/http";
 import { createContext, use, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { BRIDGE_VERSION } from "@zotlit/workbench/bridge";
-import type { LocalBridgeClientOptions } from "@zotlit/workbench/bridge";
+import {
+  BRIDGE_VERSION,
+  layerLocalBridgeClient,
+  layerTabStorage,
+} from "@zotlit/workbench/bridge";
+import type {
+  LocalBridgeClient,
+  LocalBridgeStorage,
+} from "@zotlit/workbench/bridge";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import type { WorkbenchRunner } from "@zotlit/workbench/ui";
 
-import { layerLocalBridge } from "./local-bridge";
-import type { LocalBridge } from "./local-bridge";
 import { layerRendering } from "./rendering";
 import type { Rendering } from "./rendering";
 import { layerTransfer } from "./transfer";
@@ -33,35 +40,38 @@ class PageRunner extends Context.Service<PageRunner, WorkbenchRunner>()(
 ) {}
 
 export type PageServices =
-  | LocalBridge
+  | LocalBridgeClient
   | WorkbenchConnection
   | Rendering
   | Transfer
   | PageRunner;
 
-/** What the page layer reads from outside: the Local Bridge transport and storage. */
-export type PageLayerOptions = Omit<LocalBridgeClientOptions, "compatibility">;
+/**
+ * Every service the page uses, built once per page, over the Local Bridge
+ * transport and the tab storage the page reads from outside.
+ */
+export const layerPage: Layer.Layer<
+  PageServices,
+  never,
+  HttpClient.HttpClient | LocalBridgeStorage
+> = Layer.mergeAll(
+  Layer.effect(PageRunner, FiberSet.makeRuntime()),
+  layerRendering,
+  layerTransfer,
+  layerWorkbenchConnection,
+).pipe(
+  Layer.provideMerge(
+    layerLocalBridgeClient({
+      bridgeVersion: BRIDGE_VERSION,
+      templateDataContractVersion: SAMPLE_ITEMS[0]!.contractVersion,
+    }),
+  ),
+);
 
-/** Every service the page uses, built once per page. */
-export const layerPage = (
-  options: PageLayerOptions = {},
-): Layer.Layer<PageServices> =>
-  Layer.mergeAll(
-    Layer.effect(PageRunner, FiberSet.makeRuntime()),
-    layerRendering,
-    layerTransfer,
-    layerWorkbenchConnection,
-  ).pipe(
-    Layer.provideMerge(
-      layerLocalBridge({
-        ...options,
-        compatibility: {
-          bridgeVersion: BRIDGE_VERSION,
-          templateDataContractVersion: SAMPLE_ITEMS[0]!.contractVersion,
-        },
-      }),
-    ),
-  );
+/** The page in a browser: `fetch` to the Local Bridge, the tab's session storage. */
+const layerBrowserPage = layerPage.pipe(
+  Layer.provide([FetchHttpClient.layer, layerTabStorage]),
+);
 
 /** The one way React and CodeMirror run Effects on the page's services. */
 export interface PageBridge {
@@ -142,7 +152,7 @@ export function PageRuntime({
   layer?: Layer.Layer<PageServices>;
   children: ReactNode;
 }) {
-  const [bridge] = useState(() => makePageBridge(layer ?? layerPage()));
+  const [bridge] = useState(() => makePageBridge(layer ?? layerBrowserPage));
   useEffect(() => bridge.hold(), [bridge]);
   return <PageBridgeContext value={bridge}>{children}</PageBridgeContext>;
 }
