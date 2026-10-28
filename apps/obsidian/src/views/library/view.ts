@@ -491,7 +491,7 @@ export class LibraryView extends ItemView {
     // The item details show while the researcher keeps them on: the
     // selected paper, or what fills them when none is selected.
     const cardEl = frame.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-1/2 zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
+      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-[min(16rem,50%)] zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;

@@ -1897,7 +1897,7 @@ describe("Reading State facets", () => {
     expect(listed(view)).toEqual(["AAAAAAAA"]);
   });
 
-  it("counts the node's papers and those of each facet in the item details while no paper is selected, Recent over the Library Scope", async () => {
+  it("counts the node's papers of each facet in one line of the item details while no paper is selected, Recent over the Library Scope, and leaves out a facet none passes", async () => {
     const { deps } = await pluginData();
     const view = await openTab(deps);
     const stats = () =>
@@ -1905,33 +1905,31 @@ describe("Reading State facets", () => {
         ...view.contentEl.querySelectorAll<HTMLElement>(
           "[data-library-card-stat]",
         ),
-      ].map(
-        (el) =>
-          `${el.dataset.libraryCardStat} ${el.querySelector("dd")!.textContent}`,
-      );
+      ].map((el) => el.textContent);
     // Recent lists My Library's A–E and Lab's F and G.
     await vi.waitFor(() =>
       expect(stats()).toEqual([
-        "papers 7",
-        "unread 4",
-        "annotated 2",
-        "has-note 2",
-        "pdf 2",
+        "Unread 4",
+        "Annotated 2",
+        "Has note 2",
+        "PDF 2",
       ]),
     );
     await press(view, row(view, MY_LIBRARY));
     await vi.waitFor(() =>
       expect(stats()).toEqual([
-        "papers 5",
-        "unread 2",
-        "annotated 2",
-        "has-note 2",
-        "pdf 2",
+        "Unread 2",
+        "Annotated 2",
+        "Has note 2",
+        "PDF 2",
       ]),
     );
+    // Lab's two papers are unread, so the other facets drop out.
+    await press(view, row(view, { kind: "library", library: LAB }));
+    await vi.waitFor(() => expect(stats()).toEqual(["Unread 2"]));
     // A selected paper takes their place.
     await act(async () => {
-      itemRow(view, A).click();
+      itemRow(view, "FFFFFFFF").click();
       await view.card.settled;
     });
     expect(stats()).toEqual([]);

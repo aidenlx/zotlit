@@ -133,9 +133,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     /** What the card shows, `null` while it is out of view. */
 
-    // No row is selected: the card counts the node's papers, every one and
-    // those that pass each Reading State facet, over what fills it. Its
-    // paper count is the heading's.
+    // No row is selected: the card asks for a paper over one quiet line
+    // that counts the node's papers passing each Reading State facet, in
+    // the tree's order, and leaves out a facet no paper passes.
     const noPaper = await obRun(
       run.vaultId,
       async ({ app, page }, { paperKey }) => {
@@ -163,22 +163,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           () => empty.querySelector<HTMLElement>("[data-library-card-stats]"),
           10000,
         );
-        const heading = await until("heading count", () =>
-          el
-            .querySelector<HTMLElement>("[data-library-header-count]")
-            ?.getAttribute("data-query-matched"),
-        );
         return {
           shown: card!.checkVisibility(),
           prompt: empty.querySelector("p")?.textContent ?? null,
           stats: [
             ...stats.querySelectorAll<HTMLElement>("[data-library-card-stat]"),
           ].map((stat) => stat.getAttribute("data-library-card-stat")),
-          papers: Number(
-            stats.querySelector('[data-library-card-stat="papers"] dd')
-              ?.textContent,
-          ),
-          heading: Number(heading),
+          counts: [
+            ...stats.querySelectorAll<HTMLElement>("[data-library-card-stat]"),
+          ].map((stat) => Number(stat.textContent!.match(/\d+$/)?.[0])),
           selected: el.querySelector("[data-query-item-row][data-selected]")
             ? "row"
             : null,
@@ -189,11 +182,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(noPaper).toMatchObject({
       shown: true,
       prompt: run.m.library_view_card_empty(),
-      stats: ["papers", "unread", "annotated", "has-note", "pdf"],
       selected: null,
     });
-    expect(noPaper.papers).toBeGreaterThan(0);
-    expect(noPaper.papers).toBe(noPaper.heading);
+    const order = ["unread", "annotated", "has-note", "pdf"];
+    expect(noPaper.stats.length).toBeGreaterThan(0);
+    expect(noPaper.stats).toEqual(
+      order.filter((name) => noPaper.stats.includes(name)),
+    );
+    for (const count of noPaper.counts) expect(count).toBeGreaterThan(0);
 
     // A click on the paper's row shows its card with a preview of its
     // Annotations: the first two quoted, the count of each colour, and "See

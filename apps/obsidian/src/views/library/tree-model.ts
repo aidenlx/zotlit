@@ -198,7 +198,6 @@ export function makeTreeModel() {
       );
       if (!all || !unread || !annotated || !pdf) return null;
       return {
-        papers: all.count(all.rows),
         unread: unread.count(unread.rows),
         annotated: annotated.count(annotated.rows),
         "has-note": hasNote.count(all.rows),
@@ -255,11 +254,9 @@ export type TreeModel = ReturnType<typeof makeTreeModel>;
 
 /**
  * What the item details count while no paper is selected: the papers of
- * the tree node, and those that pass each Reading State facet.
+ * the tree node that pass each Reading State facet.
  */
-export type LibraryStats = { readonly papers: number } & Readonly<
-  Record<ReadingStateFacet, number>
->;
+export type LibraryStats = Readonly<Record<ReadingStateFacet, number>>;
 
 const readTree = (shown: readonly AvailableLibrary[]) =>
   Effect.gen(function* () {

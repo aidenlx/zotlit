@@ -2887,7 +2887,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // A reload right after the changes keeps the open Collection and the
     // banner. The selected paper is session state: the view opens with no
-    // paper selected, and the item details count the papers instead.
+    // paper selected, and the item details count the papers of each facet instead.
     await reloadWindow();
     const after = await obRunUntil(
       run.vaultId,
@@ -2907,8 +2907,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const empty = card?.querySelector<HTMLElement>(
           "[data-library-card-empty]",
         );
-        const papers = empty?.querySelector<HTMLElement>(
-          '[data-library-card-stat="papers"] dd',
+        const counts = empty?.querySelector<HTMLElement>(
+          "[data-library-card-stats]",
         );
         const action = view.containerEl.querySelector<HTMLElement>(value);
         return {
@@ -2926,7 +2926,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ?.getAttribute("data-query-item-row") ?? null,
           shown: !!card && !card.hidden && card.checkVisibility(),
           prompt: empty?.querySelector("p")?.textContent ?? null,
-          papers: papers ? Number(papers.textContent) : null,
+          counts: counts?.textContent ?? null,
           banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
           pressed: action?.getAttribute("aria-pressed") ?? null,
           rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
@@ -2940,7 +2940,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           value !== null &&
           ((kept) =>
-            kept.phase === "ready" && kept.papers !== null && kept.rows > 0)(
+            kept.phase === "ready" && kept.counts !== null && kept.rows > 0)(
             value,
           ),
       },
@@ -2953,7 +2953,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       banner: true,
       pressed: "true",
     });
-    expect(after!.papers).toBeGreaterThan(0);
+    expect(after!.counts).toBeTruthy();
 
     // On a narrow pane a reload also opens with no paper selected, and the
     // details under the tree and the list count the papers.
@@ -2983,8 +2983,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         const empty = card?.querySelector<HTMLElement>(
           "[data-library-card-empty]",
         );
-        const papers = empty?.querySelector<HTMLElement>(
-          '[data-library-card-stat="papers"] dd',
+        const counts = empty?.querySelector<HTMLElement>(
+          "[data-library-card-stats]",
         );
         const action = view.containerEl.querySelector<HTMLElement>(value);
         return {
@@ -3002,7 +3002,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               ?.getAttribute("data-query-item-row") ?? null,
           shown: !!card && !card.hidden && card.checkVisibility(),
           prompt: empty?.querySelector("p")?.textContent ?? null,
-          papers: papers ? Number(papers.textContent) : null,
+          counts: counts?.textContent ?? null,
           banner: !!el.querySelector<HTMLElement>("[data-welcome-banner]"),
           pressed: action?.getAttribute("aria-pressed") ?? null,
           rows: el.querySelectorAll<HTMLElement>("[data-query-item-row]")
@@ -3016,7 +3016,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ready: (value) =>
           value !== null &&
           ((kept) =>
-            kept.phase === "ready" && kept.papers !== null && kept.rows > 0)(
+            kept.phase === "ready" && kept.counts !== null && kept.rows > 0)(
             value,
           ),
       },
@@ -3026,7 +3026,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       selected: null,
       shown: true,
       prompt: run.m.library_view_card_empty(),
-      papers: after!.papers,
+      counts: after!.counts,
       banner: true,
       pressed: "true",
     });

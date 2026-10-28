@@ -833,48 +833,42 @@ function CardBody({ card }: { card: ReadingCard }) {
   );
 }
 
-/** The order the counts show in: every paper, then each facet. */
-const STATS = ["papers", ...READING_STATE_FACETS] as const;
-
 /**
- * The item details with no paper selected: the tree node's papers and those
- * that pass each Reading State facet, as the tree's filters name them, over
- * the line that asks for a paper. The counts wait out their read unseen.
+ * The item details with no paper selected: the line that asks for a paper,
+ * over one quiet line of the tree node's papers that pass each Reading
+ * State facet, as the tree's filters name them. The heading counts every
+ * paper already, and a facet no paper passes is left out. The counts wait
+ * out their read unseen.
  */
 function NoPaper({ stats: atom }: { stats: TreeModel["stats"] }) {
   const result = useAtomValue(atom);
   const stats = Option.getOrNull(AsyncResult.value(result));
+  const shown = stats
+    ? READING_STATE_FACETS.filter((name) => stats[name] > 0)
+    : [];
   return (
     <div
-      className="zt:flex zt:h-full zt:flex-col zt:items-center zt:justify-center zt:gap-(--size-4-4) zt:p-(--size-4-4) zt:text-center"
+      className="zt:flex zt:h-full zt:flex-col zt:items-center zt:justify-center zt:gap-(--size-2-2) zt:p-(--size-4-4) zt:text-center"
       data-library-card-empty=""
     >
-      {stats && (
-        <dl
-          className="zt:m-0 zt:grid zt:grid-cols-3 zt:gap-x-(--size-4-6) zt:gap-y-(--size-4-3) zt:@md/card:grid-cols-5"
-          data-library-card-stats=""
-        >
-          {STATS.map((name) => (
-            <div
-              key={name}
-              className="zt:flex zt:flex-col-reverse zt:items-center zt:gap-(--size-2-1)"
-              data-library-card-stat={name}
-            >
-              <dt className="zt:text-xs zt:text-muted-foreground">
-                {name === "papers"
-                  ? m.library_view_card_stats_papers()
-                  : FACET_LABELS[name]()}
-              </dt>
-              <dd className="zt:m-0 zt:text-(length:--font-ui-large) zt:font-(--font-semibold) zt:text-(--text-normal) zt:tabular-nums">
-                {m.library_view_tree_count({ count: stats[name] })}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
       <p className="zt:m-0 zt:text-(length:--font-ui-small) zt:text-(--text-muted)">
         {m.library_view_card_empty()}
       </p>
+      {shown.length > 0 && (
+        <p
+          className="zt:m-0 zt:text-xs zt:text-(--text-faint) zt:tabular-nums"
+          data-library-card-stats=""
+        >
+          {shown.map((name, index) => (
+            <Fragment key={name}>
+              {index > 0 && <span aria-hidden="true">{" · "}</span>}
+              <span data-library-card-stat={name}>
+                {`${FACET_LABELS[name]()} ${m.library_view_tree_count({ count: stats![name] })}`}
+              </span>
+            </Fragment>
+          ))}
+        </p>
+      )}
     </div>
   );
 }
