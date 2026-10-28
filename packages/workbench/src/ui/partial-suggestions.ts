@@ -3,7 +3,7 @@
 import type { SuggestionConfig } from "#/language/index";
 
 import type { WorkbenchMessages } from "./generated/messages";
-import type { WorkbenchPartials } from "./host";
+import type { WorkbenchHost } from "./host";
 
 /**
  * The partial half of one pane's suggestion config.
@@ -17,15 +17,17 @@ import type { WorkbenchPartials } from "./host";
 export function partialSuggestions(
   m: WorkbenchMessages,
   dependencies: readonly string[],
-  partials: WorkbenchPartials | undefined,
+  host: Pick<WorkbenchHost, "partials" | "run"> | null | undefined,
 ): Pick<SuggestionConfig, "partials" | "createPartial"> {
-  if (!partials) return { partials: dependencies };
+  const partials = host?.partials;
+  if (!host || !partials) return { partials: dependencies };
   return {
     partials: partials.names(),
     createPartial: {
       label: m.workbench_partial_new(),
       detail: m.workbench_partial_new_detail(),
       run: (query) => partials.create(query),
+      fork: host.run,
     },
   };
 }

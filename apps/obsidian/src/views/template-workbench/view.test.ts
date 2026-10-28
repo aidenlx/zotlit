@@ -519,10 +519,11 @@ describe("TemplateWorkbenchView", () => {
       cleanup.defer(() => copy.mockRestore());
       const { view } = setup({
         runtime: testRuntime(),
-        render: async (request) => ({
-          ...emptyRender(renderIdentity(request)),
-          creationBody: "Repaired note",
-        }),
+        render: (request) =>
+          Effect.succeed({
+            ...emptyRender(renderIdentity(request)),
+            creationBody: "Repaired note",
+          }),
       });
       const file = new TFile();
       file.path = "templates/paper.md";
@@ -614,18 +615,19 @@ describe("TemplateWorkbenchView", () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
       runtime: testRuntime(),
-      render: async (request) => ({
-        ...emptyRender(renderIdentity(request)),
-        annotation: "Repaired annotation",
-        diagnostics: [
-          {
-            code: "property-error",
-            part: "properties",
-            params: { key: "title" },
-            position: 1,
-          },
-        ],
-      }),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          annotation: "Repaired annotation",
+          diagnostics: [
+            {
+              code: "property-error",
+              part: "properties",
+              params: { key: "title" },
+              position: 1,
+            },
+          ],
+        }),
     });
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
@@ -666,10 +668,11 @@ describe("TemplateWorkbenchView", () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
       runtime: testRuntime(),
-      render: async (request) => ({
-        ...emptyRender(renderIdentity(request)),
-        diagnostics: [{ code: "render-error", part: "annotation" }],
-      }),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          diagnostics: [{ code: "render-error", part: "annotation" }],
+        }),
     });
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());

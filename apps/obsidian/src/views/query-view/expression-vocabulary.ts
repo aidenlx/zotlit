@@ -4,14 +4,16 @@
 // the member list and the Signature Hint read, as the dataset's planner reads
 // them with the view's Formulas and Query Context.
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { useCallback, useMemo } from "react";
+import { Effect } from "effect";
+import { useMemo } from "react";
 
 import type { ContextRecord } from "@zotlit/item-query";
 import { datasetVocabulary } from "@zotlit/workbench/language";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
 import { useCustomFieldNames } from "@zotlit/workbench/ui";
 
-import { getLogger } from "@/lib/log";
+import { withLogCategory } from "@/lib/effect-log";
+import { useViewRunner } from "@/lib/view-runner";
 
 import { boundRecords } from "./context-hint";
 import { datasetSpec } from "./datasets";
@@ -20,8 +22,6 @@ import type { QueryFileDataset } from "./query-file";
 import type { QueryView } from "./view";
 import { fieldLabel } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
-
-const logger = getLogger(["views", "query-view", "expression-vocabulary"]);
 
 /**
  * The custom fields of the Zotero source, read each time `reading` turns
@@ -32,15 +32,22 @@ export function useViewCustomFields(
   view: QueryView,
   reading = true,
 ): readonly string[] {
-  const read = useCallback(
-    (signal: AbortSignal) =>
-      view.customFieldNames(signal).catch((error: unknown) => {
-        logger.warn("The custom fields could not be read", { error });
-        return [];
-      }),
+  // Interrupting the read aborts the signal, which stops the read under it.
+  const read = useMemo(
+    () =>
+      Effect.tryPromise((signal) => view.customFieldNames(signal)).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("The custom fields could not be read").pipe(
+            Effect.annotateLogs({ error }),
+            Effect.as<readonly string[]>([]),
+          ),
+        ),
+        withLogCategory("views", "query-view", "expression-vocabulary"),
+      ),
     [view],
   );
-  return useCustomFieldNames(read, { reading });
+  const run = useViewRunner();
+  return useCustomFieldNames(read, { run, reading });
 }
 
 export function expressionVocabulary({

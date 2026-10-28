@@ -3,6 +3,7 @@ import { Effect } from "effect";
 
 import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import { planItemFilter, testItemSeed } from "@zotlit/item-query";
+import { WorkbenchHostError } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchLibrary,
@@ -24,6 +25,7 @@ import { readerText } from "@/views/query-view/reader-diagnostic";
 import type { ReaderDiagnosticSource } from "@/views/query-view/reader-diagnostic";
 
 import { makeWorkbenchCommand, makeWorkbenchTask } from "./command";
+import { hostPromise } from "./host";
 import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
@@ -101,17 +103,16 @@ export function createMatchData(
     shared,
   );
   return {
-    tags: () => tags.run(),
-    collections: () => collections.run(),
-    libraries: () => libraries.run(),
-    matches: (indexedKey, filter) => matches.run({ indexedKey, filter }),
-    customFields: (signal) =>
-      signal.aborted
-        ? Promise.resolve([])
-        : customFields.run(signal).catch((error: unknown) => {
-            if (signal.aborted) return [];
-            throw error;
-          }),
+    tags: hostPromise(() => tags.run()),
+    collections: hostPromise(() => collections.run()),
+    libraries: hostPromise(() => libraries.run()),
+    matches: (indexedKey, filter) =>
+      hostPromise(() => matches.run({ indexedKey, filter })),
+    // The interrupt aborts the signal, which stops the read under it.
+    customFields: Effect.tryPromise({
+      try: (signal) => customFields.run(signal),
+      catch: (cause) => new WorkbenchHostError({ cause }),
+    }),
     [Symbol.dispose]() {
       for (const command of [
         tags,

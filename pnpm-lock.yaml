@@ -455,6 +455,9 @@ importers:
       cn:
         specifier: ^0.2.4
         version: 0.2.4
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.5
       feed:
         specifier: ^6.0.0
         version: 6.0.0

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
@@ -368,7 +369,8 @@ describe("suggestions: filters, tags, and partials", () => {
       createPartial: {
         label: "New partial…",
         detail: "Name a new partial, then insert the call.",
-        run: () => Promise.resolve(null),
+        run: () => Effect.succeed(null),
+        fork: Effect.runFork,
       },
     };
     // No call names either partial yet, and the list still holds both.
@@ -396,12 +398,13 @@ describe("suggestions: filters, tags, and partials", () => {
         detail: "Name a new partial, then insert the call.",
         run: (query) => {
           asked.push(query);
-          return Promise.resolve("venue-line");
+          return Effect.succeed("venue-line");
         },
+        fork: Effect.runFork,
       },
     })!;
     const option = result.options.find((o) => o.label === "New partial…")!;
-    const insert = await option.resolveInsert!();
+    const insert = await Effect.runPromise(option.resolveInsert!.insert);
     expect(insert).toBe('venue-line" with zt as zt %}');
     expect(asked).toEqual(["ven"]);
     const edit = completionEdit(source, result, { ...option, insert: insert! });

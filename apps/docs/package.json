@@ -50,6 +50,7 @@
     "class-variance-authority": "^0.7.1",
     "cmdk": "1.1.1",
     "cn": "^0.2.4",
+    "effect": "catalog:",
     "feed": "^6.0.0",
     "fumadocs-core": "16.17.5",
     "fumadocs-mdx": "15.4.7",

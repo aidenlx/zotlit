@@ -9,6 +9,7 @@ import { isolateHistory } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { regex } from "arkregex";
+import { Exit } from "effect";
 
 import { syntaxCompletion } from "./field-popup";
 import type { CompletionPresentation } from "./field-popup";
@@ -38,12 +39,15 @@ export function applyTemplateCompletion(
     // rewritten, so a changed document drops the edit rather than writing at an
     // offset that now means something else. A closed pane needs no guard:
     // CodeMirror absorbs a dispatch to a destroyed view.
+    // A flow that fails or is interrupted writes nothing.
     const source = view.state.doc.toString();
-    void option.resolveInsert().then((insert) => {
-      if (insert === null || view.state.doc.toString() !== source) return;
+    const { insert, fork } = option.resolveInsert;
+    fork(insert).addObserver((exit) => {
+      if (!Exit.isSuccess(exit)) return;
+      if (exit.value === null || view.state.doc.toString() !== source) return;
       applyTemplateCompletion(view, result, {
         ...option,
-        insert,
+        insert: exit.value,
         resolveInsert: undefined,
       });
     });
