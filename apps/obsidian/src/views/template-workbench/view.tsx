@@ -2213,14 +2213,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       return true;
     });
   }
-  /** Resolve an explicit action that requires an Item. */
-  ensureItem(): Effect.Effect<boolean> {
-    return Effect.gen({ self: this }, function* () {
-      if (this.store.getState().item) return true;
-      yield* this.chooseItem();
-      return this.store.getState().item !== null;
-    });
-  }
   /** Whether `item` became the selection; a later selection outranks it. */
   selectItem(item: WorkbenchItemChoice): Effect.Effect<boolean> {
     return joinOnView(this.#runner.run, this.#selectItem(item));

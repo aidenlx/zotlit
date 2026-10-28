@@ -43,7 +43,6 @@ vi.mock("@/views/template-workbench/view", async () => {
       file = { path: `templates/profile-${++nextProfile}.md` };
       isDefaultProfile = false;
       store = createStore(() => ({ explorer: "simple" }));
-      ensureItem = vi.fn(async () => true);
       onResize = vi.fn();
       getViewType() {
         return "zotlit-template-workbench";
