@@ -718,11 +718,13 @@ export function layerSource(
         }
         if (yield* Ref.get(walWatcherScope)) return;
         const scope = yield* Scope.make();
+        // #1798: nothing holds the scope until the watch is ready, so an
+        // interrupt while it starts closes it here.
         const result = yield* Effect.result(
           watchPath(walPath, () => enqueueWatchSignal({ trusted: false })).pipe(
             Scope.provide(scope),
           ),
-        );
+        ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void)));
         if (result._tag === "Failure") {
           yield* Scope.close(scope, Exit.void);
           yield* logWarningCause("Failed to watch Zotero WAL", result.failure, {
@@ -744,6 +746,8 @@ export function layerSource(
       }) {
         const parent = dirname(current.sourcePath);
         const scope = yield* Scope.make();
+        // #1798: nothing holds the scope until both watches are ready, so an
+        // interrupt while they start closes it here.
         const result = yield* Effect.result(
           Effect.gen(function* () {
             yield* watchPath(parent, (event) => {
@@ -758,7 +762,7 @@ export function layerSource(
               enqueueWatchSignal({ trusted: false }),
             );
           }).pipe(Scope.provide(scope)),
-        );
+        ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void)));
         if (result._tag === "Failure") {
           yield* Scope.close(scope, Exit.void);
           yield* logWarningCause(
