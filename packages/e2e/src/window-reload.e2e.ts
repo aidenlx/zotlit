@@ -118,6 +118,70 @@ describe.skipIf(!reachable)("Window reload", () => {
     ).toEqual({ loaded: true, reloaded: true });
   });
 
+  it("releases a start-up that a disable interrupts, so the next enable starts (#1786)", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(vaultId, async ({ app }) => {
+        if (!app.plugins.plugins.zotlit)
+          await app.plugins.enablePlugin("zotlit");
+      });
+    });
+    const proof = await obRun(vaultId, async ({ app, page }) => {
+      const registered = () => ({
+        commands: Object.keys(app.commands.commands).filter((id) =>
+          id.startsWith("zotlit:"),
+        ).length,
+        cli: [...app.cli.handlers.keys()].filter((name) =>
+          name.startsWith("zotlit:"),
+        ).length,
+        protocol: [...app.workspace.protocolHandler.handlers.keys()].filter(
+          (action) => action.startsWith("zotlit"),
+        ).length,
+        views: Object.keys(app.viewRegistry.viewByType).filter((type) =>
+          type.startsWith("zotlit"),
+        ).length,
+        // The Live Updates listener is the one Node server ZotLit opens.
+        servers: process
+          ._getActiveHandles()
+          .filter(
+            (handle) =>
+              handle.constructor.name === "Server" &&
+              (handle as { listening?: boolean }).listening === true,
+          ).length,
+      });
+      const started = () => {
+        try {
+          return app.plugins.plugins.zotlit?.services !== undefined;
+        } catch {
+          return false;
+        }
+      };
+      await app.plugins.disablePlugin("zotlit");
+      const enabling = app.plugins.enablePlugin("zotlit");
+      // Loaded but not started: onload still waits for its services.
+      await page.until(
+        "onload in progress",
+        () => app.plugins.plugins.zotlit?._loaded === true && !started(),
+        10000,
+      );
+      await app.plugins.disablePlugin("zotlit");
+      await enabling;
+      const afterInterruptedStart = registered();
+      await app.plugins.enablePlugin("zotlit");
+      return { afterInterruptedStart, restarted: started() };
+    });
+    expect(proof).toEqual({
+      afterInterruptedStart: {
+        commands: 0,
+        cli: 0,
+        protocol: 0,
+        views: 0,
+        servers: 0,
+      },
+      restarted: true,
+    });
+  }, 120000);
+
   it("loads ZotLit in startup order, where its rename handlers run before the metadata cache moves the path", async () => {
     const toggled = await obRun(vaultId, recordRename, {
       listenerSources: null,
