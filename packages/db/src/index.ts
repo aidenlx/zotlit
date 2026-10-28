@@ -156,6 +156,8 @@ export {
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
   getIndexSignature,
+  getIndexSignatureRange,
+  getItemIDBounds,
   type IndexedCreator,
   type IndexedItem,
   type IndexSignature,

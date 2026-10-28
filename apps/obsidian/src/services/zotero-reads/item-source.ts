@@ -4,8 +4,10 @@ import { Effect, Layer, Stream } from "effect";
 import {
   getIndexedItemIDsByLibrary,
   getIndexedItemsByID,
-  getIndexSignature,
+  getIndexSignatureRange,
+  getItemIDBounds,
 } from "@zotlit/db";
+import type { IndexSignature } from "@zotlit/db";
 import type { GroupIDMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemSource, SourceUnavailable } from "@zotlit/item-lookup";
@@ -25,6 +27,37 @@ function read<A>(
       new SourceUnavailable({ message: toDbUnavailable(cause).message }),
   });
 }
+
+/**
+ * Item IDs per signature read. A read is one synchronous task in the worker,
+ * and a search waits for the task in progress: on the Stress Build of
+ * 100,000 Items, a range of this size reads in a few milliseconds, far under
+ * the 100 ms search limit, where the whole Library took 60–96 ms.
+ */
+const SIGNATURE_RANGE = 10_000;
+
+/**
+ * A Library's {@link IndexSignature} on `client`, summed over ranges of Item
+ * IDs with a yield between them, so a search waits for one range at most.
+ */
+const signatureOf = (client: NodeDatabaseClient, libraryID: number) =>
+  Effect.gen(function* () {
+    const bounds = yield* read(client, (c) => getItemIDBounds(c, libraryID));
+    const signature: IndexSignature = { count: 0, checksum: 0 };
+    if (!bounds) return signature;
+    for (let from = bounds.min; from <= bounds.max; from += SIGNATURE_RANGE) {
+      yield* Effect.yieldNow;
+      const part = yield* read(client, (c) =>
+        getIndexSignatureRange(c, libraryID, {
+          from,
+          to: from + SIGNATURE_RANGE,
+        }),
+      );
+      signature.count += part.count;
+      signature.checksum += part.checksum;
+    }
+    return signature;
+  });
 
 /**
  * An {@link ItemSource} over {@link Connection}.
@@ -63,8 +96,7 @@ export const layerConnectionItemSource: Layer.Layer<
             read(client, (c) => getIndexedItemIDsByLibrary(c, libraryID)),
           items: (itemIDs) =>
             read(client, (c) => getIndexedItemsByID(c, itemIDs, { memo })),
-          signature: (libraryID) =>
-            read(client, (c) => getIndexSignature(c, libraryID)),
+          signature: (libraryID) => signatureOf(client, libraryID),
           itemsByIndexedKey: (indexedKeys) =>
             read(client, (c) => itemsByIndexedKeys(c, indexedKeys)),
         } satisfies PinnedItemSource;

@@ -1,5 +1,5 @@
 import { deletedItems, items, itemTypes } from "@drizzle/schema";
-import { and, count, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import type { CreatorFieldMode } from "@/lib/zt-creator";
@@ -252,44 +252,94 @@ export interface IndexSignature {
   checksum: number;
 }
 
+/** One indexed row's term of {@link IndexSignature.checksum}. */
+const checksumTerm = sql<number>`unixepoch(${items.dateModified}) + ${items.itemID} + (coalesce(${zoteroActivity} / 1000, 0) * ((${items.itemID} % 997) + 1) % 2147483647)`;
+
 /**
  * Aggregate over the same row set as {@link indexedItemsQuery} (library, non-child
- * type, not deleted) in one pass, yielding the {@link IndexSignature} fields.
+ * type, not deleted) whose Item IDs fall in `[from, to)`, yielding the
+ * {@link IndexSignature} fields of that range. Both fields are sums over rows,
+ * so the parts of disjoint ranges add up to the Library's signature.
  *
  * @see unixepoch — https://www.sqlite.org/lang_datefunc.html
  */
-const indexSignatureQuery = defineQuery<{ libraryID: number }>()(
+const indexSignatureRangeQuery = defineQuery<{
+  libraryID: number;
+  from: number;
+  to: number;
+}>()((db, { placeholder }) =>
+  db
+    .select({
+      count: count(),
+      checksum: sql<number>`coalesce(sum(${checksumTerm}), 0)`,
+    })
+    .from(items)
+    .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
+    .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
+    .where(
+      and(
+        eq(items.libraryID, placeholder("libraryID")),
+        gte(items.itemID, placeholder("from")),
+        lt(items.itemID, placeholder("to")),
+        notInArray(itemTypes.typeName, [...CHILD_ITEM_TYPES]),
+        isNull(deletedItems.itemID),
+      ),
+    ),
+);
+
+const itemIDBoundsQuery = defineQuery<{ libraryID: number }>()(
   (db, { placeholder }) =>
     db
       .select({
-        count: count(),
-        checksum: sql<number>`coalesce(sum(unixepoch(${items.dateModified}) + ${items.itemID} + (coalesce(${zoteroActivity} / 1000, 0) * ((${items.itemID} % 997) + 1) % 2147483647)), 0)`,
+        min: sql<number | null>`min(${items.itemID})`,
+        max: sql<number | null>`max(${items.itemID})`,
       })
       .from(items)
-      .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
-      .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
-      .where(
-        and(
-          eq(items.libraryID, placeholder("libraryID")),
-          notInArray(itemTypes.typeName, [...CHILD_ITEM_TYPES]),
-          isNull(deletedItems.itemID),
-        ),
-      ),
+      .where(eq(items.libraryID, placeholder("libraryID"))),
 );
 
 /**
- * Read a library's {@link IndexSignature} in one aggregate query — the gate that
- * lets the item-lookup service skip a rebuild when nothing indexed changed.
+ * The lowest and highest Item ID in a Library, of any type, or null when it
+ * has no Items. The ranges of {@link getIndexSignatureRange} cover this span.
  */
-export function getIndexSignature(
+export function getItemIDBounds(
   db: NodeDatabaseClient,
   libraryID: number,
+): { min: number; max: number } | null {
+  const row = itemIDBoundsQuery.prepared(db).get({ libraryID });
+  if (row?.min == null || row.max == null) return null;
+  return { min: row.min, max: row.max };
+}
+
+/**
+ * The part of a Library's {@link IndexSignature} from the Items whose IDs fall
+ * in `[from, to)`. The gate that lets the item-lookup service skip a rebuild
+ * when nothing indexed changed sums these parts over the Library's Item ID
+ * span, one range per task, so no single read holds the worker for long.
+ */
+export function getIndexSignatureRange(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  { from, to }: { from: number; to: number },
 ): IndexSignature {
-  const row = indexSignatureQuery.prepared(db).get({ libraryID });
+  const row = indexSignatureRangeQuery
+    .prepared(db)
+    .get({ libraryID, from, to });
   return {
     count: row?.count ?? 0,
     checksum: Number(row?.checksum ?? 0),
   };
+}
+
+/** A Library's whole {@link IndexSignature}: one range over every Item ID. */
+export function getIndexSignature(
+  db: NodeDatabaseClient,
+  libraryID: number,
+): IndexSignature {
+  return getIndexSignatureRange(db, libraryID, {
+    from: Number.MIN_SAFE_INTEGER,
+    to: Number.MAX_SAFE_INTEGER,
+  });
 }
 
 function toIndexedItem(
