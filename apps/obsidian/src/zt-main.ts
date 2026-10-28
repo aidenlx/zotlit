@@ -417,7 +417,6 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       bridge: services.bridge,
       context: services.workbenchActionContext,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      customize,
       defaultProfile: services.defaultProfile,
       itemLookup: services.itemLookup,
       settings: services.settings,

@@ -315,7 +315,6 @@ export async function createPluginRuntime(
       get defaultDocumentPath() {
         return bridge.runSync(profile.defaultDocumentPath);
       },
-      getSource: (selector) => bridge.runPromise(profile.getSource(selector)),
     } satisfies DefaultProfileTarget,
     localBridge: bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
     customize: bindCustomize(bridge, runtime.runSync(Customize)),

@@ -10,11 +10,12 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
+import { Customize } from "@/services/local-bridge/customize";
 import type {
-  CustomizeAction,
   CustomizeRequest,
   NativeProfileTarget,
 } from "@/services/local-bridge/customize";
+import { Profile } from "@/services/profile/service";
 import {
   findWorkbenchLayout,
   openWorkbenchLayout,
@@ -43,10 +44,11 @@ export function requiresNative(source: string): boolean {
 }
 
 /** Customize on the reader's chosen surface, through the Local Bridge launch. */
-export const customizeProfile = (
-  customize: CustomizeAction,
-  request: CustomizeRequest,
-) => Effect.tryPromise(() => customize(request));
+export const customizeProfile = Effect.fn("TemplateWorkbench.customizeProfile")(
+  function* (request: CustomizeRequest) {
+    yield* (yield* Customize).open(request);
+  },
+);
 
 /** Reveal `leaf`, focus it, and answer the view it holds when it is a Workbench. */
 const revealWorkbench = Effect.fn("TemplateWorkbench.revealWorkbench")(
@@ -164,9 +166,7 @@ const launchNativeProfileEditor = Effect.fn(
   if (!file && target instanceof TFile) return OPENED;
   const source = file
     ? yield* vault.cachedRead(file)
-    : yield* Effect.tryPromise(() =>
-        (target as Exclude<NativeProfileTarget, TFile>).getSource("default"),
-      );
+    : yield* (yield* Profile).getSource("default");
   if (file)
     return yield* launchTemplateWorkbench(file, {
       ...options,

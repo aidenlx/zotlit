@@ -7,6 +7,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { Notifier, reportOutcome } from "@/lib/notifier";
 import type { Vault } from "@/lib/obsidian-vault";
 import type { Workspace } from "@/lib/obsidian-workspace";
+import type { Customize } from "@/services/local-bridge/customize";
+import type { Profile } from "@/services/profile/service";
 
 /**
  * Run a Template Workbench action and report its outcome: a failure is logged
@@ -50,7 +52,12 @@ export const explainWorkbenchOpen = Effect.fn(
 });
 
 /** The services a Workbench launch reads. */
-export type WorkbenchActionServices = Notifier | Vault | Workspace;
+export type WorkbenchActionServices =
+  | Notifier
+  | Vault
+  | Workspace
+  | Customize
+  | Profile;
 
 /** What a plain Obsidian callback needs to start a Workbench action. */
 export interface WorkbenchActionDeps {
