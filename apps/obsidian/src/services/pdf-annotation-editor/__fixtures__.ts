@@ -214,6 +214,8 @@ export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
 /** The viewer child, its toolbar slot, and the page renders it dispatches. */
 export function pdfReader(page = pageView()) {
   const toolbarRightEl = createDiv();
+  /** PDF.js's scroller; a page turn and the reopen move both scroll it. */
+  const container = { scrollTop: 0, scrollLeft: 0 };
   const listeners: { event: string; listener: (event: unknown) => void }[] = [];
   const child: Record<string, unknown> = {
     // `on` and `off` read the event bus through this, and Obsidian's `unload`
@@ -221,6 +223,7 @@ export function pdfReader(page = pageView()) {
     pdfViewer: {
       eventBus: {},
       isInitialViewSet: true,
+      pdfViewer: { container },
       pdfDocument: {
         numPages: 1,
         getPage: vi.fn(async () => page.pdfPage),
@@ -240,6 +243,7 @@ export function pdfReader(page = pageView()) {
 
   return {
     child,
+    container,
     page,
     toolbarRightEl,
     viewer: host(child),
@@ -250,8 +254,9 @@ export function pdfReader(page = pageView()) {
         if (event === "pagerendered") listener({ pageNumber: 1, source: page });
       }
     },
-    /** What PDF.js dispatches when its current page number changes. */
+    /** A page turn: the reader scrolls to the page, and PDF.js names it. */
     turnPage: () => {
+      container.scrollTop += 1200;
       for (const { event, listener } of listeners) {
         if (event === "pagechanging") listener({});
       }
@@ -264,10 +269,30 @@ export function pdfReader(page = pageView()) {
     setInitialView: () => {
       (child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
         true;
+      container.scrollTop = 300;
       for (const name of ["pagechanging", "documentinit"]) {
         for (const { event, listener } of listeners) {
           if (event === name) listener({});
         }
+      }
+    },
+    /**
+     * A turn by a link or subpath: PDF.js names the new page first, and then
+     * scrolls to it in the same task.
+     */
+    navigate: () => {
+      for (const { event, listener } of listeners) {
+        if (event === "pagechanging") listener({});
+      }
+      container.scrollTop += 1200;
+    },
+    /**
+     * What PDF.js's scroll update after `setInitialView` does: it names the
+     * page the reopen position shows most of, with no scroll of its own.
+     */
+    settle: () => {
+      for (const { event, listener } of listeners) {
+        if (event === "pagechanging") listener({});
       }
     },
     /**
@@ -294,6 +319,7 @@ export function pdfReader(page = pageView()) {
       for (const { event, listener } of listeners) {
         if (event === "pagesdestroy") listener({});
       }
+      container.scrollTop = 0;
       (child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
         false;
     },

@@ -1108,13 +1108,18 @@ export class LibraryView extends ItemView {
     this.#treeWidth?.unload();
     this.#details?.unmount();
     this.#keep.run();
-    await this.#saving;
+    const saving = this.#saving;
     this.search.unload();
-    await this.query.flush();
+    const flushing = this.query.flush();
+    // Everything that reads the registry stops before the first wait: a
+    // plugin unload starts this close and then disposes the registry
+    // without waiting for it. The writes run on the storage's own runner.
     this.query.unload();
     this.card.unload();
     this.tree.unload();
     for (const part of this.#parts.splice(0)) part.unload();
+    await saving;
+    await flushing;
     this.#storage.close();
     this.#release?.();
     this.#release = null;

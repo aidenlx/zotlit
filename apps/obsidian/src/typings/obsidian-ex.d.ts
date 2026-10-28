@@ -621,6 +621,8 @@ declare module "obsidian" {
        * `setInitialView` moves to that position.
        */
       isInitialViewSet?: boolean;
+      /** PDF.js's own viewer; `container` is the element that scrolls. */
+      pdfViewer?: { container?: HTMLElement } | null;
     } | null;
     /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
     on(event: "pagerendered", listener: PDFPageRenderedListener): void;
