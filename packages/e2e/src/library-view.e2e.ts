@@ -3192,7 +3192,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
 
-  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and shows it under the tree and the list across a narrow pane with no edge, with Zotero closed", async () => {
+  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and shows it 16rem high under the tree and the list across a narrow pane, sized from its top edge with the keys and a double click and with a close button that stays put as the details scroll, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -3970,8 +3970,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     // Under a narrow pane the card spans the whole pane under the tree and
-    // the list, at half its height, with no edge to drag; the list stays
-    // above it, and the width kept waits for a wide pane.
+    // the list, 16rem high, with its top edge to drag in place of its side
+    // edge; the list stays above it, and the width kept waits for a wide
+    // pane.
     await obRun(
       run.vaultId,
       async ({ app, page }) => {
@@ -4022,6 +4023,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           const edge = card!.querySelector<HTMLElement>(
             "[data-library-card-resizer]",
           );
+          const top = card!.querySelector<HTMLElement>(
+            "[data-library-card-height-resizer]",
+          );
           const box = card!.getBoundingClientRect();
           const column = el
             .querySelector<HTMLElement>("[data-library-shell]")!
@@ -4039,9 +4043,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                   .getBoundingClientRect().width,
               ),
             spans: Math.round(box.width) === Math.round(column.width),
-            half: Math.abs(box.height - column.height / 2) <= 1,
+            height: Math.round(box.height),
+            now: Number(top!.getAttribute("aria-valuenow")),
+            orientation: top!.getAttribute("aria-orientation"),
             listAbove: Math.round(list.bottom) <= Math.round(box.top),
             edge: edge!.checkVisibility(),
+            topEdge: top!.checkVisibility(),
+            heightStored:
+              (
+                zotlit.services.bridge.runSync(
+                  zotlit.services.settings.current,
+                )["library.document"] as StoredLibraryViewDocument | null
+              )?.cardHeight ?? null,
             stored:
               (
                 zotlit.services.bridge.runSync(
@@ -4061,13 +4074,321 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       shown: true,
       below: true,
       spans: true,
-      half: true,
+      height: 256,
+      now: 256,
+      orientation: "horizontal",
       listAbove: true,
       edge: false,
+      topEdge: true,
+      heightStored: null,
       stored: null,
     });
     await screenshot("card-narrow-below");
-  });
+
+    /** The card's height under a narrow pane, its edges, and the height plugin data keeps after a flush. */
+    const cardHeight = async (
+      what: string,
+      ready: (value: {
+        shown: boolean;
+        empty: boolean;
+        below: boolean;
+        height: number;
+        now: number;
+        min: number;
+        max: number;
+        room: number;
+        topEdge: boolean;
+        edge: boolean;
+        stored: number | null;
+      }) => boolean,
+    ) =>
+      await obRunUntil(
+        run.vaultId,
+        async ({ app, zotlit }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]?.view;
+          if (!view?.query) return null;
+          await view.query.settled;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const { settings, bridge } = zotlit.services;
+          await bridge.runPromise(settings.flush);
+          const el = view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const top = card!.querySelector<HTMLElement>(
+            "[data-library-card-height-resizer]",
+          );
+          const box = card!.getBoundingClientRect();
+          const list = el
+            .querySelector<HTMLElement>("[data-library-search-row]")!
+            .parentElement!.getBoundingClientRect();
+          const num = (n: string) => Number(top!.getAttribute(n));
+          return {
+            shown: !card!.hidden && card!.checkVisibility(),
+            empty: card!.querySelector("[data-library-card-empty]") !== null,
+            below:
+              Math.round(box.width) ===
+              Math.round(
+                el
+                  .querySelector<HTMLElement>("[data-library-shell]")!
+                  .getBoundingClientRect().width,
+              ),
+            height: Math.round(box.height),
+            now: num("aria-valuenow"),
+            min: num("aria-valuemin"),
+            max: num("aria-valuemax"),
+            room: Math.round(list.height + box.height),
+            topEdge: top!.checkVisibility(),
+            edge: card!
+              .querySelector<HTMLElement>("[data-library-card-resizer]")!
+              .checkVisibility(),
+            stored:
+              (
+                bridge.runSync(settings.current)[
+                  "library.document"
+                ] as StoredLibraryViewDocument | null
+              )?.cardHeight ?? null,
+          };
+        },
+        undefined,
+        {
+          what,
+          tries: 120,
+          ready: (value) => value !== null && ready(value),
+        },
+      );
+    /** Press `keys` on the card's top edge, one frame apart. */
+    const pressTopEdge = async (keys: string[]) => {
+      await obRun(
+        run.vaultId,
+        async ({ app }, { keys }) => {
+          const top = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-card] [data-library-card-height-resizer]",
+          );
+          top!.focus();
+          for (const key of keys) {
+            top!.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            await new Promise((r) => requestAnimationFrame(r));
+          }
+        },
+        { keys: keys },
+      );
+    };
+
+    // The details with no paper selected keep the height they have with
+    // one, so the first click on a row moves nothing; the close button
+    // shows on them too.
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        // The same tab opens the view again, with no paper selected.
+        const leaf = app.workspace.getLeavesOfType("zotlit-library")[0]!;
+        await leaf.setViewState({ type: "empty" });
+        await leaf.setViewState({ type: "zotlit-library", active: true });
+        await app.workspace.revealLeaf(leaf);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      },
+      undefined,
+    );
+    const empty = await cardHeight(
+      "Reading Card with no paper under a narrow pane",
+      (value) => value.shown && value.empty && value.below,
+    );
+    expect(empty).toMatchObject({ height: 256, now: 256, topEdge: true });
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          const close = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-card] [data-library-card-close]",
+          );
+          return close !== null && close.checkVisibility();
+        },
+        undefined,
+      ),
+    ).toBe(true);
+    await obRun(
+      run.vaultId,
+      async ({ app, page }) => {
+        const { press, until } = page;
+        const el = (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl;
+        const row = await until(
+          "rows",
+          () => el.querySelector<HTMLElement>("[data-query-item-row]"),
+          20000,
+        );
+        press(row, "first paper");
+      },
+      undefined,
+    );
+    const selected = await cardHeight(
+      "Reading Card with a paper under a narrow pane",
+      (value) => value.shown && !value.empty,
+    );
+    expect(selected!.height).toBe(empty!.height);
+    // The top edge keeps the list 20rem above the card.
+    expect(selected).toMatchObject({
+      min: 128,
+      max: selected!.room - 320,
+      stored: null,
+    });
+
+    // ArrowUp makes the card 16px taller, and plugin data keeps it.
+    await pressTopEdge(["ArrowUp"]);
+    expect(
+      await cardHeight(
+        "Reading Card one step taller",
+        (value) => value.stored === 272,
+      ),
+    ).toMatchObject({ height: 272, now: 272, stored: 272 });
+
+    // A double click puts the default 16rem back, and keeps no height.
+    await obRun(
+      run.vaultId,
+      async ({ app }) => {
+        (
+          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+            view: LibraryView;
+          })[]
+        )[0]!.view.contentEl
+          .querySelector<HTMLElement>(
+            "[data-library-card] [data-library-card-height-resizer]",
+          )!
+          .dispatchEvent(
+            new MouseEvent("dblclick", {
+              bubbles: true,
+              cancelable: true,
+              detail: 2,
+            }),
+          );
+      },
+      undefined,
+    );
+    expect(
+      await cardHeight(
+        "Reading Card back at its default height",
+        (value) => value.stored === null && value.height === 256,
+      ),
+    ).toMatchObject({ height: 256, now: 256, stored: null });
+
+    // Home makes it 8rem; the close button sits outside what scrolls, so it
+    // keeps its place down the paper's details.
+    await pressTopEdge(["Home"]);
+    expect(
+      await cardHeight(
+        "Reading Card at its lowest",
+        (value) => value.stored === 128,
+      ),
+    ).toMatchObject({ height: 128, now: 128 });
+    expect(
+      await obRun(
+        run.vaultId,
+        async ({ app }) => {
+          const card = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-card]",
+          );
+          const columns = card!.querySelector<HTMLElement>(
+            "[data-library-card-columns]",
+          );
+          const close = card!.querySelector<HTMLElement>(
+            "[data-library-card-close]",
+          );
+          const before = close!.getBoundingClientRect().top;
+          const overflow = columns!.scrollHeight - columns!.clientHeight;
+          columns!.scrollTop = overflow;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          return {
+            overflows: overflow > 0,
+            scrolled: columns!.scrollTop > 0,
+            outside: !columns!.contains(close),
+            moved: Math.round(close!.getBoundingClientRect().top - before),
+            shown: close!.checkVisibility(),
+          };
+        },
+        undefined,
+      ),
+    ).toEqual({
+      overflows: true,
+      scrolled: true,
+      outside: true,
+      moved: 0,
+      shown: true,
+    });
+
+    // Beside a wide list the card keeps its side edge and no top edge.
+    await obRun(
+      run.vaultId,
+      async () => {
+        require("@electron/remote").getCurrentWindow().setSize(1600, 1000);
+      },
+      undefined,
+    );
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        async ({ app }) => {
+          const el = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0]!.view.contentEl;
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const shell = el
+            .querySelector<HTMLElement>("[data-library-shell]")!
+            .getBoundingClientRect();
+          return {
+            wide: shell.width >= 896,
+            beside:
+              Math.round(card!.getBoundingClientRect().width) <
+              Math.round(shell.width),
+            topEdge: card!
+              .querySelector<HTMLElement>("[data-library-card-height-resizer]")!
+              .checkVisibility(),
+            edge: card!
+              .querySelector<HTMLElement>("[data-library-card-resizer]")!
+              .checkVisibility(),
+          };
+        },
+        undefined,
+        {
+          what: "Reading Card beside a wide list",
+          tries: 120,
+          ready: (value) => value.wide && value.beside,
+        },
+      ),
+    ).toEqual({ wide: true, beside: true, topEdge: false, edge: true });
+  }, 180000);
 
   it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and turns it on again from the Details button at the width it had, with Zotero closed", async () => {
     const snapshot = await obRun(
