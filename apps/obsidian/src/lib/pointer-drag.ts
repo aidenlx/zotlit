@@ -1,5 +1,5 @@
-// The lifecycle of a drag that follows the pointer along x, as an edge that
-// resizes a column or a pane does: the pointer capture, the cursor held over
+// The lifecycle of a drag that follows the pointer along x, or along y, as
+// an edge that resizes a column or a pane does: the pointer capture, the cursor held over
 // the whole page, the window listeners, Escape, one update a frame and the
 // cleanup. What the drag sets stays with the caller.
 import { Scope } from "obsidian";
@@ -12,7 +12,9 @@ export interface PointerDrag {
    */
   app: Pick<App, "scope" | "keymap">;
   /** The press that starts the drag. */
-  press: Pick<PointerEvent, "pointerId" | "clientX">;
+  press: Pick<PointerEvent, "pointerId" | "clientX" | "clientY">;
+  /** The axis the drag follows; x unless it says y. */
+  axis?: "x" | "y";
   /** The element pressed, which takes the pointer and the `is-active` class. */
   handle: HTMLElement;
   /** The body class that holds the drag's cursor over the whole page. */
@@ -23,8 +25,8 @@ export interface PointerDrag {
    */
   controller: AbortController;
   /**
-   * The pointer is `delta` pixels along x from the press, once it has left
-   * the press's x; at most once a frame.
+   * The pointer is `delta` pixels along the axis from the press, once it
+   * has left the press's place on it; at most once a frame.
    */
   move: (delta: number) => void;
   /**
@@ -46,6 +48,7 @@ export interface PointerDrag {
 export function pointerDrag({
   app,
   press,
+  axis = "x",
   handle,
   cursor,
   controller,
@@ -55,7 +58,10 @@ export function pointerDrag({
 }: PointerDrag): void {
   const { doc, win } = handle;
   const { signal } = controller;
-  const { pointerId, clientX: origin } = press;
+  const at = (pointer: Pick<PointerEvent, "clientX" | "clientY">) =>
+    axis === "x" ? pointer.clientX : pointer.clientY;
+  const { pointerId } = press;
+  const origin = at(press);
   let delta = 0;
   let moved = false;
   let frame = 0;
@@ -95,9 +101,9 @@ export function pointerDrag({
     "pointermove",
     (event) => {
       if (!mine(event)) return;
-      if (event.clientX !== origin) moved = true;
+      if (at(event) !== origin) moved = true;
       if (!moved) return;
-      delta = event.clientX - origin;
+      delta = at(event) - origin;
       if (frame) return;
       frame = win.requestAnimationFrame(() => {
         frame = 0;

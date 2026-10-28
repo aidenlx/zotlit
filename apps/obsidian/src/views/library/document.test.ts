@@ -21,6 +21,7 @@ import type { QueryFile, QueryFileView } from "@/views/query-view/query-file";
 import { splitFilters } from "@/views/query-view/view-plan/filter-split";
 
 import {
+  CARD_HEIGHT_MIN,
   CARD_WIDTH_MIN,
   cardWidthBounds,
   clampCardWidth,
@@ -34,12 +35,15 @@ import {
   tagNames,
   pruneExpanded,
   withCardClosed,
+  withCardHeight,
   withCardWidth,
   withExpanded,
   withNode,
-  withSelected,
+  TREE_WIDTH_MIN,
   withTags,
   withText,
+  withTreeCollapsed,
+  withTreeWidth,
 } from "./document";
 import type { LibraryNode, LibraryViewDocument } from "./document";
 import { searchTerms, searchTokens } from "./search";
@@ -67,7 +71,6 @@ const CHAPTER: LibraryViewDocument = {
     JSON.stringify(["group:4200309", "Thesis"]),
     `closed:${JSON.stringify(["personal"])}`,
   ],
-  selected: "4200309:ABCD2345",
 };
 
 describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
@@ -127,9 +130,8 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
       sort: [{ property: "lastActivity", direction: "DESC" }],
       // The Reading Card opens with All fields and Annotations closed.
       card: { allFields: false, annotations: false },
-      // No Collection open, and no paper selected.
+      // No Collection open.
       expanded: [],
-      selected: null,
     });
   });
 
@@ -157,16 +159,11 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     ).toEqual([other, thesis, chapter]);
   });
 
-  it("takes no selected paper and no open node where either cannot be read, and keeps the rest", () => {
+  it("takes no open node where it cannot read them, and ignores the selected paper an earlier build kept, keeping the rest", () => {
     const stored = serializeLibraryViewDocument(CHAPTER);
-    expect(parseLibraryViewDocument({ ...stored, selected: 42 })).toEqual({
-      ...CHAPTER,
-      selected: null,
-    });
-    expect(parseLibraryViewDocument({ ...stored, selected: "" })).toEqual({
-      ...CHAPTER,
-      selected: null,
-    });
+    expect(
+      parseLibraryViewDocument({ ...stored, selected: "4200309:ABCD2345" }),
+    ).toEqual(CHAPTER);
     expect(parseLibraryViewDocument({ ...stored, expanded: "Thesis" })).toEqual(
       {
         ...CHAPTER,
@@ -176,16 +173,12 @@ describe("parseLibraryViewDocument and serializeLibraryViewDocument", () => {
     );
   });
 
-  it("reads a document an earlier build stored, with no open nodes and no selected paper", () => {
-    const {
-      expanded: _expanded,
-      selected: _selected,
-      ...earlier
-    } = serializeLibraryViewDocument(CHAPTER);
+  it("reads a document an earlier build stored, with no open nodes", () => {
+    const { expanded: _expanded, ...earlier } =
+      serializeLibraryViewDocument(CHAPTER);
     expect(parseLibraryViewDocument(earlier)).toEqual({
       ...CHAPTER,
       expanded: [JSON.stringify(["group:4200309", "Thesis"])],
-      selected: null,
     });
   });
 
@@ -269,7 +262,6 @@ describe("withNode", () => {
     expect(withNode(CHAPTER, node)).toEqual({
       ...CHAPTER,
       node,
-      selected: null,
     });
   });
 
@@ -278,7 +270,6 @@ describe("withNode", () => {
       ...CHAPTER,
       node: { kind: "recent" },
       sort: [{ property: "lastActivity", direction: "DESC" }],
-      selected: null,
     });
   });
 
@@ -287,7 +278,6 @@ describe("withNode", () => {
     expect(withNode(recent, CHAPTER.node)).toEqual({
       ...CHAPTER,
       sort: [],
-      selected: null,
     });
   });
 
@@ -298,7 +288,6 @@ describe("withNode", () => {
       ...CHAPTER,
       node: MY_LIBRARY,
       sort,
-      selected: null,
     });
   });
 
@@ -308,7 +297,6 @@ describe("withNode", () => {
       ...CHAPTER,
       node: MY_LIBRARY,
       sort,
-      selected: null,
     });
   });
 
@@ -334,15 +322,6 @@ describe("withExpanded, withSelected and pruneExpanded", () => {
     expect(withExpanded(CHAPTER, [reading, reading])).toEqual({
       ...CHAPTER,
       expanded: [reading],
-    });
-  });
-
-  it("selects a paper, and lets go of it", () => {
-    const selected = withSelected(CHAPTER, "1:QRST6789");
-    expect(selected).toEqual({ ...CHAPTER, selected: "1:QRST6789" });
-    expect(withSelected(selected, null)).toEqual({
-      ...CHAPTER,
-      selected: null,
     });
   });
 
@@ -408,23 +387,26 @@ describe("the Reading Card's width", () => {
     expect(clampCardWidth(400, 500)).toBe(288);
     expect(clampCardWidth(5000)).toBe(5000);
   });
+});
 
-  it("takes at most 85% of a narrow pane the card shows over, and keeps 18rem where that fits", () => {
-    // The card overlays the whole 740px pane, tree and list, so the list's
-    // 20rem does not count.
-    expect(cardWidthBounds(740, { overlay: true })).toEqual({
-      min: 288,
-      max: 629,
+describe("the Reading Card's height under a narrow list", () => {
+  it("round-trips a height, keeps it at least 8rem, and stores nothing for the default", () => {
+    const set = withCardHeight(CHAPTER, 320);
+    expect(set).toEqual({ ...CHAPTER, cardHeight: 320 });
+    expect(parseLibraryViewDocument(serializeLibraryViewDocument(set))).toEqual(
+      set,
+    );
+    expect(withCardHeight(CHAPTER, 40).cardHeight).toBe(CARD_HEIGHT_MIN);
+    expect(withCardHeight(set, undefined)).toEqual(CHAPTER);
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    expect(stored).not.toHaveProperty("cardHeight");
+    expect(parseLibraryViewDocument({ ...stored, cardHeight: 40 })).toEqual({
+      ...CHAPTER,
+      cardHeight: CARD_HEIGHT_MIN,
     });
-    expect(clampCardWidth(500, 740, { overlay: true })).toBe(500);
-    expect(clampCardWidth(2000, 740, { overlay: true })).toBe(629);
-    expect(clampCardWidth(100, 740, { overlay: true })).toBe(288);
-    // On a tiny pane the floor gives way to the cap.
-    expect(cardWidthBounds(300, { overlay: true })).toEqual({
-      min: 255,
-      max: 255,
-    });
-    expect(clampCardWidth(400, 300, { overlay: true })).toBe(255);
+    expect(parseLibraryViewDocument({ ...stored, cardHeight: "320" })).toEqual(
+      CHAPTER,
+    );
   });
 });
 
@@ -463,6 +445,42 @@ describe("the Reading Card closed", () => {
       ...CHAPTER,
       cardClosed: true,
     });
+  });
+});
+
+describe("the Library Tree's width and collapse", () => {
+  it("round-trips a width and a collapsed tree, and stores nothing for the defaults", () => {
+    const set = withTreeCollapsed(withTreeWidth(CHAPTER, 260), true);
+    expect(set).toEqual({ ...CHAPTER, treeWidth: 260, treeCollapsed: true });
+    expect(parseLibraryViewDocument(serializeLibraryViewDocument(set))).toEqual(
+      set,
+    );
+    expect(withTreeCollapsed(withTreeWidth(set, undefined), false)).toEqual(
+      CHAPTER,
+    );
+    expect(serializeLibraryViewDocument(CHAPTER)).not.toHaveProperty(
+      "treeWidth",
+    );
+    expect(serializeLibraryViewDocument(CHAPTER)).not.toHaveProperty(
+      "treeCollapsed",
+    );
+  });
+
+  it("keeps the tree at least 10rem, drops a width that is not a number, and reads it collapsed only where the field is true", () => {
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    expect(withTreeWidth(CHAPTER, 40).treeWidth).toBe(TREE_WIDTH_MIN);
+    expect(parseLibraryViewDocument({ ...stored, treeWidth: 40 })).toEqual({
+      ...CHAPTER,
+      treeWidth: TREE_WIDTH_MIN,
+    });
+    for (const treeWidth of ["240", Number.NaN, null])
+      expect(parseLibraryViewDocument({ ...stored, treeWidth })).toEqual(
+        CHAPTER,
+      );
+    for (const treeCollapsed of [false, "true", 1, null])
+      expect(parseLibraryViewDocument({ ...stored, treeCollapsed })).toEqual(
+        CHAPTER,
+      );
   });
 });
 

@@ -26,6 +26,7 @@ import type {
   Modifier,
   PaneType,
   Point,
+  PluginManifest,
   SearchMatchPart,
   SearchResult,
   Setting as ObsidianSetting,
@@ -204,6 +205,16 @@ export class Component {
 
   onload(): void {}
   onunload(): void {}
+}
+
+/** Stand-in for `Plugin`: a component over the app and its manifest. */
+export class Plugin extends Component {
+  constructor(
+    readonly app: App,
+    readonly manifest: PluginManifest,
+  ) {
+    super();
+  }
 }
 
 /** Stand-in for `MarkdownRenderChild`: a component bound to one element. */

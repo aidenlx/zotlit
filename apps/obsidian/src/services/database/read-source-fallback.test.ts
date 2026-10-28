@@ -1,5 +1,6 @@
 // Read-fallback priority at the database source boundary.
 
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { Effect } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,7 +25,9 @@ function inspectPrepared<A>(
   inspect: (prepared: import("./read-source").PreparedRead) => A,
 ): Promise<A> {
   return Effect.runPromise(
-    Effect.scoped(Effect.map(preparation, (prepared) => inspect(prepared))),
+    Effect.scoped(
+      Effect.map(preparation, (prepared) => inspect(prepared)),
+    ).pipe(Effect.provide(NodeFileSystem.layer)),
   );
 }
 

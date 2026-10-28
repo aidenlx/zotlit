@@ -3,7 +3,7 @@ import * as v from "valibot";
 // The Library View Document: what the Library View shows, as one plain value
 // that plugin data keeps per vault, and the one module that reads, changes
 // and derives it. Its transitions take a tree selection, the tree nodes
-// left open, the selected paper, the Reading Card's width, the facets, the search and a toolbar change; its derivations give the list's query (the
+// left open, the Reading Card's width, the facets, the search and a toolbar change; its derivations give the list's query (the
 // tree node, the facets and the selected tags become the filters for all views, Recent adds none
 // and reads the whole Library Scope, a search becomes its ranked key set, and
 // the sort passes through to the one Items view, always in the Papers
@@ -95,60 +95,64 @@ export interface LibraryViewDocument {
    * which shows its Collections until the researcher closes it.
    */
   readonly expanded: readonly string[];
-  /** The Indexed Key of the paper the Reading Card shows; `null` for none. */
-  readonly selected: string | null;
   /**
    * The Reading Card's width in pixels, as the researcher set it by its
    * inner edge; absent for the default, {@link CARD_WIDTH_DEFAULT}.
    */
   readonly cardWidth?: number;
   /**
-   * Whether the researcher closed the Reading Card, from its close button or
-   * by dragging its edge past the minimum; absent while it is not. A closed
-   * card stays off a wide pane as the selection moves, until a row click,
-   * Space or "Show in Library" opens it again.
+   * The Reading Card's height in pixels under a narrow list, as the
+   * researcher set it by its top edge; absent for the default,
+   * {@link CARD_HEIGHT_DEFAULT}.
+   */
+  readonly cardHeight?: number;
+  /**
+   * Whether the researcher turned the item details off, from the Details
+   * button, Space on the list, the card's close button or a drag of its edge
+   * past the minimum; absent while they show. While on, the details show the
+   * selected paper at every pane width.
    */
   readonly cardClosed?: boolean;
+  /**
+   * The Library Tree's width in pixels, as the researcher set it by its
+   * inner edge; absent for the default, {@link TREE_WIDTH_DEFAULT}.
+   */
+  readonly treeWidth?: number;
+  /**
+   * Whether the researcher collapsed the Library Tree on a pane wide enough
+   * to show it beside the list; absent while it shows.
+   */
+  readonly treeCollapsed?: boolean;
 }
 
 /** The Reading Card's width, in pixels, until the researcher sets one: 24rem. */
 export const CARD_WIDTH_DEFAULT = 384;
 /** The narrowest the Reading Card can be, in pixels: 18rem. */
 export const CARD_WIDTH_MIN = 288;
+/** The Reading Card's height under a narrow list until the researcher sets one: 16rem. */
+export const CARD_HEIGHT_DEFAULT = 256;
+/** The lowest the Reading Card can be under a narrow list, in pixels: 8rem. */
+export const CARD_HEIGHT_MIN = 128;
 /** The room the list keeps beside the Reading Card, in pixels: 20rem. */
 export const CARD_LIST_MIN = 320;
-
-/** The most of a narrow pane the Reading Card takes over the list: 85%. */
-export const CARD_OVERLAY_MAX = 0.85;
-
-/** Where the Reading Card is: beside the list, or over a narrow pane. */
-export interface CardWidthPlacement {
-  /**
-   * Whether the card shows over the pane, which is then the pane it
-   * overlays, rather than beside the list, when the pane is the list's and
-   * the card's together.
-   */
-  overlay?: boolean;
-}
+/** The Library Tree's width, in pixels, until the researcher sets one: 14rem. */
+export const TREE_WIDTH_DEFAULT = 224;
+/** The narrowest the Library Tree can be, in pixels: 10rem. */
+export const TREE_WIDTH_MIN = 160;
 
 /**
- * The widths the Reading Card can take in a pane `pane` pixels wide. Beside
- * the list: at least {@link CARD_WIDTH_MIN}, and at most what leaves the list
- * {@link CARD_LIST_MIN}, unless the pane is too narrow for both. Over a
- * narrow pane: at most {@link CARD_OVERLAY_MAX} of it, and at least
- * {@link CARD_WIDTH_MIN} where that fits under the cap.
+ * The widths a pane beside the list, the Reading Card or the Library Tree,
+ * can take where it and the list share `pane` pixels: at least `min`, and at
+ * most what leaves the list {@link CARD_LIST_MIN}, unless the room is too
+ * narrow for both.
  */
 export function cardWidthBounds(
   pane: number,
-  { overlay = false }: CardWidthPlacement = {},
+  min = CARD_WIDTH_MIN,
 ): { min: number; max: number } {
-  if (overlay) {
-    const max = Math.floor(pane * CARD_OVERLAY_MAX);
-    return { min: Math.min(CARD_WIDTH_MIN, max), max };
-  }
   return {
-    min: CARD_WIDTH_MIN,
-    max: Math.max(CARD_WIDTH_MIN, Math.round(pane) - CARD_LIST_MIN),
+    min,
+    max: Math.max(min, Math.round(pane) - CARD_LIST_MIN),
   };
 }
 
@@ -159,12 +163,9 @@ export function cardWidthBounds(
 export function clampCardWidth(
   width: number,
   pane?: number,
-  placement?: CardWidthPlacement,
+  floor = CARD_WIDTH_MIN,
 ): number {
-  const { min, max } = cardWidthBounds(
-    pane ?? Number.POSITIVE_INFINITY,
-    placement,
-  );
+  const { min, max } = cardWidthBounds(pane ?? Number.POSITIVE_INFINITY, floor);
   return Math.round(Math.min(max, Math.max(min, width)));
 }
 
@@ -208,9 +209,11 @@ export type StoredLibraryViewDocument = {
   sort: v.InferOutput<typeof sortSchema>;
   card: { allFields: boolean; annotations: boolean };
   expanded: string[];
-  selected: string | null;
   cardWidth?: number;
+  cardHeight?: number;
   cardClosed?: boolean;
+  treeWidth?: number;
+  treeCollapsed?: boolean;
 };
 
 /**
@@ -232,7 +235,6 @@ export const DEFAULT_LIBRARY_VIEW_DOCUMENT: LibraryViewDocument = Object.freeze(
     sort: RECENT_SORT,
     card: CLOSED_CARD,
     expanded: [],
-    selected: null,
   } satisfies LibraryViewDocument,
 );
 
@@ -268,13 +270,15 @@ function openTo(expanded: readonly string[], node: LibraryNode): string[] {
  * build cannot read takes its default and the other fields stay; a facet it
  * does not know drops out, and so does a tag that is not a name. A document
  * of an earlier build has no tags, and selects none; nor does it hold open
- * nodes or a selected paper. The Collections above the selected node open
+ * nodes. The Collections above the selected node open
  * on read, as the tree shows a selection. A field it no longer reads, such
- * as the `layout` and `order` of an earlier build, is ignored. A card width
+ * as the `layout`, `order` and `selected` of an earlier build, is ignored. A card width
  * that is not a finite number is dropped, so the card takes its default; one
  * below {@link CARD_WIDTH_MIN} takes the minimum. The pane, which sets the
- * maximum, clamps it again as the view applies it. The card is closed only
- * where `cardClosed` is `true`.
+ * maximum, clamps it again as the view applies it. The tree width reads
+ * the same way against {@link TREE_WIDTH_MIN}. The details are off only
+ * where `cardClosed` is `true`, and the tree collapsed only where
+ * `treeCollapsed` is `true`.
  */
 export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const stored =
@@ -293,6 +297,8 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const expanded = field(v.array(v.unknown()), "expanded", []);
   const node = field(nodeSchema, "node", defaults.node);
   const cardWidth = stored.cardWidth;
+  const cardHeight = stored.cardHeight;
+  const treeWidth = stored.treeWidth;
   return {
     node,
     facets: READING_STATE_FACETS.filter((facet) => facets.includes(facet)),
@@ -310,14 +316,18 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
       ),
       node,
     ),
-    selected: field(
-      v.pipe(v.string(), v.nonEmpty()),
-      "selected",
-      defaults.selected,
-    ),
     ...(typeof cardWidth === "number" &&
       Number.isFinite(cardWidth) && { cardWidth: clampCardWidth(cardWidth) }),
+    ...(typeof cardHeight === "number" &&
+      Number.isFinite(cardHeight) && {
+        cardHeight: clampCardWidth(cardHeight, undefined, CARD_HEIGHT_MIN),
+      }),
     ...(stored.cardClosed === true && { cardClosed: true }),
+    ...(typeof treeWidth === "number" &&
+      Number.isFinite(treeWidth) && {
+        treeWidth: clampCardWidth(treeWidth, undefined, TREE_WIDTH_MIN),
+      }),
+    ...(stored.treeCollapsed === true && { treeCollapsed: true }),
   };
 }
 
@@ -349,8 +359,7 @@ function nodeSort(node: LibraryNode): readonly QueryFileSort[] | null {
 }
 
 /**
- * `doc` with `node` selected in the tree, the Collections above it open and
- * no paper selected, since the selected row leaves the list with its node.
+ * `doc` with `node` selected in the tree and the Collections above it open.
  * Recent writes its sort, and leaving it clears that sort, so the next node
  * opens unsorted; a sort the researcher changed while on Recent is theirs
  * and stays.
@@ -367,7 +376,6 @@ export function withNode(
     node,
     sort,
     expanded: openTo(doc.expanded, node),
-    selected: null,
   };
 }
 
@@ -393,21 +401,56 @@ export function withCardWidth(
     : { ...rest, cardWidth: clampCardWidth(width) };
 }
 
-/** `doc` with the Reading Card closed, or open again. */
+/**
+ * `doc` with the Reading Card `height` pixels high under a narrow list, at
+ * least {@link CARD_HEIGHT_MIN}; `undefined` returns it to the default.
+ */
+export function withCardHeight(
+  doc: LibraryViewDocument,
+  height: number | undefined,
+): LibraryViewDocument {
+  const { cardHeight: _, ...rest } = doc;
+  return height === undefined || !Number.isFinite(height)
+    ? rest
+    : {
+        ...rest,
+        cardHeight: clampCardWidth(height, undefined, CARD_HEIGHT_MIN),
+      };
+}
+
+/**
+ * `doc` with the Library Tree `width` pixels wide, at least
+ * {@link TREE_WIDTH_MIN}; `undefined` returns it to the default.
+ */
+export function withTreeWidth(
+  doc: LibraryViewDocument,
+  width: number | undefined,
+): LibraryViewDocument {
+  const { treeWidth: _, ...rest } = doc;
+  return width === undefined || !Number.isFinite(width)
+    ? rest
+    : {
+        ...rest,
+        treeWidth: clampCardWidth(width, undefined, TREE_WIDTH_MIN),
+      };
+}
+
+/** `doc` with the Library Tree collapsed beside the list, or shown again. */
+export function withTreeCollapsed(
+  doc: LibraryViewDocument,
+  collapsed: boolean,
+): LibraryViewDocument {
+  const { treeCollapsed: _, ...rest } = doc;
+  return collapsed ? { ...rest, treeCollapsed: true } : rest;
+}
+
+/** `doc` with the item details off, or on again. */
 export function withCardClosed(
   doc: LibraryViewDocument,
   closed: boolean,
 ): LibraryViewDocument {
   const { cardClosed: _, ...rest } = doc;
   return closed ? { ...rest, cardClosed: true } : rest;
-}
-
-/** `doc` with the paper `selected`, by its Indexed Key, or none. */
-export function withSelected(
-  doc: LibraryViewDocument,
-  selected: string | null,
-): LibraryViewDocument {
-  return { ...doc, selected };
 }
 
 /**
@@ -490,9 +533,11 @@ export function serializeLibraryViewDocument(
     sort: doc.sort.map(({ property, direction }) => ({ property, direction })),
     card: { ...doc.card },
     expanded: [...doc.expanded],
-    selected: doc.selected,
     ...(doc.cardWidth !== undefined && { cardWidth: doc.cardWidth }),
+    ...(doc.cardHeight !== undefined && { cardHeight: doc.cardHeight }),
     ...(doc.cardClosed === true && { cardClosed: true }),
+    ...(doc.treeWidth !== undefined && { treeWidth: doc.treeWidth }),
+    ...(doc.treeCollapsed === true && { treeCollapsed: true }),
   };
 }
 
@@ -718,15 +763,35 @@ export function unreadCount(
   count: (rows: readonly QueryViewRow[]) => number;
 } | null {
   if (node.kind === "recent") return null;
-  const { filters, vault } = selectionConditions(node, ["unread"]);
+  return nodeCount(node, ["unread"], { scope: { mode: "all" }, notes });
+}
+
+/**
+ * How to count the Items of `node` that pass every one of `facets`, with
+ * no tag or search beside them, as the paper count reads them (ADR 0072):
+ * the request, and the rows of its answer the vault keeps. Recent counts
+ * the Library Scope it lists, `scope`.
+ */
+export function nodeCount(
+  node: LibraryNode,
+  facets: readonly ReadingStateFacet[],
+  {
+    scope,
+    notes,
+  }: { scope: LibraryScope; notes: Pick<LiteratureNotes, "find"> },
+): {
+  request: QueryViewRequest;
+  count: (rows: readonly QueryViewRow[]) => number;
+} {
+  const { filters, vault } = selectionConditions(node, facets);
   const pass = vaultPass(vault, notes);
   return {
     request: {
       from: "items",
       fields: [],
-      filter: filters.join(" && "),
+      ...(filters.length > 0 && { filter: filters.join(" && ") }),
       limit: null,
-      libraries: librariesOf(node, { mode: "all" }),
+      libraries: librariesOf(node, scope),
     },
     count: (rows) =>
       rows.filter(({ indexedKey }) => pass?.keeps(indexedKey) ?? true).length,

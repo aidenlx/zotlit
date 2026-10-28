@@ -27,6 +27,7 @@ import {
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import {
+  nodeCount,
   nodeKey,
   paperCountRequest,
   tagListRequest,
@@ -43,6 +44,8 @@ export interface TreeSession {
   readonly all: boolean;
   readonly expanded: ReadonlySet<string>;
   readonly open: boolean;
+  /** Whether the researcher collapsed the tree beside a wide list. */
+  readonly collapsed: boolean;
   readonly facets: readonly ReadingStateFacet[];
   readonly tags: readonly string[];
   readonly tagFilter: string;
@@ -83,6 +86,7 @@ export function makeTreeModel() {
     all: false,
     expanded: new Set<string>(),
     open: false,
+    collapsed: false,
     facets: [],
     tags: [],
     tagFilter: "",
@@ -152,6 +156,63 @@ export function makeTreeModel() {
         )
       : Effect.succeed(null);
   });
+  // Read only while the item details show no paper and subscribe to it.
+  const stats = viewRuntime.atom((get) => {
+    get(revision);
+    get(zoteroRevisionAtom);
+    get(zoteroTreeUnavailableAtom);
+    get(target);
+    get(resolvedLibraryScopeAtom);
+    const noted = get(notedItemKeysAtom);
+    if (!get(enabled)) return Effect.succeed(null);
+    const node = get.once(session).node;
+    const scope = scopeForLibrary(get.once(libraryScopeStateAtom));
+    const notes = {
+      find: (key: string) =>
+        noted.has(key) ? { path: key, basename: key } : null,
+    };
+    // Has note is a vault condition over the same rows as every paper.
+    const hasNote = nodeCount(node, ["has-note"], { scope, notes });
+    return Effect.gen(function* () {
+      const query = yield* QueryService;
+      const rowsOf = (facets: readonly ReadingStateFacet[]) => {
+        const { request, count } = nodeCount(node, facets, { scope, notes });
+        return query
+          .run(request)
+          .pipe(
+            Effect.map((outcome) =>
+              outcome.kind === "result" && outcome.result.rows
+                ? { rows: outcome.result.rows, count }
+                : null,
+            ),
+          );
+      };
+      const [all, unread, annotated, pdf] = yield* Effect.all(
+        [
+          rowsOf([]),
+          rowsOf(["unread"]),
+          rowsOf(["annotated"]),
+          rowsOf(["pdf"]),
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (!all || !unread || !annotated || !pdf) return null;
+      return {
+        unread: unread.count(unread.rows),
+        annotated: annotated.count(annotated.rows),
+        "has-note": hasNote.count(all.rows),
+        pdf: pdf.count(pdf.rows),
+      } satisfies LibraryStats;
+    }).pipe(
+      recover(
+        (error) =>
+          Effect.logWarning("The Library View could not count the papers", {
+            error,
+          }),
+        Effect.succeed(null),
+      ),
+    );
+  });
   const tagList = viewRuntime.atom((get) => {
     get(revision);
     get(zoteroRevisionAtom);
@@ -187,9 +248,15 @@ export function makeTreeModel() {
     unread: get(unread).waiting ? null : value(get(unread), null),
     tagList: value(get(tagList), null),
   }));
-  return { session, state, loaded, unread, tagList, canWiden };
+  return { session, state, loaded, unread, stats, tagList, canWiden };
 }
 export type TreeModel = ReturnType<typeof makeTreeModel>;
+
+/**
+ * What the item details count while no paper is selected: the papers of
+ * the tree node that pass each Reading State facet.
+ */
+export type LibraryStats = Readonly<Record<ReadingStateFacet, number>>;
 
 const readTree = (shown: readonly AvailableLibrary[]) =>
   Effect.gen(function* () {
