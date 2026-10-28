@@ -1,7 +1,8 @@
 // How a Profile document leaves this page and comes back: the file a reader
-// downloads, and the draft this browser keeps between visits. Every storage
-// call is answered even where the browser refuses storage, so a page opened
-// with site data blocked still edits and still downloads.
+// downloads or picks, the handoff to Obsidian, and the draft this browser keeps
+// between visits. Every storage call is answered even where the browser refuses
+// storage, so a page opened with site data blocked still edits and still
+// downloads.
 //
 // The two halves of a draft are kept in different storages. The text and the
 // revision it answers for are the reader's own work, so they persist; a paper
@@ -9,6 +10,7 @@
 // the tab alone and no longer. A Sample Item is bundled with the page, so it
 // rides in the persistent record like the text does.
 
+import { Context, Data, Effect, Layer } from "effect";
 import { customAlphabet } from "nanoid";
 import * as v from "valibot";
 
@@ -19,8 +21,10 @@ import {
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileRequest } from "@zotlit/workbench/bridge";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
+import { WorkbenchClipboardError } from "@zotlit/workbench/ui";
 
 import type { SampleItem } from "./fields";
+import type { PageBridge } from "./runtime";
 
 /**
  * What one visit left behind: the source being edited, and the paper it was
@@ -173,13 +177,59 @@ function clearRecord(storage: () => Storage, key: string): void {
   }
 }
 
-/** Copies the exact document before handing control to the native import sheet. */
-export async function openProfileInObsidian(source: string): Promise<void> {
-  await navigator.clipboard.writeText(source);
-  const link = document.createElement("a");
-  link.href = buildImportProfileProtocolUrl();
-  link.click();
-}
+/** A Profile file the browser could not read. */
+export class ProfileFileError extends Data.TaggedError("ProfileFileError")<{
+  readonly cause: unknown;
+}> {}
+
+/** The page's asynchronous transfers: the clipboard, the handoff, and a picked file. */
+export class Transfer extends Context.Service<
+  Transfer,
+  {
+    /** Puts `text` on the system clipboard. */
+    copy(text: string): Effect.Effect<void, WorkbenchClipboardError>;
+    /** Copies the exact document before handing control to the native import sheet. */
+    openInObsidian(
+      source: string,
+    ): Effect.Effect<void, WorkbenchClipboardError>;
+    /** The text of a Profile file the reader picked. */
+    readFile(file: File): Effect.Effect<string, ProfileFileError>;
+  }
+>()("zotlit/docs/workbench/Transfer") {}
+
+const copy = Effect.fn("Transfer.copy")((text: string) =>
+  Effect.tryPromise({
+    try: () => navigator.clipboard.writeText(text),
+    catch: (cause) => new WorkbenchClipboardError({ cause }),
+  }),
+);
+
+/** The clipboard copy a host member and the field list hand the Workbench UI. */
+export const copyThrough =
+  (bridge: Pick<PageBridge, "provide">) =>
+  (text: string): Effect.Effect<void, WorkbenchClipboardError> =>
+    bridge.provide(Transfer.use((transfer) => transfer.copy(text)));
+
+export const layerTransfer = Layer.succeed(
+  Transfer,
+  Transfer.of({
+    copy,
+    openInObsidian: Effect.fn("Transfer.openInObsidian")(function* (
+      source: string,
+    ) {
+      yield* copy(source);
+      const link = document.createElement("a");
+      link.href = buildImportProfileProtocolUrl();
+      link.click();
+    }),
+    readFile: Effect.fn("Transfer.readFile")((file: File) =>
+      Effect.tryPromise({
+        try: () => file.text(),
+        catch: (cause) => new ProfileFileError({ cause }),
+      }),
+    ),
+  }),
+);
 
 /** One transferable Default copy per editor, so a later handoff can replace it. */
 export function createProfileHandoffSource(): (source: string) => string {

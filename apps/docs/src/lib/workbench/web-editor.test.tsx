@@ -32,6 +32,7 @@ import {
   title,
   shownItem,
   bridgeFetch,
+  serveBridge,
 } from "./page-test-host";
 import type { BridgeRequest } from "./page-test-host";
 
@@ -185,7 +186,7 @@ describe("a draft the parser refuses", () => {
   });
 
   it("names the connected plugin version in a captured report", async () => {
-    vi.stubGlobal("fetch", bridgeFetch([]));
+    serveBridge(bridgeFetch([]));
     await using page = await launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
@@ -426,7 +427,7 @@ describe("the simplified editing flow", () => {
 
   it("downloads an imported file without saving over the connected profile", async () => {
     const requests: BridgeRequest[] = [];
-    vi.stubGlobal("fetch", bridgeFetch(requests));
+    serveBridge(bridgeFetch(requests));
     await using page = await launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
@@ -645,7 +646,7 @@ describe("the annotation box", () => {
       },
     });
     let loaded = snapshot([first, second], "initial");
-    vi.stubGlobal("fetch", bridgeFetch([], { item: () => loaded }));
+    serveBridge(bridgeFetch([], { item: () => loaded }));
     await using page = await launch();
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),

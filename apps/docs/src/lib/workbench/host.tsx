@@ -6,17 +6,12 @@
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Effect } from "effect";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { testItemSeed } from "@zotlit/item-query";
 import type { RenderRequest } from "@zotlit/workbench/render";
-import {
-  makeWorkbenchRunner,
-  WorkbenchClipboardError,
-  WorkbenchHostError,
-  WorkbenchMessagesProvider,
-} from "@zotlit/workbench/ui";
+import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchMatchResult,
   WorkbenchConfirmRequest,
@@ -53,23 +48,16 @@ import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
-import { renderInThread } from "./render";
+import { Rendering } from "./rendering";
 import { ResultSheet } from "./result-sheet";
-import { ensureTemporal } from "./temporal";
+import { usePageBridge } from "./runtime";
+import type { PageBridge } from "./runtime";
 import { WEB_THEME } from "./theme";
+import { copyThrough } from "./transfer";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
 /** This site's own community page, which Ask the community opens. */
 const COMMUNITY_URL = "/community";
-
-/** Puts `text` on the system clipboard; the field list copies the same way. */
-export const copyText = (
-  text: string,
-): Effect.Effect<void, WorkbenchClipboardError> =>
-  Effect.tryPromise({
-    try: () => navigator.clipboard.writeText(text),
-    catch: (cause) => new WorkbenchClipboardError({ cause }),
-  });
 
 /** A request kept open until the reader answers it. */
 interface Pending<Request, Answer> {
@@ -80,6 +68,7 @@ interface Pending<Request, Answer> {
 /** The names the snapshot's note root carries, as the Match tab needs them. */
 function matchData(
   snapshot: RenderRequest["snapshot"],
+  bridge: Pick<PageBridge, "provide">,
 ): WorkbenchHost["matchData"] {
   const note = snapshot.roots.note;
   const tags = Array.isArray(note.tags)
@@ -119,10 +108,7 @@ function matchData(
     matches: (_, filter) =>
       seed
         ? // The test reads the clock, so it waits for the `Temporal` polyfill.
-          Effect.tryPromise({
-            try: () => ensureTemporal(),
-            catch: (cause) => new WorkbenchHostError({ cause }),
-          }).pipe(
+          bridge.provide(Rendering.use((rendering) => rendering.temporal)).pipe(
             Effect.map((): WorkbenchMatchResult => {
               const answer = testItemSeed(filter, seed);
               if (answer.kind !== "problem") return answer;
@@ -159,39 +145,21 @@ export function useWebHost({
     string | null
   > | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  const bridge = usePageBridge();
   // Handlers read the latest values through refs, so the host object itself
   // stays the same across renders.
-  const data = useMemo(() => matchData(snapshot), [snapshot]);
+  const data = useMemo(() => matchData(snapshot, bridge), [snapshot, bridge]);
   const latest = useRef({ data, notice, insertTarget });
   useLayoutEffect(() => {
     latest.current = { data, notice, insertTarget };
   }, [data, notice, insertTarget]);
 
-  // The runner belongs to this mount: unmounting the page interrupts every
-  // host Effect it still runs, and an Effect started after it is interrupted
-  // at once. A remount, as StrictMode makes, opens another.
-  const runner = useRef<ReturnType<typeof makeWorkbenchRunner> | null>(null);
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      runner.current?.close();
-      runner.current = null;
-    };
-  }, []);
-
+  // The runner is the page's: closing the page interrupts every host Effect
+  // it still runs, and an Effect started after it is interrupted at once.
   const host = useMemo<WorkbenchHost>(
     () => ({
       messages: m,
-      run: (effect) => {
-        if (mounted.current)
-          return (runner.current ??= makeWorkbenchRunner()).run(effect);
-        const closed = makeWorkbenchRunner();
-        const fiber = closed.run(effect);
-        closed.close();
-        return fiber;
-      },
+      run: bridge.run,
       getLocale,
       menu: setMenu,
       dialog(request) {
@@ -217,13 +185,10 @@ export function useWebHost({
         }),
       tooltip: (text) => ({ title: text }),
       notice: (text) => latest.current.notice(text),
-      copy: copyText,
+      copy: copyThrough(bridge),
       communityUrl: COMMUNITY_URL,
       render: (request) =>
-        Effect.tryPromise({
-          try: () => renderInThread(request),
-          catch: (cause) => new WorkbenchHostError({ cause }),
-        }),
+        bridge.provide(Rendering.use((rendering) => rendering.render(request))),
       markdown: ResultSheet,
       editorPopups: (read) => [webCompletion(read), webHover(read)],
       matchData: {
@@ -261,7 +226,7 @@ export function useWebHost({
         },
       },
     }),
-    [],
+    [bridge],
   );
 
   function answerConfirm(value: boolean) {

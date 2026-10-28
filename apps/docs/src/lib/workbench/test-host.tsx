@@ -8,9 +8,18 @@ import {
 } from "@zotlit/workbench/ui";
 
 import { useWebHost } from "./host";
+import { PageRuntime } from "./runtime";
 import { WEB_THEME } from "./theme";
 
 export function WebTestHost({ children }: { children: ReactNode }) {
+  return (
+    <PageRuntime>
+      <BoundHost>{children}</BoundHost>
+    </PageRuntime>
+  );
+}
+
+function BoundHost({ children }: { children: ReactNode }) {
   const { host, overlays } = useWebHost({
     snapshot: SAMPLE_ITEMS[0]!,
     notice() {},

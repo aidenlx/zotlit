@@ -24,6 +24,7 @@ import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
 import { m } from "@/paraglide/messages.js";
 
+import { layerPage } from "./runtime";
 import { Workbench } from "./workbench";
 
 // The page's own renderer, behind a spy so a test can read every request it was
@@ -85,6 +86,17 @@ export const FIXTURE_CSL_STYLE =
   '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">' +
   "<citation><layout/></citation></style>";
 
+/** The fetch the page's Local Bridge client sends through. */
+let bridge: typeof fetch;
+
+/**
+ * Answers the Local Bridge requests of every page this test opens from now
+ * on with `fetch`. With none served, no Local Bridge is running.
+ */
+export function serveBridge(fetch: typeof globalThis.fetch): void {
+  bridge = fetch;
+}
+
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
 beforeEach(() => {
@@ -93,10 +105,7 @@ beforeEach(() => {
   installStorage("localStorage");
   installStorage("sessionStorage");
   window.history.replaceState(null, "", "/workbench");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => Promise.reject(new Error("No Local Bridge is running."))),
-  );
+  bridge = () => Promise.reject(new Error("No Local Bridge is running."));
   renderInThread.mockClear();
   renderInThread.mockImplementation((request) =>
     Promise.resolve(renderProfile(request.source, request.snapshot, request)),
@@ -140,7 +149,11 @@ export interface OpenPage extends AsyncDisposable {
   waitFor: (assertion: () => void) => Promise<void>;
 }
 
-/** The page mounted for real, so its own effects run. */
+/**
+ * The page mounted for real, so its own effects run, over a page layer whose
+ * Local Bridge sends through the served fetch and keeps its grant in this
+ * test's tab storage.
+ */
 export async function open({
   strict = false,
 }: { strict?: boolean } = {}): Promise<OpenPage> {
@@ -153,7 +166,9 @@ export async function open({
   resources.defer(() => act(async () => root.unmount()));
   const content = (
     <>
-      <Workbench />
+      <Workbench
+        layer={layerPage({ fetch: bridge, storage: sessionStorage })}
+      />
       <Toaster />
     </>
   );
@@ -372,6 +387,8 @@ export interface BridgeFixtureOptions {
   /** Answers the selected Item 401, the way a revoked credential does. */
   readonly revokeAfterConnect?: boolean;
   readonly save?: SaveSelectedProfileResponse;
+  /** Holds the answer to a request at `path` until the Promise it returns settles. */
+  readonly hold?: (path: string) => Promise<void> | undefined;
 }
 
 export function receiverName(receiver: unknown): string | undefined {
@@ -407,6 +424,7 @@ export function bridgeFetch(
       body,
       receiver: this,
     });
+    await options.hold?.(url.pathname);
 
     if (url.pathname === LOCAL_BRIDGE_PATHS.selectedItem) itemReads += 1;
 
