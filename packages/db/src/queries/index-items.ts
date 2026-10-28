@@ -278,7 +278,10 @@ const indexSignatureRangeQuery = defineQuery<{
     .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
     .where(
       and(
-        eq(items.libraryID, placeholder("libraryID")),
+        // The unary plus keeps the (libraryID, key) index out of the plan, so
+        // SQLite searches the itemID (rowid) range, and each range reads only
+        // its own rows instead of the whole Library's index entries.
+        sql`+${items.libraryID} = ${placeholder("libraryID")}`,
         gte(items.itemID, placeholder("from")),
         lt(items.itemID, placeholder("to")),
         notInArray(itemTypes.typeName, [...CHILD_ITEM_TYPES]),
@@ -320,7 +323,7 @@ export function getItemIDBounds(
 export function getIndexSignatureRange(
   db: NodeDatabaseClient,
   libraryID: number,
-  { from, to }: { from: number; to: number },
+  { from, to }: ItemIDRange,
 ): IndexSignature {
   const row = indexSignatureRangeQuery
     .prepared(db)
@@ -331,15 +334,76 @@ export function getIndexSignatureRange(
   };
 }
 
-/** A Library's whole {@link IndexSignature}: one range over every Item ID. */
+/** A half-open range `[from, to)` of Item IDs. */
+export interface ItemIDRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * The loop that sums a Library's {@link IndexSignature} over ranges of `size`
+ * Item IDs across `bounds`. It yields each range and takes back that range's
+ * part, read with {@link getIndexSignatureRange}; it returns the sum. The
+ * caller does each read, so it can give the event loop a turn between them.
+ *
+ * This departs from `policies/query-authoring.md`: the statement count grows
+ * with the Item ID span instead of staying fixed. Each statement is one task
+ * in the database worker, and a search waits for the task in progress, so no
+ * task may come near the 100 ms search limit; the whole Library in one
+ * statement took 60–96 ms on the Stress Build of 100,000 Items.
+ */
+export function* sumSignatureRanges(
+  bounds: { min: number; max: number } | null,
+  size: number,
+): Generator<ItemIDRange, IndexSignature, IndexSignature> {
+  const total: IndexSignature = { count: 0, checksum: 0 };
+  if (!bounds) return total;
+  for (let from = bounds.min; from <= bounds.max; from += size) {
+    const part = yield { from, to: from + size };
+    total.count += part.count;
+    total.checksum += part.checksum;
+  }
+  return total;
+}
+
+/**
+ * A Library's whole {@link IndexSignature} in one statement. It searches the
+ * (libraryID, key) index, so a small Library beside a large one reads only its
+ * own rows.
+ */
+const indexSignatureQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }) =>
+    db
+      .select({
+        count: count(),
+        checksum: sql<number>`coalesce(sum(${checksumTerm}), 0)`,
+      })
+      .from(items)
+      .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
+      .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
+      .where(
+        and(
+          eq(items.libraryID, placeholder("libraryID")),
+          notInArray(itemTypes.typeName, [...CHILD_ITEM_TYPES]),
+          isNull(deletedItems.itemID),
+        ),
+      ),
+);
+
+/**
+ * A Library's whole {@link IndexSignature} in one statement, equal to the sum
+ * of {@link sumSignatureRanges}. The Item Index reads the ranges instead, so
+ * no read holds the database worker for long.
+ */
 export function getIndexSignature(
   db: NodeDatabaseClient,
   libraryID: number,
 ): IndexSignature {
-  return getIndexSignatureRange(db, libraryID, {
-    from: Number.MIN_SAFE_INTEGER,
-    to: Number.MAX_SAFE_INTEGER,
-  });
+  const row = indexSignatureQuery.prepared(db).get({ libraryID });
+  return {
+    count: row?.count ?? 0,
+    checksum: Number(row?.checksum ?? 0),
+  };
 }
 
 function toIndexedItem(

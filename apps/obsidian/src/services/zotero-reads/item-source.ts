@@ -6,8 +6,8 @@ import {
   getIndexedItemsByID,
   getIndexSignatureRange,
   getItemIDBounds,
+  sumSignatureRanges,
 } from "@zotlit/db";
-import type { IndexSignature } from "@zotlit/db";
 import type { GroupIDMemo } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemSource, SourceUnavailable } from "@zotlit/item-lookup";
@@ -37,26 +37,28 @@ function read<A>(
 const SIGNATURE_RANGE = 10_000;
 
 /**
- * A Library's {@link IndexSignature} on `client`, summed over ranges of Item
- * IDs with a yield between them, so a search waits for one range at most.
+ * A Library's index signature on `client`, summed by
+ * {@link sumSignatureRanges} with a yield before each range read, so a search
+ * waits for one range at most.
  */
 const signatureOf = (client: NodeDatabaseClient, libraryID: number) =>
   Effect.gen(function* () {
-    const bounds = yield* read(client, (c) => getItemIDBounds(c, libraryID));
-    const signature: IndexSignature = { count: 0, checksum: 0 };
-    if (!bounds) return signature;
-    for (let from = bounds.min; from <= bounds.max; from += SIGNATURE_RANGE) {
+    const ranges = sumSignatureRanges(
+      yield* read(client, (c) => getItemIDBounds(c, libraryID)),
+      SIGNATURE_RANGE,
+    );
+    // One statement per range, not the fixed count that
+    // packages/db/policies/query-authoring.md asks for: no worker task may
+    // come near the 100 ms search limit.
+    let step = ranges.next();
+    while (!step.done) {
       yield* Effect.yieldNow;
-      const part = yield* read(client, (c) =>
-        getIndexSignatureRange(c, libraryID, {
-          from,
-          to: from + SIGNATURE_RANGE,
-        }),
+      const range = step.value;
+      step = ranges.next(
+        yield* read(client, (c) => getIndexSignatureRange(c, libraryID, range)),
       );
-      signature.count += part.count;
-      signature.checksum += part.checksum;
     }
-    return signature;
+    return step.value;
   });
 
 /**

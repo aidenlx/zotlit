@@ -158,6 +158,7 @@ export {
   getIndexSignature,
   getIndexSignatureRange,
   getItemIDBounds,
+  sumSignatureRanges,
   type IndexedCreator,
   type IndexedItem,
   type IndexSignature,
