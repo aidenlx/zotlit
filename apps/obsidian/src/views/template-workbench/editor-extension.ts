@@ -52,19 +52,16 @@ export const hostedEditor: Extension = [
       // styles show from the first frame there. The editor stands in the page
       // only once its plugins are made.
       let popover: HTMLElement | null = null;
-      let destroyed = false;
       const opening = (event: Event) => {
         if ((event as ToggleEvent).newState === "open")
           follow(view, view.dom.ownerDocument);
       };
       queueMicrotask(() => {
-        if (destroyed) return;
         popover = view.dom.closest<HTMLElement>("[popover]");
         popover?.addEventListener("beforetoggle", opening);
       });
       return {
         destroy() {
-          destroyed = true;
           popover?.removeEventListener("beforetoggle", opening);
           dispose();
         },
