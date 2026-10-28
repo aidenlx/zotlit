@@ -1,4 +1,5 @@
 // A native Explorer owns its data and navigation; workspace values supply its authoring context.
+import { Effect } from "effect";
 import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
@@ -25,6 +26,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { makeViewRunner } from "@/lib/view-runner";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -35,7 +37,10 @@ import {
   onCompanionStateRestored,
   subscribeActiveTemplateWorkbench,
 } from "@/views/note-preview/register";
-import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
+import {
+  copyToClipboard,
+  createTemplateWorkbenchHost,
+} from "@/views/template-workbench/host";
 import {
   chooseWorkbenchItem,
   searchWorkbenchItem,
@@ -396,10 +401,13 @@ export class TemplateDataExplorerView extends ItemView {
           this.app.workspace.requestSaveLayout();
       }),
     );
+    // Closing the leaf interrupts every host Effect the Explorer still runs.
+    const runner = cleanup.use(makeViewRunner(registry));
     this.#host = cleanup.use(
       createTemplateWorkbenchHost(this.app, {
+        run: runner.run,
         render: (request) =>
-          Promise.resolve(
+          Effect.succeed(
             failedRender(renderIdentity(request), { code: "render-error" }),
           ),
         // This view shows no Match.
@@ -492,7 +500,7 @@ export class TemplateDataExplorerView extends ItemView {
                   onSearchItem={() => void this.#chooseItem(true)}
                   lookup={this.#deps.itemLookup}
                   explorer={{
-                    copy: (text) => navigator.clipboard.writeText(text),
+                    copy: copyToClipboard,
                     onInsertNode: (node) => {
                       const editor = activeTemplateWorkbench(
                         this.app,

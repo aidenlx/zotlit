@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -23,7 +24,7 @@ afterEach(() => vi.useRealTimers());
 /** The scheduler the Template Workbench holds, with the renders it drove recorded. */
 function scheduling(live: boolean) {
   const render = vi.fn((request: RenderRequest) =>
-    Promise.resolve<NativeRenderResult>(
+    Effect.succeed<NativeRenderResult>(
       nativeResult({
         ...failedRender(renderIdentity(request), { code: "render-error" }),
         creationBody: request.source,
@@ -36,6 +37,7 @@ function scheduling(live: boolean) {
   });
   const scheduler = createRenderScheduler({
     render,
+    run: Effect.runFork,
     failed: nativeResult,
     input: {
       source: PROFILE_SOURCE,

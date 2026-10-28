@@ -128,6 +128,23 @@ export async function recentItemChoices(
   }
 }
 
+/**
+ * The chooser's answer, opened on the host's runner. Closing the leaf
+ * interrupts the chooser, which reads as a dismissal.
+ */
+function chooseOn(
+  host: WorkbenchHost,
+  request: NativeWorkbenchSuggesterRequest,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    host
+      .run(host.suggester(request))
+      .addObserver((exit) =>
+        resolve(exit._tag === "Success" ? exit.value : null),
+      );
+  });
+}
+
 export async function searchWorkbenchItem(
   deps: ItemSearchDeps,
 ): Promise<WorkbenchItemChoice | null> {
@@ -199,7 +216,7 @@ export async function chooseWorkbenchItem(
       });
     },
   };
-  const id = await host.suggester(request);
+  const id = await chooseOn(host, request);
   return id === "search-zotero"
     ? searchWorkbenchItem(deps)
     : ([...retained, ...choices].find((item) => item.id === id) ??
@@ -221,7 +238,7 @@ export async function chooseWorkbenchAnnotation(
         hint: option.description,
       };
     });
-  return host.suggester({
+  return chooseOn(host, {
     title: m.workbench_choose_annotation(),
     selected: selected ?? undefined,
     groups: [

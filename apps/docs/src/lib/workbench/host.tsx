@@ -5,13 +5,20 @@
 // for a match; and browser storage for a preference.
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Effect } from "effect";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { testItemSeed } from "@zotlit/item-query";
 import type { RenderRequest } from "@zotlit/workbench/render";
-import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
+import {
+  makeWorkbenchRunner,
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+  WorkbenchMessagesProvider,
+} from "@zotlit/workbench/ui";
 import type {
+  WorkbenchMatchResult,
   WorkbenchConfirmRequest,
   WorkbenchDialogRequest,
   WorkbenchHost,
@@ -55,6 +62,15 @@ const STORAGE_PREFIX = "zotlit.workbench.preference";
 /** This site's own community page, which Ask the community opens. */
 const COMMUNITY_URL = "/community";
 
+/** Puts `text` on the system clipboard; the field list copies the same way. */
+export const copyText = (
+  text: string,
+): Effect.Effect<void, WorkbenchClipboardError> =>
+  Effect.tryPromise({
+    try: () => navigator.clipboard.writeText(text),
+    catch: (cause) => new WorkbenchClipboardError({ cause }),
+  });
+
 /** A request kept open until the reader answers it. */
 interface Pending<Request, Answer> {
   readonly request: Request;
@@ -90,32 +106,35 @@ function matchData(
   const { library } = snapshot.item;
   const { seed } = snapshot;
   return {
-    tags: () => Promise.resolve(tags),
-    collections: () => Promise.resolve(collections),
-    libraries: () =>
-      Promise.resolve([
-        {
-          id:
-            library.type === "personal"
-              ? "personal"
-              : `group:${library.groupID}`,
-        },
-      ]),
-    customFields: () => Promise.resolve(seed?.customFieldNames ?? []),
+    tags: Effect.succeed(tags),
+    collections: Effect.succeed(collections),
+    libraries: Effect.succeed([
+      {
+        id:
+          library.type === "personal" ? "personal" : `group:${library.groupID}`,
+      },
+    ]),
+    customFields: Effect.succeed(seed?.customFieldNames ?? []),
     // The sample is the one Item the page has; it is tested in memory.
-    matches: async (_, filter) => {
-      if (!seed) return { kind: "missing" };
-      // The test reads the clock, so it waits for the `Temporal` polyfill.
-      await ensureTemporal();
-      const answer = testItemSeed(filter, seed);
-      if (answer.kind !== "problem") return answer;
-      const { message, location } = answer.diagnostic;
-      return {
-        kind: "problem",
-        message,
-        ...(location?.span ? { span: location.span } : {}),
-      };
-    },
+    matches: (_, filter) =>
+      seed
+        ? // The test reads the clock, so it waits for the `Temporal` polyfill.
+          Effect.tryPromise({
+            try: () => ensureTemporal(),
+            catch: (cause) => new WorkbenchHostError({ cause }),
+          }).pipe(
+            Effect.map((): WorkbenchMatchResult => {
+              const answer = testItemSeed(filter, seed);
+              if (answer.kind !== "problem") return answer;
+              const { message, location } = answer.diagnostic;
+              return {
+                kind: "problem",
+                message,
+                ...(location?.span ? { span: location.span } : {}),
+              };
+            }),
+          )
+        : Effect.succeed({ kind: "missing" }),
   };
 }
 
@@ -148,33 +167,72 @@ export function useWebHost({
     latest.current = { data, notice, insertTarget };
   }, [data, notice, insertTarget]);
 
+  // The runner belongs to this mount: unmounting the page interrupts every
+  // host Effect it still runs, and an Effect started after it is interrupted
+  // at once. A remount, as StrictMode makes, opens another.
+  const runner = useRef<ReturnType<typeof makeWorkbenchRunner> | null>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      runner.current?.close();
+      runner.current = null;
+    };
+  }, []);
+
   const host = useMemo<WorkbenchHost>(
     () => ({
       messages: m,
+      run: (effect) => {
+        if (mounted.current)
+          return (runner.current ??= makeWorkbenchRunner()).run(effect);
+        const closed = makeWorkbenchRunner();
+        const fiber = closed.run(effect);
+        closed.close();
+        return fiber;
+      },
       getLocale,
       menu: setMenu,
       dialog(request) {
         setDialog(request);
         return { close: () => setDialog(null) };
       },
+      // An interrupt takes the overlay away, as dismissing it would.
       confirm: (request) =>
-        new Promise((answer) => setConfirm({ request, answer })),
+        Effect.callback<boolean>((resume) => {
+          setConfirm({
+            request,
+            answer: (value) => resume(Effect.succeed(value)),
+          });
+          return Effect.sync(() => setConfirm(null));
+        }),
       suggester: (request) =>
-        new Promise((answer) => setSuggester({ request, answer })),
+        Effect.callback<string | null>((resume) => {
+          setSuggester({
+            request,
+            answer: (value) => resume(Effect.succeed(value)),
+          });
+          return Effect.sync(() => setSuggester(null));
+        }),
       tooltip: (text) => ({ title: text }),
       notice: (text) => latest.current.notice(text),
-      copy: (text) => navigator.clipboard.writeText(text),
+      copy: copyText,
       communityUrl: COMMUNITY_URL,
-      render: renderInThread,
+      render: (request) =>
+        Effect.tryPromise({
+          try: () => renderInThread(request),
+          catch: (cause) => new WorkbenchHostError({ cause }),
+        }),
       markdown: ResultSheet,
       editorPopups: (read) => [webCompletion(read), webHover(read)],
       matchData: {
-        tags: () => latest.current.data.tags(),
-        collections: () => latest.current.data.collections(),
-        libraries: () => latest.current.data.libraries(),
+        tags: Effect.suspend(() => latest.current.data.tags),
+        collections: Effect.suspend(() => latest.current.data.collections),
+        libraries: Effect.suspend(() => latest.current.data.libraries),
         matches: (indexedKey, filter) =>
-          latest.current.data.matches(indexedKey, filter),
-        customFields: (signal) => latest.current.data.customFields(signal),
+          Effect.suspend(() => latest.current.data.matches(indexedKey, filter)),
+        customFields: Effect.suspend(() => latest.current.data.customFields),
       },
       insertTarget: () => latest.current.insertTarget(),
       persistence: {

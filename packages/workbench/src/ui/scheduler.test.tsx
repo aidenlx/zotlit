@@ -169,6 +169,45 @@ it("lets the render in flight finish after selecting On demand and starts no oth
   expect(output().dataset["staleReason"]).toBe("demand");
 });
 
+it("interrupts the render in flight once the reader types past it", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  await advance(300);
+  expect(host.renders).toHaveLength(1);
+  act(() => void controller.setManifestKey("name", "Typed past"));
+  expect(host.renders[0]!.interrupted).toBe(true);
+  await advance(300);
+  expect(host.renders).toHaveLength(2);
+  expect(host.renders[1]!.interrupted).toBe(false);
+});
+
+it("keeps the render in flight running on Stop", async () => {
+  using mounted = open();
+  const { host } = mounted;
+  await advance(300);
+  fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
+  expect(host.renders[0]!.interrupted).toBe(false);
+});
+
+it("interrupts a pending render when the Workbench goes", async () => {
+  const mounted = open();
+  await advance(300);
+  const [pending] = mounted.host.renders;
+  mounted[Symbol.dispose]();
+  expect(pending!.interrupted).toBe(true);
+});
+
+it("interrupts a pending render when the host closes its runner", async () => {
+  using mounted = open();
+  await advance(300);
+  mounted.host.close();
+  expect(mounted.host.renders[0]!.interrupted).toBe(true);
+  // A render the host stopped lands nothing.
+  expect(output().dataset["busy"]).toBe("true");
+});
+
 it("drops a queued render on selecting On demand and reports the result as behind", async () => {
   using mounted = open();
   const { host, controller } = mounted;
@@ -680,6 +719,7 @@ it("mounts independent Previews without an editor and keeps choices and late res
       live: true,
     },
     render: left.render,
+    run: left.run,
     failed: (result) => result,
   });
   using second = createRenderScheduler({
@@ -690,6 +730,7 @@ it("mounts independent Previews without an editor and keeps choices and late res
       live: true,
     },
     render: right.render,
+    run: right.run,
     failed: (result) => result,
   });
   const firstPane = (
@@ -790,6 +831,7 @@ it("reports the attempt a failure came from, not the draft the reader moved on t
       live: true,
     },
     render: host.render,
+    run: host.run,
     failed: (result) => result,
     reportContext: () => ({
       document: "templates/paper.md",
@@ -840,6 +882,7 @@ it("reports the attempt a failure came from, not the draft the reader moved on t
       live: true,
     },
     render: otherHost.render,
+    run: otherHost.run,
     failed: (result) => result,
     reportContext: () => ({
       document: "templates/citation.md",

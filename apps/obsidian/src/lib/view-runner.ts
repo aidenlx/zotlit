@@ -6,10 +6,12 @@
 // gesture that its caller must interrupt or supersede on its own, such as one
 // annotation insert that a cancelled drag stops, needs its own fiber: the
 // runner forks each gesture and answers its Fiber.
+import { RegistryContext } from "@effect/atom-react";
 import { Effect, Exit, FiberSet, Scope } from "effect";
 import type { Fiber } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import { useContext, useEffect, useState } from "react";
 
 import { openScope } from "./effect-scope";
 import { viewRuntime } from "./view-atoms";
@@ -54,6 +56,18 @@ export function makeViewRunner(
     [Symbol.dispose]: () => void dispose(),
     [Symbol.asyncDispose]: dispose,
   };
+}
+
+/**
+ * A runner over the view services of the root's registry, for a component
+ * that mounts the Workbench UI itself. Unmounting the component interrupts
+ * every Effect it still runs.
+ */
+export function useViewRunner(): ViewRun {
+  const registry = useContext(RegistryContext);
+  const [runner] = useState(() => makeViewRunner(registry));
+  useEffect(() => () => runner[Symbol.dispose](), [runner]);
+  return runner.run;
 }
 
 /** Call `answer` with the value `fiber` succeeds with; an interrupt calls nothing. */

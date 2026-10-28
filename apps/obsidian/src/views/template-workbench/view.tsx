@@ -115,6 +115,7 @@ import { Vault } from "@/lib/obsidian-vault";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import { makeViewRunner } from "@/lib/view-runner";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
@@ -160,7 +161,7 @@ import { makeWorkbenchCommands, makeChoiceCommand } from "./atoms";
 import { makeWorkbenchCommand, makeWorkbenchTask } from "./command";
 import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { partialCall } from "./extract-partial";
-import { createTemplateWorkbenchHost } from "./host";
+import { createTemplateWorkbenchHost, hostPromise } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import {
@@ -605,18 +606,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (nativeRenderer)
       this.#cleanup.defer(() => nativeRenderer[Symbol.dispose]());
     const render: WorkbenchHost["render"] =
-      (deps.nativePreview
-        ? (request) => nativeRenderer!.render(request)
+      (nativeRenderer
+        ? (request) => hostPromise(() => nativeRenderer.render(request))
         : deps.render) ??
       ((request) =>
-        Promise.resolve(
+        Effect.succeed(
           failedRender(renderIdentity(request), { code: "render-error" }),
         ));
     const matchData = createMatchData(deps.registry);
     this.#cleanup.defer(() => matchData[Symbol.dispose]());
+    // Closing the leaf interrupts every host Effect the tree still runs.
+    const runner = this.#cleanup.use(makeViewRunner(deps.registry));
     this.#host = createTemplateWorkbenchHost(
       this.app,
       {
+        run: runner.run,
         render,
         markdown: (props) => (
           <NativeMarkdown
@@ -629,7 +633,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         insertTarget: () => this.insertTarget,
         partials: {
           names: () => this.partialNames,
-          create: (query) => this.createPartial(query),
+          create: (query) => hostPromise(() => this.createPartial(query)),
         },
         extractPartial: (source) => this.extractPartial(source),
         hoverParent: this,
@@ -2323,7 +2327,8 @@ function EditorContent({
         if (found) problems.select(found.id);
         else problems.setOpen(true);
       },
-      onRender: (name) => preview.renderPartial(name, partialContext),
+      onRender: (name) =>
+        hostPromise(() => preview.renderPartial(name, partialContext)),
     };
   };
   const sourceBoxes = usePartialBoxes(

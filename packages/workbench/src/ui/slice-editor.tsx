@@ -222,7 +222,7 @@ export function SliceEditor({
         ...partialSuggestions(
           report.current.m,
           controller.dependencies,
-          report.current.adapter?.partials,
+          report.current.adapter,
         ),
         ...supplied,
         root,

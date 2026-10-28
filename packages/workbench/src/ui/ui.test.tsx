@@ -1,5 +1,6 @@
 import type { RenderDiagnostic } from "#/render/result";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import type { Effect } from "effect";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1261,5 +1262,27 @@ describe("the error report", () => {
     } finally {
       globalThis.Temporal = present;
     }
+  });
+});
+
+describe("the host runner", () => {
+  it("interrupts a pending confirm and chooser when the Workbench closes", () => {
+    const mounted = mount(<TabBar />);
+    render(mounted.ui);
+    const { host } = mounted;
+    host.hold = true;
+    const answers: unknown[] = [];
+    const effects: Effect.Effect<unknown>[] = [
+      host.confirm({ title: "Replace?", body: "", confirm: "Replace" }),
+      host.suggester({ title: "Choose", groups: [] }),
+    ];
+    for (const effect of effects)
+      host.run(effect).addObserver((exit) => answers.push(exit._tag));
+    expect(host.held.map(({ kind }) => kind)).toEqual(["confirm", "suggester"]);
+
+    mounted[Symbol.dispose]();
+
+    expect(host.held.every(({ interrupted }) => interrupted)).toBe(true);
+    expect(answers).toEqual(["Failure", "Failure"]);
   });
 });

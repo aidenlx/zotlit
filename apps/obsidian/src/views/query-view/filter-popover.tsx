@@ -35,7 +35,11 @@ import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
-import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
+import { useViewRunner } from "@/lib/view-runner";
+import {
+  createTemplateWorkbenchHost,
+  refuseRender,
+} from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows, onKeymap } from "@/views/template-workbench/theme";
 
@@ -222,17 +226,19 @@ export function FilterEditor({
   onChange,
 }: FilterEditorProps) {
   const app = useObsidianApp();
+  // Unmounting the editor interrupts every host Effect it still runs.
+  const run = useViewRunner();
   const host = useMemo(() => {
     const created = createTemplateWorkbenchHost(app, {
-      render: () =>
-        Promise.reject(new Error("The Query View filter renders no template.")),
+      run,
+      render: refuseRender("The Query View filter renders no template."),
       // The Filter offers its own values and tests no Item.
       matchData: NO_MATCH_DATA,
       insertTarget: () => null,
     });
     // The popover sits in the top layer, over Obsidian's suggestion popups.
     return { ...created, inputSuggestions: undefined };
-  }, [app]);
+  }, [app, run]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
   // Per section, and kept while the issue stays, so a row underlines again
   // only when the issue changes.

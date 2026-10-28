@@ -5,6 +5,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import { Effect } from "effect";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "zustand";
@@ -12,6 +13,7 @@ import { createStore } from "zustand/vanilla";
 
 import { DataExplorer as ControlledDataExplorer } from "./data-explorer";
 import type { DataExplorerProps } from "./data-explorer";
+import { WorkbenchClipboardError } from "./host";
 
 import { initialTreeState } from "#/explorer/index";
 
@@ -54,7 +56,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ extra: "Other", title: "A paper" }}
-        copy={async () => {}}
+        copy={() => Effect.void}
       />,
     );
     const { ui } = mounted;
@@ -79,7 +81,7 @@ describe("shared Data Explorer", () => {
   });
 
   it("copies values from the row menu without an editor insertion target", () => {
-    const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
+    const copy = vi.fn<DataExplorerProps["copy"]>(() => Effect.void);
     using mounted = mount(
       <DataExplorer root="note" data={{ title: "A paper" }} copy={copy} />,
     );
@@ -102,7 +104,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
-        copy={async () => {}}
+        copy={() => Effect.void}
       />,
     );
     const { ui, host } = mounted;
@@ -120,7 +122,7 @@ describe("shared Data Explorer", () => {
         root="note"
         data={{ title: "A paper" }}
         engine="eta"
-        copy={async () => {}}
+        copy={() => Effect.void}
         onInsert={insert}
       />,
     );
@@ -137,7 +139,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ metadata: { title: "Nested paper" } }}
-        copy={async () => {}}
+        copy={() => Effect.void}
         engines={() => (eta ? ["liquid", "eta"] : ["liquid"])}
       />,
     );
@@ -167,7 +169,7 @@ describe("shared Data Explorer", () => {
         <DataExplorer
           root="note"
           data={{ citationKey: "smith2026", title: "A paper", DOI: "10.1/x" }}
-          copy={async () => {}}
+          copy={() => Effect.void}
         />,
       );
       const { ui } = mounted;
@@ -199,7 +201,7 @@ describe("shared Data Explorer", () => {
       <DataExplorer
         root="note"
         data={{ creators: [{ family: "Ada" }], title: "A paper" }}
-        copy={async () => {}}
+        copy={() => Effect.void}
       />,
     );
     const { ui } = mounted;
@@ -218,7 +220,7 @@ describe("shared Data Explorer", () => {
   });
 
   it("offers the exact copy path and annotation navigation through the host", () => {
-    const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
+    const copy = vi.fn<DataExplorerProps["copy"]>(() => Effect.void);
     const anchor = vi.fn<(node: unknown) => void>();
     using mounted = mount(
       <DataExplorer
@@ -264,7 +266,7 @@ describe("shared Data Explorer", () => {
         root="note"
         data={{ title: "A paper" }}
         mode={mode}
-        copy={async () => {}}
+        copy={() => Effect.void}
         onInsert={insert}
       />,
     );
@@ -276,12 +278,18 @@ describe("shared Data Explorer", () => {
     expect(insert).toHaveBeenCalledWith(expected);
   });
 
-  it("shows a copy error without leaving an unhandled rejection", async () => {
+  it("shows a refused copy as a notice", async () => {
     using mounted = mount(
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
-        copy={() => Promise.reject(new Error("Clipboard denied"))}
+        copy={() =>
+          Effect.fail(
+            new WorkbenchClipboardError({
+              cause: new Error("Clipboard denied"),
+            }),
+          )
+        }
       />,
     );
     const { ui, host } = mounted;
@@ -305,14 +313,14 @@ it("keeps two Explorer owners independent through display and filter changes", (
         <DataExplorer
           root="note"
           data={{ authors: ["Ada"], title: "First paper" }}
-          copy={async () => {}}
+          copy={() => Effect.void}
         />
       </section>
       <section aria-label="Second explorer">
         <DataExplorer
           root="note"
           data={{ authors: ["Grace"], title: "Second paper" }}
-          copy={async () => {}}
+          copy={() => Effect.void}
         />
       </section>
     </>,
