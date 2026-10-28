@@ -582,7 +582,7 @@ export async function verifyRecentUses(
   );
   await first(target, "cited");
   await expectEmptyCitationFirst(vaultId, {
-    choice: "",
+    noteBody: "",
     cited: false,
   });
   await obRun(
@@ -608,7 +608,7 @@ export async function verifyRecentUses(
     { sourcepath: sourcePath, sourceInput: "source", enabled: true },
   );
   await expectEmptyCitationFirst(vaultId, {
-    choice: `[@${targetCitekey}]\n\n`,
+    noteBody: `[@${targetCitekey}]\n\n`,
     cited: true,
   });
 
@@ -677,7 +677,7 @@ export async function verifyRecentUses(
   );
   await first(target, "cited");
   await expectEmptyCitationFirst(vaultId, {
-    choice: "",
+    noteBody: "",
     cited: false,
   });
   await obRun(
@@ -852,21 +852,24 @@ export async function verifyRecentUses(
 }
 
 /**
- * Types `[@` after `choice` is saved in the source note and checks that the
- * empty Citation Suggester puts the target paper first. A `cited` note waits for
- * the Document Citation Set to hold the target and expects the "cited in note"
- * label on the first suggestion. The helper closes the suggester with Escape.
+ * Checks that the empty Citation Suggester puts the target paper first, then
+ * closes it with Escape.
+ *
+ * @param vaultId - The vault window to drive.
+ * @param options.noteBody - The text the source note holds, saved before `[@` is typed after it.
+ * @param options.cited - Whether `noteBody` cites the target. A cited note waits for the Document
+ * Citation Set to hold the target and expects the "cited in note" label on the first suggestion.
  */
 async function expectEmptyCitationFirst(
   vaultId: string,
-  { choice, cited }: { choice: string; cited: boolean },
+  { noteBody, cited }: { noteBody: string; cited: boolean },
 ) {
   const m = await import("@obsidian-messages");
   await obRun(
     vaultId,
     async (
       { app, zotlit, page },
-      { sourcePath, choice, target, cited, targetTitle, citedLabel },
+      { sourcePath, noteBody, target, cited, targetTitle, citedLabel },
     ) => {
       const { until } = page;
       const s = zotlit.services;
@@ -878,7 +881,7 @@ async function expectEmptyCitationFirst(
       await app.workspace.revealLeaf(leaf!);
       app.workspace.setActiveLeaf(leaf!, { focus: true });
       const editor = leaf!.view.editor;
-      editor.setValue(choice);
+      editor.setValue(noteBody);
       await leaf!.view.save();
       if (cited) {
         await until("document citations", async () =>
@@ -929,7 +932,7 @@ async function expectEmptyCitationFirst(
     },
     {
       sourcePath,
-      choice,
+      noteBody,
       target,
       cited,
       targetTitle,
