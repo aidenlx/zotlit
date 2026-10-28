@@ -9,6 +9,7 @@ import type {
   TFile,
 } from "obsidian";
 
+import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { CurrentAnswer } from "@/services/item-lookup/current-answer";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
@@ -27,6 +28,7 @@ import type { AnnotationHit } from "./annotation-search";
 import { resolveAnnotationTrigger } from "./annotation-trigger";
 
 export interface AnnotationSuggestDeps extends AnnotationInsertDeps {
+  bridge: Pick<EffectBridge, "runSync">;
   query: Pick<QueryHandle, "run">;
   settings: Pick<PluginSettings["Service"], "current">;
   /**

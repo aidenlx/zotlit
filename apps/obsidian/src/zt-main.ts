@@ -311,7 +311,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         workspace: this.app.workspace,
         query: services.query,
         bridge: services.bridge,
-        annotationNotes: services.annotationNotes,
+        runner: services.annotationInsertRunner,
         settings: services.settings,
         notify: (message) => void new BaseNotice(message),
         commentRenderer: (owner, sourcePath) =>

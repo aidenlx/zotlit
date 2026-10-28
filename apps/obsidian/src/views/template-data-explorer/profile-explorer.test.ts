@@ -185,6 +185,7 @@ describe("independent native Explorer", () => {
     using session = host.openSession();
     const choose = vi.fn();
     using cleanup = new DisposableStack();
+    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -201,6 +202,7 @@ describe("independent native Explorer", () => {
               messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
+              run,
             }),
           },
           withModel(
@@ -214,7 +216,7 @@ describe("independent native Explorer", () => {
               },
               createElement(Explorer, {
                 explorer: { copy: () => Effect.void },
-                lookup: { search: async () => [] },
+                recentItems: Effect.succeed([]),
                 onSearchItem: choose,
                 onSelectItem: (item) => session.setTarget(item, "note"),
                 onSelectAnnotation: (id) =>
@@ -235,6 +237,111 @@ describe("independent native Explorer", () => {
       (container.querySelector("button") as HTMLButtonElement).click(),
     );
     expect(choose).toHaveBeenCalledOnce();
+  });
+  it("lists the recent Items the host reads, and stops the read at unmount", async () => {
+    using session = host.openSession();
+    using cleanup = new DisposableStack();
+    const { run } = cleanup.use(makeViewRunner(host.registry));
+    const container = cleanup.adopt(document.createElement("div"), (element) =>
+      element.remove(),
+    );
+    document.body.append(container);
+    const root = createRoot(container);
+    const renderList = (recentItems: Effect.Effect<readonly never[]>) =>
+      act(async () =>
+        root.render(
+          createElement(
+            WorkbenchHostProvider,
+            {
+              host: stubService<WorkbenchHost>("WorkbenchHost", {
+                messages: workbenchM,
+                getLocale: () => "en",
+                persistence: { read: () => null, write: () => {} },
+                run,
+              }),
+            },
+            withModel(
+              session.model,
+              createElement(
+                ExplorerActionsContext,
+                {
+                  value: stubService<ExplorerActions>("ExplorerActions", {
+                    onChooseItem: () => {},
+                  }),
+                },
+                createElement(Explorer, {
+                  explorer: { copy: () => Effect.void },
+                  recentItems,
+                  onSearchItem: () => {},
+                  onSelectItem: () => {},
+                  onSelectAnnotation: () => {},
+                  onChooseAnnotation: () => {},
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    const interrupted = vi.fn();
+    await renderList(
+      Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(interrupted))),
+    );
+    expect(interrupted).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+
+    await waitFor(() => expect(interrupted).toHaveBeenCalledOnce());
+  });
+  it("lists the recent Items the host reads", async () => {
+    using session = host.openSession();
+    using cleanup = new DisposableStack();
+    const { run } = cleanup.use(makeViewRunner(host.registry));
+    const container = cleanup.adopt(document.createElement("div"), (element) =>
+      element.remove(),
+    );
+    document.body.append(container);
+    const root = cleanup.adopt(createRoot(container), (root) => {
+      void act(() => root.unmount());
+    });
+    await act(async () =>
+      root.render(
+        createElement(
+          WorkbenchHostProvider,
+          {
+            host: stubService<WorkbenchHost>("WorkbenchHost", {
+              messages: workbenchM,
+              getLocale: () => "en",
+              persistence: { read: () => null, write: () => {} },
+              run,
+            }),
+          },
+          withModel(
+            session.model,
+            createElement(
+              ExplorerActionsContext,
+              {
+                value: stubService<ExplorerActions>("ExplorerActions", {
+                  onChooseItem: () => {},
+                }),
+              },
+              createElement(Explorer, {
+                explorer: { copy: () => Effect.void },
+                recentItems: Effect.succeed([
+                  { id: "PAPER234g42", title: "Recent paper" },
+                ]),
+                onSearchItem: () => {},
+                onSelectItem: () => {},
+                onSelectAnnotation: () => {},
+                onChooseAnnotation: () => {},
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    await waitFor(() =>
+      expect(container.textContent).toContain("Recent paper"),
+    );
   });
 });
 
@@ -301,7 +408,7 @@ it("switches annotation data locally through the annotation chooser", async () =
           session.model,
           createElement(Explorer, {
             explorer: { copy: () => Effect.void },
-            lookup: { search: async () => [] },
+            recentItems: Effect.succeed([]),
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
             onChooseAnnotation: async () => {

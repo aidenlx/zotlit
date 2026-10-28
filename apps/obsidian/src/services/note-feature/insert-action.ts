@@ -27,15 +27,19 @@ interface AnnotationInsertTarget {
   valid(): boolean;
   commit(text: string, placement?: Placement): boolean;
 }
-export type AnnotationInsertRequest = (
+/**
+ * The annotation an insert takes: a record the caller holds with its source,
+ * or a search hit that the insert reads from the repository.
+ */
+export type AnnotationInsertSubject =
   | {
       annotation: AnnotationRecord;
       snapshot: AnnotationSnapshot;
     }
   | {
       hit: { key: string; attachmentKey: string; itemKey: string };
-    }
-) & {
+    };
+export type AnnotationInsertRequest = AnnotationInsertSubject & {
   target: AnnotationInsertTarget;
   notePath: string;
   placement?: Placement;

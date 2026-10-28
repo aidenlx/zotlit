@@ -1,5 +1,6 @@
+import { it } from "@effect/vitest";
 // @vitest-environment happy-dom
-import { Effect, Exit } from "effect";
+import { Effect, FiberSet, Scope } from "effect";
 import { TFile } from "obsidian";
 import type {
   App,
@@ -7,10 +8,11 @@ import type {
   EditorSuggestContext,
   MarkdownFileInfo,
 } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 
 import { MemoryWorkspace } from "@/lib/__fixtures__/obsidian-workspace";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { openScope } from "@/lib/effect-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { yieldToMain } from "@/lib/yield-to-main";
 import { defaults } from "@/services/settings/schema";
@@ -135,10 +137,7 @@ describe("AnnotationEditorSuggest", () => {
       stubService<AnnotationSuggestDeps>("AnnotationSuggestDeps", {
         app: stubService<App>("App", {}),
         settings: { current: Effect.succeed({ ...defaults, ...settings }) },
-        bridge: {
-          runSync: Effect.runSync,
-          runPromiseExit: Effect.runPromiseExit,
-        },
+        bridge: { runSync: Effect.runSync },
         query: { run },
         commentRenderer: commentRenderer ?? (() => () => () => {}),
       }),
@@ -317,73 +316,80 @@ describe("AnnotationEditorSuggest", () => {
     expect([...h.live]).toEqual([]);
   });
 
-  it("stays silent when unload ends the insert of a chosen result", async () => {
-    const cm = stateEditor({ doc: "[>fig" });
-    const workspace = new MemoryWorkspace();
-    const editor = stubService<Editor>("Editor", {
-      cm,
-      posToOffset: ({ ch }) => ch,
-    });
-    const file = new TFile();
-    file.path = "Draft.md";
-    const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
-      editor,
-      file,
-    });
-    const notify = vi.fn();
-    const suggest = new AnnotationEditorSuggest(
-      stubService<AnnotationSuggestDeps>("AnnotationSuggestDeps", {
-        app: stubService<App>("App", {
-          workspace: stubService<App["workspace"]>("Workspace", {
-            activeEditor: info,
-            on: (name: string, callback: (...data: never[]) => unknown) =>
-              workspace.on(name, (...data: unknown[]) =>
-                Reflect.apply(callback, undefined, data),
-              ),
-            offref: (ref) => workspace.offref(ref),
+  it.live("stays silent when unload ends the insert of a chosen result", () =>
+    Effect.gen(function* () {
+      // The plugin's runner: its fibers sit on a Scope that unload closes.
+      const unload = openScope();
+      const run = yield* FiberSet.makeRuntime<never>().pipe(
+        Scope.provide(unload.scope),
+      );
+      yield* Effect.promise(async () => {
+        const cm = stateEditor({ doc: "[>fig" });
+        const workspace = new MemoryWorkspace();
+        const editor = stubService<Editor>("Editor", {
+          cm,
+          posToOffset: ({ ch }) => ch,
+        });
+        const file = new TFile();
+        file.path = "Draft.md";
+        const info = stubService<MarkdownFileInfo>("MarkdownFileInfo", {
+          editor,
+          file,
+        });
+        const notify = vi.fn();
+        const suggest = new AnnotationEditorSuggest(
+          stubService<AnnotationSuggestDeps>("AnnotationSuggestDeps", {
+            app: stubService<App>("App", {
+              workspace: stubService<App["workspace"]>("Workspace", {
+                activeEditor: info,
+                on: (name: string, callback: (...data: never[]) => unknown) =>
+                  workspace.on(name, (...data: unknown[]) =>
+                    Reflect.apply(callback, undefined, data),
+                  ),
+                offref: (ref) => workspace.offref(ref),
+              }),
+            }),
+            workspace: stubService<App["workspace"]>("Workspace", {
+              on: (name: string, callback: (...data: never[]) => unknown) =>
+                workspace.on(name, (...data: unknown[]) =>
+                  Reflect.apply(callback, undefined, data),
+                ),
+              offref: (ref) => workspace.offref(ref),
+            }),
+            bridge: { runSync: Effect.runSync },
+            // The insert waits on the read of the annotation until unload.
+            runner: { execute: () => Effect.never, run },
+            notify,
           }),
-        }),
-        workspace: stubService<App["workspace"]>("Workspace", {
-          on: (name: string, callback: (...data: never[]) => unknown) =>
-            workspace.on(name, (...data: unknown[]) =>
-              Reflect.apply(callback, undefined, data),
-            ),
-          offref: (ref) => workspace.offref(ref),
-        }),
-        // Unload ends the run that reads the annotation.
-        bridge: {
-          runSync: Effect.runSync,
-          runPromiseExit: () => Promise.resolve(Exit.interrupt()),
-        },
-        annotationNotes: { insert: () => Effect.never },
-        notify,
-      }),
-    );
-    suggest.context = stubService<EditorSuggestContext>(
-      "EditorSuggestContext",
-      {
-        editor,
-        file,
-        start: { line: 0, ch: 0 },
-        end: { line: 0, ch: 5 },
-        query: "fig",
-      },
-    );
-    const unhandled = vi.fn();
-    process.on("unhandledRejection", unhandled);
-    try {
-      suggest.selectSuggestion(hit, new MouseEvent("click"));
-      // Node reports an unhandled rejection before the next task runs.
-      await yieldToMain();
-    } finally {
-      process.off("unhandledRejection", unhandled);
-      cm.destroy();
-    }
+        );
+        suggest.context = stubService<EditorSuggestContext>(
+          "EditorSuggestContext",
+          {
+            editor,
+            file,
+            start: { line: 0, ch: 0 },
+            end: { line: 0, ch: 5 },
+            query: "fig",
+          },
+        );
+        const unhandled = vi.fn();
+        process.on("unhandledRejection", unhandled);
+        try {
+          suggest.selectSuggestion(hit, new MouseEvent("click"));
+          await unload.close();
+          // Node reports an unhandled rejection before the next task runs.
+          await yieldToMain();
+        } finally {
+          process.off("unhandledRejection", unhandled);
+          cm.destroy();
+        }
 
-    expect(unhandled).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
-    expect(cm.state.doc.toString()).toBe("[>fig");
-  });
+        expect(unhandled).not.toHaveBeenCalled();
+        expect(notify).not.toHaveBeenCalled();
+        expect(cm.state.doc.toString()).toBe("[>fig");
+      });
+    }),
+  );
 });
 
 describe("annotationTriggerProblem", () => {
