@@ -75,7 +75,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | `follow-mode.e2e.ts` | Follow Mode menu rendering |
 | `query-cli*.e2e.ts` | `zotlit:query`, schema, scope CLI |
 | `fresh-destination.e2e.ts` | Fresh vault destination flow |
-| `window-reload.e2e.ts` | Window reload startup order; a plugin start-up that a disable interrupts |
+| `window-reload.e2e.ts` | Window reload startup order; a plugin start-up that a disable interrupts; an off and on again that overlaps the old instance's start-up |
 | `walkthrough.e2e.ts` | Walkthrough regressions on the demo vault: the demo starts with Sync disabled; citations (Cited by counts, CSL style, HTML export, render recovery, caret, the Citation Popover on hover, suggester and pickers, citation settings refresh and close); Welcome and Library View tabs; literature note updates; Explorer template actions; Choose item preview; Profile editing; and Annotation fields kept when Customize reopens the Template Workbench |
 | `citation-index.e2e.ts` | Citation Index on an isolated Stress Build of 100,000 Items: answers and worker reads stay responsive during a refresh and a rebuild, and a failed snapshot integrity check keeps the held search index |
 
