@@ -237,7 +237,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
 
     // Start once the instance a quick off and on unloaded has released its
     // commands, zotlit:* names and port.
-    await this.afterPreviousInstance(stack);
+    await this.waitForPreviousAndHoldRelease(stack);
     if (this.unloaded) return;
 
     const services = await createPluginRuntime(this, stack, languagePack).catch(

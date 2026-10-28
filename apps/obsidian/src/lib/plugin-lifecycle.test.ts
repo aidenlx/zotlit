@@ -23,7 +23,7 @@ function loadedPlugin(): UnloadAwarePlugin {
 /** An instance whose start-up takes its turn after the instance before it. */
 class TurnTakingPlugin extends UnloadAwarePlugin {
   start(stack: AsyncDisposableStack): Promise<void> {
-    return this.afterPreviousInstance(stack);
+    return this.waitForPreviousAndHoldRelease(stack);
   }
 }
 
@@ -57,7 +57,7 @@ describe("UnloadAwarePlugin", () => {
 // A user who turns ZotLit off and on again while the old instance still
 // builds or closes its runtime: the new instance's commands, zotlit:* names
 // and Live Updates port must not meet the old instance's (#1786).
-describe("UnloadAwarePlugin.afterPreviousInstance", () => {
+describe("UnloadAwarePlugin.waitForPreviousAndHoldRelease", () => {
   it("starts at once when no instance came before", async () => {
     const stack = new AsyncDisposableStack();
     await expect(
@@ -81,11 +81,8 @@ describe("UnloadAwarePlugin.afterPreviousInstance", () => {
     const starting = instanceOn(app)
       .start(new AsyncDisposableStack())
       .then(() => steps.push("new start-up"));
-    await Promise.resolve();
-    expect(steps).toEqual([]);
 
-    await oldStack.disposeAsync();
-    await starting;
+    await Promise.all([oldStack.disposeAsync(), starting]);
     expect(steps).toEqual(["old runtime closed", "new start-up"]);
   });
 
@@ -95,20 +92,32 @@ describe("UnloadAwarePlugin.afterPreviousInstance", () => {
     const first = instanceOn(app);
     const firstStack = new AsyncDisposableStack();
     await first.start(firstStack);
+    firstStack.defer(() => {
+      steps.push("first released");
+    });
     first.unload();
 
     const second = instanceOn(app);
     const secondStack = new AsyncDisposableStack();
     const secondWaits = second.start(secondStack);
+    secondStack.defer(() => {
+      steps.push("second released");
+    });
     second.unload();
     // The second's onload sees the unload once its wait ends, and leaves.
-    void secondWaits.then(() => secondStack.disposeAsync());
+    const secondLeaves = (async () => {
+      await secondWaits;
+      await secondStack.disposeAsync();
+    })();
 
     const third = instanceOn(app)
       .start(new AsyncDisposableStack())
       .then(() => steps.push("third start-up"));
-    await firstStack.disposeAsync().then(() => steps.push("first released"));
-    await third;
-    expect(steps).toEqual(["first released", "third start-up"]);
+    await Promise.all([firstStack.disposeAsync(), secondLeaves, third]);
+    expect(steps).toEqual([
+      "first released",
+      "second released",
+      "third start-up",
+    ]);
   });
 });

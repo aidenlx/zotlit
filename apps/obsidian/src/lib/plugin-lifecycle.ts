@@ -2,12 +2,14 @@
 // interrupts.
 import { Plugin } from "obsidian";
 
+import { releaseKeyDescription } from "@/lib/plugin-release-key";
+
 /**
  * Where an unloaded instance leaves the promise of its release. Obsidian
  * evaluates main.js anew for each load, so module state starts empty; the App
  * outlives every instance of the plugin.
  */
-const releaseKey = (id: string) => Symbol.for(`zotlit/obsidian/release/${id}`);
+const releaseKey = (id: string) => Symbol.for(releaseKeyDescription(id));
 
 /**
  * A plugin that knows when Obsidian has unloaded it.
@@ -18,7 +20,7 @@ const releaseKey = (id: string) => Symbol.for(`zotlit/obsidian/release/${id}`);
  * instance finds the names taken (#1786). Here a registration after the
  * unload runs its cleanup at once, and {@link unloaded} tells `onload` to
  * stop. Obsidian makes a new instance for each load, so the flag stays set.
- * {@link afterPreviousInstance} starts the next instance only once the old
+ * {@link waitForPreviousAndHoldRelease} starts the next instance only once the old
  * one has released all it held.
  */
 export class UnloadAwarePlugin extends Plugin {
@@ -31,7 +33,10 @@ export class UnloadAwarePlugin extends Plugin {
 
   /**
    * Wait until the instance Obsidian unloaded before this one has released
-   * all it held, and release this instance as `stack` disposes.
+   * all it held. It also registers this instance's own release as the first
+   * entry of `stack`, so the release resolves only after every other entry
+   * of `stack` has disposed; {@link unload} hands that release to the next
+   * instance.
    *
    * Obsidian makes the next instance as soon as it unloads one, while the
    * old onload may still build and its runtime still close. Without the
@@ -39,7 +44,7 @@ export class UnloadAwarePlugin extends Plugin {
    * zotlit:* names before it, and holds the Live Updates port (#1786). Call it
    * first on the onload stack: the stack disposes its own entries last.
    */
-  protected async afterPreviousInstance(
+  protected async waitForPreviousAndHoldRelease(
     stack: AsyncDisposableStack,
   ): Promise<void> {
     const { promise, resolve } = Promise.withResolvers<void>();
