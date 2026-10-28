@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { delay } from "@std/async";
 import { DateTime, Effect } from "effect";
 import {
   FileSystemAdapter,
@@ -1371,7 +1370,6 @@ it("answers two fast Annotation History presses one after the other, in order", 
   const binding = service.bindings[0]!;
   binding.stepHistory("undo");
   binding.stepHistory("redo");
-  await delay(0);
 
   // The redo waits behind the undo Zotero has not answered yet.
   expect(annotations.undo).toHaveBeenCalledOnce();

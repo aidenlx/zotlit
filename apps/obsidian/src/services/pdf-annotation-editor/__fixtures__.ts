@@ -5,7 +5,6 @@ import {
   DateTime,
   Effect,
   Exit,
-  FiberSet,
   PubSub,
   Scope as EffectScope,
   Stream,
@@ -53,6 +52,7 @@ import type { AttachmentReads } from "./binding";
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
+import { bindingWrites } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import type { HistoryVerb } from "./reader-keymap";
 import {
@@ -619,12 +619,7 @@ export function readerSurfaces({
   const listening = listenAnnotationEvents(store, annotations, bridge);
   // The view's own Scope, which the writes run on and the disposal closes.
   const scope = EffectScope.makeUnsafe();
-  const writes = Effect.runSync(
-    FiberSet.make().pipe(
-      Effect.flatMap((fibers) => FiberSet.runtime(fibers)<never>()),
-      EffectScope.provide(scope),
-    ),
-  );
+  const writes = Effect.runSync(bindingWrites.pipe(EffectScope.provide(scope)));
   const gestures = {
     revealAnnotation: vi.fn(),
     blockedPress: vi.fn(),

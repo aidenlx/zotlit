@@ -1,5 +1,14 @@
 // PDF.js supplies the geometry; the repository owns each Annotation write.
-import { Cause, Effect, Exit, Fiber, Schema, Semaphore } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  FiberSet,
+  Schema,
+  Semaphore,
+} from "effect";
+import type { Scope } from "effect";
 
 import type {
   PdfPosition,
@@ -47,6 +56,31 @@ export type BindingWrites = <A>(
 ) => Fiber.Fiber<A, never>;
 
 /**
+ * The write runner of one PDF view, over a `FiberSet` on the Scope it is
+ * built in. A write's own failures are its outcomes; what is left is a
+ * defect, logged here because the FiberSet keeps no failure.
+ */
+export const bindingWrites: Effect.Effect<BindingWrites, never, Scope.Scope> =
+  Effect.map(
+    Effect.flatMap(FiberSet.make(), (fibers) =>
+      FiberSet.runtime(fibers)<never>(),
+    ),
+    (fork) => (effect) =>
+      fork(
+        effect.pipe(
+          Effect.tapCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.void
+              : Effect.logError("A PDF view's write died").pipe(
+                  Effect.annotateLogs({ error: Cause.squash(cause) }),
+                  withLogCategory("pdf-annotation-editor"),
+                ),
+          ),
+        ),
+      ),
+  );
+
+/**
  * Settles when `run` has ended, however it ended: answered, interrupted by the
  * view's close, or ended by unload. Settled for `null`. Never rejects.
  */
@@ -63,15 +97,15 @@ export function settledOf(
  * A keystroke asked to edit under a block: probe Zotero first, because the
  * block may be one a probe clears, and report only what survives it.
  */
-export const reportBlockedEdit = Effect.fn("PdfAnnotationEditor.editGesture")(
-  function* (
-    annotations: Pick<AnnotationRepository["Service"], "probe">,
-    report: () => void,
-  ) {
-    yield* annotations.probe;
-    report();
-  },
-);
+export const reportBlockedEdit = Effect.fn(
+  "PdfAnnotationEditor.reportBlockedEdit",
+)(function* (
+  annotations: Pick<AnnotationRepository["Service"], "probe">,
+  report: () => void,
+) {
+  yield* annotations.probe;
+  report();
+});
 
 /** A PDF.js read that could not produce the geometry or text for a gesture. */
 class PdfStructureReadError extends Schema.TaggedError<
@@ -90,11 +124,12 @@ export type CreateWrite = Effect.Effect<string | null>;
 
 /** What one create does on the creation surfaces around its write. */
 export interface CreateSeam {
-  /** Holds the Attachment's list, so the create has a source to write to. */
-  hold: () => Disposable;
   /** The create is on its way. */
   begin: () => void;
-  /** Zotero created the Annotation. */
+  /**
+   * Zotero created the Annotation. What the seam does after it is logged when
+   * it fails, and the create keeps its key.
+   */
   created: (annotationKey: string) => void;
   /** The create made nothing, for `reason`; the seam says why. */
   failed: (reason: string) => void;
@@ -115,20 +150,23 @@ export interface CreateSeam {
  * the mark sends nothing. From the send on, the create and what the seam does
  * with its answer are uninterruptible, so a close waits for Zotero's answer.
  *
- * @param create.whole whether the read is uninterruptible too: a Text Draft's
- *   typed text is created even when the view's close finished it.
+ * @param create.uninterruptible whether the read is uninterruptible too: a
+ *   Text Draft's typed text is created even when the view's close finished it.
  * @returns the created Annotation's Indexed Key, or `null`.
  */
 export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
   function* (
-    annotations: Pick<AnnotationRepository["Service"], "createAnnotation">,
+    annotations: Pick<
+      AnnotationRepository["Service"],
+      "createAnnotation" | "hold"
+    >,
     {
       attachmentKey,
       structure,
       draft,
       previous,
       group,
-      whole = false,
+      uninterruptible = false,
     }: {
       attachmentKey: string;
       structure: PdfTextStructure;
@@ -137,7 +175,7 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
       };
       previous: { pageLabel: string; pageIndex: number }[];
       group?: string;
-      whole?: boolean;
+      uninterruptible?: boolean;
     },
     seam: CreateSeam,
   ) {
@@ -154,7 +192,9 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
         catch: (cause) => new PdfStructureReadError({ cause }),
       });
       const send = Effect.gen(function* () {
-        const [sortIndex, pageLabel] = yield* whole ? read : restore(read);
+        const [sortIndex, pageLabel] = yield* uninterruptible
+          ? read
+          : restore(read);
         return yield* annotations.createAnnotation(
           attachmentKey,
           { ...draft, sortIndex, pageLabel },
@@ -169,21 +209,31 @@ export const createMark = Effect.fn("PdfAnnotationEditor.createMark")(
           ),
         ),
       );
+      // The list stays held until the create settles: a draft the view's
+      // close finishes is created after the view let go of its own hold, and
+      // a list dropped under the create leaves it no Zotero source to write
+      // to.
       return Effect.acquireUseRelease(
-        Effect.sync(() => {
-          const held = seam.hold();
-          seam.begin();
-          return held;
-        }),
+        annotations
+          .hold([attachmentKey])
+          .pipe(Effect.tap(() => Effect.sync(() => seam.begin()))),
         () =>
-          Effect.map(send, (outcome) => {
+          Effect.flatMap(send, (outcome) => {
             if (outcome.kind === "failed") {
               seam.failed(writeFailureReason(outcome.failure, seam.now()));
-              return null;
+              return Effect.succeed(null);
             }
-            key = outcome.annotationKey;
-            seam.created(key);
-            return key;
+            const created = outcome.annotationKey;
+            key = created;
+            return Effect.try(() => seam.created(created)).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("An Annotation create did not finish").pipe(
+                  Effect.annotateLogs({ type: draft.type, error: error.cause }),
+                  withLogCategory("pdf-annotation-editor"),
+                ),
+              ),
+              Effect.as(created),
+            );
           }),
         (held, exit) =>
           Effect.sync(() => {
@@ -206,27 +256,25 @@ export const oneAtATime = (): Semaphore.Semaphore => Semaphore.makeUnsafe(1);
 
 /**
  * A write that waits for the writes asked before it in `queue`, then runs as
- * `make` builds it then; `null` from `make` is a write that cannot run. The
- * wait is uninterruptible, so a write once asked for keeps its turn through a
- * close, and the write keeps its own interruptibility.
+ * `make` builds it then; `null` from `make` is a write that cannot run. A
+ * close ends the wait, so a write still waiting is never built.
  */
 export const queued = <A>(
   queue: Semaphore.Semaphore,
   make: () => Effect.Effect<A> | null,
 ): Effect.Effect<A | void> =>
-  Effect.uninterruptibleMask((restore) =>
-    queue.withPermits(1)(restore(Effect.suspend(() => make() ?? Effect.void))),
-  );
+  queue.withPermits(1)(Effect.suspend(() => make() ?? Effect.void));
 
 /**
  * Place a settled text selection on the Structured Characters of its pages,
- * then hand the placement on. A read that failed places nothing.
+ * then hand the placement on. A read that failed, or a selection that maps
+ * onto no character, places nothing.
  */
 export const placeSelection = Effect.fn("PdfAnnotationEditor.placeSelection")(
   function* (
     structure: PdfTextStructure,
     selection: TextSelection,
-    place: (captured: SelectedText | null) => void,
+    place: (captured: SelectedText) => void,
   ) {
     const captured = yield* captureText(structure, selection).pipe(
       Effect.catchTag("PdfStructureReadError", (error) =>
@@ -239,7 +287,16 @@ export const placeSelection = Effect.fn("PdfAnnotationEditor.placeSelection")(
         ),
       ),
     );
-    place(captured);
+    if (captured) place(captured);
+    else
+      yield* Effect.logDebug(
+        "Text selection maps onto no character of its pages",
+      ).pipe(
+        Effect.annotateLogs({
+          pageIndexes: selection.pages.map(({ pageIndex }) => pageIndex),
+        }),
+        withLogCategory("pdf-annotation-editor"),
+      );
   },
 );
 

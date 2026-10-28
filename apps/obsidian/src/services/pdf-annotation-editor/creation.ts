@@ -260,7 +260,7 @@ interface CreateOptions extends Pick<SelectOptions, "commenting"> {
    */
   group?: string;
   /** Whether the placement read is uninterruptible too, as a Text Draft's is. */
-  whole?: boolean;
+  uninterruptible?: boolean;
   /** Takes the create's answer: the created key, or `null` for none. */
   settle?: (annotationKey: string | null) => void;
 }
@@ -517,12 +517,6 @@ export class MarkCreation implements CreationGestures, Disposable {
     const { structure, text, pages } = read;
     this.#settling = this.#deps.writes(
       placeSelection(structure, { text, pages }, (captured) => {
-        if (!captured) {
-          logger.debug("Text selection maps onto no character of its pages", {
-            pageIndexes: pages.map(({ pageIndex }) => pageIndex),
-          });
-          return;
-        }
         if (gesture !== this.#gesture || this.#writing) return;
         // The selection can collapse while the page's characters load.
         if (selectionCollapsed(this.#deps.containerEl)) return;
@@ -1030,7 +1024,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       },
       // The typed text has no other copy, so its create runs whole even when
       // the view's close finished the draft.
-      { structure, whole: true, settle },
+      { structure, uninterruptible: true, settle },
     );
     if (run === null) settle(null);
     return run;
@@ -1078,7 +1072,13 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   #createWrite(
     { type, color, comment, text, position }: MarkDraft,
-    { structure: given, group, whole, settle, ...reveal }: CreateOptions = {},
+    {
+      structure: given,
+      group,
+      uninterruptible,
+      settle,
+      ...reveal
+    }: CreateOptions = {},
   ): CreateWrite | null {
     const structure = given ?? this.#deps.structure();
     // A blocked gesture is answered by the binding's own edit-gesture listener,
@@ -1100,31 +1100,18 @@ export class MarkCreation implements CreationGestures, Disposable {
         draft: { type, color, comment, text, position },
         previous: previousAnnotations(this.#deps.records()),
         group,
-        whole,
+        uninterruptible,
       },
       {
-        // The list stays held until the create settles: a draft the view's
-        // close finishes is created after the view let go of its own hold,
-        // and a list dropped under the create leaves it no Zotero source to
-        // write to.
-        hold: () =>
-          this.#deps.bridge.runSync(
-            this.#deps.annotations.hold([this.#deps.attachmentKey]),
-          ),
         begin: () => {
           if (!foreground) return;
           this.#writing = true;
           setInFlight(store, true);
         },
         created: (annotationKey) => {
-          // The create landed; this is what comes after it.
-          try {
-            recordColorUse(store, this.#deps.colors, color);
-            if (foreground) this.#deps.reveal(annotationKey, reveal);
-            if (disarm) this.#arm(null);
-          } catch (error) {
-            logger.warn("An Annotation create did not finish", { type, error });
-          }
+          recordColorUse(store, this.#deps.colors, color);
+          if (foreground) this.#deps.reveal(annotationKey, reveal);
+          if (disarm) this.#arm(null);
         },
         failed: (reason) => this.#deps.reportCreateFailure(reason),
         end: (annotationKey) => {
@@ -1248,7 +1235,9 @@ export class MarkCreation implements CreationGestures, Disposable {
   /**
    * One ink create; its Pending Stroke goes once Zotero answered, and a create
    * that made nothing says why. The capability can lapse while the stroke
-   * waits behind the creates released before it. Never rejects.
+   * waits behind the creates released before it.
+   *
+   * @returns the write, or `null` for a create that cannot run.
    */
   #createInk(
     pending: PendingStroke,
@@ -1259,18 +1248,21 @@ export class MarkCreation implements CreationGestures, Disposable {
       if (key === null) dropPendingStroke(this.#deps.surfaceState, id);
       else settlePendingStroke(this.#deps.surfaceState, { id, key });
     };
-    const write = editingLive(this.#capability())
-      ? this.#createWrite(
-          {
-            type: "ink",
-            color,
-            comment: "",
-            text: "",
-            position: { pageIndex, width, paths },
-          },
-          { group, settle },
-        )
-      : (this.#deps.reportBlockedGesture(), null);
+    if (!editingLive(this.#capability())) {
+      this.#deps.reportBlockedGesture();
+      settle(null);
+      return null;
+    }
+    const write = this.#createWrite(
+      {
+        type: "ink",
+        color,
+        comment: "",
+        text: "",
+        position: { pageIndex, width, paths },
+      },
+      { group, settle },
+    );
     if (write === null) settle(null);
     return write;
   }

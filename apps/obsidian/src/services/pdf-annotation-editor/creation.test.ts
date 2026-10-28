@@ -1374,6 +1374,28 @@ it("draws while an earlier stroke saves, and creates in release order", async ()
   ]);
 });
 
+it("sends no stroke still waiting behind a create when its view closes", async () => {
+  await using open = await toolReader("ink");
+  const answerFirst = open.zotero.holdWrites();
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerdown", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The first stroke is with Zotero; the second waits its turn as the view
+  // closes, and goes with the view.
+  open[Symbol.dispose]();
+  answerFirst();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 2, paths: [[100, 692]] },
+  ]);
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+});
+
 it("takes a refused stroke off the page", async () => {
   await using open = await toolReader("ink");
   open.zotero.answerNextWrite(() => createRefused());
