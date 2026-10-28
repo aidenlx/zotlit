@@ -271,6 +271,21 @@ export function pdfReader(page = pageView()) {
       }
     },
     /**
+     * What PDF.js 5.3.34's `load` does when its document-open handler throws
+     * before `documentinit`: its `.catch` calls `setInitialView()`, which marks
+     * the view set and can move the reader to a waiting bookmark. Only a move
+     * to a page other than the one showing dispatches `pagechanging`
+     * (`move`). `documentinit` never follows.
+     */
+    failInitialView: ({ move }: { move: boolean }) => {
+      (child.pdfViewer as { isInitialViewSet: boolean }).isInitialViewSet =
+        true;
+      if (!move) return;
+      for (const { event, listener } of listeners) {
+        if (event === "pagechanging") listener({});
+      }
+    },
+    /**
      * What PDF.js's `close` does when Obsidian reloads a changed file into the
      * same reader: `setDocument(null)` dispatches `pagesdestroy`, and then the
      * initial view is unset for the document that opens next.

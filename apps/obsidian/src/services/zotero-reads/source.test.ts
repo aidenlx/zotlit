@@ -42,9 +42,12 @@ let watchers: FakeWatcher[] = [];
 /**
  * Paths whose watch cannot start, and how: `fail` as a path that is gone
  * does, `die` as `fs.watch` throwing inside `NodeFileSystem` does (inotify
- * out of watches, too many open files).
+ * out of watches, too many open files), `hang` as a watch that opens and is
+ * still starting until the case opens `hungStarts`.
  */
-let unwatchable = new Map<string, "fail" | "die">();
+let unwatchable = new Map<string, "fail" | "die" | "hang">();
+/** Opens to let every `hang` watch finish starting; reset for each case. */
+let hungStarts = Deferred.makeUnsafe<void>();
 
 /** A watch that records its listener for the case to call instead of watching. */
 const fakeWatch = (
@@ -88,7 +91,16 @@ const fakeWatch = (
               Effect.sync(() => {
                 watcher.closed = true;
               }),
-          ).pipe(Effect.tap(() => Effect.sync(() => options?.onReady?.()))),
+          ).pipe(
+            Effect.tap(() =>
+              Effect.andThen(
+                unwatchable.get(path) === "hang"
+                  ? Deferred.await(hungStarts)
+                  : Effect.void,
+                Effect.sync(() => options?.onReady?.()),
+              ),
+            ),
+          ),
         );
 
 /** The Node file system, with watches the case drives. */
@@ -104,6 +116,7 @@ let dbPath: string;
 beforeEach(async () => {
   watchers = [];
   unwatchable = new Map();
+  hungStarts = Deferred.makeUnsafe<void>();
   dir = join(tmpdir(), `zotlit-reads-source-test-${crypto.randomUUID()}`);
   await mkdir(dir, { recursive: true });
   dbPath = join(dir, "zotero.sqlite");
@@ -825,6 +838,66 @@ describe("ZoteroReads source", () => {
         await expect(source.version()).resolves.toBe(2);
       },
     );
+  });
+
+  describe("watch start interrupted", () => {
+    // #1798: the source made the watch's scope and stored it only after the
+    // watch was ready, so a close while it waited left the watch open.
+    it.each(["zotero.sqlite", "zotero.sqlite-wal"])(
+      "closes a %s watch still starting when the source closes",
+      async (filename) => {
+        const path = join(dir, filename);
+        if (filename === "zotero.sqlite-wal") await writeFile(path, "");
+        unwatchable.set(path, "hang");
+        const { ports } = testPorts();
+        const source = await startSource(config(), ports);
+        await vi.waitFor(() =>
+          expect(watchers.map((w) => w.path)).toContain(path),
+        );
+
+        await source.close();
+
+        expect(watchers.map((w) => [w.path, w.closed])).toEqual(
+          watchers.map((w) => [w.path, true]),
+        );
+      },
+    );
+  });
+
+  describe("WAL watch start overlapping", () => {
+    // #1798: the refresh lane and a WAL event each found no WAL watch, both
+    // started one, and the second stored scope dropped the first, which
+    // nothing closed.
+    it("keeps one WAL watch when a WAL event arrives while the lane starts it", async () => {
+      const walPath = join(dir, "zotero.sqlite-wal");
+      await writeFile(walPath, "");
+      unwatchable.set(walPath, "hang");
+      const { ports } = testPorts();
+      const source = await startSource(config(), ports);
+      await vi.waitFor(() =>
+        expect(watchers.map((w) => w.path)).toContain(walPath),
+      );
+
+      // On the parent code, red needs the stream to reach the hung WAL start
+      // within the poll interval of this wait; on the fixed code the case is
+      // deterministic.
+      await emitDirEvent(watchers, "zotero.sqlite-wal");
+      Effect.runSync(Deferred.succeed(hungStarts, undefined));
+      await source.version();
+      // The debounce timer starts once the event's WAL sync has returned.
+      await vi.waitFor(async () => {
+        await source.elapse();
+        expect(ports.snapshotSource).toHaveBeenCalledTimes(2);
+      });
+
+      expect(
+        watchers.filter((w) => w.path === walPath && !w.closed),
+      ).toHaveLength(1);
+      await source.close();
+      expect(watchers.map((w) => [w.path, w.closed])).toEqual(
+        watchers.map((w) => [w.path, true]),
+      );
+    });
   });
 
   describe("watcher self-echo gate", () => {

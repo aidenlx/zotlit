@@ -43,6 +43,8 @@ export type PageApp = App & {
   };
   vault: App["vault"] & {
     _: { rename?: RenameListener[] };
+    /** What `Plugin.loadData` reads through. */
+    readPluginData(dir: string): Promise<unknown>;
     setConfig(key: "trashOption", value: "local" | "system" | "none"): void;
     getConfig(key: "nativeMenus" | "settingsPopoutWindow"): boolean;
     setConfig(
