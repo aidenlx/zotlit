@@ -55,8 +55,3 @@ export const installedStyles = Effect.gen(function* () {
   const { dataDir } = yield* (yield* ZoteroPref).current;
   return dataDir ? yield* listInstalledStylesOrNone(dataDir) : [];
 });
-
-/** The Default Profile's source as the vault holds it. */
-export const defaultSource = Effect.gen(function* () {
-  return yield* (yield* Profile).getSource("default");
-});

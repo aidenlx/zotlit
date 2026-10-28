@@ -47,7 +47,6 @@ import { Vault } from "@/lib/obsidian-vault";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
-import { runOnce } from "@/lib/view-runner";
 import {
   applyComposedFrontmatter,
   composeLiteratureNote,
@@ -189,8 +188,8 @@ const renderNativeTemplateEffect = Effect.fn("NotePreview.render")(function* (
 });
 
 /**
- * The native render and partial render of one owner, as Effects its runner
- * forks: interrupting a fiber stops its render.
+ * The native render and the registered-partial render over `deps`, as
+ * Effects for a view's runner to fork: interrupting a fiber stops its render.
  */
 export function makeNativeRenderer(deps: NativeRenderDeps) {
   return {
@@ -214,24 +213,6 @@ export function makeNativeRenderer(deps: NativeRenderDeps) {
         );
       }),
   };
-}
-
-export function renderNativeTemplate(
-  deps: NativeRenderDeps,
-  request: RenderRequest,
-): Promise<NativeRenderResult> {
-  return runOnce(deps.registry, makeNativeRenderer(deps).render(request));
-}
-export const renderNativeProfile = renderNativeTemplate;
-export function renderRegisteredPartial(
-  deps: NativeRenderDeps,
-  request: RenderRequest,
-  partial: PartialPreviewSelection,
-): Promise<string> {
-  return runOnce(
-    deps.registry,
-    makeNativeRenderer(deps).partial(request, partial),
-  );
 }
 
 /**

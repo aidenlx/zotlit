@@ -1,13 +1,13 @@
 // Where a view's plain code (an Obsidian callback, a menu item) forks Effect
 // work on the view services for as long as the view stands.
 //
-// A view runs most gestures as commands (ADR 0082). A command keeps one run
-// per atom: the latest wins, or the run is held while the atom is mounted. A
-// gesture that its caller must interrupt or supersede on its own, such as one
-// annotation insert that a cancelled drag stops, needs its own fiber: the
-// runner forks each gesture and answers its Fiber.
+// The runner forks each gesture on a FiberSet of the view's own and answers
+// its Fiber, so the caller can interrupt or supersede that one gesture: an
+// annotation insert that a cancelled drag stops, or an Item read that a newer
+// selection replaces. Closing the view interrupts every fiber still running.
+// What a component reads stays a view atom (ADR 0082).
 import { RegistryContext } from "@effect/atom-react";
-import { Cause, Effect, Exit, FiberSet, Scope } from "effect";
+import { Effect, Exit, FiberSet, Scope } from "effect";
 import type { Fiber } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -97,18 +97,4 @@ export function exitOf<A, E>(
   fiber: Fiber.Fiber<A, E>,
 ): Promise<Exit.Exit<A, E>> {
   return new Promise((resolve) => fiber.addObserver(resolve));
-}
-
-/**
- * Runs `effect` once on the view services of `registry`, for plain code that
- * belongs to no open view. Its failure rejects.
- */
-export async function runOnce<A, E>(
-  registry: Parameters<typeof makeViewRunner>[0],
-  effect: Effect.Effect<A, E, ViewServices>,
-): Promise<A> {
-  await using runner = makeViewRunner(registry);
-  const exit = await exitOf(runner.run(effect));
-  if (Exit.isSuccess(exit)) return exit.value;
-  throw Cause.squash(exit.cause);
 }

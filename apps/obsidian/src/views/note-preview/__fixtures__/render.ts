@@ -1,4 +1,8 @@
 import { Layer } from "effect";
+import type { PartialPreviewSelection, RenderRequest } from "@zotlit/workbench/render";
+import { runOnView } from "@/lib/__fixtures__/view-runner";
+import { makeNativeRenderer } from "@/views/note-preview/render";
+import type { NativeRenderDeps, NativeRenderResult } from "@/views/note-preview/render";
 import { buildRuntime } from "@/lib/effect-layer";
 import { layerHostApp } from "@/lib/__fixtures__/obsidian-host-app";
 import { layerUnreadViewServices } from "@/lib/__fixtures__/view-atoms";
@@ -274,4 +278,14 @@ export async function createRenderFixture(options: { existing?: string; javascri
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });
   return { cancelled, deps: previewDeps, settings, templates, client, snapshot, host, vault, zoteroReads, renderCitations, writes, async [Symbol.asyncDispose]() { await handles.disposeAsync(); await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
+}
+
+/** One native render, run on a view runner the render alone owns. */
+export function renderNativeTemplate(deps: NativeRenderDeps, request: RenderRequest): Promise<NativeRenderResult> {
+  return runOnView(deps.registry, makeNativeRenderer(deps).render(request));
+}
+export const renderNativeProfile = renderNativeTemplate;
+/** One registered Shared Partial render, run as {@link renderNativeTemplate} runs. */
+export function renderRegisteredPartial(deps: NativeRenderDeps, request: RenderRequest, partial: PartialPreviewSelection): Promise<string> {
+  return runOnView(deps.registry, makeNativeRenderer(deps).partial(request, partial));
 }

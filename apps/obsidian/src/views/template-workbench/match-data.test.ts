@@ -174,7 +174,9 @@ it.effect("stops every concurrent read when its view closes", () =>
         },
       }),
     });
-    const runner = makeViewRunner(host.registry);
+    const runner = yield* Effect.acquireDisposable(
+      Effect.sync(() => makeViewRunner(host.registry)),
+    );
     const data = createMatchData(runner.provide);
     const fibers = [
       runner.run(data.customFields),

@@ -72,25 +72,19 @@ vi.mock("@/views/note-preview/render", async (importOriginal) => {
     await importOriginal<typeof import("@/views/note-preview/render")>();
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
-  const stub = () =>
-    vi.fn<typeof actual.renderNativeTemplate>(async (_deps, request) =>
-      actual.nativeResult(
-        failedRender(renderIdentity(request), {
-          code: "render-error",
-        }),
-      ),
-    );
   return {
     ...actual,
-    renderNativeTemplate: stub(),
     makeNativeRenderer: (
       deps: Parameters<typeof actual.makeNativeRenderer>[0],
     ) => ({
       ...actual.makeNativeRenderer(deps),
-      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
-        Effect.promise(() => stub()(deps, request)),
+      render: (request: import("@zotlit/workbench/render").RenderRequest) =>
+        Effect.succeed(
+          actual.nativeResult(
+            failedRender(renderIdentity(request), { code: "render-error" }),
+          ),
+        ),
     }),
-    renderNativeProfile: stub(),
   };
 });
 

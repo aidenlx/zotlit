@@ -14,16 +14,13 @@ import {
 import {
   createRenderFixture,
   PROFILE_SOURCE,
+  renderNativeProfile,
+  renderNativeTemplate,
+  renderRegisteredPartial,
   SAVED_NOTE,
 } from "./__fixtures__/render";
 import { presentCitations } from "./markdown";
-import {
-  renderNativeProfile,
-  retainNativeOutputs,
-  previewBaseline,
-  renderNativeTemplate,
-  renderRegisteredPartial,
-} from "./render";
+import { retainNativeOutputs, previewBaseline } from "./render";
 import type { NativeRenderResult } from "./render";
 
 /** Where the counting template records how often its body has rendered. */

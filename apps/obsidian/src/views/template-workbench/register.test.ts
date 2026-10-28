@@ -19,7 +19,10 @@ import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { registerFileMenu } from "@/services/file-menu";
-import type { CustomizeAction } from "@/services/local-bridge/customize";
+import type {
+  CustomizeAction,
+  DefaultProfileTarget,
+} from "@/services/local-bridge/customize";
 import type { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import {
@@ -35,10 +38,15 @@ type RegistrationHostDeps = WorkbenchHostDeps & {
   customize: CustomizeAction;
   profile: Profile["Service"];
 };
-const registryForProfile = (profile: Partial<Profile["Service"]>) =>
-  makeWorkbenchHost({
-    profile: stubService<Profile["Service"]>("Profile", profile),
-  }).registry;
+/** The Default Profile as the plugin runtime hands it over, read from `profile`. */
+const defaultTarget = (
+  profile: Pick<Profile["Service"], "defaultDocumentPath" | "getSource">,
+): DefaultProfileTarget => ({
+  get defaultDocumentPath() {
+    return Effect.runSync(profile.defaultDocumentPath);
+  },
+  getSource: (selector) => Effect.runPromise(profile.getSource(selector)),
+});
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
@@ -197,6 +205,7 @@ function register(plugin: Plugin, deps: RegistrationHostDeps): void {
     bridge: testBridge(),
     notifier: testNotifier().service,
     webWorkbenchEnabled: deps.webWorkbenchEnabled,
+    defaultProfile: defaultTarget(deps.profile),
   };
   registerTemplateWorkbenchView(plugin, options);
   registerFileMenu(plugin, [templateWorkbenchFileMenu(plugin.app, options)]);
@@ -211,7 +220,7 @@ describe("Template Workbench entry points", () => {
         app,
         target === "file"
           ? file
-          : registryForProfile({
+          : defaultTarget({
               defaultDocumentPath: Effect.succeed(
                 "templates/zotlit-profile.default.md",
               ),
@@ -313,7 +322,7 @@ Annotation`);
     vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
     await openNativeProfile(
       app,
-      registryForProfile({
+      defaultTarget({
         defaultDocumentPath: Effect.succeed(file.path),
         getSource: vi.fn(),
       }),
@@ -346,7 +355,7 @@ Annotation`);
     });
     await openNativeProfile(
       app,
-      registryForProfile({
+      defaultTarget({
         defaultDocumentPath: Effect.succeed(
           "templates/zotlit-profile.default.md",
         ),
@@ -384,7 +393,7 @@ Annotation`);
         app,
         target === "file"
           ? file
-          : registryForProfile({
+          : defaultTarget({
               defaultDocumentPath: Effect.succeed(
                 "templates/zotlit-profile.default.md",
               ),
@@ -708,7 +717,7 @@ Annotation`);
         app,
         kind === "file"
           ? file
-          : registryForProfile({
+          : defaultTarget({
               defaultDocumentPath: Effect.succeed(
                 "templates/zotlit-profile.default.md",
               ),
@@ -733,7 +742,7 @@ Annotation`);
     );
     await openNativeProfile(
       app,
-      registryForProfile({
+      defaultTarget({
         defaultDocumentPath: Effect.succeed(
           "templates/zotlit-profile.default.md",
         ),

@@ -1,5 +1,5 @@
 // One native render owner loads its own Item Snapshot and annotation examples.
-import { Data, Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 
 import {
@@ -27,6 +27,7 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { formatErrorMessage } from "@/lib/toast";
 import type { ViewServices } from "@/lib/view-atoms";
 import { bibliographyRevisionAtom } from "@/services/pandoc/atoms";
 import { templateRevisionAtom } from "@/services/template/atoms";
@@ -38,10 +39,28 @@ import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
 
-/** A partial preview asked for before any paper is chosen. */
-class PreviewItemMissing extends Data.TaggedError("PreviewItemMissing")<{
-  readonly message: string;
-}> {}
+/** A partial preview was asked for before any paper was chosen. */
+class PreviewItemMissing extends Schema.TaggedError<
+  PreviewItemMissing,
+  { readonly brand: unique symbol }
+>()("PreviewItemMissing", {}) {
+  override get message(): string {
+    return m.workbench_example_missing_item();
+  }
+}
+
+/** The registered Shared Partial failed to render. The message is the render's own. */
+class PartialPreviewFailed extends Schema.TaggedError<
+  PartialPreviewFailed,
+  { readonly brand: unique symbol }
+>()("PartialPreviewFailed", {
+  /** What the render failed with. */
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    return formatErrorMessage(this.cause);
+  }
+}
 
 export class NativePreviewSession implements Disposable {
   readonly state: PreviewStateHandle;
@@ -234,40 +253,50 @@ export class NativePreviewSession implements Disposable {
    * shows, so the box under a call reads the data the slice it sits in reads.
    * Interrupting it stops the render.
    *
-   * Fails when no paper is chosen yet, and with whatever the render raises.
+   * Fails with {@link PreviewItemMissing} when no paper is chosen yet, and
+   * with {@link PartialPreviewFailed} when the render fails.
    */
   renderPartial(
     name: string,
     context: PartialContext,
-  ): Effect.Effect<string, unknown, ViewServices> {
+  ): Effect.Effect<
+    string,
+    PreviewItemMissing | PartialPreviewFailed,
+    ViewServices
+  > {
     return Effect.promise(() => this.ready).pipe(
-      Effect.andThen(() => {
-        const state = this.state.getState();
-        const citation =
-          context === "citation"
-            ? { variant: state.variant, example: state.citationExample }
-            : undefined;
-        const snapshot = previewSnapshot(state, citation?.example ?? null);
-        if (!snapshot)
-          return Effect.fail(
-            new PreviewItemMissing({
-              message: m.workbench_example_missing_item(),
-            }),
-          );
-        return this.#renderer.partial(
-          {
-            source: state.source ?? "",
-            snapshot,
-            ...(state.example ? { annotation: state.example } : {}),
-            ...(citation ? { citation } : {}),
-          },
-          {
-            name,
-            context,
-            profile: state.context?.partial?.profile ?? null,
-          },
-        );
-      }),
+      Effect.flatMap(
+        (): Effect.Effect<
+          string,
+          PreviewItemMissing | PartialPreviewFailed,
+          ViewServices
+        > => {
+          const state = this.state.getState();
+          const citation =
+            context === "citation"
+              ? { variant: state.variant, example: state.citationExample }
+              : undefined;
+          const snapshot = previewSnapshot(state, citation?.example ?? null);
+          if (!snapshot) return Effect.fail(new PreviewItemMissing());
+          return this.#renderer
+            .partial(
+              {
+                source: state.source ?? "",
+                snapshot,
+                ...(state.example ? { annotation: state.example } : {}),
+                ...(citation ? { citation } : {}),
+              },
+              {
+                name,
+                context,
+                profile: state.context?.partial?.profile ?? null,
+              },
+            )
+            .pipe(
+              Effect.mapError((cause) => new PartialPreviewFailed({ cause })),
+            );
+        },
+      ),
     );
   }
 

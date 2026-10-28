@@ -56,6 +56,7 @@ import { QueryService } from "./item-query/service";
 import type { LanguagePackStartup } from "./language-pack/service";
 import { LibraryScope } from "./library-scope/service";
 import { bindCustomize, Customize } from "./local-bridge/customize";
+import type { DefaultProfileTarget } from "./local-bridge/customize";
 import { bindLocalBridge } from "./local-bridge/handle";
 import { createLaunchSheet } from "./local-bridge/launch-sheet";
 import { LocalBridge } from "./local-bridge/service";
@@ -231,6 +232,7 @@ export async function createPluginRuntime(
   const zoteroPref = runtime.runSync(ZoteroPref);
   const notifier = runtime.runSync(Notifier);
   const pandocEngine = runtime.runSync(PandocEngine);
+  const profile = runtime.runSync(Profile);
   const noteFeature: NoteFeatureHandle = bindNoteFeature(
     bridge,
     runtime.runSync(NoteFeature),
@@ -304,7 +306,14 @@ export async function createPluginRuntime(
     pdfAnnotationEditor: runtime.runSync(PdfAnnotationEditor),
     libraryScope: runtime.runSync(LibraryScope),
     query: bindQuery(bridge, runtime.runSync(QueryService)),
-    profile: runtime.runSync(Profile),
+    profile,
+    // The Default Profile, as the Template Workbench opens it from a note.
+    defaultProfile: {
+      get defaultDocumentPath() {
+        return bridge.runSync(profile.defaultDocumentPath);
+      },
+      getSource: (selector) => bridge.runPromise(profile.getSource(selector)),
+    } satisfies DefaultProfileTarget,
     localBridge: bindLocalBridge(bridge, runtime.runSync(LocalBridge)),
     customize: bindCustomize(bridge, runtime.runSync(Customize)),
     templateData: bindTemplateData(

@@ -12,6 +12,7 @@ import {
   TemplateFacade,
 } from "@zotlit/templates/facade";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
+import type { RenderRequest } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
 import { testRuntime } from "@/lib/__fixtures__/runtime";
@@ -32,8 +33,23 @@ import {
   activeTemplateWorkbench,
   subscribeActiveTemplateWorkbench,
 } from "./register";
-import { renderNativeTemplate } from "./render";
+import type { NativeRenderDeps, NativeRenderResult } from "./render";
 import { NotePreviewView } from "./view";
+
+type NativeRender = (
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+) => Promise<NativeRenderResult>;
+/**
+ * Every native render the preview asks for passes through `spy`, which runs
+ * the real render, `actual`, on a view runner of its own unless a case
+ * replaces it.
+ */
+const renders = vi.hoisted(() => ({
+  actual: (() => Promise.reject(new Error("not mocked"))) as NativeRender,
+  spy: vi.fn<NativeRender>(),
+}));
+const renderNativeTemplate = renders.spy;
 
 vi.mock("@zotlit/workbench/ui", async (original) => {
   const actual = await original<typeof import("@zotlit/workbench/ui")>();
@@ -89,16 +105,16 @@ vi.mock("obsidian", async (original) => ({
 }));
 vi.mock("./render", async (original) => {
   const actual = await original<typeof import("./render")>();
-  const render = vi.fn(actual.renderNativeTemplate);
+  const { runOnView } = await import("@/lib/__fixtures__/view-runner");
+  renders.actual = (deps, request) =>
+    runOnView(deps.registry, actual.makeNativeRenderer(deps).render(request));
+  renders.spy.mockImplementation(renders.actual);
   return {
     ...actual,
-    renderNativeTemplate: render,
-    makeNativeRenderer: (
-      deps: Parameters<typeof actual.makeNativeRenderer>[0],
-    ) => ({
+    makeNativeRenderer: (deps: NativeRenderDeps) => ({
       ...actual.makeNativeRenderer(deps),
-      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
-        Effect.promise(() => render(deps, request)),
+      render: (request: RenderRequest) =>
+        Effect.promise(() => renders.spy(deps, request)),
     }),
   };
 });
@@ -1049,12 +1065,11 @@ Annotation`,
 
   it("runs current source during a save failure and rejects results for older source or a closed Preview", async () => {
     await using test = await setup();
-    const actual = await vi.importActual<typeof import("./render")>("./render");
     const held = Promise.withResolvers<void>();
     vi.mocked(renderNativeTemplate).mockImplementation(
       async (deps, request) => {
         if (request.source.includes("Old output.")) await held.promise;
-        return actual.renderNativeTemplate(deps, request);
+        return renders.actual(deps, request);
       },
     );
     vi.useFakeTimers();
@@ -1099,7 +1114,7 @@ Annotation`,
     vi.mocked(renderNativeTemplate).mockImplementationOnce(
       async (deps, request) => {
         await closing.promise;
-        return actual.renderNativeTemplate(deps, request);
+        return renders.actual(deps, request);
       },
     );
     await act(async () =>
