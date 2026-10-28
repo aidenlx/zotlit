@@ -1,5 +1,5 @@
 // The Library's document atom and its coalesced settings commands.
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Effect, Option } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
@@ -34,16 +34,17 @@ const updateDocumentCommand = viewRuntime.fn(
   { concurrent: true },
 );
 
+/**
+ * Writes plugin data to disk. It waits one turn first, so the changes of one
+ * task reach disk in one write; a close in that turn skips the write. Once
+ * the write starts it finishes, even when the view closes:
+ * `PluginSettings.flush` runs uninterruptible.
+ */
 const flushDocumentCommand = viewRuntime.fn(
-  (result: PromiseWithResolvers<void>) =>
-    PluginSettings.use((settings) => settings.flush).pipe(
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
-            result.reject(Cause.squash(exit.cause));
-          else result.resolve();
-        }),
-      ),
+  () =>
+    Effect.andThen(
+      Effect.yieldNow,
+      PluginSettings.use((settings) => settings.flush),
     ),
   { concurrent: true },
 );
@@ -57,8 +58,8 @@ export class LibraryViewStorage {
   readonly #toolbar;
   #release: (() => void) | null;
   #taken: string | null = null;
-  #writing: Promise<void> | null = null;
-  #queued: Promise<void> | null = null;
+  /** What waits for a write; a close ends each wait. */
+  readonly #waiting = new Set<() => void>();
 
   constructor(registry: ViewRegistryHandle, toolbar: () => string | null) {
     this.#registry = registry;
@@ -107,25 +108,18 @@ export class LibraryViewStorage {
     this.#registry.set(this.model.document, change(this.document()));
   }
 
-  save(): Promise<void> {
+  /**
+   * Write the document to disk. Settles once the writes asked for so far
+   * end, or the storage closes; rejects where a write failed.
+   */
+  async save(): Promise<void> {
     this.#registry.set(this.model.save, { document: this.document() });
-    if (this.#queued) return this.#queued;
-    const queued = (this.#writing ?? Promise.resolve())
-      .catch(() => {})
-      .then(() => {
-        this.#queued = null;
-        const result = Promise.withResolvers<void>();
-        this.#registry.set(flushDocumentCommand, result);
-        this.#writing = result.promise;
-        void result.promise
-          .finally(() => {
-            if (this.#writing === result.promise) this.#writing = null;
-          })
-          .catch(() => {});
-        return result.promise;
-      });
-    this.#queued = queued;
-    return queued;
+    this.#registry.set(flushDocumentCommand, undefined);
+    await waitForRead(this.#registry, flushDocumentCommand, this.#waiting);
+    if (!this.#release) return;
+    const result = this.#registry.get(flushDocumentCommand);
+    if (AsyncResult.isFailure(result) && !Cause.hasInterruptsOnly(result.cause))
+      throw Cause.squash(result.cause);
   }
 
   change(
@@ -138,5 +132,6 @@ export class LibraryViewStorage {
   close(): void {
     this.#release?.();
     this.#release = null;
+    for (const finish of this.#waiting) finish();
   }
 }

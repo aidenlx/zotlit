@@ -194,7 +194,7 @@ function ExpressionField({
   const properties = useViewProperties(view);
   const dataset = useQueryViewState(view, (s) => s.view?.from);
   const formulas = useQueryViewState(view, (s) => s.file?.formulas);
-  const custom = useViewCustomFields(view);
+  const custom = useViewCustomFields();
   // A Formula reads no vault property, and naming itself is a cycle.
   const vocabulary = useMemo(
     () =>

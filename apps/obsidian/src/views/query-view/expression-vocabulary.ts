@@ -4,17 +4,17 @@
 // the member list and the Signature Hint read, as the dataset's planner reads
 // them with the view's Formulas and Query Context.
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
-import { Effect } from "effect";
+import { useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import { useMemo } from "react";
 
 import type { ContextRecord } from "@zotlit/item-query";
 import { datasetVocabulary } from "@zotlit/workbench/language";
 import type { ExpressionVocabulary } from "@zotlit/workbench/language";
-import { useCustomFieldNames } from "@zotlit/workbench/ui";
 
-import { withLogCategory } from "@/lib/effect-log";
-import { useViewRunner } from "@/lib/view-runner";
-
+import { customFieldNamesAtom } from "./atoms";
 import { boundRecords } from "./context-hint";
 import { datasetSpec } from "./datasets";
 import { useQueryViewState } from "./model";
@@ -23,31 +23,18 @@ import type { QueryView } from "./view";
 import { fieldLabel } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
 
+/** No custom fields, the same list each render. */
+const NO_CUSTOM: readonly string[] = [];
+const noCustomAtom = Atom.make(AsyncResult.success(NO_CUSTOM));
+
 /**
- * The custom fields of the Zotero source, read each time `reading` turns
- * true; the read stops when it turns false or the editor unmounts. None
- * until the first read arrives.
+ * The custom fields of the Zotero source, read while `reading` is true; the
+ * read stops when it turns false or the editor unmounts. None until the
+ * first read arrives.
  */
-export function useViewCustomFields(
-  view: QueryView,
-  reading = true,
-): readonly string[] {
-  // Interrupting the read aborts the signal, which stops the read under it.
-  const read = useMemo(
-    () =>
-      Effect.tryPromise((signal) => view.customFieldNames(signal)).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("The custom fields could not be read").pipe(
-            Effect.annotateLogs({ error }),
-            Effect.as<readonly string[]>([]),
-          ),
-        ),
-        withLogCategory("views", "query-view", "expression-vocabulary"),
-      ),
-    [view],
-  );
-  const run = useViewRunner();
-  return useCustomFieldNames(read, { run, reading });
+export function useViewCustomFields(reading = true): readonly string[] {
+  const read = useAtomValue(reading ? customFieldNamesAtom : noCustomAtom);
+  return Option.getOrElse(AsyncResult.value(read), () => NO_CUSTOM);
 }
 
 export function expressionVocabulary({
@@ -99,7 +86,7 @@ export function useFilterExpressions(
   { reading, vaultNames }: { reading: boolean; vaultNames?: readonly string[] },
 ): (dataset: QueryFileDataset) => ExpressionVocabulary {
   const formulas = useQueryViewState(view, (s) => s.file?.formulas);
-  const custom = useViewCustomFields(view, reading);
+  const custom = useViewCustomFields(reading);
   const context = boundRecords(view.contextSource);
   return useMemo(() => {
     const made = new Map<QueryFileDataset, ExpressionVocabulary>();

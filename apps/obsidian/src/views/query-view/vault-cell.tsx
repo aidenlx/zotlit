@@ -11,6 +11,7 @@
 // of an edit creates the note first; opening the editor creates nothing.
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
+import { Effect } from "effect";
 import {
   useCallback,
   useEffect,
@@ -28,11 +29,12 @@ import type { ProjectionJson } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { recover } from "@/lib/effect-cause";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
+import { useQueryTask } from "./model";
 import { LIST_TYPES } from "./table-notes";
 import type {
   LiteratureNotes,
@@ -204,8 +206,6 @@ export function VaultCell(props: VaultCellProps) {
   return <VaultCellContent value={useVaultValue(props)} />;
 }
 
-const logger = getLogger("QueryView");
-
 /**
  * The line a Table cell shows at rest: one line a row tall, which clips what
  * does not fit. What it holds takes the {@link LINE} the editor takes, so
@@ -235,6 +235,7 @@ function VaultPreview({
   /** Open the menu of the list item at `at`, as a Bases list cell does. */
   chipMenu: (event: MouseEvent<HTMLElement>, at: number) => void;
 }): ReactNode {
+  const run = useQueryTask();
   const state = vaultState(value);
   if (!value.note)
     return (
@@ -308,7 +309,7 @@ function VaultPreview({
           // The link opens its note; the cell does not enter edit.
           event.preventDefault();
           event.stopPropagation();
-          notes.openLink(ref, event.nativeEvent);
+          run(notes.openLink(ref, event.nativeEvent));
         }}
       >
         {link.text}
@@ -396,20 +397,29 @@ export function VaultEditCell(props: VaultCellProps) {
   }, [editing]);
   // A row with no note edits too: the first write creates the note.
   const editable = !managed;
+  const run = useQueryTask();
   const write = (next: unknown) =>
-    notes
-      .write({ itemKey, name, value: next, host })
-      .then((result) => {
-        const message = unwrittenMessage(result, name);
-        if (message !== null) new BaseNotice(message);
-      })
-      .catch((error: unknown) => {
-        logger.warn("The Query View could not write a vault property", {
-          error,
-          name,
-        });
-        new BaseNotice(m.query_view_vault_write_failed({ name }));
-      });
+    void run(
+      notes.write({ itemKey, name, value: next, host }).pipe(
+        Effect.flatMap((result) =>
+          Effect.sync(() => {
+            const message = unwrittenMessage(result, name);
+            if (message !== null) new BaseNotice(message);
+          }),
+        ),
+        recover(
+          (error) =>
+            Effect.logWarning(
+              "The Query View could not write a vault property",
+              { error, name },
+            ),
+          Effect.sync(
+            () =>
+              void new BaseNotice(m.query_view_vault_write_failed({ name })),
+          ),
+        ),
+      ),
+    );
   /** Enter edit; at the list item `chip`, in place, where one is given. */
   const begin = (chip?: number) => {
     ended.current = false;
@@ -430,7 +440,7 @@ export function VaultEditCell(props: VaultCellProps) {
       edit: () => begin(at),
       remove: () => {
         const rest = items.filter((_, i) => i !== at);
-        void write(rest.length === 0 ? null : rest);
+        write(rest.length === 0 ? null : rest);
       },
     }),
   });
@@ -465,7 +475,7 @@ export function VaultEditCell(props: VaultCellProps) {
       JSON.stringify(valueOf(type, draftOf(type, current)))
     )
       return;
-    void write(next);
+    write(next);
   };
   const checkbox = type === "checkbox";
   // A checkbox of a note is its own control; any other cell is one.
@@ -474,7 +484,7 @@ export function VaultEditCell(props: VaultCellProps) {
     if (!editable || editing) return;
     // A checkbox of a row with no note toggles on, creating the note.
     if (!checkbox) begin();
-    else if (!value.note) void write(true);
+    else if (!value.note) write(true);
   };
   return (
     <>
@@ -568,7 +578,7 @@ export function VaultEditCell(props: VaultCellProps) {
                 data-indeterminate={current == null ? "true" : undefined}
                 aria-checked={current == null ? "mixed" : current === true}
                 disabled={!editable}
-                onChange={() => void write(current !== true)}
+                onChange={() => write(current !== true)}
               />
             }
           />

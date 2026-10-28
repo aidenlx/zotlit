@@ -4170,7 +4170,7 @@ effectIt.live(
           importProfile: vi.fn(),
         },
       });
-      const opening = actions.openNote(item.indexedKey, "tab");
+      actions.openNote(item.indexedKey, "tab");
       await waitFor(() => expect(planCreations).toHaveBeenCalledOnce());
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       cleanup.defer(() => void vi.useRealTimers());
@@ -4178,17 +4178,17 @@ effectIt.live(
       await vi.advanceTimersByTimeAsync(10);
       const file = host.vault.addFile("literatures/paper.md", "Paper");
       created.resolve(file);
-      await opening;
-      expect(openLinkText).toHaveBeenCalledWith(file.path, "", "tab", {
-        active: true,
-      });
+      await vi.waitFor(() =>
+        expect(openLinkText).toHaveBeenCalledWith(file.path, "", "tab", {
+          active: true,
+        }),
+      );
       created = Promise.withResolvers<TFile>();
-      const interrupted = actions.openNote(item.indexedKey, "tab");
+      actions.openNote(item.indexedKey, "tab");
       await waitFor(() => expect(planCreations).toHaveBeenCalledTimes(2));
       pluginLifetime.dispose();
       await vi.advanceTimersByTimeAsync(10);
-      await interrupted;
-      expect(cancelled).toBe(true);
+      await vi.waitFor(() => expect(cancelled).toBe(true));
       created.resolve(file);
       expect(openLinkText).toHaveBeenCalledOnce();
     }),

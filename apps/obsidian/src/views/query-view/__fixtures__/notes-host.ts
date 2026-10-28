@@ -23,7 +23,11 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import { literatureNotes } from "@/views/query-view/table-notes";
-import type { LiteratureNotesDeps } from "@/views/query-view/table-notes";
+import type {
+  LiteratureNotesDeps,
+  VaultEdit,
+  VaultWrite,
+} from "@/views/query-view/table-notes";
 import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 
 export interface NotesHostDeps {
@@ -146,6 +150,9 @@ export async function makeNotesHost(deps: NotesHostDeps) {
   return {
     notes,
     registry,
+    /** Write a vault property, as a leaf runs the write, and its answer. */
+    write: (edit: VaultEdit): Promise<VaultWrite> =>
+      runtime.runPromise(notes.write(edit)),
     async [Symbol.asyncDispose]() {
       registry.dispose();
       await stack.disposeAsync();
