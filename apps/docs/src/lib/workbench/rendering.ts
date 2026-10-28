@@ -11,14 +11,14 @@ import type {
 import { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 import { renderInThread } from "./render";
-import { ensureTemporal } from "./temporal";
+import { loadTemporal } from "./temporal";
 
 export class Rendering extends Context.Service<
   Rendering,
   {
     /**
-     * Loads `Temporal` where the runtime has none. The module loader keeps the
-     * polyfill, so the page downloads it once.
+     * Loads `Temporal` where the runtime has none, once for the page: a later
+     * read answers the first load's outcome.
      */
     readonly temporal: Effect.Effect<void, WorkbenchHostError>;
     render(
@@ -27,18 +27,20 @@ export class Rendering extends Context.Service<
   }
 >()("zotlit/docs/workbench/Rendering") {}
 
-export const layerRendering = Layer.succeed(
+export const layerRendering = Layer.effect(
   Rendering,
-  Rendering.of({
-    temporal: Effect.tryPromise({
-      try: () => ensureTemporal(),
-      catch: (cause) => new WorkbenchHostError({ cause }),
-    }).pipe(Effect.withSpan("Rendering.temporal")),
-    render: Effect.fn("Rendering.render")((request: RenderRequest) =>
-      Effect.tryPromise({
-        try: () => renderInThread(request),
-        catch: (cause) => new WorkbenchHostError({ cause }),
-      }),
-    ),
+  Effect.gen(function* () {
+    const temporal = yield* Effect.cached(
+      loadTemporal.pipe(
+        Effect.mapError((cause) => new WorkbenchHostError({ cause })),
+        Effect.withSpan("Rendering.temporal"),
+      ),
+    );
+    return Rendering.of({
+      temporal,
+      render: Effect.fn("Rendering.render")((request: RenderRequest) =>
+        Effect.andThen(temporal, () => renderInThread(request)),
+      ),
+    });
   }),
 );

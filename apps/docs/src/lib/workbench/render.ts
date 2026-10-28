@@ -1,21 +1,23 @@
 // The web's binding of the host adapter's render, run on the page's own thread
 // so a Profile draft is exposed to what a real note creation is exposed to.
 
+import { Effect } from "effect";
+
 import { renderProfile } from "@zotlit/workbench/render";
 import type {
   TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
-
-import { ensureTemporal } from "./temporal";
+import { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 /**
- * The page loads the polyfill in an effect, so a render awaits it here rather
- * than reading a date the runtime has no `Temporal` for.
+ * Renders `request` on the page's thread. The caller has `Temporal` in place:
+ * the Rendering service loads it before each render.
  */
-export async function renderInThread(
+export const renderInThread = (
   request: RenderRequest,
-): Promise<TemplateRenderResult> {
-  await ensureTemporal();
-  return renderProfile(request.source, request.snapshot, request);
-}
+): Effect.Effect<TemplateRenderResult, WorkbenchHostError> =>
+  Effect.try({
+    try: () => renderProfile(request.source, request.snapshot, request),
+    catch: (cause) => new WorkbenchHostError({ cause }),
+  });
