@@ -62,6 +62,8 @@ import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
 import {
+  historyPresses,
+  pressHistory,
   readMarks,
   reportBlockedEdit,
   settledOf,
@@ -367,8 +369,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   #toolbarMounted = false;
   /** The last Editing Capability gesture's run; `null` while none has run. */
   #gesturing: WriteRun | null = null;
-  /** The Annotation History press this view is answering; settled while none is. */
-  #stepping = Promise.resolve();
+  /** This reader's Annotation History presses, answered one at a time. */
+  readonly #presses = historyPresses();
+  /** The last Annotation History press's run; `null` while none has run. */
+  #stepping: WriteRun | null = null;
 
   constructor({
     view,
@@ -547,7 +551,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    * none has run. Never rejects.
    */
   get stepped(): Promise<void> {
-    return this.#stepping;
+    return settledOf(this.#bridge, this.#stepping);
   }
 
   /**
@@ -1344,37 +1348,31 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   stepHistory(direction: HistoryDirection): void {
     if (this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
-    const answered = this.#bridge
-      .runPromise(
+    this.#stepping = this.#writes(
+      pressHistory(
+        this.#presses,
         stepMarkHistory(this.#annotations, this.#notifier, {
           attachmentKey,
           direction,
-          speaks: () => !this.#surfaces.disposed,
           now: () => this.#now(),
         }),
-      )
-      .then((outcome) => {
-        if (this.#surfaces.disposed) return;
-        switch (outcome.kind) {
-          case "stepped":
-            return this.#landOn(outcome.annotationKey);
-          case "removed":
-            return this.#landOnPage(outcome.pageIndex);
-          case "blocked":
-            this.#editGesture();
-            return;
-          case "changed":
-          case "failed":
-          case "locked":
-          case "idle":
-            return;
-        }
-      });
-    // Chained rather than replaced, so a second press in flight leaves this
-    // settling behind both rather than behind the later one alone. Settled
-    // rather than resolved, so it answers however each press ended.
-    this.#stepping = Promise.allSettled([this.#stepping, answered]).then(
-      () => undefined,
+        (outcome) => {
+          switch (outcome.kind) {
+            case "stepped":
+              return this.#landOn(outcome.annotationKey);
+            case "removed":
+              return this.#landOnPage(outcome.pageIndex);
+            case "blocked":
+              this.#editGesture();
+              return;
+            case "changed":
+            case "failed":
+            case "locked":
+            case "idle":
+              return;
+          }
+        },
+      ),
     );
   }
 

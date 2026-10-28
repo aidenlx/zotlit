@@ -1,5 +1,5 @@
 // PDF.js supplies the geometry; the repository owns each Annotation write.
-import { Cause, Effect, Exit, Fiber, Schema } from "effect";
+import { Cause, Effect, Exit, Fiber, Schema, Semaphore } from "effect";
 
 import type {
   PdfPosition,
@@ -287,8 +287,11 @@ export const eraseMarks = (
  * land, or one that put an Annotation back under a new creator. A step that
  * failed before Zotero answered is one whose outcome ZotLit never learned.
  *
- * @param options.speaks whether the reader that asked still stands to hear the
- *   answer; a closed one says nothing.
+ * The step itself is uninterruptible: the repository moves the step to the
+ * other stack only once its writes answered, so a reader closed under it
+ * waits for that answer. What the reader is told runs after, and the close
+ * ends it.
+ *
  * @param options.now the clock a cooldown's remaining seconds are read against.
  */
 export const stepMarkHistory = Effect.fn("PdfAnnotationEditor.stepHistory")(
@@ -298,35 +301,55 @@ export const stepMarkHistory = Effect.fn("PdfAnnotationEditor.stepHistory")(
     {
       attachmentKey,
       direction,
-      speaks,
       now,
     }: {
       attachmentKey: string;
       direction: HistoryDirection;
-      speaks: () => boolean;
       now: () => CopyInstant;
     },
   ) {
-    const outcome = yield* (
-      direction === "undo"
+    const outcome = yield* Effect.uninterruptible(
+      (direction === "undo"
         ? annotations.undo(attachmentKey)
         : annotations.redo(attachmentKey)
-    ).pipe(
-      recover(
-        (cause) =>
-          Effect.logWarning(
-            "A History Step failed before Zotero answered",
-          ).pipe(
-            Effect.annotateLogs({ direction, error: Cause.squash(cause) }),
-            withLogCategory("pdf-annotation-editor"),
-          ),
-        Effect.succeed<HistoryOutcome>(UNKNOWN_OUTCOME),
+      ).pipe(
+        recover(
+          (cause) =>
+            Effect.logWarning(
+              "A History Step failed before Zotero answered",
+            ).pipe(
+              Effect.annotateLogs({ direction, error: Cause.squash(cause) }),
+              withLogCategory("pdf-annotation-editor"),
+            ),
+          Effect.succeed<HistoryOutcome>(UNKNOWN_OUTCOME),
+        ),
       ),
     );
-    if (!speaks()) return outcome;
     const notice = historyOutcomeNotice(outcome, now());
     if (notice !== null) yield* notifier.show(notice);
     return outcome;
+  },
+);
+
+/** The Annotation History presses of one reader, answered one at a time. */
+export const historyPresses = (): Semaphore.Semaphore =>
+  Semaphore.makeUnsafe(1);
+
+/**
+ * One Annotation History press of a reader: its step, then the landing on
+ * what the step changed, once the presses before it have landed.
+ */
+export const pressHistory = Effect.fn("PdfAnnotationEditor.pressHistory")(
+  function* (
+    presses: Semaphore.Semaphore,
+    step: Effect.Effect<HistoryOutcome>,
+    land: (outcome: HistoryOutcome) => Promise<void> | void,
+  ) {
+    yield* presses.withPermits(1)(
+      Effect.flatMap(step, (outcome) =>
+        Effect.promise(async () => land(outcome)),
+      ),
+    );
   },
 );
 

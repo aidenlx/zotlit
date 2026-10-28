@@ -26,7 +26,6 @@ it.effect(
       const outcome = yield* stepMarkHistory(annotations, notifier.service, {
         attachmentKey: "RGRPDF24",
         direction: "undo",
-        speaks: () => true,
         now: () => READER_NOW,
       });
 
