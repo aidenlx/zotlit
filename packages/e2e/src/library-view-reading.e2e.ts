@@ -29,7 +29,7 @@ import type {} from "./page-library-types.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
-  it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it over the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
+  it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it under the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -582,7 +582,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
 
-    // A narrow pane shows the card over the list, and a wide one beside it;
+    // A narrow pane shows the card under the list, and a wide one beside it;
     // the row stays selected.
 
     cleanup.defer(async () => {
@@ -622,12 +622,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             `card ${choice} the list at ${el.clientWidth}px`,
             () =>
               card!.checkVisibility() &&
-              (getComputedStyle(card!).position === "absolute") === enabled,
+              (getComputedStyle(card!)
+                .getPropertyValue("--zt-library-card-place")
+                .trim() ===
+                "below") ===
+                enabled,
             5000,
           );
           return {
             card: card!.checkVisibility(),
-            over: getComputedStyle(card!).position === "absolute",
+            below:
+              getComputedStyle(card!)
+                .getPropertyValue("--zt-library-card-place")
+                .trim() === "below",
             selected:
               el
                 .querySelector<HTMLElement>(
@@ -639,13 +646,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         {
           positionInput: 30,
           condition: 100 - 30,
-          choice: "over",
+          choice: "under",
           enabled: true,
         },
       ),
     ).toEqual({
       card: true,
-      over: true,
+      below: true,
       selected: paper.key,
     });
     // Its close button puts it away; the row stays selected and takes the
@@ -688,7 +695,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toEqual({ selected: paper.key, focused: paper.key });
     // The arrow keys move the selection and leave the list uncovered; Space
-    // on the selected row opens its card over the list, and Escape on the
+    // on the selected row opens its card under the list, and Escape on the
     // row puts it away.
     /** Press `key` where the focus is; report once the card shows or hides. */
 
@@ -715,8 +722,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         { key: key },
       )) as string;
-    // Over the list, a click waits out a double click before it opens the
-    // card.
+    // Under a narrow list a click opens the card; where the card would
+    // cover the row, it waits out a double click first.
     await obRun(
       run.vaultId,
       async ({ app, page }, { paperKey }) => {
@@ -885,7 +892,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       focused: next,
     });
     // A double click on the paper's row, by the pointer, where the card
-    // goes over the list, opens its PDF: the first click leaves the row
+    // shows under the list, opens its PDF: the first click leaves the row
     // uncovered for the second.
     expect(
       await obRun(
@@ -1196,12 +1203,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             `card ${choice} the list at ${el.clientWidth}px`,
             () =>
               card!.checkVisibility() &&
-              (getComputedStyle(card!).position === "absolute") === enabled,
+              (getComputedStyle(card!)
+                .getPropertyValue("--zt-library-card-place")
+                .trim() ===
+                "below") ===
+                enabled,
             5000,
           );
           return {
             card: card!.checkVisibility(),
-            over: getComputedStyle(card!).position === "absolute",
+            below:
+              getComputedStyle(card!)
+                .getPropertyValue("--zt-library-card-place")
+                .trim() === "below",
             selected:
               el
                 .querySelector<HTMLElement>(
@@ -1219,7 +1233,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toEqual({
       card: true,
-      over: false,
+      below: false,
       selected: paper.key,
     });
     // Beside a wide list the card follows the arrow keys.

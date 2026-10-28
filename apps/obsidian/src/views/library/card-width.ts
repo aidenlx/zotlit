@@ -21,6 +21,26 @@ import {
 /** The custom property the card's width utility reads. */
 const CARD_WIDTH = "--zt-library-card-width";
 
+/**
+ * The custom property the card's utilities set to `below` on a narrow pane,
+ * where the card shows under the list at its full width.
+ */
+const CARD_PLACE = "--zt-library-card-place";
+
+/**
+ * The share of the list's column the card takes under a narrow list: its
+ * `h-1/2` utility.
+ */
+export const CARD_BELOW_SHARE = 0.5;
+
+/** Whether `card` shows under the list, as on a narrow pane. */
+export function cardBelowList(card: HTMLElement): boolean {
+  return (
+    card.win.getComputedStyle(card).getPropertyValue(CARD_PLACE).trim() ===
+    "below"
+  );
+}
+
 /** How far one arrow key moves the edge, in pixels. */
 const STEP = 16;
 
@@ -39,10 +59,10 @@ const RESIZING = "zt-is-resizing-library-card";
 /**
  * The card's inner edge: a strip on its start side with the resize cursor,
  * whose line shows on hover and focus and holds the accent while it is
- * dragged. Over a narrow pane the card is absolute already.
+ * dragged. Under a narrow list the card spans the column, so it has none.
  */
 const HANDLE =
-  "zt:absolute zt:-start-1 zt:inset-y-0 zt:z-(--layer-cover) zt:w-2 zt:cursor-col-resize zt:touch-none zt:outline-none zt:after:absolute zt:after:inset-y-0 zt:after:start-[3px] zt:after:w-0.5 zt:hover:after:bg-(--interactive-accent) zt:focus-visible:after:bg-(--interactive-accent) zt:[&.is-active]:after:bg-(--interactive-accent)";
+  "zt:@max-4xl:hidden zt:absolute zt:-start-1 zt:inset-y-0 zt:z-(--layer-cover) zt:w-2 zt:cursor-col-resize zt:touch-none zt:outline-none zt:after:absolute zt:after:inset-y-0 zt:after:start-[3px] zt:after:w-0.5 zt:hover:after:bg-(--interactive-accent) zt:focus-visible:after:bg-(--interactive-accent) zt:[&.is-active]:after:bg-(--interactive-accent)";
 
 export interface CardWidthHost {
   /** The width the document keeps, in pixels; `undefined` for the default. */
@@ -64,14 +84,14 @@ export interface CardWidthHost {
 export interface CardWidthPanes {
   /** The list the card shows beside on a wide pane. */
   list: HTMLElement;
-  /** The pane that holds the list and the card, which a narrow card overlays. */
+  /** The pane that holds the list and the card. */
   pane: HTMLElement;
 }
 
 /**
  * Put the resize edge on `card` and size it from `host`'s width, clamped so
- * the list keeps 20rem beside it, or, over a narrow pane, so the card takes
- * at most 85% of it. Call {@link CardWidth.apply} when the card shows or the
+ * the list keeps 20rem beside it. Under a narrow list the card spans the
+ * column, and its width waits for a wide pane. Call {@link CardWidth.apply} when the card shows or the
  * kept width changes; the pane's own resizes apply themselves.
  */
 export class CardWidth {
@@ -131,23 +151,18 @@ export class CardWidth {
 
   /** Show the kept width, clamped to the pane as it is now. */
   apply(): void {
-    if (this.#drag) return;
+    if (this.#drag || cardBelowList(this.#card)) return;
     this.#show(this.#host.stored() ?? CARD_WIDTH_DEFAULT);
   }
 
   /** The widths the card can take in the pane as it is now. */
   #bounds(): { min: number; max: number } {
     const card = this.#card;
-    const overlay = card.win.getComputedStyle(card).position === "absolute";
-    // Beside the list the card and the list share the room; over a narrow
-    // pane, the card takes from the whole pane it overlays.
-    const pane = overlay
-      ? this.#pane.getBoundingClientRect().width
-      : this.#list.getBoundingClientRect().width +
-        (card.hidden ? 0 : card.getBoundingClientRect().width);
-    return cardWidthBounds(pane === 0 ? Number.POSITIVE_INFINITY : pane, {
-      overlay,
-    });
+    // The card and the list share the room beside each other.
+    const pane =
+      this.#list.getBoundingClientRect().width +
+      (card.hidden ? 0 : card.getBoundingClientRect().width);
+    return cardWidthBounds(pane === 0 ? Number.POSITIVE_INFINITY : pane);
   }
 
   /** Show `width`, within the pane's bounds, and say it on the edge. */

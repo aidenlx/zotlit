@@ -49,7 +49,7 @@ import type {} from "./page-library-types.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
-  it("swaps the Reading Card from one paper to the next in one step, by the arrow keys and by a click, beside a wide list and over a narrow one, with its Annotations closed and open, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
+  it("swaps the Reading Card from one paper to the next in one step, by the arrow keys and by a click, beside a wide list and under a narrow one, with its Annotations closed and open, whether ZotLit Query answers at once or late, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -330,7 +330,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect.soft(step.from, what).toBeTruthy();
       expect.soft(step.to, what).toBeTruthy();
       expect.soft(step.from, what).not.toBe(step.to);
-      // Over a narrow list a click puts the card away while it waits out a
+      // Under a narrow list a click puts the card away while it waits out a
       // double click: the frames it is away count for nothing.
       const frames = step.frames.filter(({ shown }) => shown);
       expect
@@ -442,7 +442,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           `${where}, opens on 3, ${pace}`,
           await switchCard(narrow ? "show" : "click", [null, rows[3]!], delay),
         );
-        // Down the first rows by the arrow keys, then by a click; over a
+        // Down the first rows by the arrow keys, then by a click; under a
         // narrow list those put the card away, so the selection moves as
         // "Show in Library" moves it.
         if (!narrow)
@@ -519,7 +519,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       { enabled: false },
     );
 
-    // Over a narrow list.
+    // Under a narrow list.
     await obRun(
       run.vaultId,
       async ({ app, page }, { value }) => {
@@ -541,10 +541,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           card: true,
         });
         await until(
-          "card over the list",
+          "card under the list",
           () =>
             card!.checkVisibility() &&
-            getComputedStyle(card!).position === "absolute",
+            getComputedStyle(card!)
+              .getPropertyValue("--zt-library-card-place")
+              .trim() === "below",
           5000,
         );
       },
@@ -3068,8 +3070,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     )!;
 
     // The Library View on My Library, and beside it a note to cite into, in
-    // a window wide enough that the Reading Card, which shows over a
-    // narrow list, leaves the start of each row in reach.
+    // a window wide enough that the Reading Card, which shows under a
+    // narrow list, leaves the rows above it in reach.
     await suite.wideWindow(cleanup);
     await obRun(
       run.vaultId,
@@ -3103,7 +3105,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     /**
      * Run `script` with the Library View's tab active and `el` its content.
      * `pressRow` presses a row near its start, where a reader clicks while
-     * the Reading Card over a narrow list covers the row's far end: it
+     * the Reading Card under a narrow list covers the rows below it: it
      * presses what stands at that point, inside the row, through `press`.
      */
 

@@ -118,34 +118,12 @@ export const CARD_WIDTH_MIN = 288;
 /** The room the list keeps beside the Reading Card, in pixels: 20rem. */
 export const CARD_LIST_MIN = 320;
 
-/** The most of a narrow pane the Reading Card takes over the list: 85%. */
-export const CARD_OVERLAY_MAX = 0.85;
-
-/** Where the Reading Card is: beside the list, or over a narrow pane. */
-export interface CardWidthPlacement {
-  /**
-   * Whether the card shows over the pane, which is then the pane it
-   * overlays, rather than beside the list, when the pane is the list's and
-   * the card's together.
-   */
-  overlay?: boolean;
-}
-
 /**
  * The widths the Reading Card can take in a pane `pane` pixels wide. Beside
  * the list: at least {@link CARD_WIDTH_MIN}, and at most what leaves the list
- * {@link CARD_LIST_MIN}, unless the pane is too narrow for both. Over a
- * narrow pane: at most {@link CARD_OVERLAY_MAX} of it, and at least
- * {@link CARD_WIDTH_MIN} where that fits under the cap.
+ * {@link CARD_LIST_MIN}, unless the pane is too narrow for both.
  */
-export function cardWidthBounds(
-  pane: number,
-  { overlay = false }: CardWidthPlacement = {},
-): { min: number; max: number } {
-  if (overlay) {
-    const max = Math.floor(pane * CARD_OVERLAY_MAX);
-    return { min: Math.min(CARD_WIDTH_MIN, max), max };
-  }
+export function cardWidthBounds(pane: number): { min: number; max: number } {
   return {
     min: CARD_WIDTH_MIN,
     max: Math.max(CARD_WIDTH_MIN, Math.round(pane) - CARD_LIST_MIN),
@@ -156,15 +134,8 @@ export function cardWidthBounds(
  * `width` within the {@link cardWidthBounds} of a pane `pane` pixels wide,
  * in whole pixels; `pane` absent takes the floor alone.
  */
-export function clampCardWidth(
-  width: number,
-  pane?: number,
-  placement?: CardWidthPlacement,
-): number {
-  const { min, max } = cardWidthBounds(
-    pane ?? Number.POSITIVE_INFINITY,
-    placement,
-  );
+export function clampCardWidth(width: number, pane?: number): number {
+  const { min, max } = cardWidthBounds(pane ?? Number.POSITIVE_INFINITY);
   return Math.round(Math.min(max, Math.max(min, width)));
 }
 

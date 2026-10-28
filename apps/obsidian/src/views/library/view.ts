@@ -35,7 +35,7 @@ import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 
 import { makeItemNodeCommand } from "./atoms";
-import { CardWidth } from "./card-width";
+import { CARD_BELOW_SHARE, CardWidth, cardBelowList } from "./card-width";
 import {
   LIBRARY_LAYOUTS,
   libraryViewDefaults,
@@ -106,9 +106,10 @@ const OWN_KEYS =
  * switcher: Mod opens in a new tab.
  */
 /**
- * How long a click on a row waits before it opens the Reading Card over a
- * narrow list, so the second click of a double click still lands on the row
- * (ADR 0074): the usual double-click time of macOS and Windows.
+ * How long a click on a row waits before it opens the Reading Card under a
+ * narrow list where the card would cover the row, so the second click of a
+ * double click still lands on the row (ADR 0074): the usual double-click
+ * time of macOS and Windows.
  */
 const DOUBLE_CLICK_MS = 500;
 
@@ -144,7 +145,7 @@ export class LibraryView extends ItemView {
   /**
    * The selected row, by its Item's Indexed Key, and whether the researcher
    * asked for its Reading Card: a click on the row or Space on it does, the
-   * arrow keys do not. A narrow pane shows the card over the list only
+   * arrow keys do not. A narrow pane shows the card under the list only
    * while it is asked for; a wide pane shows it beside the list for every
    * selected row, unless the researcher closed it (the document's
    * `cardClosed`), when it too waits to be asked for.
@@ -181,6 +182,8 @@ export class LibraryView extends ItemView {
   #cardEl: HTMLElement | null = null;
   /** The box of the tree, the list and the card, once the tab has opened. */
   #shell: HTMLElement | null = null;
+  /** The column of the list and the card, once the tab has opened. */
+  #body: HTMLElement | null = null;
   /** The Reading Card's resizable inner edge, once the tab has opened. */
   #cardWidth: CardWidth | null = null;
   /** The click that waits out a double click before it opens the card. */
@@ -277,11 +280,11 @@ export class LibraryView extends ItemView {
     };
     this.register(() => drag.cancel());
     this.#registerRowKeys();
-    // Escape puts away a card that shows over the list, from the list as
-    // from the card. Otherwise Obsidian moves focus to the last navigable
+    // Escape puts away a card that shows under a narrow list, from the list
+    // as from the card. Otherwise Obsidian moves focus to the last navigable
     // leaf, which in the main area switches the tab away from this view.
     const onEscape = () => {
-      if (this.#cardOverList()) {
+      if (this.#cardBelowList()) {
         this.#closeCard();
         return false as const;
       }
@@ -481,19 +484,25 @@ export class LibraryView extends ItemView {
     const treeEl = treePane.createDiv({
       cls: "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:scroll-gutter",
     });
-    const main = shell.createDiv({
-      cls: "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col",
+    // The list and the card share one box: side by side on a wide pane, and
+    // the card under the list on a narrow one.
+    const body = shell.createDiv({
+      cls: "zt:flex zt:min-w-0 zt:flex-1 zt:@max-4xl:flex-col",
+    });
+    this.#body = body;
+    const main = body.createDiv({
+      cls: "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col",
     });
     // Where ZotLit cannot read Zotero's database, the tree and the list say
     // so in place of what they hold; the search box and the header's count
     // go with them.
     const hidden = "zt:group-data-zotero-missing:hidden";
     // The Reading Card shows while a row is selected: beside the list on a
-    // wide pane, and over it on a narrow one, as the tree does, once the
+    // wide pane, and under it, across the column, on a narrow one, once the
     // researcher asks for it. A card the researcher closed is hidden, so a
     // wide pane too waits for it to be asked for.
-    const cardEl = shell.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:absolute zt:@max-4xl:inset-y-0 zt:@max-4xl:end-0 zt:@max-4xl:max-w-[85%] zt:@max-4xl:z-(--layer-popover) zt:@max-4xl:shadow-(--shadow-s)",
+    const cardEl = body.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
+      cls: "zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:@4xl:[&:not([hidden])]:flex zt:group-data-card-open:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-1/2 zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width) zt:@max-4xl:[--zt-library-card-place:below]",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
@@ -738,8 +747,9 @@ export class LibraryView extends ItemView {
 
   /**
    * Show the Reading Card as the selection and the document have it: hidden
-   * while no row is selected or the researcher closed it, and over a narrow
-   * pane only while it is asked for.
+   * while no row is selected or the researcher closed it, and under a narrow
+   * list only while it is asked for, with the selected row kept in view
+   * above it.
    */
   #showCard(): void {
     const el = this.#cardEl;
@@ -748,6 +758,8 @@ export class LibraryView extends ItemView {
     el.hidden = key === null || this.#storage.document().cardClosed === true;
     this.#shell?.toggleAttribute("data-card-open", card);
     this.#cardWidth?.apply();
+    if (card && this.#cardBelowList())
+      this.#selectedRow()?.scrollIntoView({ block: "nearest" });
   }
 
   /** Keep the Reading Card closed, or open again. */
@@ -761,26 +773,35 @@ export class LibraryView extends ItemView {
       });
   }
 
-  /** Whether the Reading Card shows over the list, as on a narrow pane. */
-  #cardOverList(): boolean {
-    return !!this.#cardEl && !this.#cardEl.hidden && this.#cardIsOverlay();
-  }
-
-  /** Whether the Reading Card goes over the list once it shows. */
-  #cardIsOverlay(): boolean {
+  /** Whether the Reading Card shows under the list, as on a narrow pane. */
+  #cardBelowList(): boolean {
     const el = this.#cardEl;
-    return !!el && el.win.getComputedStyle(el).position === "absolute";
+    return !!el && !el.hidden && cardBelowList(el);
   }
 
   /**
-   * A click on the row `key` selects it and asks for its Reading Card. Over
-   * a narrow list the card waits out a double click first, as it would
-   * cover the row the second click aims at; the second click of a double
-   * click asks for no card.
+   * Whether the Reading Card, once it shows under a narrow list, covers the
+   * point of `event`: the card is not showing yet, and the point is in the
+   * part of the column it takes.
+   */
+  #cardWouldCover(event: MouseEvent): boolean {
+    const el = this.#cardEl;
+    const body = this.#body;
+    if (!el || !body || !cardBelowList(el)) return false;
+    if (this.selected.card && !el.hidden) return false;
+    const box = body.getBoundingClientRect();
+    return event.clientY >= box.bottom - box.height * CARD_BELOW_SHARE;
+  }
+
+  /**
+   * A click on the row `key` selects it and asks for its Reading Card. Where
+   * the card would show under a narrow list over the row clicked, it waits
+   * out a double click first, as it would cover the row the second click
+   * aims at; the second click of a double click asks for no card.
    */
   #click(key: string, event: MouseEvent): void {
     this.#cancelCard();
-    if (event.detail <= 1 && !this.#cardIsOverlay()) {
+    if (event.detail <= 1 && !this.#cardWouldCover(event)) {
       this.#selectRow({ key, card: true });
       return;
     }
@@ -802,7 +823,7 @@ export class LibraryView extends ItemView {
 
   /**
    * Put the Reading Card away; the row stays selected and takes the focus
-   * back. Escape over a narrow list puts it away alone; the close button and
+   * back. Escape under a narrow list puts it away alone; the close button and
    * a drag of its edge past the minimum also keep it closed, so a wide pane
    * stops showing it as the selection moves.
    */
@@ -820,7 +841,7 @@ export class LibraryView extends ItemView {
    * The row keys of the quick switcher (ADR 0074): ↑ and ↓ move the
    * selection; Enter opens the selected row's Literature Note, or writes it,
    * Mod+Enter in a new pane; Shift+Enter opens its PDF. Space opens the
-   * selected row's Reading Card, which a narrow pane shows over the list
+   * selected row's Reading Card, which a narrow pane shows under the list
    * (ADR 0071).
    */
   #registerRowKeys(): void {
