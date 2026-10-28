@@ -1,14 +1,28 @@
 // The Workbench Connection over a fake Local Bridge: which reads a Disconnect,
 // a closed page and a newer draft stop.
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Scope,
+  SubscriptionRef,
+} from "effect";
 import { expect } from "vitest";
 
-import { BRIDGE_CAPABILITIES, BRIDGE_VERSION } from "@zotlit/workbench/bridge";
-import type { LocalBridgeConnection } from "@zotlit/workbench/bridge";
+import {
+  BRIDGE_CAPABILITIES,
+  BRIDGE_VERSION,
+  LocalBridgeClient,
+} from "@zotlit/workbench/bridge";
+import type {
+  LocalBridgeConnection,
+  LocalBridgeState,
+} from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
-import { LocalBridge } from "./local-bridge";
 import {
   layerWorkbenchConnection,
   WorkbenchConnection,
@@ -52,7 +66,10 @@ const heldBridge = Effect.gen(function* () {
   const stopped = yield* Deferred.make<void>();
   const interrupted: string[] = [];
   const dependencyReads: string[] = [];
-  let connection: LocalBridgeConnection = CONNECTED;
+  const client = yield* SubscriptionRef.make<LocalBridgeState>({
+    connection: CONNECTED,
+    resumable: true,
+  });
   const held = (name: keyof typeof started): Effect.Effect<never> =>
     Deferred.succeed(started[name], undefined).pipe(
       Effect.andThen(Effect.never),
@@ -63,14 +80,20 @@ const heldBridge = Effect.gen(function* () {
       ),
     );
   const layer = Layer.succeed(
-    LocalBridge,
-    LocalBridge.of({
-      connection: Effect.sync(() => connection),
-      resumable: Effect.succeed(true),
-      connectFromFragment: () => Effect.succeed(connection),
-      resume: Effect.succeed(connection),
-      disconnect: Effect.sync(() => {
-        connection = { state: "disconnected" };
+    LocalBridgeClient,
+    LocalBridgeClient.of({
+      current: SubscriptionRef.get(client),
+      changes: SubscriptionRef.changes(client),
+      connectFromFragment: () => Effect.succeed(CONNECTED),
+      resume: Effect.succeed(CONNECTED),
+      disconnect: SubscriptionRef.set(client, {
+        connection: { state: "disconnected" },
+        resumable: false,
+      }),
+      readTemplateSchema: Effect.succeed({
+        note: {},
+        annotation: {},
+        filename: {},
       }),
       loadSelectedItem: held("item"),
       readSelectedProfile: Effect.succeed({

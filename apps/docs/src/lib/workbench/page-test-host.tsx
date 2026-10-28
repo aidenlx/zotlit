@@ -1,4 +1,6 @@
 import { EditorView } from "@codemirror/view";
+import { Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -7,6 +9,7 @@ import {
   BRIDGE_CAPABILITIES,
   BRIDGE_VERSION,
   LOCAL_BRIDGE_PATHS,
+  LocalBridgeStorage,
   connectFragment,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileResponse } from "@zotlit/workbench/bridge";
@@ -167,7 +170,14 @@ export async function open({
   const content = (
     <>
       <Workbench
-        layer={layerPage({ fetch: bridge, storage: sessionStorage })}
+        layer={layerPage.pipe(
+          Layer.provide([
+            FetchHttpClient.layer.pipe(
+              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
+            ),
+            Layer.succeed(LocalBridgeStorage, sessionStorage),
+          ]),
+        )}
       />
       <Toaster />
     </>
