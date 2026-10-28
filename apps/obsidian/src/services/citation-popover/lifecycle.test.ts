@@ -352,17 +352,24 @@ describe("Citation Popover visits", () => {
         open: run.open,
       }),
     );
-    await vi.advanceTimersByTimeAsync(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(run.textReads).toHaveLength(1);
 
     await act(async () => {
       run.events.emit("invalidated");
+      await vi.advanceTimersByTimeAsync(0);
     });
-    await vi.advanceTimersByTimeAsync(0);
 
     expect(run.textReads).toHaveLength(2);
     expect(run.textReads[0]!.aborted).toBe(true);
     expect(run.textReads[1]!.aborted).toBe(false);
+    // The interrupted read draws nothing, not even a failure.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(run.parent.hoverPopover!.hoverEl.textContent).toBe("");
   });
 
   it("interrupts the read of a work when its popover hides", async () => {
@@ -385,6 +392,43 @@ describe("Citation Popover visits", () => {
     await showing;
 
     expect(signals[0]!.aborted).toBe(true);
+    // The interrupted read draws nothing: no card opens again.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(run.parent.hoverPopover).toBeNull();
+    expect(document.querySelector(".zt-citation-popover")).toBeNull();
+  });
+
+  it("interrupts the read of a document citation when its popover hides", async () => {
+    await using run = harness();
+    await act(() =>
+      run.showDocument({
+        event: new MouseEvent("mouseover"),
+        hoverParent: run.parent,
+        targetEl: run.first,
+        sourcePath: "Draft.md",
+        works: [{ citekey: "alpha" }],
+        open: run.open,
+      }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(run.textReads).toHaveLength(1);
+
+    await act(async () => {
+      run.hide(run.parent);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(run.textReads[0]!.aborted).toBe(true);
+    // The interrupted read draws nothing: no card opens again.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(run.parent.hoverPopover).toBeNull();
+    expect(document.querySelector(".zt-citation-popover")).toBeNull();
   });
 
   it.each(["retarget", "hide", "unload"] as const)(

@@ -48,9 +48,15 @@ const popovers = vi.hoisted(
     }[],
 );
 
+/** A failure the next draw of entries throws, as a broken render would. */
+const draw = vi.hoisted(() => ({ fails: null as Error | null }));
+
 vi.mock("./popover", () => ({
   CitationHoverPopover: class {
-    readonly render = vi.fn(() => true);
+    readonly render = vi.fn((content: unknown) => {
+      if (draw.fails && content !== null) throw draw.fails;
+      return true;
+    });
     readonly retarget = vi.fn();
     readonly #cleanup: (() => void)[] = [];
     readonly hide = vi.fn(() => {
@@ -224,6 +230,7 @@ function harness(read: () => Promise<DocumentCitations | null>) {
 
 beforeEach(() => {
   popovers.length = 0;
+  draw.fails = null;
 });
 
 describe("Citation Popover citation text", () => {
@@ -649,6 +656,41 @@ describe("popover failure and lifetime", () => {
     await vi.waitFor(() => expect(popovers.at(-1)!.render).toHaveBeenCalled());
     run.removeSource();
     await vi.waitFor(() => expect(popovers.at(-1)!.hide).toHaveBeenCalled());
+  });
+});
+
+describe("popover draw failures", () => {
+  it("logs a failure to draw the entries and fails the first read's caller", async () => {
+    const errors: {
+      message: unknown;
+      category: readonly string[];
+      annotations: Readonly<Record<string, unknown>>;
+    }[] = [];
+    const logs: Layer.Layer<never> = Logger.layer([
+      Logger.make(({ logLevel, message, fiber }) => {
+        if (logLevel !== "Error") return;
+        errors.push({
+          message: Array.isArray(message) ? message[0] : message,
+          category: fiber.getRef(LogCategory),
+          annotations: fiber.getRef(References.CurrentLogAnnotations),
+        });
+      }),
+    ]);
+    await using run = workHarness({ logs });
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    draw.fails = new Error("draw failed");
+
+    await expect(
+      run.showUnder({ kind: "item", indexedKey: "ABCD2345" }),
+    ).rejects.toThrow("draw failed");
+
+    expect(errors).toEqual([
+      {
+        message: "Cannot show the entries of a hovered citation",
+        category: ["citation-popover"],
+        annotations: { error: new Error("draw failed") },
+      },
+    ]);
   });
 });
 

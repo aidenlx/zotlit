@@ -851,78 +851,72 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
   });
 
   it("shows the entries of every work a hovered citation names in its popover", async () => {
-    const notePath = "Citation hover.md";
-    await obRun(
+    const entries = await obRun(
       vaultId,
-      async ({ app: host }, { notePath }) => {
+      async ({ app: host, page }) => {
         const app = host as WalkthroughApp;
-        const file = await app.vault.create(
-          notePath,
-          "Figures and trust [@rougier2014; @ioannidis2005].\n",
+        const { until } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const file = cleanup.adopt(
+          await app.vault.create(
+            "Citation hover.md",
+            "Figures and trust [@rougier2014; @ioannidis2005].\n",
+          ),
+          (file) => app.vault.delete(file),
         );
-        const leaf = app.workspace.getLeaf("tab");
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
         await leaf.openFile(file, { state: { mode: "preview" } });
         app.workspace.setActiveLeaf(leaf, { focus: true });
+        const view = leaf.view as MarkdownView;
+        cleanup.defer(() => view.hoverPopover?.hide());
+        // The reading view formats the citation once its render settles and
+        // may draw it again meanwhile, so the hover goes to the citation that
+        // stands until a popover opens over it. A popover that opened and then
+        // hid itself fails the case rather than being hovered open again.
+        let opened = false;
+        return until(
+          "the Citation Popover entries of the hovered citation",
+          () => {
+            const popover = view.hoverPopover?.hoverEl.isConnected
+              ? view.hoverPopover
+              : null;
+            if (!popover) {
+              if (opened)
+                throw new Error("The Citation Popover opened and hid itself");
+              const citation =
+                view.previewMode.containerEl.querySelector<HTMLElement>(
+                  ".zt-citation",
+                );
+              if (!citation?.textContent?.includes("Rougier")) return null;
+              const box = citation.getBoundingClientRect();
+              citation.dispatchEvent(
+                new MouseEvent("mouseover", {
+                  clientX: box.x + box.width / 2,
+                  clientY: box.y + box.height / 2,
+                  bubbles: true,
+                  view: citation.ownerDocument.defaultView,
+                }),
+              );
+              return null;
+            }
+            opened = true;
+            const blocks = [
+              ...popover.hoverEl.querySelectorAll<HTMLElement>(
+                ".zt-citation-popover-content [data-citation-popover-block]",
+              ),
+            ].map((block) => ({
+              citekey: block.dataset.citationPopoverBlock ?? "",
+              text: block.textContent ?? "",
+            }));
+            return blocks.length === 2 ? blocks : null;
+          },
+          30_000,
+        );
       },
-      { notePath },
-    );
-    // The reading view formats the citation once its render settles and may
-    // draw it again meanwhile, so each try hovers the citation that stands
-    // until a popover is open over it.
-    const entries = await obRunUntil(
-      vaultId,
-      async ({ page }, { notePath }) => {
-        const view = page
-          .leavesOfType("markdown")
-          .find((leaf) => leaf.view.file?.path === notePath)?.view;
-        if (!view) return [];
-        const popover = view.hoverPopover?.hoverEl.isConnected
-          ? view.hoverPopover
-          : null;
-        if (!popover) {
-          const citation =
-            view.previewMode.containerEl.querySelector<HTMLElement>(
-              ".zt-citation",
-            );
-          if (citation?.textContent?.includes("Rougier")) {
-            const box = citation.getBoundingClientRect();
-            citation.dispatchEvent(
-              new MouseEvent("mouseover", {
-                clientX: box.x + box.width / 2,
-                clientY: box.y + box.height / 2,
-                bubbles: true,
-                view: citation.ownerDocument.defaultView,
-              }),
-            );
-          }
-          return [];
-        }
-        return [
-          ...popover.hoverEl.querySelectorAll<HTMLElement>(
-            ".zt-citation-popover-content [data-citation-popover-block]",
-          ),
-        ].map((block) => ({
-          citekey: block.dataset.citationPopoverBlock ?? "",
-          text: block.textContent ?? "",
-        }));
-      },
-      { notePath },
-      {
-        what: "the Citation Popover entries of the hovered citation",
-        ready: (entries) => entries.length === 2,
-      },
-    );
-    await obRun(
-      vaultId,
-      async ({ app, page }, { notePath }) => {
-        const leaf = page
-          .leavesOfType("markdown")
-          .find((leaf) => leaf.view.file?.path === notePath)!;
-        leaf.view.hoverPopover?.hide();
-        leaf.detach();
-        await app.vault.delete(app.vault.getFileByPath(notePath)!);
-      },
-      { notePath },
+      undefined,
+      { timeoutMs: 60_000 },
     );
 
     expect(entries.map(({ citekey }) => citekey)).toEqual([
