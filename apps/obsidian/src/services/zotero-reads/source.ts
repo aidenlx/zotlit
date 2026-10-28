@@ -11,6 +11,7 @@ import {
   Queue,
   Ref,
   Scope,
+  Semaphore,
   Stream,
 } from "effect";
 import { dirname, join } from "node:path";
@@ -187,6 +188,12 @@ export function layerSource(
       const loggedFallbacks = yield* Ref.make(new Set<ReadFallbackReason>());
       const mainWatcherScope = yield* Ref.make<Scope.Closeable | null>(null);
       const walWatcherScope = yield* Ref.make<Scope.Closeable | null>(null);
+      /**
+       * #1798: one WAL sync or rebind at a time. Each reads the stored scope
+       * before it binds a new one, so two at once both bound a WAL watch, and
+       * the second stored scope dropped the first.
+       */
+      const watchBinds = yield* Semaphore.make(1);
       const watchSignals = yield* Queue.unbounded<WatchSignal>();
       const watchTimer = yield* Ref.make<Fiber.Fiber<void> | null>(null);
       const watchTrusted = yield* Ref.make(false);
@@ -739,7 +746,8 @@ export function layerSource(
           }),
         );
 
-      const syncWalWatcher = Effect.fnUntraced(function* () {
+      /** Runs under the `watchBinds` permit of its caller. */
+      const syncWalWatcherHeld = Effect.fnUntraced(function* () {
         const current = yield* Ref.get(state);
         if (!current.sourcePath || current.readMode === "immutable") {
           yield* closeWalWatcher;
@@ -757,6 +765,8 @@ export function layerSource(
           { message: "Failed to watch Zotero WAL", annotations: { walPath } },
         );
       });
+      const syncWalWatcher = () =>
+        syncWalWatcherHeld().pipe(Semaphore.withPermit(watchBinds));
 
       const enqueueWatchSignal = (signal: WatchSignal): void => {
         // boundary: a watch event calls back synchronously; bridge into Effect once.
@@ -797,8 +807,8 @@ export function layerSource(
           sourcePath: current.sourcePath,
           readMode: current.readMode,
         });
-        yield* syncWalWatcher();
-      });
+        yield* syncWalWatcherHeld();
+      }, Semaphore.withPermit(watchBinds));
 
       yield* Stream.fromQueue(watchSignals).pipe(
         Stream.runForEach((signal) => scheduleWatchedRefresh(signal)),
