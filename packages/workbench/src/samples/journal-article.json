@@ -96,6 +96,7 @@
       "notePath": null,
       "backlink": "zotero://select/library/items/IANNP5A2",
       "weblink": null,
+      "librarylink": "obsidian://zotlit/show-in-library?item-key=IANNP5A2",
       "authors": [
         {
           "family": "Ioannidis",
@@ -337,5 +338,5 @@
       ]
     ]
   },
-  "revision": "bccddd287b76fabfa977e32a72821b7756b4ed50340a147282462e98e53189ca"
+  "revision": "d2d09991c0052664a82dee50d86eb9a68412b6f324f0bcc2e822e476405bd7a2"
 }

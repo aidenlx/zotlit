@@ -1392,4 +1392,172 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("null");
   }, 180000);
+
+  it("shows a Literature Note's Item in the Library View from its command, the Cited By toolbar and a Library Link, and keeps the search when a link names no Item, with Zotero closed", async () => {
+    const snapshot = await obRun(
+      run.vaultId,
+      ({ app, zotlit }) =>
+        JSON.stringify({
+          layout: app.workspace.getLayout(),
+          document:
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] ?? null,
+        }),
+      undefined,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await obRun(
+        run.vaultId,
+        async ({ app, zotlit }, { snapshot }) => {
+          const saved = JSON.parse(snapshot);
+          const { settings, bridge } = zotlit.services;
+          bridge.runSync(
+            settings.update({ "library.document": saved.document }),
+          );
+          await bridge.runPromise(settings.flush);
+          await app.workspace.changeLayout(saved.layout);
+        },
+        { snapshot },
+      );
+    });
+    const paper = annotationItem;
+    const notePath = "literatures/rougierTenSimpleRules2014.md";
+    /** Close the Library View, and open the note in the active tab. */
+    const openNote = () =>
+      obRun(
+        run.vaultId,
+        async ({ app }, { notepath }) => {
+          for (const leaf of app.workspace.getLeavesOfType("zotlit-library"))
+            leaf.detach();
+          const leaf =
+            app.workspace.getLeavesOfType("markdown")[0] ??
+            app.workspace.getLeaf("tab");
+          await leaf.openFile(app.vault.getFileByPath(notepath)!);
+          app.workspace.setActiveLeaf(leaf, { focus: true });
+        },
+        { notepath: notePath },
+      );
+    /** Wait until the Library View selects the paper's row with its Reading Card. */
+    const shownInLibrary = (what: string) =>
+      obRunUntil(
+        run.vaultId,
+        async ({ app }, { key }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & {
+              view: LibraryView;
+            })[]
+          )[0]?.view;
+          if (!view?.query) return false;
+          await view.query.settled;
+          return view.selected.key === key && view.selected.card;
+        },
+        { key: paper.key },
+        { what },
+      );
+
+    // The command, on the active Literature Note.
+    await openNote();
+    expect(
+      await obRun(run.vaultId, ({ app }) =>
+        app.commands.executeCommandById("zotlit:show-in-library"),
+      ),
+    ).toBe(true);
+    await shownInLibrary("the command shows the paper");
+
+    // The Cited By toolbar, for the same note, open in the sidebar.
+    await obRun(run.vaultId, async ({ app }) => {
+      let leaf = app.workspace.getLeavesOfType("zotlit-cited-by")[0];
+      if (!leaf) {
+        leaf = app.workspace.getRightLeaf(false)!;
+        await leaf.setViewState({ type: "zotlit-cited-by" });
+      }
+      await app.workspace.revealLeaf(leaf);
+      await leaf.loadIfDeferred();
+    });
+    await openNote();
+    await obRunUntil(
+      run.vaultId,
+      ({ app }) => {
+        const button = app.workspace
+          .getLeavesOfType("zotlit-cited-by")
+          .map((leaf) =>
+            leaf.view.containerEl?.querySelector<HTMLElement>(
+              "[data-cited-by-show-in-library]",
+            ),
+          )
+          .find(Boolean);
+        button?.click();
+        return !!button;
+      },
+      undefined,
+      { what: "the Cited By toolbar's Show in Library button" },
+    );
+    await shownInLibrary("Cited By shows the paper");
+
+    // The Library Link `zt.librarylink` writes, through Obsidian's handler.
+    await openNote();
+    await obRun(
+      run.vaultId,
+      ({ app }, { key }) => {
+        app.workspace.protocolHandler.handlers.get("zotlit/show-in-library")!({
+          action: "zotlit/show-in-library",
+          "item-key": key,
+        });
+      },
+      { key: paper.key },
+    );
+    await shownInLibrary("the Library Link shows the paper");
+
+    // A link to an Item no Library holds keeps the search and says so.
+    await obRun(run.vaultId, async ({ app }) => {
+      const view = (
+        app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
+          view: LibraryView;
+        })[]
+      )[0]!.view;
+      const input = view.contentEl.querySelector<HTMLInputElement>(
+        "[data-library-search] input",
+      )!;
+      input.value = "figures";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await view.searched;
+      await view.query.settled;
+      app.workspace.protocolHandler.handlers.get("zotlit/show-in-library")!({
+        action: "zotlit/show-in-library",
+        "item-key": "QQQQQQQQ",
+      });
+    });
+    expect(
+      await obRunUntil(
+        run.vaultId,
+        ({ app }) => {
+          const view = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & {
+              view: LibraryView;
+            })[]
+          )[0]!.view;
+          return {
+            search:
+              view.contentEl.querySelector<HTMLInputElement>(
+                "[data-library-search] input",
+              )?.value ?? null,
+            notice: [...activeDocument.querySelectorAll(".notice")].some((el) =>
+              el.textContent?.includes("not found in your libraries"),
+            ),
+          };
+        },
+        undefined,
+        {
+          what: "the not-found notice",
+          ready: (value) => value.notice,
+        },
+      ),
+    ).toEqual({ search: "figures", notice: true });
+  }, 180000);
 });

@@ -78,7 +78,10 @@ const ITEM_SECTIONS: readonly SectionSpec[] = [
   },
   { id: "content", keys: ["abstract", "attachments", "annotations", "notes"] },
   { id: "organization", keys: ["tags", "collections", "relatedItems"] },
-  { id: "links", keys: ["backlink", "weblink", "noteLink", "notePath"] },
+  {
+    id: "links",
+    keys: ["backlink", "weblink", "librarylink", "noteLink", "notePath"],
+  },
   {
     id: "record",
     keys: [
@@ -158,6 +161,7 @@ const ITEM_LABELS: Readonly<Record<string, WorkbenchMessageLabel>> = {
   relatedItems: "workbench_field_related_items",
   notes: "workbench_field_notes",
   weblink: "workbench_field_weblink",
+  librarylink: "workbench_field_librarylink",
   key: "workbench_field_key",
   indexedKey: "workbench_field_indexed_key",
   libraryID: "workbench_field_library_id",

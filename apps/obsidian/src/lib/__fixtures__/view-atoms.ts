@@ -37,6 +37,7 @@ import { Template } from "@/services/template/service";
 import { UseLedger } from "@/services/use-ledger/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 
 /**
  * Every view service outside the Obsidian host tags, as an empty mock. Merge
@@ -79,6 +80,7 @@ export const layerUnreadViewServices = Layer.mergeAll(
   Layer.mock(UseLedger, {}),
   Layer.mock(PluginSettings, {}),
   Layer.mock(Release, { version: "" }),
+  Layer.mock(ShowInLibrary, {}),
   Layer.mock(QueryClients, {
     client: stubService<QueryClients["Service"]["client"]>("QueryClient", {}),
   }),

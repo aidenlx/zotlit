@@ -25,7 +25,10 @@ import { inTextEntry } from "@/services/pdf-annotation-editor/capability-afforda
 import { useLedgerAtom } from "@/services/use-ledger/atoms";
 import { showItemInAnnotView } from "@/views/annot-view/register";
 import { saveAsQueryFile } from "@/views/annot-view/save-query-file";
-import { ITEM_ROW_ATTRIBUTE } from "@/views/query-view/item-rows";
+import {
+  ITEM_ROW_ATTRIBUTE,
+  ITEM_ROW_REVEALED_ATTRIBUTE,
+} from "@/views/query-view/item-rows";
 import type { ItemRowGestures } from "@/views/query-view/item-rows";
 import { holdsPdf } from "@/views/query-view/papers-layout";
 import { QueryView } from "@/views/query-view/view";
@@ -929,6 +932,23 @@ export class LibraryView extends ItemView {
   }
 
   /**
+   * Flash `row` once, so the eye finds the row Show in Library selected. A
+   * flash still running starts over: the style read between the two writes
+   * makes the browser see the attribute go and come back.
+   */
+  #flash(row: HTMLElement): void {
+    row.removeAttribute(ITEM_ROW_REVEALED_ATTRIBUTE);
+    row.getBoundingClientRect();
+    row.setAttribute(ITEM_ROW_REVEALED_ATTRIBUTE, "");
+    const ended = (event: AnimationEvent) => {
+      if (event.target !== row) return;
+      row.removeAttribute(ITEM_ROW_REVEALED_ATTRIBUTE);
+      row.removeEventListener("animationend", ended);
+    };
+    row.addEventListener("animationend", ended);
+  }
+
+  /**
    * Show the Item `indexedKey` selected, in its first Collection, or in its
    * Library where it is filed in none. A search, a Reading State facet or a
    * selected tag that may leave the Item out is cleared.
@@ -937,13 +957,15 @@ export class LibraryView extends ItemView {
    */
   async reveal(
     indexedKey: string,
-  ): Promise<"listed" | "not-listed" | "closed"> {
+  ): Promise<"listed" | "not-listed" | "not-found" | "closed"> {
     const node = await this.#itemNode(indexedKey);
     if (!this.#release) return "closed";
+    // An Item the Library Scope does not hold leaves the list as it was.
+    if (!node) return "not-found";
     if (this.tree.state.facets.length > 0) this.#filter([]);
     if (this.tree.state.tags.length > 0) this.#tag([]);
     if (this.search.state.text !== "") this.search.clear();
-    if (node) this.#select(node);
+    this.#select(node);
     await this.searched;
     await this.query.settled;
     const listed = this.query.state
@@ -956,7 +978,10 @@ export class LibraryView extends ItemView {
     // Show in Library asks for the Reading Card, as a click does.
     this.#selectRow({ key: indexedKey, card: true });
     const row = this.#rowOf(indexedKey);
-    if (row) this.#focus(row);
+    if (row) {
+      this.#focus(row);
+      this.#flash(row);
+    }
     return "listed";
   }
 

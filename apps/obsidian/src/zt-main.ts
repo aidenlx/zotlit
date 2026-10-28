@@ -53,6 +53,7 @@ import {
 import { registerCitedByView } from "./views/cited-by/register";
 import { itemActions } from "./views/library/item-actions";
 import { registerLibraryView, showInLibrary } from "./views/library/register";
+import { showInLibraryFileMenu } from "./views/library/show-in-library-actions";
 import { registerNotePreview } from "./views/note-preview/register";
 import { openTargetCommand } from "./views/open-target";
 import { registerPandocExport } from "./views/pandoc-export/register";
@@ -483,6 +484,9 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
             ),
         }),
         indexedKeyFileMenu(),
+        showInLibraryFileMenu((indexedKey) =>
+          services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
+        ),
         explorerFileMenu(this.app, {
           bridge: services.bridge,
           context: services.workbenchActionContext,

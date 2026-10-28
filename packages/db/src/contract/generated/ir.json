@@ -1586,6 +1586,15 @@
           }
         },
         {
+          "name": "librarylink",
+          "description": "Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View.",
+          "optional": false,
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          }
+        },
+        {
           "name": "authors",
           "description": "Primary Creators from the item's role-priority chain.",
           "optional": false,
@@ -2514,6 +2523,15 @@
                 "type": "null"
               }
             ]
+          }
+        },
+        {
+          "name": "librarylink",
+          "description": "Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View.",
+          "optional": false,
+          "type": {
+            "kind": "primitive",
+            "type": "string"
           }
         },
         {
@@ -3731,6 +3749,15 @@
                 "type": "null"
               }
             ]
+          }
+        },
+        {
+          "name": "librarylink",
+          "description": "Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View.",
+          "optional": false,
+          "type": {
+            "kind": "primitive",
+            "type": "string"
           }
         },
         {

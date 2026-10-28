@@ -858,7 +858,7 @@ function ItemRow({
         {...row}
         className={cn(
           ROW,
-          "zt:data-selected:bg-(--nav-item-background-selected)",
+          "zt:data-revealed:animate-row-flash zt:data-selected:bg-(--nav-item-background-selected)",
           "zt:outline-hidden zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]",
         )}
         data-query-table-row="item"

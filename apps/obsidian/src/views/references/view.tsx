@@ -8,6 +8,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { showInLibraryCommand } from "@/views/library/atoms";
 
 import {
   copyBibliographyMessage,
@@ -69,6 +70,7 @@ export class ReferencesView extends ItemView {
     const { registry, app } = this.#deps;
     this.#release ??= holdReferencesModel(registry, this.model);
     cleanup.defer(registry.mount(openIndexedKeyCommand));
+    cleanup.defer(registry.mount(showInLibraryCommand));
     cleanup.defer(registry.mount(dismissEngineHintCommand));
     cleanup.defer(registry.mount(openReferenceLinkCommand));
     cleanup.defer(registry.mount(revealReferenceOccurrenceCommand));
@@ -76,6 +78,7 @@ export class ReferencesView extends ItemView {
       app,
       getSourcePath: () => registry.get(referencesSelectionAtom).path,
       openIndexedKey: (key) => registry.set(openIndexedKeyCommand, key),
+      showInLibrary: (key) => registry.set(showInLibraryCommand, key),
       openLinkText: (linkpath, sourcePath) =>
         registry.set(openReferenceLinkCommand, { linkpath, sourcePath }),
       nextOccurrence: (id, count) => {

@@ -255,7 +255,7 @@ function PaperRow({
       <div
         {...row}
         {...(gestures && { role: "group", "aria-labelledby": titleId })}
-        className="zt:flex zt:items-start zt:gap-1.5 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-selected:bg-(--nav-item-background-selected)"
+        className="zt:flex zt:items-start zt:gap-1.5 zt:rounded-sm zt:px-1 zt:py-1.5 zt:outline-hidden zt:hover:bg-(--background-modifier-hover) zt:focus-visible:shadow-[inset_0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)] zt:data-revealed:animate-row-flash zt:data-selected:bg-(--nav-item-background-selected)"
       >
         {/* The chevron, the type and the marks at the end sit on the
             title's line, not the row's top. */}

@@ -71,6 +71,7 @@
       "notePath": null,
       "backlink": "zotero://select/library/items/NW2CPDTC",
       "weblink": null,
+      "librarylink": "obsidian://zotlit/show-in-library?item-key=NW2CPDTC",
       "authors": [
         {
           "family": "Kahneman",
@@ -269,5 +270,5 @@
     "tags": [],
     "collections": []
   },
-  "revision": "9cffd7ec56df0181eead532c44b8b4d3f05eed9f9c47961b916a08182ae162db"
+  "revision": "828588b80d0582fc741e2fd4f37dcb8efa5c21a0ae2759f0013804f05e116dd6"
 }

@@ -30,6 +30,7 @@ vi.mock("@/components/obsidian/icon-button", async () => {
 const actions: CitationPopoverActions = {
   onOpenNote: vi.fn(),
   onOpenInZotero: vi.fn(),
+  onShowInLibrary: vi.fn(),
   onOpenAttachment: vi.fn(),
   onDone: vi.fn(),
   onSwitchProfile: vi.fn(),
@@ -165,12 +166,13 @@ describe("CitationPopoverContent", () => {
     expect(blocksOf(container)[0]!.textContent).toContain("Doe (2024): Book");
   });
 
-  it("offers the note and Zotero actions on every resolved work", async () => {
+  it("offers the note, Zotero and Library actions on every resolved work", async () => {
     const container = await render([entry("doe2024")]);
 
     expect(iconsOf(blocksOf(container)[0]!)).toEqual([
       "file-text",
       "external-link",
+      "library",
     ]);
   });
 
@@ -198,6 +200,7 @@ describe("CitationPopoverContent", () => {
     ).toEqual([
       m.references_open_note(),
       m.references_open_in_zotero(),
+      m.library_view_show_in_library(),
       m.references_open_attachment(),
     ]);
   });
@@ -221,8 +224,9 @@ describe("CitationPopoverContent", () => {
       expect.objectContaining({ type: "click" }),
     );
     expect(actions.onOpenInZotero).toHaveBeenCalledExactlyOnceWith(block);
+    expect(actions.onShowInLibrary).toHaveBeenCalledExactlyOnceWith(block);
     expect(actions.onOpenAttachment).toHaveBeenCalledOnce();
-    expect(actions.onDone).toHaveBeenCalledTimes(3);
+    expect(actions.onDone).toHaveBeenCalledTimes(4);
   });
 
   it("explains an unresolved citekey and offers nothing on it", async () => {
@@ -326,8 +330,8 @@ describe("CitationPopoverContent under a note-class style", () => {
       rows.map((row) => row.getAttribute("data-citation-popover-block")),
     ).toEqual(["smith2025", "doe2024"]);
     expect(rows.map(iconsOf)).toEqual([
-      ["file-text", "external-link"],
-      ["file-text", "external-link"],
+      ["file-text", "external-link", "library"],
+      ["file-text", "external-link", "library"],
     ]);
   });
 
@@ -359,7 +363,11 @@ describe("CitationPopoverContent under a note-class style", () => {
     );
 
     const [resolved, unresolved] = blocksOf(container);
-    expect(iconsOf(resolved!)).toEqual(["file-text", "external-link"]);
+    expect(iconsOf(resolved!)).toEqual([
+      "file-text",
+      "external-link",
+      "library",
+    ]);
     expect(unresolved!.textContent).toContain(
       m.references_citekey_unresolved({ citekey: "typo2024" }),
     );

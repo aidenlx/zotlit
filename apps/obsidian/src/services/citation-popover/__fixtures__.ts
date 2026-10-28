@@ -34,6 +34,7 @@ import type {
   ZoteroReadLease,
   ZoteroReadsApi,
 } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 
 import { layerCitationPopover, CitationPopover } from "./service";
 
@@ -70,6 +71,8 @@ export interface CitationPopoverFixtureDeps {
     ): Promise<unknown>;
   };
   libraryScope: { current: unknown };
+  /** Receives each Show in Library of the popover. */
+  showInLibrary?: (indexedKey: string) => void;
   citationText?: {
     read(
       path: string,
@@ -123,6 +126,13 @@ export function citationPopoverFixture(
       Layer.mergeAll(
         options.logs ?? Layer.empty,
         layerHost(deps.host),
+        Layer.succeed(
+          ShowInLibrary,
+          ShowInLibrary.of({
+            show: (indexedKey) =>
+              Effect.sync(() => deps.showInLibrary?.(indexedKey)),
+          }),
+        ),
         Layer.succeed(
           ZoteroReads,
           stubService<ZoteroReads["Service"]>("ZoteroReads", {

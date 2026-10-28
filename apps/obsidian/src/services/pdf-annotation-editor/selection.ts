@@ -126,7 +126,9 @@ import {
   reportWrite,
   reportWrites,
   saveGeometry,
+  settledOf,
 } from "./operations";
+import type { BindingWrites } from "./operations";
 import {
   beginAdjust,
   cancelAdjust,
@@ -267,7 +269,9 @@ export interface MarkSelectionDeps {
   /** Announces the selection to whoever follows this reader. */
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync" | "runPromise" | "runPromiseExit">;
+  /** Starts a Geometry Edit's save on the view's own Scope. */
+  writes: BindingWrites;
   /** Where a write that did not land says why. */
   notifier: Notifier["Service"];
   /** The colours used last, which a recolour puts a colour first in. */
@@ -1034,7 +1038,7 @@ export class MarkSelection implements Disposable {
    * snaps back to the confirmed record, with a failure told at the notice
    * seam.
    */
-  async #saveGeometry(
+  #saveGeometry(
     key: string,
     proposal: EditablePosition,
     { text, input }: { text?: string; input: GeometryInput },
@@ -1048,18 +1052,23 @@ export class MarkSelection implements Disposable {
     if (!this.#live()) {
       end();
       this.#deps.gestures.reportBlockedGesture();
-      return;
+      return Promise.resolve();
     }
-    await this.#write(
-      saveGeometry(this.#deps.annotations, this.#deps.sortIndex, {
-        key,
-        proposal,
-        text,
-        input,
-        onRead: end,
-      }),
-      geometryFailureMessage,
-    ).finally(end);
+    return settledOf(
+      this.#deps.bridge,
+      this.#deps.writes(
+        saveGeometry(this.#deps.annotations, this.#deps.notifier, {
+          readSortIndex: this.#deps.sortIndex,
+          key,
+          proposal,
+          text,
+          input,
+          end,
+          now: () => this.#deps.now(),
+          message: geometryFailureMessage,
+        }),
+      ),
+    );
   }
 
   /**

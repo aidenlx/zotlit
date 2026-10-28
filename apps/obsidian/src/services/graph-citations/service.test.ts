@@ -71,6 +71,7 @@ import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ZoteroReadsEvent } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 
 import type { LinkMap } from "./adapter";
 import { GRAPH_CORE_PLUGIN_ID } from "./install";
@@ -759,6 +760,9 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
     (_indexedKey: string, _pane: NavigationPane): Effect.Effect<void> =>
       Effect.void,
   );
+  const showInLibrary = vi.fn(
+    (_indexedKey: string): Effect.Effect<void> => Effect.void,
+  );
   const citationPopover = stubService<
     import("@/services/citation-popover/service").CitationPopover["Service"] & {
       showWork: ReturnType<typeof vi.fn>;
@@ -845,6 +849,7 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
               ),
           }),
           Layer.mock(CitekeyEditor, { openCitekey, openIndexedKey }),
+          Layer.mock(ShowInLibrary, { show: showInLibrary }),
           Layer.mock(CitationPopover, citationPopover),
           settings.layer,
           Logger.layer([warnings]),
@@ -904,6 +909,7 @@ const makeFixture = Effect.fnUntraced(function* (options: FixtureOptions = {}) {
     },
     openCitekey,
     openIndexedKey,
+    showInLibrary,
     citationPopover,
     /** What a page preview goes out through: `workspace.trigger("hover-link", …)`. */
     trigger,
@@ -1463,6 +1469,7 @@ describe("GraphCitations right-clicks", () => {
         expect(menu?.items.map((item) => item.title)).toEqual([
           m.graph_citations_menu_create_note(),
           m.references_open_in_zotero(),
+          m.library_view_show_in_library(),
           m.graph_citations_menu_copy_citekey(),
         ]);
         expect(engine.nativeRightClicks).toEqual([]);
@@ -1484,6 +1491,9 @@ describe("GraphCitations right-clicks", () => {
         );
         expect(opened).toHaveBeenCalledExactlyOnceWith(
           "zotero://select/groups/4/items/PINE2345",
+        );
+        expect(fixture.showInLibrary).toHaveBeenCalledExactlyOnceWith(
+          "PINE2345g4",
         );
         expect(copied).toHaveBeenCalledExactlyOnceWith("pine2023");
       }),

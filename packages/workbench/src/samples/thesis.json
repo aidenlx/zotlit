@@ -71,6 +71,7 @@
       "notePath": null,
       "backlink": "zotero://select/library/items/I49R3FTL",
       "weblink": null,
+      "librarylink": "obsidian://zotlit/show-in-library?item-key=I49R3FTL",
       "authors": [
         {
           "family": "Batista",
@@ -270,5 +271,5 @@
     "tags": [],
     "collections": []
   },
-  "revision": "e065729884c6cd982c0bd5b9878bbe7a3575d486ccf7d9a6708b64eac8522ce5"
+  "revision": "1346a6713fc951bbe41332807801085546125c6aa6b41705e9ccf788ec26806f"
 }

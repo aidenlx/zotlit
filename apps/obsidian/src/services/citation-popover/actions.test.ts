@@ -49,15 +49,18 @@ function click({
 function actions() {
   const opened: [citekey: string, pane: unknown][] = [];
   const hide = vi.fn();
+  const showInLibrary = vi.fn();
   return {
     opened,
     hide,
+    showInLibrary,
     ...createCitationPopoverActions({
       host: {
         workspace: stubService<Workspace>("Workspace", { trigger: vi.fn() }),
       },
       open: (entry, pane) => opened.push([entry.citekey!, pane]),
       hide,
+      showInLibrary,
       switchProfile: vi.fn(),
       log: vi.fn(),
     }),
@@ -93,6 +96,15 @@ describe("createCitationPopoverActions", () => {
     expect(open).toHaveBeenCalledExactlyOnceWith(
       "zotero://select/groups/7/items/ITEM0009",
     );
+  });
+
+  it("shows the Item in the Library View by its Indexed Key", () => {
+    const { onShowInLibrary, showInLibrary } = actions();
+
+    onShowInLibrary(block({ itemKey: "ITEM0009", groupID: 7 }));
+    onShowInLibrary(block({ itemKey: "BOOK0001", groupID: null }));
+
+    expect(showInLibrary.mock.calls).toEqual([["ITEM0009g7"], ["BOOK0001"]]);
   });
 
   it("opens a single Attachment straight away", () => {
