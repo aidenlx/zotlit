@@ -2614,7 +2614,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
   /** What the Library View shows that a reload must keep, once it settled. */
 
-  it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper in view with its Reading Card beside a wide list and none under a narrow one, and the Welcome View banner they asked for, with Zotero closed", async () => {
+  it("puts the researcher back where they were after a window reload: the Collection left open, the selected paper in view with its Reading Card beside a wide list and under a narrow one, and the Welcome View banner they asked for, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }, { libraryScopeSettingKey }) => {
@@ -2967,9 +2967,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("scrolled");
 
-    // On a narrow pane the restored paper is selected as the arrow keys
-    // select a row: its card does not open under the list, which stays
-    // uncovered with the row in view.
+    // On a narrow pane the restored paper is selected as any selection is:
+    // its card shows under the tree and the list, with the row in view
+    // above it.
     await obRun(
       run.vaultId,
       async () => {
@@ -3032,12 +3032,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         tries: 120,
         ready: (value) =>
           value !== null &&
-          ((kept) => kept.phase === "ready" && kept.selected !== null)(value),
+          ((kept) =>
+            kept.phase === "ready" && kept.selected !== null && !!kept.card)(
+            value,
+          ),
       },
     );
     expect(narrow).toMatchObject({
       selected: last,
-      card: null,
+      card: before!.card,
       inView: true,
       banner: true,
       pressed: "true",
@@ -3204,7 +3207,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(JSON.stringify({ dismissed: true, requested: false, action: true }));
   });
 
-  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and shows it under the list across a narrow pane with no edge, with Zotero closed", async () => {
+  it("resizes the Reading Card from its inner edge with the keys and a drag, keeps the width after a window reload, returns it to 24rem on a double click, and shows it under the tree and the list across a narrow pane with no edge, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -3331,12 +3334,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .parentElement!.getBoundingClientRect().width,
           ),
           pane: Math.round(
-            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            el
+              .querySelector<HTMLElement>("[data-library-shell]")!
+              .getBoundingClientRect().width,
           ),
           below:
-            getComputedStyle(card!)
-              .getPropertyValue("--zt-library-card-place")
-              .trim() === "below",
+            Math.round(card!.getBoundingClientRect().width) ===
+            Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
+            ),
           now: num("aria-valuenow"),
           min: num("aria-valuemin"),
           max: num("aria-valuemax"),
@@ -3422,12 +3430,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 .parentElement!.getBoundingClientRect().width,
             ),
             pane: Math.round(
-              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
             ),
             below:
-              getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() === "below",
+              Math.round(card!.getBoundingClientRect().width) ===
+              Math.round(
+                el
+                  .querySelector<HTMLElement>("[data-library-shell]")!
+                  .getBoundingClientRect().width,
+              ),
             now: num("aria-valuenow"),
             min: num("aria-valuemin"),
             max: num("aria-valuemax"),
@@ -3505,12 +3518,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .parentElement!.getBoundingClientRect().width,
           ),
           pane: Math.round(
-            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            el
+              .querySelector<HTMLElement>("[data-library-shell]")!
+              .getBoundingClientRect().width,
           ),
           below:
-            getComputedStyle(card!)
-              .getPropertyValue("--zt-library-card-place")
-              .trim() === "below",
+            Math.round(card!.getBoundingClientRect().width) ===
+            Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
+            ),
           now: num("aria-valuenow"),
           min: num("aria-valuemin"),
           max: num("aria-valuemax"),
@@ -3587,12 +3605,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 .parentElement!.getBoundingClientRect().width,
             ),
             pane: Math.round(
-              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
             ),
             below:
-              getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() === "below",
+              Math.round(card!.getBoundingClientRect().width) ===
+              Math.round(
+                el
+                  .querySelector<HTMLElement>("[data-library-shell]")!
+                  .getBoundingClientRect().width,
+              ),
             now: num("aria-valuenow"),
             min: num("aria-valuemin"),
             max: num("aria-valuemax"),
@@ -3669,12 +3692,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .parentElement!.getBoundingClientRect().width,
           ),
           pane: Math.round(
-            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            el
+              .querySelector<HTMLElement>("[data-library-shell]")!
+              .getBoundingClientRect().width,
           ),
           below:
-            getComputedStyle(card!)
-              .getPropertyValue("--zt-library-card-place")
-              .trim() === "below",
+            Math.round(card!.getBoundingClientRect().width) ===
+            Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
+            ),
           now: num("aria-valuenow"),
           min: num("aria-valuemin"),
           max: num("aria-valuemax"),
@@ -3764,12 +3792,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .parentElement!.getBoundingClientRect().width,
           ),
           pane: Math.round(
-            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            el
+              .querySelector<HTMLElement>("[data-library-shell]")!
+              .getBoundingClientRect().width,
           ),
           below:
-            getComputedStyle(card!)
-              .getPropertyValue("--zt-library-card-place")
-              .trim() === "below",
+            Math.round(card!.getBoundingClientRect().width) ===
+            Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
+            ),
           now: num("aria-valuenow"),
           min: num("aria-valuemin"),
           max: num("aria-valuemax"),
@@ -3825,12 +3858,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               .parentElement!.getBoundingClientRect().width,
           ),
           pane: Math.round(
-            card!.parentElement!.parentElement!.getBoundingClientRect().width,
+            el
+              .querySelector<HTMLElement>("[data-library-shell]")!
+              .getBoundingClientRect().width,
           ),
           below:
-            getComputedStyle(card!)
-              .getPropertyValue("--zt-library-card-place")
-              .trim() === "below",
+            Math.round(card!.getBoundingClientRect().width) ===
+            Math.round(
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
+            ),
           now: num("aria-valuenow"),
           min: num("aria-valuemin"),
           max: num("aria-valuemax"),
@@ -3910,12 +3948,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 .parentElement!.getBoundingClientRect().width,
             ),
             pane: Math.round(
-              card!.parentElement!.parentElement!.getBoundingClientRect().width,
+              el
+                .querySelector<HTMLElement>("[data-library-shell]")!
+                .getBoundingClientRect().width,
             ),
             below:
-              getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() === "below",
+              Math.round(card!.getBoundingClientRect().width) ===
+              Math.round(
+                el
+                  .querySelector<HTMLElement>("[data-library-shell]")!
+                  .getBoundingClientRect().width,
+              ),
             now: num("aria-valuenow"),
             min: num("aria-valuemin"),
             max: num("aria-valuemax"),
@@ -3941,13 +3984,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       now: 384,
     });
 
-    // Under a narrow pane the card spans the list's column below it, at
-    // half the column's height, with no edge to drag; the list stays
+    // Under a narrow pane the card spans the whole pane under the tree and
+    // the list, at half its height, with no edge to drag; the list stays
     // above it, and the width kept waits for a wide pane.
     await obRun(
       run.vaultId,
       async ({ app, page }) => {
-        const { press, until } = page;
+        const { until } = page;
         require("@electron/remote").getCurrentWindow().setSize(740, 1000);
         const el = (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
@@ -3959,20 +4002,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "the narrow pane",
           () =>
             activeWindow.outerWidth === 740 &&
-            getComputedStyle(card!)
-              .getPropertyValue("--zt-library-card-place")
-              .trim() === "below",
+            Math.round(card!.getBoundingClientRect().width) ===
+              Math.round(
+                el
+                  .querySelector<HTMLElement>("[data-library-shell]")!
+                  .getBoundingClientRect().width,
+              ),
           5000,
         );
-        if (!card!.checkVisibility())
-          press(
-            el.querySelector<HTMLElement>(
-              "[data-query-item-row][data-selected]",
-            ),
-            "selected paper",
-          );
         await until(
-          "card under the list",
+          "card under the tree and the list",
           () => !card!.hidden && card!.checkVisibility(),
           5000,
         );
@@ -3999,17 +4038,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             "[data-library-card-resizer]",
           );
           const box = card!.getBoundingClientRect();
-          const column =
-            card!.parentElement!.parentElement!.getBoundingClientRect();
+          const column = el
+            .querySelector<HTMLElement>("[data-library-shell]")!
+            .getBoundingClientRect();
           const list = el
             .querySelector<HTMLElement>("[data-library-search-row]")!
             .parentElement!.getBoundingClientRect();
           return {
             shown: !card!.hidden && card!.checkVisibility(),
             below:
-              getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() === "below",
+              Math.round(card!.getBoundingClientRect().width) ===
+              Math.round(
+                el
+                  .querySelector<HTMLElement>("[data-library-shell]")!
+                  .getBoundingClientRect().width,
+              ),
             spans: Math.round(box.width) === Math.round(column.width),
             half: Math.abs(box.height - column.height / 2) <= 1,
             listAbove: Math.round(list.bottom) <= Math.round(box.top),
@@ -4024,7 +4067,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         undefined,
         {
-          what: "Reading Card under the list",
+          what: "Reading Card under the tree and the list",
           tries: 120,
           ready: (value) => value !== null && value.shown && value.below,
         },
@@ -4041,7 +4084,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await screenshot("card-narrow-below");
   });
 
-  it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and opens it on a row click at the width it had, with Zotero closed", async () => {
+  it("closes the Reading Card on a wide pane from its close button or a drag of its edge past the minimum, keeps it closed while the arrow keys move and after a window reload, and turns it on again from the Details button at the width it had, with Zotero closed", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -4483,25 +4526,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toMatchObject({ shown: false, closed: true, stored: 400 });
 
-    // A click on a row opens it again, at its width.
+    // The Details button turns it on again, at its width.
     await obRun(
       run.vaultId,
-      async ({ app, page }, { position }) => {
+      async ({ app, page }) => {
         const { press } = page;
         press(
-          [
-            ...(
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
-              "[data-query-item-row]",
-            )!,
-          ][position],
-          `paper ${position}`,
+          (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & {
+              view: LibraryView;
+            })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-details-toggle]",
+          ),
+          "Details",
         );
       },
-      { position: 1 },
+      undefined,
     );
     expect(
       await obRunUntil(
@@ -4711,22 +4754,22 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
     await obRun(
       run.vaultId,
-      async ({ app, page }, { position }) => {
+      async ({ app, page }) => {
         const { press } = page;
         press(
-          [
-            ...(
-              app.workspace.getLeavesOfType(
-                "zotlit-library",
-              ) as (WorkspaceLeaf & { view: LibraryView })[]
-            )[0]!.view.contentEl.querySelectorAll<HTMLElement>(
-              "[data-query-item-row]",
-            ),
-          ][position],
-          `paper ${position}`,
+          (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & {
+              view: LibraryView;
+            })[]
+          )[0]!.view.contentEl.querySelector<HTMLElement>(
+            "[data-library-details-toggle]",
+          ),
+          "Details",
         );
       },
-      { position: 1 },
+      undefined,
     );
     expect(
       await obRunUntil(
@@ -5744,7 +5787,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               const start = rows()[from];
               leaf!.view.card.registry.set(leaf!.view.model.selection, {
                 key: start!.getAttribute("data-query-item-row")!,
-                card: false,
               });
               await until("row selected", () =>
                 start!.hasAttribute("data-selected"),
@@ -5770,7 +5812,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             const up = await arrow("ArrowUp", n - 1, n - 2);
             leaf!.view.card.registry.set(leaf!.view.model.selection, {
               key: null,
-              card: false,
             });
             return {
               overflows: list!.scrollHeight > list!.clientHeight,
@@ -6139,7 +6180,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // The Library View in the sidebar.
     await obRun(
       run.vaultId,
-      async ({ app }) => {
+      async ({ app, zotlit, page }) => {
+        const { until } = page;
         (
           app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
             view: LibraryView;
@@ -6149,6 +6191,30 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         await leaf!.setViewState({ type: "zotlit-library", active: true });
         app.workspace.rightSplit.expand();
         await app.workspace.revealLeaf(leaf!);
+        // The tab selects again the row its document keeps and scrolls it
+        // into view once the list draws it, in the half of the pane the
+        // Reading Card leaves the list.
+        const view = leaf!.view as LibraryView;
+        await view.query.settled;
+        const selected =
+          (
+            zotlit.services.bridge.runSync(zotlit.services.settings.current)[
+              "library.document"
+            ] as StoredLibraryViewDocument | null
+          )?.selected ?? null;
+        if (selected !== null) {
+          await until(
+            "restored row drawn",
+            () =>
+              view.contentEl.querySelector<HTMLElement>(
+                `[data-query-item-row="${selected}"][data-selected]`,
+              ),
+            10000,
+          );
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+          );
+        }
       },
       undefined,
     );

@@ -29,7 +29,7 @@ import type {} from "./page-library-types.ts";
 describe.skipIf(!reachable)("End-to-end Run", () => {
   registerEndToEndRunHooks();
 
-  it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it under the list on a narrow pane on a click or Space and puts it away on Escape, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, shows it beside a wide list as the arrow keys move, and hides it with no selection and while Zotero's data folder is missing", async () => {
+  it("shows the selected row's Reading Card with its seeded fields, abstract and, once opened, Annotation Cards under the Editing Capability, runs the row menu's actions from its buttons, opens its Annotations in the sidebar, shows it under the tree and the list on a narrow pane and beside a wide list, turns it on and off from the Details button and Space and off from its close button, while a click and the arrow keys only select and Escape leaves it as it is, keeps a double click on the row for the PDF, selects the row the keyboard enters the list at, says what fills it with no selection, and hides it while Zotero's data folder is missing", async () => {
     const snapshot = await obRun(
       run.vaultId,
       async ({ app, zotlit }) => {
@@ -133,7 +133,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     /** What the card shows, `null` while it is out of view. */
 
-    // No row is selected: the card is out of view.
+    // No row is selected: the card shows what fills it.
     expect(
       await obRun(
         run.vaultId,
@@ -149,46 +149,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await leaf!.view.query.settled;
           const el = leaf!.view.contentEl;
           const card = el.querySelector<HTMLElement>("[data-library-card]");
-          const row = (key: string) =>
-            el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
-          await until("rows", () => row(paperKey), 10000);
-          const part = (name: string) =>
-            card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
-              ?.textContent ?? null;
-          return JSON.stringify(
-            card!.checkVisibility()
-              ? {
-                  title: part("title"),
-                  creators: part("creators"),
-                  venue: part("venue"),
-                  citationKey: part("citekey"),
-                  abstract: part("abstract"),
-                  actions: [
-                    ...card!.querySelectorAll<HTMLElement>(
-                      "[data-library-card-action]",
-                    ),
-                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                  cards: [
-                    ...card!.querySelectorAll<HTMLElement>(
-                      ".zt-annot-card[data-zotero-annotation-key]",
-                    ),
-                  ]
-                    .map((n) => ({
-                      key: n.getAttribute("data-zotero-annotation-key")!,
-                      color: n.getAttribute("data-annot-color"),
-                      page:
-                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                          ?.textContent ?? null,
-                      text: n.textContent,
-                    }))
-                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                }
-              : null,
+          await until(
+            "rows",
+            () => el.querySelector(`[data-query-item-row="${paperKey}"]`),
+            10000,
           );
+          const empty = await until("empty card", () =>
+            card!.querySelector<HTMLElement>("[data-library-card-empty]"),
+          );
+          return {
+            shown: card!.checkVisibility(),
+            empty: empty.textContent,
+            selected: el.querySelector("[data-query-item-row][data-selected]")
+              ? "row"
+              : null,
+          };
         },
         { paperKey: paper.key },
       ),
-    ).toBe("null");
+    ).toEqual({
+      shown: true,
+      empty: run.m.library_view_card_empty(),
+      selected: null,
+    });
 
     // A click on the paper's row shows its card with a preview of its
     // Annotations: the first two quoted, the count of each colour, and "See
@@ -582,9 +565,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     );
 
-    // A narrow pane shows the card under the list, and a wide one beside it;
-    // the row stays selected.
-
+    // A narrow pane shows the card under the tree and the list, across the
+    // whole pane, and a wide one beside the list; the row stays selected.
     cleanup.defer(async () => {
       await obRun(
         run.vaultId,
@@ -594,13 +576,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         undefined,
       );
     });
-    expect(
-      await obRun(
+    /** Give the Library View's tab `share` percent of the window; report where its card shows. */
+    const placeCard = (share: number, below: boolean) =>
+      obRun(
         run.vaultId,
-        async (
-          { app, page },
-          { positionInput, condition, choice, enabled },
-        ) => {
+        async ({ app, page }, { positionInput, condition, enabled }) => {
           const { until } = page;
           const leaf = (
             app.workspace.getLeavesOfType(
@@ -612,29 +592,27 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           await leaf!.view.query.settled;
           const el = leaf!.view.contentEl;
           const card = el.querySelector<HTMLElement>("[data-library-card]");
-
+          const shell = el.querySelector<HTMLElement>("[data-library-shell]");
+          // Under a narrow list the card spans the whole shell, under the
+          // tree and the list together.
+          const spans = () =>
+            Math.abs(
+              card!.getBoundingClientRect().width -
+                shell!.getBoundingClientRect().width,
+            ) < 2;
           app.workspace.rightSplit.collapse();
           const beside = (page.scratch.zotlitE2EBeside ??=
             app.workspace.createLeafBySplit(leaf!, "vertical"));
           (leaf!.parent as LibraryTabs).setDimension(positionInput);
           (beside.parent as LibraryTabs).setDimension(condition);
           await until(
-            `card ${choice} the list at ${el.clientWidth}px`,
-            () =>
-              card!.checkVisibility() &&
-              (getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() ===
-                "below") ===
-                enabled,
+            `card ${enabled ? "under" : "beside"} the list at ${el.clientWidth}px`,
+            () => card!.checkVisibility() && spans() === enabled,
             5000,
           );
           return {
             card: card!.checkVisibility(),
-            below:
-              getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() === "below",
+            below: spans(),
             selected:
               el
                 .querySelector<HTMLElement>(
@@ -643,20 +621,161 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
                 ?.getAttribute("data-query-item-row") ?? null,
           };
         },
-        {
-          positionInput: 30,
-          condition: 100 - 30,
-          choice: "under",
-          enabled: true,
-        },
-      ),
-    ).toEqual({
+        { positionInput: share, condition: 100 - share, enabled: below },
+      );
+    expect(await placeCard(30, true)).toEqual({
       card: true,
       below: true,
       selected: paper.key,
     });
-    // Its close button puts it away; the row stays selected and takes the
-    // focus back.
+    /** Press the Details button; report once the card is `shown` and the button says so. */
+    const pressDetails = (shown: boolean) =>
+      obRun(
+        run.vaultId,
+        async ({ app, page }, { enabled }) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const toggle = () =>
+            el.querySelector<HTMLElement>("[data-library-details-toggle]");
+          press(toggle(), "Details");
+          await until(
+            `card ${enabled ? "shows" : "hides"} with the Details button ${enabled ? "pressed" : "released"}`,
+            () =>
+              card!.checkVisibility() === enabled &&
+              toggle()?.getAttribute("aria-pressed") === String(enabled),
+          );
+          return {
+            card: card!.checkVisibility(),
+            pressed: toggle()!.getAttribute("aria-pressed"),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+          };
+        },
+        { enabled: shown },
+      );
+    /** Click the row `key`; report once it is selected and the card is `shown`. */
+    const clickRow = (key: string, shown: boolean) =>
+      obRun(
+        run.vaultId,
+        async ({ app, page }, { rowKey, enabled }) => {
+          const { press, until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const row = el.querySelector<HTMLElement>(
+            `[data-query-item-row="${rowKey}"]`,
+          );
+          press(row, `row ${rowKey}`);
+          await until(
+            `row ${rowKey} selected with the card ${enabled ? "shown" : "hidden"}`,
+            () =>
+              row!.hasAttribute("data-selected") &&
+              card!.checkVisibility() === enabled,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected:
+              el
+                .querySelector<HTMLElement>(
+                  "[data-query-item-row][data-selected]",
+                )
+                ?.getAttribute("data-query-item-row") ?? null,
+          };
+        },
+        { rowKey: key, enabled: shown },
+      );
+    /** Press `key` where the focus is; report once `selected` is the selected row and the card is `shown`. */
+    const keyOnList = (key: string, selected: string, shown: boolean) =>
+      obRun(
+        run.vaultId,
+        async ({ app, page }, { keyName, selectedKey, enabled }) => {
+          const { until } = page;
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const card = el.querySelector<HTMLElement>("[data-library-card]");
+          const selectedRow = () =>
+            el
+              .querySelector<HTMLElement>(
+                "[data-query-item-row][data-selected]",
+              )
+              ?.getAttribute("data-query-item-row") ?? null;
+          activeDocument.activeElement!.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: keyName,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          await until(
+            `card ${enabled ? "shown" : "hidden"} with row ${selectedKey} selected`,
+            () =>
+              card!.checkVisibility() === enabled &&
+              selectedRow() === selectedKey,
+          );
+          return {
+            card: card!.checkVisibility(),
+            selected: selectedRow(),
+            focused:
+              activeDocument.activeElement?.getAttribute(
+                "data-query-item-row",
+              ) ?? null,
+          };
+        },
+        { keyName: key, selectedKey: selected, enabled: shown },
+      );
+    /** The row after `key` on screen. */
+    const rowAfter = async (key: string) =>
+      (await obRun(
+        run.vaultId,
+        async ({ app }, { key }) => {
+          const leaf = (
+            app.workspace.getLeavesOfType(
+              "zotlit-library",
+            ) as (WorkspaceLeaf & { view: LibraryView })[]
+          )[0];
+          await app.workspace.revealLeaf(leaf!);
+          app.workspace.setActiveLeaf(leaf!, { focus: true });
+          await leaf!.view.query.settled;
+          const el = leaf!.view.contentEl;
+          const keys = [
+            ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
+          ].map((n) => n.getAttribute("data-query-item-row")!);
+          return keys[keys.indexOf(key) + 1] ?? null;
+        },
+        { key: key },
+      )) as string;
+    const next = await rowAfter(paper.key);
+    expect(next).not.toBeNull();
+
+    // Its close button turns the details off; the row stays selected and
+    // takes the focus back, and the Details button is released.
     expect(
       await obRun(
         run.vaultId,
@@ -689,211 +808,70 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               activeDocument.activeElement?.getAttribute(
                 "data-query-item-row",
               ) ?? null,
+            pressed:
+              el
+                .querySelector<HTMLElement>("[data-library-details-toggle]")
+                ?.getAttribute("aria-pressed") ?? null,
           };
         },
         undefined,
       ),
-    ).toEqual({ selected: paper.key, focused: paper.key });
-    // The arrow keys move the selection and leave the list uncovered; Space
-    // on the selected row opens its card under the list, and Escape on the
-    // row puts it away.
-    /** Press `key` where the focus is; report once the card shows or hides. */
+    ).toEqual({ selected: paper.key, focused: paper.key, pressed: "false" });
 
-    /** The row after `key` on screen. */
-    const rowAfter = async (key: string) =>
-      (await obRun(
-        run.vaultId,
-        async ({ app }, { key }) => {
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          el.querySelector<HTMLElement>("[data-library-card]");
-
-          const keys = [
-            ...el.querySelectorAll<HTMLElement>("[data-query-item-row]"),
-          ].map((n) => n.getAttribute("data-query-item-row")!);
-          return keys[keys.indexOf(key) + 1] ?? null;
-        },
-        { key: key },
-      )) as string;
-    // Under a narrow list a click opens the card; where the card would
-    // cover the row, it waits out a double click first.
-    await obRun(
-      run.vaultId,
-      async ({ app, page }, { paperKey }) => {
-        const { press, until } = page;
-        const leaf = (
-          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
-            view: LibraryView;
-          })[]
-        )[0];
-        await app.workspace.revealLeaf(leaf!);
-        app.workspace.setActiveLeaf(leaf!, { focus: true });
-        await leaf!.view.query.settled;
-        const el = leaf!.view.contentEl;
-        const card = el.querySelector<HTMLElement>("[data-library-card]");
-        const row = (key: string) =>
-          el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
-        press(row(paperKey), "paper row");
-        await until("card", () => card!.checkVisibility());
-      },
-      { paperKey: paper.key },
-    );
-    const next = await rowAfter(paper.key);
-    expect(next).not.toBeNull();
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { arrowDown, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: arrowDown,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { arrowDown: "ArrowDown", choice: "hides", enabled: false },
-      ),
-    ).toEqual({
+    // On a narrow pane the Details button turns the card on and off, pressed
+    // while it shows; with the details off a click on a row selects it and
+    // shows no card.
+    expect(await pressDetails(true)).toEqual({
+      card: true,
+      pressed: "true",
+      selected: paper.key,
+    });
+    expect(await pressDetails(false)).toEqual({
+      card: false,
+      pressed: "false",
+      selected: paper.key,
+    });
+    expect(await clickRow(next, false)).toEqual({
       card: false,
       selected: next,
-      focused: next,
     });
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { text, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
+    expect(await pressDetails(true)).toEqual({
+      card: true,
+      pressed: "true",
+      selected: next,
+    });
 
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: text,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { text: " ", choice: "shows", enabled: true },
-      ),
-    ).toEqual({
+    // With the details on, a click on a row shows its card, and the arrow
+    // keys move the selection with the card still showing. Space on the
+    // selected row turns the details off and on; Escape leaves them as
+    // they are.
+    expect(await clickRow(paper.key, true)).toEqual({
+      card: true,
+      selected: paper.key,
+    });
+    expect(await keyOnList("ArrowDown", next, true)).toEqual({
       card: true,
       selected: next,
       focused: next,
     });
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { escape, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: escape,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { escape: "Escape", choice: "hides", enabled: false },
-      ),
-    ).toEqual({
+    expect(await keyOnList(" ", next, false)).toEqual({
       card: false,
       selected: next,
       focused: next,
     });
-    // A double click on the paper's row, by the pointer, where the card
-    // shows under the list, opens its PDF: the first click leaves the row
-    // uncovered for the second.
+    expect(await keyOnList(" ", next, true)).toEqual({
+      card: true,
+      selected: next,
+      focused: next,
+    });
+    expect(await keyOnList("Escape", next, true)).toEqual({
+      card: true,
+      selected: next,
+      focused: next,
+    });
+    // A double click on the paper's row, by the pointer, while the card
+    // shows under the list, opens its PDF: the first click selects the row
+    // and moves nothing.
     expect(
       await obRun(
         run.vaultId,
@@ -907,7 +885,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           app.workspace.setActiveLeaf(leaf!, { focus: true });
           await leaf!.view.query.settled;
           const el = leaf!.view.contentEl;
-          el.querySelector<HTMLElement>("[data-library-card]");
           const row = (key: string) =>
             el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
           const target = row(paperKey);
@@ -937,9 +914,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("double-clicked");
     await pdfOpened(run.vaultId, annotationAttachment.path!);
-    // The keyboard that enters the list at its first row selects it, with
-    // no card, so Space opens its card. Selecting the node again lets go of
-    // the selection.
+    // The keyboard that enters the list at its first row selects it, and
+    // the card shows it. Selecting the node again lets go of the selection.
     const entered = (await obRun(
       run.vaultId,
       async ({ app, page }) => {
@@ -1004,283 +980,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       first: string;
     };
     expect(entered).toEqual({
-      card: false,
+      card: true,
       selected: entered.first,
       focused: entered.first,
       first: entered.first,
     });
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { text, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: text,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { text: " ", choice: "shows", enabled: true },
-      ),
-    ).toEqual({
+    // ↑ from the row after the paper goes back to the paper with its card;
+    // a wide pane shows the card of the selected row beside the list.
+    expect(await clickRow(next, true)).toEqual({
       card: true,
-      selected: entered.first,
-      focused: entered.first,
+      selected: next,
     });
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { escape, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: escape,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { escape: "Escape", choice: "hides", enabled: false },
-      ),
-    ).toMatchObject({
-      card: false,
-    });
-    // Back to the card of the row after the paper.
-    await obRun(
-      run.vaultId,
-      async ({ app, page }, { next }) => {
-        const { press, until } = page;
-        const leaf = (
-          app.workspace.getLeavesOfType("zotlit-library") as (WorkspaceLeaf & {
-            view: LibraryView;
-          })[]
-        )[0];
-        await app.workspace.revealLeaf(leaf!);
-        app.workspace.setActiveLeaf(leaf!, { focus: true });
-        await leaf!.view.query.settled;
-        const el = leaf!.view.contentEl;
-        const card = el.querySelector<HTMLElement>("[data-library-card]");
-        const row = (key: string) =>
-          el.querySelector<HTMLElement>(`[data-query-item-row="${key}"]`);
-        press(row(next), "row after the paper");
-        await until("card", () => card!.checkVisibility());
-      },
-      { next: next },
-    );
-    // ↑ goes back to the paper and puts its card away; a wide pane shows
-    // the card of the selected row beside the list.
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { arrowUp, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: arrowUp,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { arrowUp: "ArrowUp", choice: "hides", enabled: false },
-      ),
-    ).toEqual({
-      card: false,
+    expect(await keyOnList("ArrowUp", paper.key, true)).toEqual({
+      card: true,
       selected: paper.key,
       focused: paper.key,
     });
-    expect(
-      await obRun(
-        run.vaultId,
-        async (
-          { app, page },
-          { positionInput, condition, choice, enabled },
-        ) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          app.workspace.rightSplit.collapse();
-          const beside = (page.scratch.zotlitE2EBeside ??=
-            app.workspace.createLeafBySplit(leaf!, "vertical"));
-          (leaf!.parent as LibraryTabs).setDimension(positionInput);
-          (beside.parent as LibraryTabs).setDimension(condition);
-          await until(
-            `card ${choice} the list at ${el.clientWidth}px`,
-            () =>
-              card!.checkVisibility() &&
-              (getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() ===
-                "below") ===
-                enabled,
-            5000,
-          );
-          return {
-            card: card!.checkVisibility(),
-            below:
-              getComputedStyle(card!)
-                .getPropertyValue("--zt-library-card-place")
-                .trim() === "below",
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-          };
-        },
-        {
-          positionInput: 90,
-          condition: 100 - 90,
-          choice: "beside",
-          enabled: false,
-        },
-      ),
-    ).toEqual({
+    expect(await placeCard(90, false)).toEqual({
       card: true,
       below: false,
       selected: paper.key,
     });
     // Beside a wide list the card follows the arrow keys.
-    expect(
-      await obRun(
-        run.vaultId,
-        async ({ app, page }, { arrowDown, choice, enabled }) => {
-          const { until } = page;
-          const leaf = (
-            app.workspace.getLeavesOfType(
-              "zotlit-library",
-            ) as (WorkspaceLeaf & { view: LibraryView })[]
-          )[0];
-          await app.workspace.revealLeaf(leaf!);
-          app.workspace.setActiveLeaf(leaf!, { focus: true });
-          await leaf!.view.query.settled;
-          const el = leaf!.view.contentEl;
-          const card = el.querySelector<HTMLElement>("[data-library-card]");
-
-          activeDocument.activeElement!.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: arrowDown,
-              bubbles: true,
-              cancelable: true,
-            }),
-          );
-          await until(
-            `card ${choice}`,
-            () => card!.checkVisibility() === enabled,
-          );
-          return {
-            card: card!.checkVisibility(),
-            selected:
-              el
-                .querySelector<HTMLElement>(
-                  "[data-query-item-row][data-selected]",
-                )
-                ?.getAttribute("data-query-item-row") ?? null,
-            focused:
-              activeDocument.activeElement?.getAttribute(
-                "data-query-item-row",
-              ) ?? null,
-          };
-        },
-        { arrowDown: "ArrowDown", choice: "shows", enabled: true },
-      ),
-    ).toEqual({
+    expect(await keyOnList("ArrowDown", next, true)).toEqual({
       card: true,
       selected: next,
       focused: next,
@@ -1334,7 +1056,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
 
     // Picking another node in the tree leaves no row selected, and the card
-    // goes.
+    // shows what fills it.
     expect(
       await obRun(
         run.vaultId,
@@ -1368,43 +1090,24 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           press(recent, "Recent");
           await leaf!.view.searched;
           await leaf!.view.query.settled;
-          const part = (name: string) =>
-            card!.querySelector<HTMLElement>(`[data-library-card-${name}]`)
-              ?.textContent ?? null;
-          return JSON.stringify(
-            card!.checkVisibility()
-              ? {
-                  title: part("title"),
-                  creators: part("creators"),
-                  venue: part("venue"),
-                  citationKey: part("citekey"),
-                  abstract: part("abstract"),
-                  actions: [
-                    ...card!.querySelectorAll<HTMLElement>(
-                      "[data-library-card-action]",
-                    ),
-                  ].map((b) => b.textContent || b.getAttribute("aria-label")),
-                  cards: [
-                    ...card!.querySelectorAll<HTMLElement>(
-                      ".zt-annot-card[data-zotero-annotation-key]",
-                    ),
-                  ]
-                    .map((n) => ({
-                      key: n.getAttribute("data-zotero-annotation-key")!,
-                      color: n.getAttribute("data-annot-color"),
-                      page:
-                        n.querySelector<HTMLElement>(".zt-annot-page-chip")
-                          ?.textContent ?? null,
-                      text: n.textContent,
-                    }))
-                    .toSorted((a, b) => a.key!.localeCompare(b.key!)),
-                }
-              : null,
+          const empty = await until("empty card", () =>
+            card!.querySelector<HTMLElement>("[data-library-card-empty]"),
           );
+          return {
+            shown: card!.checkVisibility(),
+            empty: empty.textContent,
+            selected: el.querySelector("[data-query-item-row][data-selected]")
+              ? "row"
+              : null,
+          };
         },
         undefined,
       ),
-    ).toBe("null");
+    ).toEqual({
+      shown: true,
+      empty: run.m.library_view_card_empty(),
+      selected: null,
+    });
   }, 180000);
 
   it("shows a Literature Note's Item in the Library View from its command, the Cited By toolbar and a Library Link, and keeps the search when a link names no Item, with Zotero closed", async () => {
@@ -1453,7 +1156,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         },
         { notepath: notePath },
       );
-    /** Wait until the Library View selects the paper's row with its Reading Card. */
+    /** Wait until the Library View selects the paper's row and focuses it. */
     const shownInLibrary = (what: string) =>
       obRunUntil(
         run.vaultId,
@@ -1467,7 +1170,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           )[0]?.view;
           if (!view?.query) return false;
           await view.query.settled;
-          return view.selected.key === key && view.selected.card;
+          // Show in Library focuses the row it selects; a selection the new
+          // tab restores from its document does not.
+          return (
+            view.selected.key === key &&
+            activeDocument.activeElement?.getAttribute(
+              "data-query-item-row",
+            ) === key
+          );
         },
         { key: paper.key },
         { what },
