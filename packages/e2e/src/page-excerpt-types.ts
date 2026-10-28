@@ -9,6 +9,8 @@ import type {
 } from "@/services/excerpt-image/renderer";
 import type { ExcerptOutcome } from "@/services/excerpt-image/service";
 
+import type { RenderingResult } from "./excerpt-rendering.ts";
+
 type MemorySample =
   | { rss: number; heapUsed: number; heapTotal: number }
   | string;
@@ -52,7 +54,7 @@ interface ExcerptAcceptanceState {
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   controller: AbortController;
-  result: import("./excerpt-rendering.ts").RenderingResult | null;
+  result: RenderingResult | null;
   error: string | null;
   cases: readonly FixtureExcerptCase[];
 }
