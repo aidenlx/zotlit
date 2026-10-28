@@ -261,6 +261,25 @@ export function initialViewSet(controller: PDFViewerController): boolean {
 }
 
 /**
+ * Where PDF.js's scroller stands, or `null` when the viewer closed or has no
+ * scroller. A page turn moves it; PDF.js naming the page the reader already
+ * shows does not.
+ */
+export function scrollOffsetOf(
+  controller: PDFViewerController,
+): { top: number; left: number } | null {
+  if (!viewerOpen(controller, "read the scroll position")) return null;
+  const container: unknown = controller.pdfViewer?.pdfViewer?.container;
+  if (
+    !isObject(container) ||
+    typeof container.scrollTop !== "number" ||
+    typeof container.scrollLeft !== "number"
+  )
+    return null;
+  return { top: container.scrollTop, left: container.scrollLeft };
+}
+
+/**
  * Subscribes to `documentinit`, which PDF.js dispatches once `setInitialView`
  * has moved the reader to the position the document opens at.
  */

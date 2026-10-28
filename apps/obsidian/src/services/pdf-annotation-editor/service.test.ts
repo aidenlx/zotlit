@@ -1511,3 +1511,43 @@ it("records no read for the page a reader reopens at after its document reloads 
 
   expect(recordRead).not.toHaveBeenCalled();
 });
+
+// PDF.js names the current page from the scroll position on its next scroll
+// update, which can run after `documentinit`. The move to the reopen position
+// then dispatches its `pagechanging` with the reader where the initial view
+// left it.
+it("records no read for the page PDF.js names after a restored reader's initial view", async () => {
+  const reader = openingReader();
+  const { service, recordRead } = await restoredTab(reader);
+  await using _ = service;
+  reader.setInitialView();
+
+  reader.settle();
+
+  expect(recordRead).not.toHaveBeenCalled();
+});
+
+// A binding can attach after `documentinit` and before that scroll update.
+it("records no read for the page PDF.js names after the initial view a binding attached behind", async () => {
+  const reader = pdfReader();
+  // The initial view has moved the reader; PDF.js has not named the page yet.
+  reader.container.scrollTop = 300;
+  const { service, recordRead } = await restoredTab(reader);
+  await using _ = service;
+
+  reader.settle();
+
+  expect(recordRead).not.toHaveBeenCalled();
+});
+
+it("records a read for a page turn after PDF.js names the reopen page", async () => {
+  const reader = openingReader();
+  const { service, recordRead } = await restoredTab(reader);
+  await using _ = service;
+  reader.setInitialView();
+  reader.settle();
+
+  reader.turnPage();
+
+  expect(recordRead).toHaveBeenCalledExactlyOnceWith(RESOLVED.itemKey);
+});

@@ -107,6 +107,7 @@ import {
   onPageChanged,
   openFileOf,
   pageViewOf,
+  scrollOffsetOf,
   pdfDocumentOf,
   PdfSeamProbeLog,
   probeController,
@@ -778,24 +779,33 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // page turn: page changes count from the initial view on. PDF.js sets its
     // flag before that move, so the binding keeps its own, which turns on at
     // `documentinit` and off when the document closes for a reload in place.
+    // PDF.js names the page that move shows on its next scroll update, which
+    // can come after `documentinit`; that change leaves the reader where the
+    // initial view put it. So the reopen position is kept until the reader
+    // leaves it, and a page change there is not a turn.
     let initialView = initialViewSet(controller);
+    let reopenedAt = initialView ? scrollOffsetOf(controller) : null;
     this.#surfaces.use(
       onInitialView(controller, () => {
         initialView = true;
+        reopenedAt = scrollOffsetOf(controller);
       }),
     );
     this.#surfaces.use(
       onDocumentClosed(controller, () => {
         initialView = false;
+        reopenedAt = null;
       }),
     );
     this.#surfaces.use(
       onPageChanged(controller, () => {
-        if (
-          this.#attachment.kind === "resolved" &&
-          this.#pageProbed &&
-          initialView
-        )
+        if (!initialView) return;
+        if (reopenedAt) {
+          const at = scrollOffsetOf(controller);
+          if (at?.top === reopenedAt.top && at.left === reopenedAt.left) return;
+          reopenedAt = null;
+        }
+        if (this.#attachment.kind === "resolved" && this.#pageProbed)
           this.#reads?.record(this.#attachment, "page");
       }),
     );
