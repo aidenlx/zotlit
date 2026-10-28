@@ -19,14 +19,14 @@ import { Vault } from "@/lib/obsidian-vault";
 import { Template } from "@/services/template/service";
 import type { CitationTemplateStatus } from "@/services/template/service";
 import { openNewPartialPrompt } from "@/views/template-workbench/new-partial";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { rebuildingSettingTab } from "./__fixtures__";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { citationTextItems, partialItems } from "./templates";
 
-vi.mock("@/views/template-workbench/register", () => ({
-  openTemplateWorkbench: vi.fn(async () => {}),
+vi.mock("@/views/template-workbench/open", () => ({
+  openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 vi.mock("@/views/template-workbench/new-partial", () => ({
   openNewPartialPrompt: vi.fn(),

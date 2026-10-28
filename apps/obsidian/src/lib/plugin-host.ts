@@ -11,7 +11,6 @@ import type {
 } from "obsidian";
 
 import type { CliHost } from "@/lib/cli-command";
-import { portCall } from "@/lib/legacy-port";
 
 /**
  * What a layer registers on: Obsidian commands, post-processors, editor
@@ -133,13 +132,8 @@ export function makePluginHost(plugin: Plugin & CliHost): PluginHostShape {
  * Close the settings window, then open a view through `open`: a view opened
  * from a setting row shows only once the settings window is out of the way.
  */
-export const leaveSettingsFor = <const S extends string, A>(
-  step: S,
-  open: (signal: AbortSignal) => Promise<A>,
-) =>
-  PluginHost.use((host) => host.closeSettings).pipe(
-    Effect.andThen(portCall(step, open)),
-  );
+export const leaveSettingsFor = <A, E, R>(open: Effect.Effect<A, E, R>) =>
+  PluginHost.use((host) => host.closeSettings).pipe(Effect.andThen(open));
 
 export function layerPluginHost(
   plugin: Plugin & CliHost,

@@ -7,8 +7,7 @@
 // selection replaces. Closing the view interrupts every fiber still running.
 // What a component reads stays a view atom (ADR 0082).
 import { RegistryContext } from "@effect/atom-react";
-import { Effect, Exit, FiberSet, Scope } from "effect";
-import type { Fiber } from "effect";
+import { Effect, Exit, Fiber, FiberSet, Scope } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext, useEffect, useState } from "react";
@@ -90,7 +89,64 @@ export function onFiberSuccess<A, E>(
 }
 
 /**
- * How `fiber` ended, for a view flow that still awaits a Promise. An
+ * `effect` run on the view's runner and joined, for a caller outside the view,
+ * such as a launch that opens the view. The view's close interrupts the run,
+ * and so does the caller's own interrupt.
+ */
+export function joinOnView<A, E>(
+  run: ViewRun,
+  effect: Effect.Effect<A, E, ViewServices>,
+): Effect.Effect<A, E> {
+  return Effect.suspend(() => {
+    const fiber = run(effect);
+    return Fiber.join(fiber).pipe(
+      Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+    );
+  });
+}
+
+/**
+ * One run of a view flow at a time: a caller that comes while a run is in
+ * flight joins that run and gets its answer, so a second press does the work
+ * once. The view's close interrupts the run and every caller that joined it.
+ */
+export interface InFlightSlot<A, E> {
+  /** Starts a run, or joins the one in flight. */
+  readonly join: Effect.Effect<A, E>;
+  /** Whether a run is in flight now. */
+  readonly running: () => boolean;
+}
+
+/**
+ * An {@link InFlightSlot} whose runs fork `effect` on `run`. `onChange` runs
+ * when a run starts and when it ends, for a view that shows the run.
+ */
+export function inFlightSlot<A, E>(
+  run: ViewRun,
+  effect: Effect.Effect<A, E, ViewServices>,
+  onChange: () => void = () => {},
+): InFlightSlot<A, E> {
+  let current: Fiber.Fiber<A, E> | null = null;
+  return {
+    join: Effect.suspend(() => {
+      if (current) return Fiber.join(current);
+      const fiber = run(effect);
+      current = fiber;
+      // A run that ended while it forked frees the slot at once.
+      fiber.addObserver(() => {
+        if (current !== fiber) return;
+        current = null;
+        onChange();
+      });
+      if (current === fiber) onChange();
+      return Fiber.join(fiber);
+    }),
+    running: () => current !== null,
+  };
+}
+
+/**
+ * How `fiber` ended, for an Obsidian override that answers a Promise. An
  * interrupt-only Exit means the view closed or a newer run superseded it.
  */
 export function exitOf<A, E>(

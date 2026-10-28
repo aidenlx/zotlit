@@ -50,7 +50,7 @@ import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import { makeViewRunner } from "@/lib/view-runner";
+import { exitOf, makeViewRunner } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { profilesAtom } from "@/services/profile/atoms";
 import { templateFolderAtom } from "@/services/settings/atoms";
@@ -1058,7 +1058,9 @@ export class NotePreviewView extends ItemView {
     if (!session || !host) return;
     const generation = ++this.#choiceGeneration;
     if (editor) {
-      const accepted = await editor.chooseItem();
+      // The editor's chooser, on this leaf's runner until ticket 06.
+      const exit = await exitOf(host.run(editor.chooseItem()));
+      const accepted = exit._tag === "Success" && exit.value;
       if (
         accepted &&
         this.#session === session &&

@@ -5,6 +5,7 @@ import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
+import { workbenchActionContext } from "@/views/template-workbench/__fixtures__";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 import {
   TemplateWorkbenchView,
@@ -183,7 +184,7 @@ function setup() {
     plugin,
     stubService<PreviewViewDeps & WorkbenchActionDeps>("PreviewViewDeps", {
       bridge,
-      notifier: testNotifier().service,
+      context: workbenchActionContext(testNotifier().service),
     }),
   );
   const editorLeaf = makeLeaf();

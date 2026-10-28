@@ -50,6 +50,7 @@ export type WorkspaceSource = Pick<
   | "updateOptions"
   | "openLinkText"
   | "getLeaf"
+  | "openPopoutLeaf"
   | "setActiveLeaf"
   | "revealLeaf"
   | "trigger"
@@ -140,6 +141,11 @@ export interface WorkspaceShape {
    * open in.
    */
   getLeaf(newLeaf?: PaneType | boolean): Effect.Effect<WorkspaceLeaf>;
+  /** Obsidian's `openPopoutLeaf`: a leaf in a new window of `size`. */
+  openPopoutLeaf(size: {
+    readonly width: number;
+    readonly height: number;
+  }): Effect.Effect<WorkspaceLeaf>;
   /** Reveal an existing leaf before focusing it. */
   revealLeaf(leaf: WorkspaceLeaf): Effect.Effect<void, Cause.UnknownError>;
   /** Obsidian's `setActiveLeaf`: make `leaf` the active leaf, focused when `focus`. */
@@ -271,6 +277,9 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     ),
     getLeaf: Effect.fn("Workspace.getLeaf")((newLeaf) =>
       Effect.sync(() => source.getLeaf(newLeaf)),
+    ),
+    openPopoutLeaf: Effect.fn("Workspace.openPopoutLeaf")((size) =>
+      Effect.sync(() => source.openPopoutLeaf({ size })),
     ),
     revealLeaf: Effect.fn("Workspace.revealLeaf")((leaf) =>
       Effect.tryPromise((_signal) => source.revealLeaf(leaf)),

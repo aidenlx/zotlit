@@ -8,14 +8,13 @@ import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { withOutcome } from "@/lib/notifier";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { Template } from "@/services/template/service";
 
 import { openNewPartialPrompt } from "./new-partial";
 import type { CreateSharedPartialOptions } from "./new-partial";
-import { openTemplateWorkbench } from "./register";
+import { openTemplateWorkbench } from "./open";
 
 /**
  * Ask a name under the shared rule and write `zotlit-partial.<name>.md`. An
@@ -61,12 +60,10 @@ export const createSharedPartialEffect = Effect.fn(
         const leaf = yield* (yield* Workspace).getLeaf(
           open === "split" ? "split" : "tab",
         );
-        yield* portCall("open-template-workbench", () =>
-          openTemplateWorkbench(app, created.file, {
-            leaf,
-            explainUnsupported: false,
-          }),
-        );
+        yield* openTemplateWorkbench(app, created.file, {
+          leaf,
+          explainUnsupported: false,
+        });
       }
       return created.name;
     }),

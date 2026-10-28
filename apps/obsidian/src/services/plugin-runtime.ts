@@ -22,11 +22,12 @@ import {
   revealAnnotationInView,
 } from "@/views/annot-view/register";
 import type { PandocExportServices } from "@/views/pandoc-export/register";
+import type { WorkbenchActionServices } from "@/views/template-workbench/actions";
+import { openNativeProfile } from "@/views/template-workbench/open";
 import {
   profileCustomization,
   saveProfileCustomization,
 } from "@/views/template-workbench/preferences";
-import { openNativeProfile } from "@/views/template-workbench/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -343,6 +344,9 @@ export async function createPluginRuntime(
     citationSuggestServices: { citationLookup, citationIndex, useLedger },
     pandocExportContext: runtime.runSync(
       Effect.context<PandocExportServices>(),
+    ),
+    workbenchActionContext: runtime.runSync(
+      Effect.context<WorkbenchActionServices>(),
     ),
     pandocEngine: bindManagedBinary(bridge, pandocEngine),
     citationText: runtime.runSync(CitationText),

@@ -12,6 +12,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { UserCancelled } from "@/lib/user-cancel";
@@ -91,6 +92,8 @@ it.effect(
         Layer.mock(Template, {}),
         Layer.mock(NoteFeature, {}),
         Layer.mock(Vault, {}),
+        Layer.mock(Workspace, {}),
+        Layer.mock(Workspace, {}),
         Layer.succeed(
           PluginHost,
           stubService<PluginHost["Service"]>("PluginHost", {}),
@@ -168,6 +171,7 @@ const savingDestination = Effect.gen(function* () {
     Layer.mock(Template, {}),
     Layer.mock(NoteFeature, {}),
     Layer.mock(Vault, {}),
+    Layer.mock(Workspace, {}),
     Layer.succeed(
       PluginHost,
       stubService<PluginHost["Service"]>("PluginHost", {}),

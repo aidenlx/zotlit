@@ -1,5 +1,5 @@
 // A native Explorer owns its data and navigation; workspace values supply its authoring context.
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
@@ -26,7 +26,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import { makeViewRunner } from "@/lib/view-runner";
+import { exitOf, makeViewRunner } from "@/lib/view-runner";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -585,7 +585,10 @@ export class TemplateDataExplorerView extends ItemView {
   async #chooseItem(searchAll = false): Promise<void> {
     const editor = this.#sourceEditor();
     if (editor && !searchAll) {
-      const selected = await editor.chooseItem();
+      if (!this.#host) return;
+      // The editor's chooser, on this leaf's runner until ticket 06.
+      const exit = await exitOf(this.#host.run(editor.chooseItem()));
+      const selected = Exit.isSuccess(exit) && exit.value;
       if (selected && !this.#closed && editor === this.#sourceEditor())
         this.#apply(editor.authoringContext, true);
       return;

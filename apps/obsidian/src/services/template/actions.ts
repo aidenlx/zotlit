@@ -12,12 +12,13 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { reportOutcome } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
+import type { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { Template } from "./service";
 
@@ -26,14 +27,17 @@ import { Template } from "./service";
  * entry point, so it runs the open on the layer's own bridge, over the
  * services the layer was built with.
  */
+/** The services the Citation Template open runs with. */
+type CitationTemplateServices = Template | Notifier | Vault | Workspace;
+
 export const layerCitationTemplateActions: Layer.Layer<
   never,
   never,
-  PluginHost | Template | Notifier
+  PluginHost | CitationTemplateServices
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const context = yield* Effect.context<Template | Notifier>();
+    const context = yield* Effect.context<CitationTemplateServices>();
     const bridge = yield* scopedBridge;
     yield* addCitationTemplateActions(host, { context, bridge });
   }),
@@ -42,7 +46,7 @@ export const layerCitationTemplateActions: Layer.Layer<
 export function addCitationTemplateActions(
   host: Pick<PluginHostShape, "addCommand" | "app">,
   deps: {
-    context: Context.Context<Template | Notifier>;
+    context: Context.Context<CitationTemplateServices>;
     bridge: Pick<EffectBridge, "runAndForget">;
   },
 ): Effect.Effect<void, never, Scope.Scope> {
@@ -69,9 +73,7 @@ export function addCitationTemplateActions(
 export const openCitationTemplate = Effect.fn("openCitationTemplate")(
   function* (app: App) {
     const file = yield* (yield* Template).materializeCitationTemplate;
-    yield* portCall("open-template-workbench", () =>
-      openTemplateWorkbench(app, file, { explainUnsupported: false }),
-    );
+    yield* openTemplateWorkbench(app, file, { explainUnsupported: false });
   },
 );
 

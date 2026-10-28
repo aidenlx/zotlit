@@ -1,7 +1,8 @@
 // Native overlays and Markdown lifecycle for the shared Template Workbench tree.
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
+import type { Fiber } from "effect";
 import {
   AbstractInputSuggest,
   Component,
@@ -36,6 +37,7 @@ import type {
   WorkbenchSuggesterRequest,
   WorkbenchSuggesterOption,
   WorkbenchInputSuggestionsRequest,
+  WorkbenchRunner,
 } from "@zotlit/workbench/ui";
 
 import { Toggle } from "@/components/obsidian/toggle";
@@ -134,7 +136,7 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
 export interface NativeWorkbenchSuggesterRequest extends WorkbenchSuggesterRequest {
   readonly searchItems?: (
     query: string,
-  ) => Promise<readonly WorkbenchSuggesterOption[]>;
+  ) => Effect.Effect<readonly WorkbenchSuggesterOption[], unknown>;
 }
 
 type NativeSuggestion = WorkbenchSuggesterOption & { group: string };
@@ -149,13 +151,19 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
   #picked = false;
   #search = prepareSimpleSearch("");
   readonly #request: NativeWorkbenchSuggesterRequest;
+  readonly #run: WorkbenchRunner;
   constructor(
     app: App,
     request: NativeWorkbenchSuggesterRequest,
-    settle: (answer: string | null) => void,
+    answer: {
+      /** Runs the typed searches on the host's leaf. */
+      run: WorkbenchRunner;
+      settle: (answer: string | null) => void;
+    },
   ) {
     super(app);
-    this.#settle = settle;
+    this.#run = answer.run;
+    this.#settle = answer.settle;
     takeEnter(this);
     this.setTitle(request.title);
     this.#request = request;
@@ -184,25 +192,37 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
             `${option.label} ${option.hint ?? ""} ${option.group}`,
           ) !== null,
       );
-    if (!query.trim() || !this.#request.searchItems)
+    const search = this.#request.searchItems;
+    if (!query.trim() || !search)
       return this.#current.track((this.#latest = choices));
-    this.#latest = this.#request
-      .searchItems(query)
-      .then((items): NativeSuggestion[] | Promise<NativeSuggestion[]> => {
-        if (revision !== this.#revision) return this.#latest;
-        const shown = new Set(choices.map(({ id }) => id));
-        return [
-          ...choices,
-          ...items
-            .filter(({ id }) => !shown.has(id))
-            .map((item) => ({ ...item, group: "" })),
-        ];
-      })
-      .catch(() => {
-        if (revision !== this.#revision) return this.#latest;
-        new BaseNotice(m.workbench_item_search_failed());
-        return choices;
-      });
+    /** The answer of a newer query, for a search it outran. */
+    const newer = Effect.promise(() => Promise.resolve(this.#latest));
+    const shown = new Set(choices.map(({ id }) => id));
+    this.#latest = answerOf(
+      this.#run(
+        search(query).pipe(
+          Effect.matchEffect({
+            onSuccess: (items) =>
+              revision !== this.#revision
+                ? newer
+                : Effect.succeed([
+                    ...choices,
+                    ...items
+                      .filter(({ id }) => !shown.has(id))
+                      .map((item) => ({ ...item, group: "" })),
+                  ]),
+            onFailure: () =>
+              revision !== this.#revision
+                ? newer
+                : Effect.sync(() => {
+                    new BaseNotice(m.workbench_item_search_failed());
+                    return choices;
+                  }),
+          }),
+        ),
+      ),
+      choices,
+    );
     return this.#current.track(this.#latest);
   }
   /**
@@ -339,6 +359,18 @@ function addWorkbenchMenuItems(
     );
 }
 
+/**
+ * The value `fiber` succeeds with, for an Obsidian override that answers a
+ * Promise; `released` when the leaf's close interrupted it.
+ */
+function answerOf<A>(fiber: Fiber.Fiber<A>, released: A): Promise<A> {
+  return new Promise((resolve) =>
+    fiber.addObserver((exit) =>
+      resolve(Exit.isSuccess(exit) ? exit.value : released),
+    ),
+  );
+}
+
 export function createTemplateWorkbenchHost(
   app: App,
   ports: Pick<WorkbenchHost, "run" | "render" | "matchData" | "insertTarget"> &
@@ -398,7 +430,9 @@ export function createTemplateWorkbenchHost(
         // The list's keys, on the keymap as Obsidian's suggesters take them.
         obsidianPopupKeys(app),
         templateHover(read, hoverParent),
-        extractPartial ? extractPartialMenu(read, extractPartial) : [],
+        extractPartial
+          ? extractPartialMenu(read, extractPartial, rest.run)
+          : [],
       ];
     },
     menu({ anchor, pointerEvent, items, submenus }) {
@@ -454,9 +488,12 @@ export function createTemplateWorkbenchHost(
       }),
     suggester: (request) =>
       awaitModal<string | null>((settle) => {
-        const modal = new EditorSuggester(app, request, (answer) => {
-          open.delete(close);
-          settle(answer);
+        const modal = new EditorSuggester(app, request, {
+          run: rest.run,
+          settle: (answer) => {
+            open.delete(close);
+            settle(answer);
+          },
         });
         const close = track(() => modal.close());
         modal.open();

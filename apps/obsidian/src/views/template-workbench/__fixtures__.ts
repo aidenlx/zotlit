@@ -20,7 +20,9 @@ import type { ViewServices } from "@/lib/view-atoms";
 import { makeViewRegistry } from "@/lib/view-atoms";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { QueryService } from "@/services/item-query/service";
+import { NoteWriteAborted } from "@/services/note-feature/errors";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
+import { NoteFeature } from "@/services/note-feature/service";
 import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -37,6 +39,7 @@ import type {
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
+import type { WorkbenchActionServices } from "./actions";
 import type { TemplateWorkbenchDeps } from "./view";
 type TemplateFixture = TemplateOperations & {
   readonly "compile-status-changed": Stream.Stream<void>;
@@ -113,6 +116,29 @@ export type WorkbenchHostDeps = Omit<
       | "defaultDocumentPath"
     >;
   };
+
+/**
+ * The services a Workbench launch runs with: `notifier`, and a vault and a
+ * workspace whose members each test supplies when its launch reads them.
+ */
+export function workbenchActionContext(
+  notifier: Notifier["Service"] = testNotifier().service,
+  services: {
+    vault?: Partial<Vault["Service"]>;
+    workspace?: Partial<Workspace["Service"]>;
+  } = {},
+): Context.Context<WorkbenchActionServices> {
+  return Context.make(Notifier, notifier).pipe(
+    Context.add(
+      Vault,
+      stubService<Vault["Service"]>("Vault", services.vault ?? {}),
+    ),
+    Context.add(
+      Workspace,
+      stubService<Workspace["Service"]>("Workspace", services.workspace ?? {}),
+    ),
+  );
+}
 
 export function makeWorkbenchHost(
   input: Partial<WorkbenchHostDeps> = {},
@@ -307,6 +333,21 @@ export function makeWorkbenchHost(
       }),
     ),
     Context.add(
+      NoteFeature,
+      stubService<NoteFeature["Service"]>("NoteFeature", {
+        // The service's write runs to its end once started; a rejection is
+        // what the note operation's write stopped on.
+        updateNote: (file, options) =>
+          Effect.uninterruptible(
+            Effect.tryPromise({
+              try: () => deps.noteFeature!.updateNote(file, options),
+              catch: (cause) =>
+                new NoteWriteAborted({ path: file.path, cause }),
+            }),
+          ),
+      }),
+    ),
+    Context.add(
       Workspace,
       stubService<Workspace["Service"]>("Workspace", {
         getLeaf: (pane) => Effect.sync(() => deps.app!.workspace.getLeaf(pane)),
@@ -333,7 +374,6 @@ export function makeWorkbenchHost(
     own: (close: () => void | Promise<void>) => owners.push(close),
     deps: {
       registry,
-      noteFeature: deps.noteFeature,
       nativePreview: deps.nativePreview,
       render: deps.render,
       pluginVersion: deps.pluginVersion,

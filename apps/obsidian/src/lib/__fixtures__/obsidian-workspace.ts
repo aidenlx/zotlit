@@ -150,6 +150,11 @@ export class MemoryWorkspace implements WorkspaceSource {
     return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
   }
 
+  /** A leaf in a new window; no window opens. */
+  openPopoutLeaf(): WorkspaceLeaf {
+    return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  }
+
   /** Records the leaf; the active file stays. */
   async revealLeaf(_leaf: WorkspaceLeaf): Promise<void> {}
 

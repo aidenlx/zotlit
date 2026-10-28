@@ -2,11 +2,8 @@ import "./style.css";
 import { MarkdownView, Platform, TFile } from "obsidian";
 import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
-import { WorkbenchDocumentController } from "@zotlit/workbench/document";
-
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
-import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type {
   CustomizeAction,
@@ -19,14 +16,15 @@ import {
   fileProfileValueAtom,
 } from "@/services/profile/atoms";
 import { templateFolderAtom } from "@/services/settings/atoms";
-import {
-  findWorkbenchLayout,
-  openWorkbenchLayout,
-} from "@/views/note-preview/register";
 
 import { startTemplateWorkbenchAction } from "./actions";
-import type { WorkbenchActionDeps, WorkbenchOpened } from "./actions";
+import type { WorkbenchActionDeps } from "./actions";
 import { templateDocumentKind } from "./document-kind";
+import {
+  customizeProfile,
+  openNativeProfile,
+  openTemplateWorkbench,
+} from "./open";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
@@ -87,7 +85,7 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
         ...options,
         customize: true,
       });
-    return deps.customize({
+    return customizeProfile(deps.customize, {
       profileId,
       ...(options.destination ? { destination: options.destination } : {}),
       ...(options.itemIndexedKey
@@ -121,7 +119,9 @@ export function registerTemplateWorkbenchView(
       const target = plugin.app.workspace.getActiveFile();
       if (!isProfile(target)) return false;
       if (!checking)
-        startTemplateWorkbenchAction(deps, "customize", () =>
+        startTemplateWorkbenchAction(
+          deps,
+          "customize",
           customizeTarget(target, { destination: "native" }),
         );
       return true;
@@ -135,7 +135,9 @@ export function registerTemplateWorkbenchView(
         const target = targetOf(plugin.app.workspace.getActiveFile());
         if (!target) return false;
         if (!checking)
-          startTemplateWorkbenchAction(deps, "open-web", () =>
+          startTemplateWorkbenchAction(
+            deps,
+            "open-web",
             customizeTarget(target, { destination: "web" }),
           );
         return true;
@@ -151,7 +153,9 @@ export function registerTemplateWorkbenchView(
       // file menu and the Markdown header action already take.
       if (isPlainDocument(active)) {
         if (!checking)
-          startTemplateWorkbenchAction(deps, "open-editor", () =>
+          startTemplateWorkbenchAction(
+            deps,
+            "open-editor",
             openTemplateWorkbench(plugin.app, active, {
               explainUnsupported: false,
               ...(leaf ? { leaf } : {}),
@@ -165,7 +169,9 @@ export function registerTemplateWorkbenchView(
         const itemIndexedKey =
           active &&
           itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
-        startTemplateWorkbenchAction(deps, "open-editor", () =>
+        startTemplateWorkbenchAction(
+          deps,
+          "open-editor",
           openNativeProfile(plugin.app, target, {
             ...(itemIndexedKey ? { itemIndexedKey } : {}),
             ...(leaf ? { leaf } : {}),
@@ -187,7 +193,9 @@ export function registerTemplateWorkbenchView(
         explainUnsupported: false,
         ...(problem ? { problem } : {}),
       };
-      startTemplateWorkbenchAction(deps, "open-workbench", () =>
+      startTemplateWorkbenchAction(
+        deps,
+        "open-workbench",
         file
           ? openTemplateWorkbench(plugin.app, file, options)
           : openNativeProfile(plugin.app, deps.defaultProfile, options),
@@ -218,7 +226,9 @@ export function registerTemplateWorkbenchView(
           view.addAction("file-pen-line", m.template_workbench_open(), () => {
             const file = view.file;
             if (!file) return;
-            startTemplateWorkbenchAction(deps, "open-editor", () =>
+            startTemplateWorkbenchAction(
+              deps,
+              "open-editor",
               openTemplateWorkbench(plugin.app, file, {
                 leaf: view.leaf,
                 ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
@@ -259,7 +269,9 @@ export function templateWorkbenchFileMenu(
           .setTitle(m.template_workbench_open())
           .setIcon("file-pen-line")
           .onClick(() =>
-            startTemplateWorkbenchAction(deps, "open-editor", () =>
+            startTemplateWorkbenchAction(
+              deps,
+              "open-editor",
               openTemplateWorkbench(app, file, {
                 explainUnsupported: false,
                 ...(leaf ? { leaf } : {}),
@@ -279,7 +291,9 @@ export function templateWorkbenchFileMenu(
           .setTitle(m.template_workbench_open_layout())
           .setIcon("panels-top-left")
           .onClick(() =>
-            startTemplateWorkbenchAction(deps, "customize", () =>
+            startTemplateWorkbenchAction(
+              deps,
+              "customize",
               customizeTarget(target, {
                 ...options,
                 destination: "native",
@@ -294,7 +308,9 @@ export function templateWorkbenchFileMenu(
           .setTitle(m.template_workbench_web_open())
           .setIcon("external-link")
           .onClick(() =>
-            startTemplateWorkbenchAction(deps, "open-web", () =>
+            startTemplateWorkbenchAction(
+              deps,
+              "open-web",
               customizeTarget(target, {
                 ...options,
                 destination: "web",
@@ -309,7 +325,9 @@ export function templateWorkbenchFileMenu(
         .setIcon("file-pen-line")
         .onClick(() => {
           const leaf = activeLeafFor(app, file);
-          startTemplateWorkbenchAction(deps, "open-editor", () =>
+          startTemplateWorkbenchAction(
+            deps,
+            "open-editor",
             openNativeProfile(app, target, {
               ...options,
               ...(leaf ? { leaf } : {}),
@@ -328,176 +346,4 @@ function activeLeafFor(
   return leaf?.view instanceof MarkdownView && leaf.view.file === file
     ? leaf
     : undefined;
-}
-
-/** An open that asks the reader to know nothing. */
-const OPENED: WorkbenchOpened = {
-  nativeRequired: false,
-  unavailableNote: null,
-};
-
-/**
- * Open a Profile file or the built-in Default draft in the native editor.
- *
- * @returns what the open asks the reader to know, for the caller to show.
- */
-export async function openNativeProfile(
-  app: App,
-  target: NativeProfileTarget,
-  options: {
-    leaf?: WorkspaceLeaf;
-    itemIndexedKey?: string;
-    originatingNote?: TFile;
-    explainUnsupported?: boolean;
-    customize?: boolean;
-    /** The failure that brought the reader here, explained on arrival. */
-    problem?: ArrivingProblem;
-  } = {},
-): Promise<WorkbenchOpened> {
-  const path =
-    target instanceof TFile ? target.path : target.defaultDocumentPath;
-  const file =
-    target instanceof TFile
-      ? target
-      : path
-        ? app.vault.getFileByPath(path)
-        : null;
-  let source: string;
-  if (file) source = await app.vault.cachedRead(file);
-  else if (target instanceof TFile) return OPENED;
-  else source = await target.getSource("default");
-  if (file)
-    return openTemplateWorkbench(app, file, {
-      ...options,
-      ...(target instanceof TFile ? {} : { defaultProfile: true }),
-    });
-  const nativeRequired =
-    options.explainUnsupported !== false && requiresNative(source);
-  const { itemIndexedKey } = options;
-  const workbench = options.customize
-    ? await findWorkbenchLayout(app, { file: null, defaultProfile: true })
-    : null;
-  if (workbench?.file) {
-    const opened = await openTemplateWorkbench(app, workbench.file, {
-      ...options,
-      leaf: workbench.leaf,
-      defaultProfile: true,
-    });
-    return {
-      ...opened,
-      nativeRequired: nativeRequired || opened.nativeRequired,
-    };
-  }
-  const leaf =
-    workbench?.leaf ??
-    options.leaf ??
-    app.workspace
-      .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
-      .find(
-        (entry) =>
-          entry.view instanceof TemplateWorkbenchView &&
-          entry.view.isDefaultDraft,
-      ) ??
-    (options.customize
-      ? app.workspace.openPopoutLeaf({ size: { width: 1440, height: 900 } })
-      : app.workspace.getLeaf("tab"));
-  await leaf.setViewState({
-    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-    state: {
-      defaultDraft: true,
-      file: null,
-      ...(itemIndexedKey ? { itemIndexedKey } : {}),
-    },
-    active: true,
-  });
-  await app.workspace.revealLeaf(leaf);
-  leaf.getContainer().focus();
-  if (!(leaf.view instanceof TemplateWorkbenchView))
-    return { ...OPENED, nativeRequired };
-  if (options.problem) leaf.view.explainArrival(options.problem);
-  if (options.customize) await leaf.view.customizeDefault();
-  return {
-    nativeRequired,
-    unavailableNote: await leaf.view.setOriginatingNote(
-      options.originatingNote ?? null,
-    ),
-  };
-}
-
-export function requiresNative(source: string): boolean {
-  const manifest = new WorkbenchDocumentController(source, {
-    runtime: "native",
-  }).document?.manifest;
-  return (
-    manifest?.language === "eta" ||
-    !!manifest?.partials?.some((partial) => partial.language === "eta") ||
-    !!manifest?.frontmatter?.some((field) => "js" in field)
-  );
-}
-
-/**
- * Open a Profile document with an explicitly supplied launch Item.
- *
- * @returns what the open asks the reader to know, for the caller to show.
- */
-export async function openTemplateWorkbench(
-  app: App,
-  file: TFile,
-  options: {
-    leaf?: WorkspaceLeaf;
-    itemIndexedKey?: string;
-    originatingNote?: TFile;
-    tab?: "match" | "name";
-    explainUnsupported?: boolean;
-    customize?: boolean;
-    defaultProfile?: boolean;
-    /** The failure that brought the reader here, explained on arrival. */
-    problem?: ArrivingProblem;
-  } = {},
-): Promise<WorkbenchOpened> {
-  const nativeRequired =
-    options.explainUnsupported !== false &&
-    requiresNative(await app.vault.cachedRead(file));
-  const { itemIndexedKey } = options;
-  const workbench = options.customize
-    ? await findWorkbenchLayout(app, {
-        file: file.path,
-        defaultProfile: options.defaultProfile ?? false,
-      })
-    : null;
-  const leaf =
-    workbench?.leaf ??
-    options.leaf ??
-    app.workspace
-      .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
-      .find(
-        (entry) =>
-          entry.view instanceof TemplateWorkbenchView &&
-          entry.view.file?.path === file.path,
-      ) ??
-    (options.customize
-      ? app.workspace.openPopoutLeaf({ size: { width: 1440, height: 900 } })
-      : app.workspace.getLeaf("tab"));
-  await leaf.setViewState({
-    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-    state: {
-      file: file.path,
-      ...(workbench && !workbench.file ? { defaultDraft: false } : {}),
-      ...(itemIndexedKey ? { itemIndexedKey } : {}),
-      ...(options.tab ? { tab: options.tab, advanced: false } : {}),
-    },
-    active: true,
-  });
-  await app.workspace.revealLeaf(leaf);
-  leaf.getContainer().focus();
-  if (!(leaf.view instanceof TemplateWorkbenchView))
-    return { ...OPENED, nativeRequired };
-  if (options.problem) leaf.view.explainArrival(options.problem);
-  if (options.customize) await openWorkbenchLayout(app, leaf.view);
-  return {
-    nativeRequired,
-    unavailableNote: await leaf.view.setOriginatingNote(
-      options.originatingNote ?? null,
-    ),
-  };
 }

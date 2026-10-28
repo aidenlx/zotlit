@@ -9,6 +9,8 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { scopedBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import type { PluginHostShape } from "@/lib/plugin-host";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE } from "@/views/template-workbench/view";
 
@@ -37,24 +39,26 @@ function workspaceApp() {
       }),
     view: stubService<WorkspaceLeaf["view"]>("View", {}),
   });
-  const app = stubService<App>("App", {
-    workspace: stubService<App["workspace"]>("Workspace", {
-      getLeavesOfType: () => [],
-      getLeaf: () => leaf,
-      revealLeaf: async () => {},
-    }),
+  // No Workbench is open, so the open takes a new tab: `leaf`.
+  const workspace = Layer.mock(Workspace, {
+    leavesOfType: () => Effect.succeed([]),
+    getLeaf: () => Effect.succeed(leaf),
+    revealLeaf: () => Effect.void,
   });
-  return { app, opened };
+  return { app: stubService<App>("App", {}), opened, workspace };
 }
 
-/** The Template and Notifier the open reads. */
+/** The Template, Notifier and workspace the open reads. */
 const servicesOver = (
   materializeCitationTemplate: Effect.Effect<TFile, TemplateFailure>,
   notifier: Notifier["Service"] = testNotifier().service,
+  workspace = workspaceApp().workspace,
 ) =>
-  Layer.merge(
+  Layer.mergeAll(
     Layer.mock(Template, { materializeCitationTemplate }),
     Layer.succeed(Notifier, notifier),
+    Layer.mock(Vault, {}),
+    workspace,
   );
 
 const failure = templateFailure(new Error("the template folder is a file"));
@@ -73,9 +77,9 @@ it.effect("registers Customize citation text as a command", () =>
         app: workspaceApp().app,
       },
     );
-    const context = yield* Effect.context<Template | Notifier>().pipe(
-      Effect.provide(servicesOver(Effect.succeed(CITATION))),
-    );
+    const context = yield* Effect.context<
+      Template | Notifier | Vault | Workspace
+    >().pipe(Effect.provide(servicesOver(Effect.succeed(CITATION))));
     yield* addCitationTemplateActions(host, {
       context,
       bridge: yield* scopedBridge,
@@ -93,10 +97,12 @@ it.effect(
   "materializes the document, then opens it in the Template Workbench View",
   () =>
     Effect.gen(function* () {
-      const { app, opened } = workspaceApp();
+      const { app, opened, workspace } = workspaceApp();
 
       yield* openCitationTemplate(app).pipe(
-        Effect.provide(servicesOver(Effect.succeed(CITATION))),
+        Effect.provide(
+          servicesOver(Effect.succeed(CITATION), undefined, workspace),
+        ),
       );
 
       expect(opened).toEqual([

@@ -93,6 +93,17 @@ vi.mock("@/views/template-workbench/selection", async (original) => ({
     return hit ? { id: hit.item.indexedKey, title: null } : null;
   },
 }));
+// The editor's own chooser reaches the same Zotero search.
+vi.mock("@/views/template-workbench/item-choice", async (original) => ({
+  ...(await original<
+    typeof import("@/views/template-workbench/item-choice")
+  >()),
+  workbenchItemChoice: (_host: unknown, deps: Parameters<typeof pickItem>[0]) =>
+    Effect.promise(async () => {
+      const hit = await pickItem(deps, "");
+      return hit ? { id: hit.item.indexedKey, title: null } : null;
+    }),
+}));
 vi.mock("obsidian", async (original) => ({
   ...(await original<typeof import("obsidian")>()),
   MarkdownRenderer: {

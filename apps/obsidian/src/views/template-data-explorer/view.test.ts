@@ -420,13 +420,19 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
     get authoringContext() {
       return context;
     },
-    chooseItem: vi.fn(async () => {
-      if (!accepted) return false;
-      context = { ...context, item: { id: "PAPER002", title: "Second paper" } };
-      for (const event of events.values())
-        if (event.name === "zotlit:authoring-context") event.callback(context);
-      return true;
-    }),
+    chooseItem: vi.fn(() =>
+      Effect.sync(() => {
+        if (!accepted) return false;
+        context = {
+          ...context,
+          item: { id: "PAPER002", title: "Second paper" },
+        };
+        for (const event of events.values())
+          if (event.name === "zotlit:authoring-context")
+            event.callback(context);
+        return true;
+      }),
+    ),
   } as unknown as TemplateWorkbenchView;
   Object.defineProperty(editor, "leaf", { value: context.leaf });
   vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);

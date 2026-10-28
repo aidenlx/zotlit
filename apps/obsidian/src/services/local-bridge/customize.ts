@@ -14,7 +14,7 @@ import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
+import { LegacyPortError } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -107,7 +107,7 @@ export interface CustomizePorts {
   readonly openNative: (
     request: CustomizeRequest,
     target: NativeProfileTarget,
-  ) => Promise<WorkbenchOpened | void>;
+  ) => Effect.Effect<WorkbenchOpened | void, unknown, Workspace | Vault>;
   /** The destination this device remembers (`views/template-workbench/preferences`). */
   readonly preference: () => ProfileCustomization;
   readonly rememberPreference: (
@@ -184,9 +184,13 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
     const target = yield* nativeTarget(request.profileId);
     if (target)
       yield* explainWorkbenchOpen(
-        yield* portCall("open-native", () =>
-          ports.openNative(nativeRequest, target),
-        ),
+        yield* ports
+          .openNative(nativeRequest, target)
+          .pipe(
+            Effect.mapError(
+              (cause) => new LegacyPortError({ step: "open-native", cause }),
+            ),
+          ),
       );
   });
   if (!ports.webWorkbenchEnabled) {

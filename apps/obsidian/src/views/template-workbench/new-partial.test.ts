@@ -5,7 +5,7 @@ import {
   TextComponent,
   controlsOf,
 } from "@mock/obsidian";
-import { Exit, Stream } from "effect";
+import { Effect, Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import type { App, PaneType, SplitDirection, WorkspaceLeaf } from "obsidian";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -19,10 +19,12 @@ import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import type { SharedPartialActions } from "./new-partial";
+import { openTemplateWorkbench } from "./open";
 import { createSharedPartialEffect } from "./partial-command";
-import { openTemplateWorkbench } from "./register";
 
-vi.mock("./register", () => ({ openTemplateWorkbench: vi.fn(async () => {}) }));
+vi.mock("./open", () => ({
+  openTemplateWorkbench: vi.fn(() => Effect.void),
+}));
 
 const split = stubService<WorkspaceLeaf>("WorkspaceLeaf", {
   updateHeader: vi.fn(),

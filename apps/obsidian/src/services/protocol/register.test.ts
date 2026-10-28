@@ -61,7 +61,7 @@ import type {
   ZoteroReadsState,
 } from "@/services/zotero-reads/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { ProtocolOutcome } from "./outcome";
 import { layerProtocolHandlers, registerProtocolHandlers } from "./register";
@@ -103,8 +103,8 @@ vi.mock("@/services/attachment-open/resolve", async (importOriginal) => ({
   toObsidianOpenableAttachments: vi.fn(),
 }));
 
-vi.mock("@/views/template-workbench/register", () => ({
-  openTemplateWorkbench: vi.fn(async () => {}),
+vi.mock("@/views/template-workbench/open", () => ({
+  openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
 vi.mock("@/views/template-data-explorer/register", () => ({

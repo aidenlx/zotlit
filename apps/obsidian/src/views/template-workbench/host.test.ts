@@ -148,8 +148,8 @@ describe("Template Workbench host", () => {
       groups: [],
       searchItems: vi
         .fn()
-        .mockReturnValueOnce(first.promise)
-        .mockReturnValueOnce(second.promise),
+        .mockReturnValueOnce(Effect.promise(() => first.promise))
+        .mockReturnValueOnce(Effect.promise(() => second.promise)),
     };
     void host.run(host.suggester(request));
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
@@ -175,8 +175,8 @@ describe("Template Workbench host", () => {
       groups: [],
       searchItems: vi
         .fn()
-        .mockResolvedValueOnce([figures, rules])
-        .mockReturnValueOnce(typed.promise),
+        .mockReturnValueOnce(Effect.succeed([figures, rules]))
+        .mockReturnValueOnce(Effect.promise(() => typed.promise)),
     };
     const chosen = host.run(host.suggester(request));
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
@@ -198,7 +198,9 @@ describe("Template Workbench host", () => {
     const request: NativeWorkbenchSuggesterRequest = {
       title: "Items",
       groups: [],
-      searchItems: vi.fn().mockReturnValueOnce(typed.promise),
+      searchItems: vi
+        .fn()
+        .mockReturnValueOnce(Effect.promise(() => typed.promise)),
     };
     const chosen = host.run(host.suggester(request));
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
