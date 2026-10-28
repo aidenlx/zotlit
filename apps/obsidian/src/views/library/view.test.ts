@@ -1562,8 +1562,9 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   await press(view, button("list", "Open settings"));
   expect(setupActions.locateZotero).toHaveBeenCalledOnce();
   expect(setupActions.openSettings).toHaveBeenCalledOnce();
-  // No setup-time hint names ZotLit Companion or Better BibTeX.
-  expect(view.contentEl.textContent).not.toMatch(/Companion|Better BibTeX/);
+  // ZotLit Companion shows only as the optional last setup step; no
+  // setup-time hint names Better BibTeX.
+  expect(view.contentEl.textContent).not.toMatch(/Better BibTeX/);
 
   await act(async () => {
     await locate();

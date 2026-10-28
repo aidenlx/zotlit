@@ -3886,6 +3886,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               run.m.welcome_step_connect_title(),
               run.m.welcome_step_folder_title(),
               run.m.welcome_step_library_title(),
+              run.m.welcome_step_companion_title(),
             ],
             // Zotero reads, so the folder is the one step still open.
             open: run.m.welcome_step_folder_title(),
@@ -3901,9 +3902,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
               "https://github.com/sponsors/aidenlx",
               "https://zotlit.aidenlx.site/docs/how-to/migrate-from-v1",
             ],
-            companion: false,
+            // ZotLit Companion is the optional last step.
+            companion: true,
           }),
-        what: "the Welcome banner in the Library View to show its three setup steps",
+        what: "the Welcome banner in the Library View to show its four setup steps",
       },
     );
     // Search your library puts the cursor in the Library View's own search
@@ -4118,7 +4120,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       JSON.stringify({
         before: { active: false, pressed: "false" },
         dismissed: false,
-        steps: 3,
+        steps: 4,
         rows: 0,
         active: true,
         pressed: "true",
