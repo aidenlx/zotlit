@@ -1,7 +1,8 @@
 // A zotlit:* command whose handler is an Effect. The plugin's bridge runs it,
 // as any call from Obsidian into Effect code; unloading the plugin interrupts
-// a run still in flight and stops one that starts after it. ZotLitPlugin.registerCliHandler then
-// turns a failure into the text Obsidian prints (`cli-rejection.ts`).
+// a run still in flight, and stops one that starts after it at its first
+// pause. ZotLitPlugin.registerCliHandler then turns a failure into the text
+// Obsidian prints (`cli-rejection.ts`).
 
 import type { Effect } from "effect";
 import type { CliData, CliFlags, PluginManifest } from "obsidian";
