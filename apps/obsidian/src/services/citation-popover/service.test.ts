@@ -393,12 +393,14 @@ function workHarness(options: { logs?: Layer.Layer<never> } = {}) {
     () => Promise<BibliographyRenderResult | null>
   >(async () => null);
   const open = vi.fn();
+  const showInLibrary = vi.fn();
   const popover = citationPopoverFixture(
     {
       host: {},
       db,
       citationLookup,
       libraryScope: { current: [] },
+      showInLibrary,
       profile: profileReader(),
       bibliographyRender: { readBibliography, ...events.streams },
     },
@@ -413,6 +415,7 @@ function workHarness(options: { logs?: Layer.Layer<never> } = {}) {
     citationLookup,
     readBibliography,
     open,
+    showInLibrary,
     emit(event: string) {
       events.emit(event);
     },
@@ -628,6 +631,24 @@ describe("source-less Item actions", () => {
     });
     expect(run.open).not.toHaveBeenCalled();
     expect(popovers.at(-1)!.hide).not.toHaveBeenCalled();
+  });
+});
+
+describe("Show in Library", () => {
+  it("shows the hovered Item in the Library View and closes the popover", async () => {
+    await using run = workHarness();
+    run.db.holds([{ itemID: 1, key: "ABCD2345", title: "Alpha kernels" }]);
+    run.show();
+    (await run.shown())
+      .querySelector<HTMLButtonElement>(
+        `[aria-label="${m.library_view_show_in_library()}"]`,
+      )!
+      .click();
+
+    await vi.waitFor(() =>
+      expect(run.showInLibrary).toHaveBeenCalledExactlyOnceWith("ABCD2345"),
+    );
+    await vi.waitFor(() => expect(popovers.at(-1)!.hide).toHaveBeenCalled());
   });
 });
 

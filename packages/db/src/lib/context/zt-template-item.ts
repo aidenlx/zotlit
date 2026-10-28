@@ -9,7 +9,7 @@ import { parseItemExtra } from "@/lib/zt-extra";
 import type { ItemExtra } from "@/lib/zt-extra";
 import { toTemplateTag } from "@/lib/zt-tag";
 import type { ItemTag, TemplateTag } from "@/lib/zt-tag";
-import { itemSelectUri, itemWebUrl } from "@/lib/zt-uri";
+import { itemSelectUri, itemWebUrl, libraryViewUri } from "@/lib/zt-uri";
 import type { Creator, Item } from "@/queries/items";
 
 /**
@@ -371,6 +371,8 @@ export interface ResolvedItemCore extends TemplateAuthorData {
   backlink: string;
   /** Zotero web library URL (`https://www.zotero.org/...`); `null` for a never-synced personal library. */
   weblink: string | null;
+  /** Obsidian link (`obsidian://zotlit/show-in-library?...`) that shows the item in ZotLit's Library View. */
+  librarylink: string;
 }
 
 /** Compute the {@link ResolvedItemCore} conveniences for an item. The single
@@ -384,6 +386,7 @@ export function resolveItemCore(input: {
   return {
     backlink: itemSelectUri(input.item.key, input.item.groupID),
     weblink: itemWebUrl(input.item.key, input.item.groupID, input.username),
+    librarylink: libraryViewUri(input.item.key, input.item.groupID),
     authors: resolvePrimaryCreators(input.baseData),
     authorsShort: input.authorsShort(input.item),
   };

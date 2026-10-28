@@ -53,6 +53,7 @@ import type { Template } from "@/services/template/service";
 import type { UseLedger } from "@/services/use-ledger/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroReads } from "@/services/zotero-reads/service";
+import type { ShowInLibrary } from "@/views/library/show-in-library";
 
 /**
  * The services a view atom may read. The registry holds the plugin's whole
@@ -89,6 +90,7 @@ export type ViewServices =
   | PluginSettings
   | QueryClients
   | Release
+  | ShowInLibrary
   | TemplateDataReads
   | TemplateMigration
   | Vault

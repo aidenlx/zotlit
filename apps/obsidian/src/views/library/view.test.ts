@@ -2178,6 +2178,23 @@ it("shows an Item in its first Collection, selected, with its Reading Card", asy
   expect(view.selected).toEqual({ key: A, card: true });
 });
 
+it("flashes the row it shows until the flash ends, and again on the next Show in Library", async () => {
+  const { deps } = await pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    await view.reveal(A);
+  });
+  const row = itemRow(view, A);
+  expect(row.hasAttribute("data-revealed")).toBe(true);
+  row.dispatchEvent(new Event("animationend", { bubbles: true }));
+  expect(row.hasAttribute("data-revealed")).toBe(false);
+
+  await act(async () => {
+    await view.reveal(A);
+  });
+  expect(itemRow(view, A).hasAttribute("data-revealed")).toBe(true);
+});
+
 it("turns the Reading State facets off to show an Item they leave out", async () => {
   const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
@@ -2223,6 +2240,26 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
     expect(view.selected).toEqual({ key: null, card: false });
   }
 });
+
+it.each([
+  ["a key no Library holds", "QQQQQQQQ"],
+  ["a group outside the Library Scope", "QQQQQQQQg999"],
+])(
+  "says it cannot find %s, and keeps the search and facets",
+  async (_, indexedKey) => {
+    const { deps } = await pluginData();
+    const view = await openTab(deps);
+    await press(view, facet(view, "pdf"));
+    await type(view, "kernel");
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await view.reveal(indexedKey);
+    });
+    expect(outcome).toBe("not-found");
+    expect(searchBox(view).value).toBe("kernel");
+    expect(facet(view, "pdf").getAttribute("aria-pressed")).toBe("true");
+  },
+);
 
 it("shows an Item filed in no Collection in its Library", async () => {
   const { deps, run } = await pluginData();

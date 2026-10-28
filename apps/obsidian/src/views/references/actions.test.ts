@@ -93,6 +93,7 @@ describe("onOpenNote", () => {
       }),
       getSourcePath: () => "notes/tidal.md",
       openIndexedKey,
+      showInLibrary: () => undefined,
       openLinkText,
       nextOccurrence: () => 0,
       revealOccurrence: () => undefined,
@@ -132,6 +133,38 @@ describe("onOpenNote", () => {
       linkpath: null,
     });
     expect(openIndexedKey).toHaveBeenCalledExactlyOnceWith("NCKEY234");
+  });
+});
+
+describe("onShowInLibrary", () => {
+  it("shows the cited Item in the Library View by its Indexed Key", () => {
+    const showInLibrary = vi.fn();
+    const actions = createReferenceActions({
+      app: stubService<App>("App", {}),
+      getSourcePath: () => "notes/tidal.md",
+      openIndexedKey: () => undefined,
+      showInLibrary,
+      openLinkText: () => undefined,
+      nextOccurrence: () => 0,
+      revealOccurrence: () => undefined,
+      onOpenEngineSettings: () => undefined,
+      onChangeStyle: () => undefined,
+      onDismissEngineHint: () => undefined,
+      getCopySnapshot,
+      writeClipboard,
+      reportCopy: () => undefined,
+    });
+
+    actions.onShowInLibrary({
+      itemKey: "ITEM0009",
+      groupID: 7,
+    } as ReferenceSource);
+    actions.onShowInLibrary({
+      itemKey: "BOOK0001",
+      groupID: null,
+    } as ReferenceSource);
+
+    expect(showInLibrary.mock.calls).toEqual([["ITEM0009g7"], ["BOOK0001"]]);
   });
 });
 
@@ -178,6 +211,7 @@ describe("onCopyBibliography", () => {
       app: stubService<App>("App", {}),
       getSourcePath: () => "notes/tidal.md",
       openIndexedKey: () => undefined,
+      showInLibrary: () => undefined,
       openLinkText: () => undefined,
       nextOccurrence: () => 0,
       revealOccurrence: () => undefined,

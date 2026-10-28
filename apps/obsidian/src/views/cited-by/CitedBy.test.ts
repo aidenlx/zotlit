@@ -445,6 +445,7 @@ async function render(options: {
     setEphemeralState,
     setLayout,
     show,
+    shownInLibrary: current.shownInLibrary,
   };
 }
 
@@ -1442,6 +1443,27 @@ describe("CitedBy", () => {
     expect(read).toHaveBeenCalledOnce();
     expect(DEFAULT_CITED_BY_LAYOUT.search).toBe("");
     expect(EMPTY_CITED_BY_NOTE_STATE.collapsed).toEqual([]);
+  });
+
+  it("shows the Literature Note's Item in the Library View", async () => {
+    const { container, shownInLibrary } = await render({});
+    const action = container.querySelector<HTMLElement>(
+      "[data-cited-by-show-in-library]",
+    );
+    expect(action?.getAttribute("aria-label")).toBe(
+      m.library_view_show_in_library(),
+    );
+
+    await act(() => action!.click());
+
+    await waitForState(() => expect(shownInLibrary).toEqual(["ABCD2345"]));
+  });
+
+  it("offers Show in Library only while a Literature Note is active", async () => {
+    const { container } = await render({ indexedKey: null });
+    expect(
+      container.querySelector("[data-cited-by-show-in-library]"),
+    ).toBeNull();
   });
 
   it("offers the six Backlinks sort modes and marks the one in force", async () => {

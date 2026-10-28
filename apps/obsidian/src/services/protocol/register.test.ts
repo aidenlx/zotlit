@@ -60,6 +60,7 @@ import type {
   ZoteroReadsApi,
   ZoteroReadsState,
 } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
@@ -242,6 +243,9 @@ interface Setup {
   readonly whenIndexed?: Effect.Effect<void>;
 }
 
+/** Each Indexed Key a link showed in the Library View, in order. */
+const shownInLibrary: string[] = [];
+
 /** The services the handlers read, over the case's fakes. */
 function servicesFor(setup: Setup = {}) {
   return Layer.mergeAll(
@@ -275,6 +279,12 @@ function servicesFor(setup: Setup = {}) {
       importNotesRequests: setup.importNotesRequests ?? Stream.empty,
     }),
     Layer.mock(UseLedger, {}),
+    Layer.mock(ShowInLibrary, {
+      show: (indexedKey) =>
+        Effect.sync(() => {
+          shownInLibrary.push(indexedKey);
+        }),
+    }),
     // A link import reads only these members before it opens its modal.
     Layer.mock(NoteIndex, { whenIndexed: setup.whenIndexed ?? Effect.void }),
     Layer.mock(LibraryScope, {}),
@@ -335,6 +345,7 @@ const dispatch = Effect.fn("dispatch")(function* (
 
 beforeEach(() => {
   handlers.clear();
+  shownInLibrary.length = 0;
   vi.mocked(runBatchUpdate).mockClear();
   vi.mocked(runBatchUpdateAll).mockClear();
   openBatchModal.mockReset();
@@ -394,6 +405,30 @@ describe("paneType", () => {
         ITEM_REF,
         { action: "open", scope: "full", paneType: "split" },
       );
+    }),
+  );
+});
+
+describe("show-in-library protocol link", () => {
+  it.effect("shows the Item its Indexed Key names in the Library View", () =>
+    Effect.gen(function* () {
+      yield* register();
+      const outcome = yield* dispatch("zotlit/show-in-library", {
+        "item-key": "ABCD2345g7",
+      });
+      expect(shownInLibrary).toEqual(["ABCD2345g7"]);
+      expect(outcome).toEqual(ProtocolOutcome.Opened());
+    }),
+  );
+
+  it.effect("refuses a link whose key is not an Indexed Key", () =>
+    Effect.gen(function* () {
+      yield* register();
+      const outcome = yield* dispatch("zotlit/show-in-library", {
+        "item-key": "not a key",
+      });
+      expect(shownInLibrary).toEqual([]);
+      expect(outcome).toEqual(ProtocolOutcome.InvalidLink());
     }),
   );
 });

@@ -593,6 +593,14 @@
           }
         },
         {
+          "name": "librarylink",
+          "optional": false,
+          "type": {
+            "kind": "primitive",
+            "type": "string"
+          }
+        },
+        {
           "name": "authors",
           "optional": false,
           "type": {
@@ -1444,6 +1452,14 @@
                 "type": "null"
               }
             ]
+          }
+        },
+        {
+          "name": "librarylink",
+          "optional": false,
+          "type": {
+            "kind": "primitive",
+            "type": "string"
           }
         },
         {
@@ -2540,6 +2556,14 @@
                 "type": "null"
               }
             ]
+          }
+        },
+        {
+          "name": "librarylink",
+          "optional": false,
+          "type": {
+            "kind": "primitive",
+            "type": "string"
           }
         },
         {

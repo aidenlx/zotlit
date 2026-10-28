@@ -38,6 +38,7 @@ import { PluginSettings } from "@/services/settings/service";
 import { changed as readsChanged } from "@/services/zotero-reads/events";
 import type { WorkLabelSource } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
@@ -180,6 +181,7 @@ export const layerGraphCitations = Layer.effect(
     const citationLookup = yield* CitationLookup;
     const noteIndex = yield* NoteIndex;
     const citekeyEditor = yield* CitekeyEditor;
+    const showInLibrary = yield* ShowInLibrary;
     const citationPopover = yield* CitationPopover;
     const settings = yield* PluginSettings;
     const bridge = yield* scopedBridge;
@@ -653,6 +655,8 @@ export const layerGraphCitations = Layer.effect(
         resolveCitekey,
         open,
         workspace: triggerWorkspace,
+        showInLibrary: (indexedKey) =>
+          bridge.runAndForget(showInLibrary.show(indexedKey)),
       };
       restores.use(wrapNodeClick(renderer, nodeDeps));
       restores.use(wrapNodeRightClick(renderer, nodeDeps));

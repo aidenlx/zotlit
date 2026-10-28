@@ -77,6 +77,7 @@ export {
   annotationOpenUri,
   attachmentOpenUri,
   itemSelectUri,
+  libraryViewUri,
   parseAnnotationOpenUri,
   type AnnotationOpenUriOptions,
 } from "./lib/zt-uri";

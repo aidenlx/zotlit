@@ -6,8 +6,23 @@ import {
   itemSelectUri,
   itemUri,
   itemWebUrl,
+  libraryViewUri,
   parseAnnotationOpenUri,
 } from "./zt-uri";
+
+describe("libraryViewUri", () => {
+  it("names a personal-library item by its bare key", () => {
+    expect(libraryViewUri("ABC12345", null)).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ABC12345",
+    );
+  });
+
+  it("names a group-library item by its Indexed Key", () => {
+    expect(libraryViewUri("ABC12345", 42)).toBe(
+      "obsidian://zotlit/show-in-library?item-key=ABC12345g42",
+    );
+  });
+});
 
 describe("itemSelectUri", () => {
   it("uses the library path for personal items", () => {

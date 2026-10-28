@@ -311,6 +311,11 @@ function Reference({
                     label={m.references_open_in_zotero()}
                     onClick={() => actions.onOpenInZotero(source)}
                   />
+                  <EntryAction
+                    icon="library"
+                    label={m.library_view_show_in_library()}
+                    onClick={() => actions.onShowInLibrary(source)}
+                  />
                   {/* Dropped outright when the Item stores nothing to open —
                         the row keeps "Open in Zotero" either way, so the
                         toolbar never empties. */}

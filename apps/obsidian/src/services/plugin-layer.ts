@@ -31,7 +31,9 @@ import { layerAnnotationNoteActions } from "@/services/note-feature/view-actions
 import type { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { layerTemplateDataReads } from "@/services/template-workbench/data-reads";
 import { layerSettingTab } from "@/setting-tab/layer";
-import { openLibraryView } from "@/views/library/register";
+import { layerShowInLibrary, openLibraryView } from "@/views/library/register";
+import type { ShowInLibrary } from "@/views/library/show-in-library";
+import { layerShowInLibraryActions } from "@/views/library/show-in-library-actions";
 
 import { layerAnnotationLinkReading } from "./annotation-popover/reading";
 import { layerAnnotationPopover } from "./annotation-popover/service";
@@ -256,6 +258,7 @@ export function pluginLayer(
   | Workspace
   | MetadataCache
   | ObsidianEnv
+  | ShowInLibrary
   | FileSystem.FileSystem
 > {
   // The file manager decides its outcomes from the vault's cache.
@@ -378,6 +381,8 @@ export function pluginLayer(
         layerWorkspace,
         layerObsidianEnv,
         layerMetadataCache,
+        // Views, the popovers and commands open the Library View on an Item.
+        layerShowInLibrary,
       ),
     ),
     Layer.provideMerge(
@@ -440,6 +445,7 @@ export function pluginLayer(
       ? layerQueryMeasureCli.pipe(startingAs("QueryMeasureCli"))
       : Layer.empty,
     layerReleaseActions.pipe(startingAs("ReleaseActions")),
+    layerShowInLibraryActions.pipe(startingAs("ShowInLibraryActions")),
     layerSettingTab({ webWorkbenchEnabled: WEB_WORKBENCH_ENABLED }).pipe(
       startingAs("SettingTab"),
     ),

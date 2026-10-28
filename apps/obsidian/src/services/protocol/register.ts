@@ -29,10 +29,12 @@ import {
   parseOpenAttachmentProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
+  parseShowInLibraryProtocolQuery,
   parseUpdateAllProtocolQuery,
   protocolActionId,
   protocolActions,
   protocolSourceMatches,
+  showInLibraryProtocolActionId,
   updateAllProtocolActionId,
 } from "@zotlit/protocol";
 import type { ImportMode, ProtocolAction } from "@zotlit/protocol";
@@ -89,6 +91,7 @@ import { ZoteroPref } from "@/services/zotero-pref/service";
 import { readDisplayRef } from "@/services/zotero-reads/display-ref";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
+import { ShowInLibrary } from "@/views/library/show-in-library";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
@@ -104,6 +107,7 @@ export type ProtocolServices =
   | Notifier
   | ObsidianEnv
   | ProfileDialogServices
+  | ShowInLibrary
   | TargetOpener
   | UseLedger
   | Vault
@@ -182,6 +186,7 @@ export const registerProtocolHandlers = Effect.fn("registerProtocolHandlers")(
     register(exploreProtocolActionId, (data) =>
       handleExploreProtocol(data, deps),
     );
+    register(showInLibraryProtocolActionId, handleShowInLibraryProtocol);
     register(openAttachmentProtocolActionId, (data) =>
       handleOpenAttachmentProtocol(data, deps),
     );
@@ -460,6 +465,30 @@ const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
     return ProtocolOutcome.Opened();
   },
 );
+
+/**
+ * Handle `obsidian://zotlit/show-in-library`, the link `zt.librarylink` writes
+ * into a note. It names the Item by its Indexed Key and carries no
+ * `source-id`, so it opens on every device the note syncs to.
+ */
+const handleShowInLibraryProtocol = Effect.fn(
+  "protocol.handleShowInLibraryProtocol",
+)(function* (data: ObsidianProtocolData) {
+  const query = yield* Effect.try(() =>
+    parseShowInLibraryProtocolQuery(data),
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Invalid protocol query").pipe(
+        Effect.annotateLogs({ action: "show-in-library", error: error.cause }),
+        withLogCategory("protocol"),
+        Effect.as(null),
+      ),
+    ),
+  );
+  if (!query) return ProtocolOutcome.InvalidLink();
+  yield* (yield* ShowInLibrary).show(query.indexedKey);
+  return ProtocolOutcome.Opened();
+});
 
 /**
  * Handle `obsidian://zotlit/open-attachment`. `query.item` may name either a
