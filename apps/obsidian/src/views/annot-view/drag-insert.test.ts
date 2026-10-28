@@ -90,8 +90,9 @@ function insertRunner() {
 
 /** The outcome an insert answered, or `"interrupted"` when it was stopped. */
 async function outcomeOf(
-  fiber: Fiber.Fiber<AnnotationInsertOutcome>,
+  fiber: Fiber.Fiber<AnnotationInsertOutcome> | null,
 ): Promise<AnnotationInsertOutcome | "interrupted"> {
+  if (!fiber) throw new Error("The insert ended before it started");
   const exit = await Effect.runPromise(Fiber.await(fiber));
   if (Exit.isSuccess(exit)) return exit.value;
   if (Cause.hasInterruptsOnly(exit.cause)) return "interrupted";
@@ -219,7 +220,10 @@ it.effect("offers no insert into a note in Reading view", () =>
     f.workspace.getMostRecentLeaf = () => leaf;
 
     expect(f.insert.offer()).toBeNull();
-    expect(await outcomeOf(f.insert(card))).toEqual({ kind: "no-note" });
+    expect(f.insert(card)).toBeNull();
+    expect(f.notify).toHaveBeenCalledExactlyOnceWith(
+      m.annot_view_insert_no_note(),
+    );
     expect(f.prepare).not.toHaveBeenCalled();
     expect(f.cm.state.doc.toString()).toBe("one two");
   }),
@@ -318,12 +322,12 @@ it.effect("supersedes the pending action and inserts once with one undo", () =>
     await using f = fixture();
     const first = f.insert(card);
     const second = f.insert(card);
-    await vi.waitFor(() => expect(f.interrupted[0]).toBe(true));
+    expect(await outcomeOf(first)).toBe("interrupted");
+    expect(f.interrupted[0]).toBe(true);
     f.cm.dispatch({ changes: { from: 0, insert: "user " } });
     f.pending[1]!.resolve(result("EXCERPT"));
     expect(await outcomeOf(second)).toMatchObject({ kind: "inserted" });
     f.pending[0]!.resolve(result("STALE"));
-    expect(await outcomeOf(first)).toBe("interrupted");
     expect(f.cm.state.doc.toString()).toBe("user one EXCERPT ");
     undo(f.cm);
     expect(f.cm.state.doc.toString()).toBe("user one two");

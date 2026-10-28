@@ -15,6 +15,7 @@ import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { onFiberSuccess } from "@/lib/view-runner";
 import type { ViewRun } from "@/lib/view-runner";
 import type {
   AnnotationRecord,
@@ -29,7 +30,6 @@ import type {
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import { menuSections, raiseMenu } from "@/services/menu-events";
-import { InertTemplateError } from "@/services/template/errors";
 import { viewTargetOpener } from "@/views/open-target";
 
 import {
@@ -320,21 +320,13 @@ export interface AnnotActionDeps {
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
-/**
- * Show what a citation read answered, and copy the citation. Each menu runs
- * its own read, so two copies from two menus both finish.
- */
-function copyCitation(key: string, read: CitationRead): void {
+/** Show what a citation read answered, and copy the citation. */
+function copyCitation(read: CitationRead): void {
+  if (read.kind === "inert-template") {
+    new BaseNotice(read.message);
+    return;
+  }
   if (read.kind === "failed") {
-    const { error } = read;
-    if (error instanceof InertTemplateError) {
-      new BaseNotice(error.message);
-      return;
-    }
-    logger.warn("Copy citation could not read the annotation", {
-      annotationKey: key,
-      error,
-    });
     new BaseNotice(m.annot_view_copy_failed());
     return;
   }
@@ -592,11 +584,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setSection(SECTION.clipboard)
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
-        .onClick(
-          () =>
-            void deps.run(
-              readCitation(annot.key, (read) => copyCitation(annot.key, read)),
-            ),
+        // Each menu runs its own read, so two copies from two menus both
+        // finish; the view's close stops a read with no notice.
+        .onClick(() =>
+          onFiberSuccess(deps.run(readCitation(annot.key)), copyCitation),
         );
     });
 

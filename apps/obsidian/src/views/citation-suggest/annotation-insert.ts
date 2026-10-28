@@ -40,10 +40,11 @@ export async function insertAnnotation(
     range,
     workspace: deps.workspace,
   });
-  // The bridge takes a signal at this EditorSuggest edge.
+  // This plain edge stops a bridge run only through a signal, so the
+  // destination's cancel aborts one.
   const cancelled = new AbortController();
-  const release = target.onCancel(() => cancelled.abort());
-  using _listener = { [Symbol.dispose]: release };
+  using cleanup = new DisposableStack();
+  cleanup.defer(target.onCancel(() => cancelled.abort()));
   const outcome = valueOr(
     await deps.bridge.runPromiseExit(
       deps.annotationNotes.insert({

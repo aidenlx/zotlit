@@ -1,10 +1,11 @@
 // Annotation reads and gestures on the plugin's view runtime.
-import { Cause, Effect, Exit, Option } from "effect";
+import { Cause, Effect, Option } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import { isChildItemFields } from "@zotlit/db";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { itemSummary } from "@/lib/item-summary";
 import { viewRuntime } from "@/lib/view-atoms";
@@ -28,7 +29,10 @@ import type { AnnotationCitation } from "@/services/note-feature/annotation-cita
 import type { AnnotationInsertRequest } from "@/services/note-feature/insert-action";
 import { AnnotationNoteActions } from "@/services/note-feature/view-actions";
 import { PluginSettings } from "@/services/settings/service";
-import { plainTemplateError } from "@/services/template/errors";
+import {
+  InertTemplateError,
+  plainTemplateError,
+} from "@/services/template/errors";
 import { zoteroDataDirAtom } from "@/services/zotero-pref/atoms";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { zoteroRevisionAtom } from "@/services/zotero-reads/atoms";
@@ -371,35 +375,40 @@ export const refreshExcerptDisplayCommand = viewRuntime.fn(() =>
 );
 
 /** The insert an editor gesture runs on the view's runner. */
-export const insertAnnotation = (request: AnnotationInsertRequest) =>
+export const annotationInsert = (request: AnnotationInsertRequest) =>
   Effect.flatMap(AnnotationNoteActions, (notes) => notes.insert(request));
 
-/** What a citation read answered: the citation, or the error it failed with. */
+/**
+ * What a citation read answered: the citation, a template error the
+ * researcher can fix by its own message, or a failure the log keeps.
+ */
 export type CitationRead =
   | { kind: "read"; citation: AnnotationCitation }
-  | { kind: "failed"; error: unknown };
+  | { kind: "inert-template"; message: string }
+  | { kind: "failed" };
 
-/**
- * Read one Annotation's citation and hand the read to `answer`. An interrupt,
- * such as the view's close, ends the read with no answer.
- */
-export const readCitation = (
-  key: string,
-  answer: (read: CitationRead) => void,
-) =>
+/** Read one Annotation's citation; the view's close interrupts the read. */
+export const readCitation = (key: string) =>
   Effect.flatMap(AnnotationNoteActions, (notes) => notes.citation(key)).pipe(
-    Effect.exit,
-    Effect.flatMap((exit) => {
-      if (Exit.isSuccess(exit))
-        return Effect.sync(() =>
-          answer({ kind: "read", citation: exit.value }),
-        );
-      if (Cause.hasInterruptsOnly(exit.cause)) return Effect.interrupt;
-      return Effect.sync(() =>
-        answer({
-          kind: "failed",
-          error: plainTemplateError(Cause.squash(exit.cause)),
-        }),
-      );
+    Effect.map((citation): CitationRead => ({ kind: "read", citation })),
+    Effect.catch((cause) => {
+      const error = plainTemplateError(cause);
+      return error instanceof InertTemplateError
+        ? Effect.succeed<CitationRead>({
+            kind: "inert-template",
+            message: error.message,
+          })
+        : Effect.fail(error);
     }),
+    recover(
+      (cause) =>
+        Effect.logWarning("Copy citation could not read the annotation").pipe(
+          Effect.annotateLogs({
+            annotationKey: key,
+            error: Cause.squash(cause),
+          }),
+        ),
+      Effect.succeed<CitationRead>({ kind: "failed" }),
+    ),
+    withLogCategory("views", "annot-view"),
   );

@@ -1,11 +1,12 @@
 // Asynchronous annotation insertion for the menu action and ZotLit-owned drops.
 import { nanoid } from "nanoid";
 import { MarkdownView } from "obsidian";
-import type { App, Editor, MarkdownFileInfo } from "obsidian";
+import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent } from "react";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import { onFiberSuccess } from "@/lib/view-runner";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
   AnnotationInsertOutcome,
@@ -14,7 +15,7 @@ import type {
 export type { AnnotationInsertOutcome } from "@/services/note-feature/insert-action";
 
 import { captureInsertion } from "./async-insert";
-import { endInsert, startInsert } from "./insert-run";
+import { startInsert } from "./insert-run";
 import type { InsertFiber, InsertRunner } from "./insert-run";
 
 const SOURCE_TAG = "application/x-zotlit-annotation";
@@ -26,14 +27,35 @@ export interface InsertDeps<R> extends InsertRunner<R> {
   notify: (message: string | DocumentFragment) => void;
 }
 
-/** The function that shows the notice of an outcome and answers the outcome. */
+/** The function that shows the notice of an outcome. */
 const reporter =
   (deps: Pick<InsertDeps<never>, "app" | "notify">) =>
-  (outcome: AnnotationInsertOutcome): AnnotationInsertOutcome => {
+  (outcome: AnnotationInsertOutcome): void => {
     const message = insertOutcomeMessage(deps.app, outcome);
     if (message !== null) deps.notify(message);
-    return outcome;
   };
+
+/**
+ * The one insert a handler has in flight: holding a newer one interrupts it.
+ * The outcome of an insert that finishes is shown; an interrupted one shows
+ * nothing.
+ */
+function insertSlot(report: (outcome: AnnotationInsertOutcome) => void) {
+  let pending: InsertFiber | null = null;
+  const cancel = () => pending?.interruptUnsafe();
+  return {
+    cancel,
+    hold(fiber: InsertFiber): InsertFiber {
+      cancel();
+      pending = fiber;
+      fiber.addObserver(() => {
+        if (pending === fiber) pending = null;
+      });
+      onFiberSuccess(fiber, report);
+      return fiber;
+    },
+  };
+}
 
 /**
  * The notice for an insert's outcome, or `null` for none: an Excerpt Image
@@ -92,44 +114,42 @@ export function getInsertionEditor(app: App): MarkdownFileInfo | null {
 
 export function createInsertHandler<R>(deps: InsertDeps<R>) {
   const report = reporter(deps);
-  let pending: InsertFiber | null = null;
-  const cancel = () => pending?.interruptUnsafe();
+  const slot = insertSlot(report);
+  const { cancel } = slot;
+  /** The insert in flight, or `null` where it ended at once with its notice. */
   const insertInto = (
     annotation: AnnotationRecord,
     info: MarkdownFileInfo | null,
-  ): InsertFiber => {
+  ): InsertFiber | null => {
     cancel();
     const editor = info?.editor;
     const file = info?.file;
-    if (!info || !file || !editor)
-      return endInsert(deps, { kind: "no-note" }, report);
+    if (!info || !file || !editor) {
+      report({ kind: "no-note" });
+      return null;
+    }
     const snapshot = deps.snapshot(annotation);
-    if (!snapshot.source || snapshot.sourceScope === null)
-      return endInsert(deps, { kind: "source-unavailable" }, report);
-    const fiber = startInsert(deps, {
-      capture: () =>
-        captureInsertion({
-          editor,
-          info,
-          isCurrent: () => {
-            const current = getInsertionEditor(deps.app);
-            return current?.editor === editor && current.file === info.file;
-          },
-          workspace: deps.app.workspace,
-        }),
-      request: (target) => ({
+    if (!snapshot.source || snapshot.sourceScope === null) {
+      report({ kind: "source-unavailable" });
+      return null;
+    }
+    return slot.hold(
+      startInsert(deps, {
         annotation,
         snapshot,
-        target,
         notePath: file.path,
+        capture: () =>
+          captureInsertion({
+            editor,
+            info,
+            isCurrent: () => {
+              const current = getInsertionEditor(deps.app);
+              return current?.editor === editor && current.file === info.file;
+            },
+            workspace: deps.app.workspace,
+          }),
       }),
-      report,
-    });
-    pending = fiber;
-    fiber.addObserver(() => {
-      if (pending === fiber) pending = null;
-    });
-    return fiber;
+    );
   };
   const offer = () => {
     const info = getInsertionEditor(deps.app);
@@ -159,11 +179,11 @@ interface ActiveDrag {
 
 export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
   const report = reporter(deps);
+  const slot = insertSlot(report);
   let active: ActiveDrag | null = null;
-  let pending: InsertFiber | null = null;
   const cancel = () => {
     active?.cancel();
-    pending?.interruptUnsafe();
+    slot.cancel();
   };
   const drag = (
     event: DragEvent<HTMLElement>,
@@ -200,18 +220,20 @@ export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
       dropEvent.preventDefault();
       dropEvent.dataTransfer.dropEffect = "copy";
       cleanup();
-      pending?.interruptUnsafe();
-      const fiber = insertDrop(deps, report, {
-        annotation,
-        snapshot,
-        dropEvent,
-        editor,
-        info,
-      });
-      pending = fiber;
-      fiber.addObserver(() => {
-        if (pending === fiber) pending = null;
-      });
+      if (!info.file) {
+        report({ kind: "no-note" });
+        return;
+      }
+      slot.hold(
+        insertDrop(deps, {
+          annotation,
+          snapshot,
+          dropEvent,
+          editor,
+          info,
+          file: info.file,
+        }),
+      );
     });
     active = operation;
     win.addEventListener("dragend", onDragEnd, { once: true });
@@ -221,7 +243,6 @@ export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
 
 function insertDrop<R>(
   deps: InsertDeps<R>,
-  report: (outcome: AnnotationInsertOutcome) => AnnotationInsertOutcome,
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;
@@ -229,18 +250,20 @@ function insertDrop<R>(
     dropEvent: globalThis.DragEvent;
     editor: Editor;
     info: MarkdownFileInfo;
+    file: TFile;
   },
 ): InsertFiber {
-  const { editor, info } = options;
-  const file = info.file;
+  const { editor, info, file } = options;
   // The nearest position, as CodeMirror's own drop handler asks for: the
   // exact form is null over an empty active line.
   const position = editor.cm.posAtCoords(
     { x: options.dropEvent.clientX, y: options.dropEvent.clientY },
     false,
   );
-  if (!file) return endInsert(deps, { kind: "no-note" }, report);
   return startInsert(deps, {
+    annotation: options.annotation,
+    snapshot: options.snapshot,
+    notePath: file.path,
     capture: () =>
       captureInsertion({
         editor,
@@ -249,12 +272,5 @@ function insertDrop<R>(
         isCurrent: () => info.file === file && info.editor === editor,
         workspace: deps.app.workspace,
       }),
-    request: (target) => ({
-      annotation: options.annotation,
-      snapshot: options.snapshot,
-      target,
-      notePath: file.path,
-    }),
-    report,
   });
 }

@@ -497,6 +497,7 @@ describe("copying a card's citation", () => {
       string,
       ReturnType<typeof Promise.withResolvers<AnnotationCitation>>
     >();
+    const reads = new Map<string, AbortSignal>();
     const view = new AsyncDisposableStack();
     const deps = stubService<AnnotActionDeps>("AnnotActionDeps", {
       ...inertActionDeps(),
@@ -518,9 +519,10 @@ describe("copying a card's citation", () => {
       }),
       notes: {
         citation: (key: string) =>
-          Effect.promise(() => {
+          Effect.promise((signal) => {
             const answer = Promise.withResolvers<AnnotationCitation>();
             answers.set(key, answer);
+            reads.set(key, signal);
             return answer.promise;
           }),
       },
@@ -528,7 +530,7 @@ describe("copying a card's citation", () => {
     const actions = testActions(deps, view);
     const copy = (card: AnnotationRecord) =>
       entry(openMenu(actions, card), m.annot_view_menu_copy_citation()).click();
-    return { answers, copy, close: () => view.disposeAsync() };
+    return { answers, reads, copy, close: () => view.disposeAsync() };
   }
 
   it("finishes two copies started from two menus", async () => {
@@ -557,9 +559,9 @@ describe("copying a card's citation", () => {
     f.copy(QUOTED);
     await vi.waitFor(() => expect(f.answers.size).toBe(1));
     await f.close();
-    f.answers.get(QUOTED.key)!.resolve({ kind: "citation", text: "[@a]" });
 
-    await new Promise((resolve) => activeWindow.setTimeout(resolve, 10));
+    expect(f.reads.get(QUOTED.key)!.aborted).toBe(true);
+    f.answers.get(QUOTED.key)!.resolve({ kind: "citation", text: "[@a]" });
     expect(write).not.toHaveBeenCalled();
   });
 });

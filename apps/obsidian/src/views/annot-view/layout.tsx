@@ -58,7 +58,7 @@ import {
   makeExcerptRequestCommand,
   openExcerptDemandCommand,
   refreshExcerptDisplayCommand,
-  insertAnnotation,
+  annotationInsert,
   resultValue,
   requireResult,
 } from "./atoms";
@@ -312,7 +312,7 @@ export class AnnotationsLayout extends Component {
     const { run } = subscriptions.use(makeViewRunner(deps.registry));
     const insertDeps: InsertDeps<ViewServices> = {
       app: deps.app,
-      execute: insertAnnotation,
+      execute: annotationInsert,
       run,
       notify: (message) => void new BaseNotice(message),
       snapshot: (annotation) => {

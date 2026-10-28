@@ -268,7 +268,7 @@ export function captureInsertion(options: {
         return () => {};
       }
       cancelListeners.add(listener);
-      return () => cancelListeners.delete(listener);
+      return () => void cancelListeners.delete(listener);
     },
     valid,
     cancel,

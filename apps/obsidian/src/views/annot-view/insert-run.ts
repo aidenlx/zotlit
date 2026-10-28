@@ -1,20 +1,21 @@
 // The Effect side of an annotation insert by command or by drag: each insert
 // runs as one fiber on the view's runner, so a cancelled destination or a
-// closed view interrupts it.
-import { Cause, Effect, Exit } from "effect";
+// closed view interrupts it. The fiber answers the outcome; the caller shows it.
+import { Cause, Effect } from "effect";
 import type { Fiber } from "effect";
 
+import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
   AnnotationInsertOutcome,
   AnnotationInsertRequest,
+  AnnotationSnapshot,
 } from "@/services/note-feature/insert-action";
 
 import type { captureInsertion } from "./async-insert";
 
-type InsertionTarget = ReturnType<typeof captureInsertion>;
-
-/** An insert in flight; interrupting it stops the insert with no notice. */
+/** An insert in flight; interrupting it stops the insert with no outcome. */
 export type InsertFiber = Fiber.Fiber<AnnotationInsertOutcome>;
 
 /** Where an insert runs; `R` is the services its Effects run with. */
@@ -30,30 +31,22 @@ export interface InsertRunner<R> {
   run: <A>(effect: Effect.Effect<A, never, R>) => Fiber.Fiber<A>;
 }
 
-/** An insert that ends before it starts, with `outcome`, which `report` shows. */
-export function endInsert<R>(
-  runner: InsertRunner<R>,
-  outcome: AnnotationInsertOutcome,
-  report: (outcome: AnnotationInsertOutcome) => AnnotationInsertOutcome,
-): InsertFiber {
-  return runner.run(Effect.sync(() => report(outcome)));
-}
-
 /**
- * Captures the destination for the insert and runs it, interrupted when the
- * destination is cancelled (Escape, an overlapping edit, a switch of note).
- * `report` shows the outcome. A failure the insert did not fold into its
- * outcome is logged and reads as a failed insert.
+ * Captures the destination for the insert of `annotation` and runs it,
+ * interrupted when the destination is cancelled (Escape, an overlapping edit,
+ * a switch of note). A failure the insert did not fold into its outcome is
+ * logged and answers a failed insert.
  */
 export function startInsert<R>(
   runner: InsertRunner<R>,
   options: {
-    capture: () => InsertionTarget;
-    request: (target: InsertionTarget) => AnnotationInsertRequest;
-    report: (outcome: AnnotationInsertOutcome) => AnnotationInsertOutcome;
+    annotation: AnnotationRecord;
+    snapshot: AnnotationSnapshot;
+    notePath: string;
+    capture: () => ReturnType<typeof captureInsertion>;
   },
 ): InsertFiber {
-  const { report } = options;
+  const { annotation, snapshot, notePath } = options;
   return runner.run(
     Effect.gen(function* () {
       const target = yield* Effect.acquireDisposable(
@@ -63,15 +56,23 @@ export function startInsert<R>(
         const release = target.onCancel(() => resume(Effect.interrupt));
         return Effect.sync(release);
       });
-      const exit = yield* Effect.exit(
-        Effect.raceFirst(runner.execute(options.request(target)), cancelled),
+      return yield* Effect.raceFirst(
+        runner.execute({ annotation, snapshot, target, notePath }),
+        cancelled,
       );
-      if (Exit.isSuccess(exit)) return report(exit.value);
-      if (Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.interrupt;
-      yield* Effect.logWarning("Annotation insert failed").pipe(
-        Effect.annotateLogs({ error: Cause.squash(exit.cause) }),
-      );
-      return report({ kind: "failed" });
-    }).pipe(Effect.scoped, withLogCategory("views", "annot-view")),
+    }).pipe(
+      Effect.scoped,
+      recover(
+        (cause) =>
+          Effect.logWarning("Annotation insert failed").pipe(
+            Effect.annotateLogs({
+              annotationKey: annotation.key,
+              error: Cause.squash(cause),
+            }),
+          ),
+        Effect.succeed<AnnotationInsertOutcome>({ kind: "failed" }),
+      ),
+      withLogCategory("views", "annot-view"),
+    ),
   );
 }
