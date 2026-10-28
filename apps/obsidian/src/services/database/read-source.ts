@@ -33,12 +33,11 @@ import {
   Duration,
   Effect,
   FileSystem,
-  PlatformError,
   Ref,
   Schedule,
   Schema,
 } from "effect";
-import type { Scope } from "effect";
+import type { Scope, PlatformError } from "effect";
 import { createHash } from "node:crypto";
 import { open, stat } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
@@ -48,7 +47,7 @@ import { pathToFileURL } from "node:url";
 
 import { ZOTERO_DB_READ_TEMP_PREFIX } from "@/lib/constants";
 import { withLogCategory } from "@/lib/effect-log-category";
-import { isErrno, nodeFileSystemCall } from "@/lib/errno";
+import { isNotFound, isPlatformErrno, nodeFileSystemCall } from "@/lib/errno";
 import { reflink, ReflinkUnsupportedError } from "@/lib/reflink";
 import type { ZoteroReadMode } from "@/services/settings/schema";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
@@ -177,21 +176,6 @@ function toDbUnavailable(cause: unknown): DbUnavailable {
   return new DbUnavailable({
     message: error instanceof Error ? error.message : String(error),
   });
-}
-
-/** Whether `error` is the `PlatformError` of a missing file. */
-function isNotFound(error: unknown): boolean {
-  return (
-    PlatformError.isPlatformError(error) && error.reason._tag === "NotFound"
-  );
-}
-
-/**
- * Whether `error` is a `PlatformError` over the Node.js errno `code`. The
- * errnos read here have no reason of their own, so the code is in the cause.
- */
-function isPlatformErrno(error: unknown, code: string): boolean {
-  return PlatformError.isPlatformError(error) && isErrno(error.cause, code);
 }
 
 /** A bigint `stat`, for the nanosecond times `FileSystem` does not give. */
@@ -770,9 +754,8 @@ const mainIdentity = Effect.fnUntraced(function* (path: string) {
       };
     }),
   ).pipe(
-    Effect.catchIf(
-      (error) => isNotFound(error),
-      () => Effect.succeed({ exists: false as const }),
+    Effect.catchReason("PlatformError", "NotFound", () =>
+      Effect.succeed({ exists: false as const }),
     ),
   );
 });

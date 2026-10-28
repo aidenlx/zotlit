@@ -1,11 +1,11 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import { Effect, FileSystem, Layer, PlatformError } from "effect";
+import { Effect, PlatformError } from "effect";
 import { appendFile, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { layerNodeFileSystemWith } from "@/lib/__fixtures__/node-file-system";
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import { nodeFileSystemCall } from "@/lib/errno";
 
@@ -50,28 +50,21 @@ let copyFile: typeof import("node:fs/promises").copyFile;
  * The Node file system, where a copy runs `copyFile` and the directory at
  * `mkdirFault.path` refuses to be created.
  */
-const testFileSystem = Layer.effect(
-  FileSystem.FileSystem,
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return FileSystem.FileSystem.of({
-      ...fs,
-      copyFile: (from, to) =>
-        nodeFileSystemCall("copyFile", to, () => copyFile(from, to)),
-      makeDirectory: (path, options) =>
-        path === mkdirFault.path
-          ? Effect.fail(
-              PlatformError.systemError({
-                _tag: "PermissionDenied",
-                module: "FileSystem",
-                method: "makeDirectory",
-                pathOrDescriptor: path,
-              }),
-            )
-          : fs.makeDirectory(path, options),
-    });
-  }),
-).pipe(Layer.provide(NodeFileSystem.layer));
+const testFileSystem = layerNodeFileSystemWith((fs) => ({
+  copyFile: (from, to) =>
+    nodeFileSystemCall("copyFile", to, () => copyFile(from, to)),
+  makeDirectory: (path, options) =>
+    path === mkdirFault.path
+      ? Effect.fail(
+          PlatformError.systemError({
+            _tag: "PermissionDenied",
+            module: "FileSystem",
+            method: "makeDirectory",
+            pathOrDescriptor: path,
+          }),
+        )
+      : fs.makeDirectory(path, options),
+}));
 
 let dir: string;
 let source: string;

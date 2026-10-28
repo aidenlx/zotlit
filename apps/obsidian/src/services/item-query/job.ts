@@ -77,6 +77,7 @@ export function runQueryJob(
     Effect.flatMap((answer) => {
       const { closeError } = stage;
       if (closeError === undefined) return Effect.succeed(answer);
+      // Only a system error is the export's failure; any other defect is a bug.
       if (!PlatformError.isPlatformError(closeError))
         return Effect.die(closeError);
       return Effect.succeed<QueryAnswer>({

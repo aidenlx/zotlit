@@ -1,9 +1,8 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import type { FileSystem } from "effect";
 import {
   Deferred,
   Effect,
   Exit,
-  FileSystem,
   Layer,
   Option,
   PlatformError,
@@ -22,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
+import { layerNodeFileSystemWith } from "@/lib/__fixtures__/node-file-system";
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
 import { prepareRead, snapshotSource } from "@/services/database/read-source";
 import type {
@@ -39,15 +39,19 @@ import type { SourceOptions, SourcePorts } from "./source";
 
 /** The watches the source holds, newest last; reset for each case. */
 let watchers: FakeWatcher[] = [];
-/** Paths whose watch fails to start, as a path that is gone does. */
-let unwatchable = new Set<string>();
+/**
+ * Paths whose watch cannot start, and how: `fail` as a path that is gone
+ * does, `die` as `fs.watch` throwing inside `NodeFileSystem` does (inotify
+ * out of watches, too many open files).
+ */
+let unwatchable = new Map<string, "fail" | "die">();
 
 /** A watch that records its listener for the case to call instead of watching. */
 const fakeWatch = (
   path: string,
   options?: FileSystem.WatchOptions,
 ): Stream.Stream<FileSystem.WatchEvent, PlatformError.PlatformError> =>
-  unwatchable.has(path)
+  unwatchable.get(path) === "fail"
     ? Stream.fail(
         PlatformError.systemError({
           _tag: "NotFound",
@@ -56,34 +60,39 @@ const fakeWatch = (
           pathOrDescriptor: path,
         }),
       )
-    : Stream.callback<FileSystem.WatchEvent>((queue) =>
-        Effect.acquireRelease(
+    : unwatchable.get(path) === "die"
+      ? Stream.callback<FileSystem.WatchEvent>(() =>
           Effect.sync(() => {
-            const watcher: FakeWatcher = {
-              path,
-              listener: (_event, filename) =>
-                Queue.offerUnsafe(queue, { _tag: "Update", path: filename }),
-              pending: () => Queue.sizeUnsafe(queue),
-              closed: false,
-            };
-            watchers.push(watcher);
-            return watcher;
+            throw Object.assign(
+              new Error(
+                "ENOSPC: System limit for number of file watchers reached",
+              ),
+              { code: "ENOSPC" },
+            );
           }),
-          (watcher) =>
+        )
+      : Stream.callback<FileSystem.WatchEvent>((queue) =>
+          Effect.acquireRelease(
             Effect.sync(() => {
-              watcher.closed = true;
+              const watcher: FakeWatcher = {
+                path,
+                listener: (_event, filename) =>
+                  Queue.offerUnsafe(queue, { _tag: "Update", path: filename }),
+                pending: () => Queue.sizeUnsafe(queue),
+                closed: false,
+              };
+              watchers.push(watcher);
+              return watcher;
             }),
-        ).pipe(Effect.tap(() => Effect.sync(() => options?.onReady?.()))),
-      );
+            (watcher) =>
+              Effect.sync(() => {
+                watcher.closed = true;
+              }),
+          ).pipe(Effect.tap(() => Effect.sync(() => options?.onReady?.()))),
+        );
 
 /** The Node file system, with watches the case drives. */
-const testFileSystem = Layer.effect(
-  FileSystem.FileSystem,
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return FileSystem.FileSystem.of({ ...fs, watch: fakeWatch });
-  }),
-).pipe(Layer.provide(NodeFileSystem.layer));
+const testFileSystem = layerNodeFileSystemWith(() => ({ watch: fakeWatch }));
 
 /** The source over the test file system, which it also provides. */
 const testSource = (options?: SourceOptions) =>
@@ -94,7 +103,7 @@ let dbPath: string;
 
 beforeEach(async () => {
   watchers = [];
-  unwatchable = new Set();
+  unwatchable = new Map();
   dir = join(tmpdir(), `zotlit-reads-source-test-${crypto.randomUUID()}`);
   await mkdir(dir, { recursive: true });
   dbPath = join(dir, "zotero.sqlite");
@@ -802,17 +811,20 @@ describe("ZoteroReads source", () => {
   });
 
   describe("watch start", () => {
-    it("serves and closes the watches it bound when the database watch cannot start", async () => {
-      unwatchable.add(dbPath);
-      const { ports } = testPorts();
-      await using source = await startSource(config(), ports);
+    it.each(["fail", "die"] as const)(
+      "serves and closes the watches it bound when the database watch cannot start: %s",
+      async (how) => {
+        unwatchable.set(dbPath, how);
+        const { ports } = testPorts();
+        await using source = await startSource(config(), ports);
 
-      await expect(source.version()).resolves.toBe(1);
-      expect(watchers.map((w) => [w.path, w.closed])).toEqual([[dir, true]]);
-      writeLibrary(dbPath, 2);
-      await source.run(source.reads.Refresh());
-      await expect(source.version()).resolves.toBe(2);
-    });
+        await expect(source.version()).resolves.toBe(1);
+        expect(watchers.map((w) => [w.path, w.closed])).toEqual([[dir, true]]);
+        writeLibrary(dbPath, 2);
+        await source.run(source.reads.Refresh());
+        await expect(source.version()).resolves.toBe(2);
+      },
+    );
   });
 
   describe("watcher self-echo gate", () => {

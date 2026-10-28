@@ -13,7 +13,6 @@ import {
   Scope,
   Stream,
 } from "effect";
-import type { PlatformError } from "effect";
 import { dirname, join } from "node:path";
 
 import { getSchemaVersions, SUPPORTED_SCHEMA_VERSIONS } from "@zotlit/db";
@@ -665,30 +664,37 @@ export function layerSource(
 
       /**
        * Watch `path` for the scope, calling `onEvent` for each event. Fails
-       * when the watch cannot start; a watch that fails later logs and stops.
+       * when the watch cannot start, with its failure or its defect: the Node
+       * file system starts `fs.watch` inside `Effect.sync`, so a throw there
+       * (no inotify watches left, too many open files) is a defect. A watch
+       * that stops later logs and ends.
        */
       const watchPath = Effect.fnUntraced(function* (
         path: string,
         onEvent: (event: FileSystem.WatchEvent) => void,
       ) {
-        const ready = yield* Deferred.make<void, PlatformError.PlatformError>();
+        const ready = yield* Deferred.make<void, unknown>();
         yield* fs
           .watch(path, {
             onReady: () => Deferred.doneUnsafe(ready, Exit.void),
           })
           .pipe(
             Stream.runForEach((event) => Effect.sync(() => onEvent(event))),
-            // A watch that never started fails `ready` for the caller to
-            // report; one that stops later reports here.
-            Effect.catch((error) =>
-              Effect.flatMap(Deferred.fail(ready, error), (starting) =>
+            Effect.exit,
+            Effect.flatMap((exit) => {
+              if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause))
+                return Effect.void;
+              const error = Cause.squash(exit.cause);
+              // A watch that never started fails `ready` for the caller to
+              // report; one that stops later reports here.
+              return Effect.flatMap(Deferred.fail(ready, error), (starting) =>
                 starting
                   ? Effect.void
                   : logWarningCause("A Zotero database watch failed", error, {
                       path,
                     }),
-              ),
-            ),
+              );
+            }),
             Effect.forkScoped,
           );
         yield* Deferred.await(ready);

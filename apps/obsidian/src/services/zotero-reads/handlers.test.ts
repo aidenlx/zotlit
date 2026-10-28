@@ -1,5 +1,4 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import { Effect, Fiber, FileSystem, Layer } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +12,7 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { rowInstant } from "@zotlit/db/test-utils";
 
+import { layerNodeFileSystemWith } from "@/lib/__fixtures__/node-file-system";
 import { workerQuery } from "@/services/item-query/__fixtures__/worker-query";
 import { makeAttachmentFileResolver } from "@/services/item-query/attachment-files";
 import type { QueryJob } from "@/services/item-query/worker-protocol";
@@ -43,22 +43,17 @@ function resolverWith(
   probe: (path: string) => void,
 ) {
   return Effect.runPromise(
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      return yield* makeAttachmentFileResolver(paths).pipe(
-        Effect.provideService(
-          FileSystem.FileSystem,
-          FileSystem.FileSystem.of({
-            ...fs,
-            exists: (path) =>
-              Effect.andThen(
-                Effect.sync(() => probe(path)),
-                fs.exists(path),
-              ),
-          }),
-        ),
-      );
-    }).pipe(Effect.provide(NodeFileSystem.layer)),
+    makeAttachmentFileResolver(paths).pipe(
+      Effect.provide(
+        layerNodeFileSystemWith((fs) => ({
+          exists: (path) =>
+            Effect.andThen(
+              Effect.sync(() => probe(path)),
+              fs.exists(path),
+            ),
+        })),
+      ),
+    ),
   );
 }
 

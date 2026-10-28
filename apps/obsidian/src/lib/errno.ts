@@ -9,6 +9,21 @@ export function isErrno(error: unknown, code: string): boolean {
   );
 }
 
+/** Whether `error` is the `PlatformError` of a missing file. */
+export function isNotFound(error: unknown): boolean {
+  return (
+    PlatformError.isPlatformError(error) && error.reason._tag === "NotFound"
+  );
+}
+
+/**
+ * Whether `error` is a `PlatformError` over the Node.js errno `code`. The
+ * errnos read here have no reason of their own, so the code is in the cause.
+ */
+export function isPlatformErrno(error: unknown, code: string): boolean {
+  return PlatformError.isPlatformError(error) && isErrno(error.cause, code);
+}
+
 /**
  * The `PlatformError` reason `FileSystem` gives a Node.js errno, as
  * `@effect/platform-node-shared` maps it.

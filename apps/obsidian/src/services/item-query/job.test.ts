@@ -1,13 +1,5 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  FileSystem,
-  Layer,
-  PlatformError,
-} from "effect";
+import { Deferred, Effect, Fiber, PlatformError } from "effect";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliData } from "obsidian";
@@ -21,6 +13,7 @@ import {
 import type { ScenarioDatabase } from "@zotlit/db/test-scenario";
 import { ItemQuerySliceObserver } from "@zotlit/item-query";
 
+import { layerNodeFileSystemWith } from "@/lib/__fixtures__/node-file-system";
 import { MY_LIBRARY_SCOPE } from "@/services/library-scope/scope";
 
 import { workerQuery } from "./__fixtures__/worker-query";
@@ -37,25 +30,18 @@ let closeFailure: PlatformError.PlatformError | undefined;
  * `closeFailure` says: `FileSystem` makes a failed close a defect of the
  * scope that opened the file.
  */
-const testFileSystem = Layer.effect(
-  FileSystem.FileSystem,
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    return FileSystem.FileSystem.of({
-      ...fs,
-      open: (path, options) =>
-        fs.open(path, options).pipe(
-          Effect.tap(() =>
-            Effect.addFinalizer(() => {
-              const failure = closeFailure;
-              closeFailure = undefined;
-              return failure ? Effect.die(failure) : Effect.void;
-            }),
-          ),
-        ),
-    });
-  }),
-).pipe(Layer.provide(NodeFileSystem.layer));
+const testFileSystem = layerNodeFileSystemWith((fs) => ({
+  open: (path, options) =>
+    fs.open(path, options).pipe(
+      Effect.tap(() =>
+        Effect.addFinalizer(() => {
+          const failure = closeFailure;
+          closeFailure = undefined;
+          return failure ? Effect.die(failure) : Effect.void;
+        }),
+      ),
+    ),
+}));
 
 const IDENTITY = {
   vault: { name: "Research", path: "/vaults/research" },
@@ -198,7 +184,7 @@ describe("Query Job", () => {
         closeFailure = PlatformError.systemError({
           _tag: "Unknown",
           module: "FileSystem",
-          method: "open",
+          method: "close",
           cause: Object.assign(new Error("EIO: i/o error, close"), {
             code: "EIO",
           }),
