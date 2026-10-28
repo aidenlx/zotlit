@@ -6,16 +6,17 @@
 import { isolateHistory } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { Effect } from "effect";
 import { Menu } from "obsidian";
 
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { SuggestionSource } from "@zotlit/workbench/language";
+import { observeExit } from "@zotlit/workbench/ui";
+import type { WorkbenchRunner } from "@zotlit/workbench/ui";
 
+import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-
-const logger = getLogger(["views", "template-workbench"]);
 
 /**
  * Move `source` into a new Shared Partial: the host asks a name, writes the
@@ -24,7 +25,7 @@ const logger = getLogger(["views", "template-workbench"]);
  * @returns the call that replaces the selection, or `null` when the reader
  *   dismisses the prompt or the file is not written.
  */
-export type ExtractPartial = (source: string) => Promise<string | null>;
+export type ExtractPartial = (source: string) => Effect.Effect<string | null>;
 
 /**
  * The call one Template Document writes to render `name`. Both forms hand the
@@ -50,6 +51,7 @@ export function partialCall(name: string, language: TemplateLanguage): string {
 export function extractPartialMenu(
   read: SuggestionSource,
   extract: ExtractPartial,
+  run: WorkbenchRunner,
 ): Extension {
   return EditorView.domEventHandlers({
     contextmenu(event, view) {
@@ -86,8 +88,10 @@ export function extractPartialMenu(
         item
           .setTitle(m.template_workbench_extract_partial())
           .setIcon("file-output")
-          .onClick(
-            () => void extractSelection(view, extract).then(reportExtraction),
+          .onClick(() =>
+            observeExit(run(extractSelection(view, extract)), {
+              onSuccess: reportExtraction,
+            }),
           ),
       );
       menu.showAtMouseEvent(event);
@@ -136,26 +140,31 @@ export type ExtractOutcome = "extracted" | "dismissed" | "stale";
  *   measured before it, so the document keeps its text and the created partial
  *   stands on its own.
  */
-export async function extractSelection(
+export const extractSelection = (
   view: EditorView,
   extract: ExtractPartial,
-): Promise<ExtractOutcome> {
-  const { from, to } = view.state.selection.main;
-  const source = view.state.doc.toString();
-  const call = await extract(source.slice(from, to));
-  if (call === null) return "dismissed";
-  if (view.state.doc.toString() !== source) {
-    logger.debug("Dropped an extraction onto a changed document", { call });
-    return "stale";
-  }
-  view.dispatch({
-    changes: { from, to, insert: call },
-    selection: { anchor: from + call.length },
-    annotations: isolateHistory.of("full"),
-    userEvent: "input.extract-partial",
+): Effect.Effect<ExtractOutcome> =>
+  Effect.suspend(() => {
+    const { from, to } = view.state.selection.main;
+    const source = view.state.doc.toString();
+    return extract(source.slice(from, to)).pipe(
+      Effect.flatMap((call) => {
+        if (call === null) return Effect.succeed("dismissed" as const);
+        if (view.state.doc.toString() !== source)
+          return Effect.logDebug(
+            "Dropped an extraction onto a changed document",
+          ).pipe(Effect.annotateLogs({ call }), Effect.as("stale" as const));
+        view.dispatch({
+          changes: { from, to, insert: call },
+          selection: { anchor: from + call.length },
+          annotations: isolateHistory.of("full"),
+          userEvent: "input.extract-partial",
+        });
+        return Effect.succeed("extracted" as const);
+      }),
+      withLogCategory("template-workbench"),
+    );
   });
-  return "extracted";
-}
 
 /** The seam that renders one {@link extractSelection} outcome. */
 function reportExtraction(outcome: ExtractOutcome): void {

@@ -1,6 +1,7 @@
 // Read cancellation, selective reloads and leaf-owned commands on the real view registry.
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { expect } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
@@ -17,7 +18,7 @@ import { openTargetCommand, viewTargetOpener } from "@/views/open-target";
 import { waitFor } from "@/views/welcome/__fixtures__";
 
 import { makeLibraryHost } from "./__fixtures__";
-import { makeItemNodeCommand } from "./atoms";
+import { itemNodeAtom } from "./atoms";
 import { makeCardModel, patchCard } from "./card-model";
 import { libraryItemCommand } from "./item-actions";
 import { waitForRead } from "./model";
@@ -261,7 +262,7 @@ it.live(
 );
 
 it.live(
-  "interrupts a leaf's reveal command on close while another leaf can finish",
+  "interrupts a leaf's Collection lookup on close while another leaf's finishes",
   () =>
     Effect.gen(function* () {
       const started: string[] = [];
@@ -297,8 +298,8 @@ it.live(
           }),
         ),
       );
-      const first = makeItemNodeCommand();
-      const second = makeItemNodeCommand();
+      const first = itemNodeAtom("AAAA2345");
+      const second = itemNodeAtom("BBBB2345");
       const releaseFirst = host.registry.mount(first);
       const releaseSecond = host.registry.mount(second);
       yield* Effect.addFinalizer(() =>
@@ -307,27 +308,22 @@ it.live(
           releaseSecond();
         }),
       );
-      const one = Promise.withResolvers<
-        import("./document").LibraryNode | null
-      >();
-      const two = Promise.withResolvers<
-        import("./document").LibraryNode | null
-      >();
-      host.registry.set(first, { indexedKey: "AAAA2345", result: one });
-      host.registry.set(second, { indexedKey: "BBBB2345", result: two });
       yield* Effect.promise(() =>
         waitFor(() => expect(started).toHaveLength(2)),
       );
+      const firstKey = started.find((key) => key.includes("AAAA2345"))!;
+      const secondKey = started.find((key) => key.includes("BBBB2345"))!;
       releaseFirst();
       yield* Effect.promise(() =>
-        waitFor(() => expect(cancelled).toEqual([started[0]])),
+        waitFor(() => expect(cancelled).toEqual([firstKey])),
       );
-      expect(yield* Effect.promise(() => one.promise)).toBeNull();
-      land.get(started[1]!)!();
-      expect(yield* Effect.promise(() => two.promise)).toEqual({
-        kind: "library",
-        library: { type: "personal" },
-      });
+      land.get(secondKey)!();
+      yield* Effect.promise(() =>
+        waitForRead(host.registry, second, new Set()),
+      );
+      expect(AsyncResult.value(host.registry.get(second))).toEqual(
+        Option.some({ kind: "library", library: { type: "personal" } }),
+      );
     }),
 );
 
@@ -398,9 +394,9 @@ it.live("runs shared item gestures together across leaves", () =>
     const started: string[] = [];
     const cancelled: string[] = [];
     const finish = new Map<string, () => void>();
-    const request = (key: string) => ({
-      result: Promise.withResolvers<void>(),
-      effect: Effect.promise(
+    const finished: string[] = [];
+    const request = (key: string) =>
+      Effect.promise(
         (signal) =>
           new Promise<void>((resolve) => {
             started.push(key);
@@ -414,8 +410,7 @@ it.live("runs shared item gestures together across leaves", () =>
               { once: true },
             );
           }),
-      ),
-    });
+      ).pipe(Effect.ensuring(Effect.sync(() => finished.push(key))));
     const first = request("first");
     const second = request("second");
     host.registry.set(libraryItemCommand, first);
@@ -427,10 +422,14 @@ it.live("runs shared item gestures together across leaves", () =>
       waitFor(() => expect(started).toEqual(["first", "second"])),
     );
     finish.get("second")!();
-    yield* Effect.promise(() => second.result.promise);
+    yield* Effect.promise(() =>
+      waitFor(() => expect(finished).toEqual(["second"])),
+    );
     expect(cancelled).toEqual([]);
     finish.get("first")!();
-    yield* Effect.promise(() => first.result.promise);
+    yield* Effect.promise(() =>
+      waitFor(() => expect(finished).toEqual(["second", "first"])),
+    );
   }),
 );
 
@@ -455,17 +454,20 @@ it.live(
       host.registry.mount(openTargetCommand);
       const storage = new LibraryViewStorage(host.registry, () => null);
       let acting = false;
-      const result = Promise.withResolvers<void>();
-      const acted = result.promise.then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      host.registry.set(libraryItemCommand, {
-        result,
-        effect: Effect.sync(() => {
+      let actInterrupted = false;
+      host.registry.set(
+        libraryItemCommand,
+        Effect.sync(() => {
           acting = true;
-        }).pipe(Effect.andThen(Effect.never)),
-      });
+        }).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              actInterrupted = true;
+            }),
+          ),
+        ),
+      );
       let opening = false;
       let openInterrupted = false;
       viewTargetOpener(host.registry, {
@@ -491,7 +493,7 @@ it.live(
       );
       storage.close();
       yield* Effect.promise(() => host.close());
-      expect(yield* Effect.promise(() => acted)).toBeUndefined();
+      expect(actInterrupted).toBe(true);
       expect(openInterrupted).toBe(true);
       expect(yield* Effect.promise(() => saved)).toBeUndefined();
     }),

@@ -596,9 +596,7 @@ function CardBody({ card }: { card: ReadingCard }) {
                   <span className="zt:truncate zt:select-text">
                     {item.citationKey}
                   </span>
-                  <CopyCitationKey
-                    onCopy={() => void items.copyCitationKey(key)}
-                  />
+                  <CopyCitationKey onCopy={() => items.copyCitationKey(key)} />
                 </span>
               )}
             </div>
@@ -611,7 +609,7 @@ function CardBody({ card }: { card: ReadingCard }) {
                 variant="cta"
                 icon="file-text"
                 data-library-card-action="pdf"
-                onClick={() => void items.openPdf(key, false)}
+                onClick={() => items.openPdf(key, false)}
               >
                 {m.library_view_menu_open_pdf()}
               </Button>
@@ -620,7 +618,7 @@ function CardBody({ card }: { card: ReadingCard }) {
               {...(!item?.pdf && { variant: "cta" as const })}
               icon={noted ? "notebook-pen" : "file-plus"}
               data-library-card-action="note"
-              onClick={() => void items.openNote(key, false)}
+              onClick={() => items.openNote(key, false)}
             >
               {noted
                 ? m.library_view_menu_open_note()

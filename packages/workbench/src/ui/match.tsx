@@ -1,12 +1,6 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-  useRef,
-} from "react";
+import { Effect } from "effect";
+import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 
 import { composeFilterTree } from "@zotlit/filter-expression";
 import type { FilterPath } from "@zotlit/filter-expression";
@@ -55,6 +49,7 @@ import type { MatchReorder } from "./match.reorder";
 import { MatchSelect } from "./match.rows";
 // One Match tree over the document controller; rows write through the master history.
 import { useWorkbenchMessages } from "./messages";
+import { useForkedEffect } from "./run";
 import { useParts, useIcon } from "./theme";
 
 import { datasetVocabulary } from "#/language/expression-vocabulary";
@@ -112,39 +107,39 @@ export function MatchPane({
     read();
     return controller.subscribe(read);
   }, [controller]);
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    void Promise.all([
-      host.matchData.tags(),
-      host.matchData.collections(),
-      host.matchData.libraries(),
-    ]).then(
-      ([tags, collections, libraries]) => {
-        if (active) {
-          setValues({
-            tags,
-            collections: collections.map((path) => path.join("/")),
-            libraries: libraries.map(({ id, name }) => ({
-              id,
-              name: name ?? null,
-            })),
-          });
-          setProblem(null);
-          setLoading(false);
-        }
+  useForkedEffect(
+    host.run,
+    () => {
+      setLoading(true);
+      return Effect.all(
+        [
+          host.matchData.tags,
+          host.matchData.collections,
+          host.matchData.libraries,
+        ],
+        { concurrency: "unbounded" },
+      );
+    },
+    {
+      deps: [host.matchData, vocabularyRevision, m, retry],
+      onSuccess: ([tags, collections, libraries]) => {
+        setValues({
+          tags,
+          collections: collections.map((path) => path.join("/")),
+          libraries: libraries.map(({ id, name }) => ({
+            id,
+            name: name ?? null,
+          })),
+        });
+        setProblem(null);
+        setLoading(false);
       },
-      () => {
-        if (active) {
-          setProblem(m.workbench_example_failed());
-          setLoading(false);
-        }
+      onFailure: () => {
+        setProblem(m.workbench_example_failed());
+        setLoading(false);
       },
-    );
-    return () => {
-      active = false;
-    };
-  }, [host.matchData, vocabularyRevision, m, retry]);
+    },
+  );
   const filter = useMemo(
     () => (match === undefined ? null : composeFilterTree(match)),
     [match],
@@ -178,12 +173,8 @@ export function MatchPane({
     [filter, faulty, span],
   );
   const locale = host.getLocale();
-  const { matchData } = host;
-  const readCustom = useCallback(
-    (signal: AbortSignal) => matchData.customFields(signal),
-    [matchData],
-  );
-  const custom = useCustomFieldNames(readCustom, {
+  const custom = useCustomFieldNames(host.matchData.customFields, {
+    run: host.run,
     revision: vocabularyRevision,
   });
   // What a condition reads: the fields of an Item, labelled as Zotero labels
@@ -313,7 +304,8 @@ export function MatchPane({
 
 /**
  * The host's test of the Item `indexedKey` against `filter`: `undefined`
- * while it runs, and `failed` when the host could not answer. A filter or an
+ * while it runs, and `failed` when the host could not answer, by a failure
+ * or a defect. A filter or an
  * Item of `null` is not tested. A new `revision` tests again.
  */
 function useMatchTest(
@@ -330,21 +322,23 @@ function useMatchTest(
     key: string;
     value: WorkbenchMatchResult | "failed";
   } | null>(null);
-  useEffect(() => {
-    if (key === null || indexedKey === null || filter === null) return;
-    let active = true;
-    void host.matchData.matches(indexedKey, filter).then(
-      (value) => {
-        if (active) setAnswer({ key, value });
-      },
-      () => {
-        if (active) setAnswer({ key, value: "failed" });
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [host.matchData, key, indexedKey, filter]);
+  useForkedEffect(
+    host.run,
+    () =>
+      key === null || indexedKey === null || filter === null
+        ? null
+        : host.matchData.matches(indexedKey, filter).pipe(
+            Effect.map((value) => ({ key, value })),
+            // A defect fails the test as a failure does.
+            Effect.catchCause(() =>
+              Effect.succeed({ key, value: "failed" as const }),
+            ),
+          ),
+    {
+      deps: [host.matchData, key, indexedKey, filter],
+      onSuccess: setAnswer,
+    },
+  );
   return answer?.key === key ? answer.value : undefined;
 }
 

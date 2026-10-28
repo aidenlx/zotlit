@@ -41,7 +41,7 @@ import { readMigrationVerificationData } from "@/services/template/migration-dat
 import { Template } from "@/services/template/service";
 import type { ZoteroPref } from "@/services/zotero-pref/service";
 import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { CreateProfileModal } from "./create-profile-modal";
 import type {
@@ -429,9 +429,7 @@ export const addProfileDestination = Effect.fn("addProfileDestination")(
         message: m.notice_profile_action_failed(),
       });
     yield* explainWorkbenchOpen(
-      yield* portCall("open-template-workbench", () =>
-        openTemplateWorkbench(app, file, { tab: "name", customize: true }),
-      ),
+      yield* openTemplateWorkbench(file, { tab: "name", customize: true }),
     );
     yield* (yield* Notifier).show(
       m.notice_profile_created({ label: created.label }),

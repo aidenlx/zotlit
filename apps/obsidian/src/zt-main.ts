@@ -364,6 +364,10 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       itemLookup: services.itemLookup,
       settings: services.settings,
       registry: services.viewRegistry,
+      explorer: {
+        bridge: services.bridge,
+        context: services.workbenchActionContext,
+      },
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
@@ -411,10 +415,9 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     const templateWorkbenchDeps = {
       registry: services.viewRegistry,
       bridge: services.bridge,
-      notifier: services.notifier,
-      noteFeature: services.noteFeature,
+      context: services.workbenchActionContext,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      customize,
+      defaultProfile: services.defaultProfile,
       itemLookup: services.itemLookup,
       settings: services.settings,
       nativePreview: {
@@ -426,6 +429,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
 
     registerTemplateDataExplorer(this, {
       bridge: services.bridge,
+      context: services.workbenchActionContext,
       app: this.app,
       registry: services.viewRegistry,
       itemLookup: services.itemLookup,
@@ -436,7 +440,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       app: this.app,
       registry: services.viewRegistry,
       bridge: services.bridge,
-      notifier: services.notifier,
+      context: services.workbenchActionContext,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });
@@ -495,7 +499,10 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         showInLibraryFileMenu((indexedKey) =>
           services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
         ),
-        explorerFileMenu(this.app),
+        explorerFileMenu(this.app, {
+          bridge: services.bridge,
+          context: services.workbenchActionContext,
+        }),
         queryFileFileMenu(this.app),
       ],
       [queryFileFolderMenu(this.app)],

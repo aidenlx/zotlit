@@ -5,10 +5,10 @@ import type {
   ItemView as MockItemView,
   Scope as MockScope,
 } from "@mock/obsidian";
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { Stream } from "effect";
 import { SuggestModal, TFile } from "obsidian";
-import type { App, WorkspaceLeaf } from "obsidian";
+import type { App, ViewState, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +29,6 @@ import {
 import { answerConfirmation } from "@/lib/__fixtures__/confirm";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import { VaultError } from "@/lib/vault-errors";
 import { bindProfile } from "@/services/profile/bindings";
@@ -52,8 +51,12 @@ import {
   unpackedPartialNotices,
 } from "./view";
 
-vi.mock("@/views/note-preview/register", () => ({
-  openWorkbenchLayout: vi.fn(async () => {}),
+// The real leaf edges stand in: the layout module imports this view.
+vi.mock("@/views/note-preview/layout", () => ({
+  setLeafState: (leaf: WorkspaceLeaf, state: ViewState) =>
+    Effect.tryPromise(() => leaf.setViewState(state)),
+  WORKBENCH_WINDOW: { width: 1440, height: 900 },
+  openWorkbenchLayout: vi.fn(() => Effect.void),
 }));
 
 // The create flow is #1046's own, driven end to end by new-partial.test.ts.
@@ -72,25 +75,19 @@ vi.mock("@/views/note-preview/render", async (importOriginal) => {
     await importOriginal<typeof import("@/views/note-preview/render")>();
   const { failedRender, renderIdentity } =
     await import("@zotlit/workbench/render");
-  const stub = () =>
-    vi.fn<typeof actual.renderNativeTemplate>(async (_deps, request) =>
-      actual.nativeResult(
-        failedRender(renderIdentity(request), {
-          code: "render-error",
-        }),
-      ),
-    );
   return {
     ...actual,
-    renderNativeTemplate: stub(),
     makeNativeRenderer: (
       deps: Parameters<typeof actual.makeNativeRenderer>[0],
     ) => ({
       ...actual.makeNativeRenderer(deps),
-      render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
-        stub()(deps, request),
+      render: (request: import("@zotlit/workbench/render").RenderRequest) =>
+        Effect.succeed(
+          actual.nativeResult(
+            failedRender(renderIdentity(request), { code: "render-error" }),
+          ),
+        ),
     }),
-    renderNativeProfile: stub(),
   };
 });
 
@@ -106,6 +103,9 @@ A stable note.
 --- zotlit:annotation ---
 An annotation.
 `;
+
+/** Run a view flow to its end, as a launch or a button does. */
+const run = <A, E>(flow: Effect.Effect<A, E>) => Effect.runPromise(flow);
 
 class TestTemplateWorkbenchView extends TemplateWorkbenchView {
   open() {
@@ -221,13 +221,14 @@ describe("TemplateWorkbenchView", () => {
       duplicateRegionCount: 0,
     }));
     const waitUntilSettled = vi.fn(async () => "settled" as const);
-    const profileOf: NonNullable<
-      NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]
-    > = () =>
+    const profileOf = vi.fn<
+      NonNullable<NonNullable<TemplateWorkbenchDeps["profile"]>["profileOf"]>
+    >(() =>
       Effect.succeed({
         ok: true,
         profile: bindProfile(defaults, { selector: "default" }),
-      });
+      }),
+    );
     const h = setup({
       runtime: testRuntime(),
       noteFeature: stubService<
@@ -261,7 +262,7 @@ describe("TemplateWorkbenchView", () => {
     Object.assign(h.app.vault, { getFileByPath, read });
     Object.assign(h.app, { metadataCache: { getFileCache } });
     h.view.file = template;
-    await h.view.setOriginatingNote(file);
+    await run(h.view.setOriginatingNote(file));
     return {
       ...h,
       file,
@@ -271,23 +272,56 @@ describe("TemplateWorkbenchView", () => {
       getFileByPath,
       getFileCache,
       read,
+      profileOf,
     };
   }
+
+  // Ticket 04's review: a launch whose Profile read finishes last replaced
+  // the note a later launch had set.
+  it("keeps the later launch's note when an earlier Profile read finishes last", async () => {
+    const h = await originHarness();
+    const earlierRead = Promise.withResolvers<void>();
+    h.profileOf.mockImplementationOnce(() =>
+      Effect.promise(() => earlierRead.promise).pipe(
+        Effect.as({
+          ok: true as const,
+          profile: bindProfile(defaults, { selector: "default" }),
+        }),
+      ),
+    );
+    const later = Object.assign(new TFile(), {
+      path: "Literature/Later.md",
+      basename: "Later",
+    });
+    const earlier = run(h.view.setOriginatingNote(h.file));
+    await vi.waitFor(() => expect(h.profileOf).toHaveBeenCalledTimes(2));
+    await run(h.view.setOriginatingNote(later));
+    expect(h.view.originatingNote).toBe(later);
+    earlierRead.resolve();
+    expect(await earlier).toBeNull();
+    expect(h.view.originatingNote).toBe(later);
+  });
 
   it("updates the originating note after saving, independent of focus and preview selection", async () => {
     const h = await originHarness();
     const saved = Promise.withResolvers<void>();
-    using save = vi.spyOn(h.view, "save").mockReturnValue(saved.promise);
+    using save = vi
+      .spyOn(MockTextFileView.prototype, "save")
+      .mockReturnValue(saved.promise);
     const other = Object.assign(new TFile(), { path: "Other.md" });
     using _activeFile = vi
       .spyOn(h.app.workspace, "getActiveFile")
       .mockReturnValue(other);
     h.view.store.getState().setItem({ id: "BBBBBBBB", title: "Other paper" });
-    const updating = h.view.updateOriginatingNote();
-    expect(h.view.updateOriginatingNote()).toBe(updating);
-    expect(save).toHaveBeenCalledOnce();
+    const updating = run(h.view.updateOriginatingNote());
+    // A second press while the update runs joins it.
+    const again = run(h.view.updateOriginatingNote());
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(h.view.updatingNote).toBe(true);
     expect(h.updateNote).not.toHaveBeenCalled();
     saved.resolve();
+    expect(await again).toBe(await updating);
+    expect(h.view.updatingNote).toBe(false);
     expect(await updating).toMatchObject({
       outcome: "updated",
       name: "Original",
@@ -313,7 +347,7 @@ describe("TemplateWorkbenchView", () => {
       });
     const automatic = h.view.save();
     await started.promise;
-    const updating = h.view.updateOriginatingNote();
+    const updating = run(h.view.updateOriginatingNote());
     expect(h.updateNote).not.toHaveBeenCalled();
     pending.resolve();
     await automatic;
@@ -326,11 +360,11 @@ describe("TemplateWorkbenchView", () => {
     "reports a %s save without updating the note",
     async (failure) => {
       const h = await originHarness();
-      using save = vi.spyOn(h.view, "save");
+      using save = vi.spyOn(MockTextFileView.prototype, "save");
       if (failure === "rejected")
         save.mockRejectedValue(new Error("disk full"));
       else h.read.mockResolvedValue("previously saved template");
-      expect(await h.view.updateOriginatingNote()).toEqual({
+      expect(await run(h.view.updateOriginatingNote())).toEqual({
         outcome: "save-failed",
         name: "Original",
       });
@@ -344,7 +378,7 @@ describe("TemplateWorkbenchView", () => {
       const h = await originHarness();
       const compilation = Promise.withResolvers<"settled">();
       h.waitUntilSettled.mockReturnValue(compilation.promise);
-      const updating = h.view.updateOriginatingNote();
+      const updating = run(h.view.updateOriginatingNote());
       await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
       h.getFileByPath.mockReturnValue(
         change === "deleted"
@@ -367,51 +401,81 @@ describe("TemplateWorkbenchView", () => {
       duplicateRegionCount: 0,
       noManagedBlock: true,
     });
-    const result = await h.view.updateOriginatingNote();
+    const result = await run(h.view.updateOriginatingNote());
     expect(result).toMatchObject({
       outcome: "updated",
       name: "Original",
       result: { bodyUpdated: false, noManagedBlock: true },
     });
-    expect(originatingNoteUpdateNotice(h.app, result)).toContain("Original");
-    expect(originatingNoteUpdateNotice(h.app, result)).toContain(
+    expect(originatingNoteUpdateNotice(h.app, result!)).toContain("Original");
+    expect(originatingNoteUpdateNotice(h.app, result!)).toContain(
       m.notice_updated_note_no_managed_block(),
     );
     const error = new Error("write failed");
     h.updateNote.mockRejectedValueOnce(error);
-    await expect(h.view.updateOriginatingNote()).rejects.toMatchObject({
+    await expect(run(h.view.updateOriginatingNote())).rejects.toMatchObject({
       _tag: "OriginatingNoteUpdateError",
       note: "Original",
       cause: error,
     });
   });
 
-  // #1819: unload releases a waiting update without a failure notice.
-  it.each(["settlement", "write", "closed"])(
-    "stays silent when unload stops the originating note update at %s",
-    async (stage) => {
-      const h = await originHarness();
-      const waiting = Promise.withResolvers<"settled">();
-      if (stage === "write")
-        h.updateNote.mockRejectedValueOnce(new AbortError());
-      else h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
-      // An abort, bare or as the cause of the typed failure, which the
-      // Notifier passes over without a notice.
-      const stopping = h.view.updateOriginatingNote().then(
-        () => null,
-        (error: unknown) => error,
-      );
-      await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
-      if (stage === "closed") await h.view.close();
-      if (stage !== "write") waiting.reject(new AbortError());
-      const stopped: unknown = await stopping;
-      expect(
-        AbortError.test(stopped) ||
-          (stopped instanceof Error && AbortError.test(stopped.cause)),
-      ).toBe(true);
-      expect(h.updateNote).toHaveBeenCalledTimes(stage === "write" ? 1 : 0);
-    },
-  );
+  // #1819: closing the leaf stops a waiting update quietly, before the write.
+  it("stops quietly when the leaf closes before the note's write", async () => {
+    const h = await originHarness();
+    const waiting = Promise.withResolvers<"settled">();
+    h.waitUntilSettled.mockReturnValueOnce(waiting.promise);
+    const stopping = Effect.runPromiseExit(h.view.updateOriginatingNote());
+    await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
+    await h.view.close();
+    const exit = await stopping;
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+      true,
+    );
+    expect(h.view.updatingNote).toBe(false);
+    expect(h.updateNote).not.toHaveBeenCalled();
+  });
+
+  it("waits for the note's write when the leaf closes during it", async () => {
+    const h = await originHarness();
+    const write = Promise.withResolvers<{
+      bodyUpdated: boolean;
+      duplicateRegionCount: number;
+    }>();
+    h.updateNote.mockReturnValueOnce(write.promise);
+    const updating = Effect.runPromiseExit(h.view.updateOriginatingNote());
+    await vi.waitFor(() => expect(h.updateNote).toHaveBeenCalledOnce());
+    let closed = false;
+    const closing = h.view.close().then(() => {
+      closed = true;
+    });
+    await Effect.runPromise(Effect.sleep("10 millis"));
+    expect(closed).toBe(false);
+    write.resolve({ bodyUpdated: true, duplicateRegionCount: 0 });
+    await closing;
+    await updating;
+  });
+
+  it("waits for the template's save when the leaf closes during it", async () => {
+    const h = await originHarness();
+    const saved = Promise.withResolvers<void>();
+    using save = vi
+      .spyOn(MockTextFileView.prototype, "save")
+      .mockReturnValueOnce(saved.promise);
+    const updating = Effect.runPromiseExit(h.view.updateOriginatingNote());
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    let closed = false;
+    const closing = h.view.close().then(() => {
+      closed = true;
+    });
+    await Effect.runPromise(Effect.sleep("10 millis"));
+    expect(closed).toBe(false);
+    saved.resolve();
+    await closing;
+    // The save finished; the update stopped after it, before the note.
+    expect(Exit.isSuccess(await updating)).toBe(false);
+    expect(h.updateNote).not.toHaveBeenCalled();
+  });
 
   it("keeps the existing template diagnostic on a refused update", async () => {
     const h = await originHarness();
@@ -425,9 +489,9 @@ describe("TemplateWorkbenchView", () => {
       },
     };
     h.updateNote.mockResolvedValueOnce(result);
-    const outcome = await h.view.updateOriginatingNote();
+    const outcome = await run(h.view.updateOriginatingNote());
     expect(outcome).toEqual({ outcome: "refused", name: "Original", result });
-    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
       m.notice_literature_note_template_missing({ document: "missing.md" }),
     );
   });
@@ -440,7 +504,7 @@ describe("TemplateWorkbenchView", () => {
         h.view.controller.setManifestKey("name", "New edit");
         return h.view.getViewData();
       });
-    expect(await h.view.updateOriginatingNote()).toEqual({
+    expect(await run(h.view.updateOriginatingNote())).toEqual({
       outcome: "not-ready",
       name: "Original",
     });
@@ -456,7 +520,7 @@ describe("TemplateWorkbenchView", () => {
       options.beforeWrite?.();
       return { bodyUpdated: true, duplicateRegionCount: 0 };
     });
-    expect(await h.view.updateOriginatingNote()).toEqual({
+    expect(await run(h.view.updateOriginatingNote())).toEqual({
       outcome: "unavailable",
       name: "Original",
     });
@@ -474,9 +538,9 @@ describe("TemplateWorkbenchView", () => {
         path: h.file.path,
       },
     });
-    const outcome = await h.view.updateOriginatingNote();
+    const outcome = await run(h.view.updateOriginatingNote());
     expect(outcome).toEqual({ outcome: "unavailable", name: "Original" });
-    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
+    expect(originatingNoteUpdateNotice(h.app, outcome!)).toBe(
       m.template_workbench_update_unavailable({ name: "Original" }),
     );
   });
@@ -488,7 +552,7 @@ describe("TemplateWorkbenchView", () => {
       options.beforeWrite?.();
       return { bodyUpdated: true, duplicateRegionCount: 0 };
     });
-    expect(await h.view.updateOriginatingNote()).toMatchObject({
+    expect(await run(h.view.updateOriginatingNote())).toMatchObject({
       outcome: "updated",
       name: "Original",
     });
@@ -497,14 +561,14 @@ describe("TemplateWorkbenchView", () => {
   it("names a launch note this editor cannot update", async () => {
     const h = await originHarness();
     h.getFileCache.mockReturnValue(null as never);
-    expect(await h.view.setOriginatingNote(h.file)).toBe("Original");
+    expect(await run(h.view.setOriginatingNote(h.file))).toBe("Original");
     expect(h.view.originatingNote).toBeNull();
   });
 
   it("clears the action when the editor is opened without an originating note", async () => {
     const h = await originHarness();
-    await h.view.setOriginatingNote(null);
-    await h.view.updateOriginatingNote();
+    await run(h.view.setOriginatingNote(null));
+    await run(h.view.updateOriginatingNote());
     expect(h.view.originatingNote).toBeNull();
     expect(h.updateNote).not.toHaveBeenCalled();
   });
@@ -519,10 +583,11 @@ describe("TemplateWorkbenchView", () => {
       cleanup.defer(() => copy.mockRestore());
       const { view } = setup({
         runtime: testRuntime(),
-        render: async (request) => ({
-          ...emptyRender(renderIdentity(request)),
-          creationBody: "Repaired note",
-        }),
+        render: (request) =>
+          Effect.succeed({
+            ...emptyRender(renderIdentity(request)),
+            creationBody: "Repaired note",
+          }),
       });
       const file = new TFile();
       file.path = "templates/paper.md";
@@ -614,18 +679,19 @@ describe("TemplateWorkbenchView", () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
       runtime: testRuntime(),
-      render: async (request) => ({
-        ...emptyRender(renderIdentity(request)),
-        annotation: "Repaired annotation",
-        diagnostics: [
-          {
-            code: "property-error",
-            part: "properties",
-            params: { key: "title" },
-            position: 1,
-          },
-        ],
-      }),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          annotation: "Repaired annotation",
+          diagnostics: [
+            {
+              code: "property-error",
+              part: "properties",
+              params: { key: "title" },
+              position: 1,
+            },
+          ],
+        }),
     });
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
@@ -666,10 +732,11 @@ describe("TemplateWorkbenchView", () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup({
       runtime: testRuntime(),
-      render: async (request) => ({
-        ...emptyRender(renderIdentity(request)),
-        diagnostics: [{ code: "render-error", part: "annotation" }],
-      }),
+      render: (request) =>
+        Effect.succeed({
+          ...emptyRender(renderIdentity(request)),
+          diagnostics: [{ code: "render-error", part: "annotation" }],
+        }),
     });
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
@@ -1078,13 +1145,18 @@ An annotation.
     expect(controller.redo()).toBe(false);
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).not.toHaveBeenCalled();
-    const creating = view.customizeDefault();
+    const creating = run(view.customizeDefault());
     expect(view.store.getState().customization === "pending").toBe(true);
-    expect(view.customizeDefault()).toBe(creating);
-    expect(materializeDefault).toHaveBeenCalledExactlyOnceWith();
+    // A second press while the document is written joins that write.
+    const again = run(view.customizeDefault());
+    await vi.waitFor(() =>
+      expect(materializeDefault).toHaveBeenCalledExactlyOnceWith(),
+    );
     controller.setManifestKey("name", "Pending attempt");
     pending.resolve({ file, created: true });
     await creating;
+    await again;
+    expect(materializeDefault).toHaveBeenCalledOnce();
     expect(view.controller).toBe(controller);
     expect(controller.readOnly).toBe(false);
     expect(requestSave).not.toHaveBeenCalled();
@@ -1134,7 +1206,7 @@ An annotation.
       ),
     });
     await view.setState({ defaultDraft: true }, { history: false });
-    await view.customizeDefault();
+    await run(view.customizeDefault());
     expect(view.store.getState().customization === "failed").toBe(true);
     expect(view.store.getState().customization === "pending").toBe(false);
     view.controller.setManifestKey("name", "Attempt after failure");
@@ -1142,7 +1214,7 @@ An annotation.
     expect(view.getViewData()).toBe(SOURCE);
     expect(materializeDefault).toHaveBeenCalledOnce();
     expect(requestSave).not.toHaveBeenCalled();
-    await view.customizeDefault();
+    await run(view.customizeDefault());
     expect(view.store.getState().customization === "failed").toBe(false);
     expect(view.isDefaultDraft).toBe(false);
   });
@@ -1168,7 +1240,7 @@ An annotation.
       view.setViewData(existing, true);
     });
     await view.setState({ defaultDraft: true }, { history: false });
-    await view.customizeDefault();
+    await run(view.customizeDefault());
     expect(view.getViewData()).toBe(existing);
     expect(view.controller.undo()).toBe(false);
     expect(requestSave).not.toHaveBeenCalled();
@@ -1216,7 +1288,9 @@ An annotation.
     )!;
     await act(async () => {
       customize.click();
-      await view.customizeDefault();
+      await vi.waitFor(() =>
+        expect(view.store.getState().customization).toBe("failed"),
+      );
     });
     expect(view.contentEl.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(view.contentEl.textContent).toContain(
@@ -1246,7 +1320,7 @@ An annotation.
       ),
     });
     await view.setState({ defaultDraft: true }, { history: false });
-    const creating = view.customizeDefault();
+    const creating = run(view.customizeDefault());
     await view.setState({ file: "other.md" }, { history: false });
     view.setViewData(SOURCE.replace("name: Paper", "name: Other"), true);
     const controller = view.controller;
@@ -1267,7 +1341,7 @@ An annotation.
       { history: false },
     );
     const choice = SAMPLE_ITEM_CHOICES[0]!;
-    expect(await view.selectItem(choice)).toBe(true);
+    expect(await run(view.selectItem(choice))).toBe(true);
     loaded.resolve();
     await restoring;
     expect(view.store.getState().item).toMatchObject({ id: choice.id });
@@ -1310,12 +1384,12 @@ An annotation.
         },
       ),
     });
-    await expect(view.refreshStyles()).resolves.toBeUndefined();
+    await expect(run(view.refreshStyles())).resolves.toBeUndefined();
     expect(view.unavailableDependencies).toHaveLength(1);
     expect(view.getViewData()).toBe(SOURCE);
     expect(view.citationStyles).toEqual([]);
     failed = false;
-    await view.refreshStyles();
+    await run(view.refreshStyles());
     expect(view.unavailableDependencies).toEqual([]);
   });
 
@@ -2431,7 +2505,7 @@ language: liquid
 
     // Both entries go — the written one and the one the reader's own file
     // answers — so the problem clears and neither name has two homes left.
-    await view.unpackBundledPartials();
+    await run(view.unpackBundledPartials());
     expect(unpacked).toEqual(["authors", "venue-line"]);
     expect(view.getViewData()).not.toContain("partials:");
     expect(view.getViewData()).toContain("filename: paper");
@@ -2464,7 +2538,7 @@ language: liquid
 
       const setViewState = vi.spyOn(leaf, "setViewState");
 
-      await view.restoreDefault();
+      await run(view.restoreDefault());
 
       expect(restoreDefault).toHaveBeenCalledTimes(confirmed ? 1 : 0);
       expect(setViewState).toHaveBeenCalledTimes(confirmed ? 1 : 0);
@@ -3060,6 +3134,77 @@ describe("Template Workbench Item choice", () => {
   const FIRST = "FIRST234";
   const LATER = "LATER234";
 
+  /** A ZoteroReads fake whose Item reads hold until they are interrupted. */
+  function heldReads() {
+    const started: string[] = [];
+    const interrupted: string[] = [];
+    const zoteroReads = stubService<TemplateWorkbenchDeps["zoteroReads"]>(
+      "ZoteroReads",
+      {
+        state: "ready",
+        reads: stubService<TemplateWorkbenchDeps["zoteroReads"]["reads"]>(
+          "ZoteroReadsApi",
+          {
+            ItemsByIndexedKeys: ({ indexedKeys }) =>
+              Effect.callback<never>(() => {
+                const key = indexedKeys[0]!;
+                started.push(key);
+                return Effect.sync(() => interrupted.push(key));
+              }),
+          },
+        ),
+      },
+    );
+    return { zoteroReads, started, interrupted };
+  }
+
+  it("interrupts the older Item read when a newer selection starts", async () => {
+    const reads = heldReads();
+    const { view } = setup({
+      runtime: testRuntime(),
+      zoteroReads: reads.zoteroReads,
+    });
+    const first = run(view.selectItem({ id: FIRST, title: "First" }));
+    await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
+    void run(view.selectItem({ id: LATER, title: "Later" }));
+    await vi.waitFor(() => expect(reads.started).toEqual([FIRST, LATER]));
+    await expect(first).resolves.toBe(false);
+    // The later read still runs.
+    expect(reads.interrupted).toEqual([FIRST]);
+  });
+
+  it("interrupts every pending command when the view closes", async () => {
+    const reads = heldReads();
+    const prompts: string[] = [];
+    vi.mocked(createSharedPartialEffect).mockReturnValueOnce(
+      Effect.never.pipe(
+        Effect.onInterrupt(() => Effect.sync(() => prompts.push("closed"))),
+      ),
+    );
+    const { view } = setup({
+      runtime: testRuntime(),
+      zoteroReads: reads.zoteroReads,
+    });
+    const selecting = Effect.runPromiseExit(
+      view.selectItem({ id: FIRST, title: "First" }),
+    );
+    // An extraction run from outside the leaf still runs on it.
+    const extracting = Effect.runPromiseExit(view.extractPartial("venue"));
+    await vi.waitFor(() => expect(reads.started).toEqual([FIRST]));
+    await view.close();
+    expect(reads.interrupted).toEqual([FIRST]);
+    expect(prompts).toEqual(["closed"]);
+    const extracted = await extracting;
+    expect(
+      Exit.isFailure(extracted) && Cause.hasInterruptsOnly(extracted.cause),
+    ).toBe(true);
+    // The selection stops quietly: unapplied, or interrupted with the leaf.
+    const exit = await selecting;
+    expect(
+      Exit.isSuccess(exit) ? exit.value : !Cause.hasInterruptsOnly(exit.cause),
+    ).toBe(false);
+  });
+
   it("keeps a later selection and leaves the outrun choice unpublished", async () => {
     // The read that confirms the chosen Item holds until the test lets it go.
     const firstRead = Promise.withResolvers<void>();
@@ -3130,7 +3275,7 @@ describe("Template Workbench Item choice", () => {
     using open = vi.spyOn(SuggestModal.prototype, "open");
     using trigger = vi.spyOn(app.workspace, "trigger");
 
-    const chosen = view.chooseItem();
+    const chosen = run(view.chooseItem());
     await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
     const modal = open.mock.contexts[0] as SuggestModal<{ id: string }>;
     const rows = await modal.getSuggestions("");
@@ -3142,7 +3287,7 @@ describe("Template Workbench Item choice", () => {
     // The reader picks the later paper while the first choice still reads.
     await firstReading.promise;
     await expect(
-      view.selectItem({ id: LATER, title: "Later paper" }),
+      run(view.selectItem({ id: LATER, title: "Later paper" })),
     ).resolves.toBe(true);
     firstRead.resolve();
 
@@ -3151,6 +3296,42 @@ describe("Template Workbench Item choice", () => {
     expect(trigger).not.toHaveBeenCalledWith(
       "zotlit:workbench-selection",
       expect.objectContaining({ item: expect.objectContaining({ id: FIRST }) }),
+    );
+  });
+  it("closes the Zotero search when the view closes while it is open", async () => {
+    const { view } = setup({
+      runtime: testRuntime(),
+      itemLookup: stubService<TemplateWorkbenchDeps["itemLookup"]>(
+        "ItemLookup",
+        {
+          search: async () => [],
+          openSession: () => ({
+            search: async () => [],
+            close: () => {},
+            [Symbol.dispose]() {},
+          }),
+        },
+      ),
+    });
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    using close = vi.spyOn(SuggestModal.prototype, "close");
+    const chosen = Effect.runPromiseExit(view.chooseItem());
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
+    const chooser = open.mock.contexts[0] as SuggestModal<{ id: string }>;
+    chooser.selectSuggestion(
+      (await chooser.getSuggestions("")).find(
+        (row) => row.id === "search-zotero",
+      )!,
+      new KeyboardEvent("keydown", { key: "Enter" }),
+    );
+    // The Zotero search opens in its own picker.
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+    const picker = open.mock.contexts[1];
+    await view.close();
+    expect(close.mock.contexts).toContain(picker);
+    const exit = await chosen;
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(
+      true,
     );
   });
 });

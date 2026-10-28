@@ -111,6 +111,7 @@ export function WebPreview({
     const owner = createRenderScheduler({
       input: { source: "", snapshot: null, mode: "create", live: true },
       render: (request) => host.render(request),
+      run: host.run,
       failed: (result) => result,
       reportContext: () => named.current(),
     });

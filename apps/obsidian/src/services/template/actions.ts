@@ -6,43 +6,47 @@
 
 import { Effect, Layer } from "effect";
 import type { Context, Scope } from "effect";
-import type { App } from "obsidian";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { reportOutcome } from "@/lib/notifier";
 import type { Notifier } from "@/lib/notifier";
+import type { Vault } from "@/lib/obsidian-vault";
+import type { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import type { PluginHostShape } from "@/lib/plugin-host";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { Template } from "./service";
+
+/** The services the Citation Template open runs with. */
+type CitationTemplateServices = Template | Notifier | Vault | Workspace;
 
 /**
  * The "Customize citation text" command. Its callback is a plain Obsidian
  * entry point, so it runs the open on the layer's own bridge, over the
  * services the layer was built with.
  */
+
 export const layerCitationTemplateActions: Layer.Layer<
   never,
   never,
-  PluginHost | Template | Notifier
+  PluginHost | CitationTemplateServices
 > = Layer.effectDiscard(
   Effect.gen(function* () {
     const host = yield* PluginHost;
-    const context = yield* Effect.context<Template | Notifier>();
+    const context = yield* Effect.context<CitationTemplateServices>();
     const bridge = yield* scopedBridge;
     yield* addCitationTemplateActions(host, { context, bridge });
   }),
 );
 
 export function addCitationTemplateActions(
-  host: Pick<PluginHostShape, "addCommand" | "app">,
+  host: Pick<PluginHostShape, "addCommand">,
   deps: {
-    context: Context.Context<Template | Notifier>;
+    context: Context.Context<CitationTemplateServices>;
     bridge: Pick<EffectBridge, "runAndForget">;
   },
 ): Effect.Effect<void, never, Scope.Scope> {
@@ -52,9 +56,7 @@ export function addCitationTemplateActions(
       name: m.command_customize_citation_text_name(),
       callback: () =>
         deps.bridge.runAndForget(
-          reportCitationTemplateOpen(host.app).pipe(
-            Effect.provideContext(deps.context),
-          ),
+          reportCitationTemplateOpen.pipe(Effect.provideContext(deps.context)),
         ),
     }),
   );
@@ -66,27 +68,19 @@ export function addCitationTemplateActions(
  * "profile uses Eta" notice belongs to a Profile document, so it is not
  * offered here.
  */
-export const openCitationTemplate = Effect.fn("openCitationTemplate")(
-  function* (app: App) {
-    const file = yield* (yield* Template).materializeCitationTemplate;
-    yield* portCall("open-template-workbench", () =>
-      openTemplateWorkbench(app, file, { explainUnsupported: false }),
-    );
-  },
-);
+export const openCitationTemplate = Effect.gen(function* () {
+  const file = yield* (yield* Template).materializeCitationTemplate;
+  yield* openTemplateWorkbench(file, { explainUnsupported: false });
+}).pipe(Effect.withSpan("openCitationTemplate"));
 
 /**
  * {@link openCitationTemplate} for an entry point: a failure is logged and a
  * notice tells the user; an interrupt passes on with no notice.
  */
-export const reportCitationTemplateOpen = Effect.fn(
-  "CitationTemplate.reportOpen",
-)(
-  function* (app: App) {
-    yield* reportOutcome(openCitationTemplate(app), {
-      success: () => undefined,
-      error: () => m.notice_citation_text_open_failed(),
-    });
-  },
+export const reportCitationTemplateOpen = reportOutcome(openCitationTemplate, {
+  success: () => undefined,
+  error: () => m.notice_citation_text_open_failed(),
+}).pipe(
   withLogCategory("template", "actions"),
+  Effect.withSpan("CitationTemplate.reportOpen"),
 );

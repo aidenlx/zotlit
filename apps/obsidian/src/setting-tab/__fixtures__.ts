@@ -17,6 +17,7 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import { Notifier } from "@/lib/notifier";
 import { FileManager } from "@/lib/obsidian-file-manager";
 import { Vault } from "@/lib/obsidian-vault";
+import { Workspace } from "@/lib/obsidian-workspace";
 import { PluginHost } from "@/lib/plugin-host";
 import { CapabilityNotices } from "@/services/annotation-repository/notices";
 import { AnnotationRepository } from "@/services/annotation-repository/service";
@@ -87,6 +88,7 @@ export const unimplementedTabServices = Layer.mergeAll(
   Layer.mock(NoteFeature)({}),
   Layer.mock(NoteIndex)({}),
   Layer.mock(Vault)({}),
+  Layer.mock(Workspace)({}),
   Layer.mock(FileManager)({}),
   Layer.succeed(
     PluginHost,

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useUniqueId } from "@zotlit/ui";
 
 import { useTooltip, useWorkbenchHost } from "./host";
+import { useFork } from "./run";
 import { useIcon, useParts } from "./theme";
 
 export interface SampleOption {
@@ -34,6 +35,7 @@ export function SampleSuggester({
   const part = useParts("sampleSuggester");
   const icon = useIcon();
   const host = useWorkbenchHost();
+  const fork = useFork(host.run);
   const labelTooltip = useTooltip(label);
   const triggerTooltip = useTooltip(title);
   const instanceId = useUniqueId();
@@ -51,10 +53,10 @@ export function SampleSuggester({
         aria-label={title}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={async (event) => {
+        onClick={(event) => {
           setOpen(true);
-          try {
-            const choice = await host.suggester({
+          fork(
+            host.suggester({
               anchor: event.currentTarget,
               title,
               selected,
@@ -67,11 +69,15 @@ export function SampleSuggester({
                   hint: option.description,
                 })),
               })),
-            });
-            if (choice !== null) onSelect(choice);
-          } finally {
-            setOpen(false);
-          }
+            }),
+            {
+              onSuccess: (choice) => {
+                setOpen(false);
+                if (choice !== null) onSelect(choice);
+              },
+              onFailure: () => setOpen(false),
+            },
+          );
         }}
       >
         {icon("choose-sample")}

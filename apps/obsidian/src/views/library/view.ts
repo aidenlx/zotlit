@@ -5,6 +5,8 @@
 // reads Zotero's database only, so Zotero does not need to run.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
+import { Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { debounce, ItemView, Keymap, Scope } from "obsidian";
 import type { Component, Modifier, WorkspaceLeaf } from "obsidian";
 
@@ -34,7 +36,7 @@ import type { QueryViewDeps } from "@/views/query-view/view";
 import { WelcomeBanner } from "@/views/welcome/banner";
 import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 
-import { makeItemNodeCommand } from "./atoms";
+import { itemNodeAtom } from "./atoms";
 import { DetailsToggle } from "./details-toggle";
 import {
   CARD_HEIGHT_DEFAULT,
@@ -74,7 +76,7 @@ import { ZOTLIT_MARK_ICON } from "./icon";
 import type { ItemActions } from "./item-actions";
 import { createItemDrag, refuseItemDrop } from "./item-drag";
 import { FACET_LABELS, LibraryTree } from "./library-tree";
-import { makeLibraryModel, patchSelection } from "./model";
+import { makeLibraryModel, patchSelection, waitForRead } from "./model";
 import type { LibrarySelection } from "./model";
 import { ZoteroNotFound } from "./not-found";
 import { PaneWidth } from "./pane-width";
@@ -151,8 +153,9 @@ export class LibraryView extends ItemView {
    * pane width.
    */
   readonly model = makeLibraryModel();
-  readonly #itemNodeCommand = makeItemNodeCommand();
   #release: (() => void) | null;
+  /** What a Collection lookup waits on; a close ends each wait. */
+  readonly #waiting = new Set<() => void>();
   get selected(): LibrarySelection {
     return this.#deps.registry.get(this.model.selection);
   }
@@ -169,7 +172,6 @@ export class LibraryView extends ItemView {
   #hold(): () => void {
     const releases = [
       this.#deps.registry.mount(this.model.selection),
-      this.#deps.registry.mount(this.#itemNodeCommand),
       this.#deps.registry.mount(useLedgerAtom),
       this.#deps.registry.mount(notedItemKeysAtom),
       this.#deps.registry.mount(libraryScopeStateAtom),
@@ -254,7 +256,7 @@ export class LibraryView extends ItemView {
       first: () =>
         this.query.state.getState().results?.records[0]?.row.indexedKey ?? null,
       open: (key, event) => {
-        void deps.items.openPdf(key, Keymap.isModEvent(event));
+        deps.items.openPdf(key, Keymap.isModEvent(event));
       },
       // The menu acts on the row it opens over, which it selects.
       menu: (key, event) => {
@@ -973,9 +975,17 @@ export class LibraryView extends ItemView {
 
   /** The node of the Item's first Collection, or of its Library. */
   async #itemNode(indexedKey: string): Promise<LibraryNode | null> {
-    const result = Promise.withResolvers<LibraryNode | null>();
-    this.#deps.registry.set(this.#itemNodeCommand, { indexedKey, result });
-    return result.promise;
+    const { registry } = this.#deps;
+    const atom = itemNodeAtom(indexedKey);
+    const release = registry.mount(atom);
+    try {
+      await waitForRead(registry, atom, this.#waiting);
+      // A close ends the wait; its read is interrupted and answers nothing.
+      if (!this.#release) return null;
+      return Option.getOrNull(AsyncResult.value(registry.get(atom)));
+    } finally {
+      release();
+    }
   }
 
   /** The researcher picked `node` in the tree: list it, and keep it. */
@@ -1108,6 +1118,7 @@ export class LibraryView extends ItemView {
     this.#storage.close();
     this.#release?.();
     this.#release = null;
+    for (const finish of this.#waiting) finish();
   }
 }
 

@@ -17,8 +17,8 @@ import { leaveSettingsFor } from "@/lib/plugin-host";
 import type { AutoTrim } from "@/services/settings/schema";
 import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { Template } from "@/services/template/service";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 import { createSharedPartial } from "@/views/template-workbench/partial-command";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { appendCompileError } from "./compile-error";
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -232,8 +232,8 @@ function openPartial(ctx: SettingTabContext, path: string) {
   return Effect.gen(function* () {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
-    yield* leaveSettingsFor("open-template-workbench", () =>
-      openTemplateWorkbench(ctx.app, file, { explainUnsupported: false }),
+    yield* leaveSettingsFor(
+      openTemplateWorkbench(file, { explainUnsupported: false }),
     );
   });
 }
@@ -328,7 +328,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
         void ctx.tab.run(
-          reportCitationTemplateOpen(ctx.app).pipe(Effect.ensuring(rebuild)),
+          reportCitationTemplateOpen.pipe(Effect.ensuring(rebuild)),
         );
       }),
   );

@@ -2,6 +2,7 @@
 // off the contract IR, filters, tags, partial names, and the annotation shortcut.
 
 import { regex } from "arkregex";
+import { Effect } from "effect";
 
 import type { ContractRoot } from "@zotlit/db";
 import type { ContractMember, ContractType } from "@zotlit/db/contract/ir";
@@ -24,6 +25,7 @@ import {
 } from "./contract";
 import { etaRange } from "./eta-syntax";
 import type { EtaRange } from "./eta-syntax";
+import type { WorkbenchHostError, WorkbenchRunner } from "./host-effects";
 import { jsonSuggestions, jsonHover } from "./json-e";
 import { liquidCodeRange, STRUCTURAL_TAGS } from "./liquid-ranges";
 import type { LiquidRange } from "./liquid-ranges";
@@ -59,7 +61,9 @@ export interface SuggestionConfig {
      * @returns the created name, which the editor writes as the call's
      *   argument, or `null` when the reader dismisses the prompt.
      */
-    run(query: string): Promise<string | null>;
+    run(query: string): Effect.Effect<string | null, WorkbenchHostError>;
+    /** Forks `run`, so closing the pane's owner interrupts the flow. */
+    fork: WorkbenchRunner;
   };
   /**
    * The Template data the root binds to `zt`, as a template reads it: link
@@ -115,7 +119,11 @@ export interface Suggestion {
    * "New partial…" names and creates a file first. A `null` answer leaves the
    * source as it stands.
    */
-  resolveInsert?: () => Promise<string | null>;
+  resolveInsert?: {
+    readonly insert: Effect.Effect<string | null, WorkbenchHostError>;
+    /** The runner `insert` is forked on. */
+    readonly fork: WorkbenchRunner;
+  };
 }
 export interface SuggestionResult {
   from: number;
@@ -308,9 +316,11 @@ function partialOptions(
       category: "new-partial",
       detail: create.detail,
       pinned: true,
-      resolveInsert: async () => {
-        const name = await create.run(query);
-        return name === null ? null : name + (tail?.text ?? "");
+      resolveInsert: {
+        insert: Effect.map(create.run(query), (name) =>
+          name === null ? null : name + (tail?.text ?? ""),
+        ),
+        fork: create.fork,
       },
     });
   return options;

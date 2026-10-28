@@ -1,3 +1,4 @@
+import { Effect, Fiber } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,17 +11,28 @@ import type { WorkbenchHost } from "@zotlit/workbench/ui";
 import { m } from "@/paraglide/messages.js";
 
 import { useWebHost } from "./host";
+import { PageRuntime } from "./runtime";
 
 let host!: WorkbenchHost;
 const notices: string[] = [];
 
-function Page({
-  insertTarget = () => ({ slice: "note", range: { from: 3, to: 3 } }),
-  snapshot = SAMPLE_ITEMS[0]!,
-}: {
+interface PageProps {
   insertTarget?: WorkbenchHost["insertTarget"];
   snapshot?: (typeof SAMPLE_ITEMS)[number];
-}) {
+}
+
+function Page(props: PageProps) {
+  return (
+    <PageRuntime>
+      <BoundPage {...props} />
+    </PageRuntime>
+  );
+}
+
+function BoundPage({
+  insertTarget = () => ({ slice: "note", range: { from: 3, to: 3 } }),
+  snapshot = SAMPLE_ITEMS[0]!,
+}: PageProps) {
   const bound = useWebHost({
     snapshot,
     notice: (text) => void notices.push(text),
@@ -83,7 +95,6 @@ describe("the web host", () => {
         ],
       }),
     );
-    await act(async () => {});
     expect(texts('[role="menuitem"]')).toEqual(["Duplicate", "Delete"]);
     const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
     act(() => item.click());
@@ -102,13 +113,14 @@ describe("the web host", () => {
   it("asks a confirmation in a dialog and answers with the reader's choice", async () => {
     let answer!: Promise<boolean>;
     act(() => {
-      answer = host.confirm({
-        title: "Change the format?",
-        body: "The old value stays one undo away.",
-        confirm: "Change",
-      });
+      answer = Effect.runPromise(
+        host.confirm({
+          title: "Change the format?",
+          body: "The old value stays one undo away.",
+          confirm: "Change",
+        }),
+      );
     });
-    await act(async () => {});
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(dialog.textContent).toContain("Change the format?");
     expect(dialog.textContent).toContain("The old value stays one undo away.");
@@ -125,29 +137,44 @@ describe("the web host", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it("takes a confirmation away when the Workbench interrupts it", async () => {
+    let fiber!: Fiber.Fiber<boolean>;
+    act(() => {
+      fiber = host.run(
+        host.confirm({ title: "Replace?", body: "", confirm: "Replace" }),
+      );
+    });
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+
+    await act(async () => await Effect.runPromise(Fiber.interrupt(fiber)));
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it("keeps empty groups and returns keyboard focus to the originating chooser", async () => {
     const anchor = document.getElementById("anchor")!;
     anchor.focus();
     let answer!: Promise<string | null>;
     act(() => {
-      answer = host.suggester({
-        anchor,
-        title: "Choose an annotation",
-        selected: "a",
-        groups: [
-          {
-            label: "Current Item",
-            options: [],
-            empty: "This Item has no annotations.",
-          },
-          {
-            label: "Examples",
-            options: [{ id: "a", label: "Example annotation" }],
-          },
-        ],
-      });
+      answer = Effect.runPromise(
+        host.suggester({
+          anchor,
+          title: "Choose an annotation",
+          selected: "a",
+          groups: [
+            {
+              label: "Current Item",
+              options: [],
+              empty: "This Item has no annotations.",
+            },
+            {
+              label: "Examples",
+              options: [{ id: "a", label: "Example annotation" }],
+            },
+          ],
+        }),
+      );
     });
-    await act(async () => {});
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "This Item has no annotations.",
     );
@@ -198,7 +225,7 @@ describe("the web host", () => {
       ),
     );
     await expect(
-      host.matchData.customFields(new AbortController().signal),
+      Effect.runPromise(host.matchData.customFields),
     ).resolves.toEqual(["Shelf"]);
   });
 
@@ -206,10 +233,10 @@ describe("the web host", () => {
     expect(host.tooltip("Undo")).toEqual({ title: "Undo" });
     host.notice("Saved");
     expect(notices).toEqual(["Saved"]);
-    await expect(host.matchData.collections()).resolves.toEqual([
-      ["Shared key"],
-    ]);
-    await expect(host.matchData.libraries()).resolves.toEqual([
+    await expect(
+      Effect.runPromise(host.matchData.collections),
+    ).resolves.toEqual([["Shared key"]]);
+    await expect(Effect.runPromise(host.matchData.libraries)).resolves.toEqual([
       { id: "personal" },
     ]);
     host.persistence.write("vault", "explorer", "all");

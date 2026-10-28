@@ -4,8 +4,8 @@ import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
+import { observeExit } from "@zotlit/workbench/ui";
 
-import { AbortError } from "@/lib/abort-error";
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
@@ -16,6 +16,7 @@ import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRun } from "@/lib/view-runner";
 import type {
   AnnotationRecord,
   TextField,
@@ -29,19 +30,17 @@ import type {
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import { menuSections, raiseMenu } from "@/services/menu-events";
-import type { AnnotationCitation } from "@/services/note-feature";
-import { InertTemplateError } from "@/services/template/errors";
 import { viewTargetOpener } from "@/views/open-target";
 
 import {
   annotationDraftCommand,
-  copyCitationCommand,
   openExcerptDemandCommand,
   annotationWriteCommand,
+  readCitation,
   resultValue,
   requireResult,
 } from "./atoms";
-import type { AnnotationWriteRequest } from "./atoms";
+import type { AnnotationWriteRequest, CitationRead } from "./atoms";
 import { chooseAttachment } from "./attachment-suggester";
 import { groupControl, pressControl } from "./card-controls";
 import type { CardBlock, CardControl, CardControls } from "./card-controls";
@@ -258,6 +257,8 @@ export interface AnnotActionDeps {
   opener: Pick<TargetOpener["Service"], "open">;
   excerptImageRequest: AnnotActions["excerptImageRequest"];
   registry: ViewRegistryHandle;
+  /** Forks a menu's Effect on the view's lifetime. */
+  run: ViewRun;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
   /**
@@ -317,6 +318,31 @@ export interface AnnotActionDeps {
    */
   openEditor: (annot: AnnotationRecord, field: TextField) => void;
   onExploreAnnotation: (annotationKey: string) => void;
+}
+
+/** Show what a citation read answered, and copy the citation. */
+function copyCitation(read: CitationRead): void {
+  if (read.kind === "inert-template") {
+    new BaseNotice(read.message);
+    return;
+  }
+  if (read.kind === "failed") {
+    new BaseNotice(m.annot_view_copy_failed());
+    return;
+  }
+  const { citation } = read;
+  if (citation.kind === "not-in-database") {
+    new BaseNotice(m.annot_view_annotation_not_in_database());
+    return;
+  }
+  if (citation.kind === "no-citation-key") {
+    new BaseNotice(m.annot_view_copy_citation_no_key());
+    return;
+  }
+  void toast.promise(writeClipboard(citation.text), {
+    success: m.annot_view_copied_citation(),
+    error: m.annot_view_copy_failed(),
+  });
 }
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
@@ -558,43 +584,13 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setSection(SECTION.clipboard)
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
-        .onClick(async () => {
-          let citation: AnnotationCitation;
-          try {
-            citation = await new Promise<AnnotationCitation>(
-              (resolve, reject) =>
-                deps.registry.set(copyCitationCommand, {
-                  key: annot.key,
-                  resolve,
-                  reject,
-                }),
-            );
-          } catch (e) {
-            if (AbortError.test(e)) return;
-            if (e instanceof InertTemplateError) {
-              new BaseNotice(e.message);
-              return;
-            }
-            logger.warn("Copy citation could not read the annotation", {
-              annotationKey: annot.key,
-              error: e,
-            });
-            new BaseNotice(m.annot_view_copy_failed());
-            return;
-          }
-          if (citation.kind === "not-in-database") {
-            new BaseNotice(m.annot_view_annotation_not_in_database());
-            return;
-          }
-          if (citation.kind === "no-citation-key") {
-            new BaseNotice(m.annot_view_copy_citation_no_key());
-            return;
-          }
-          void toast.promise(writeClipboard(citation.text), {
-            success: m.annot_view_copied_citation(),
-            error: m.annot_view_copy_failed(),
-          });
-        });
+        // Each menu runs its own read, so two copies from two menus both
+        // finish; the view's close stops a read with no notice.
+        .onClick(() =>
+          observeExit(deps.run(readCitation(annot.key)), {
+            onSuccess: copyCitation,
+          }),
+        );
     });
 
     // The keyboard's route to what a drag does.

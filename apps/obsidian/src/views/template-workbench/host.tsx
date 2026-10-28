@@ -1,6 +1,7 @@
 // Native overlays and Markdown lifecycle for the shared Template Workbench tree.
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
+import { Effect, Fiber } from "effect";
 import {
   AbstractInputSuggest,
   Component,
@@ -23,7 +24,11 @@ import {
   completionSuggestion,
   templateCompletion,
 } from "@zotlit/workbench/language";
-import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
+import {
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+  WorkbenchMessagesProvider,
+} from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchDialogRequest,
@@ -31,10 +36,12 @@ import type {
   WorkbenchSuggesterRequest,
   WorkbenchSuggesterOption,
   WorkbenchInputSuggestionsRequest,
+  WorkbenchRunner,
 } from "@zotlit/workbench/ui";
 
 import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
+import { awaitModal } from "@/lib/effect-modal";
 import { obsidianPopupKeys } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -42,6 +49,7 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
+import { answerOf } from "@/lib/view-runner";
 import {
   CurrentAnswer,
   takeEnter,
@@ -128,23 +136,35 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
 export interface NativeWorkbenchSuggesterRequest extends WorkbenchSuggesterRequest {
   readonly searchItems?: (
     query: string,
-  ) => Promise<readonly WorkbenchSuggesterOption[]>;
+  ) => Effect.Effect<readonly WorkbenchSuggesterOption[]>;
 }
 
 type NativeSuggestion = WorkbenchSuggesterOption & { group: string };
 
 class EditorSuggester extends SuggestModal<NativeSuggestion> {
   #revision = 0;
-  #latest: NativeSuggestion[] | Promise<NativeSuggestion[]> = [];
+  /** The latest query's answer, or the search that answers it. */
+  #latest: NativeSuggestion[] | Fiber.Fiber<NativeSuggestion[]> = [];
   readonly #current = new CurrentAnswer<NativeSuggestion>(
     this.resultContainerEl,
   );
-  readonly #answer = Promise.withResolvers<string | null>();
+  readonly #settle: (answer: string | null) => void;
   #picked = false;
   #search = prepareSimpleSearch("");
   readonly #request: NativeWorkbenchSuggesterRequest;
-  constructor(app: App, request: NativeWorkbenchSuggesterRequest) {
+  readonly #run: WorkbenchRunner;
+  constructor(
+    app: App,
+    request: NativeWorkbenchSuggesterRequest,
+    answer: {
+      /** Runs the typed searches on the host's leaf. */
+      run: WorkbenchRunner;
+      settle: (answer: string | null) => void;
+    },
+  ) {
     super(app);
+    this.#run = answer.run;
+    this.#settle = answer.settle;
     takeEnter(this);
     this.setTitle(request.title);
     this.#request = request;
@@ -173,26 +193,33 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
             `${option.label} ${option.hint ?? ""} ${option.group}`,
           ) !== null,
       );
-    if (!query.trim() || !this.#request.searchItems)
+    const search = this.#request.searchItems;
+    if (!query.trim() || !search)
       return this.#current.track((this.#latest = choices));
-    this.#latest = this.#request
-      .searchItems(query)
-      .then((items): NativeSuggestion[] | Promise<NativeSuggestion[]> => {
-        if (revision !== this.#revision) return this.#latest;
-        const shown = new Set(choices.map(({ id }) => id));
-        return [
-          ...choices,
-          ...items
-            .filter(({ id }) => !shown.has(id))
-            .map((item) => ({ ...item, group: "" })),
-        ];
-      })
-      .catch(() => {
-        if (revision !== this.#revision) return this.#latest;
-        new BaseNotice(m.workbench_item_search_failed());
-        return choices;
-      });
-    return this.#current.track(this.#latest);
+    /** The answer of a newer query, for a search it outran. */
+    const newer = Effect.suspend(() => {
+      const latest = this.#latest;
+      return Array.isArray(latest)
+        ? Effect.succeed(latest)
+        : Fiber.join(latest);
+    });
+    const shown = new Set(choices.map(({ id }) => id));
+    const searching = this.#run(
+      search(query).pipe(
+        Effect.flatMap((items) =>
+          revision !== this.#revision
+            ? newer
+            : Effect.succeed([
+                ...choices,
+                ...items
+                  .filter(({ id }) => !shown.has(id))
+                  .map((item) => ({ ...item, group: "" })),
+              ]),
+        ),
+      ),
+    );
+    this.#latest = searching;
+    return this.#current.track(answerOf(searching, choices));
   }
   /**
    * A row reads the way a citation row reads: the name in the title slot,
@@ -265,21 +292,38 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
     });
   }
   override onChooseSuggestion(option: WorkbenchSuggesterOption): void {
-    this.#answer.resolve(option.id);
+    this.#settle(option.id);
   }
   override onClose(): void {
     super.onClose();
-    if (!this.#picked) this.#answer.resolve(null);
+    if (!this.#picked) this.#settle(null);
     this.#revision++;
     this.#latest = [];
     this.#current.close();
     this.#request.anchor?.focus();
   }
-  choose(): Promise<string | null> {
-    this.open();
-    return this.#answer.promise;
-  }
 }
+
+/** A mount's own Effect as a host member: its failure becomes a host failure. */
+export const hostEffect = <A, E>(
+  effect: Effect.Effect<A, E>,
+): Effect.Effect<A, WorkbenchHostError> =>
+  Effect.mapError(effect, (cause) => new WorkbenchHostError({ cause }));
+
+/** The render of a mount that renders no template: each one fails with `reason`. */
+export const refuseRender =
+  (reason: string): WorkbenchHost["render"] =>
+  () =>
+    Effect.fail(new WorkbenchHostError({ cause: new Error(reason) }));
+
+/** Puts `text` on the system clipboard; the Template Data Explorer copies the same way. */
+export const copyToClipboard = (
+  text: string,
+): Effect.Effect<void, WorkbenchClipboardError> =>
+  Effect.tryPromise({
+    try: () => navigator.clipboard.writeText(text),
+    catch: (cause) => new WorkbenchClipboardError({ cause }),
+  });
 
 /** A tag's syntax and example read in the docstring, not in a row cell. */
 const templateCompletionPresentation = nativeCompletion((completion) => {
@@ -313,7 +357,7 @@ function addWorkbenchMenuItems(
 
 export function createTemplateWorkbenchHost(
   app: App,
-  ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
+  ports: Pick<WorkbenchHost, "run" | "render" | "matchData" | "insertTarget"> &
     Partial<Pick<WorkbenchHost, "markdown" | "partials">> & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */
       hoverParent?: HoverParent;
@@ -370,7 +414,9 @@ export function createTemplateWorkbenchHost(
         // The list's keys, on the keymap as Obsidian's suggesters take them.
         obsidianPopupKeys(app),
         templateHover(read, hoverParent),
-        extractPartial ? extractPartialMenu(read, extractPartial) : [],
+        extractPartial
+          ? extractPartialMenu(read, extractPartial, rest.run)
+          : [],
       ];
     },
     menu({ anchor, pointerEvent, items, submenus }) {
@@ -407,33 +453,41 @@ export function createTemplateWorkbenchHost(
       modal.open();
       return { close };
     },
-    confirm(request) {
-      const { promise, resolve } = Promise.withResolvers<boolean>();
-      const modal = new ConfirmationModal(app);
-      const close = track(() => modal.close());
-      modal.setTitle(request.title);
-      modal.setContent(request.body);
-      modal.addButton((button) =>
-        button.setButtonText(request.confirm).onClick(() => resolve(true)),
-      );
-      modal.addCancelButton(request.cancel ?? m.modal_cancel());
-      modal.setCloseCallback(() => {
-        open.delete(close);
-        resolve(false);
-      });
-      modal.open();
-      return promise;
-    },
-    suggester(request) {
-      const modal = new EditorSuggester(app, request);
-      const close = track(() => modal.close());
-      return modal.choose().finally(() => open.delete(close));
-    },
+    confirm: (request) =>
+      awaitModal<boolean>((settle) => {
+        const modal = new ConfirmationModal(app);
+        const close = track(() => modal.close());
+        modal.setTitle(request.title);
+        modal.setContent(request.body);
+        modal.addButton((button) =>
+          button.setButtonText(request.confirm).onClick(() => settle(true)),
+        );
+        modal.addCancelButton(request.cancel ?? m.modal_cancel());
+        modal.setCloseCallback(() => {
+          open.delete(close);
+          settle(false);
+        });
+        modal.open();
+        return modal;
+      }),
+    suggester: (request) =>
+      awaitModal<string | null>((settle) => {
+        const modal = new EditorSuggester(app, request, {
+          run: rest.run,
+          settle: (answer) => {
+            open.delete(close);
+            settle(answer);
+          },
+        });
+        const close = track(() => modal.close());
+        modal.open();
+        return modal;
+      }),
     tooltip: tooltipAttrs,
     notice: (text) => {
       new BaseNotice(text);
     },
-    copy: (text) => navigator.clipboard.writeText(text),
+    copy: copyToClipboard,
     communityUrl: COMMUNITY,
     persistence: {
       read(scope, key) {

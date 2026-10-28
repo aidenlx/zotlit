@@ -62,7 +62,7 @@ import type {
 } from "@/services/zotero-reads/service";
 import { ShowInLibrary } from "@/views/library/show-in-library";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { ProtocolOutcome } from "./outcome";
 import { layerProtocolHandlers, registerProtocolHandlers } from "./register";
@@ -104,8 +104,8 @@ vi.mock("@/services/attachment-open/resolve", async (importOriginal) => ({
   toObsidianOpenableAttachments: vi.fn(),
 }));
 
-vi.mock("@/views/template-workbench/register", () => ({
-  openTemplateWorkbench: vi.fn(async () => {}),
+vi.mock("@/views/template-workbench/open", () => ({
+  openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
 vi.mock("@/views/template-data-explorer/register", () => ({
@@ -769,7 +769,7 @@ describe("clipboard Profile protocol handoff", () => {
         yield* Deferred.succeed(consent, imported(file.path));
         if (!Fiber.isFiber(fiber)) return yield* Effect.die("no handler fiber");
         yield* Fiber.join(fiber);
-        expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {});
+        expect(openTemplateWorkbench).toHaveBeenCalledWith(file, {});
       }),
   );
 
@@ -793,7 +793,7 @@ describe("clipboard Profile protocol handoff", () => {
       });
 
       expect(workspace.leafRequests).toEqual(["split"]);
-      expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {
+      expect(openTemplateWorkbench).toHaveBeenCalledWith(file, {
         leaf: expect.anything(),
       });
     }),

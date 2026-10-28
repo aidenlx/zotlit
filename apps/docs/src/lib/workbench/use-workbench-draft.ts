@@ -16,7 +16,7 @@ import {
 import type { SampleItem } from "./fields";
 import { clearDraft, readDraft, writeDraft } from "./transfer";
 import type { DraftLocation, WorkbenchDraft } from "./transfer";
-import type { SaveTarget } from "./use-workbench-connection";
+import type { SaveTarget } from "./workbench-connection";
 
 /** The paper a fresh visit opens on. */
 export const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;

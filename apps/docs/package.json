@@ -50,6 +50,7 @@
     "class-variance-authority": "^0.7.1",
     "cmdk": "1.1.1",
     "cn": "^0.2.4",
+    "effect": "catalog:",
     "feed": "^6.0.0",
     "fumadocs-core": "16.17.5",
     "fumadocs-mdx": "15.4.7",
@@ -70,6 +71,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.64.0",
+    "@effect/vitest": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/devtools-vite": "^0.8.5",
     "@types/hast": "3.0.5",

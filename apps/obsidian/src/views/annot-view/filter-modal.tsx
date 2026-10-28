@@ -56,6 +56,7 @@ function SidebarFilter({
   if (!file || !shown) return null;
   return (
     <FilterEditor
+      run={query.run}
       dataset={shown.from ?? "annotations"}
       allViewsDataset={allViewsDataset(file)}
       allViews={file.filters}

@@ -5,6 +5,7 @@
 // for a match; and browser storage for a preference.
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { Effect } from "effect";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -12,6 +13,7 @@ import { testItemSeed } from "@zotlit/item-query";
 import type { RenderRequest } from "@zotlit/workbench/render";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
+  WorkbenchMatchResult,
   WorkbenchConfirmRequest,
   WorkbenchDialogRequest,
   WorkbenchHost,
@@ -46,10 +48,12 @@ import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
-import { renderInThread } from "./render";
+import { Rendering } from "./rendering";
 import { ResultSheet } from "./result-sheet";
-import { ensureTemporal } from "./temporal";
+import { usePageBridge } from "./runtime";
+import type { PageBridge } from "./runtime";
 import { WEB_THEME } from "./theme";
+import { copyThrough } from "./transfer";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
 /** This site's own community page, which Ask the community opens. */
@@ -64,6 +68,7 @@ interface Pending<Request, Answer> {
 /** The names the snapshot's note root carries, as the Match tab needs them. */
 function matchData(
   snapshot: RenderRequest["snapshot"],
+  bridge: Pick<PageBridge, "provide">,
 ): WorkbenchHost["matchData"] {
   const note = snapshot.roots.note;
   const tags = Array.isArray(note.tags)
@@ -90,32 +95,32 @@ function matchData(
   const { library } = snapshot.item;
   const { seed } = snapshot;
   return {
-    tags: () => Promise.resolve(tags),
-    collections: () => Promise.resolve(collections),
-    libraries: () =>
-      Promise.resolve([
-        {
-          id:
-            library.type === "personal"
-              ? "personal"
-              : `group:${library.groupID}`,
-        },
-      ]),
-    customFields: () => Promise.resolve(seed?.customFieldNames ?? []),
+    tags: Effect.succeed(tags),
+    collections: Effect.succeed(collections),
+    libraries: Effect.succeed([
+      {
+        id:
+          library.type === "personal" ? "personal" : `group:${library.groupID}`,
+      },
+    ]),
+    customFields: Effect.succeed(seed?.customFieldNames ?? []),
     // The sample is the one Item the page has; it is tested in memory.
-    matches: async (_, filter) => {
-      if (!seed) return { kind: "missing" };
-      // The test reads the clock, so it waits for the `Temporal` polyfill.
-      await ensureTemporal();
-      const answer = testItemSeed(filter, seed);
-      if (answer.kind !== "problem") return answer;
-      const { message, location } = answer.diagnostic;
-      return {
-        kind: "problem",
-        message,
-        ...(location?.span ? { span: location.span } : {}),
-      };
-    },
+    matches: (_, filter) =>
+      seed
+        ? // The test reads the clock, so it waits for the `Temporal` polyfill.
+          bridge.provide(Rendering.use((rendering) => rendering.temporal)).pipe(
+            Effect.map((): WorkbenchMatchResult => {
+              const answer = testItemSeed(filter, seed);
+              if (answer.kind !== "problem") return answer;
+              const { message, location } = answer.diagnostic;
+              return {
+                kind: "problem",
+                message,
+                ...(location?.span ? { span: location.span } : {}),
+              };
+            }),
+          )
+        : Effect.succeed({ kind: "missing" }),
   };
 }
 
@@ -140,41 +145,59 @@ export function useWebHost({
     string | null
   > | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  const bridge = usePageBridge();
   // Handlers read the latest values through refs, so the host object itself
   // stays the same across renders.
-  const data = useMemo(() => matchData(snapshot), [snapshot]);
+  const data = useMemo(() => matchData(snapshot, bridge), [snapshot, bridge]);
   const latest = useRef({ data, notice, insertTarget });
   useLayoutEffect(() => {
     latest.current = { data, notice, insertTarget };
   }, [data, notice, insertTarget]);
 
+  // The runner is the page's: closing the page interrupts every host Effect
+  // it still runs, and an Effect started after it is interrupted at once.
   const host = useMemo<WorkbenchHost>(
     () => ({
       messages: m,
+      run: bridge.run,
       getLocale,
       menu: setMenu,
       dialog(request) {
         setDialog(request);
         return { close: () => setDialog(null) };
       },
+      // An interrupt takes the overlay away, as dismissing it would.
       confirm: (request) =>
-        new Promise((answer) => setConfirm({ request, answer })),
+        Effect.callback<boolean>((resume) => {
+          setConfirm({
+            request,
+            answer: (value) => resume(Effect.succeed(value)),
+          });
+          return Effect.sync(() => setConfirm(null));
+        }),
       suggester: (request) =>
-        new Promise((answer) => setSuggester({ request, answer })),
+        Effect.callback<string | null>((resume) => {
+          setSuggester({
+            request,
+            answer: (value) => resume(Effect.succeed(value)),
+          });
+          return Effect.sync(() => setSuggester(null));
+        }),
       tooltip: (text) => ({ title: text }),
       notice: (text) => latest.current.notice(text),
-      copy: (text) => navigator.clipboard.writeText(text),
+      copy: copyThrough(bridge),
       communityUrl: COMMUNITY_URL,
-      render: renderInThread,
+      render: (request) =>
+        bridge.provide(Rendering.use((rendering) => rendering.render(request))),
       markdown: ResultSheet,
       editorPopups: (read) => [webCompletion(read), webHover(read)],
       matchData: {
-        tags: () => latest.current.data.tags(),
-        collections: () => latest.current.data.collections(),
-        libraries: () => latest.current.data.libraries(),
+        tags: Effect.suspend(() => latest.current.data.tags),
+        collections: Effect.suspend(() => latest.current.data.collections),
+        libraries: Effect.suspend(() => latest.current.data.libraries),
         matches: (indexedKey, filter) =>
-          latest.current.data.matches(indexedKey, filter),
-        customFields: (signal) => latest.current.data.customFields(signal),
+          Effect.suspend(() => latest.current.data.matches(indexedKey, filter)),
+        customFields: Effect.suspend(() => latest.current.data.customFields),
       },
       insertTarget: () => latest.current.insertTarget(),
       persistence: {
@@ -203,7 +226,7 @@ export function useWebHost({
         },
       },
     }),
-    [],
+    [bridge],
   );
 
   function answerConfirm(value: boolean) {

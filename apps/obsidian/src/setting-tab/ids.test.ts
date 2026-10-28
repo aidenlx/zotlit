@@ -35,9 +35,9 @@ import { readerPageItems } from "./reader";
 import { resourcesGroup } from "./resources";
 import { zoteroPageItems } from "./zotero";
 
-vi.mock("@/views/template-workbench/register", () => ({
-  openNativeProfile: vi.fn(async () => {}),
-  openTemplateWorkbench: vi.fn(async () => {}),
+vi.mock("@/views/template-workbench/open", () => ({
+  openNativeProfile: vi.fn(() => Effect.void),
+  openTemplateWorkbench: vi.fn(() => Effect.void),
 }));
 
 function ctx(): SettingTabContext {

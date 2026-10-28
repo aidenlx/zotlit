@@ -8,6 +8,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Effect } from "effect";
 import { afterEach, expect, it } from "vitest";
 
 import { useWorkbenchController } from "./editor";
@@ -91,4 +92,77 @@ it("leaves Mod+Z to the expression field, whose own history undoes the typing", 
   expect(view.state.doc.toString()).not.toBe(typed);
   await waitFor(() => expect(controller.source).not.toBe(before));
   expect(controller.source).not.toContain("&& x");
+});
+
+it("interrupts its vocabulary, custom-field and Match reads when the pane goes", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  mounted.host.hold = true;
+  const { unmount } = render(mounted.ui);
+  await waitFor(() =>
+    expect(mounted.host.held.map(({ kind }) => kind)).toEqual(
+      expect.arrayContaining([
+        "tags",
+        "collections",
+        "libraries",
+        "customFields",
+        "matches",
+      ]),
+    ),
+  );
+  expect(mounted.host.held.some(({ interrupted }) => interrupted)).toBe(false);
+
+  act(() => unmount());
+
+  expect(
+    mounted.host.held
+      .filter(({ interrupted }) => !interrupted)
+      .map(({ kind }) => kind),
+  ).toEqual([]);
+});
+
+it("interrupts the Match test for a filter the reader has moved past", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  mounted.host.hold = true;
+  render(mounted.ui);
+  const first = await waitFor(() => {
+    const held = mounted.host.held.find(({ kind }) => kind === "matches");
+    expect(held).toBeDefined();
+    return held!;
+  });
+
+  act(() => void mounted.controller.setMatch({ and: [] }));
+
+  await waitFor(() => expect(first.interrupted).toBe(true));
+});
+
+it("shows the failed state when the host's Match test dies", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  mounted.host.matchData = {
+    ...mounted.host.matchData,
+    matches: () => Effect.die(new Error("Query worker crashed")),
+  };
+  render(mounted.ui);
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toContain(
+      m.workbench_example_failed(),
+    ),
+  );
 });

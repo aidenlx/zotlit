@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import type { WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
@@ -14,8 +15,9 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
+import { answerOf, makeViewRunner } from "@/lib/view-runner";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
-import { chooseWorkbenchAnnotation } from "@/views/template-workbench/selection";
+import { workbenchAnnotationChoice } from "@/views/template-workbench/item-choice";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { makeExplorerHost, waitFor } from "./__fixtures__";
@@ -211,7 +213,7 @@ describe("independent native Explorer", () => {
                 }),
               },
               createElement(Explorer, {
-                explorer: { copy: async () => {} },
+                explorer: { copy: () => Effect.void },
                 lookup: { search: async () => [] },
                 onSearchItem: choose,
                 onSelectItem: (item) => session.setTarget(item, "note"),
@@ -269,8 +271,11 @@ it("switches annotation data locally through the annotation chooser", async () =
   session.setContext(authoring);
   other.setContext(authoring);
   await Promise.all([session.ready(), other.ready()]);
-  const suggester = vi.fn(async (_request: unknown) => "ANNT2346g42");
+  const suggester = vi.fn((_request: unknown) =>
+    Effect.succeed<string | null>("ANNT2346g42"),
+  );
   await using cleanup = new AsyncDisposableStack();
+  const { run } = cleanup.use(makeViewRunner(host.registry));
   const container = cleanup.adopt(document.createElement("div"), (element) =>
     element.remove(),
   );
@@ -289,22 +294,32 @@ it("switches annotation data locally through the annotation chooser", async () =
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,
+            run,
           }),
         },
         withModel(
           session.model,
           createElement(Explorer, {
-            explorer: { copy: async () => {} },
+            explorer: { copy: () => Effect.void },
             lookup: { search: async () => [] },
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
             onChooseAnnotation: async () => {
               const state = session.state();
-              const id = await chooseWorkbenchAnnotation(
-                stubService<WorkbenchHost>("WorkbenchHost", { suggester }),
-                state.annotations ?? [],
-                annotationIndexedKey(state.item!.id, state.annotationId) ??
-                  state.annotationId,
+              const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
+                suggester,
+                run,
+              });
+              const id = await answerOf(
+                chooser.run(
+                  workbenchAnnotationChoice(
+                    chooser,
+                    state.annotations ?? [],
+                    annotationIndexedKey(state.item!.id, state.annotationId) ??
+                      state.annotationId,
+                  ),
+                ),
+                null,
               );
               if (id) session.setTarget(state.item, "annotation", id);
             },
@@ -331,7 +346,7 @@ it("switches annotation data locally through the annotation chooser", async () =
   expect(session.state().annotationId).toBe("ANNT2346g42");
   expect(session.state().context).toBe(authoring);
   expect(other.state().annotationId).toBe("ANNT2345");
-  suggester.mockResolvedValueOnce(SAMPLE_ANNOTATIONS[1]!.id);
+  suggester.mockReturnValueOnce(Effect.succeed(SAMPLE_ANNOTATIONS[1]!.id));
   await act(async () => {
     container
       .querySelector<HTMLButtonElement>(

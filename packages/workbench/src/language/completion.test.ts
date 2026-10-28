@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { Effect } from "effect";
 import { expect, it } from "vitest";
 
 import { applyTemplateCompletion } from "./completion";
@@ -25,7 +26,8 @@ function newPartialCompletion(name: string | null) {
     createPartial: {
       label: "New partial…",
       detail: "Name a new partial, then insert the call.",
-      run: () => promise,
+      run: () => Effect.promise(() => promise),
+      fork: Effect.runFork,
     },
   })!;
   const option = result.options.find(
