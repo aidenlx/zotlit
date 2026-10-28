@@ -98,7 +98,7 @@ vi.mock("./render", async (original) => {
     ) => ({
       ...actual.makeNativeRenderer(deps),
       render: (request: Parameters<typeof actual.renderNativeTemplate>[1]) =>
-        render(deps, request),
+        Effect.promise(() => render(deps, request)),
     }),
   };
 });

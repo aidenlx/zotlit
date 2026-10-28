@@ -42,8 +42,8 @@ export const createSharedPartial = Effect.fn("SharedPartial.create")(function* (
 });
 
 /**
- * {@link createSharedPartial} for a Workbench entry point, which a leaf holds
- * as a command, so closing the leaf also closes its prompt. The document opens
+ * {@link createSharedPartial} for a Workbench entry point, which a leaf runs
+ * on its runner, so closing the leaf also closes its prompt. The document opens
  * as `options.open` says. A failure is logged and shows a notice, and answers
  * `null` as a dismissal does.
  *

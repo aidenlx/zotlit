@@ -47,6 +47,7 @@ import { Vault } from "@/lib/obsidian-vault";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import { runOnce } from "@/lib/view-runner";
 import {
   applyComposedFrontmatter,
   composeLiteratureNote,
@@ -71,7 +72,6 @@ import {
 import { plainTemplateError } from "@/services/template/errors";
 import { Template } from "@/services/template/service";
 import type { TemplateOperations } from "@/services/template/service";
-import { makeWorkbenchCommand } from "@/views/template-workbench/command";
 
 import { previewBaseline } from "./baseline";
 export { previewBaseline } from "./baseline";
@@ -188,52 +188,50 @@ const renderNativeTemplateEffect = Effect.fn("NotePreview.render")(function* (
     : renderNativeProfileEffect(environment, request);
 });
 
-/** One command per owner: a close interrupts its active render. */
+/**
+ * The native render and partial render of one owner, as Effects its runner
+ * forks: interrupting a fiber stops its render.
+ */
 export function makeNativeRenderer(deps: NativeRenderDeps) {
-  const command = makeWorkbenchCommand(
-    deps.registry,
-    (input: {
-      request: RenderRequest;
-      partial?: PartialPreviewSelection;
-    }): Effect.Effect<NativeRenderResult | string, unknown, ViewServices> =>
-      input.partial
-        ? Effect.gen(function* () {
-            const environment: RenderEnvironment = {
-              app: deps.app,
-              ...(yield* renderEnvironment),
-            };
-            return yield* renderRegisteredPartialEffect(
-              environment,
-              input.request,
-              input.partial!,
-            );
-          })
-        : renderNativeTemplateEffect(deps, input.request),
-  );
   return {
-    render: (request: RenderRequest) =>
-      command.run({ request }) as Promise<NativeRenderResult>,
-    partial: (request: RenderRequest, partial: PartialPreviewSelection) =>
-      command.run({ request, partial }) as Promise<string>,
-    [Symbol.dispose]: () => command[Symbol.dispose](),
+    render: (
+      request: RenderRequest,
+    ): Effect.Effect<NativeRenderResult, unknown, ViewServices> =>
+      renderNativeTemplateEffect(deps, request),
+    partial: (
+      request: RenderRequest,
+      partial: PartialPreviewSelection,
+    ): Effect.Effect<string, unknown, ViewServices> =>
+      Effect.gen(function* () {
+        const environment: RenderEnvironment = {
+          app: deps.app,
+          ...(yield* renderEnvironment),
+        };
+        return yield* renderRegisteredPartialEffect(
+          environment,
+          request,
+          partial,
+        );
+      }),
   };
 }
 
-export async function renderNativeTemplate(
+export function renderNativeTemplate(
   deps: NativeRenderDeps,
   request: RenderRequest,
 ): Promise<NativeRenderResult> {
-  using renderer = makeNativeRenderer(deps);
-  return await renderer.render(request);
+  return runOnce(deps.registry, makeNativeRenderer(deps).render(request));
 }
 export const renderNativeProfile = renderNativeTemplate;
-export async function renderRegisteredPartial(
+export function renderRegisteredPartial(
   deps: NativeRenderDeps,
   request: RenderRequest,
   partial: PartialPreviewSelection,
 ): Promise<string> {
-  using renderer = makeNativeRenderer(deps);
-  return await renderer.partial(request, partial);
+  return runOnce(
+    deps.registry,
+    makeNativeRenderer(deps).partial(request, partial),
+  );
 }
 
 /**

@@ -7,6 +7,7 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import { runOnce } from "@/lib/view-runner";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { FileMenuSegment } from "@/services/file-menu";
 import type {
@@ -26,7 +27,7 @@ import {
 
 import { startTemplateWorkbenchAction } from "./actions";
 import type { WorkbenchActionDeps, WorkbenchOpened } from "./actions";
-import { makeDefaultSourceCommand } from "./atoms";
+import { defaultSource } from "./atoms";
 import { templateDocumentKind } from "./document-kind";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
@@ -369,10 +370,7 @@ export async function openNativeProfile(
   if (file) source = await app.vault.cachedRead(file);
   else if (target instanceof TFile) return OPENED;
   else if (!("get" in target)) source = await target.getSource("default");
-  else {
-    using command = makeDefaultSourceCommand(target);
-    source = await command.run();
-  }
+  else source = await runOnce(target, defaultSource);
   if (file)
     return openTemplateWorkbench(app, file, {
       ...options,

@@ -1,87 +1,62 @@
-// Service gestures owned by one Workbench leaf.
+// Service reads and writes one Workbench leaf runs on its runner.
 import { Effect } from "effect";
-import type { App, TFile } from "obsidian";
+import type { TFile } from "obsidian";
 
 import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
 
 import { itemSummary } from "@/lib/item-summary";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
 import { listInstalledStylesOrNone } from "@/services/pandoc/installed-styles";
 import { Profile } from "@/services/profile/service";
-import { reportCitationTemplateOpen } from "@/services/template/actions";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
-import { makeWorkbenchCommand, makeWorkbenchTask } from "./command";
 import { getSampleItem } from "./selection-data";
 
-export function makeWorkbenchCommands(registry: ViewRegistryHandle) {
-  const commands = {
-    select: makeWorkbenchCommand(registry, (indexedKey: string) =>
-      Effect.gen(function* () {
-        const sample = getSampleItem(indexedKey);
-        if (sample) return { id: indexedKey, title: sample.item.title ?? null };
-        if (!parseIndexedKey(indexedKey)) return null;
-        const db = yield* ZoteroReads;
-        if ((yield* db.current).state === "degraded") return null;
-        const items = yield* db.reads.ItemsByIndexedKeys({
-          indexedKeys: [indexedKey],
-        });
-        const item = items.get(indexedKey);
-        return !item || isChildItemFields(item.fields)
-          ? null
-          : { id: indexedKey, title: itemSummary(item, item.fields).formatted };
-      }),
-    ),
-    builtIn: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        return yield* (yield* Profile).getBuiltInSource;
-      }),
-    ),
-    profileOf: makeWorkbenchCommand(registry, (file: TFile) =>
-      Effect.gen(function* () {
-        return yield* (yield* Profile).profileOf(file);
-      }),
-    ),
-    materialize: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        return yield* (yield* Profile).materializeDefault;
-      }),
-    ),
-    citation: makeWorkbenchCommand(registry, (app: App) =>
-      reportCitationTemplateOpen(app),
-    ),
-    styles: makeWorkbenchTask(registry, () =>
-      Effect.gen(function* () {
-        const { dataDir } = yield* (yield* ZoteroPref).current;
-        return dataDir ? yield* listInstalledStylesOrNone(dataDir) : [];
-      }),
-    ),
-  };
-  return {
-    ...commands,
-    [Symbol.dispose]() {
-      for (const command of Object.values(commands).reverse())
-        command[Symbol.dispose]();
-    },
-  };
-}
+/**
+ * The Item `indexedKey` names, once a read confirms it is a top-level Item;
+ * `null` when it is not, or the database is degraded.
+ */
+export const readSelectableItem = Effect.fn("TemplateWorkbench.readItem")(
+  function* (indexedKey: string) {
+    const sample = getSampleItem(indexedKey);
+    if (sample) return { id: indexedKey, title: sample.item.title ?? null };
+    if (!parseIndexedKey(indexedKey)) return null;
+    const db = yield* ZoteroReads;
+    if ((yield* db.current).state === "degraded") return null;
+    const items = yield* db.reads.ItemsByIndexedKeys({
+      indexedKeys: [indexedKey],
+    });
+    const item = items.get(indexedKey);
+    return !item || isChildItemFields(item.fields)
+      ? null
+      : { id: indexedKey, title: itemSummary(item, item.fields).formatted };
+  },
+);
 
-/** The shared native chooser still owns its modal and its search session. */
-export const makeChoiceCommand = <A>(
-  registry: ViewRegistryHandle,
-  choose: () => Promise<A>,
-) =>
-  makeWorkbenchTask(registry, () =>
-    Effect.tryPromise((signal) => {
-      signal.throwIfAborted();
-      return choose();
-    }),
-  );
+/** The built-in Default Profile's source. */
+export const builtInSource = Effect.gen(function* () {
+  return yield* (yield* Profile).getBuiltInSource;
+});
 
-export const makeDefaultSourceCommand = (registry: ViewRegistryHandle) =>
-  makeWorkbenchTask(registry, () =>
-    Effect.gen(function* () {
-      return yield* (yield* Profile).getSource("default");
-    }),
-  );
+/** The Profile that renders `file`. */
+export const profileOfFile = Effect.fn("TemplateWorkbench.profileOf")(
+  function* (file: TFile) {
+    return yield* (yield* Profile).profileOf(file);
+  },
+);
+
+/** Writes the Default Profile to its document, for Customize. */
+export const materializeDefault = Effect.gen(function* () {
+  return yield* (yield* Profile).materializeDefault;
+});
+
+/** The citation styles installed in the Zotero data folder. */
+export const installedStyles = Effect.gen(function* () {
+  const { dataDir } = yield* (yield* ZoteroPref).current;
+  return dataDir ? yield* listInstalledStylesOrNone(dataDir) : [];
+});
+
+/** The Default Profile's source as the vault holds it. */
+export const defaultSource = Effect.gen(function* () {
+  return yield* (yield* Profile).getSource("default");
+});

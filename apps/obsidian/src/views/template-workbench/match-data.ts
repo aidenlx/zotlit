@@ -3,14 +3,13 @@ import { Effect } from "effect";
 
 import { formatIndexedKey, parseIndexedKey } from "@zotlit/db";
 import { planItemFilter, testItemSeed } from "@zotlit/item-query";
-import { WorkbenchHostError } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchLibrary,
   WorkbenchMatchResult,
 } from "@zotlit/workbench/ui";
 
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
+import type { ViewRunner } from "@/lib/view-runner";
 import { QueryService } from "@/services/item-query/service";
 import {
   resolveLibraryScope,
@@ -24,105 +23,68 @@ import { ZoteroReads } from "@/services/zotero-reads/service";
 import { readerText } from "@/views/query-view/reader-diagnostic";
 import type { ReaderDiagnosticSource } from "@/views/query-view/reader-diagnostic";
 
-import { makeWorkbenchCommand, makeWorkbenchTask } from "./command";
-import { hostPromise } from "./host";
+import { hostEffect } from "./host";
 import { getSampleItem } from "./selection-data";
 
+/**
+ * The Match vocabulary and test, each forked on the runner of the mount that
+ * reads it: its interrupt stops the read under it. The Workbench shows the
+ * Match pane twice, and each copy reads at once.
+ */
 export function createMatchData(
-  registry: ViewRegistryHandle,
-): WorkbenchHost["matchData"] & Disposable {
-  // The Workbench shows the Match pane twice, and each copy reads at once.
-  const shared = { concurrent: true };
-  const tags = makeWorkbenchTask(
-    registry,
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const reads = yield* (yield* ZoteroReads).snapshot;
-          return [...(yield* reads.TagNames({}))];
-        }),
+  provide: ViewRunner["provide"],
+): WorkbenchHost["matchData"] {
+  return {
+    tags: hostEffect(
+      provide(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const reads = yield* (yield* ZoteroReads).snapshot;
+            return [...(yield* reads.TagNames({}))];
+          }),
+        ),
       ),
-
-    shared,
-  );
-  const collections = makeWorkbenchTask(
-    registry,
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const reads = yield* (yield* ZoteroReads).snapshot;
-          const libraries = resolveLibraryScope(yield* reads.Libraries({}), {
-            mode: "all",
-          }).available;
-          const paths = yield* reads.CollectionPaths({
-            libraryIDs: libraries.map(({ libraryID }) => libraryID),
-          });
-          return paths.map((path) => [...path]);
-        }),
+    ),
+    collections: hostEffect(
+      provide(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const reads = yield* (yield* ZoteroReads).snapshot;
+            const libraries = resolveLibraryScope(yield* reads.Libraries({}), {
+              mode: "all",
+            }).available;
+            const paths = yield* reads.CollectionPaths({
+              libraryIDs: libraries.map(({ libraryID }) => libraryID),
+            });
+            return paths.map((path) => [...path]);
+          }),
+        ),
       ),
-
-    shared,
-  );
-  const libraries = makeWorkbenchTask(
-    registry,
-    () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const reads = yield* (yield* ZoteroReads).snapshot;
-          return resolveLibraryScope(yield* reads.Libraries({}), {
-            mode: "all",
-          }).available.map((library) => ({
-            id: selectorKey(library.selector) as WorkbenchLibrary["id"],
-            ...(library.name === null ? {} : { name: library.name }),
-          }));
-        }),
+    ),
+    libraries: hostEffect(
+      provide(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const reads = yield* (yield* ZoteroReads).snapshot;
+            return resolveLibraryScope(yield* reads.Libraries({}), {
+              mode: "all",
+            }).available.map((library) => ({
+              id: selectorKey(library.selector) as WorkbenchLibrary["id"],
+              ...(library.name === null ? {} : { name: library.name }),
+            }));
+          }),
+        ),
       ),
-
-    shared,
-  );
-  const matches = makeWorkbenchCommand(
-    registry,
-    (input: { indexedKey: string; filter: string }) =>
-      testMatch(input.indexedKey, input.filter),
-    shared,
-  );
-  const customFields = makeWorkbenchCommand(
-    registry,
-    (signal: AbortSignal) =>
-      Effect.raceFirst(
+    ),
+    matches: (indexedKey, filter) =>
+      hostEffect(provide(testMatch(indexedKey, filter))),
+    customFields: hostEffect(
+      provide(
         Effect.gen(function* () {
           return yield* (yield* QueryService).customFieldNames;
         }),
-        Effect.callback<never>((resume) => {
-          const abort = () => resume(Effect.interrupt);
-          signal.addEventListener("abort", abort, { once: true });
-          return Effect.sync(() => signal.removeEventListener("abort", abort));
-        }),
       ),
-
-    shared,
-  );
-  return {
-    tags: hostPromise(() => tags.run()),
-    collections: hostPromise(() => collections.run()),
-    libraries: hostPromise(() => libraries.run()),
-    matches: (indexedKey, filter) =>
-      hostPromise(() => matches.run({ indexedKey, filter })),
-    // The interrupt aborts the signal, which stops the read under it.
-    customFields: Effect.tryPromise({
-      try: (signal) => customFields.run(signal),
-      catch: (cause) => new WorkbenchHostError({ cause }),
-    }),
-    [Symbol.dispose]() {
-      for (const command of [
-        tags,
-        collections,
-        libraries,
-        matches,
-        customFields,
-      ])
-        command[Symbol.dispose]();
-    },
+    ),
   };
 }
 

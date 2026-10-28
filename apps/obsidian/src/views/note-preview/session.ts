@@ -1,4 +1,5 @@
 // One native render owner loads its own Item Snapshot and annotation examples.
+import { Data, Effect } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 
 import {
@@ -26,6 +27,7 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { ViewServices } from "@/lib/view-atoms";
 import { bibliographyRevisionAtom } from "@/services/pandoc/atoms";
 import { templateRevisionAtom } from "@/services/template/atoms";
 import { getSampleAnnotationParent } from "@/views/template-workbench/selection-data";
@@ -35,6 +37,11 @@ import { makeNativeRenderer } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
+
+/** A partial preview asked for before any paper is chosen. */
+class PreviewItemMissing extends Data.TaggedError("PreviewItemMissing")<{
+  readonly message: string;
+}> {}
 
 export class NativePreviewSession implements Disposable {
   readonly state: PreviewStateHandle;
@@ -58,7 +65,7 @@ export class NativePreviewSession implements Disposable {
     this.state = options.state ?? previewStateHandle(deps.registry, model);
     if (options.item !== undefined) this.state.setState({ item: options.item });
     using cleanup = new DisposableStack();
-    this.#renderer = cleanup.use(makeNativeRenderer(deps));
+    this.#renderer = makeNativeRenderer(deps);
     cleanup.defer(holdPreviewModel(deps.registry, model));
     for (const atom of [templateRevisionAtom, bibliographyRevisionAtom]) {
       let previous = deps.registry.get(atom);
@@ -225,30 +232,42 @@ export class NativePreviewSession implements Disposable {
    * The text one registered Shared Partial produces for `context`, under this
    * session's own selections. This is what a Partial Placeholder's preview
    * shows, so the box under a call reads the data the slice it sits in reads.
+   * Interrupting it stops the render.
    *
-   * @throws when no paper is chosen yet, and whatever the render raises.
+   * Fails when no paper is chosen yet, and with whatever the render raises.
    */
-  async renderPartial(name: string, context: PartialContext): Promise<string> {
-    await this.ready;
-    const state = this.state.getState();
-    const citation =
-      context === "citation"
-        ? { variant: state.variant, example: state.citationExample }
-        : undefined;
-    const snapshot = previewSnapshot(state, citation?.example ?? null);
-    if (!snapshot) throw new Error(m.workbench_example_missing_item());
-    return await this.#renderer.partial(
-      {
-        source: state.source ?? "",
-        snapshot,
-        ...(state.example ? { annotation: state.example } : {}),
-        ...(citation ? { citation } : {}),
-      },
-      {
-        name,
-        context,
-        profile: state.context?.partial?.profile ?? null,
-      },
+  renderPartial(
+    name: string,
+    context: PartialContext,
+  ): Effect.Effect<string, unknown, ViewServices> {
+    return Effect.promise(() => this.ready).pipe(
+      Effect.andThen(() => {
+        const state = this.state.getState();
+        const citation =
+          context === "citation"
+            ? { variant: state.variant, example: state.citationExample }
+            : undefined;
+        const snapshot = previewSnapshot(state, citation?.example ?? null);
+        if (!snapshot)
+          return Effect.fail(
+            new PreviewItemMissing({
+              message: m.workbench_example_missing_item(),
+            }),
+          );
+        return this.#renderer.partial(
+          {
+            source: state.source ?? "",
+            snapshot,
+            ...(state.example ? { annotation: state.example } : {}),
+            ...(citation ? { citation } : {}),
+          },
+          {
+            name,
+            context,
+            profile: state.context?.partial?.profile ?? null,
+          },
+        );
+      }),
     );
   }
 

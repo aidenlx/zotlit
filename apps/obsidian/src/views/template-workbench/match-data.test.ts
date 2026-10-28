@@ -7,6 +7,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { makeViewRunner } from "@/lib/view-runner";
 import { buildQueryService } from "@/services/item-query/__fixtures__";
 import {
   inProcessReadsService,
@@ -69,7 +70,9 @@ async function openMatchData(stack: AsyncDisposableStack) {
     ),
     query,
   });
-  const data = stack.use(createMatchData(host.registry));
+  const data = createMatchData(
+    stack.use(makeViewRunner(host.registry)).provide,
+  );
   return { data, dispose };
 }
 
@@ -144,9 +147,10 @@ it.effect(
           customFieldNames,
         }),
       });
-      const data = yield* Effect.acquireDisposable(
-        Effect.sync(() => createMatchData(host.registry)),
+      const runner = yield* Effect.acquireDisposable(
+        Effect.sync(() => makeViewRunner(host.registry)),
       );
+      const data = createMatchData(runner.provide);
       const fiber = yield* Effect.forkChild(data.customFields);
       const running = yield* Effect.promise(() => started.promise);
       yield* Fiber.interrupt(fiber);
@@ -156,4 +160,30 @@ it.effect(
       );
       expect(customFieldNames).toHaveBeenCalledOnce();
     }),
+);
+
+// #1819: concurrent reads stop when the view closes, before the registry's idle expiry.
+it.effect("stops every concurrent read when its view closes", () =>
+  Effect.gen(function* () {
+    const signals: AbortSignal[] = [];
+    const host = makeWorkbenchHost({
+      query: stubService<NonNullable<WorkbenchHostDeps["query"]>>("Query", {
+        customFieldNames: (signal) => {
+          signals.push(signal);
+          return new Promise<never>(() => {});
+        },
+      }),
+    });
+    const runner = makeViewRunner(host.registry);
+    const data = createMatchData(runner.provide);
+    const fibers = [
+      runner.run(data.customFields),
+      runner.run(data.customFields),
+    ];
+    yield* Effect.promise(() => waitFor(() => expect(signals).toHaveLength(2)));
+    yield* Effect.promise(() => runner[Symbol.asyncDispose]());
+    for (const fiber of fibers)
+      expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true);
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+  }),
 );

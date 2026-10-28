@@ -7,7 +7,7 @@
 // annotation insert that a cancelled drag stops, needs its own fiber: the
 // runner forks each gesture and answers its Fiber.
 import { RegistryContext } from "@effect/atom-react";
-import { Effect, Exit, FiberSet, Scope } from "effect";
+import { Cause, Effect, Exit, FiberSet, Scope } from "effect";
 import type { Fiber } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -24,6 +24,14 @@ export type ViewRun = <A, E>(
 
 export interface ViewRunner extends Disposable, AsyncDisposable {
   readonly run: ViewRun;
+  /**
+   * `effect` with the view services provided, for a seam that takes an Effect
+   * with no requirements, such as a Workbench host member. Its fiber runs on
+   * whichever runner forks it.
+   */
+  readonly provide: <A, E>(
+    effect: Effect.Effect<A, E, ViewServices>,
+  ) => Effect.Effect<A, E>;
 }
 
 /**
@@ -47,6 +55,7 @@ export function makeViewRunner(
   const dispose = () => (closing ??= close().finally(unmount));
   return {
     run,
+    provide: Effect.provideContext(context),
     [Symbol.dispose]: () => void dispose(),
     [Symbol.asyncDispose]: dispose,
   };
@@ -72,4 +81,28 @@ export function onFiberSuccess<A, E>(
   fiber.addObserver((exit) => {
     if (Exit.isSuccess(exit)) answer(exit.value);
   });
+}
+
+/**
+ * How `fiber` ended, for a view flow that still awaits a Promise. An
+ * interrupt-only Exit means the view closed or a newer run superseded it.
+ */
+export function exitOf<A, E>(
+  fiber: Fiber.Fiber<A, E>,
+): Promise<Exit.Exit<A, E>> {
+  return new Promise((resolve) => fiber.addObserver(resolve));
+}
+
+/**
+ * Runs `effect` once on the view services of `registry`, for plain code that
+ * belongs to no open view. Its failure rejects.
+ */
+export async function runOnce<A, E>(
+  registry: Parameters<typeof makeViewRunner>[0],
+  effect: Effect.Effect<A, E, ViewServices>,
+): Promise<A> {
+  await using runner = makeViewRunner(registry);
+  const exit = await exitOf(runner.run(effect));
+  if (Exit.isSuccess(exit)) return exit.value;
+  throw Cause.squash(exit.cause);
 }

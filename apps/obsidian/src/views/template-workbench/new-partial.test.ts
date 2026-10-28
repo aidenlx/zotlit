@@ -5,17 +5,18 @@ import {
   TextComponent,
   controlsOf,
 } from "@mock/obsidian";
-import { Stream } from "effect";
+import { Exit, Stream } from "effect";
 import type { TFile } from "obsidian";
 import type { App, PaneType, SplitDirection, WorkspaceLeaf } from "obsidian";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { valueOr } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
+import { exitOf, makeViewRunner } from "@/lib/view-runner";
 
 import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
-import { makeWorkbenchCommand } from "./command";
 import type { CreateSharedPartialOptions } from "./new-partial";
 import type { SharedPartialActions } from "./new-partial";
 import { createSharedPartialEffect } from "./partial-command";
@@ -73,15 +74,13 @@ function partialFlow(
       "compile-status-changed": Stream.empty,
     }),
   });
-  const command = makeWorkbenchCommand(
-    host.registry,
-    (options: CreateSharedPartialOptions) =>
-      createSharedPartialEffect(app, options),
-  );
-  host.own(() => command[Symbol.dispose]());
+  const runner = makeViewRunner(host.registry);
+  host.own(async () => await runner[Symbol.asyncDispose]());
+  const exit = exitOf(runner.run(createSharedPartialEffect(app, options)));
   return {
-    result: command.run(options),
-    close: () => command[Symbol.dispose](),
+    result: exit.then((exit) => valueOr(exit, null)),
+    exit,
+    close: async () => await runner[Symbol.asyncDispose](),
   };
 }
 const createSharedPartial = (
@@ -196,10 +195,9 @@ it("answers null when the reader dismisses the prompt", async () => {
 it("closes the name prompt when its Workbench closes", async () => {
   const template = actions();
   const flow = partialFlow(app, template);
-  const result = flow.result.catch((error: unknown) => error);
   const modal = await prompt();
-  flow.close();
+  await flow.close();
   await vi.waitFor(() => expect(modal.isOpen).toBe(false));
   expect(template.createPartial).not.toHaveBeenCalled();
-  expect(await result).toBeInstanceOf(Error);
+  expect(Exit.hasInterrupts(await flow.exit)).toBe(true);
 });
