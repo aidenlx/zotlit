@@ -14,6 +14,7 @@ import {
   answerOf,
   inFlightSlot,
   joinOnView,
+  latestSlot,
   makeViewRunner,
 } from "./view-runner";
 import type { InFlightSlot } from "./view-runner";
@@ -210,4 +211,41 @@ it.effect(
       );
       expect(thrown).toBe(failure);
     }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "interrupts the older run when a newer one starts, and on request",
+  () =>
+    Effect.gen(function* () {
+      const runner = yield* scopedRunner;
+      const slot = latestSlot(runner.run);
+      const older = slot.run(Effect.never);
+      const newer = slot.run(Effect.never);
+      expect(Exit.hasInterrupts(yield* Fiber.await(older))).toBe(true);
+      expect(newer.pollUnsafe()).toBeUndefined();
+      slot.interrupt();
+      expect(Exit.hasInterrupts(yield* Fiber.await(newer))).toBe(true);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("answers the released value to the caller of a superseded run", () =>
+  Effect.gen(function* () {
+    const runner = yield* scopedRunner;
+    const slot = latestSlot(runner.run);
+    const started = yield* Deferred.make<void>();
+    const older = yield* Effect.forkChild(
+      slot.join(
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.as("older"),
+        ),
+        "released",
+      ),
+    );
+    yield* Deferred.await(started);
+    // The newer run starts once the older one waits, as a later gesture does.
+    yield* Effect.yieldNow;
+    expect(yield* slot.join(Effect.succeed("newer"), "released")).toBe("newer");
+    expect(yield* Fiber.join(older)).toBe("released");
+  }).pipe(Effect.scoped),
 );

@@ -8,6 +8,7 @@ import { observeExit } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import { latestSlot } from "@/lib/view-runner";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
   AnnotationInsertOutcome,
@@ -37,21 +38,21 @@ const reporter =
   };
 
 /**
- * The one insert a handler has in flight: holding a newer one interrupts it.
+ * The one insert a handler has in flight: starting a newer one interrupts it.
  * The outcome of an insert that finishes is shown; an interrupted one shows
  * nothing.
  */
-function insertSlot(report: (outcome: AnnotationInsertOutcome) => void) {
-  let pending: InsertFiber | null = null;
-  const cancel = () => pending?.interruptUnsafe();
+function insertSlot<R>(
+  deps: InsertDeps<R>,
+  report: (outcome: AnnotationInsertOutcome) => void,
+) {
+  const latest = latestSlot(deps.run);
+  const runner: InsertDeps<R> = { ...deps, run: latest.run };
   return {
-    cancel,
-    hold(fiber: InsertFiber): InsertFiber {
-      cancel();
-      pending = fiber;
-      fiber.addObserver(() => {
-        if (pending === fiber) pending = null;
-      });
+    cancel: latest.interrupt,
+    /** Starts the insert `start` makes on the slot's runner. */
+    hold(start: (runner: InsertDeps<R>) => InsertFiber): InsertFiber {
+      const fiber = start(runner);
       observeExit(fiber, { onSuccess: report });
       return fiber;
     },
@@ -115,7 +116,7 @@ export function getInsertionEditor(app: App): MarkdownFileInfo | null {
 
 export function createInsertHandler<R>(deps: InsertDeps<R>) {
   const report = reporter(deps);
-  const slot = insertSlot(report);
+  const slot = insertSlot(deps, report);
   const { cancel } = slot;
   /** The insert in flight, or `null` where it ended at once with its notice. */
   const insertInto = (
@@ -134,8 +135,8 @@ export function createInsertHandler<R>(deps: InsertDeps<R>) {
       report({ kind: "source-unavailable" });
       return null;
     }
-    return slot.hold(
-      startInsert(deps, {
+    return slot.hold((runner) =>
+      startInsert(runner, {
         annotation,
         snapshot,
         notePath: file.path,
@@ -180,7 +181,7 @@ interface ActiveDrag {
 
 export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
   const report = reporter(deps);
-  const slot = insertSlot(report);
+  const slot = insertSlot(deps, report);
   let active: ActiveDrag | null = null;
   const cancel = () => {
     active?.cancel();
@@ -221,18 +222,19 @@ export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
       dropEvent.preventDefault();
       dropEvent.dataTransfer.dropEffect = "copy";
       cleanup();
-      if (!info.file) {
+      const file = info.file;
+      if (!file) {
         report({ kind: "no-note" });
         return;
       }
-      slot.hold(
-        insertDrop(deps, {
+      slot.hold((runner) =>
+        insertDrop(runner, {
           annotation,
           snapshot,
           dropEvent,
           editor,
           info,
-          file: info.file,
+          file,
         }),
       );
     });

@@ -7,7 +7,7 @@
 // selection replaces. Closing the view interrupts every fiber still running.
 // What a component reads stays a view atom (ADR 0082).
 import { RegistryContext } from "@effect/atom-react";
-import { Effect, Fiber, FiberSet, Scope } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Scope } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext, useEffect, useState } from "react";
@@ -135,6 +135,53 @@ export function inFlightSlot<A, E>(
     join: Effect.suspend(() => Fiber.join(begin())),
     start: () => void begin(),
     running: () => current !== null,
+  };
+}
+
+/**
+ * One run at a time, the newest first: a new run interrupts the run before
+ * it, so a superseded read stops in place of landing late. The view's close
+ * interrupts the run as well.
+ */
+export interface LatestSlot<R> {
+  /** Forks `effect` and interrupts the run before it. */
+  readonly run: <A, E>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>;
+  /**
+   * Runs `effect` as {@link run} does and joins it, for a caller that waits
+   * for the answer: `released` when a newer run or {@link interrupt} stops
+   * it, or the view closes. The caller's interrupt interrupts the run.
+   */
+  readonly join: <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    released: A,
+  ) => Effect.Effect<A, E>;
+  /** Interrupts the run in flight, for a change that makes its answer stale. */
+  readonly interrupt: () => void;
+}
+
+/** A {@link LatestSlot} whose runs fork on `run`. */
+export function latestSlot<R>(
+  run: <A, E>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>,
+): LatestSlot<R> {
+  let current: Fiber.Fiber<unknown, unknown> | null = null;
+  const interrupt = () => current?.interruptUnsafe();
+  const start = <A, E>(effect: Effect.Effect<A, E, R>) => {
+    interrupt();
+    const fiber = run(effect);
+    current = fiber;
+    return fiber;
+  };
+  return {
+    run: start,
+    join: (effect, released) =>
+      joinForked(Effect.sync(() => start(effect))).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.succeed(released)
+            : Effect.failCause(cause),
+        ),
+      ),
+    interrupt,
   };
 }
 
