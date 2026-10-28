@@ -32,3 +32,8 @@ body.zt-is-resizing-library-card,
 body.zt-is-resizing-library-card * {
   cursor: col-resize !important;
 }
+
+body.zt-is-resizing-library-card-height,
+body.zt-is-resizing-library-card-height * {
+  cursor: row-resize !important;
+}

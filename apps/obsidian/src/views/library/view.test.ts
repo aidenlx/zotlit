@@ -1444,12 +1444,37 @@ it("names the tree and the facets for a screen reader, with no tooltip over them
   const view = await openTab(deps);
   const pane = view.contentEl.querySelector("[data-library-tree]")!;
   // Obsidian shows every `aria-label` as a tooltip on hover.
-  expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+  expect(
+    pane.querySelectorAll("[aria-label]:not([data-library-tree-resizer])"),
+  ).toHaveLength(0);
   expect(accessibleName(pane.querySelector("nav")!)).toBe("");
   expect(accessibleName(pane.querySelector("[role=tree]")!)).toBe("Libraries");
   expect(accessibleName(pane.querySelector("[role=group]")!)).toBe(
     m.library_view_facets_label(),
   );
+});
+
+it("collapses the tree beside a wide list from its button, pressed while it shows, and keeps it collapsed when the tab opens again", async () => {
+  const { deps, settings } = await pluginData();
+  const first = await openTab(deps);
+  const collapse = (view: LibraryView) =>
+    view.contentEl.querySelector<HTMLElement>("[data-library-tree-collapse]")!;
+  const shell = (view: LibraryView) =>
+    view.contentEl.querySelector("[data-library-shell]")!;
+  expect(collapse(first).getAttribute("aria-pressed")).toBe("true");
+  await press(first, collapse(first));
+  expect(shell(first).hasAttribute("data-tree-collapsed")).toBe(true);
+  expect(collapse(first).getAttribute("aria-pressed")).toBe("false");
+  await act(() => settings.bridge.runPromise(settings.flush));
+  expect(
+    settings.bridge.runSync(settings.current)?.["library.document"]
+      ?.treeCollapsed,
+  ).toBe(true);
+  await act(() => first.close());
+  const view = await openTab(deps);
+  expect(shell(view).hasAttribute("data-tree-collapsed")).toBe(true);
+  await press(view, collapse(view));
+  expect(shell(view).hasAttribute("data-tree-collapsed")).toBe(false);
 });
 
 it("puts the open tree away on Escape from inside it, on a Scope above the list's", async () => {
@@ -1460,7 +1485,7 @@ it("puts the open tree away on Escape from inside it, on a Scope above the list'
   const pane = view.contentEl.querySelector<HTMLElement>(
     "[data-library-tree]",
   )!;
-  const shell = pane.parentElement!;
+  const shell = view.contentEl.querySelector("[data-library-shell]")!;
   const escape = async (target: Element, init: KeyboardEventInit = {}) => {
     let event: KeyboardEvent | undefined;
     await act(() => {
@@ -1504,9 +1529,7 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   const { deps, lose, locate, setupActions } = await pluginData();
   await lose();
   const view = await openTab(deps);
-  const shell = view.contentEl.querySelector(
-    "[data-library-tree]",
-  )!.parentElement!;
+  const shell = view.contentEl.querySelector("[data-library-shell]")!;
   const notFound = (part: "tree" | "list") =>
     view.contentEl.querySelector<HTMLElement>(
       `[data-library-not-found="${part}"]`,
@@ -1539,8 +1562,9 @@ it("says where Zotero's data folder cannot be found, offers to locate it, and li
   await press(view, button("list", "Open settings"));
   expect(setupActions.locateZotero).toHaveBeenCalledOnce();
   expect(setupActions.openSettings).toHaveBeenCalledOnce();
-  // No setup-time hint names ZotLit Companion or Better BibTeX.
-  expect(view.contentEl.textContent).not.toMatch(/Companion|Better BibTeX/);
+  // ZotLit Companion shows only as the optional last setup step; no
+  // setup-time hint names Better BibTeX.
+  expect(view.contentEl.textContent).not.toMatch(/Better BibTeX/);
 
   await act(async () => {
     await locate();
@@ -1555,9 +1579,7 @@ it("keeps the last rows with a note where a refresh of the database fails, and d
   const { deps, refreshFails, locate } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
   const rows = shown(view);
-  const shell = view.contentEl.querySelector(
-    "[data-library-tree]",
-  )!.parentElement!;
+  const shell = view.contentEl.querySelector("[data-library-shell]")!;
   const note = () =>
     view.contentEl.querySelector<HTMLElement>("[data-library-refresh-failed]");
   await act(async () => {
@@ -1577,9 +1599,7 @@ it("keeps the last rows with a note where a refresh of the database fails, and d
 it("says Zotero is not found where the data folder changes to one that does not read, though the earlier database still serves", async () => {
   const { deps, moveFails } = await pluginData(ON_MY_LIBRARY);
   const view = await openTab(deps);
-  const shell = view.contentEl.querySelector(
-    "[data-library-tree]",
-  )!.parentElement!;
+  const shell = view.contentEl.querySelector("[data-library-shell]")!;
   await act(async () => {
     await moveFails();
     await view.query.settled;
@@ -1878,6 +1898,44 @@ describe("Reading State facets", () => {
     expect(listed(view)).toEqual(["AAAAAAAA"]);
   });
 
+  it("counts the node's papers of each facet in one line of the item details while no paper is selected, Recent over the Library Scope, and leaves out a facet none passes", async () => {
+    const { deps } = await pluginData();
+    const view = await openTab(deps);
+    const stats = () =>
+      [
+        ...view.contentEl.querySelectorAll<HTMLElement>(
+          "[data-library-card-stat]",
+        ),
+      ].map((el) => el.textContent);
+    // Recent lists My Library's A–E and Lab's F and G.
+    await vi.waitFor(() =>
+      expect(stats()).toEqual([
+        "Unread 4",
+        "Annotated 2",
+        "Has note 2",
+        "PDF 2",
+      ]),
+    );
+    await press(view, row(view, MY_LIBRARY));
+    await vi.waitFor(() =>
+      expect(stats()).toEqual([
+        "Unread 2",
+        "Annotated 2",
+        "Has note 2",
+        "PDF 2",
+      ]),
+    );
+    // Lab's two papers are unread, so the other facets drop out.
+    await press(view, row(view, { kind: "library", library: LAB }));
+    await vi.waitFor(() => expect(stats()).toEqual(["Unread 2"]));
+    // A selected paper takes their place.
+    await act(async () => {
+      itemRow(view, "FFFFFFFF").click();
+      await view.card.settled;
+    });
+    expect(stats()).toEqual([]);
+  });
+
   it("counts the unread Items of the selection in the header, once the vault answers for their notes", async () => {
     const { deps, addNote } = await pluginData();
     const view = await openTab(deps);
@@ -2044,25 +2102,25 @@ it("lets the keyboard enter the list at its first row while none is selected, an
   expect(accessibleName(itemRow(view, C))).toBe("Figures that work");
 });
 
-it("selects the row the keyboard enters the list at, with no Reading Card, so its keys act on it", async () => {
+it("selects the row the keyboard enters the list at, so its keys act on it", async () => {
   const { deps, items } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).focus());
-  expect(view.selected).toEqual({ key: A, card: false });
+  expect(view.selected).toEqual({ key: A });
   expect(await pressKey(view, itemRow(view, A), ["Enter"])).toBe(true);
   expect(items.openNote).toHaveBeenLastCalledWith(A, false);
   expect(await pressKey(view, itemRow(view, A), [" "])).toBe(true);
-  expect(view.selected).toEqual({ key: A, card: true });
+  expect(view.selected).toEqual({ key: A });
 });
 
-it("selects a row whose expand button is clicked, and asks for no Reading Card", async () => {
+it("selects a row whose expand button is clicked", async () => {
   const { deps } = await pluginData();
   const view = await openTab(deps);
   const expand = itemRow(view, A).querySelector<HTMLElement>(
     "button[data-query-expand]",
   )!;
   await act(() => expand.click());
-  expect(view.selected).toEqual({ key: A, card: false });
+  expect(view.selected).toEqual({ key: A });
 });
 
 it("answers the quick switcher's keys on the selected row: Enter the note, Mod+Enter the note in a new pane, Shift+Enter the PDF", async () => {
@@ -2137,7 +2195,7 @@ it("lists the row's actions in its menu, which other plugins add to", async () =
   // The menu acts on the row it opened over, which it selects without
   // opening its Reading Card.
   expect(itemRows(view)[1]).toBe(`${B} *`);
-  expect(view.selected).toEqual({ key: B, card: false });
+  expect(view.selected).toEqual({ key: B });
   menu.items[1]!.click();
   expect(items.openPdf).toHaveBeenCalledExactlyOnceWith(B, "split");
   menu.items[5]!.click();
@@ -2175,7 +2233,7 @@ it("shows an Item in its first Collection, selected, with its Reading Card", asy
   expect(header(view)).toBe("My Library›Thesis› | Chapter 1 | 1 paper");
   expect(itemRows(view)).toContain(`${A} *`);
   // Show in Library asks for the Item's Reading Card, as a click does.
-  expect(view.selected).toEqual({ key: A, card: true });
+  expect(view.selected).toEqual({ key: A });
 });
 
 it("flashes the row it shows until the flash ends, and again on the next Show in Library", async () => {
@@ -2237,7 +2295,7 @@ it("says it cannot show an Item past the rows the list holds, and selects nothin
       outcome = await view.reveal("YYYYYYYY");
     });
     expect(outcome).toBe("not-listed");
-    expect(view.selected).toEqual({ key: null, card: false });
+    expect(view.selected).toEqual({ key: null });
   }
 });
 
@@ -2836,7 +2894,7 @@ it("asks the database nothing from the search box while Zotero's data folder is 
   expect(shown(view)).toEqual(["DDDDDDDD", "CCCCCCCC", "AAAAAAAA"]);
 });
 
-it("lets go of the selected row once a search leaves it out, and hides its Reading Card", async () => {
+it("lets go of the selected row once a search leaves it out, and the item details show no paper", async () => {
   const { deps } = await pluginData();
   const view = await openTab(deps);
   await act(() => itemRow(view, A).click());
@@ -2845,58 +2903,26 @@ it("lets go of the selected row once a search leaves it out, and hides its Readi
   expect(itemRows(view)).toEqual([B]);
   expect(view.selected.key).toBeNull();
   expect(
-    view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
-  ).toBe(true);
+    view.contentEl.querySelector("[data-library-card-empty]")?.textContent,
+  ).toContain(m.library_view_card_empty());
 });
 
-it("opens again on the paper the researcher selected, scrolled into view, with its Reading Card beside a wide list", async () => {
+it("opens a new tab with no paper selected, and keeps no selection in the document", async () => {
   const { deps, settings } = await pluginData();
   const first = await openTab(deps);
   await act(() => itemRow(first, C).click());
   await act(() => settings.bridge.runPromise(settings.flush));
+  // A click writes nothing to plugin data.
   expect(
-    settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
-  ).toBe(C);
+    settings.bridge.runSync(settings.current)?.["library.document"] ?? {},
+  ).not.toHaveProperty("selected");
   await act(() => first.close());
-  const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
-  cleanup.defer(() => scrolled.mockRestore());
   const view = await openTab(deps);
-  expect(itemRows(view).slice(0, 3)).toEqual([A, B, `${C} *`]);
-  // Selected as the arrow keys select: a wide pane shows the card beside
-  // the list, and a narrow one leaves the list uncovered.
-  expect(view.selected).toEqual({ key: C, card: false });
-  expect(
-    view.contentEl.querySelector("[data-library-card]")!.hasAttribute("hidden"),
-  ).toBe(false);
-  // The list draws the row before it scrolls there.
-  await vi.waitFor(() =>
-    expect(scrolled.mock.contexts).toContain(itemRow(view, C)),
-  );
-});
-
-it("lets go of the selected paper in the document once the researcher picks another node", async () => {
-  const { deps, settings } = await pluginData();
-  const view = await openTab(deps);
-  await act(() => itemRow(view, A).click());
-  await press(view, row(view, MY_LIBRARY));
-  await act(() => settings.bridge.runPromise(settings.flush));
-  expect(
-    settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
-  ).toBeNull();
-});
-
-it("opens with no paper selected where the list no longer holds the one it kept, and forgets it", async () => {
-  const { deps, settings } = await pluginData({
-    node: { kind: "recent" },
-    selected: "1:ZZZZZZZZ",
-  });
-  const view = await openTab(deps);
-  expect(view.selected.key).toBeNull();
+  expect(view.selected).toEqual({ key: null });
   expect(itemRows(view).some((key) => key.endsWith("*"))).toBe(false);
-  await act(() => settings.bridge.runPromise(settings.flush));
   expect(
-    settings.bridge.runSync(settings.current)?.["library.document"]?.selected,
-  ).toBeNull();
+    view.contentEl.querySelector("[data-library-card-empty]"),
+  ).not.toBeNull();
 });
 
 describe("Reading Card", () => {
@@ -2906,7 +2932,8 @@ describe("Reading Card", () => {
   /** The card's text by part, `null` while the card is hidden. */
   const shownCard = (view: LibraryView) => {
     const el = card(view);
-    if (el.hidden) return null;
+    // Off, or on with no paper to show.
+    if (el.hidden || el.querySelector("[data-library-card-empty]")) return null;
     const part = (name: string) =>
       el.querySelector(`[data-library-card-${name}]`)?.textContent ?? null;
     return {
@@ -2921,7 +2948,7 @@ describe("Reading Card", () => {
       `[data-library-card-action="${action}"]`,
     )!;
 
-  it("hides while no row is selected, and shows the selected Item's title, creators in full, publication with year, and abstract", async () => {
+  it("shows no paper while no row is selected, and shows the selected Item's title, creators in full, publication with year, and abstract", async () => {
     const { deps } = await pluginData();
     const view = await openTab(deps);
     expect(shownCard(view)).toBeNull();
@@ -3038,7 +3065,7 @@ describe("Reading Card", () => {
     });
   });
 
-  it("hides once the researcher picks another node in the tree", async () => {
+  it("shows no paper once the researcher picks another node in the tree", async () => {
     const { deps } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
@@ -3117,7 +3144,7 @@ describe("Reading Card", () => {
     expect(actions()).toEqual(["pdf (primary)", "note", "more", "sidebar"]);
   });
 
-  it("closes from its close button, gives the focus back to the row, and keeps it closed", async () => {
+  it("turns off from its close button, gives the focus back to the row, and keeps it off", async () => {
     const { deps, settings } = await pluginData();
     const view = await openTab(deps);
     await act(async () => {
@@ -3129,7 +3156,7 @@ describe("Reading Card", () => {
     )!;
     expect(close.getAttribute("aria-label")).toBe(m.library_view_card_close());
     await act(() => close.click());
-    expect(view.selected).toEqual({ key: B, card: false });
+    expect(view.selected).toEqual({ key: B });
     expect(document.activeElement).toBe(itemRow(view, B));
     // A pane wide enough for the card beside the list hides it too.
     expect(shownCard(view)).toBeNull();
@@ -3140,9 +3167,17 @@ describe("Reading Card", () => {
     ).toBe(true);
   });
 
-  it("stays closed while the arrow keys move the selection, and opens again on a row click", async () => {
+  it("stays off while the arrow keys or a click move the selection, and shows again from the Details button, pressed while on", async () => {
     const { deps, settings } = await pluginData();
     const view = await openTab(deps);
+    const details = () =>
+      view.contentEl.querySelector<HTMLElement>(
+        "[data-library-details-toggle]",
+      )!;
+    expect(details().getAttribute("aria-label")).toBe(
+      m.library_view_details_toggle(),
+    );
+    expect(details().getAttribute("aria-pressed")).toBe("true");
     await act(async () => {
       itemRow(view, B).click();
       await view.card.settled;
@@ -3152,54 +3187,50 @@ describe("Reading Card", () => {
         .querySelector<HTMLElement>("[data-library-card-close]")!
         .click(),
     );
+    expect(details().getAttribute("aria-pressed")).toBe("false");
     expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
-    expect(view.selected).toEqual({ key: C, card: false });
+    expect(view.selected).toEqual({ key: C });
+    expect(shownCard(view)).toBeNull();
+    await act(() => itemRow(view, D).click());
+    expect(view.selected).toEqual({ key: D });
     expect(shownCard(view)).toBeNull();
     await act(async () => {
-      itemRow(view, C).click();
+      details().click();
       await view.card.settled;
     });
+    expect(details().getAttribute("aria-pressed")).toBe("true");
     expect(shownCard(view)).not.toBeNull();
     await act(() => settings.bridge.runPromise(settings.flush));
     expect(
       settings.bridge.runSync(settings.current)?.["library.document"],
     ).not.toHaveProperty("cardClosed");
-    // Opened again, it follows the arrow keys beside the list once more.
-    expect(await pressKey(view, itemRow(view, C), ["ArrowUp"])).toBe(true);
+    // On again, they follow the arrow keys.
+    expect(await pressKey(view, itemRow(view, D), ["ArrowUp"])).toBe(true);
     expect(shownCard(view)).not.toBeNull();
   });
 
-  it("opens again on Space on the selected row", async () => {
-    const { deps } = await pluginData({
+  it("turns on and off on Space on the selected row, and leaves the row selected", async () => {
+    const { deps, items } = await pluginData({
       node: { kind: "recent" },
       cardClosed: true,
     });
     const view = await openTab(deps);
-    expect(await pressKey(view, itemRow(view, A), ["ArrowDown"])).toBe(true);
-    expect(view.selected.key).not.toBeNull();
-    expect(shownCard(view)).toBeNull();
-    const key = view.selected.key!;
-    expect(await pressKey(view, itemRow(view, key), [" "])).toBe(true);
-    expect(shownCard(view)).not.toBeNull();
-  });
-
-  it("opens on a click or on Space on the selected row, and stays closed while the arrow keys move the selection", async () => {
-    const { deps, items } = await pluginData();
-    const view = await openTab(deps);
     // Space with no row selected leaves the list to scroll.
     expect(await pressKey(view, itemRow(view, A), [" "])).toBe(false);
-    await act(() => itemRow(view, B).click());
-    expect(view.selected).toEqual({ key: B, card: true });
-    expect(await pressKey(view, itemRow(view, B), ["ArrowDown"])).toBe(true);
-    expect(view.selected).toEqual({ key: C, card: false });
-    expect(document.activeElement).toBe(itemRow(view, C));
+    expect(await pressKey(view, itemRow(view, A), ["ArrowDown"])).toBe(true);
+    const key = view.selected.key!;
+    expect(key).not.toBeNull();
+    expect(shownCard(view)).toBeNull();
     // Space on a button inside the row is the button's.
-    const inside = itemRow(view, C).createEl("button");
+    const inside = itemRow(view, key).createEl("button");
     expect(await pressKey(view, inside, [" "])).toBe(false);
-    expect(view.selected).toEqual({ key: C, card: false });
-    expect(await pressKey(view, itemRow(view, C), [" "])).toBe(true);
-    expect(view.selected).toEqual({ key: C, card: true });
-    // Space only opens the card.
+    expect(shownCard(view)).toBeNull();
+    expect(await pressKey(view, itemRow(view, key), [" "])).toBe(true);
+    expect(shownCard(view)).not.toBeNull();
+    expect(await pressKey(view, itemRow(view, key), [" "])).toBe(true);
+    expect(shownCard(view)).toBeNull();
+    expect(view.selected).toEqual({ key });
+    // Space only turns the details on or off.
     expect(items.openNote).not.toHaveBeenCalled();
     expect(items.openPdf).not.toHaveBeenCalled();
   });
@@ -4080,7 +4111,9 @@ describe("Tag Selector", () => {
     const { deps } = await pluginData(ON_MY_LIBRARY);
     const view = await openTab(deps);
     const pane = view.contentEl.querySelector("[data-library-tree]")!;
-    expect(pane.querySelectorAll("[aria-label]")).toHaveLength(0);
+    expect(
+      pane.querySelectorAll("[aria-label]:not([data-library-tree-resizer])"),
+    ).toHaveLength(0);
     const group = pane.querySelector("[data-library-tags]")!;
     expect(group.getAttribute("role")).toBe("group");
     expect(accessibleName(group)).toBe(m.library_view_tags_label());

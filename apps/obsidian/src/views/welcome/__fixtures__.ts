@@ -42,6 +42,8 @@ export interface WelcomeHostOptions<R = never> {
   readonly services?: Layer.Layer<R>;
   readonly dataDir?: string;
   readonly count?: (signal: AbortSignal) => Promise<{ itemCount: number }>;
+  /** What the Zotero add-on list says each time it is read. */
+  readonly companionInstalled?: () => boolean;
 }
 
 export async function makeWelcomeHost<R = never>(
@@ -81,6 +83,10 @@ export async function makeWelcomeHost<R = never>(
           stubService<ZoteroPrefSnapshot>("ZoteroPrefSnapshot", {
             dataDir: options.dataDir ?? "/Zotero",
           }),
+        ),
+        changes: Stream.never,
+        companionInstalled: Effect.sync(
+          () => options.companionInstalled?.() ?? false,
         ),
       }),
       Layer.mock(ZoteroReads, {

@@ -850,6 +850,106 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
     ]);
   });
 
+  it("shows the entries of every work a hovered citation names in its popover", async () => {
+    const entries = await obRun(
+      vaultId,
+      async ({ app: host, page }) => {
+        const app = host as WalkthroughApp;
+        const { until } = page;
+        await using cleanup = new AsyncDisposableStack();
+        const file = cleanup.adopt(
+          await app.vault.create(
+            "Citation hover.md",
+            "Figures and trust [@rougier2014; @ioannidis2005].\n",
+          ),
+          (file) => app.vault.delete(file),
+        );
+        const leaf = cleanup.adopt(app.workspace.getLeaf("tab"), (leaf) =>
+          leaf.detach(),
+        );
+        await leaf.openFile(file, { state: { mode: "preview" } });
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        const view = leaf.view as MarkdownView;
+        cleanup.defer(() => view.hoverPopover?.hide());
+        // The reading view formats the citation once its render settles and
+        // may draw it again meanwhile, so each citation element that stands is
+        // hovered once, until a popover opens over one. Hovering one element
+        // again would restart the popover's opening delay. A popover that
+        // closed while its citation still stands hid itself and fails the
+        // case; one that closed with its citation drawn again is hovered again
+        // over the new element.
+        let opened = false;
+        let hovered: HTMLElement | null = null;
+        let hovers = 0;
+        // Awaited here, so the cleanup stack runs after the read.
+        return await until(
+          "the Citation Popover entries of the hovered citation",
+          () => {
+            const popover = view.hoverPopover?.hoverEl.isConnected
+              ? view.hoverPopover
+              : null;
+            if (!popover) {
+              if (opened) {
+                if (hovered?.isConnected)
+                  throw new Error("The Citation Popover opened and hid itself");
+                opened = false;
+              }
+              const citation =
+                view.previewMode?.containerEl.querySelector<HTMLElement>(
+                  ".zt-citation",
+                );
+              if (
+                !citation?.textContent?.includes("Rougier") ||
+                citation === hovered
+              )
+                return null;
+              hovered = citation;
+              hovers++;
+              const box = citation.getBoundingClientRect();
+              citation.dispatchEvent(
+                new MouseEvent("mouseover", {
+                  clientX: box.x + box.width / 2,
+                  clientY: box.y + box.height / 2,
+                  bubbles: true,
+                  view: citation.ownerDocument.defaultView,
+                }),
+              );
+              return null;
+            }
+            opened = true;
+            const blocks = [
+              ...popover.hoverEl.querySelectorAll<HTMLElement>(
+                ".zt-citation-popover-content [data-citation-popover-block]",
+              ),
+            ].map((block) => ({
+              citekey: block.dataset.citationPopoverBlock ?? "",
+              text: block.textContent ?? "",
+            }));
+            return blocks.length === 2 ? blocks : null;
+          },
+          30_000,
+        ).catch((error: unknown) => {
+          throw new Error(
+            `${error instanceof Error ? error.message : String(error)}; citation hovers: ${hovers}; citation: ${
+              view.previewMode?.containerEl.querySelector(".zt-citation")
+                ?.textContent ?? "none"
+            }; popover: ${view.hoverPopover?.hoverEl.outerHTML.slice(0, 300) ?? "none"}`,
+            { cause: error },
+          );
+        });
+      },
+      undefined,
+      { timeoutMs: 60_000 },
+    );
+
+    expect(entries.map(({ citekey }) => citekey)).toEqual([
+      "rougier2014",
+      "ioannidis2005",
+    ]);
+    expect(entries[0]!.text).toContain("Rougier");
+    expect(entries[1]!.text).toContain("Ioannidis");
+  });
+
   it("keeps citation suggestions for full words and inserts from both pickers", async () => {
     await obRunUntil(
       vaultId,

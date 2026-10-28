@@ -1,3 +1,4 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { it } from "@effect/vitest";
 import {
   Effect,
@@ -206,7 +207,10 @@ function withReads<A, E>(
   return Effect.gen(function* () {
     const reads = yield* makeInProcessClient(options);
     return yield* body(reads);
-  }).pipe(Effect.scoped, Effect.provide(layerRcRef(opener)));
+  }).pipe(
+    Effect.scoped,
+    Effect.provide([layerRcRef(opener), NodeFileSystem.layer]),
+  );
 }
 
 /** The library-1 version a read saw: which connection answered. */
@@ -1435,7 +1439,10 @@ describe("ZoteroReads connection lifetime", () => {
             .Libraries({ snapshot: id })
             .pipe(Effect.flip, Effect.retry({ times: 100 }));
           return { afterADay, expired };
-        }).pipe(Effect.scoped, Effect.provide(layerRcRef(open)));
+        }).pipe(
+          Effect.scoped,
+          Effect.provide([layerRcRef(open), NodeFileSystem.layer]),
+        );
         expect(result.afterADay).toBe(1);
         expect(result.expired).toBeInstanceOf(SnapshotExpired);
       }),
@@ -1930,7 +1937,7 @@ describe("ZoteroReads SearchItems", () => {
     Effect.gen(function* () {
       const reads = yield* makeInProcessClient();
       return yield* body(reads);
-    }).pipe(Effect.scoped, Effect.provide(connection));
+    }).pipe(Effect.scoped, Effect.provide([connection, NodeFileSystem.layer]));
 
   it.effect(
     "the first search builds the index and answers hydrated Items; later searches reuse it",
@@ -2264,7 +2271,7 @@ describe("ZoteroReads SearchItems", () => {
       return Effect.gen(function* () {
         const reads = yield* makeInProcessClient(options);
         return yield* body(reads, ran);
-      }).pipe(Effect.scoped, Effect.provide(quiet));
+      }).pipe(Effect.scoped, Effect.provide([quiet, NodeFileSystem.layer]));
     };
 
     it.effect(

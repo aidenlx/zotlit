@@ -10,6 +10,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
@@ -162,6 +163,7 @@ describe("Welcome setup checklist", () => {
       connection: CONNECTED,
       literatureFolderExists: true,
       requested: true,
+      companionInstalled: true,
     });
     expect(container.querySelector("[data-open]")).toBeNull();
     await act(() =>
@@ -197,7 +199,8 @@ describe("Welcome setup checklist", () => {
       [...container.querySelectorAll("[data-welcome-step]")].map((el) =>
         el.getAttribute("data-welcome-step"),
       ),
-    ).toEqual(["done", "done", "done"]);
+      // ZotLit Companion is optional: it does not keep setup from being done.
+    ).toEqual(["done", "done", "done", "todo"]);
   });
 
   it("keeps the steps open when asked for, even beside a notice", async () => {
@@ -207,7 +210,7 @@ describe("Welcome setup checklist", () => {
       requested: true,
     });
     expect(container.querySelector("[data-welcome-setup-done]")).toBeNull();
-    expect(container.querySelectorAll("[data-welcome-step]")).toHaveLength(3);
+    expect(container.querySelectorAll("[data-welcome-step]")).toHaveLength(4);
   });
 
   it("opens Connect while Zotero is missing, saying so beside the Locate action", async () => {
@@ -243,7 +246,49 @@ describe("Welcome setup checklist", () => {
       "ZotLit",
       m.welcome_step_folder_title(),
       m.welcome_step_library_title(),
+      m.welcome_step_companion_title(),
     ]);
+  });
+
+  it("recommends ZotLit Companion last, folded while a step before it is not done", async () => {
+    const { container } = await render("fresh", { connection: CONNECTED });
+    const companion = step(container, m.welcome_step_companion_title());
+    expect(companion.hasAttribute("data-open")).toBe(false);
+    expect(companion.textContent).toContain(
+      m.welcome_step_companion_recommended(),
+    );
+  });
+
+  it("opens ZotLit Companion once the other steps are done, with its installation guide", async () => {
+    const { actions, container } = await render("fresh", {
+      connection: CONNECTED,
+      literatureFolderExists: true,
+      requested: true,
+    });
+    const companion = step(container, m.welcome_step_companion_title());
+    expect(companion.hasAttribute("data-open")).toBe(true);
+    expect(companion.textContent).toContain(m.welcome_step_companion_body());
+    await act(() =>
+      button(companion, m.welcome_action_install_companion())?.click(),
+    );
+    expect(actions.openExternal).toHaveBeenCalledWith(DOCS_COMPANION);
+  });
+
+  it("marks ZotLit Companion done once Zotero lists it as installed", async () => {
+    const { container } = await render("fresh", {
+      connection: CONNECTED,
+      literatureFolderExists: true,
+      requested: true,
+      companionInstalled: true,
+    });
+    const companion = step(container, m.welcome_step_companion_title());
+    expect(companion.getAttribute("data-welcome-step")).toBe("done");
+    expect(companion.textContent).toContain(
+      m.welcome_step_companion_installed(),
+    );
+    expect(button(companion, m.welcome_action_install_companion())).toBe(
+      undefined,
+    );
   });
 });
 

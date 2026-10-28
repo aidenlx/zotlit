@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   FiberMap,
+  FileSystem,
   Layer,
   Ref,
   Scope,
@@ -272,6 +273,8 @@ export function handlersLayer(options?: HandlersOptions) {
   const handlers = ZoteroReads.toLayer(
     Effect.gen(function* () {
       const connection = yield* Connection;
+      // The Query Jobs write their exports and probe Attachment files here.
+      const fs = yield* FileSystem.FileSystem;
       const itemIndex = yield* Effect.flatMap(
         Layer.build(itemIndexLayer),
         (context) => Effect.provideContext(ItemIndex, context),
@@ -378,7 +381,7 @@ export function handlersLayer(options?: HandlersOptions) {
                       job.source.databasePath;
                     return yield* runQueryJob(job, {
                       client,
-                      attachmentFiles: makeAttachmentFileResolver(
+                      attachmentFiles: yield* makeAttachmentFileResolver(
                         job.attachmentPaths,
                       ),
                       identity: {
@@ -392,7 +395,7 @@ export function handlersLayer(options?: HandlersOptions) {
                         },
                       },
                     });
-                  }),
+                  }).pipe(Effect.provideService(FileSystem.FileSystem, fs)),
                 ),
               ),
             );

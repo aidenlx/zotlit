@@ -30,7 +30,7 @@ import {
   libraryViewQuery,
   withCardWidth,
   withExpanded,
-  withSelected,
+  withSearch,
 } from "./document";
 import type { LibraryViewDocument } from "./document";
 import { LibraryViewStorage } from "./storage";
@@ -202,12 +202,11 @@ it("writes a toolbar change to the document in plugin data at once", async () =>
     await query.flush();
   });
   // The stored document, of an earlier build, selected no tags, left no
-  // node open but the one above the selected Collection, and no paper.
+  // node open but the one above the selected Collection.
   expect(saved(plugin)).toEqual({
     ...STORED,
     tags: [],
     expanded: [JSON.stringify(["personal", "Thesis"])],
-    selected: null,
     sort: [{ property: "title", direction: "ASC" }],
   });
   expect(storage.document().sort).toEqual([
@@ -248,12 +247,12 @@ it("writes the changes of one task to disk once, holding the last of them", asyn
   const reading = JSON.stringify(["personal", "Reading"]);
   await Promise.all([
     storage.change((doc) => withExpanded(doc, [...doc.expanded, reading])),
-    storage.change((doc) => withSelected(doc, "1:ABCD2345")),
+    storage.change((doc) => withSearch(doc, "attention")),
   ]);
   expect(saveData).toHaveBeenCalledTimes(1);
   expect(saved(plugin)).toMatchObject({
     expanded: [JSON.stringify(["personal", "Thesis"]), reading],
-    selected: "1:ABCD2345",
+    search: "attention",
   });
 });
 
@@ -265,16 +264,16 @@ it("writes once more after a write that runs, holding the last change asked for 
     await disk.promise;
     plugin.data = data;
   });
-  const first = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  const first = storage.change((doc) => withSearch(doc, "attention"));
   await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
   const rest = [
-    storage.change((doc) => withSelected(doc, "1:BBBB2222")),
-    storage.change((doc) => withSelected(doc, "1:CCCC3333")),
+    storage.change((doc) => withSearch(doc, "attention is")),
+    storage.change((doc) => withSearch(doc, "attention is all")),
   ];
   disk.resolve();
   await Promise.all([first, ...rest]);
   expect(saveData).toHaveBeenCalledTimes(2);
-  expect(saved(plugin)).toMatchObject({ selected: "1:CCCC3333" });
+  expect(saved(plugin)).toMatchObject({ search: "attention is all" });
 });
 
 it("writes the Reading Card's width to disk at once, and drops it on a reset", async () => {
@@ -297,14 +296,14 @@ it("finishes a write that has started when the view closes", async () => {
     await disk.promise;
     plugin.data = data;
   });
-  const saving = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  const saving = storage.change((doc) => withSearch(doc, "attention"));
   await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
   storage.close();
   // The close ends the wait at once; the write goes on to disk.
   await saving;
   disk.resolve();
   await vi.waitFor(() =>
-    expect(saved(plugin)).toMatchObject({ selected: "1:AAAA1111" }),
+    expect(saved(plugin)).toMatchObject({ search: "attention" }),
   );
 });
 
@@ -319,17 +318,17 @@ it("settles a write when the plugin's registry closes under it, as a plugin relo
     await disk.promise;
     plugin.data = data;
   });
-  const saving = storage.change((doc) => withSelected(doc, "1:AAAA1111"));
+  const saving = storage.change((doc) => withSearch(doc, "reload"));
   await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
   registry.dispose();
   disk.resolve();
   await expect(saving).resolves.toBeUndefined();
-  expect(saved(plugin)).toMatchObject({ selected: "1:AAAA1111" });
+  expect(saved(plugin)).toMatchObject({ search: "reload" });
 });
 
 it("settles a write that has not started when the plugin's registry closes", async () => {
   const { storage, registry } = await openLibrary();
-  const saving = storage.change((doc) => withSelected(doc, "1:BBBB2222"));
+  const saving = storage.change((doc) => withSearch(doc, "closed"));
   registry.dispose();
   await expect(saving).resolves.toBeUndefined();
 });

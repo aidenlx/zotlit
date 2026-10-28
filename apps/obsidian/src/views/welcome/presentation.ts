@@ -34,6 +34,11 @@ export interface WelcomeState {
    */
   converted: boolean;
   connection: ConnectionReadout;
+  /**
+   * The Zotero profile lists ZotLit Companion as installed and enabled. The
+   * Companion is optional: its step never keeps setup from being done.
+   */
+  companionInstalled: boolean;
   /** Current `note.literature-folder` binding in the default profile. */
   literatureFolder: string;
   /** The literature-notes folder exists in the vault. */

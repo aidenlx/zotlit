@@ -75,7 +75,7 @@ Add a new case to the area file that matches its feature (create a new area file
 | `follow-mode.e2e.ts` | Follow Mode menu rendering |
 | `query-cli*.e2e.ts` | `zotlit:query`, schema, scope CLI |
 | `fresh-destination.e2e.ts` | Fresh vault destination flow |
-| `window-reload.e2e.ts` | Window reload startup order |
+| `window-reload.e2e.ts` | Window reload startup order; a plugin start-up that a disable interrupts |
 
 The default reporter prints suite progress, the run's evidence folder, and the final counts. Each run writes its evidence to its own folder, `.scratch/e2e-results/<start time>-<pid>/`, and `.scratch/e2e-results/latest` points to the run that started last. Read `results.json` there for individual results and `console.log` for console evidence. A Paired Run setup failure writes `paired-startup.log` in that folder with the launch error chain. The ten newest run folders stay; copy evidence you need to retain longer. A tool that reads the results of a run it starts sets `ZOTLIT_E2E_RESULTS` to the folder (see `src/verify-worker.ts`).
 
