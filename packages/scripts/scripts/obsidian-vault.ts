@@ -159,11 +159,18 @@ async function obEval(code: string, target?: string): Promise<string> {
  * `show` call `showInactive` and its `focus` do nothing. `showInactive` still
  * puts the window in front of every other app's windows on macOS, so `show`
  * then calls `blur`, which there orders the window behind them.
+ *
+ * The listener also turns the window's background throttling off before its
+ * page loads. Chromium runs the renderer of a window that other apps' windows
+ * cover at macOS background priority. On a busy machine that renderer then gets
+ * so little CPU that the vault's startup, Restricted Mode exit, and reload pass
+ * the 30-second CLI bound, and the call reports a live window as unreachable
+ * (#1868). The setting lasts through the window's reloads.
  */
 function vaultOpenCode(abs: string): string {
   const open = `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`;
   if (!inactive) return open;
-  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.show=()=>{win.showInactive();if(process.platform==="darwin")win.blur();};win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
+  return `(()=>{const remote=require('@electron/remote');const off=remote.require('vm').runInThisContext('(app)=>{const hook=(_event,win)=>{win.webContents.setBackgroundThrottling(false);win.show=()=>{win.showInactive();if(process.platform==="darwin")win.blur();};win.focus=()=>{};};app.on("browser-window-created",hook);return ()=>app.off("browser-window-created",hook);}')(remote.app);try{return ${open};}finally{off();}})()`;
 }
 
 /**
