@@ -38,9 +38,8 @@ One module owns each surface, and each says what it owns at its head:
 | Module | Owns |
 | --- | --- |
 | [`workbench.tsx`](workbench.tsx) | Page layout, header menu, the editor's view store and what a tab or mode change does beyond it, slice routing, the `{{` popup and the narrow sheet, problem navigation |
-| [`runtime.tsx`](runtime.tsx) | The page runtime: one `ManagedRuntime` over every service below, created with the page and disposed when it closes, and the one bridge React and CodeMirror reach the services through |
+| [`runtime.tsx`](runtime.tsx) | The page runtime: one `ManagedRuntime` over every service below and the Local Bridge client (`@zotlit/workbench/bridge`), created with the page and disposed when it closes, and the one bridge React and CodeMirror reach the services through |
 | [`workbench-connection.ts`](workbench-connection.ts) | The Workbench Connection service: the launch-fragment code exchange, hydration, the dependency and citation-style re-reads, Save with revision reconciliation, disconnect, and the connection Scope that Disconnect closes |
-| [`local-bridge.ts`](local-bridge.ts) | The `LocalBridgeClient` as a service of the page runtime |
 | [`use-workbench-connection.ts`](use-workbench-connection.ts) | The page's view of the Workbench Connection: its state, the draft it follows, and the reader's actions |
 | [`rendering.ts`](rendering.ts) | The Rendering service: the render the host hands the Workbench, and the `Temporal` load |
 | [`use-workbench-draft.ts`](use-workbench-draft.ts) | The baseline a draft is measured against, the autosave keyed by document reference, the restore prompt |

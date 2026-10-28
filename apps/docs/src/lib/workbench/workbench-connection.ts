@@ -14,18 +14,19 @@ import {
   PubSub,
   Ref,
   Scope,
+  Stream,
   SubscriptionRef,
 } from "effect";
-import type { Stream } from "effect";
 
 import {
   CONNECT_FRAGMENT_CODE,
-  LocalBridgeProtocolError,
-  LocalBridgeUnavailableError,
+  LocalBridgeClient,
 } from "@zotlit/workbench/bridge";
 import type {
   InstalledCitationStyle,
   LocalBridgeConnection,
+  LocalBridgeError,
+  LocalBridgeState,
   SaveSelectedProfileRequest,
   SaveSelectedProfileResponse,
   SelectedProfileResponse,
@@ -35,8 +36,6 @@ import type { RenderResources } from "@zotlit/workbench/render";
 import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
-import { LocalBridge } from "./local-bridge";
-import type { LocalBridgeFailure } from "./local-bridge";
 import { readDraft } from "./transfer";
 import type { WorkbenchDraft } from "./transfer";
 
@@ -64,10 +63,11 @@ export interface SavedProfile {
 }
 
 /** What the page shows of the connection. */
-export interface ConnectionState {
-  readonly connection: LocalBridgeConnection;
-  /** Whether a kept credential and its port are still here to present. */
-  readonly resumable: boolean;
+export interface ConnectionState
+  extends LocalBridgeState, PageConnectionState {}
+
+/** What the page holds of the connection beside the client's own state. */
+interface PageConnectionState {
   readonly saveTarget: SaveTarget | null;
   readonly resources: RenderResources | undefined;
   readonly citationStyles: readonly InstalledCitationStyle[] | null;
@@ -112,8 +112,8 @@ export class WorkbenchConnection extends Context.Service<
     readonly reconnect: Effect.Effect<void>;
     /** Reads the selected Profile again over the connection held now. */
     readonly reload: Effect.Effect<void>;
-    /** Ends the connection; answers whether it ended. */
-    readonly disconnect: Effect.Effect<boolean>;
+    /** Ends the connection, even when the vault did not answer. */
+    readonly disconnect: Effect.Effect<void>;
     /** The selected Item, or null when the read failed. */
     readonly loadSelectedItem: Effect.Effect<SampleItem | null>;
     /** The saved revision, or null when the vault refused or the save failed. */
@@ -181,11 +181,9 @@ const openReads = (parent: Scope.Scope) =>
 export const layerWorkbenchConnection = Layer.effect(
   WorkbenchConnection,
   Effect.gen(function* () {
-    const bridge = yield* LocalBridge;
+    const bridge = yield* LocalBridgeClient;
     const layerScope = yield* Scope.Scope;
-    const state = yield* SubscriptionRef.make<ConnectionState>({
-      connection: yield* bridge.connection,
-      resumable: yield* bridge.resumable,
+    const state = yield* SubscriptionRef.make<PageConnectionState>({
       saveTarget: null,
       ...DISCONNECTED_RESOURCES,
       connectionBusy: false,
@@ -199,34 +197,32 @@ export const layerWorkbenchConnection = Layer.effect(
     const reads = yield* Ref.make<ConnectionReads>(
       yield* openReads(layerScope),
     );
-    const current = SubscriptionRef.get(state);
+    const current = Effect.zipWith(
+      bridge.current,
+      SubscriptionRef.get(state),
+      shown,
+    );
     const update = (
-      patch: (held: ConnectionState) => Partial<ConnectionState>,
+      patch: (held: PageConnectionState) => Partial<PageConnectionState>,
     ) => SubscriptionRef.update(state, (held) => ({ ...held, ...patch(held) }));
+    /** The connection the client holds now. */
+    const clientConnection = Effect.map(
+      bridge.current,
+      (now) => now.connection,
+    );
 
     const started = yield* Ref.make(false);
     const launchItemLoaded = yield* Ref.make(false);
     const bundle = yield* Ref.make(NO_BUNDLE);
     const forgetBundle = Ref.set(bundle, NO_BUNDLE);
 
-    /** Takes what the client holds now as what the page shows. */
-    const settle = (connection?: LocalBridgeConnection) =>
+    const connectionFailed = (failure: LocalBridgeError) =>
       Effect.gen(function* () {
-        const next = connection ?? (yield* bridge.connection);
-        const resumable = yield* bridge.resumable;
-        yield* update(() => ({ connection: next, resumable }));
-      });
-
-    const connectionFailed = (failure: LocalBridgeFailure) =>
-      Effect.gen(function* () {
-        const next = yield* bridge.connection;
-        const resumable = yield* bridge.resumable;
+        const next = yield* clientConnection;
         if (next.state !== "connected") yield* forgetBundle;
         yield* update(() => ({
           ...(next.state === "connected" ? {} : DISCONNECTED_RESOURCES),
-          connection: next,
-          resumable,
-          message: connectionFailureMessage(failure.cause, next),
+          message: connectionFailureMessage(failure, next),
         }));
       });
 
@@ -250,7 +246,7 @@ export const layerWorkbenchConnection = Layer.effect(
      * the hydration it belongs to.
      */
     const readCitationStyles = Effect.gen(function* () {
-      const grant = yield* bridge.connection;
+      const grant = yield* clientConnection;
       if (
         grant.state !== "connected" ||
         !grant.capabilities.includes("citation-styles:list")
@@ -258,16 +254,12 @@ export const layerWorkbenchConnection = Layer.effect(
         return null;
       }
       return yield* bridge.listCitationStyles.pipe(
-        // Ticket 08 turns this check of what the client threw into a failure tag.
-        Effect.catchIf(
-          (failure) => failure.cause instanceof LocalBridgeProtocolError,
-          () => Effect.succeed(null),
-        ),
+        Effect.catchTag("LocalBridgeStatusError", () => Effect.succeed(null)),
       );
     });
 
     const hydrate = Effect.gen(function* () {
-      const grant = yield* bridge.connection;
+      const grant = yield* clientConnection;
       if (grant.state !== "connected") return;
       const selected = yield* bridge.readSelectedProfile;
       // The style this vault has in effect, which a Profile that binds none
@@ -287,7 +279,7 @@ export const layerWorkbenchConnection = Layer.effect(
       const installationId = grant.installation.id;
       const currentExpected = expectedRevision(selected.document);
       const kept = readDraft({ reference, installationId });
-      const { saveTarget } = yield* current;
+      const { saveTarget } = yield* SubscriptionRef.get(state);
       const retainedExpected =
         saveTarget?.reference === reference
           ? saveTarget.expected
@@ -296,7 +288,7 @@ export const layerWorkbenchConnection = Layer.effect(
       // The first hydration loads the launch paper before exposing Restore, so
       // a late response cannot replace the snapshot the reader just restored.
       let snapshot: SampleItem | null = null;
-      let itemFailure: LocalBridgeFailure | undefined;
+      let itemFailure: LocalBridgeError | undefined;
       if (!(yield* Ref.get(launchItemLoaded)) && grant.selectedItem) {
         const loaded = yield* Effect.result(bridge.loadSelectedItem);
         if (loaded._tag === "Success") {
@@ -334,12 +326,11 @@ export const layerWorkbenchConnection = Layer.effect(
     });
 
     const connect = (
-      open: Effect.Effect<LocalBridgeConnection, LocalBridgeFailure>,
+      open: Effect.Effect<LocalBridgeConnection, LocalBridgeError>,
     ) =>
       Effect.gen(function* () {
         yield* update(() => ({ connectionBusy: true, message: null }));
         const next = yield* open;
-        yield* settle(next);
         if (next.state === "connected") yield* hydrate;
       }).pipe(
         Effect.catch(connectionFailed),
@@ -350,7 +341,7 @@ export const layerWorkbenchConnection = Layer.effect(
     const resume = bridge.resume.pipe(
       Effect.filterOrElse(
         (next): next is LocalBridgeConnection => next !== null,
-        () => bridge.connection,
+        () => clientConnection,
       ),
     );
 
@@ -368,7 +359,7 @@ export const layerWorkbenchConnection = Layer.effect(
       // The restored grant records the versions and capabilities in force when
       // it was issued, so a reload presents the kept credential to the bridge
       // running now and is measured against what it answers.
-      const kept = yield* bridge.connection;
+      const kept = yield* clientConnection;
       if (kept.state === "connected") yield* connect(resume);
     }).pipe(Effect.withSpan("WorkbenchConnection.start"));
 
@@ -378,15 +369,13 @@ export const layerWorkbenchConnection = Layer.effect(
       const ended = yield* Ref.getAndSet(reads, yield* openReads(layerScope));
       yield* Scope.close(ended.scope, Exit.void);
       yield* update(() => ({ connectionBusy: true }));
-      yield* bridge.disconnect;
+      // The client drops the grant whatever the vault answered, so the page
+      // has ended the connection either way; the vault ends a session it
+      // never heard about when the reader revokes it in Obsidian.
+      yield* Effect.ignore(bridge.disconnect);
       yield* forgetBundle;
       yield* update(() => ({ ...DISCONNECTED_RESOURCES, message: null }));
-      yield* settle();
-      return true;
     }).pipe(
-      Effect.catch((failure) =>
-        connectionFailed(failure).pipe(Effect.as(false)),
-      ),
       Effect.ensuring(update(() => ({ connectionBusy: false }))),
       Effect.withSpan("WorkbenchConnection.disconnect"),
     );
@@ -405,8 +394,8 @@ export const layerWorkbenchConnection = Layer.effect(
 
     const save = Effect.fn("WorkbenchConnection.save")(
       function* (source: string) {
-        const grant = yield* bridge.connection;
-        const { saveTarget } = yield* current;
+        const grant = yield* clientConnection;
+        const { saveTarget } = yield* SubscriptionRef.get(state);
         if (!saveTarget || grant.state !== "connected") return null;
         yield* update(() => ({ saveBusy: true, message: null }));
         const saved = yield* bridge.saveSelectedProfile({
@@ -529,12 +518,16 @@ export const layerWorkbenchConnection = Layer.effect(
 
     return WorkbenchConnection.of({
       current,
-      changes: SubscriptionRef.changes(state),
+      changes: Stream.zipLatestWith(
+        bridge.changes,
+        SubscriptionRef.changes(state),
+        shown,
+      ),
       start,
       reconnect: connect(resume).pipe(
         Effect.withSpan("WorkbenchConnection.reconnect"),
       ),
-      reload: connect(bridge.connection).pipe(
+      reload: connect(clientConnection).pipe(
         Effect.withSpan("WorkbenchConnection.reload"),
       ),
       disconnect,
@@ -547,20 +540,19 @@ export const layerWorkbenchConnection = Layer.effect(
   }),
 );
 
-// Ticket 08 turns these checks of what the client threw into failure tags.
 function connectionFailureMessage(
-  error: unknown,
+  failure: LocalBridgeError,
   connection: LocalBridgeConnection,
 ): string {
   if (
-    error instanceof LocalBridgeProtocolError &&
-    error.code === "invalid-one-time-code" &&
+    failure._tag === "LocalBridgeStatusError" &&
+    failure.code === "invalid-one-time-code" &&
     connection.state === "disconnected"
   ) {
     return m.docs_workbench_connection_link_expired();
   }
   if (
-    error instanceof LocalBridgeUnavailableError &&
+    failure._tag === "LocalBridgeUnavailableError" &&
     connection.state === "unavailable"
   ) {
     if (connection.reason === "version-mismatch") {
@@ -576,7 +568,15 @@ function connectionFailureMessage(
   ) {
     return m.workbench_connection_disconnected_notice();
   }
-  return m.workbench_connection_failed({ message: errorMessage(error) });
+  return m.workbench_connection_failed({ message: failure.message });
+}
+
+/** What the page shows: the client's connection beside the page's own state. */
+function shown(
+  client: LocalBridgeState,
+  page: PageConnectionState,
+): ConnectionState {
+  return { ...client, ...page };
 }
 
 function expectedRevision(
@@ -611,8 +611,4 @@ function saveRefusalMessage(
     case "unsupported-profile":
       return m.workbench_save_unsupported();
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

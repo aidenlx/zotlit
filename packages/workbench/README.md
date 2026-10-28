@@ -295,12 +295,22 @@ one fault once without comparing either failure's wording.
 
 ## Bridge
 
-`@zotlit/workbench/bridge` holds the wire schemas and the browser client. The
-session credential lives in `sessionStorage` and outlives a transport failure:
-a dropped fetch marks the connection lost and keeps the credential, so a reload
-re-checks compatibility and revision with it, and `resume()` does the same from
-the page, so Reconnect after a blip costs no fresh approval. A refusal (HTTP
-401) and a version mismatch clear it, and so does an explicit disconnect.
+`@zotlit/workbench/bridge` holds the wire schemas and the browser client, the
+`LocalBridgeClient` Effect service (`layerLocalBridgeClient`). Its members are
+Effects, its connection state is a `SubscriptionRef` (`current`, `changes`), and
+it sends through Effect's `HttpClient` (`FetchHttpClient.layer` in a browser, a
+fake `fetch` in tests) and keeps its grant behind the `LocalBridgeStorage` tag
+(`layerTabStorage`). A request fails with one tag: `LocalBridgeDecodeError`, `LocalBridgeStatusError`,
+`LocalBridgeConnectionError` (ZotLit not reachable) or
+`LocalBridgeUnavailableError`. A version mismatch is a connection state and a
+refused Save a `refused` answer, not failures.
+
+The session credential lives in `sessionStorage` and outlives a transport
+failure: a dropped fetch marks the connection lost and keeps the credential, so
+a reload re-checks compatibility and revision with it, and `resume` does the
+same from the page, so Reconnect after a blip costs no fresh approval. A
+refusal (HTTP 401) and a version mismatch clear it, and so does Disconnect,
+even when its request fails.
 
 ## Language
 

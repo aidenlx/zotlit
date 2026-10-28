@@ -1,4 +1,6 @@
 import { EditorView } from "@codemirror/view";
+import { Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -7,6 +9,7 @@ import {
   BRIDGE_CAPABILITIES,
   BRIDGE_VERSION,
   LOCAL_BRIDGE_PATHS,
+  LocalBridgeStorage,
   connectFragment,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileResponse } from "@zotlit/workbench/bridge";
@@ -167,7 +170,14 @@ export async function open({
   const content = (
     <>
       <Workbench
-        layer={layerPage({ fetch: bridge, storage: sessionStorage })}
+        layer={layerPage.pipe(
+          Layer.provide([
+            FetchHttpClient.layer.pipe(
+              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
+            ),
+            Layer.succeed(LocalBridgeStorage, sessionStorage),
+          ]),
+        )}
       />
       <Toaster />
     </>
@@ -361,7 +371,6 @@ export interface BridgeRequest {
   readonly origin: string;
   readonly path: string;
   readonly body: unknown;
-  readonly receiver: unknown;
 }
 
 export interface BridgeFixtureOptions {
@@ -386,14 +395,11 @@ export interface BridgeFixtureOptions {
   readonly noSelectedItem?: boolean;
   /** Answers the selected Item 401, the way a revoked credential does. */
   readonly revokeAfterConnect?: boolean;
+  /** Never answers Disconnect, the way a bridge that went away does. */
+  readonly disconnectUnreachable?: boolean;
   readonly save?: SaveSelectedProfileResponse;
   /** Holds the answer to a request at `path` until the Promise it returns settles. */
   readonly hold?: (path: string) => Promise<void> | undefined;
-}
-
-export function receiverName(receiver: unknown): string | undefined {
-  if (receiver === null || typeof receiver !== "object") return undefined;
-  return receiver.constructor.name;
 }
 
 export function bridgeFetch(
@@ -408,11 +414,7 @@ export function bridgeFetch(
     options.itemNetworkFailureOnce === true ||
     options.initialItemFailure === true;
   let itemProtocolFailurePending = options.itemProtocolFailureOnce === true;
-  return async function (
-    this: typeof globalThis,
-    input: string | URL | Request,
-    init?: RequestInit,
-  ) {
+  return async function (input: string | URL | Request, init?: RequestInit) {
     const url = new URL(
       typeof input === "string" || input instanceof URL ? input : input.url,
     );
@@ -422,7 +424,6 @@ export function bridgeFetch(
       origin: url.origin,
       path: url.pathname,
       body,
-      receiver: this,
     });
     await options.hold?.(url.pathname);
 
@@ -446,6 +447,12 @@ export function bridgeFetch(
       );
     }
 
+    if (
+      options.disconnectUnreachable &&
+      url.pathname === LOCAL_BRIDGE_PATHS.disconnect
+    ) {
+      throw new TypeError("The Local Bridge disappeared.");
+    }
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.selectedItem &&
       itemNetworkFailurePending &&
