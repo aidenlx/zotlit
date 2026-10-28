@@ -101,6 +101,12 @@ export interface LibraryViewDocument {
    */
   readonly cardWidth?: number;
   /**
+   * The Reading Card's height in pixels under a narrow list, as the
+   * researcher set it by its top edge; absent for the default,
+   * {@link CARD_HEIGHT_DEFAULT}.
+   */
+  readonly cardHeight?: number;
+  /**
    * Whether the researcher turned the item details off, from the Details
    * button, Space on the list, the card's close button or a drag of its edge
    * past the minimum; absent while they show. While on, the details show the
@@ -123,6 +129,10 @@ export interface LibraryViewDocument {
 export const CARD_WIDTH_DEFAULT = 384;
 /** The narrowest the Reading Card can be, in pixels: 18rem. */
 export const CARD_WIDTH_MIN = 288;
+/** The Reading Card's height under a narrow list until the researcher sets one: 16rem. */
+export const CARD_HEIGHT_DEFAULT = 256;
+/** The lowest the Reading Card can be under a narrow list, in pixels: 8rem. */
+export const CARD_HEIGHT_MIN = 128;
 /** The room the list keeps beside the Reading Card, in pixels: 20rem. */
 export const CARD_LIST_MIN = 320;
 /** The Library Tree's width, in pixels, until the researcher sets one: 14rem. */
@@ -200,6 +210,7 @@ export type StoredLibraryViewDocument = {
   card: { allFields: boolean; annotations: boolean };
   expanded: string[];
   cardWidth?: number;
+  cardHeight?: number;
   cardClosed?: boolean;
   treeWidth?: number;
   treeCollapsed?: boolean;
@@ -286,6 +297,7 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
   const expanded = field(v.array(v.unknown()), "expanded", []);
   const node = field(nodeSchema, "node", defaults.node);
   const cardWidth = stored.cardWidth;
+  const cardHeight = stored.cardHeight;
   const treeWidth = stored.treeWidth;
   return {
     node,
@@ -306,6 +318,10 @@ export function parseLibraryViewDocument(raw: unknown): LibraryViewDocument {
     ),
     ...(typeof cardWidth === "number" &&
       Number.isFinite(cardWidth) && { cardWidth: clampCardWidth(cardWidth) }),
+    ...(typeof cardHeight === "number" &&
+      Number.isFinite(cardHeight) && {
+        cardHeight: clampCardWidth(cardHeight, undefined, CARD_HEIGHT_MIN),
+      }),
     ...(stored.cardClosed === true && { cardClosed: true }),
     ...(typeof treeWidth === "number" &&
       Number.isFinite(treeWidth) && {
@@ -383,6 +399,23 @@ export function withCardWidth(
   return width === undefined || !Number.isFinite(width)
     ? rest
     : { ...rest, cardWidth: clampCardWidth(width) };
+}
+
+/**
+ * `doc` with the Reading Card `height` pixels high under a narrow list, at
+ * least {@link CARD_HEIGHT_MIN}; `undefined` returns it to the default.
+ */
+export function withCardHeight(
+  doc: LibraryViewDocument,
+  height: number | undefined,
+): LibraryViewDocument {
+  const { cardHeight: _, ...rest } = doc;
+  return height === undefined || !Number.isFinite(height)
+    ? rest
+    : {
+        ...rest,
+        cardHeight: clampCardWidth(height, undefined, CARD_HEIGHT_MIN),
+      };
 }
 
 /**
@@ -501,6 +534,7 @@ export function serializeLibraryViewDocument(
     card: { ...doc.card },
     expanded: [...doc.expanded],
     ...(doc.cardWidth !== undefined && { cardWidth: doc.cardWidth }),
+    ...(doc.cardHeight !== undefined && { cardHeight: doc.cardHeight }),
     ...(doc.cardClosed === true && { cardClosed: true }),
     ...(doc.treeWidth !== undefined && { treeWidth: doc.treeWidth }),
     ...(doc.treeCollapsed === true && { treeCollapsed: true }),

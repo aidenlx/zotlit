@@ -468,10 +468,30 @@ function CardBody({ card }: { card: ReadingCard }) {
       bodyHeight.current =
         bodyRef.current.offsetHeight + (abstractRef.current?.offsetHeight ?? 0);
   });
+  // The details turn off here at every pane width, as the Details button
+  // turns them off, and the list takes their room until the researcher
+  // turns them on again. The button sits in the card's corner, outside
+  // what scrolls, so it stays in reach down a long paper.
+  const close = (
+    <span className="zt:absolute zt:end-(--size-4-4) zt:top-(--size-4-4) zt:z-(--layer-cover) zt:flex zt:rounded-(--radius-s) zt:bg-(--background-primary)">
+      <IconButton
+        icon="x"
+        data-library-card-close=""
+        {...tooltipAttrs(m.library_view_card_close())}
+        onClick={card.host.close}
+      />
+    </span>
+  );
   // With no row selected the details keep their room, count the papers of
   // the tree node and say what fills it, so the first click on a row moves
   // nothing.
-  if (key === null) return <NoPaper stats={card.host.stats()} />;
+  if (key === null)
+    return (
+      <>
+        {close}
+        <NoPaper stats={card.host.stats()} />
+      </>
+    );
   const { items, host, readers } = card;
   const hasInfo =
     !!item &&
@@ -488,348 +508,340 @@ function CardBody({ card }: { card: ReadingCard }) {
   // narrow list or dragged wide, sets the paper's title page beside its
   // info and Annotations, so it reads in two short columns, not one long.
   return (
-    <section
-      className="zt:relative zt:flex zt:h-full zt:min-h-0 zt:flex-col zt:overflow-y-auto zt:px-(--size-4-4) zt:pt-(--size-4-4) zt:pb-(--size-4-8) zt:@2xl/card:grid zt:@2xl/card:grid-cols-2 zt:@2xl/card:content-start zt:@2xl/card:items-start zt:@2xl/card:gap-x-(--size-4-8)"
-      aria-labelledby={titleId}
-      data-library-card-columns=""
-    >
-      <div className="zt:flex zt:min-w-0 zt:flex-col">
-        <div className="zt:flex zt:min-h-(--icon-size) zt:items-center zt:gap-(--size-2-2)">
-          {item?.type && (
+    <>
+      {close}
+      <section
+        className="zt:relative zt:flex zt:h-full zt:min-h-0 zt:flex-col zt:overflow-y-auto zt:px-(--size-4-4) zt:pt-(--size-4-4) zt:pb-(--size-4-8) zt:@2xl/card:grid zt:@2xl/card:grid-cols-2 zt:@2xl/card:content-start zt:@2xl/card:items-start zt:@2xl/card:gap-x-(--size-4-8)"
+        aria-labelledby={titleId}
+        data-library-card-columns=""
+      >
+        <div className="zt:flex zt:min-w-0 zt:flex-col">
+          <div className="zt:flex zt:min-h-(--icon-size) zt:items-center zt:gap-(--size-2-2) zt:pe-(--size-4-8)">
+            {item?.type && (
+              <div
+                className="zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-1.5 zt:text-xs zt:font-(--font-medium) zt:tracking-[0.06em] zt:text-muted-foreground zt:uppercase"
+                data-library-card-part="type"
+              >
+                {/* The icon of the Item type, from the map the Papers rows use. */}
+                <Icon
+                  name={itemTypeIcon(item.itemType)}
+                  size="xs"
+                  className="zt:shrink-0"
+                  data-library-card-type-icon={itemTypeIcon(item.itemType)}
+                />
+                <span className="zt:truncate">{item.type}</span>
+              </div>
+            )}
+          </div>
+          <div
+            role="heading"
+            aria-level={2}
+            id={titleId}
+            className="zt:m-0 zt:mt-(--size-2-3) zt:font-(family-name:--zt-font-display) zt:text-base zt:leading-[1.3] zt:font-(--font-semibold) zt:text-balance zt:break-words zt:text-(--text-normal) zt:select-text"
+            data-library-card-title=""
+          >
+            {item?.title}
+          </div>
+          {item?.creators && (
             <div
-              className="zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-1.5 zt:text-xs zt:font-(--font-medium) zt:tracking-[0.06em] zt:text-muted-foreground zt:uppercase"
-              data-library-card-part="type"
+              className="zt:mt-(--size-2-3) zt:text-(length:--font-ui-small) zt:break-words zt:text-(--text-normal) zt:select-text"
+              data-library-card-creators=""
             >
-              {/* The icon of the Item type, from the map the Papers rows use. */}
-              <Icon
-                name={itemTypeIcon(item.itemType)}
-                size="xs"
-                className="zt:shrink-0"
-                data-library-card-type-icon={itemTypeIcon(item.itemType)}
-              />
-              <span className="zt:truncate">{item.type}</span>
+              {item.creators}
             </div>
           )}
-          {/* The details turn off here at every pane width, as the
-              Details button turns them off, and the list takes their room
-              until the researcher turns them on again. */}
-          <span className="zt:ms-auto zt:flex zt:@2xl/card:absolute zt:@2xl/card:end-(--size-4-4) zt:@2xl/card:top-(--size-4-4)">
-            <IconButton
-              icon="x"
-              data-library-card-close=""
-              {...tooltipAttrs(m.library_view_card_close())}
-              onClick={host.close}
-            />
-          </span>
-        </div>
-        <div
-          role="heading"
-          aria-level={2}
-          id={titleId}
-          className="zt:m-0 zt:mt-(--size-2-3) zt:font-(family-name:--zt-font-display) zt:text-base zt:leading-[1.3] zt:font-(--font-semibold) zt:text-balance zt:break-words zt:text-(--text-normal) zt:select-text"
-          data-library-card-title=""
-        >
-          {item?.title}
-        </div>
-        {item?.creators && (
-          <div
-            className="zt:mt-(--size-2-3) zt:text-(length:--font-ui-small) zt:break-words zt:text-(--text-normal) zt:select-text"
-            data-library-card-creators=""
-          >
-            {item.creators}
-          </div>
-        )}
-        {item?.venue && (
-          <div
-            className="zt:mt-(--size-2-1) zt:text-(length:--font-ui-small) zt:break-words zt:text-muted-foreground zt:italic zt:select-text"
-            data-library-card-venue=""
-          >
-            {item.venue}
-          </div>
-        )}
-        {item && (item.doi || item.citationKey) && (
-          <div
-            className="zt:mt-(--size-4-3) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-2-3)"
-            data-library-card-part="ids"
-          >
-            {item.doi && (
-              <a
-                className={cn(
-                  CHIP,
-                  FOCUS_RING,
-                  "zt:no-underline zt:hover:bg-(--background-modifier-active-hover)",
-                )}
-                href={item.doi.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-library-card-doi=""
-              >
-                <Icon
-                  name="link"
-                  size="xs"
-                  className="zt:shrink-0 zt:text-muted-foreground"
-                />
-                <span className="zt:truncate">{`doi:${item.doi.text}`}</span>
-              </a>
-            )}
-            {item.citationKey && (
-              <span
-                className={cn(CHIP, "zt:pe-0.5")}
-                data-library-card-citekey=""
-              >
-                <Icon
-                  name="at-sign"
-                  size="xs"
-                  className="zt:shrink-0 zt:text-muted-foreground"
-                />
-                <span className="zt:truncate zt:select-text">
-                  {item.citationKey}
-                </span>
-                <CopyCitationKey
-                  onCopy={() => void items.copyCitationKey(key)}
-                />
-              </span>
-            )}
-          </div>
-        )}
-        <div className="zt:mt-(--size-4-4) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-2-2)">
-          {/* Open PDF leads where there is a PDF; without one, the
-              Literature Note is the primary action. */}
-          {item?.pdf && (
-            <Button
-              variant="cta"
-              icon="file-text"
-              data-library-card-action="pdf"
-              onClick={() => void items.openPdf(key, false)}
+          {item?.venue && (
+            <div
+              className="zt:mt-(--size-2-1) zt:text-(length:--font-ui-small) zt:break-words zt:text-muted-foreground zt:italic zt:select-text"
+              data-library-card-venue=""
             >
-              {m.library_view_menu_open_pdf()}
-            </Button>
+              {item.venue}
+            </div>
           )}
-          <Button
-            {...(!item?.pdf && { variant: "cta" as const })}
-            icon={noted ? "notebook-pen" : "file-plus"}
-            data-library-card-action="note"
-            onClick={() => void items.openNote(key, false)}
-          >
-            {noted
-              ? m.library_view_menu_open_note()
-              : m.library_view_menu_write_note()}
-          </Button>
-          <IconButton
-            icon="more-horizontal"
-            {...tooltipAttrs(m.library_view_card_more())}
-            data-library-card-action="more"
-            onClick={(event: ReactMouseEvent<HTMLElement>) =>
-              host.menu(
-                { indexedKey: key, pdf: item?.pdf ?? false },
-                event.currentTarget,
-              )
-            }
-          />
-          {/* The annotation view's own icon, so the button names where it
-              leads. */}
-          <IconButton
-            icon="highlighter"
-            data-library-card-action="sidebar"
-            {...tooltipAttrs(m.library_view_card_open_in_annot_view())}
-            onClick={() => host.openInSidebar(key)}
-          />
-        </div>
-        {!loading && item?.abstract && (
-          <div
-            ref={abstractRef}
-            className="zt:mt-(--size-4-4) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4)"
-          >
-            <Abstract abstract={item.abstract} />
-          </div>
-        )}
-      </div>
-      {loading ? (
-        <div
-          data-library-card-loading=""
-          style={
-            {
-              "--zt-card-body-height": `${bodyHeight.current}px`,
-            } as CSSProperties
-          }
-          className="zt:mt-(--size-4-4) zt:min-h-(--zt-card-body-height) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4) zt:text-(length:--font-ui-small) zt:text-muted-foreground zt:@2xl/card:mt-0 zt:@2xl/card:border-t-0 zt:@2xl/card:pt-(--size-4-8)"
-        >
-          <span className={LOADING_TEXT}>{m.query_view_table_loading()}</span>
-        </div>
-      ) : (
-        // Sections parted by thin rules: the info and the Annotations; a
-        // part with nothing in it is left out with its rule. Beside the
-        // title page they start below the close button.
-        <div
-          ref={bodyRef}
-          className="zt:mt-(--size-4-4) zt:flex zt:min-w-0 zt:flex-col zt:divide-y-(length:--border-width) zt:divide-(--background-modifier-border) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:empty:hidden zt:@2xl/card:mt-0 zt:@2xl/card:border-t-0 zt:@2xl/card:pt-(--size-4-4) zt:[&>*]:py-(--size-4-4) zt:[&>*:last-child]:pb-0"
-        >
-          {item && hasInfo && (
-            <div className="zt:flex zt:flex-col zt:gap-(--size-4-3)">
-              {item.where.length > 0 && (
-                <InfoLine
-                  name="where"
-                  label={m.library_view_card_where()}
-                  icon={
-                    item.where.some((path) => path.length > 1)
-                      ? "folder"
-                      : "library"
-                  }
+          {item && (item.doi || item.citationKey) && (
+            <div
+              className="zt:mt-(--size-4-3) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-2-3)"
+              data-library-card-part="ids"
+            >
+              {item.doi && (
+                <a
+                  className={cn(
+                    CHIP,
+                    FOCUS_RING,
+                    "zt:no-underline zt:hover:bg-(--background-modifier-active-hover)",
+                  )}
+                  href={item.doi.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-library-card-doi=""
                 >
-                  <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-1) zt:p-0">
-                    {item.where.map((path) => (
-                      <li
-                        key={path.join("\u0000")}
-                        className="zt:break-words"
-                        data-library-card-path=""
-                      >
-                        {path.map((name, index) => (
-                          <Fragment key={index}>
-                            {index > 0 && (
-                              <span
-                                aria-hidden="true"
-                                className="zt:text-muted-foreground"
-                              >
-                                {" › "}
-                              </span>
-                            )}
-                            {name}
-                          </Fragment>
-                        ))}
-                      </li>
-                    ))}
-                  </ul>
-                </InfoLine>
+                  <Icon
+                    name="link"
+                    size="xs"
+                    className="zt:shrink-0 zt:text-muted-foreground"
+                  />
+                  <span className="zt:truncate">{`doi:${item.doi.text}`}</span>
+                </a>
               )}
-              {item.tags.length > 0 && (
-                <InfoLine
-                  name="tags"
-                  label={m.library_view_card_tags()}
-                  icon="tag"
-                  chips
+              {item.citationKey && (
+                <span
+                  className={cn(CHIP, "zt:pe-0.5")}
+                  data-library-card-citekey=""
                 >
-                  <ul className="zt:m-0 zt:flex zt:list-none zt:flex-wrap zt:gap-(--size-2-2) zt:p-0">
-                    {/* A tag selects itself in the Tag Selector, which narrows
+                  <Icon
+                    name="at-sign"
+                    size="xs"
+                    className="zt:shrink-0 zt:text-muted-foreground"
+                  />
+                  <span className="zt:truncate zt:select-text">
+                    {item.citationKey}
+                  </span>
+                  <CopyCitationKey
+                    onCopy={() => void items.copyCitationKey(key)}
+                  />
+                </span>
+              )}
+            </div>
+          )}
+          <div className="zt:mt-(--size-4-4) zt:flex zt:flex-wrap zt:items-center zt:gap-(--size-2-2)">
+            {/* Open PDF leads where there is a PDF; without one, the
+              Literature Note is the primary action. */}
+            {item?.pdf && (
+              <Button
+                variant="cta"
+                icon="file-text"
+                data-library-card-action="pdf"
+                onClick={() => void items.openPdf(key, false)}
+              >
+                {m.library_view_menu_open_pdf()}
+              </Button>
+            )}
+            <Button
+              {...(!item?.pdf && { variant: "cta" as const })}
+              icon={noted ? "notebook-pen" : "file-plus"}
+              data-library-card-action="note"
+              onClick={() => void items.openNote(key, false)}
+            >
+              {noted
+                ? m.library_view_menu_open_note()
+                : m.library_view_menu_write_note()}
+            </Button>
+            <IconButton
+              icon="more-horizontal"
+              {...tooltipAttrs(m.library_view_card_more())}
+              data-library-card-action="more"
+              onClick={(event: ReactMouseEvent<HTMLElement>) =>
+                host.menu(
+                  { indexedKey: key, pdf: item?.pdf ?? false },
+                  event.currentTarget,
+                )
+              }
+            />
+            {/* The annotation view's own icon, so the button names where it
+              leads. */}
+            <IconButton
+              icon="highlighter"
+              data-library-card-action="sidebar"
+              {...tooltipAttrs(m.library_view_card_open_in_annot_view())}
+              onClick={() => host.openInSidebar(key)}
+            />
+          </div>
+          {!loading && item?.abstract && (
+            <div
+              ref={abstractRef}
+              className="zt:mt-(--size-4-4) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4)"
+            >
+              <Abstract abstract={item.abstract} />
+            </div>
+          )}
+        </div>
+        {loading ? (
+          <div
+            data-library-card-loading=""
+            style={
+              {
+                "--zt-card-body-height": `${bodyHeight.current}px`,
+              } as CSSProperties
+            }
+            className="zt:mt-(--size-4-4) zt:min-h-(--zt-card-body-height) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:pt-(--size-4-4) zt:text-(length:--font-ui-small) zt:text-muted-foreground zt:@2xl/card:mt-0 zt:@2xl/card:border-t-0 zt:@2xl/card:pt-(--size-4-8)"
+          >
+            <span className={LOADING_TEXT}>{m.query_view_table_loading()}</span>
+          </div>
+        ) : (
+          // Sections parted by thin rules: the info and the Annotations; a
+          // part with nothing in it is left out with its rule. Beside the
+          // title page they start below the close button.
+          <div
+            ref={bodyRef}
+            className="zt:mt-(--size-4-4) zt:flex zt:min-w-0 zt:flex-col zt:divide-y-(length:--border-width) zt:divide-(--background-modifier-border) zt:border-t-(length:--border-width) zt:border-(--background-modifier-border) zt:empty:hidden zt:@2xl/card:mt-0 zt:@2xl/card:border-t-0 zt:@2xl/card:pt-(--size-4-4) zt:[&>*]:py-(--size-4-4) zt:[&>*:last-child]:pb-0"
+          >
+            {item && hasInfo && (
+              <div className="zt:flex zt:flex-col zt:gap-(--size-4-3)">
+                {item.where.length > 0 && (
+                  <InfoLine
+                    name="where"
+                    label={m.library_view_card_where()}
+                    icon={
+                      item.where.some((path) => path.length > 1)
+                        ? "folder"
+                        : "library"
+                    }
+                  >
+                    <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-1) zt:p-0">
+                      {item.where.map((path) => (
+                        <li
+                          key={path.join("\u0000")}
+                          className="zt:break-words"
+                          data-library-card-path=""
+                        >
+                          {path.map((name, index) => (
+                            <Fragment key={index}>
+                              {index > 0 && (
+                                <span
+                                  aria-hidden="true"
+                                  className="zt:text-muted-foreground"
+                                >
+                                  {" › "}
+                                </span>
+                              )}
+                              {name}
+                            </Fragment>
+                          ))}
+                        </li>
+                      ))}
+                    </ul>
+                  </InfoLine>
+                )}
+                {item.tags.length > 0 && (
+                  <InfoLine
+                    name="tags"
+                    label={m.library_view_card_tags()}
+                    icon="tag"
+                    chips
+                  >
+                    <ul className="zt:m-0 zt:flex zt:list-none zt:flex-wrap zt:gap-(--size-2-2) zt:p-0">
+                      {/* A tag selects itself in the Tag Selector, which narrows
                       the list to the papers that carry it, and is drawn as
                       the Tag Selector draws it. Obsidian's unlayered
                       `button` rules outrank the chip's utilities, so the
                       chip is a `role="button"` of its own. */}
-                    {item.tags.map((tag) => (
-                      <li key={tag} className="zt:flex zt:max-w-full">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          data-library-card-tag={tag}
-                          className={TAG_CHIP_CLASS}
-                          {...tooltipAttrs(
-                            m.library_view_card_tag_filter({ tag }),
-                          )}
-                          onClick={() => host.selectTag(tag)}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ")
-                              return;
-                            event.preventDefault();
-                            host.selectTag(tag);
-                          }}
-                        >
-                          {tag}
+                      {item.tags.map((tag) => (
+                        <li key={tag} className="zt:flex zt:max-w-full">
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            data-library-card-tag={tag}
+                            className={TAG_CHIP_CLASS}
+                            {...tooltipAttrs(
+                              m.library_view_card_tag_filter({ tag }),
+                            )}
+                            onClick={() => host.selectTag(tag)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ")
+                                return;
+                              event.preventDefault();
+                              host.selectTag(tag);
+                            }}
+                          >
+                            {tag}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </InfoLine>
+                )}
+                {item.files.length > 0 && (
+                  <InfoLine
+                    name="files"
+                    label={m.library_view_card_files()}
+                    icon="paperclip"
+                  >
+                    <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-1) zt:p-0">
+                      {item.files.map((file) => (
+                        <li key={file.key} className="zt:min-w-0">
+                          <ReaderLink
+                            readers={readers}
+                            target={{
+                              kind: "attachment",
+                              attachmentKey: file.key,
+                            }}
+                          >
+                            <Icon
+                              name={FILE_ICONS[file.fileType] ?? "file"}
+                              size="xs"
+                              className="zt:shrink-0"
+                            />
+                            <span className="zt:truncate">{file.title}</span>
+                          </ReaderLink>
+                        </li>
+                      ))}
+                    </ul>
+                  </InfoLine>
+                )}
+                {item.notes.length > 0 && (
+                  <InfoLine
+                    name="notes"
+                    label={m.library_view_card_notes()}
+                    icon="sticky-note"
+                  >
+                    <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-1) zt:p-0">
+                      {item.notes.map((note) => (
+                        <li key={note.key} className="zt:flex zt:min-w-0">
+                          <ZoteroNoteLink noteKey={note.key}>
+                            {note.title}
+                          </ZoteroNoteLink>
+                        </li>
+                      ))}
+                    </ul>
+                  </InfoLine>
+                )}
+                {(item.added !== null || item.fields.length > 0) && (
+                  <div
+                    data-library-card-part="footer"
+                    className="zt:flex zt:flex-col zt:gap-(--size-4-2)"
+                  >
+                    <div className="zt:flex zt:flex-wrap zt:items-center zt:justify-between zt:gap-(--size-2-2) zt:text-xs zt:text-muted-foreground">
+                      {item.added !== null && (
+                        <span data-library-card-added="">
+                          {m.library_view_card_added({ date: item.added })}
                         </span>
-                      </li>
-                    ))}
-                  </ul>
-                </InfoLine>
-              )}
-              {item.files.length > 0 && (
-                <InfoLine
-                  name="files"
-                  label={m.library_view_card_files()}
-                  icon="paperclip"
-                >
-                  <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-1) zt:p-0">
-                    {item.files.map((file) => (
-                      <li key={file.key} className="zt:min-w-0">
-                        <ReaderLink
-                          readers={readers}
-                          target={{
-                            kind: "attachment",
-                            attachmentKey: file.key,
-                          }}
+                      )}
+                      {item.fields.length > 0 && (
+                        <Disclosure
+                          name="fields"
+                          open={disclosures.allFields}
+                          controls={fieldsId}
+                          onToggle={() =>
+                            card.disclose("allFields", !disclosures.allFields)
+                          }
                         >
-                          <Icon
-                            name={FILE_ICONS[file.fileType] ?? "file"}
-                            size="xs"
-                            className="zt:shrink-0"
-                          />
-                          <span className="zt:truncate">{file.title}</span>
-                        </ReaderLink>
-                      </li>
-                    ))}
-                  </ul>
-                </InfoLine>
-              )}
-              {item.notes.length > 0 && (
-                <InfoLine
-                  name="notes"
-                  label={m.library_view_card_notes()}
-                  icon="sticky-note"
-                >
-                  <ul className="zt:m-0 zt:flex zt:list-none zt:flex-col zt:gap-(--size-2-1) zt:p-0">
-                    {item.notes.map((note) => (
-                      <li key={note.key} className="zt:flex zt:min-w-0">
-                        <ZoteroNoteLink noteKey={note.key}>
-                          {note.title}
-                        </ZoteroNoteLink>
-                      </li>
-                    ))}
-                  </ul>
-                </InfoLine>
-              )}
-              {(item.added !== null || item.fields.length > 0) && (
-                <div
-                  data-library-card-part="footer"
-                  className="zt:flex zt:flex-col zt:gap-(--size-4-2)"
-                >
-                  <div className="zt:flex zt:flex-wrap zt:items-center zt:justify-between zt:gap-(--size-2-2) zt:text-xs zt:text-muted-foreground">
-                    {item.added !== null && (
-                      <span data-library-card-added="">
-                        {m.library_view_card_added({ date: item.added })}
-                      </span>
-                    )}
-                    {item.fields.length > 0 && (
-                      <Disclosure
-                        name="fields"
-                        open={disclosures.allFields}
-                        controls={fieldsId}
-                        onToggle={() =>
-                          card.disclose("allFields", !disclosures.allFields)
-                        }
-                      >
-                        {m.library_view_card_all_fields()}
-                      </Disclosure>
-                    )}
+                          {m.library_view_card_all_fields()}
+                        </Disclosure>
+                      )}
+                    </div>
+                    {item.fields.length > 0 &&
+                      (disclosures.allFields ? (
+                        <div data-library-card-part="fields">
+                          <Fields fields={item.fields} id={fieldsId} />
+                        </div>
+                      ) : (
+                        <div id={fieldsId} hidden />
+                      ))}
                   </div>
-                  {item.fields.length > 0 &&
-                    (disclosures.allFields ? (
-                      <div data-library-card-part="fields">
-                        <Fields fields={item.fields} id={fieldsId} />
-                      </div>
-                    ) : (
-                      <div id={fieldsId} hidden />
-                    ))}
-                </div>
-              )}
-            </div>
-          )}
-          {item && item.annotations > 0 && (
-            <Annotations
-              card={card}
-              item={item}
-              open={disclosures.annotations}
-            />
-          )}
-        </div>
-      )}
-    </section>
+                )}
+              </div>
+            )}
+            {item && item.annotations > 0 && (
+              <Annotations
+                card={card}
+                item={item}
+                open={disclosures.annotations}
+              />
+            )}
+          </div>
+        )}
+      </section>
+    </>
   );
 }
 

@@ -21,6 +21,7 @@ import type { QueryFile, QueryFileView } from "@/views/query-view/query-file";
 import { splitFilters } from "@/views/query-view/view-plan/filter-split";
 
 import {
+  CARD_HEIGHT_MIN,
   CARD_WIDTH_MIN,
   cardWidthBounds,
   clampCardWidth,
@@ -34,6 +35,7 @@ import {
   tagNames,
   pruneExpanded,
   withCardClosed,
+  withCardHeight,
   withCardWidth,
   withExpanded,
   withNode,
@@ -384,6 +386,27 @@ describe("the Reading Card's width", () => {
     expect(cardWidthBounds(500)).toEqual({ min: 288, max: 288 });
     expect(clampCardWidth(400, 500)).toBe(288);
     expect(clampCardWidth(5000)).toBe(5000);
+  });
+});
+
+describe("the Reading Card's height under a narrow list", () => {
+  it("round-trips a height, keeps it at least 8rem, and stores nothing for the default", () => {
+    const set = withCardHeight(CHAPTER, 320);
+    expect(set).toEqual({ ...CHAPTER, cardHeight: 320 });
+    expect(parseLibraryViewDocument(serializeLibraryViewDocument(set))).toEqual(
+      set,
+    );
+    expect(withCardHeight(CHAPTER, 40).cardHeight).toBe(CARD_HEIGHT_MIN);
+    expect(withCardHeight(set, undefined)).toEqual(CHAPTER);
+    const stored = serializeLibraryViewDocument(CHAPTER);
+    expect(stored).not.toHaveProperty("cardHeight");
+    expect(parseLibraryViewDocument({ ...stored, cardHeight: 40 })).toEqual({
+      ...CHAPTER,
+      cardHeight: CARD_HEIGHT_MIN,
+    });
+    expect(parseLibraryViewDocument({ ...stored, cardHeight: "320" })).toEqual(
+      CHAPTER,
+    );
   });
 });
 

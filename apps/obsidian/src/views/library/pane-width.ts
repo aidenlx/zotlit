@@ -1,10 +1,11 @@
 // The inner edge of a pane beside the list, the Reading Card or the Library
 // Tree, which sets its width as a sidebar's edge does: a drag, the arrow
 // keys, Home and End, and a double click for the default. A drag well past
-// the minimum closes the pane, as an Obsidian sidebar collapses. The width
-// the researcher sets is the document's `cardWidth` or `treeWidth`; the width
-// on screen is that one clamped to the room, so a pane that narrows for a
-// while never loses the width kept.
+// the minimum closes the pane, as an Obsidian sidebar collapses. The Reading
+// Card under a narrow list has the same edge on its top, which sets its
+// height. The size the researcher sets is the document's `cardWidth`,
+// `cardHeight` or `treeWidth`; the size on screen is that one clamped to the
+// room, so a pane that shrinks for a while never loses the size kept.
 //
 // @see apps/obsidian/docs/adr/0071-the-library-view-is-a-fileless-query-view-host-that-saves-to-plugin-data.md
 import { setTooltip } from "obsidian";
@@ -18,17 +19,24 @@ import { cardWidthBounds } from "./document";
 const STEP = 16;
 
 /**
- * The body class of a resize on: the resize cursor over the whole page,
- * whatever the pointer passes over. `style.css` sets it.
+ * The body class of a resize on, by its axis: the resize cursor over the
+ * whole page, whatever the pointer passes over. `style.css` sets it.
  */
-const RESIZING = "zt-is-resizing-library-card";
+const RESIZING = {
+  x: "zt-is-resizing-library-card",
+  y: "zt-is-resizing-library-card-height",
+} as const;
 
 /**
- * The pane's inner edge: a strip with the resize cursor, whose line shows on
- * hover and focus and holds the accent while it is dragged.
+ * The pane's inner edge, by its axis: a strip with the resize cursor, whose
+ * line shows on hover and focus and holds the accent while it is dragged.
  */
-const HANDLE =
-  "zt:absolute zt:inset-y-0 zt:z-(--layer-cover) zt:w-2 zt:cursor-col-resize zt:touch-none zt:outline-none zt:after:absolute zt:after:inset-y-0 zt:after:start-[3px] zt:after:w-0.5 zt:hover:after:bg-(--interactive-accent) zt:focus-visible:after:bg-(--interactive-accent) zt:[&.is-active]:after:bg-(--interactive-accent)";
+const HANDLE_LINE =
+  "zt:absolute zt:z-(--layer-cover) zt:touch-none zt:outline-none zt:after:absolute zt:hover:after:bg-(--interactive-accent) zt:focus-visible:after:bg-(--interactive-accent) zt:[&.is-active]:after:bg-(--interactive-accent)";
+const HANDLE = {
+  x: `${HANDLE_LINE} zt:inset-y-0 zt:w-2 zt:cursor-col-resize zt:after:inset-y-0 zt:after:start-[3px] zt:after:w-0.5`,
+  y: `${HANDLE_LINE} zt:inset-x-0 zt:-top-1 zt:h-2 zt:cursor-row-resize zt:after:inset-x-0 zt:after:top-[3px] zt:after:h-0.5`,
+} as const;
 
 export interface PaneWidthHost {
   /** The width the document keeps, in pixels; `undefined` for the default. */
@@ -48,15 +56,16 @@ export interface PaneWidthHost {
 
 /** Which pane the edge sizes, and how. */
 export interface PaneWidthOptions {
-  /** The list the pane shows beside, which keeps 20rem. */
+  /** The list the pane shows beside or under, which keeps 20rem. */
   list: HTMLElement;
   /** The box whose size sets the most the pane can take. */
   shell: HTMLElement;
   /**
    * The side of the pane the edge sits on, toward the list: `start` for the
-   * card after the list, `end` for the tree before it.
+   * card after the list, `end` for the tree before it, `top` for the card
+   * under it, whose edge sets its height.
    */
-  side: "start" | "end";
+  side: "start" | "end" | "top";
   /** The custom property the pane's width utility reads. */
   property: string;
   /** The width until the researcher sets one, in pixels. */
@@ -85,7 +94,8 @@ export class PaneWidth {
   readonly #options: PaneWidthOptions;
   readonly #host: PaneWidthHost;
   readonly #handle: HTMLElement;
-  /** The width on screen, in pixels. */
+  readonly #axis: "x" | "y";
+  /** The size on screen, in pixels. */
   #width: number;
   #observer: ResizeObserver | null = null;
   #drag: AbortController | null = null;
@@ -99,17 +109,25 @@ export class PaneWidth {
     this.#options = options;
     this.#host = host;
     this.#width = options.fallback;
+    const axis = options.side === "top" ? "y" : "x";
+    this.#axis = axis;
+    const place = { start: "zt:-start-1", end: "zt:-end-1", top: "" }[
+      options.side
+    ];
     const handle = pane.createDiv({
-      cls: `${HANDLE} ${options.side === "start" ? "zt:-start-1" : "zt:-end-1"} ${options.cls}`,
+      cls: `${HANDLE[axis]} ${place} ${options.cls}`,
       attr: {
         role: "separator",
         tabindex: "0",
-        "aria-orientation": "vertical",
+        "aria-orientation": axis === "x" ? "vertical" : "horizontal",
         [options.attr]: "",
       },
     });
     setTooltip(handle, options.hint, {
-      placement: options.side === "start" ? "left" : "right",
+      placement: { start: "left", end: "right", top: "top" }[options.side] as
+        | "left"
+        | "right"
+        | "top",
     });
     handle.addEventListener("pointerdown", (event) => this.#resize(event));
     handle.addEventListener("keydown", (event) => this.#key(event));
@@ -146,12 +164,14 @@ export class PaneWidth {
     return handle.win.getComputedStyle(handle).display !== "none";
   }
 
-  /** The widths the pane can take in the room as it is now. */
+  /** The sizes the pane can take in the room as it is now. */
   #bounds(): { min: number; max: number } {
-    // The pane and the list share the room beside each other.
-    const room =
-      this.#options.list.getBoundingClientRect().width +
-      this.#pane.getBoundingClientRect().width;
+    // The pane and the list share the room beside or over each other.
+    const size = (el: HTMLElement) => {
+      const box = el.getBoundingClientRect();
+      return this.#axis === "x" ? box.width : box.height;
+    };
+    const room = size(this.#options.list) + size(this.#pane);
     return cardWidthBounds(
       room === 0 ? Number.POSITIVE_INFINITY : room,
       this.#options.min,
@@ -177,9 +197,10 @@ export class PaneWidth {
   /**
    * The sign of a move toward the list: the card's edge is on its start
    * side and the tree's on its end side, and a right-to-left pane mirrors
-   * both.
+   * both; the list is above a card's top edge.
    */
   #towardList(): 1 | -1 {
+    if (this.#options.side === "top") return -1;
     const rtl = this.#pane.win.getComputedStyle(this.#pane).direction === "rtl";
     return (this.#options.side === "start") === rtl ? 1 : -1;
   }
@@ -189,8 +210,12 @@ export class PaneWidth {
    * pane; Home and End take it to its narrowest and widest.
    */
   #key(event: KeyboardEvent): void {
-    const toList = this.#towardList() === 1 ? "ArrowRight" : "ArrowLeft";
-    const fromList = toList === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
+    const [toList, fromList] =
+      this.#axis === "y"
+        ? ["ArrowUp", "ArrowDown"]
+        : this.#towardList() === 1
+          ? ["ArrowRight", "ArrowLeft"]
+          : ["ArrowLeft", "ArrowRight"];
     const { min, max } = this.#bounds();
     let width: number;
     if (event.key === toList) width = this.#width + STEP;
@@ -231,8 +256,9 @@ export class PaneWidth {
     pointerDrag({
       app: this.#host.app,
       press: event,
+      axis: this.#axis,
       handle: this.#handle,
-      cursor: RESIZING,
+      cursor: RESIZING[this.#axis],
       controller,
       move: (delta) => {
         const width = widthAt(delta);

@@ -37,6 +37,8 @@ import type { WelcomeBannerDeps } from "@/views/welcome/banner";
 import { makeItemNodeCommand } from "./atoms";
 import { DetailsToggle } from "./details-toggle";
 import {
+  CARD_HEIGHT_DEFAULT,
+  CARD_HEIGHT_MIN,
   CARD_WIDTH_DEFAULT,
   CARD_WIDTH_MIN,
   LIBRARY_LAYOUTS,
@@ -51,6 +53,7 @@ import {
   withCardClosed,
   withCardDisclosure,
   withCardWidth,
+  withCardHeight,
   withExpanded,
   withFacets,
   withNode,
@@ -179,6 +182,8 @@ export class LibraryView extends ItemView {
   #cardEl: HTMLElement | null = null;
   /** The Reading Card's resizable inner edge, once the tab has opened. */
   #cardWidth: PaneWidth | null = null;
+  /** The Reading Card's top edge under a narrow list, once the tab has opened. */
+  #cardHeight: PaneWidth | null = null;
   /** The Library Tree's resizable inner edge, once the tab has opened. */
   #treeWidth: PaneWidth | null = null;
   /** The Details button, once the tab has opened. */
@@ -491,13 +496,19 @@ export class LibraryView extends ItemView {
     // The item details show while the researcher keeps them on: the
     // selected paper, or what fills them when none is selected.
     const cardEl = frame.createDiv({ cls: `zt:contents ${hidden}` }).createDiv({
-      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-[min(16rem,50%)] zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
+      cls: "zt:@container/card zt:relative zt:hidden zt:w-[var(--zt-library-card-width,24rem)] zt:shrink-0 zt:flex-col zt:min-h-0 zt:border-s-(length:--border-width) zt:border-(--divider-color) zt:bg-(--background-primary) zt:[&:not([hidden])]:flex zt:@max-4xl:w-auto zt:@max-4xl:h-[var(--zt-library-card-height,16rem)] zt:@max-4xl:border-s-0 zt:@max-4xl:border-t-(length:--border-width)",
       attr: { "data-library-card": "", hidden: "" },
     });
     this.#cardEl = cardEl;
     // Each pane's inner edge sets its width beside the list; under a narrow
-    // list the details span the pane, and over a narrow one the tree keeps
-    // its own room, so neither has an edge there.
+    // list the details span the pane, and their top edge sets their height
+    // instead, and over a narrow one the tree keeps its own room.
+    // A drag past the minimum hides the details while the pointer stays
+    // there, and turns them off on release.
+    const collapseCard = (collapsed: boolean) => {
+      if (collapsed) cardEl.hidden = true;
+      else this.#showCard();
+    };
     this.#cardWidth = new PaneWidth(
       cardEl,
       {
@@ -514,18 +525,42 @@ export class LibraryView extends ItemView {
       {
         app: this.#deps.app,
         stored: () => this.#storage.document().cardWidth,
-        // A drag past the minimum hides the details while the pointer stays
-        // there, and turns them off on release.
-        collapse: (collapsed) => {
-          if (collapsed) cardEl.hidden = true;
-          else this.#showCard();
-        },
+        collapse: collapseCard,
         close: () => this.#setDetails(false),
         keep: (width) => {
           this.#storage
             .change((doc) => withCardWidth(doc, width))
             .catch((error: unknown) => {
               logger.warn("The Library View could not keep the card's width", {
+                error,
+              });
+            });
+        },
+      },
+    );
+    this.#cardHeight = new PaneWidth(
+      cardEl,
+      {
+        list: top,
+        shell,
+        side: "top",
+        property: "--zt-library-card-height",
+        fallback: CARD_HEIGHT_DEFAULT,
+        min: CARD_HEIGHT_MIN,
+        cls: "zt:@4xl/library:hidden",
+        hint: m.library_view_card_resize_hint(),
+        attr: "data-library-card-height-resizer",
+      },
+      {
+        app: this.#deps.app,
+        stored: () => this.#storage.document().cardHeight,
+        collapse: collapseCard,
+        close: () => this.#setDetails(false),
+        keep: (height) => {
+          this.#storage
+            .change((doc) => withCardHeight(doc, height))
+            .catch((error: unknown) => {
+              logger.warn("The Library View could not keep the card's height", {
                 error,
               });
             });
@@ -636,6 +671,7 @@ export class LibraryView extends ItemView {
         shell.toggleAttribute("data-tree-collapsed", collapsed);
         this.#treeWidth?.apply();
         this.#cardWidth?.apply();
+        this.#cardHeight?.apply();
       }),
     );
     this.#holdTreeKeys(treePane);
@@ -689,6 +725,7 @@ export class LibraryView extends ItemView {
     await this.#storage.load();
     const doc = this.#storage.document();
     this.#cardWidth?.load();
+    this.#cardHeight?.load();
     this.#treeWidth?.load();
     this.tree.showCollapsed(doc.treeCollapsed === true);
     this.#showCard();
@@ -732,6 +769,7 @@ export class LibraryView extends ItemView {
     el.hidden = !on;
     this.#details?.show(on);
     this.#cardWidth?.apply();
+    this.#cardHeight?.apply();
     this.#treeWidth?.apply();
   }
 
@@ -1056,6 +1094,7 @@ export class LibraryView extends ItemView {
   protected override async onClose(): Promise<void> {
     if (!this.#release) return;
     this.#cardWidth?.unload();
+    this.#cardHeight?.unload();
     this.#treeWidth?.unload();
     this.#details?.unmount();
     this.#keep.run();
