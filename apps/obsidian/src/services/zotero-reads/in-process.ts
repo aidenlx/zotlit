@@ -1,6 +1,6 @@
 // In-process adapter: the ZoteroReads handler layer on the calling runtime, over an in-memory protocol pair.
 import { Effect } from "effect";
-import type { Scope } from "effect";
+import type { FileSystem, Scope } from "effect";
 import { RpcClient, RpcServer } from "effect/rpc";
 import type { RpcClientError, RpcGroup } from "effect/rpc";
 
@@ -24,7 +24,11 @@ export type ZoteroReadsClient = RpcClient.RpcClient<
  */
 export const makeInProcessClient = Effect.fnUntraced(function* (
   options?: HandlersOptions,
-): Effect.fn.Return<ZoteroReadsClient, never, Connection | Scope.Scope> {
+): Effect.fn.Return<
+  ZoteroReadsClient,
+  never,
+  Connection | FileSystem.FileSystem | Scope.Scope
+> {
   const protocols = yield* makeInMemoryRpcProtocols;
   yield* RpcServer.make(ZoteroReads).pipe(
     Effect.provide(handlersLayer(options)),

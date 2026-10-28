@@ -8,13 +8,14 @@ import {
   Cause,
   Context,
   Effect,
+  FileSystem,
   Layer,
   PubSub,
   Schema,
   Stream,
   SubscriptionRef,
 } from "effect";
-import { readFile } from "node:fs/promises";
+import type { PlatformError } from "effect";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,8 +26,6 @@ import { COMPANION_ADDON_ID, ZOTERO_DB_FILENAME } from "@/lib/constants";
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { startupBarrier } from "@/lib/effect-startup";
-import { systemCallError } from "@/lib/errno";
-import type { SystemCallError } from "@/lib/errno";
 import { ObsidianApp } from "@/lib/obsidian-app";
 
 import {
@@ -53,18 +52,21 @@ import type { PrefValue } from "./prefs-file";
 export class ZoteroPrefFiles extends Context.Service<
   ZoteroPrefFiles,
   {
-    read(path: string): Effect.Effect<string, SystemCallError>;
+    read(path: string): Effect.Effect<string, PlatformError.PlatformError>;
   }
 >()("zotlit/zotero-pref/ZoteroPrefFiles") {}
 
-export const layerZoteroPrefFiles = Layer.succeed(ZoteroPrefFiles, {
-  read: Effect.fn("ZoteroPrefFiles.read")(function* (path: string) {
-    return yield* Effect.tryPromise({
-      try: (signal) => readFile(path, { encoding: "utf8", signal }),
-      catch: systemCallError,
+export const layerZoteroPrefFiles = Layer.effect(
+  ZoteroPrefFiles,
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    return ZoteroPrefFiles.of({
+      read: Effect.fn("ZoteroPrefFiles.read")(function* (path: string) {
+        return yield* fs.readFileString(path);
+      }),
     });
   }),
-});
+);
 
 /** `profiles.ini` names no default profile; the prefs load degrades. */
 class NoDefaultZoteroProfile extends Schema.TaggedError<
