@@ -956,6 +956,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
       bridge: this.#bridge,
+      writes: this.#writes,
       notifier: this.#notifier,
       colors: this.#toolColors,
       surfaceState: state,

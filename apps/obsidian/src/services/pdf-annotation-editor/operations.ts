@@ -142,50 +142,81 @@ export const captureText = Effect.fn("PdfAnnotationEditor.captureText")(
     }),
 );
 
-/** Recompute the released position's Sort Index before its geometry write. */
+/**
+ * Save a released Geometry Edit: recompute its Sort Index, write it, and say
+ * through the Notifier why it did not land. A read or a write that failed is
+ * an outcome ZotLit never learned.
+ *
+ * The read is interruptible: a reader closed while the index is computed
+ * sends nothing, and its mark goes with it. From the send on, the write and
+ * its notice are uninterruptible, so a close waits for Zotero's answer and a
+ * refused edit is still told.
+ *
+ * @param options.end ends the adjustment the mark draws: called once the
+ *   index is read, and again however the save ended.
+ * @param options.message the notice for one failure.
+ */
 export const saveGeometry = Effect.fn("PdfAnnotationEditor.saveGeometry")(
   function* (
     annotations: Pick<AnnotationRepository["Service"], "patchGeometry">,
-    readSortIndex: (position: PdfPosition) => Promise<string | null>,
+    notifier: Pick<Notifier["Service"], "show">,
     {
+      readSortIndex,
       key,
       proposal,
       text,
       input,
-      onRead,
+      end,
+      now,
+      message,
     }: {
+      readSortIndex: (position: PdfPosition) => Promise<string | null>;
       key: string;
       proposal: EditablePosition;
       text?: string;
       input: GeometryInput;
-      onRead: () => void;
+      end: () => void;
+      now: () => CopyInstant;
+      message: FailureMessage;
     },
   ) {
-    const sortIndex = yield* Effect.tryPromise({
-      try: () => readSortIndex(proposal),
-      catch: (cause) => new PdfStructureReadError({ cause }),
+    const save = Effect.fnUntraced(function* (
+      restore: <A, E>(effect: Effect.Effect<A, E>) => Effect.Effect<A, E>,
+    ) {
+      const sortIndex = yield* restore(
+        Effect.tryPromise({
+          try: () => readSortIndex(proposal),
+          catch: (cause) => new PdfStructureReadError({ cause }),
+        }),
+      );
+      if (sortIndex === null) return { kind: "idle" } as const;
+      end();
+      return yield* annotations.patchGeometry(
+        key,
+        { position: proposal, sortIndex, ...(text !== undefined && { text }) },
+        input,
+      );
     });
-    if (sortIndex === null) return { kind: "idle" } as const;
-    onRead();
-    return yield* annotations.patchGeometry(
-      key,
-      { position: proposal, sortIndex, ...(text !== undefined && { text }) },
-      input,
-    );
-  },
-  (operation) =>
-    operation.pipe(
-      Effect.catchTag(["PdfStructureReadError", "WriteRunFailed"], (error) =>
-        Effect.logWarning("An Annotation geometry edit did not finish").pipe(
-          Effect.annotateLogs({ error }),
-          withLogCategory("pdf-annotation-editor"),
-          Effect.as<MutationState>({
-            kind: "failed",
-            failure: { kind: "unknown-outcome" },
-          }),
+    return yield* Effect.uninterruptibleMask((restore) =>
+      reportWrite(
+        notifier,
+        save(restore).pipe(
+          Effect.catchTag(
+            ["PdfStructureReadError", "WriteRunFailed"],
+            (error) =>
+              Effect.logWarning(
+                "An Annotation geometry edit did not finish",
+              ).pipe(
+                Effect.annotateLogs({ error }),
+                withLogCategory("pdf-annotation-editor"),
+                Effect.as<MutationState>(UNKNOWN_OUTCOME),
+              ),
+          ),
         ),
+        { verb: "edit", now, message },
       ),
-    ),
+    ).pipe(Effect.ensuring(Effect.sync(end)));
+  },
 );
 
 /** The notice for one write that did not land. */
