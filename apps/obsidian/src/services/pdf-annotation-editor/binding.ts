@@ -99,8 +99,11 @@ import {
 } from "./render";
 import type { PdfPageAnnotation } from "./render";
 import {
+  initialViewSet,
   loadedPageOf,
   onPageRendered,
+  onDocumentClosed,
+  onInitialView,
   onPageChanged,
   openFileOf,
   pageViewOf,
@@ -771,9 +774,28 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       this.#popupHost?.sync();
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
+    // The move to the position a document reopens at is PDF.js's own, not a
+    // page turn: page changes count from the initial view on. PDF.js sets its
+    // flag before that move, so the binding keeps its own, which turns on at
+    // `documentinit` and off when the document closes for a reload in place.
+    let initialView = initialViewSet(controller);
+    this.#surfaces.use(
+      onInitialView(controller, () => {
+        initialView = true;
+      }),
+    );
+    this.#surfaces.use(
+      onDocumentClosed(controller, () => {
+        initialView = false;
+      }),
+    );
     this.#surfaces.use(
       onPageChanged(controller, () => {
-        if (this.#attachment.kind === "resolved" && this.#pageProbed)
+        if (
+          this.#attachment.kind === "resolved" &&
+          this.#pageProbed &&
+          initialView
+        )
           this.#reads?.record(this.#attachment, "page");
       }),
     );

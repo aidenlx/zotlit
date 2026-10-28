@@ -299,6 +299,8 @@ export async function verifyPdfReads(
   )[itemKey]!;
   // A real page transition reaches PDF.js's pagechanging event; rendering and
   // immediate turns stay inside the five-minute limit established by open.
+  // PDF.js reopens a document at its last position, which every vault of the
+  // app shares through localStorage, so the target is a page the reader is not on.
   await obRun(
     vaultId,
     async ({ app, page }) => {
@@ -312,10 +314,25 @@ export async function verifyPdfReads(
         })[]
       )[0]!.view;
       const reader = view.viewer.child;
+      // PDF.js's own move to the reopen position belongs to its initial view.
+      await until(
+        "PDF initial view",
+        () => reader.pdfViewer.isInitialViewSet === true,
+      );
       page.scratch.pageChanges = 0;
       reader.on("pagechanging", () => page.scratch.pageChanges!++);
-      reader.applySubpath("#page=2");
-      await until("real page change", () => page.scratch.pageChanges! > 0);
+      const from = reader.pdfViewer.pdfViewer.currentPageNumber;
+      const target = from === 1 ? 2 : 1;
+      reader.applySubpath(`#page=${target}`);
+      try {
+        await until("real page change", () => page.scratch.pageChanges! > 0);
+      } catch (error) {
+        const now = reader.pdfViewer.pdfViewer.currentPageNumber;
+        throw new Error(
+          `No pagechanging from page ${from} to ${target}: now on page ${now} (renderingState ${reader.getPage(now)?.renderingState}), isInitialViewSet ${reader.pdfViewer.isInitialViewSet}, ${page.scratch.pageChanges} events`,
+          { cause: error },
+        );
+      }
     },
     undefined,
   );
@@ -428,6 +445,25 @@ export async function verifyPdfReads(
               ?.attachmentKey === attachmentKey
           );
         },
+        20000,
+      );
+      // The restored reader settles: PDF.js moves it to the position the
+      // document reopens at, then paints that page.
+      const reader = (
+        app.workspace.getLeavesOfType(
+          "pdf",
+        ) as (import("obsidian").WorkspaceLeaf & {
+          view: PagePdfView;
+        })[]
+      ).find((l) => l.view.file?.path === notePath)!.view.viewer.child;
+      // PDF.js `RenderingStates.FINISHED`.
+      const RENDERING_FINISHED = 3;
+      await until(
+        "restored PDF settled",
+        () =>
+          reader.pdfViewer.isInitialViewSet === true &&
+          reader.getPage(reader.pdfViewer.pdfViewer.currentPageNumber)
+            ?.renderingState === RENDERING_FINISHED,
         20000,
       );
     },
