@@ -123,6 +123,16 @@
   --ease-out: var(--anim-motion-smooth);
   --ease-in: var(--anim-motion-delay);
   --ease-in-out: var(--anim-motion-smooth);
+
+  /* A row Show in Library brings into view starts in a strong tint of the
+     accent and fades back to its own background. */
+  --animate-row-flash: zt-row-flash 1.6s var(--anim-motion-smooth);
+
+  @keyframes zt-row-flash {
+    from {
+      background-color: hsla(var(--interactive-accent-hsl), 0.35);
+    }
+  }
 }
 
 @import "tailwindcss/utilities.css" layer(utilities) prefix(zt);

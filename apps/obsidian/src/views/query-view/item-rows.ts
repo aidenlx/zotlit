@@ -58,6 +58,9 @@ export interface ItemRowGestures {
 /** The attribute that holds an Item row's Indexed Key, for the host's keys. */
 export const ITEM_ROW_ATTRIBUTE = "data-query-item-row";
 
+/** The attribute a row holds while it flashes, as Show in Library brings it into view. */
+export const ITEM_ROW_REVEALED_ATTRIBUTE = "data-revealed";
+
 /** Whether `event` landed on a link or a button inside the row. */
 function onControl(event: { target: EventTarget; currentTarget: Element }) {
   const target = event.target as Node;

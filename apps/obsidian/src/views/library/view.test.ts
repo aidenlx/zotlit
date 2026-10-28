@@ -2178,6 +2178,23 @@ it("shows an Item in its first Collection, selected, with its Reading Card", asy
   expect(view.selected).toEqual({ key: A, card: true });
 });
 
+it("flashes the row it shows until the flash ends, and again on the next Show in Library", async () => {
+  const { deps } = await pluginData();
+  const view = await openTab(deps);
+  await act(async () => {
+    await view.reveal(A);
+  });
+  const row = itemRow(view, A);
+  expect(row.hasAttribute("data-revealed")).toBe(true);
+  row.dispatchEvent(new Event("animationend", { bubbles: true }));
+  expect(row.hasAttribute("data-revealed")).toBe(false);
+
+  await act(async () => {
+    await view.reveal(A);
+  });
+  expect(itemRow(view, A).hasAttribute("data-revealed")).toBe(true);
+});
+
 it("turns the Reading State facets off to show an Item they leave out", async () => {
   const { deps, run, settings } = await pluginData();
   const view = await openTab(deps);
