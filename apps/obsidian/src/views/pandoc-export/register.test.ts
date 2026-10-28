@@ -6,8 +6,14 @@ import {
   Modal,
   settingsOf,
 } from "@mock/obsidian";
-import { Cause, Context, Effect, Exit, ManagedRuntime } from "effect";
-import type { FileSystem } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  FileSystem,
+  ManagedRuntime,
+} from "effect";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,17 +27,20 @@ import { effectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { ZoteroHttp } from "@/lib/zotero-http";
 import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
 import { CitationLookup } from "@/services/citation-index/lookup-service";
-import type { ManagedBinaryApi } from "@/services/managed-binary/service";
+import { CitationParse } from "@/services/citation-parse/service";
 import { nodeFileSystem } from "@/services/pandoc/__fixtures__/file-effects";
 import type { CitationEngine } from "@/services/pandoc/engine";
+import { PandocEngine } from "@/services/pandoc/service";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 import { ZoteroPref } from "@/services/zotero-pref/service";
 import type { ZoteroPrefSnapshot } from "@/services/zotero-pref/service";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -192,13 +201,10 @@ function openVault({
         profileOf: (file) => Effect.succeed(reader.profileOf(file)),
       }),
     ),
-  );
-  const deps = stubService<PandocExportDeps>("PandocExportDeps", {
-    fileSystem,
-    app,
-    pandocEngine: stubService<ManagedBinaryApi<CitationEngine>>(
-      "PandocEngine",
-      {
+    Context.add(FileSystem.FileSystem, fileSystem),
+    Context.add(
+      PandocEngine,
+      stubService<PandocEngine["Service"]>("PandocEngine", {
         getStatus: Effect.succeed(
           engineInstalled
             ? {
@@ -218,22 +224,36 @@ function openVault({
             }),
           ),
         ),
-      },
+      }),
     ),
-    citationParse: stubService<PandocExportDeps["citationParse"]>(
-      "CitationParse",
-      {},
+    Context.add(
+      CitationParse,
+      stubService<CitationParse["Service"]>("CitationParse", {}),
     ),
-    zoteroHttp: stubService<PandocExportDeps["zoteroHttp"]>("ZoteroHttp", {}),
-    settings: { current: Effect.succeed(resolvedSettings) },
+    Context.add(
+      ZoteroHttp,
+      stubService<ZoteroHttp["Service"]>("ZoteroHttp", {}),
+    ),
+    Context.add(
+      PluginSettings,
+      stubService<PluginSettings["Service"]>("PluginSettings", {
+        current: Effect.succeed(resolvedSettings),
+      }),
+    ),
+    Context.add(
+      Notifier,
+      Notifier.of({
+        ...notifier.service,
+        track: (notice) => runtime.runSync(Notifier).track(notice),
+      }),
+    ),
+  );
+  const deps: PandocExportDeps = {
+    app,
     bridge,
-    notifier: Notifier.of({
-      ...notifier.service,
-      track: (notice) => runtime.runSync(Notifier).track(notice),
-    }),
     openSettings: () => undefined,
     context,
-  });
+  };
   registerPandocExport(
     stubService<Pick<Plugin, "addCommand" | "app">>("Plugin", {
       app,

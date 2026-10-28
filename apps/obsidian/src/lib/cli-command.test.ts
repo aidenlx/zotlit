@@ -3,6 +3,7 @@ import { Deferred, Effect, Layer } from "effect";
 import { describe, expect } from "vitest";
 
 import { cliRunner } from "./cli-command";
+import { effectBridge } from "./effect-bridge";
 import { buildRuntime } from "./effect-layer";
 
 /** The plugin's unload, which a CLI runner hears through its signal. */
@@ -10,14 +11,19 @@ function pluginUnload(): AbortController {
   return new AbortController();
 }
 
-/** A runner over an empty runtime, and the controller standing in for unload. */
+/** A runner over an empty runtime's bridge, and the controller standing in for unload. */
 const runnerFixture = Effect.gen(function* () {
   const stack = yield* Effect.acquireDisposable(
     Effect.tryPromise(async () => new AsyncDisposableStack()),
   );
   const runtime = buildRuntime(Layer.empty, stack);
+  yield* Effect.promise(() => runtime.context());
   const unload = pluginUnload();
-  return { run: cliRunner(runtime, unload.signal), unload };
+  return {
+    run: cliRunner(effectBridge(runtime), unload.signal),
+    unload,
+    stack,
+  };
 });
 
 describe("cliRunner", () => {
@@ -59,6 +65,37 @@ describe("cliRunner", () => {
 
       const rejected = yield* Effect.flip(Effect.tryPromise(() => pending));
       expect(rejected.cause).toBe(unload.signal.reason);
+    }),
+  );
+
+  // Failure mode: a command that starts after unload rejects with the closed
+  // runtime's own error instead of the reason the run stopped. The run stops
+  // at its first pause, so the command pauses before its work, as a command
+  // that reads Zotero does.
+  it.effect("stops a command that starts after unload at its first pause", () =>
+    Effect.gen(function* () {
+      const { run, unload, stack } = yield* runnerFixture;
+      let ran = false;
+
+      unload.abort(new Error("Plugin unloaded"));
+      yield* Effect.promise(() => stack.disposeAsync());
+      const rejected = yield* Effect.flip(
+        Effect.tryPromise(() =>
+          run(
+            Effect.yieldNow.pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  ran = true;
+                  return "done";
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(rejected.cause).toBe(unload.signal.reason);
+      expect(ran).toBe(false);
     }),
   );
 });

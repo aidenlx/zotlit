@@ -12,6 +12,7 @@ import {
 import { describe, expect } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { effectBridge } from "@/lib/effect-bridge";
 import { LogCategory } from "@/lib/effect-log";
 import { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
@@ -241,7 +242,7 @@ it.effect("libraryTagNamesOf resolves an empty list after disposal", () =>
       ),
     );
     yield* Effect.promise(() => runtime.context());
-    const tagsOf = libraryTagNamesOf(runtime);
+    const tagsOf = libraryTagNamesOf(reads, effectBridge(runtime));
 
     expect(yield* Effect.promise(() => tagsOf(GROUP_KEY))).toEqual(["history"]);
 
