@@ -15,7 +15,6 @@ import { Plugin } from "obsidian";
 export class UnloadAwarePlugin extends Plugin {
   #unloaded = false;
 
-  /** Whether Obsidian has unloaded this instance. */
   protected get unloaded(): boolean {
     return this.#unloaded;
   }
