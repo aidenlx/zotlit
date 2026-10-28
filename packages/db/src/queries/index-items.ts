@@ -1,5 +1,5 @@
 import { deletedItems, items, itemTypes } from "@drizzle/schema";
-import { and, count, eq, isNull, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import type { CreatorFieldMode } from "@/lib/zt-creator";
@@ -252,18 +252,131 @@ export interface IndexSignature {
   checksum: number;
 }
 
+/** One indexed row's term of {@link IndexSignature.checksum}. */
+const checksumTerm = sql<number>`unixepoch(${items.dateModified}) + ${items.itemID} + (coalesce(${zoteroActivity} / 1000, 0) * ((${items.itemID} % 997) + 1) % 2147483647)`;
+
 /**
  * Aggregate over the same row set as {@link indexedItemsQuery} (library, non-child
- * type, not deleted) in one pass, yielding the {@link IndexSignature} fields.
+ * type, not deleted) whose Item IDs fall in `[from, to)`, yielding the
+ * {@link IndexSignature} fields of that range. Both fields are sums over rows,
+ * so the parts of disjoint ranges add up to the Library's signature.
  *
  * @see unixepoch — https://www.sqlite.org/lang_datefunc.html
+ */
+const indexSignatureRangeQuery = defineQuery<{
+  libraryID: number;
+  from: number;
+  to: number;
+}>()((db, { placeholder }) =>
+  db
+    .select({
+      count: count(),
+      checksum: sql<number>`coalesce(sum(${checksumTerm}), 0)`,
+    })
+    .from(items)
+    .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
+    .leftJoin(deletedItems, eq(deletedItems.itemID, items.itemID))
+    .where(
+      and(
+        // The unary plus keeps the (libraryID, key) index out of the plan, so
+        // SQLite searches the itemID (rowid) range, and each range reads only
+        // its own rows instead of the whole Library's index entries.
+        sql`+${items.libraryID} = ${placeholder("libraryID")}`,
+        gte(items.itemID, placeholder("from")),
+        lt(items.itemID, placeholder("to")),
+        notInArray(itemTypes.typeName, [...CHILD_ITEM_TYPES]),
+        isNull(deletedItems.itemID),
+      ),
+    ),
+);
+
+const itemIDBoundsQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }) =>
+    db
+      .select({
+        min: sql<number | null>`min(${items.itemID})`,
+        max: sql<number | null>`max(${items.itemID})`,
+      })
+      .from(items)
+      .where(eq(items.libraryID, placeholder("libraryID"))),
+);
+
+/**
+ * The lowest and highest Item ID in a Library, of any type, or null when it
+ * has no Items. The ranges of {@link getIndexSignatureRange} cover this span.
+ */
+export function getItemIDBounds(
+  db: NodeDatabaseClient,
+  libraryID: number,
+): { min: number; max: number } | null {
+  const row = itemIDBoundsQuery.prepared(db).get({ libraryID });
+  if (row?.min == null || row.max == null) return null;
+  return { min: row.min, max: row.max };
+}
+
+/**
+ * The part of a Library's {@link IndexSignature} from the Items whose IDs fall
+ * in `[from, to)`. The gate that lets the item-lookup service skip a rebuild
+ * when nothing indexed changed sums these parts over the Library's Item ID
+ * span, one range per task, so no single read holds the worker for long.
+ */
+export function getIndexSignatureRange(
+  db: NodeDatabaseClient,
+  libraryID: number,
+  { from, to }: ItemIDRange,
+): IndexSignature {
+  const row = indexSignatureRangeQuery
+    .prepared(db)
+    .get({ libraryID, from, to });
+  return {
+    count: row?.count ?? 0,
+    checksum: Number(row?.checksum ?? 0),
+  };
+}
+
+/** A half-open range `[from, to)` of Item IDs. */
+export interface ItemIDRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * The loop that sums a Library's {@link IndexSignature} over ranges of `size`
+ * Item IDs across `bounds`. It yields each range and takes back that range's
+ * part, read with {@link getIndexSignatureRange}; it returns the sum. The
+ * caller does each read, so it can give the event loop a turn between them.
+ *
+ * This departs from `policies/query-authoring.md`: the statement count grows
+ * with the Item ID span instead of staying fixed. Each statement is one task
+ * in the database worker, and a search waits for the task in progress, so no
+ * task may come near the 100 ms search limit; the whole Library in one
+ * statement took 60–96 ms on the Stress Build of 100,000 Items.
+ */
+export function* sumSignatureRanges(
+  bounds: { min: number; max: number } | null,
+  size: number,
+): Generator<ItemIDRange, IndexSignature, IndexSignature> {
+  const total: IndexSignature = { count: 0, checksum: 0 };
+  if (!bounds) return total;
+  for (let from = bounds.min; from <= bounds.max; from += size) {
+    const part = yield { from, to: from + size };
+    total.count += part.count;
+    total.checksum += part.checksum;
+  }
+  return total;
+}
+
+/**
+ * A Library's whole {@link IndexSignature} in one statement. It searches the
+ * (libraryID, key) index, so a small Library beside a large one reads only its
+ * own rows.
  */
 const indexSignatureQuery = defineQuery<{ libraryID: number }>()(
   (db, { placeholder }) =>
     db
       .select({
         count: count(),
-        checksum: sql<number>`coalesce(sum(unixepoch(${items.dateModified}) + ${items.itemID} + (coalesce(${zoteroActivity} / 1000, 0) * ((${items.itemID} % 997) + 1) % 2147483647)), 0)`,
+        checksum: sql<number>`coalesce(sum(${checksumTerm}), 0)`,
       })
       .from(items)
       .innerJoin(itemTypes, eq(itemTypes.itemTypeID, items.itemTypeID))
@@ -278,8 +391,9 @@ const indexSignatureQuery = defineQuery<{ libraryID: number }>()(
 );
 
 /**
- * Read a library's {@link IndexSignature} in one aggregate query — the gate that
- * lets the item-lookup service skip a rebuild when nothing indexed changed.
+ * A Library's whole {@link IndexSignature} in one statement, equal to the sum
+ * of {@link sumSignatureRanges}. The Item Index reads the ranges instead, so
+ * no read holds the database worker for long.
  */
 export function getIndexSignature(
   db: NodeDatabaseClient,

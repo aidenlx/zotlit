@@ -776,8 +776,10 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#surfaces.use(onPageRendered(controller, onRender));
     // The move to the position a document reopens at is PDF.js's own, not a
     // page turn: page changes count from the initial view on. PDF.js sets its
-    // flag before that move, so the binding keeps its own, which turns on at
-    // `documentinit` and off when the document closes for a reload in place.
+    // flag before that move, so the binding keeps its own. It turns on at
+    // `documentinit`, or at the first page change after PDF.js set its flag,
+    // which is not counted; it turns off when the document closes for a
+    // reload in place.
     let initialView = initialViewSet(controller);
     this.#surfaces.use(
       onInitialView(controller, () => {
@@ -791,6 +793,16 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     );
     this.#surfaces.use(
       onPageChanged(controller, () => {
+        // #1870: PDF.js 5.3.34 sets the initial view from the `.catch` of
+        // `load` when its open handler throws, and `documentinit` never
+        // follows. A page change after PDF.js set its flag is that move or a
+        // later one, so the binding takes the view as set and counts from the
+        // next change. On the usual path this is the move `documentinit`
+        // follows in the same task, which stays uncounted.
+        if (!initialView && initialViewSet(controller)) {
+          initialView = true;
+          return;
+        }
         if (
           this.#attachment.kind === "resolved" &&
           this.#pageProbed &&

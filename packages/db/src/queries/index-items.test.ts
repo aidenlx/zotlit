@@ -11,7 +11,11 @@ import {
   getIndexedItemsByID,
   getIndexedItemsByLibrary,
   getIndexSignature,
+  getIndexSignatureRange,
+  getItemIDBounds,
+  sumSignatureRanges,
 } from "./index-items";
+import type { IndexSignature } from "./index-items";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -113,6 +117,108 @@ describe("getIndexSignature", () => {
     expect(after.count).toBe(before.count);
     expect(after.checksum).not.toBe(before.checksum);
     expect(after.checksum).toBe(8014099987);
+  });
+});
+
+describe("getIndexSignatureRange", () => {
+  /**
+   * The signature that {@link sumSignatureRanges} sums over ranges of `size`
+   * Item IDs, each range read as the worker reads it.
+   */
+  function chunked(libraryID: number, size: number): IndexSignature {
+    const ranges = sumSignatureRanges(getItemIDBounds(db, libraryID), size);
+    let step = ranges.next();
+    while (!step.done) {
+      step = ranges.next(getIndexSignatureRange(db, libraryID, step.value));
+    }
+    return step.value;
+  }
+
+  beforeEach(() => {
+    // Gaps in the Item IDs, with activity on a child, so that some ranges are
+    // empty and the last range is partial for most sizes. A group Library
+    // holds Item IDs inside the span of My Library.
+    sqlite.exec(`
+      insert into libraries (libraryID, type, editable, filesEditable)
+        values (2, 'group', 1, 1);
+      insert into groups (groupID, libraryID, name) values (9, 2, 'Group');
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values
+          (20, 1, '2024-01-01 00:00:00', '2024-06-15 00:00:00', 2, 'GROUPA'),
+          (40, 1, '2024-01-01 00:00:00', '2024-07-01 00:00:00', 1, 'GAPPED'),
+          (41, 3, '2024-01-01 00:00:00', '2024-08-01 00:00:00', 1, 'GAPNOTE'),
+          (42, 5, '2024-01-01 00:00:00', '2024-08-15 00:00:00', 2, 'GROUPB'),
+          (43, 3, '2024-01-01 00:00:00', '2024-08-20 00:00:00', 2, 'GROUPNOTE'),
+          (60, 1, '2024-01-01 00:00:00', '2024-08-25 00:00:00', 2, 'GROUPC'),
+          (97, 5, '2024-01-01 00:00:00', '2024-09-01 00:00:00', 1, 'LAST');
+      insert into itemNotes (itemID, parentItemID) values (41, 40), (43, 42);
+    `);
+  });
+
+  it.each([1, 2, 3, 7, 10, 64, 1000])(
+    "sums to the whole signature over ranges of %i Item IDs",
+    (size) => {
+      const whole = getIndexSignature(db, USER_LIBRARY_ID);
+      expect(whole.count).toBe(5);
+      expect(chunked(USER_LIBRARY_ID, size)).toEqual(whole);
+    },
+  );
+
+  it.each([1, 3, 10, 1000])(
+    "sums each Library's own Items over ranges of %i Item IDs that hold both",
+    (size) => {
+      const mine = getIndexSignature(db, USER_LIBRARY_ID);
+      const group = getIndexSignature(db, 2);
+      expect([mine.count, group.count]).toEqual([5, 3]);
+      expect(chunked(USER_LIBRARY_ID, size)).toEqual(mine);
+      expect(chunked(2, size)).toEqual(group);
+    },
+  );
+
+  it("reads only the Library's Items in a range that holds two Libraries", () => {
+    const range = { from: 40, to: 61 };
+    expect(getIndexSignatureRange(db, USER_LIBRARY_ID, range).count).toBe(1);
+    expect(getIndexSignatureRange(db, 2, range).count).toBe(2);
+  });
+
+  it("answers an empty part for a range with no indexed Items", () => {
+    expect(
+      getIndexSignatureRange(db, USER_LIBRARY_ID, { from: 8, to: 40 }),
+    ).toEqual({ count: 0, checksum: 0 });
+    expect(
+      getIndexSignatureRange(db, USER_LIBRARY_ID, { from: 98, to: 200 }),
+    ).toEqual({ count: 0, checksum: 0 });
+  });
+
+  it("includes the lower bound and excludes the upper bound", () => {
+    const at40 = getIndexSignatureRange(db, USER_LIBRARY_ID, {
+      from: 40,
+      to: 41,
+    });
+    expect(at40.count).toBe(1);
+    expect(
+      getIndexSignatureRange(db, USER_LIBRARY_ID, { from: 39, to: 40 }).count,
+    ).toBe(0);
+  });
+
+  it("asks for one range per size step across the bounds, the last one partial", () => {
+    const ranges: { from: number; to: number }[] = [];
+    const loop = sumSignatureRanges({ min: 1, max: 25 }, 10);
+    for (let step = loop.next(); !step.done;) {
+      ranges.push(step.value);
+      step = loop.next({ count: 1, checksum: step.value.from });
+    }
+    expect(ranges).toEqual([
+      { from: 1, to: 11 },
+      { from: 11, to: 21 },
+      { from: 21, to: 31 },
+    ]);
+  });
+
+  it("has no bounds and an empty signature for a Library without Items", () => {
+    expect(getItemIDBounds(db, 3)).toBeNull();
+    expect(chunked(3, 10)).toEqual(getIndexSignature(db, 3));
+    expect(chunked(3, 10)).toEqual({ count: 0, checksum: 0 });
   });
 });
 

@@ -705,6 +705,40 @@ export function layerSource(
         yield* Deferred.await(ready);
       });
 
+      /**
+       * Start `watches` on a new scope and store the scope in `holder`, or log
+       * `failure` and close it when a watch cannot start.
+       *
+       * #1798: nothing else holds the scope until `holder` does, so only the
+       * wait for the watches can be interrupted, and an interrupt there
+       * closes the scope.
+       */
+      const bindWatches = (
+        holder: Ref.Ref<Scope.Closeable | null>,
+        watches: Effect.Effect<void, unknown, Scope.Scope>,
+        failure: { message: string; annotations?: Record<string, unknown> },
+      ) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const scope = yield* Scope.make();
+            const result = yield* Effect.result(
+              restore(watches.pipe(Scope.provide(scope))).pipe(
+                Effect.onInterrupt(() => Scope.close(scope, Exit.void)),
+              ),
+            );
+            if (result._tag === "Failure") {
+              yield* Scope.close(scope, Exit.void);
+              yield* logWarningCause(
+                failure.message,
+                result.failure,
+                failure.annotations,
+              );
+              return;
+            }
+            yield* Ref.set(holder, scope);
+          }),
+        );
+
       const syncWalWatcher = Effect.fnUntraced(function* () {
         const current = yield* Ref.get(state);
         if (!current.sourcePath || current.readMode === "immutable") {
@@ -717,20 +751,11 @@ export function layerSource(
           return;
         }
         if (yield* Ref.get(walWatcherScope)) return;
-        const scope = yield* Scope.make();
-        const result = yield* Effect.result(
-          watchPath(walPath, () => enqueueWatchSignal({ trusted: false })).pipe(
-            Scope.provide(scope),
-          ),
+        yield* bindWatches(
+          walWatcherScope,
+          watchPath(walPath, () => enqueueWatchSignal({ trusted: false })),
+          { message: "Failed to watch Zotero WAL", annotations: { walPath } },
         );
-        if (result._tag === "Failure") {
-          yield* Scope.close(scope, Exit.void);
-          yield* logWarningCause("Failed to watch Zotero WAL", result.failure, {
-            walPath,
-          });
-          return;
-        }
-        yield* Ref.set(walWatcherScope, scope);
       });
 
       const enqueueWatchSignal = (signal: WatchSignal): void => {
@@ -738,15 +763,14 @@ export function layerSource(
         Queue.offerUnsafe(watchSignals, signal);
       };
 
-      const acquireMainWatchers = Effect.fnUntraced(function* (current: {
+      const bindMainWatchers = (current: {
         sourcePath: string;
         readMode: EffectiveReadMode;
-      }) {
-        const parent = dirname(current.sourcePath);
-        const scope = yield* Scope.make();
-        const result = yield* Effect.result(
+      }) =>
+        bindWatches(
+          mainWatcherScope,
           Effect.gen(function* () {
-            yield* watchPath(parent, (event) => {
+            yield* watchPath(dirname(current.sourcePath), (event) => {
               const name = event.path;
               if (!watchedFilename(name)) return;
               enqueueWatchSignal({
@@ -757,18 +781,9 @@ export function layerSource(
             yield* watchPath(current.sourcePath, () =>
               enqueueWatchSignal({ trusted: false }),
             );
-          }).pipe(Scope.provide(scope)),
+          }),
+          { message: "Failed to watch the Zotero database" },
         );
-        if (result._tag === "Failure") {
-          yield* Scope.close(scope, Exit.void);
-          yield* logWarningCause(
-            "Failed to watch the Zotero database",
-            result.failure,
-          );
-          return null;
-        }
-        return scope;
-      });
 
       const rebindWatchers = Effect.fnUntraced(function* () {
         yield* closeWatcherScopes;
@@ -778,11 +793,10 @@ export function layerSource(
           return;
         }
         if (!current.sourcePath || !current.readMode) return;
-        const scope = yield* acquireMainWatchers({
+        yield* bindMainWatchers({
           sourcePath: current.sourcePath,
           readMode: current.readMode,
         });
-        if (scope) yield* Ref.set(mainWatcherScope, scope);
         yield* syncWalWatcher();
       });
 
