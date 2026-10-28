@@ -1,10 +1,10 @@
-import { Effect } from "effect";
-import { Keymap } from "obsidian";
 // The Table layout: the Items of a view as rows, like Zotero's item list, with
 // the visible properties as columns, the Literature Note Property among them. An Item
 // row expands into its Attachments and Child Notes, and an Attachment row
 // into its Annotations. Each kind of child row comes from one Table Child
 // Source, so a new kind joins the list without another branch.
+import { Effect, Schema } from "effect";
+import { Keymap } from "obsidian";
 import {
   useEffect,
   useMemo,
@@ -29,6 +29,7 @@ import type {
   QueryViewRow,
   QueryViewValue,
 } from "@/services/item-query/query-view";
+import type { ItemQueryError } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import { useItemRow } from "./item-rows";
@@ -68,8 +69,17 @@ export interface TableRecord {
 export interface ChildQuery {
   run(
     request: QueryViewRequest,
-  ): Effect.Effect<QueryViewOutcome, unknown, ViewServices>;
+  ): Effect.Effect<QueryViewOutcome, ItemQueryError, ViewServices>;
 }
+
+/** A query for the rows under a parent answered no rows: it failed or was cancelled. */
+export class ChildRowsUnread extends Schema.TaggedError<
+  ChildRowsUnread,
+  { readonly brand: unique symbol }
+>()("ChildRowsUnread", {
+  /** The kind of outcome the query answered. */
+  outcome: Schema.Literals(["failed", "cancelled"]),
+}) {}
 
 /** The rows of one kind that a row of another kind expands into. */
 export interface TableChildSource {
@@ -89,7 +99,11 @@ export interface TableChildSource {
   load(
     parent: TableRecord,
     query: ChildQuery,
-  ): Effect.Effect<readonly TableRecord[], unknown, ViewServices>;
+  ): Effect.Effect<
+    readonly TableRecord[],
+    ItemQueryError | ChildRowsUnread,
+    ViewServices
+  >;
   /**
    * The text of one row, under the row it expands from. An Attachment or
    * Annotation row puts its text in a `link` that opens it in its reader.
@@ -116,7 +130,8 @@ function queried(
   return (parent, query) =>
     Effect.gen(function* () {
       const outcome = yield* query.run(request(parent.key));
-      if (outcome.kind !== "result") return yield* Effect.fail(outcome);
+      if (outcome.kind !== "result")
+        return yield* new ChildRowsUnread({ outcome: outcome.kind });
       const rows =
         outcome.result.rows ??
         outcome.result.groups.flatMap((group) => group.rows);

@@ -19,6 +19,7 @@ import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
 import type { ConversionRun } from "./atoms";
 import { WelcomeModelProvider } from "./model";
+import type { WelcomeModel } from "./model";
 import type { WelcomeState } from "./presentation";
 import { Welcome } from "./Welcome";
 
@@ -462,7 +463,7 @@ async function render(
   const host = cleanup.use(await makeWelcomeHost());
   const { registry } = host;
   const session = cleanup.use(host.openSession());
-  const conversion = Atom.make<AsyncResult.AsyncResult<ConversionRun, unknown>>(
+  const conversion = Atom.make<Atom.Type<WelcomeModel["conversion"]>>(
     AsyncResult.initial(),
   );
   cleanup.defer(registry.mount(conversion));

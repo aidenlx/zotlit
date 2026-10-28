@@ -36,16 +36,15 @@ const updateDocumentCommand = viewRuntime.fn(
 
 /**
  * Writes plugin data to disk. It waits one turn first, so the changes of one
- * task reach disk in one write; once the write starts, it finishes, even
- * when the view closes.
+ * task reach disk in one write; a close in that turn skips the write. Once
+ * the write starts it finishes, even when the view closes:
+ * `PluginSettings.flush` runs uninterruptible.
  */
 const flushDocumentCommand = viewRuntime.fn(
   () =>
     Effect.andThen(
       Effect.yieldNow,
-      PluginSettings.use((settings) => settings.flush).pipe(
-        Effect.uninterruptible,
-      ),
+      PluginSettings.use((settings) => settings.flush),
     ),
   { concurrent: true },
 );

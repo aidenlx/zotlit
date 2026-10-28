@@ -5,7 +5,7 @@
 //
 // @see apps/obsidian/docs/adr/0068-query-files-are-a-zotlit-file-type-embedded-through-the-private-embed-registry.md
 // @see apps/obsidian/docs/adr/0069-the-annotation-view-is-the-annotations-layout-of-the-query-view.md
-import { Effect, Latch } from "effect";
+import { Effect } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { Component } from "obsidian";
 import type { Scope } from "obsidian";
@@ -17,10 +17,14 @@ import type { NameDictionary, QueryContext } from "@zotlit/item-query";
 import { useUniqueId } from "@zotlit/ui";
 
 import { PaneState } from "@/components/pane-state";
+import { recover } from "@/lib/effect-cause";
+import { withLogCategory } from "@/lib/effect-log";
 import type { SubscriptionRuntime } from "@/lib/effect-stream";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
+import { makeViewRunner } from "@/lib/view-runner";
+import type { ViewRunner } from "@/lib/view-runner";
 import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import type { TargetOpenGesture } from "@/services/attachment-open/actions";
@@ -51,7 +55,7 @@ import { useAnnotStore } from "@/views/annot-view/store";
 import type { AnnotState } from "@/views/annot-view/store";
 import { viewTargetOpener } from "@/views/open-target";
 
-import { makeQueryTaskCommand, makeRunQueryCommand } from "./atoms";
+import { makeRunQueryCommand } from "./atoms";
 import type { QueryCardFocus } from "./card-focus";
 import { CardsLayout } from "./cards-layout";
 import { contextHint } from "./context-hint";
@@ -493,11 +497,8 @@ export class QueryView extends Component implements HistorySurface {
   /** The file's text, the view on screen, the edits and their saves. */
   readonly #document: QueryFileDocument;
   readonly #runCommand = makeRunQueryCommand();
-  /** The table's actions and reads, which the leaf's close interrupts. */
-  readonly #tasks = makeQueryTaskCommand();
-  #releaseTasks: (() => void) | null = null;
-  /** What waits for the tasks; the leaf's close ends each wait. */
-  readonly #taskWaiters = new Set<() => void>();
+  /** Runs the table's actions and reads; the leaf's close interrupts them. */
+  #tasks: ViewRunner | null = null;
   /** Whether the rows on screen are drawn as Annotation Cards. */
   #cardsShown = false;
   /**
@@ -626,7 +627,7 @@ export class QueryView extends Component implements HistorySurface {
   get settled(): Promise<void> {
     return this.#settled
       .then(() => this.#layout.read)
-      .then(() => this.#tasksSettled());
+      .then(() => this.#tasks?.settled());
   }
 
   /**
@@ -671,7 +672,7 @@ export class QueryView extends Component implements HistorySurface {
     const subscriptions = new DisposableStack();
     this.#subscriptions = subscriptions;
     this.#releaseCommand ??= this.registry.mount(this.#runCommand);
-    this.#releaseTasks ??= this.registry.mount(this.#tasks);
+    this.#tasks ??= makeViewRunner(this.registry);
     subscriptions.defer(this.registry.mount(queryRevisionAtom));
     subscriptions.defer(
       this.registry.subscribe(queryRevisionAtom, () => {
@@ -719,9 +720,8 @@ export class QueryView extends Component implements HistorySurface {
     this.#finishRun = null;
     this.#releaseCommand?.();
     this.#releaseCommand = null;
-    this.#releaseTasks?.();
-    this.#releaseTasks = null;
-    for (const finish of this.#taskWaiters) finish();
+    void this.#tasks?.[Symbol.asyncDispose]();
+    this.#tasks = null;
     this.#subscriptions?.dispose();
     this.#subscriptions = null;
     this.#release?.();
@@ -805,27 +805,17 @@ export class QueryView extends Component implements HistorySurface {
    * stops the read of the rows under it.
    */
   runTask(task: Effect.Effect<void, unknown, ViewServices>): () => void {
-    if (!this.#releaseTasks) return () => {};
-    const stop = Latch.makeUnsafe(false);
-    this.registry.set(this.#tasks, Effect.raceFirst(task, stop.await));
-    return () => void stop.openUnsafe();
-  }
-
-  /** Settles once no task of {@link runTask} runs, or the leaf closes. */
-  #tasksSettled(): Promise<void> {
-    if (!this.#releaseTasks || !this.registry.get(this.#tasks).waiting)
-      return Promise.resolve();
-    return new Promise((resolve) => {
-      const finish = () => {
-        stop();
-        this.#taskWaiters.delete(finish);
-        resolve();
-      };
-      const stop = this.registry.subscribe(this.#tasks, (result) => {
-        if (!result.waiting) finish();
-      });
-      this.#taskWaiters.add(finish);
-    });
+    if (!this.#tasks) return () => {};
+    const fiber = this.#tasks.run(
+      task.pipe(
+        recover(
+          (error) => Effect.logWarning("A Query View action failed", { error }),
+          Effect.void,
+        ),
+        withLogCategory("query-view"),
+      ),
+    );
+    return () => fiber.interruptUnsafe();
   }
 
   /** The surface the host is, by what it binds to `this`. */

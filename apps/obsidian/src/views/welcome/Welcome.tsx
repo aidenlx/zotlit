@@ -1,5 +1,5 @@
-import * as AsyncResult from "effect/reactivity/AsyncResult";
 // Welcome onboarding banner: the header, the update of ZotLit, the checklist of setup steps, the template conversion, the v1 Migration Prompt and the Zotero 10 Companion guidance, each as a section the model decides, and the Help Links whatever it shows.
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";

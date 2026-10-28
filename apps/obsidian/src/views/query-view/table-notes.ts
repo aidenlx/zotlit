@@ -7,6 +7,7 @@
 //
 // @see apps/obsidian/docs/adr/0070-vault-properties-are-answered-outside-zotlit-query.md
 import { Effect, Option } from "effect";
+import type { Cause } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -26,12 +27,17 @@ import {
   vaultTags,
 } from "@/lib/obsidian-private/property-values";
 import { Workspace } from "@/lib/obsidian-workspace";
+import type { OpenLinkFailed } from "@/lib/obsidian-workspace";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import type { ItemQueryError } from "@/services/item-query/service";
 import { createNoteInteractively } from "@/services/note-feature/creation-view";
 import type { InteractiveCreationPorts } from "@/services/note-feature/creation-view";
 import { noteIndexSnapshotAtom } from "@/services/note-index/atoms";
 import { profileRevisionAtom } from "@/services/profile/atoms";
+import type { ProfileOperationError } from "@/services/profile/service";
 import { templateRevisionAtom } from "@/services/template/atoms";
+import type { TemplateFailure } from "@/services/template/service";
+import type { DbUnavailable } from "@/services/zotero-reads/rpc";
 import { ZoteroReads } from "@/services/zotero-reads/service";
 
 import { replacedKeysAtom } from "./note-atoms";
@@ -120,6 +126,16 @@ export interface VaultLinkRef {
   readonly host: VaultHost | null;
 }
 
+/**
+ * How the usual creation of an Item's Literature Note fails: the Zotero read
+ * of the Item, the Profile selection, or the template render.
+ */
+export type NoteCreationFailure =
+  | DbUnavailable
+  | ItemQueryError
+  | ProfileOperationError
+  | TemplateFailure;
+
 /** What the "Literature note" column and the vault properties read and do. */
 export interface LiteratureNotes {
   /** The Literature Note of an Item, by its Indexed Key; `null` where it has none. */
@@ -168,7 +184,13 @@ export interface LiteratureNotes {
    * Profile when more than one fits. A key the note's Profile replaces, as
    * {@link managed} tells, is not written.
    */
-  write(edit: VaultEdit): Effect.Effect<VaultWrite, unknown, ViewServices>;
+  write(
+    edit: VaultEdit,
+  ): Effect.Effect<
+    VaultWrite,
+    NoteCreationFailure | Cause.UnknownError,
+    ViewServices
+  >;
   /**
    * The values the vault holds for the property `name`, each once, which an
    * edit of it suggests: the vault's tags for a property of tags.
@@ -180,14 +202,16 @@ export interface LiteratureNotes {
   openLink(
     link: VaultLinkRef,
     event: MouseEvent,
-  ): Effect.Effect<void, unknown, ViewServices>;
+  ): Effect.Effect<void, OpenLinkFailed, ViewServices>;
   /** Open the note; a Cmd/Ctrl press opens it in a new tab. */
   open(
     note: LiteratureNoteLink,
     event: MouseEvent,
-  ): Effect.Effect<void, unknown, ViewServices>;
+  ): Effect.Effect<void, OpenLinkFailed, ViewServices>;
   /** Create the Item's Literature Note, as the usual creation does. */
-  create(itemKey: string): Effect.Effect<void, unknown, ViewServices>;
+  create(
+    itemKey: string,
+  ): Effect.Effect<void, NoteCreationFailure, ViewServices>;
 }
 
 export interface LiteratureNotesDeps {

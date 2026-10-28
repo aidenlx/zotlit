@@ -1,13 +1,11 @@
 // Query View reads and commands, run in the plugin's view registry.
 import { Cause, Effect } from "effect";
-import * as Atom from "effect/reactivity/Atom";
 
 import type { FilterValues } from "@zotlit/workbench/ui";
 
 import { recover } from "@/lib/effect-cause";
 import { withLogCategory } from "@/lib/effect-log";
 import { viewRuntime } from "@/lib/view-atoms";
-import type { ViewServices } from "@/lib/view-atoms";
 import type {
   QueryViewOutcome,
   QueryViewRequest,
@@ -164,26 +162,3 @@ export const customFieldNamesAtom = viewRuntime.atom(
     withLogCategory("query-view"),
   ),
 );
-
-/**
- * One leaf's table actions and reads: each runs beside the others, and the
- * leaf's close interrupts them. A failure is logged here; a task that shows
- * its own failure handles it first.
- */
-export const makeQueryTaskCommand = () =>
-  Atom.setIdleTTL(
-    viewRuntime.fn(
-      (task: Effect.Effect<void, unknown, ViewServices>) =>
-        task.pipe(
-          recover(
-            (error) =>
-              Effect.logWarning("A Query View action failed", { error }),
-            Effect.void,
-          ),
-          withLogCategory("query-view"),
-        ),
-      { concurrent: true },
-    ),
-    // A closed leaf's tasks stop at once, not after the registry's idle delay.
-    0,
-  );

@@ -16,7 +16,6 @@ import { settingsAtom } from "@/services/settings/atoms";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 
 import { makeConversionCommand } from "./atoms";
-import type { ConversionRun } from "./atoms";
 import { connectionAtom, connectionLoadAtom, unavailable } from "./connection";
 import { bannerSections } from "./presentation";
 import type { WelcomeState } from "./presentation";
@@ -116,13 +115,13 @@ export const setConverted =
   (state: WelcomeSession): WelcomeSession =>
     state.converted === converted ? state : { ...state, converted };
 
-/** What the banner's tree reads: its state and its conversion's last run. */
-export interface WelcomeModelView {
-  readonly state: Atom.Atom<WelcomeState>;
-  readonly conversion: Atom.Atom<
-    AsyncResult.AsyncResult<ConversionRun, unknown>
-  >;
-}
+/**
+ * What the banner's tree reads: its state and its conversion's last run. The
+ * tree only reads them, so it takes any atom of the model's value types.
+ */
+type WelcomeModelView = {
+  readonly [K in "state" | "conversion"]: Atom.Atom<Atom.Type<WelcomeModel[K]>>;
+};
 
 const WelcomeModelContext = createContext<WelcomeModelView | null>(null);
 export const WelcomeModelProvider = WelcomeModelContext.Provider;
@@ -130,7 +129,7 @@ export const WelcomeModelProvider = WelcomeModelContext.Provider;
 function useWelcomeModel(): WelcomeModelView {
   const model = useContext(WelcomeModelContext);
   if (!model)
-    throw new Error("useWelcomeState must be used within WelcomeModelProvider");
+    throw new Error("useWelcomeModel must be used within WelcomeModelProvider");
   return model;
 }
 
@@ -139,9 +138,6 @@ export function useWelcomeState<A>(select: (state: WelcomeState) => A): A {
 }
 
 /** The last run of the banner's template conversion, while it runs and after. */
-export function useConversion(): AsyncResult.AsyncResult<
-  ConversionRun,
-  unknown
-> {
+export function useConversion() {
   return useAtomValue(useWelcomeModel().conversion);
 }
