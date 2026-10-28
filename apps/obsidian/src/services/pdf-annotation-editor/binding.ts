@@ -18,7 +18,6 @@ import type {
   SelectedText,
 } from "@zotlit/pdf-structure";
 
-import { passAborted } from "@/lib/abort-error";
 import {
   registerDomEvent,
   registerMigratingWindowEvent,
@@ -62,7 +61,15 @@ import type { TextRotation } from "./geometry-edit";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
-import { readMarks, stepMarkHistory } from "./operations";
+import {
+  oneAtATime,
+  pressHistory,
+  readMarks,
+  reportBlockedEdit,
+  settledOf,
+  stepMarkHistory,
+} from "./operations";
+import type { BindingWrites, WriteRun } from "./operations";
 import { mountReaderKeymap } from "./reader-keymap";
 import {
   createReaderSurfaceState,
@@ -92,8 +99,11 @@ import {
 } from "./render";
 import type { PdfPageAnnotation } from "./render";
 import {
+  initialViewSet,
   loadedPageOf,
   onPageRendered,
+  onDocumentClosed,
+  onInitialView,
   onPageChanged,
   openFileOf,
   pageViewOf,
@@ -207,6 +217,12 @@ export interface PdfViewBindingDeps {
     EffectBridge,
     "runSync" | "runPromise" | "runPromiseExit" | "runAndForget" | "subscribe"
   >;
+  /**
+   * Starts one write of this view on its own Scope, which the view's close
+   * closes: a write still running then is interrupted, or finishes where it
+   * is uninterruptible.
+   */
+  writes: BindingWrites;
   /** Where the reader's writes and History Steps say what became of them. */
   notifier: Notifier["Service"];
   capabilityGestures: CapabilityGestures;
@@ -250,6 +266,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #attachments;
   readonly #annotations;
   readonly #bridge;
+  readonly #writes;
   readonly #notifier;
   readonly #gestures;
   readonly #markGestures;
@@ -353,9 +370,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /** The Creation Toolbar's own slot for the affordance; `null` until mounted. */
   #capabilitySlot: HTMLElement | null = null;
   #toolbarMounted = false;
-  #gesturing = Promise.resolve();
-  /** The Annotation History press this view is answering; settled while none is. */
-  #stepping = Promise.resolve();
+  /** The last Editing Capability gesture's run; `null` while none has run. */
+  #gesturing: WriteRun | null = null;
+  /** This reader's Annotation History presses, answered one at a time. */
+  readonly #presses = oneAtATime();
+  /** The last Annotation History press's run; `null` while none has run. */
+  #stepping: WriteRun | null = null;
 
   constructor({
     view,
@@ -363,6 +383,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     attachments,
     annotations,
     bridge,
+    writes,
     notifier,
     capabilityGestures,
     markGestures,
@@ -378,6 +399,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#attachments = attachments;
     this.#annotations = annotations;
     this.#bridge = bridge;
+    this.#writes = writes;
     this.#notifier = notifier;
     this.#gestures = capabilityGestures;
     this.#markGestures = markGestures;
@@ -522,7 +544,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    * settled while none has run. Never rejects.
    */
   get gestured(): Promise<void> {
-    return this.#gesturing;
+    return settledOf(this.#bridge, this.#gesturing);
   }
 
   /**
@@ -532,7 +554,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    * none has run. Never rejects.
    */
   get stepped(): Promise<void> {
-    return this.#stepping;
+    return settledOf(this.#bridge, this.#stepping);
   }
 
   /**
@@ -752,9 +774,28 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       this.#popupHost?.sync();
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
+    // The move to the position a document reopens at is PDF.js's own, not a
+    // page turn: page changes count from the initial view on. PDF.js sets its
+    // flag before that move, so the binding keeps its own, which turns on at
+    // `documentinit` and off when the document closes for a reload in place.
+    let initialView = initialViewSet(controller);
+    this.#surfaces.use(
+      onInitialView(controller, () => {
+        initialView = true;
+      }),
+    );
+    this.#surfaces.use(
+      onDocumentClosed(controller, () => {
+        initialView = false;
+      }),
+    );
     this.#surfaces.use(
       onPageChanged(controller, () => {
-        if (this.#attachment.kind === "resolved" && this.#pageProbed)
+        if (
+          this.#attachment.kind === "resolved" &&
+          this.#pageProbed &&
+          initialView
+        )
           this.#reads?.record(this.#attachment, "page");
       }),
     );
@@ -914,6 +955,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       surfaceState: state,
       annotations: this.#annotations,
       bridge: this.#bridge,
+      writes: this.#writes,
       now: this.#now,
     });
     this.#creation = creation;
@@ -937,6 +979,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
       bridge: this.#bridge,
+      writes: this.#writes,
       notifier: this.#notifier,
       colors: this.#toolColors,
       surfaceState: state,
@@ -1309,14 +1352,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     // the edit was blocked would contradict it. No gesture opens Zotero's
     // dialog; only Allow editing does.
     if (editingLive(this.#capability())) return;
-    this.#gesturing = this.#bridge
-      .runPromise(this.#annotations.probe)
-      .then(() => {
-        if (this.#surfaces.disposed) return;
+    this.#gesturing = this.#writes(
+      reportBlockedEdit(this.#annotations, () => {
         if (this.#attachment.kind !== "resolved") return;
         this.#gestures.reportBlockedGesture(this.#attachment.attachmentKey);
-      })
-      .catch(passAborted);
+      }),
+    );
   }
 
   /**
@@ -1331,37 +1372,31 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   stepHistory(direction: HistoryDirection): void {
     if (this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
-    const answered = this.#bridge
-      .runPromise(
+    this.#stepping = this.#writes(
+      pressHistory(
+        this.#presses,
         stepMarkHistory(this.#annotations, this.#notifier, {
           attachmentKey,
           direction,
-          speaks: () => !this.#surfaces.disposed,
           now: () => this.#now(),
         }),
-      )
-      .then((outcome) => {
-        if (this.#surfaces.disposed) return;
-        switch (outcome.kind) {
-          case "stepped":
-            return this.#landOn(outcome.annotationKey);
-          case "removed":
-            return this.#landOnPage(outcome.pageIndex);
-          case "blocked":
-            this.#editGesture();
-            return;
-          case "changed":
-          case "failed":
-          case "locked":
-          case "idle":
-            return;
-        }
-      });
-    // Chained rather than replaced, so a second press in flight leaves this
-    // settling behind both rather than behind the later one alone. Settled
-    // rather than resolved, so it answers however each press ended.
-    this.#stepping = Promise.allSettled([this.#stepping, answered]).then(
-      () => undefined,
+        (outcome) => {
+          switch (outcome.kind) {
+            case "stepped":
+              return this.#landOn(outcome.annotationKey);
+            case "removed":
+              return this.#landOnPage(outcome.pageIndex);
+            case "blocked":
+              this.#editGesture();
+              return;
+            case "changed":
+            case "failed":
+            case "locked":
+            case "idle":
+              return;
+          }
+        },
+      ),
     );
   }
 

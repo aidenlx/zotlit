@@ -1,18 +1,15 @@
 // One Query Job inside the ZoteroReads worker, on its borrowed connection: one
 // Effect on the fiber of the job, with the time-budget scheduler and the
 // database of the job. Interruption of that fiber is the cancel of the job.
-import { Effect } from "effect";
+import { Cause, Effect, Exit, FileSystem, PlatformError, Scope } from "effect";
 // oxlint-disable-next-line no-restricted-imports -- ItemQueryScheduler uses MessageChannel and adds a per-query time budget.
 import { Scheduler } from "effect";
-import type { Scope } from "effect";
-import { open } from "node:fs/promises";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { ItemQueryDatabase } from "@zotlit/db/item-query";
 import { ItemQueryScheduler } from "@zotlit/item-query";
 import type { ResolveAttachmentFile } from "@zotlit/item-query";
 
-import { systemCallError } from "@/lib/errno";
 import type { WorkbenchIdentity } from "@/services/template-workbench/envelope";
 
 import {
@@ -44,9 +41,10 @@ export interface QueryJobEnv {
 export function runQueryJob(
   job: QueryJob,
   env: QueryJobEnv,
-): Effect.Effect<QueryAnswer> {
+): Effect.Effect<QueryAnswer, never, FileSystem.FileSystem> {
   const stage: StageState = {};
   return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
     const startedAt = performance.timeOrigin + performance.now();
     const trace = job.measure ? createTrace(job.heap ?? false) : undefined;
     const answerSteps: number[] = [];
@@ -63,7 +61,7 @@ export function runQueryJob(
               onAnswerStep: job.measure
                 ? (ms: number) => answerSteps.push(ms)
                 : undefined,
-              openOutput: () => openStage(job.stagePath, stage),
+              openOutput: () => openStage(fs, job.stagePath, stage),
             });
     if (!trace) return reply;
     return {
@@ -79,16 +77,14 @@ export function runQueryJob(
     Effect.flatMap((answer) => {
       const { closeError } = stage;
       if (closeError === undefined) return Effect.succeed(answer);
-      return fileStep(() => Promise.reject(closeError)).pipe(
-        Effect.as(answer),
-        Effect.catch((failed) =>
-          Effect.succeed<QueryAnswer>({
-            command: job.command,
-            answer: failure(job.command, failed.diagnostic),
-            receipt: { kind: "inline" },
-          }),
-        ),
-      );
+      // Only a system error is the export's failure; any other defect is a bug.
+      if (!PlatformError.isPlatformError(closeError))
+        return Effect.die(closeError);
+      return Effect.succeed<QueryAnswer>({
+        command: job.command,
+        answer: failure(job.command, outputError(closeError).diagnostic),
+        receipt: { kind: "inline" },
+      });
     }),
     Effect.provideService(ItemQueryDatabase, { client: env.client }),
     Effect.provideService(Scheduler.Scheduler, new ItemQueryScheduler()),
@@ -100,48 +96,61 @@ interface StageState {
   closeError?: unknown;
 }
 
+const encoder = new TextEncoder();
+
 /**
- * Open the staging file of the job in its scope. Only the write of one chunk is
- * uninterruptible: native I/O settles before the scope closes the file. The
- * release records a failed close in `stage`.
+ * Open the staging file of the job in its scope: exclusive, and readable by
+ * this user only. Only the write of one chunk is uninterruptible: native I/O
+ * settles before the scope closes the file. `FileSystem` closes the file in
+ * the scope that opened it and makes a failed close a defect of that scope's
+ * close, so the file gets a scope of its own, and the release records that
+ * defect in `stage`.
  */
 function openStage(
+  fs: FileSystem.FileSystem,
   stagePath: string | undefined,
   stage: StageState,
 ): Effect.Effect<QueryWriter, QueryOutputError, Scope.Scope> {
   if (stagePath === undefined)
     return Effect.die(new Error("Item Query export has no staging path"));
-  return Effect.acquireRelease(
-    fileStep(() => open(stagePath, "wx", 0o600)),
-    (file) =>
-      Effect.promise(() =>
-        file.close().catch((error: unknown) => {
-          stage.closeError = error;
-        }),
+  return Effect.gen(function* () {
+    const fileScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+      Effect.exit(Scope.close(scope, Exit.void)).pipe(
+        Effect.flatMap((exit) =>
+          Effect.sync(() => {
+            if (Exit.isFailure(exit))
+              stage.closeError = Cause.squash(exit.cause);
+          }),
+        ),
       ),
-  ).pipe(
-    Effect.map((file) => ({
+    );
+    const file = yield* fileStep(
+      fs
+        .open(stagePath, { flag: "wx", mode: 0o600 })
+        .pipe(Scope.provide(fileScope)),
+    );
+    return {
       write: (text: string) =>
-        fileStep(() => file.writeFile(text, "utf8")).pipe(
+        fileStep(file.writeAll(encoder.encode(text))).pipe(
           Effect.uninterruptible,
         ),
-    })),
-  );
+    };
+  });
 }
 
 /** A file operation: a system error is the `output-error` of the envelope. */
 function fileStep<A>(
-  step: () => Promise<A>,
+  step: Effect.Effect<A, PlatformError.PlatformError>,
 ): Effect.Effect<A, QueryOutputError> {
-  return Effect.tryPromise({ try: step, catch: systemCallError }).pipe(
-    Effect.catch((error) =>
-      error.code !== undefined
-        ? Effect.fail(
-            new QueryOutputError({
-              diagnostic: diagnostic("output-error", error.message),
-            }),
-          )
-        : Effect.die(error.cause),
+  return step.pipe(Effect.mapError((error) => outputError(error)));
+}
+
+/** The diagnostic quotes the system's own message, which names the errno. */
+function outputError(error: PlatformError.PlatformError): QueryOutputError {
+  return new QueryOutputError({
+    diagnostic: diagnostic(
+      "output-error",
+      Error.isError(error.cause) ? error.cause.message : error.message,
     ),
-  );
+  });
 }

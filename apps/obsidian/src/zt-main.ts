@@ -1,4 +1,5 @@
-import { Plugin, View } from "obsidian";
+import { View } from "obsidian";
+import type { Plugin } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import type { CliCommand, CliHost } from "@/lib/cli-command";
@@ -9,6 +10,7 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
 
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
@@ -155,7 +157,7 @@ function reportStartupFailure(error: unknown): never {
 }
 
 /** Thin Obsidian plugin shell; feature work should live in services/actions. */
-export default class ZotLitPlugin extends Plugin implements CliHost {
+export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
   // Owns every service/resource registered during onload after startup commits.
   #stack?: AsyncDisposableStack;
 
@@ -235,6 +237,10 @@ export default class ZotLitPlugin extends Plugin implements CliHost {
     const services = await createPluginRuntime(this, stack, languagePack).catch(
       reportStartupFailure,
     );
+
+    // A disable during the build has already unloaded this instance: leave
+    // now, and the stack releases the services the build acquired.
+    if (this.unloaded) return;
 
     // One Customize flow shared by every entry action.
     const customize = services.customize;

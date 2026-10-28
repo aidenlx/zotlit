@@ -23,9 +23,14 @@ export type PageApp = App & {
     floatingSplit: { children: { win: Window }[] };
     isAttached(leaf: import("obsidian").WorkspaceLeaf): boolean;
   };
+  cli: { handlers: Map<string, unknown> };
+  viewRegistry: { viewByType: Record<string, unknown> };
   plugins: App["plugins"] & {
     plugins: App["plugins"]["plugins"] & {
-      zotlit?: import("obsidian").Plugin & { _loaded: boolean };
+      zotlit?: import("obsidian").Plugin & {
+        _loaded: boolean;
+        services: unknown;
+      };
     };
     manifests: Record<string, import("obsidian").PluginManifest>;
     disablePlugin(id: string): Promise<void>;
@@ -54,5 +59,11 @@ export interface EmptyView extends View {
 declare global {
   interface Window {
     __ztRestoreBackgroundThrottling?: () => void;
+  }
+  namespace NodeJS {
+    interface Process {
+      /** Node's open handles: sockets, servers, timers. Internal. */
+      _getActiveHandles(): object[];
+    }
   }
 }
