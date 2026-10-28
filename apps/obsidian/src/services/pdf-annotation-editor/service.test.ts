@@ -11,10 +11,12 @@ import type { App, EventRef, View, Vault, Workspace } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import { toInstant } from "@/lib/effect-clock";
 import { themeHook } from "@/lib/theme-hooks";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import type { HistoryOutcome } from "@/services/annotation-repository/service";
 import { openNoteVault } from "@/services/note-index/__fixtures__";
 import { NoteIndex } from "@/services/note-index/service";
 
@@ -1182,6 +1184,41 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
 });
 
+it("interrupts a blocked keystroke's probe when its PDF view closes, and says nothing", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf", pdfReader());
+  const annotations = annotationReads([], {
+    kind: "read-only",
+    reason: "zotero-unavailable",
+  });
+  const interrupted = vi.fn();
+  annotations.probeRuns.mockReturnValueOnce(
+    Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(interrupted))),
+  );
+  const gestures = capabilityGestures();
+  const open = [{ view }];
+  const { app, relayout } = workspace(open);
+
+  await using service = await PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: gestures,
+    ...(await standingDeps()),
+  });
+  const binding = service.bindings[0]!;
+  view.containerEl.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "h", bubbles: true }),
+  );
+  expect(annotations.probeRuns).toHaveBeenCalledOnce();
+
+  open.pop();
+  relayout();
+  await binding.gestured;
+
+  expect(interrupted).toHaveBeenCalledOnce();
+  expect(gestures.reportBlockedGesture).not.toHaveBeenCalled();
+});
+
 it("opens one Annotation History per Attachment and ends it with the last view", async () => {
   const first = pdfView("attachments/rougier-2014.pdf");
   const second = pdfView("attachments/rougier-2014.pdf");
@@ -1258,6 +1295,89 @@ it("lands on the Annotation an undo changed, and reports one Zotero moved", asyn
   expect(gestures.reportBlockedGesture).toHaveBeenCalledExactlyOnceWith(
     "ABCD2345",
   );
+});
+
+/**
+ * A History Step Zotero answers only once `answer` is called; `interrupted`
+ * counts the waits that were cut short.
+ */
+function heldStep() {
+  const { promise, resolve } = Promise.withResolvers<HistoryOutcome>();
+  const interrupted = vi.fn();
+  return {
+    step: Effect.promise(() => promise).pipe(
+      Effect.onInterrupt(() => Effect.sync(interrupted)),
+    ),
+    answer: resolve,
+    interrupted,
+  };
+}
+
+/** A step whose write was sent and whose answer was lost. */
+const LOST: HistoryOutcome = {
+  kind: "failed",
+  failure: { kind: "unknown-outcome" },
+};
+
+it("lets an undo finish when its PDF view closes, and says nothing of it", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf", pdfReader());
+  const annotations = annotationReads([HIGHLIGHT]);
+  const notifier = testNotifier();
+  const open = [{ view }];
+  const { app, relayout } = workspace(open);
+  const held = heldStep();
+  annotations.undo.mockReturnValueOnce(held.step);
+
+  const service = await PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    notifier,
+    ...(await standingDeps()),
+  });
+  const binding = service.bindings[0]!;
+  binding.stepHistory("undo");
+
+  // The view closes, then the plugin unloads, while Zotero has the step.
+  open.pop();
+  relayout();
+  const unloaded = service[Symbol.asyncDispose]();
+  held.answer(LOST);
+  await unloaded;
+  await binding.stepped;
+
+  // The step is taken whole: its wait is never cut, so the history moves.
+  expect(held.interrupted).not.toHaveBeenCalled();
+  // The reader that asked is gone, so the outcome is not told.
+  expect(notifier.notices).toEqual([]);
+});
+
+it("answers two fast Annotation History presses one after the other, in order", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf", pdfReader());
+  const annotations = annotationReads([HIGHLIGHT]);
+  const { app } = workspace([{ view }]);
+  const held = heldStep();
+  annotations.undo.mockReturnValueOnce(held.step);
+
+  await using service = await PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    ...(await standingDeps()),
+  });
+  const binding = service.bindings[0]!;
+  binding.stepHistory("undo");
+  binding.stepHistory("redo");
+
+  // The redo waits behind the undo Zotero has not answered yet.
+  expect(annotations.undo).toHaveBeenCalledOnce();
+  expect(annotations.redo).not.toHaveBeenCalled();
+
+  held.answer({ kind: "idle" });
+  await binding.stepped;
+  expect(annotations.redo).toHaveBeenCalledExactlyOnceWith("ABCD2345");
 });
 
 // A tab Obsidian restored at startup records no open of its own; a later open
