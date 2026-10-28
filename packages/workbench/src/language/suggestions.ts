@@ -2,6 +2,8 @@
 // off the contract IR, filters, tags, partial names, and the annotation shortcut.
 
 import { regex } from "arkregex";
+import { Effect } from "effect";
+import type { Fiber } from "effect";
 
 import type { ContractRoot } from "@zotlit/db";
 import type { ContractMember, ContractType } from "@zotlit/db/contract/ir";
@@ -35,6 +37,14 @@ const JSDOC_LINK = regex("\\{@link (?<target>[^}]+)}", "g");
 const ANNOTATION_SHORTCUT_DETAIL =
   "Renders the Profile's final Annotation Section with the argument bound to zt. Outside a Profile, uses the named annotation partial. Missing or null data is an error.";
 
+/**
+ * Forks an Effect and returns its Fiber, on a runner whose owner interrupts
+ * what it still runs when the owner goes.
+ */
+export type EffectRunner = <A, E>(
+  effect: Effect.Effect<A, E>,
+) => Fiber.Fiber<A, E>;
+
 export interface SuggestionConfig {
   /** The root the document renders against before any Annotation Section. */
   root: ContractRoot;
@@ -59,7 +69,9 @@ export interface SuggestionConfig {
      * @returns the created name, which the editor writes as the call's
      *   argument, or `null` when the reader dismisses the prompt.
      */
-    run(query: string): Promise<string | null>;
+    run(query: string): Effect.Effect<string | null, unknown>;
+    /** Forks `run`, so closing the pane's owner interrupts the flow. */
+    fork: EffectRunner;
   };
   /**
    * The Template data the root binds to `zt`, as a template reads it: link
@@ -115,7 +127,11 @@ export interface Suggestion {
    * "New partial…" names and creates a file first. A `null` answer leaves the
    * source as it stands.
    */
-  resolveInsert?: () => Promise<string | null>;
+  resolveInsert?: {
+    readonly insert: Effect.Effect<string | null, unknown>;
+    /** The runner `insert` is forked on. */
+    readonly fork: EffectRunner;
+  };
 }
 export interface SuggestionResult {
   from: number;
@@ -308,9 +324,11 @@ function partialOptions(
       category: "new-partial",
       detail: create.detail,
       pinned: true,
-      resolveInsert: async () => {
-        const name = await create.run(query);
-        return name === null ? null : name + (tail?.text ?? "");
+      resolveInsert: {
+        insert: Effect.map(create.run(query), (name) =>
+          name === null ? null : name + (tail?.text ?? ""),
+        ),
+        fork: create.fork,
       },
     });
   return options;

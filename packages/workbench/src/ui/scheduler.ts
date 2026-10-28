@@ -1,4 +1,4 @@
-// A view-owned scheduler consumes values and rejects work for superseded inputs.
+// A view-owned scheduler consumes values and interrupts work for superseded inputs.
 import type { CitationPreviewSelection } from "#/render/citation-examples";
 import type { PartialPreviewSelection } from "#/render/partial-preview";
 import type { WorkbenchReportContext } from "#/render/report";
@@ -10,7 +10,11 @@ import type {
 } from "#/render/result";
 import type { AnnotationExample } from "#/render/sample-annotations";
 import type { ItemSnapshot } from "#/snapshot/index";
+import type { Effect } from "effect";
 
+import { WorkbenchHostError } from "./host";
+import { forkReported } from "./run";
+import type { WorkbenchRunner } from "./run";
 import type { PreviewMode } from "./store";
 
 import { captureRenderReport, engineEvidence } from "#/render/report";
@@ -96,8 +100,16 @@ export interface RenderSchedulerState<
 }
 
 export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
-  /** Renders one request on the calling thread. */
-  readonly render: (request: RenderRequest) => Promise<R>;
+  /**
+   * Renders one request. A template failure is part of the result; the error
+   * channel holds a host failure, which the scheduler shows as a failed
+   * attempt.
+   */
+  readonly render: (
+    request: RenderRequest,
+  ) => Effect.Effect<R, WorkbenchHostError>;
+  /** Forks each render; a superseded render is interrupted. */
+  readonly run: WorkbenchRunner;
   /**
    * The host's own shape for a result this scheduler composed itself, so a
    * failure reads like every other result the host publishes.
@@ -151,6 +163,7 @@ function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
 
 export function createRenderScheduler<R extends TemplateRenderResult>({
   render,
+  run,
   failed,
   retain = retainOutputs,
   input: initial,
@@ -174,6 +187,8 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
   let producedDocument = initial.document;
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
+  // Interrupts the render in flight; Stop leaves it running.
+  let interruptCurrent: (() => void) | undefined;
   // A host may reach a disposed scheduler from a continuation it started while
   // the view was still open, and a disposed one answers for nothing.
   let closed = false;
@@ -349,6 +364,9 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     clearTimeout(pending);
     pending = undefined;
     current = undefined;
+    const interrupt = interruptCurrent;
+    interruptCurrent = undefined;
+    interrupt?.();
   }
 
   function pause(): void {
@@ -363,24 +381,28 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     current = identity;
     pending = undefined;
     publish({ busy: true });
-    void render(request).then(
-      (result) => {
+    const interrupt = forkReported(run, render(request), {
+      onSuccess: (result) => {
         if (current !== identity) return;
         current = undefined;
+        interruptCurrent = undefined;
         publish({ result, busy: false, trigger });
       },
       // A template that throws stops this render, not the host around it.
-      (error: unknown) => {
+      onFailure: (failure) => {
         if (current !== identity) return;
         current = undefined;
+        interruptCurrent = undefined;
+        // The host failure carries the engine's error, whole: the message
+        // alone loses the name, the chain, and the excerpt a reader needs to
+        // report the failure.
+        const error =
+          failure instanceof WorkbenchHostError ? failure.cause : failure;
         publish({
           result: failed(
             failedRender(identity, {
               code: "render-error",
               message: error instanceof Error ? error.message : String(error),
-              // Taken here, where the engine's error is still whole: the
-              // message alone loses the name, the chain, and the excerpt a
-              // reader needs to report the failure.
               evidence: engineEvidence(error),
               part: "render",
             }),
@@ -389,7 +411,9 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
           trigger,
         });
       },
-    );
+    });
+    // A render that answered before `run` returned has already landed.
+    if (current === identity) interruptCurrent = interrupt;
   }
 
   function changed(): void {

@@ -19,6 +19,7 @@ import type {
   PartialChoice,
   PartialContext,
   RenderDiagnostic,
+  RenderRequest,
   WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
@@ -49,12 +50,16 @@ import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { openSettingsTab } from "@/lib/open-settings";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
+import { makeViewRunner } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { profilesAtom } from "@/services/profile/atoms";
 import { templateFolderAtom } from "@/services/settings/atoms";
 import type { PluginSettings } from "@/services/settings/service";
 import { templatePartialName } from "@/views/template-workbench/document-kind";
-import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
+import {
+  createTemplateWorkbenchHost,
+  hostPromise,
+} from "@/views/template-workbench/host";
 import {
   chooseWorkbenchItem,
   chooseWorkbenchAnnotation,
@@ -498,6 +503,10 @@ export class NotePreviewView extends ItemView {
     const resources = cleanup.use(new DisposableStack());
     const deps = this.#deps;
     const renderer = resources.use(makeNativeRenderer(deps));
+    // Closing the leaf interrupts every host Effect the preview still runs.
+    const runner = resources.use(makeViewRunner(deps.registry));
+    const render = (request: RenderRequest) =>
+      hostPromise(() => renderer.render(request));
     const scheduler = resources.use(
       createRenderScheduler({
         input: {
@@ -505,7 +514,8 @@ export class NotePreviewView extends ItemView {
           snapshot: null,
           ...this.state.getState().preview,
         },
-        render: (request) => renderer.render(request),
+        render,
+        run: runner.run,
         failed: nativeResult,
         retain: retainNativeOutputs,
         reportContext: () => this.#reportContext(),
@@ -516,7 +526,8 @@ export class NotePreviewView extends ItemView {
     );
     const host = resources.use(
       createTemplateWorkbenchHost(this.app, {
-        render: (request) => renderer.render(request),
+        run: runner.run,
+        render,
         // This view shows no Match.
         matchData: NO_MATCH_DATA,
         insertTarget: () => null,

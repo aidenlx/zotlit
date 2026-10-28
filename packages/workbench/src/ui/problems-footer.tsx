@@ -47,6 +47,7 @@ import {
   problemText,
   renderDiagnosis,
 } from "./problems";
+import { useFork } from "./run";
 import type { RenderTrigger } from "./scheduler";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts, useIcon } from "./theme";
@@ -286,6 +287,7 @@ export function ProblemsFooter({
 }) {
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
+  const fork = useFork(host?.run);
   const part = useParts("problemsFooter");
   const icon = useIcon();
   const panel = useRef<HTMLElement>(null);
@@ -339,15 +341,15 @@ export function ProblemsFooter({
   function copyReport(text: string): void {
     if (host?.copy === undefined) return;
     setCopyFailed(false);
-    void host.copy(text).then(
-      () => host.notice(m.workbench_problems_copy_done()),
-      () => {
+    fork(host.copy(text), {
+      onSuccess: () => host.notice(m.workbench_problems_copy_done()),
+      onFailure: () => {
         // A denied clipboard leaves the reader the report itself: the
         // disclosure opens so the text is there to select and copy by hand.
         setCopyFailed(true);
         if (details.current) details.current.open = true;
       },
-    );
+    });
   }
   /** Technical details, Copy error report, and Ask the community, as one block. */
   function reporting(text: string | null, evidence: string | null) {

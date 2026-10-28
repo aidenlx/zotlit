@@ -1,4 +1,5 @@
 import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
+import type { Effect } from "effect";
 import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
@@ -9,11 +10,16 @@ import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
 import type { DisplaySection } from "./explorer-tree";
 import { useWorkbenchHost } from "./host";
-import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
+import type {
+  WorkbenchClipboardError,
+  WorkbenchMenuItem,
+  WorkbenchMenuRequest,
+} from "./host";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchMessageLabel } from "./messages";
+import { useFork } from "./run";
 import type { TemplateRoot } from "./store";
 import { useParts } from "./theme";
 
@@ -57,7 +63,7 @@ export interface DataExplorerProps {
   onInsert?: (snippet: string) => void;
   /** Resolves insertion against the receiving editor at action time. */
   onInsertNode?: (node: DisplayNode) => void;
-  copy: (text: string) => Promise<void>;
+  copy: (text: string) => Effect.Effect<void, WorkbenchClipboardError>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
 }
@@ -120,6 +126,7 @@ export function DataExplorer({
   }, [restore, data, onRestored]);
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
+  const fork = useFork(host.run);
   const part = useParts("dataExplorer");
   const insertNode =
     onInsertNode ??
@@ -173,10 +180,10 @@ export function DataExplorer({
     onCollapsedSectionsChange(next);
   };
   const copyMenu = (text: string) => {
-    void copy(text).then(
-      () => host.notice(m.workbench_field_copy_done()),
-      () => host.notice(m.workbench_field_copy_failed()),
-    );
+    fork(copy(text), {
+      onSuccess: () => host.notice(m.workbench_field_copy_done()),
+      onFailure: () => host.notice(m.workbench_field_copy_failed()),
+    });
   };
   const menuEntries = (node: DisplayNode) => {
     const value = copyValue(node);

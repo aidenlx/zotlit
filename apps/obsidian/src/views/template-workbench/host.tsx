@@ -1,6 +1,7 @@
 // Native overlays and Markdown lifecycle for the shared Template Workbench tree.
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
+import { Effect } from "effect";
 import {
   AbstractInputSuggest,
   Component,
@@ -23,7 +24,11 @@ import {
   completionSuggestion,
   templateCompletion,
 } from "@zotlit/workbench/language";
-import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
+import {
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+  WorkbenchMessagesProvider,
+} from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchDialogRequest,
@@ -35,6 +40,7 @@ import type {
 
 import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
+import { awaitModal } from "@/lib/effect-modal";
 import { obsidianPopupKeys } from "@/lib/field-popup";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -139,12 +145,17 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
   readonly #current = new CurrentAnswer<NativeSuggestion>(
     this.resultContainerEl,
   );
-  readonly #answer = Promise.withResolvers<string | null>();
+  readonly #settle: (answer: string | null) => void;
   #picked = false;
   #search = prepareSimpleSearch("");
   readonly #request: NativeWorkbenchSuggesterRequest;
-  constructor(app: App, request: NativeWorkbenchSuggesterRequest) {
+  constructor(
+    app: App,
+    request: NativeWorkbenchSuggesterRequest,
+    settle: (answer: string | null) => void,
+  ) {
     super(app);
+    this.#settle = settle;
     takeEnter(this);
     this.setTitle(request.title);
     this.#request = request;
@@ -265,21 +276,45 @@ class EditorSuggester extends SuggestModal<NativeSuggestion> {
     });
   }
   override onChooseSuggestion(option: WorkbenchSuggesterOption): void {
-    this.#answer.resolve(option.id);
+    this.#settle(option.id);
   }
   override onClose(): void {
     super.onClose();
-    if (!this.#picked) this.#answer.resolve(null);
+    if (!this.#picked) this.#settle(null);
     this.#revision++;
     this.#latest = [];
     this.#current.close();
     this.#request.anchor?.focus();
   }
-  choose(): Promise<string | null> {
-    this.open();
-    return this.#answer.promise;
-  }
 }
+
+/**
+ * Promise work a Workbench mount hands the host, as a host Effect. An
+ * interrupt stops waiting for it; the work under it stops through its own
+ * leaf command.
+ */
+export const hostPromise = <A,>(
+  work: () => Promise<A>,
+): Effect.Effect<A, WorkbenchHostError> =>
+  Effect.tryPromise({
+    try: work,
+    catch: (cause) => new WorkbenchHostError({ cause }),
+  });
+
+/** The render of a mount that renders no template: each one fails with `reason`. */
+export const refuseRender =
+  (reason: string): WorkbenchHost["render"] =>
+  () =>
+    Effect.fail(new WorkbenchHostError({ cause: new Error(reason) }));
+
+/** Puts `text` on the system clipboard; the Template Data Explorer copies the same way. */
+export const copyToClipboard = (
+  text: string,
+): Effect.Effect<void, WorkbenchClipboardError> =>
+  Effect.tryPromise({
+    try: () => navigator.clipboard.writeText(text),
+    catch: (cause) => new WorkbenchClipboardError({ cause }),
+  });
 
 /** A tag's syntax and example read in the docstring, not in a row cell. */
 const templateCompletionPresentation = nativeCompletion((completion) => {
@@ -313,7 +348,7 @@ function addWorkbenchMenuItems(
 
 export function createTemplateWorkbenchHost(
   app: App,
-  ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
+  ports: Pick<WorkbenchHost, "run" | "render" | "matchData" | "insertTarget"> &
     Partial<Pick<WorkbenchHost, "markdown" | "partials">> & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */
       hoverParent?: HoverParent;
@@ -407,33 +442,38 @@ export function createTemplateWorkbenchHost(
       modal.open();
       return { close };
     },
-    confirm(request) {
-      const { promise, resolve } = Promise.withResolvers<boolean>();
-      const modal = new ConfirmationModal(app);
-      const close = track(() => modal.close());
-      modal.setTitle(request.title);
-      modal.setContent(request.body);
-      modal.addButton((button) =>
-        button.setButtonText(request.confirm).onClick(() => resolve(true)),
-      );
-      modal.addCancelButton(request.cancel ?? m.modal_cancel());
-      modal.setCloseCallback(() => {
-        open.delete(close);
-        resolve(false);
-      });
-      modal.open();
-      return promise;
-    },
-    suggester(request) {
-      const modal = new EditorSuggester(app, request);
-      const close = track(() => modal.close());
-      return modal.choose().finally(() => open.delete(close));
-    },
+    confirm: (request) =>
+      awaitModal<boolean>((settle) => {
+        const modal = new ConfirmationModal(app);
+        const close = track(() => modal.close());
+        modal.setTitle(request.title);
+        modal.setContent(request.body);
+        modal.addButton((button) =>
+          button.setButtonText(request.confirm).onClick(() => settle(true)),
+        );
+        modal.addCancelButton(request.cancel ?? m.modal_cancel());
+        modal.setCloseCallback(() => {
+          open.delete(close);
+          settle(false);
+        });
+        modal.open();
+        return modal;
+      }),
+    suggester: (request) =>
+      awaitModal<string | null>((settle) => {
+        const modal = new EditorSuggester(app, request, (answer) => {
+          open.delete(close);
+          settle(answer);
+        });
+        const close = track(() => modal.close());
+        modal.open();
+        return modal;
+      }),
     tooltip: tooltipAttrs,
     notice: (text) => {
       new BaseNotice(text);
     },
-    copy: (text) => navigator.clipboard.writeText(text),
+    copy: copyToClipboard,
     communityUrl: COMMUNITY,
     persistence: {
       read(scope, key) {

@@ -92,3 +92,54 @@ it("leaves Mod+Z to the expression field, whose own history undoes the typing", 
   await waitFor(() => expect(controller.source).not.toBe(before));
   expect(controller.source).not.toContain("&& x");
 });
+
+it("interrupts its vocabulary, custom-field and Match reads when the pane goes", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  mounted.host.hold = true;
+  const { unmount } = render(mounted.ui);
+  await act(async () => {});
+  const kinds = mounted.host.held.map(({ kind }) => kind);
+  expect(kinds).toEqual(
+    expect.arrayContaining([
+      "tags",
+      "collections",
+      "libraries",
+      "customFields",
+      "matches",
+    ]),
+  );
+  expect(mounted.host.held.some(({ interrupted }) => interrupted)).toBe(false);
+
+  act(() => unmount());
+
+  expect(
+    mounted.host.held
+      .filter(({ interrupted }) => !interrupted)
+      .map(({ kind }) => kind),
+  ).toEqual([]);
+});
+
+it("interrupts the Match test for a filter the reader has moved past", async () => {
+  using mounted = mount(<Pane />, {
+    source: SOURCE.replace(
+      "id: reading",
+      `id: reading\nmatch: 'itemType == "book"'`,
+    ),
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  mounted.host.hold = true;
+  render(mounted.ui);
+  await act(async () => {});
+  const first = mounted.host.held.find(({ kind }) => kind === "matches")!;
+
+  act(() => void mounted.controller.setMatch({ and: [] }));
+  await act(async () => {});
+
+  expect(first.interrupted).toBe(true);
+});

@@ -4,6 +4,7 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { WorkbenchReportContext } from "#/render/report";
 import type { TemplateRenderResult } from "#/render/result";
+import { Effect } from "effect";
 import {
   createContext,
   useContext,
@@ -16,7 +17,7 @@ import { useStore } from "zustand";
 
 import { useUniqueId } from "@zotlit/ui";
 
-import type { WorkbenchHost } from "./host";
+import type { WorkbenchHost, WorkbenchHostError } from "./host";
 import { createRenderScheduler } from "./scheduler";
 import type { RenderScheduler, RenderSchedulerState } from "./scheduler";
 import { createWorkbenchStore } from "./store";
@@ -84,8 +85,11 @@ export function createWorkbenchEditor<R extends TemplateRenderResult>({
     },
     render: (request) => {
       const result = host.render(request);
-      return mapResult ? result.then(mapResult) : (result as Promise<R>);
+      return mapResult
+        ? Effect.map(result, mapResult)
+        : (result as Effect.Effect<R, WorkbenchHostError>);
     },
+    run: host.run,
     failed: asHostResult,
     ...(retain ? { retain } : {}),
     ...(reportContext ? { reportContext } : {}),

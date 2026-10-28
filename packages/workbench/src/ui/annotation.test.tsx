@@ -1,5 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { Effect } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 
 import {
@@ -56,7 +57,7 @@ it("hands annotation choice to the host with current annotations first and empty
   const host = fakeHost();
   host.suggester = (request) => {
     host.calls.suggesters.push(request);
-    return Promise.resolve(SAMPLE_ANNOTATIONS[1]!.id);
+    return Effect.succeed(SAMPLE_ANNOTATIONS[1]!.id);
   };
   const selected = vi.fn<(id: string) => void>();
   const example = SAMPLE_ANNOTATIONS[0]!;
@@ -93,7 +94,7 @@ it.each(["compact", "hideLabel"] as const)(
     const example = SAMPLE_ANNOTATIONS[0]!;
     host.suggester = (request) => {
       host.calls.suggesters.push(request);
-      return Promise.resolve(SAMPLE_ANNOTATIONS[1]!.id);
+      return Effect.succeed(SAMPLE_ANNOTATIONS[1]!.id);
     };
     const selected = vi.fn<(id: string) => void>();
     render(
@@ -126,7 +127,7 @@ it.each(["compact", "hideLabel"] as const)(
 
 it("keeps a compact annotation selection when its chooser is dismissed", async () => {
   const host = fakeHost();
-  host.suggester = async () => null;
+  host.suggester = () => Effect.succeed(null);
   const selected = vi.fn<(id: string) => void>();
   render(
     <WorkbenchHostProvider host={host}>
@@ -148,7 +149,7 @@ it("keeps a compact annotation selection when its chooser is dismissed", async (
 
 it("keeps Item selection unchanged when its host chooser is dismissed", async () => {
   const host = fakeHost();
-  host.suggester = vi.fn<typeof host.suggester>(async () => null);
+  host.suggester = vi.fn<typeof host.suggester>(() => Effect.succeed(null));
   const select = vi.fn<(id: string) => void>();
   render(
     <WorkbenchHostProvider host={host}>
@@ -305,7 +306,7 @@ it("offers annotation examples before an annotation has been selected", async ()
   const host = fakeHost();
   host.suggester = (request) => {
     host.calls.suggesters.push(request);
-    return Promise.resolve(SAMPLE_ANNOTATIONS[1]!.id);
+    return Effect.succeed(SAMPLE_ANNOTATIONS[1]!.id);
   };
   const selected = vi.fn<(id: string) => void>();
   render(
@@ -388,4 +389,27 @@ it("uses host-specific finish guidance without offering a native note action to 
   expect(
     screen.queryByText(m.workbench_annotation_help_finish_note()),
   ).toBeNull();
+});
+
+it("closes a chooser it opened when the sample bar goes", async () => {
+  const host = fakeHost();
+  host.hold = true;
+  const selected = vi.fn<(id: string) => void>();
+  const { unmount } = render(
+    <WorkbenchHostProvider host={host}>
+      <AnnotationSampleBar current={[]} example={null} onSelect={selected} />
+    </WorkbenchHostProvider>,
+  );
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_choose_annotation() }),
+    ),
+  );
+  const [chooser] = host.held;
+  expect(chooser?.kind).toBe("suggester");
+
+  act(() => unmount());
+
+  expect(chooser!.interrupted).toBe(true);
+  expect(selected).not.toHaveBeenCalled();
 });

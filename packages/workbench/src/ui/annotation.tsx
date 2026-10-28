@@ -16,6 +16,7 @@ import { useWorkbenchHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { usePartialBoxes } from "./partial-boxes";
 import type { PartialPlaceholderHost } from "./partial-boxes";
+import { useFork } from "./run";
 import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
@@ -44,6 +45,7 @@ export function AnnotationSampleBar({
   const part = useParts("annotation");
   const triggerPart = useParts("sampleSuggester");
   const host = useWorkbenchHost();
+  const fork = useFork(host.run);
   const icon = useIcon();
   const [open, setOpen] = useState(false);
   const title = example
@@ -73,10 +75,10 @@ export function AnnotationSampleBar({
           aria-label={title}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onClick={async (event) => {
+          onClick={(event) => {
             setOpen(true);
-            try {
-              const choice = await host.suggester({
+            fork(
+              host.suggester({
                 anchor: event.currentTarget,
                 title,
                 selected: example?.id ?? "",
@@ -89,11 +91,14 @@ export function AnnotationSampleBar({
                     hint: option.description,
                   })),
                 })),
-              });
-              if (choice !== null) onSelect(choice);
-            } finally {
-              setOpen(false);
-            }
+              }),
+              {
+                onSuccess: (choice) => {
+                  setOpen(false);
+                  if (choice !== null) onSelect(choice);
+                },
+              },
+            );
           }}
         >
           {icon("choose-sample")}

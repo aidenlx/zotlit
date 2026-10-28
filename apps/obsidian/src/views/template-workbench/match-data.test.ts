@@ -1,5 +1,7 @@
+import { expect, it } from "@effect/vitest";
 // Vault-wide suggestions and the Match test of a real Item read one database.
-import { expect, it, vi } from "vitest";
+import { Effect, Exit, Fiber } from "effect";
+import { vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
@@ -16,8 +18,8 @@ import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
 import { createMatchData } from "./match-data";
 
-it("includes Libraries outside the chosen paper and keeps automatic Tags and direct Collection paths", async () => {
-  await using stack = new AsyncDisposableStack();
+/** Match data over one fixture database, with the lease releases counted. */
+async function openMatchData(stack: AsyncDisposableStack) {
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -67,76 +69,92 @@ it("includes Libraries outside the chosen paper and keeps automatic Tags and dir
     ),
     query,
   });
-  using data = createMatchData(host.registry);
-  await expect(data.tags()).resolves.toEqual([
-    "Automatic",
-    "Manual",
-    "Other paper",
-  ]);
-  // ADR 0040 accepts slash ambiguity in expressions; provider facts retain real segments.
-  await expect(data.collections()).resolves.toEqual([
-    ["A/B"],
-    ["Project"],
-    ["Project", "Drafts"],
-    ["Team only"],
-  ]);
-  await expect(data.libraries()).resolves.toEqual([
-    { id: "personal" },
-    { id: "group:118", name: "Team" },
-  ]);
-  // Automatic Tags and direct Collection paths count, as in selection.
-  for (const [filter, matched] of [
-    ['itemType == "book" && library == "personal"', true],
-    ['tags.containsAll("Automatic", "Manual")', true],
-    ['collections.contains("Project/Drafts")', true],
-    ['collections.contains("Project")', false],
-    ['collections.within("Project")', true],
-    ['tags.contains("Other paper")', false],
-  ] as const)
-    await expect(data.matches("BKKKK222", filter), filter).resolves.toEqual({
-      kind: "result",
-      matched,
-    });
-  // The Workbench shows the Match pane twice; overlapping tests both answer.
-  await expect(
-    Promise.all([
-      data.matches("BKKKK222", "true"),
-      data.matches("BKKKK222", "false"),
-    ]),
-  ).resolves.toEqual([
-    { kind: "result", matched: true },
-    { kind: "result", matched: false },
-  ]);
-  await expect(data.matches("ABSENT22", "true")).resolves.toEqual({
-    kind: "missing",
-  });
-  await expect(
-    data.matches("BKKKK222", "tags.contain(1)"),
-  ).resolves.toMatchObject({
-    kind: "problem",
-    span: { from: 5, to: 12 },
-  });
-  expect(dispose).toHaveBeenCalledTimes(3);
-});
+  const data = stack.use(createMatchData(host.registry));
+  return { data, dispose };
+}
 
-it("stops reading custom fields when the Match editor stops reading", async () => {
-  const started = Promise.withResolvers<AbortSignal>();
-  const customFieldNames = vi.fn((signal: AbortSignal) => {
-    started.resolve(signal);
-    return new Promise<never>(() => {});
-  });
-  const host = makeWorkbenchHost({
-    query: stubService<NonNullable<WorkbenchHostDeps["query"]>>("Query", {
-      customFieldNames,
+it.effect(
+  "includes Libraries outside the chosen paper and keeps automatic Tags and direct Collection paths",
+  () =>
+    Effect.gen(function* () {
+      const stack = yield* Effect.acquireRelease(
+        Effect.sync(() => new AsyncDisposableStack()),
+        (stack) => Effect.promise(() => stack.disposeAsync()),
+      );
+      const { data, dispose } = yield* Effect.promise(() =>
+        openMatchData(stack),
+      );
+      expect(yield* data.tags).toEqual(["Automatic", "Manual", "Other paper"]);
+      // ADR 0040 accepts slash ambiguity in expressions; provider facts retain real segments.
+      expect(yield* data.collections).toEqual([
+        ["A/B"],
+        ["Project"],
+        ["Project", "Drafts"],
+        ["Team only"],
+      ]);
+      expect(yield* data.libraries).toEqual([
+        { id: "personal" },
+        { id: "group:118", name: "Team" },
+      ]);
+      // Automatic Tags and direct Collection paths count, as in selection.
+      for (const [filter, matched] of [
+        ['itemType == "book" && library == "personal"', true],
+        ['tags.containsAll("Automatic", "Manual")', true],
+        ['collections.contains("Project/Drafts")', true],
+        ['collections.contains("Project")', false],
+        ['collections.within("Project")', true],
+        ['tags.contains("Other paper")', false],
+      ] as const)
+        expect(yield* data.matches("BKKKK222", filter), filter).toEqual({
+          kind: "result",
+          matched,
+        });
+      // The Workbench shows the Match pane twice; overlapping tests both answer.
+      expect(
+        yield* Effect.all(
+          [data.matches("BKKKK222", "true"), data.matches("BKKKK222", "false")],
+          { concurrency: "unbounded" },
+        ),
+      ).toEqual([
+        { kind: "result", matched: true },
+        { kind: "result", matched: false },
+      ]);
+      expect(yield* data.matches("ABSENT22", "true")).toEqual({
+        kind: "missing",
+      });
+      expect(yield* data.matches("BKKKK222", "tags.contain(1)")).toMatchObject({
+        kind: "problem",
+        span: { from: 5, to: 12 },
+      });
+      expect(dispose).toHaveBeenCalledTimes(3);
     }),
-  });
-  using data = createMatchData(host.registry);
-  const controller = new AbortController();
-  const result = data.customFields(controller.signal);
-  const running = await started.promise;
-  controller.abort();
-  await expect(result).resolves.toEqual([]);
-  await waitFor(() => expect(running.aborted).toBe(true));
-  await expect(data.customFields(controller.signal)).resolves.toEqual([]);
-  expect(customFieldNames).toHaveBeenCalledOnce();
-});
+);
+
+it.effect(
+  "stops reading custom fields when the Match editor interrupts the read",
+  () =>
+    Effect.gen(function* () {
+      const started = Promise.withResolvers<AbortSignal>();
+      const customFieldNames = vi.fn((signal: AbortSignal) => {
+        started.resolve(signal);
+        return new Promise<never>(() => {});
+      });
+      const host = makeWorkbenchHost({
+        query: stubService<NonNullable<WorkbenchHostDeps["query"]>>("Query", {
+          customFieldNames,
+        }),
+      });
+      const data = yield* Effect.acquireRelease(
+        Effect.sync(() => createMatchData(host.registry)),
+        (data) => Effect.sync(() => data[Symbol.dispose]()),
+      );
+      const fiber = yield* Effect.forkChild(data.customFields);
+      const running = yield* Effect.promise(() => started.promise);
+      yield* Fiber.interrupt(fiber);
+      expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true);
+      yield* Effect.promise(() =>
+        waitFor(() => expect(running.aborted).toBe(true)),
+      );
+      expect(customFieldNames).toHaveBeenCalledOnce();
+    }),
+);

@@ -16,6 +16,7 @@ import type {
   RenderedRange,
 } from "#/render/result";
 import type { Extension } from "@codemirror/state";
+import { Data, Effect } from "effect";
 import { createContext, useContext } from "react";
 import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
@@ -23,7 +24,22 @@ import { useUniqueId } from "@zotlit/ui";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import { WorkbenchMessagesProvider } from "./messages";
+import type { WorkbenchRunner } from "./run";
 import type { WorkbenchIcon } from "./theme";
+
+/**
+ * Work the host could not do: a render, a read of the vault's Match
+ * vocabulary, or a Shared Partial it could not create. `cause` is the host's
+ * own failure, as the engine or the service threw it.
+ */
+export class WorkbenchHostError extends Data.TaggedError("WorkbenchHostError")<{
+  readonly cause: unknown;
+}> {}
+
+/** The system clipboard refused the text. */
+export class WorkbenchClipboardError extends Data.TaggedError(
+  "WorkbenchClipboardError",
+)<{ readonly cause: unknown }> {}
 
 export interface WorkbenchMenuItem {
   readonly label: string;
@@ -127,29 +143,38 @@ export type WorkbenchMatchResult =
 
 /** The names a Match condition can be written against, and its test. */
 export interface WorkbenchMatchData {
-  tags(): Promise<readonly string[]>;
+  readonly tags: Effect.Effect<readonly string[], WorkbenchHostError>;
   /** Root-first Collection path segments; display formatting stays in the UI. */
-  collections(): Promise<readonly (readonly string[])[]>;
-  libraries(): Promise<readonly WorkbenchLibrary[]>;
+  readonly collections: Effect.Effect<
+    readonly (readonly string[])[],
+    WorkbenchHostError
+  >;
+  readonly libraries: Effect.Effect<
+    readonly WorkbenchLibrary[],
+    WorkbenchHostError
+  >;
   /**
    * Test the Item `indexedKey` against `filter`, a filter of the Items
    * dataset, as Profile selection tests it.
    */
-  matches(indexedKey: string, filter: string): Promise<WorkbenchMatchResult>;
+  matches(
+    indexedKey: string,
+    filter: string,
+  ): Effect.Effect<WorkbenchMatchResult, WorkbenchHostError>;
   /**
    * The names of the source's custom fields, which a condition reads as
    * `custom["<name>"]`; none where the source cannot answer.
    */
-  customFields(signal: AbortSignal): Promise<readonly string[]>;
+  readonly customFields: Effect.Effect<readonly string[], WorkbenchHostError>;
 }
 
 /** The Match data of a host that shows no Match: no names, no Item to test. */
 export const NO_MATCH_DATA: WorkbenchMatchData = {
-  tags: async () => [],
-  collections: async () => [],
-  libraries: async () => [],
-  matches: async () => ({ kind: "missing" }),
-  customFields: async () => [],
+  tags: Effect.succeed([]),
+  collections: Effect.succeed([]),
+  libraries: Effect.succeed([]),
+  matches: () => Effect.succeed({ kind: "missing" }),
+  customFields: Effect.succeed([]),
 };
 
 /** The slice editor a field is inserted into, and where in it. */
@@ -203,20 +228,31 @@ export interface WorkbenchPartials {
    *
    * @returns the created name, or `null` when the reader dismisses the prompt.
    */
-  create(query: string): Promise<string | null>;
+  create(query: string): Effect.Effect<string | null, WorkbenchHostError>;
 }
 
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
+  /**
+   * Forks each host Effect the tree starts. It belongs to one mounted
+   * Workbench: closing it interrupts every Effect it still runs.
+   */
+  readonly run: WorkbenchRunner;
   readonly toggle?: ComponentType<WorkbenchToggleProps>;
   /** The locale currently used by the host's displayed messages. */
   getLocale(): string;
   menu(request: WorkbenchMenuRequest): void;
   dialog(request: WorkbenchDialogRequest): WorkbenchDialogHandle;
-  /** Resolves `true` when the reader confirms. */
-  confirm(request: WorkbenchConfirmRequest): Promise<boolean>;
-  /** Resolves the chosen option's id, or `null` when dismissed. */
-  suggester(request: WorkbenchSuggesterRequest): Promise<string | null>;
+  /**
+   * `true` when the reader confirms, `false` when they dismiss. An interrupt
+   * closes the dialog.
+   */
+  confirm(request: WorkbenchConfirmRequest): Effect.Effect<boolean>;
+  /**
+   * The chosen option's id, or `null` when dismissed. An interrupt closes the
+   * chooser.
+   */
+  suggester(request: WorkbenchSuggesterRequest): Effect.Effect<string | null>;
   inputSuggestions?(
     request: WorkbenchInputSuggestionsRequest,
   ): WorkbenchDialogHandle;
@@ -224,11 +260,11 @@ export interface WorkbenchHost {
   tooltip(text: string): HTMLAttributes<HTMLElement>;
   notice(text: string): void;
   /**
-   * Puts `text` on the system clipboard, rejecting where the host cannot.
+   * Puts `text` on the system clipboard, failing where the host cannot.
    * Each host has its own clipboard, and a host that supplies none leaves the
    * Problems area's Copy error report out.
    */
-  copy?(text: string): Promise<void>;
+  copy?(text: string): Effect.Effect<void, WorkbenchClipboardError>;
   /**
    * The community page this build belongs to, which Ask the community opens.
    * The destination is the configured site's, so each host names its own; a
@@ -236,7 +272,9 @@ export interface WorkbenchHost {
    */
   readonly communityUrl?: string;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
-  render: (request: RenderRequest) => Promise<TemplateRenderResult>;
+  render: (
+    request: RenderRequest,
+  ) => Effect.Effect<TemplateRenderResult, WorkbenchHostError>;
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
   /** Completion and hover presentation, with the editor's mount for window-local overlays. */
