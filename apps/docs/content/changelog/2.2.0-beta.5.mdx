@@ -51,6 +51,8 @@ Hover over an annotation link in Live Preview, Source mode, or Reading view to s
 
 The default annotation template has a new layout. The paper's citation now follows the quote, and the page label is the link. When the annotation has no page label, the link reads "[Zotero]". If you use the default template, annotations you insert from now on look different from your older ones. Custom templates keep their output. See [Default templates](/docs/reference/templates/defaults).
 
+![A literature note with two annotations in the new default layout, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar](/img/changelog/annotation-link-popover.webp)
+
 A new <UiLabel name={m.settings_citation_annotation_citations_name()} /> setting under <SettingsPath page={m.settings_page_citations()} /> is off by default. Turn it on to count an annotation link as a citation of its paper. The paper then appears in the <UiLabel name={m.references_view_name()} /> sidebar and the other citation features. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
 
 ### Show any paper in the Zotero library view
@@ -64,6 +66,8 @@ file menu. The new <Command inline name={m.command_show_in_library_name()} />
 command does the same. Before, only `Alt+Enter` in the quick switcher did this.
 See [Show a paper in the
 library](/docs/how-to/use-library-view#show-in-library).
+
+![A thesis chapter with the citation popover open over a Rougier et al. citation and the tooltip "Show in Zotero library" on its library button, beside the Library View with that paper's row selected and its details below the list](/img/changelog/show-in-library.webp)
 
 The Library View clears its search and filters so nothing hides the paper, then flashes the paper's row. When the paper is in none of your libraries, the view keeps your search and filters and shows <UiLabel name={m.library_view_reveal_not_found()} />
 
@@ -81,6 +85,10 @@ Templates have a new `zt.librarylink` variable. It gives an `obsidian://zotlit/s
   large libraries. For 10,000 new notes, the confirmation appears in about one
   second instead of about ten.
 - Notes with many citations open and update faster.
+
+![The Library View in a narrow pane beside a thesis chapter, with the selected paper's details under the list at full width and the tooltip "Show item details" on the toggle at the end of the search row](/img/changelog/library-view-details-toggle.webp)
+
+![A Query View filter written as an expression, with field names, functions, numbers, and text in different colors, a wavy underline and an error message under "year", and the completion list open with "tags" at the top](/img/changelog/filter-expression-editor.webp)
 
 ## Bug Fixes
 
