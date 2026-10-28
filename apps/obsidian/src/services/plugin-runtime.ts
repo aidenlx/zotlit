@@ -10,6 +10,7 @@ import { Notifier } from "@/lib/notifier";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { revealSetting } from "@/lib/open-settings";
+import { ViewRegistry } from "@/lib/view-atoms";
 import { ZoteroHttp } from "@/lib/zotero-http";
 import { libraryTagNamesOf } from "@/services/database/library-tag-names";
 import {
@@ -219,7 +220,7 @@ export async function createPluginRuntime(
   // Above the runtime on the stack, so unload interrupts a command still
   // running before the services it reads dispose.
   const runCli = cliRunner(
-    runtime,
+    bridge,
     stack.use(new DisposableAbortController()).signal,
   );
 
@@ -266,6 +267,7 @@ export async function createPluginRuntime(
   return {
     runtime,
     bridge,
+    viewRegistry: runtime.runSync(ViewRegistry),
     annotationNotes: runtime.runSync(AnnotationNoteActions),
     workspace: runtime.runSync(Workspace),
     metadataCache: runtime.runSync(MetadataCache),
@@ -287,7 +289,7 @@ export async function createPluginRuntime(
     ),
     zoteroReads,
     acquireZoteroRead: () => acquireReadLease(zoteroReads, bridge),
-    libraryTagNames: libraryTagNamesOf(runtime),
+    libraryTagNames: libraryTagNamesOf(zoteroReads, bridge),
     excerptImage: runtime.runSync(ExcerptImageService),
     excerptDisplay: runtime.runSync(ExcerptDisplays),
     attachmentResolver,
