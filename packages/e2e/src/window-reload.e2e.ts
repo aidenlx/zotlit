@@ -95,6 +95,44 @@ describe.skipIf(!reachable)("Window reload", () => {
     ).toBe(true);
   });
 
+  it("releases each old plugin instance after a restart (#1882)", async () => {
+    const proof = await obRun(
+      vaultId,
+      async ({ app, page }, { restarts }) => {
+        require("v8").setFlagsFromString("--expose-gc");
+        const gc = require("vm").runInNewContext("gc") as () => void;
+        const exitListeners = process.listenerCount("exit");
+        const old: WeakRef<object>[] = [];
+        for (let i = 0; i < restarts; i++) {
+          old.push(new WeakRef(app.plugins.plugins.zotlit!));
+          await app.plugins.disablePlugin("zotlit");
+          await app.plugins.enablePlugin("zotlit");
+        }
+        // The console keeps each object it logged, and a dev build logs
+        // records that reach ZotLit's classes; this case looks past that.
+        console.clear();
+        const reachable = () => old.filter((ref) => ref.deref()).length;
+        await page
+          .until(
+            "old plugin instances collected",
+            () => {
+              gc();
+              return reachable() === 0;
+            },
+            10000,
+          )
+          .catch(() => undefined);
+        return {
+          reachable: reachable(),
+          addedExitListeners: process.listenerCount("exit") - exitListeners,
+        };
+      },
+      { restarts: 3 },
+      { timeoutMs: 60000 },
+    );
+    expect(proof).toEqual({ reachable: 0, addedExitListeners: 0 });
+  }, 90000);
+
   it("reloads when ZotLit is disabled only in memory (#1848)", async () => {
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {

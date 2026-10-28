@@ -1,10 +1,5 @@
 // LogTape's sinks and levels for the plugin, following the log settings.
-import {
-  configure,
-  configureSync,
-  getConsoleSink,
-  reset,
-} from "@logtape/logtape";
+import { getConsoleSink } from "@logtape/logtape";
 import type { Config, LogLevel, Sink } from "@logtape/logtape";
 import {
   Cause,
@@ -20,6 +15,11 @@ import type { Plugin } from "obsidian";
 
 import { devToolsFormatter } from "@zotlit/shared/log-formatter";
 
+import {
+  configureLogTape,
+  configureLogTapeSync,
+  resetLogTape,
+} from "@/lib/log";
 import { PluginSettings } from "@/services/settings/service";
 import type { Settings } from "@/services/settings/service";
 
@@ -52,12 +52,12 @@ export function layerLogOutput(
     LogOutput,
     LogOutput.of({
       configureSync: Effect.fn("LogOutput.configureSync")((config) =>
-        Effect.try(() => configureSync(config)),
+        Effect.try(() => configureLogTapeSync(config)),
       ),
       configure: Effect.fn("LogOutput.configure")((config) =>
-        Effect.tryPromise(() => configure(config)),
+        Effect.tryPromise(() => configureLogTape(config)),
       ),
-      reset: Effect.tryPromise(() => reset()),
+      reset: Effect.tryPromise(() => resetLogTape()),
       openFile: Effect.acquireDisposable(
         Effect.tryPromise(() => createVaultFileSink(adapter, path)),
       ),
