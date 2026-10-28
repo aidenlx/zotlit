@@ -299,6 +299,8 @@ export async function verifyPdfReads(
   )[itemKey]!;
   // A real page transition reaches PDF.js's pagechanging event; rendering and
   // immediate turns stay inside the five-minute limit established by open.
+  // PDF.js reopens a document at its last position, which every vault of the
+  // app shares through localStorage, so the target is a page the reader is not on.
   await obRun(
     vaultId,
     async ({ app, page }) => {
@@ -314,8 +316,17 @@ export async function verifyPdfReads(
       const reader = view.viewer.child;
       page.scratch.pageChanges = 0;
       reader.on("pagechanging", () => page.scratch.pageChanges!++);
-      reader.applySubpath("#page=2");
-      await until("real page change", () => page.scratch.pageChanges! > 0);
+      const from = reader.pdfViewer.pdfViewer.currentPageNumber;
+      const target = from === 1 ? 2 : 1;
+      reader.applySubpath(`#page=${target}`);
+      try {
+        await until("real page change", () => page.scratch.pageChanges! > 0);
+      } catch (error) {
+        throw new Error(
+          `No pagechanging from page ${from} to ${target}: now on page ${reader.pdfViewer.pdfViewer.currentPageNumber}, ${page.scratch.pageChanges} events`,
+          { cause: error },
+        );
+      }
     },
     undefined,
   );
