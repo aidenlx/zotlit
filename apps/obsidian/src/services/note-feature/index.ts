@@ -41,4 +41,3 @@ export {
   type ProfileNotePreviewOptions,
   type PreparedProfileSwitch,
 } from "./types";
-export { type AnnotationCitation } from "./annotation-citation";
