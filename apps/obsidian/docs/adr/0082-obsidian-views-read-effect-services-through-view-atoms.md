@@ -30,7 +30,8 @@ Each pattern names its reference. Copy the reference; it carries the details thi
 | Saved and ephemeral view state decoded with Schema | `src/views/template-data-explorer/model.ts`: `readSavedExplorer`, `readEphemeralExplorer` |
 | Layout save, view title and view action sync from a registry subscription | `src/views/annot-view/view.tsx`: `onOpen`; `src/views/template-data-explorer/view.tsx`: `onOpen` |
 | A command that needs no leaf, shared by every leaf | `src/views/cited-by/atoms.ts`: `openSourceCommand`, `openOccurrenceCommand` |
-| A command owned by one leaf, interrupted when that leaf closes | `src/views/template-data-explorer/atoms.ts`: `makeExportTemplateDataCommand` |
+| A command owned by one leaf, interrupted when that leaf closes | `src/views/welcome/atoms.ts`: `makeConversionCommand` (`Atom.setIdleTTL(…, 0)`); `src/views/template-data-explorer/atoms.ts`: `makeExportTemplateDataCommand` |
+| A gesture from plain code, forked on the leaf's runner and interrupted when the leaf closes; a newer run replaces a superseded one | `src/lib/view-runner.ts`: `makeViewRunner`, `inFlightSlot`, `latestSlot`, `joinOnView`, `answerOf`; `src/views/template-data-explorer/view.tsx`: `#choices` |
 | Palette commands with `checkCallback` that read the registry | `src/views/annot-view/register.ts`: `addFollowModeCommands` |
 | The React tree reads atoms through the registry provider and a model context | `src/lib/view-atoms.ts`: `ViewRegistryProvider`; `src/views/template-data-explorer/model.ts`: `ExplorerModelContext`, `useExplorerModel` |
 | A test host: the registry over in-memory Obsidian sources and service fakes the test drives | `src/views/cited-by/__fixtures__.ts`: `makeCitedByHost`; `src/views/template-data-explorer/__fixtures__.ts`: `makeExplorerHost`; `src/lib/__fixtures__/view-atoms.ts`: `layerUnreadViewServices`, `scopedViewRegistry` |

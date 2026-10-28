@@ -119,9 +119,10 @@ import {
   answerOf,
   inFlightSlot,
   joinOnView,
+  latestSlot,
   makeViewRunner,
 } from "@/lib/view-runner";
-import type { InFlightSlot, ViewRunner } from "@/lib/view-runner";
+import type { InFlightSlot, LatestSlot, ViewRunner } from "@/lib/view-runner";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
@@ -399,8 +400,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #bindingDraft = false;
   #receivingSource = false;
   #sourceRevision = 0;
-  #readGeneration = 0;
-  #initialRead: number | null = null;
+  /** The file read; a newer read or a clear stops the one in flight. */
+  readonly #reads: LatestSlot<ViewServices>;
+  /** The read that a clearing load started, while it runs. */
+  #initialRead: object | null = null;
   #pendingSource: string | null = null;
   #clearing = false;
   #originatingNote: {
@@ -409,8 +412,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     template: TFile | null;
     profile: ProfileSelector;
   } | null = null;
-  /** The launch that last set the originating note; an older one stands down. */
-  #originGeneration = 0;
+  /** The launch that sets the originating note; a later one stops an older one. */
+  readonly #origins: LatestSlot<ViewServices>;
   /** One save at a time: a native save returns early while another runs. */
   readonly #saveLock = Semaphore.makeUnsafe(1);
   /** The originating-note update; a second press joins the one in flight. */
@@ -461,15 +464,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    *   explain, or `null`.
    */
   setOriginatingNote(file: TFile | null) {
-    return joinOnView(
-      this.#runner.run,
+    return this.#origins.join(
       Effect.gen({ self: this }, function* () {
-        const generation = ++this.#originGeneration;
         const indexedKey =
           file &&
           itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file));
         const resolved = file ? yield* profileOfFile(file) : null;
-        if (generation !== this.#originGeneration) return null;
         this.#originatingNote =
           file && indexedKey && resolved?.ok
             ? {
@@ -482,6 +482,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.#mount();
         return file && (!indexedKey || !resolved?.ok) ? file.basename : null;
       }),
+      null,
     );
   }
   /**
@@ -646,7 +647,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#deps = deps;
     this.#release = holdWorkbenchModel(deps.registry, this.model);
     // Closing the leaf interrupts every Effect it still runs.
-    this.#runner = this.#cleanup.use(makeViewRunner(deps.registry));
+    this.#runner = makeViewRunner(deps.registry);
+    this.#origins = latestSlot(this.#runner.run);
+    this.#reads = latestSlot(this.#runner.run);
     this.#noteUpdates = inFlightSlot(
       this.#runner.run,
       Effect.suspend(() => this.#noteUpdate()),
@@ -1241,7 +1244,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** Obsidian's file read, run on this leaf so its close stops the read. */
   override loadFileInternal(file: TFile, clear: boolean): Promise<void> {
-    return answerOf(this.#runner.run(this.#loadFile(file, clear)), undefined);
+    return answerOf(this.#reads.run(this.#loadFile(file, clear)), undefined);
   }
   /**
    * Read `file` into this view. A read that a newer read, an edit, or another
@@ -1255,9 +1258,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const loadBase = (receiver: this, reset: boolean) =>
       super.loadFileInternal.call(receiver, file, reset);
     return Effect.suspend(() => {
-      const generation = ++this.#readGeneration;
+      const initial = {};
       let reset = clear;
-      if (clear) this.#initialRead = generation;
+      if (clear) this.#initialRead = initial;
       /** Set once the read is interrupted; the native read then stands down. */
       let stopped = false;
       const read = (): Effect.Effect<void, Cause.UnknownError> =>
@@ -1279,7 +1282,6 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                 property === "lastSavedData" &&
                 (stopped ||
                   file !== this.file ||
-                  generation !== this.#readGeneration ||
                   revision !== this.#sourceRevision ||
                   baseline !== this.lastSavedData)
               )
@@ -1302,12 +1304,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                   Effect.annotateLogs({
                     path: file.path,
                     fileChanged: file !== this.file,
-                    readChanged: generation !== this.#readGeneration,
                     sourceChanged: revision !== this.#sourceRevision,
                     baselineChanged: baseline !== this.lastSavedData,
                   }),
                 );
-                if (generation !== this.#readGeneration) return;
                 if (revision !== this.#sourceRevision) reset = false;
                 yield* read();
               }),
@@ -1322,7 +1322,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         ),
         Effect.ensuring(
           Effect.sync(() => {
-            if (this.#initialRead === generation) {
+            if (this.#initialRead === initial) {
               this.#initialRead = null;
               this.#pendingSource = null;
             }
@@ -1334,7 +1334,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   override clear(): void {
     if (this.#defaultDraft || this.#bindingDraft) return;
-    this.#readGeneration++;
+    this.#reads.interrupt();
     this.#clearing = true;
     try {
       this.setViewData("", true);
@@ -1632,7 +1632,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return true;
   }
 
-  protected override async onOpen(): Promise<void> {
+  protected override onOpen(): Promise<void> {
     this.#closed = false;
     this.#release ??= holdWorkbenchModel(this.registry, this.model);
     this.#cleanup.defer(
@@ -1720,19 +1720,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#root = createRoot(this.contentEl);
     this.#mount();
     this.startStylesRefresh();
+    return Promise.resolve();
   }
   /**
    * Obsidian's close. It waits for the write a running flow has started, such
    * as a save or the originating note's write, and interrupts the rest.
    */
-  protected override async onClose(): Promise<void> {
+  protected override onClose(): Promise<void> {
     this.#closed = true;
-    try {
-      await super.onClose();
-    } finally {
+    return super.onClose().finally(() => {
       this.#root?.unmount();
       this.#root = null;
       this.#cleanup.dispose();
+      // Interrupts what still runs before the host and the editor go.
+      const stopped = this.#runner[Symbol.asyncDispose]();
       this.preview?.[Symbol.dispose]();
       this.#editor[Symbol.dispose]();
       this.#host[Symbol.dispose]();
@@ -1740,8 +1741,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#unsubscribe = null;
       this.#release?.();
       this.#release = null;
-      await this.#runner[Symbol.asyncDispose]();
-    }
+      return stopped;
+    });
   }
 
   templateDataTarget(): TemplateDataExportTarget | null {

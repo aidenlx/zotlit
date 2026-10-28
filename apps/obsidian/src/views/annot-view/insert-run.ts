@@ -28,7 +28,7 @@ export interface InsertRunner<R> {
    * Forks an insert on the view's lifetime: closing the view interrupts
    * every insert it started.
    */
-  run: <A>(effect: Effect.Effect<A, never, R>) => Fiber.Fiber<A>;
+  run: <A, E>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>;
 }
 
 /**

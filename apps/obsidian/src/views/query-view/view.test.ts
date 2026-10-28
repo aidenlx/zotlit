@@ -26,6 +26,7 @@ import { shimPopover } from "@/components/__fixtures__/popover";
 import type { ShimmedPopover } from "@/components/__fixtures__/popover";
 import { testEvents } from "@/lib/__fixtures__/event-stream";
 import { pressTop } from "@/lib/__fixtures__/keymap";
+import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { testRuntime } from "@/lib/__fixtures__/runtime";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
@@ -418,8 +419,12 @@ async function mount(
     literatureNotes,
     opener: stubService<QueryViewDeps["opener"]>("TargetOpener", readers),
   });
+  const notifier = testNotifier();
   const queryHost = cleanup.use(
-    await makeQueryHost(deps, { annotations: annotationsApi }),
+    await makeQueryHost(deps, {
+      annotations: annotationsApi,
+      services: notifier.layer,
+    }),
   );
   deps.registry = queryHost.registry;
   const save = vi.fn((_text: string) => {});
@@ -469,6 +474,8 @@ async function mount(
     app: deps.app as unknown as { scopes: Scope[] },
     /** The Scope the host gives the view for its keys. */
     scope,
+    /** The notices the view showed. */
+    notices: notifier.notices,
     run,
     changeUses: async () => {
       const before = view.registry.get(queryRevisionAtom);
@@ -6090,6 +6097,28 @@ it("stops the read of a row's children when the row collapses, and a note creati
   expect(creating).toBe(true);
   await act(() => view.unload());
   await waitFor(() => expect(stopped).toBe(true));
+});
+
+it("shows a notice when a row's Literature Note cannot be created", async () => {
+  const { view, el, settle, literatureNotes, notices } = await mount([
+    result([itemRow("ITEMBBBB", "Deep learning")]),
+  ]);
+  await act(() => view.setText(TABLE_FILE));
+  await settle();
+  // The fake's failure type is never, so the failure arrives as a defect.
+  literatureNotes.create.mockImplementationOnce(() =>
+    Effect.die(new Error("Zotero is not running")),
+  );
+  await act(() =>
+    el
+      .querySelector<HTMLElement>('[data-query-create-note="ITEMBBBB"]')!
+      .click(),
+  );
+  await waitFor(() =>
+    expect(notices.map(({ messages }) => messages[0])).toContain(
+      m.notice_create_note_failed(),
+    ),
+  );
 });
 
 it("interrupts a query read when its host closes", async () => {

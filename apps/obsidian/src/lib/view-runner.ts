@@ -6,11 +6,11 @@
 // annotation insert that a cancelled drag stops, or an Item read that a newer
 // selection replaces. Closing the view interrupts every fiber still running.
 // What a component reads stays a view atom (ADR 0082).
-import { RegistryContext } from "@effect/atom-react";
-import { Cause, Effect, Exit, Fiber, FiberSet, Scope } from "effect";
+import { Cause, Effect, Fiber, FiberSet, Scope } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { useContext, useEffect, useState } from "react";
+
+import { joinForked, observeExit } from "@zotlit/workbench/ui";
 
 import { openScope } from "./effect-scope";
 import { viewRuntime } from "./view-atoms";
@@ -67,28 +67,6 @@ export function makeViewRunner(
 }
 
 /**
- * A runner over the view services of the root's registry, for a component
- * that mounts the Workbench UI itself. Unmounting the component interrupts
- * every Effect it still runs.
- */
-export function useViewRunner(): ViewRun {
-  const registry = useContext(RegistryContext);
-  const [runner] = useState(() => makeViewRunner(registry));
-  useEffect(() => () => runner[Symbol.dispose](), [runner]);
-  return runner.run;
-}
-
-/** Call `answer` with the value `fiber` succeeds with; an interrupt calls nothing. */
-export function onFiberSuccess<A, E>(
-  fiber: Fiber.Fiber<A, E>,
-  answer: (value: A) => void,
-): void {
-  fiber.addObserver((exit) => {
-    if (Exit.isSuccess(exit)) answer(exit.value);
-  });
-}
-
-/**
  * `effect` run on the view's runner and joined, for a caller outside the view,
  * such as a launch that opens the view. The view's close interrupts the run,
  * and so does the caller's own interrupt.
@@ -97,14 +75,7 @@ export function joinOnView<A, E>(
   run: ViewRun,
   effect: Effect.Effect<A, E, ViewServices>,
 ): Effect.Effect<A, E> {
-  // The fork and the finalizer are set up before an interrupt can land, so a
-  // caller interrupted as the run starts still interrupts the run.
-  return Effect.uninterruptibleMask((restore) => {
-    const fiber = run(effect);
-    return restore(Fiber.join(fiber)).pipe(
-      Effect.onInterrupt(() => Fiber.interrupt(fiber)),
-    );
-  });
+  return joinForked(Effect.sync(() => run(effect)));
 }
 
 /**
@@ -138,13 +109,12 @@ export function inFlightSlot<A, E>(
     if (current) return current;
     const fiber = run(effect);
     current = fiber;
-    // A run that ended while it forked frees the slot at once.
+    onChange();
+    // A run that has ended already, as on a closed view, ends here at once.
     fiber.addObserver(() => {
-      if (current !== fiber) return;
       current = null;
       onChange();
     });
-    if (current === fiber) onChange();
     return fiber;
   };
   return {
@@ -155,13 +125,48 @@ export function inFlightSlot<A, E>(
 }
 
 /**
- * How `fiber` ended, for a test that reads the Exit. An interrupt-only Exit
- * means the view closed or a newer run superseded it.
+ * One run at a time, the newest first: a new run interrupts the run before
+ * it, so a superseded read stops in place of landing late. The view's close
+ * interrupts the run as well.
  */
-export function exitOf<A, E>(
-  fiber: Fiber.Fiber<A, E>,
-): Promise<Exit.Exit<A, E>> {
-  return new Promise((resolve) => fiber.addObserver(resolve));
+export interface LatestSlot<R> {
+  /** Forks `effect` and interrupts the run before it. */
+  readonly run: <A, E>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>;
+  /**
+   * Runs `effect` as {@link run} does and joins it, for a caller that waits
+   * for the answer: `released` when a newer run or {@link interrupt} stops
+   * it, or the view closes. The caller's interrupt interrupts the run.
+   */
+  readonly join: <A, E>(
+    effect: Effect.Effect<A, E, R>,
+    released: A,
+  ) => Effect.Effect<A, E>;
+  /** Interrupts the run in flight, for a change that makes its answer stale. */
+  readonly interrupt: () => void;
+}
+
+/** A {@link LatestSlot} whose runs fork on `run`. */
+export function latestSlot<R>(
+  run: <A, E>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>,
+): LatestSlot<R> {
+  let current: Fiber.Fiber<unknown, unknown> | null = null;
+  const interrupt = () => current?.interruptUnsafe();
+  const start = <A, E>(effect: Effect.Effect<A, E, R>) => {
+    interrupt();
+    const fiber = run(effect);
+    current = fiber;
+    return fiber;
+  };
+  return {
+    run: start,
+    join: (effect, released) =>
+      joinForked(Effect.sync(() => start(effect))).pipe(
+        Effect.catchCauseIf(Cause.hasInterruptsOnly, () =>
+          Effect.succeed(released),
+        ),
+      ),
+    interrupt,
+  };
 }
 
 /**
@@ -175,10 +180,10 @@ export function answerOf<A, E>(
   released: A,
 ): Promise<A> {
   return new Promise((resolve, reject) =>
-    fiber.addObserver((exit) => {
-      if (Exit.isSuccess(exit)) resolve(exit.value);
-      else if (Cause.hasInterruptsOnly(exit.cause)) resolve(released);
-      else reject(Cause.squash(exit.cause));
+    observeExit(fiber, {
+      onSuccess: resolve,
+      onInterrupt: () => resolve(released),
+      onFailure: reject,
     }),
   );
 }

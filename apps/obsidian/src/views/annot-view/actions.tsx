@@ -4,6 +4,7 @@ import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
+import { observeExit } from "@zotlit/workbench/ui";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
@@ -15,7 +16,6 @@ import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import * as toast from "@/lib/toast";
 import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import { onFiberSuccess } from "@/lib/view-runner";
 import type { ViewRun } from "@/lib/view-runner";
 import type {
   AnnotationRecord,
@@ -587,7 +587,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         // Each menu runs its own read, so two copies from two menus both
         // finish; the view's close stops a read with no notice.
         .onClick(() =>
-          onFiberSuccess(deps.run(readCitation(annot.key)), copyCitation),
+          observeExit(deps.run(readCitation(annot.key)), {
+            onSuccess: copyCitation,
+          }),
         );
     });
 

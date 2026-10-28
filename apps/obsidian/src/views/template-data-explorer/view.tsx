@@ -27,8 +27,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
-import { answerOf, inFlightSlot, makeViewRunner } from "@/lib/view-runner";
-import type { InFlightSlot, ViewRunner } from "@/lib/view-runner";
+import {
+  answerOf,
+  inFlightSlot,
+  latestSlot,
+  makeViewRunner,
+} from "@/lib/view-runner";
+import type { InFlightSlot, LatestSlot, ViewRunner } from "@/lib/view-runner";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -109,7 +114,8 @@ export class TemplateDataExplorerView extends ItemView {
   readonly #choosingAnnotation: InFlightSlot<void, never>;
   #actions: ExplorerActions | null = null;
   #closed = false;
-  #choiceGeneration = 0;
+  /** The Item and annotation choices; a newer one stops the one before. */
+  readonly #choices: LatestSlot<ViewServices>;
   constructor(leaf: WorkspaceLeaf, deps: ExplorerViewDeps) {
     super(leaf);
     this.contentEl.addClass("zt-root");
@@ -117,12 +123,13 @@ export class TemplateDataExplorerView extends ItemView {
     // Obsidian sets the layout state before the view opens.
     this.#release = holdExplorerModel(deps.registry, this.#model);
     this.#runner = makeViewRunner(deps.registry);
+    this.#choices = latestSlot(this.#runner.run);
     this.#choosingItem = inFlightSlot(
-      this.#runner.run,
+      this.#choices.run,
       Effect.suspend(() => this.#chooseItem()),
     );
     this.#choosingAnnotation = inFlightSlot(
-      this.#runner.run,
+      this.#choices.run,
       Effect.suspend(() => this.#chooseAnnotation()),
     );
   }
@@ -453,7 +460,7 @@ export class TemplateDataExplorerView extends ItemView {
       onToggleSections: () => this.#toggleSections(),
       onRefresh: () => this.#update(refresh),
       canExport: () => this.#exportTarget() !== null,
-      onExport: () => void this.#export(),
+      onExport: () => this.#export(),
       exportLabel: () =>
         this.#state().root === "annotation" &&
         this.#exportTarget()?.root === "note"
@@ -527,7 +534,7 @@ export class TemplateDataExplorerView extends ItemView {
                   onSelectAnnotation={(id) => this.#selectAnnotation(id)}
                   onChooseAnnotation={() => this.#choosingAnnotation.start()}
                   onSelectItem={(item) => this.#selectItem(item)}
-                  onSearchItem={() => this.#runner.run(this.#searchItem())}
+                  onSearchItem={() => this.#choices.run(this.#searchItem())}
                   lookup={this.#deps.itemLookup}
                   explorer={{
                     copy: copyToClipboard,
@@ -598,7 +605,7 @@ export class TemplateDataExplorerView extends ItemView {
     const key = annotationIndexedKey(item.id, annotationId);
     return key ? { indexedKey: key, root } : null;
   }
-  async #export(): Promise<void> {
+  #export(): void {
     const target = this.#exportTarget();
     if (target)
       this.#deps.registry.set(this.#exportCommand, {
@@ -642,20 +649,14 @@ export class TemplateDataExplorerView extends ItemView {
       bridge: this.#deps.bridge,
     };
   }
-  /** Select the Item `choice` answers, unless a later choice or selection came first. */
+  /** Select the Item `choice` answers, unless a selection came first. */
   #pickItem<R>(
     choice: Effect.Effect<WorkbenchItemChoice | null, never, R>,
   ): Effect.Effect<void, never, R> {
     return Effect.gen({ self: this }, function* () {
-      const generation = ++this.#choiceGeneration;
       const previous = this.#state().item;
       const item = yield* choice;
-      if (
-        !item ||
-        generation !== this.#choiceGeneration ||
-        this.#state().item !== previous
-      )
-        return;
+      if (!item || this.#state().item !== previous) return;
       this.#selectItem(item);
     });
   }
@@ -685,7 +686,6 @@ export class TemplateDataExplorerView extends ItemView {
       const host = this.#host;
       if (!host) return;
       const state = this.#state();
-      const generation = ++this.#choiceGeneration;
       const id = yield* workbenchAnnotationChoice(
         host,
         state.annotations ?? [],
@@ -694,11 +694,7 @@ export class TemplateDataExplorerView extends ItemView {
               state.annotationId)
           : state.annotationId,
       );
-      if (
-        id !== null &&
-        generation === this.#choiceGeneration &&
-        state.item === this.#state().item
-      )
+      if (id !== null && state.item === this.#state().item)
         this.#selectAnnotation(id);
     });
   }

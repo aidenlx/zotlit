@@ -53,8 +53,13 @@ import { Vault } from "@/lib/obsidian-vault";
 import { openSettingsTab } from "@/lib/open-settings";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
 import type { ViewServices } from "@/lib/view-atoms";
-import { answerOf, inFlightSlot, makeViewRunner } from "@/lib/view-runner";
-import type { InFlightSlot, ViewRunner } from "@/lib/view-runner";
+import {
+  answerOf,
+  inFlightSlot,
+  latestSlot,
+  makeViewRunner,
+} from "@/lib/view-runner";
+import type { InFlightSlot, LatestSlot, ViewRunner } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { profilesAtom } from "@/services/profile/atoms";
 import { Profile } from "@/services/profile/service";
@@ -113,7 +118,7 @@ import type { NativePreviewState } from "./session";
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: Pick<PluginSettings["Service"], "current" | "update">;
   itemLookup: Pick<ItemLookupHandle, "search" | "openSession">;
-  bridge: Pick<EffectBridge, "runSync" | "runPromise">;
+  bridge: Pick<EffectBridge, "runSync">;
 }
 
 /** Which result the preview shows for the editor's current authoring context. */
@@ -191,7 +196,8 @@ export class NotePreviewView extends ItemView {
   #cleanup: DisposableStack | null = null;
   #editor: TemplateWorkbenchView | null = null;
   #file: TFile | null = null;
-  #sourceGeneration = 0;
+  /** The source read; a newer read or a change of source stops the one before. */
+  readonly #sources: LatestSlot<ViewServices>;
   #choiceGeneration = 0;
   /**
    * Set while a restored state waits for native completion, which rebinds the
@@ -213,6 +219,7 @@ export class NotePreviewView extends ItemView {
     this.state = previewStateHandle(deps.registry, this.model);
     this.#releaseModel = holdPreviewModel(deps.registry, this.model);
     this.#runner = makeViewRunner(deps.registry);
+    this.#sources = latestSlot(this.#runner.run);
     this.#choosingItem = inFlightSlot(
       this.#runner.run,
       Effect.suspend(() => this.#chooseItem()),
@@ -504,7 +511,7 @@ export class NotePreviewView extends ItemView {
       this.#host = null;
       this.#editor = null;
       this.#file = null;
-      this.#sourceGeneration++;
+      this.#sources.interrupt();
     });
     const resources = cleanup.use(new DisposableStack());
     const deps = this.#deps;
@@ -678,14 +685,14 @@ export class NotePreviewView extends ItemView {
       "quick-preview",
       (file, source) => {
         if (file === this.#file) {
-          this.#sourceGeneration++;
+          this.#sources.interrupt();
           this.#session?.setSource(source);
         }
       },
     );
     cleanup.defer(() => this.app.workspace.offref(sourceEvent));
     const modify = this.app.vault.on("modify", (file) => {
-      if (file === this.#file) runner.run(this.#readSource(this.#file));
+      if (file === this.#file) this.#sources.run(this.#readSource(this.#file));
     });
     cleanup.defer(() => this.app.vault.offref(modify));
     const rename = this.app.vault.on("rename", (file) => {
@@ -693,12 +700,12 @@ export class NotePreviewView extends ItemView {
       const context = session?.state.getState().context;
       if (file !== this.#file || !session || !context) return;
       session.setContext({ ...context, path: file.path });
-      runner.run(this.#readSource(this.#file));
+      this.#sources.run(this.#readSource(this.#file));
     });
     cleanup.defer(() => this.app.vault.offref(rename));
     const remove = this.app.vault.on("delete", (file) => {
       if (file !== this.#file) return;
-      this.#sourceGeneration++;
+      this.#sources.interrupt();
       this.#file = null;
       this.#session?.state.setState({
         sourceProblem: m.settings_profile_document_missing({ path: file.path }),
@@ -951,16 +958,22 @@ export class NotePreviewView extends ItemView {
       if (!context || !session) return;
       if (context.path === null) {
         this.#file = null;
-        const generation = ++this.#sourceGeneration;
-        const source = yield* Effect.exit((yield* Profile).getBuiltInSource);
-        if (Exit.isSuccess(source) && generation === this.#sourceGeneration)
-          session.setSource(source.value);
+        yield* this.#sources.join(
+          Effect.gen(function* () {
+            const source = yield* Effect.exit(
+              (yield* Profile).getBuiltInSource,
+            );
+            if (Exit.isSuccess(source)) session.setSource(source.value);
+          }),
+          undefined,
+        );
         return;
       }
       this.#file = yield* (yield* Vault).getFileByPath(context.path);
-      if (this.#file) yield* this.#readSource(this.#file);
+      if (this.#file)
+        yield* this.#sources.join(this.#readSource(this.#file), undefined);
       else {
-        this.#sourceGeneration++;
+        this.#sources.interrupt();
         this.state.setState({
           sourceProblem: m.settings_profile_document_missing({
             path: context.path,
@@ -972,9 +985,8 @@ export class NotePreviewView extends ItemView {
   }
   #readSource(file: TFile): Effect.Effect<void, never, ViewServices> {
     return Effect.gen({ self: this }, function* () {
-      const generation = ++this.#sourceGeneration;
       const read = yield* Effect.exit(readLiveText(file));
-      if (file !== this.#file || generation !== this.#sourceGeneration) return;
+      if (file !== this.#file) return;
       if (Exit.isSuccess(read)) {
         this.#session?.setSource(read.value);
         return;
@@ -993,7 +1005,7 @@ export class NotePreviewView extends ItemView {
     if (this.leaf.pinned && previous && !explicit) return;
     if (previous?.annotationId !== context.annotationId)
       session.select(context.annotationId);
-    if (this.#file !== this.#editor?.file) this.#sourceGeneration++;
+    if (this.#file !== this.#editor?.file) this.#sources.interrupt();
     this.#file = this.#editor?.file ?? null;
     if (
       previous?.path !== context.path ||

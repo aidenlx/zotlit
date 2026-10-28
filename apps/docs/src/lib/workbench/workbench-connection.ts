@@ -8,7 +8,6 @@ import {
   Context,
   Effect,
   Exit,
-  Fiber,
   FiberHandle,
   Layer,
   PubSub,
@@ -32,6 +31,7 @@ import type {
   SelectedProfileResponse,
 } from "@zotlit/workbench/bridge";
 import type { RenderResources } from "@zotlit/workbench/render";
+import { joinForked } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -228,15 +228,11 @@ export const layerWorkbenchConnection = Layer.effect(
 
     /** Runs `effect` among this connection's reads; Disconnect interrupts it. */
     const inConnection = <A, E>(effect: Effect.Effect<A, E>) =>
-      Effect.gen(function* () {
-        const { scope } = yield* Ref.get(reads);
-        const fiber = yield* Effect.forkIn(effect, scope, {
-          startImmediately: true,
-        });
-        return yield* Fiber.join(fiber).pipe(
-          Effect.onInterrupt(() => Fiber.interrupt(fiber)),
-        );
-      });
+      joinForked(
+        Effect.flatMap(Ref.get(reads), ({ scope }) =>
+          Effect.forkIn(effect, scope, { startImmediately: true }),
+        ),
+      );
 
     /**
      * The styles the vault has installed, so the citation-style binding is

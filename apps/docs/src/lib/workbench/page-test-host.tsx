@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -22,6 +22,7 @@ import type {
   TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
+import type { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
@@ -34,7 +35,11 @@ import { Workbench } from "./workbench";
 // given and hold one render open.
 const { renderInThread } = vi.hoisted(() => ({
   renderInThread:
-    vi.fn<(request: RenderRequest) => Promise<TemplateRenderResult>>(),
+    vi.fn<
+      (
+        request: RenderRequest,
+      ) => Effect.Effect<TemplateRenderResult, WorkbenchHostError>
+    >(),
 }));
 
 vi.mock("./render", () => ({ renderInThread }));
@@ -111,7 +116,7 @@ beforeEach(() => {
   bridge = () => Promise.reject(new Error("No Local Bridge is running."));
   renderInThread.mockClear();
   renderInThread.mockImplementation((request) =>
-    Promise.resolve(renderProfile(request.source, request.snapshot, request)),
+    Effect.sync(() => renderProfile(request.source, request.snapshot, request)),
   );
 });
 

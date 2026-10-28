@@ -7,12 +7,14 @@ import {
   layerUnreadViewServices,
   scopedViewRegistry,
 } from "@/lib/__fixtures__/view-atoms";
+import { scopedViewRunner } from "@/lib/__fixtures__/view-runner";
 import { Release } from "@/services/release/service";
 
 import {
   answerOf,
   inFlightSlot,
   joinOnView,
+  latestSlot,
   makeViewRunner,
 } from "./view-runner";
 import type { InFlightSlot } from "./view-runner";
@@ -81,12 +83,12 @@ it.effect(
 );
 
 /** A runner over the test services, closed with the test's Scope. */
-const scopedRunner = Effect.gen(function* () {
-  const registry = yield* scopedViewRegistry(yield* Layer.build(layerServices));
-  return yield* Effect.acquireDisposable(
-    Effect.sync(() => makeViewRunner(registry)),
-  );
-});
+const scopedRunner = Effect.flatMap(
+  Effect.flatMap(Layer.build(layerServices), (context) =>
+    scopedViewRegistry(context),
+  ),
+  (registry) => scopedViewRunner(registry),
+);
 
 it.effect("interrupts the run on the view when its caller is interrupted", () =>
   Effect.gen(function* () {
@@ -166,6 +168,25 @@ it.effect("shares one run between the callers that join while it runs", () =>
   }).pipe(Effect.scoped),
 );
 
+it.effect("frees the slot of a run the closed view ends at once", () =>
+  Effect.gen(function* () {
+    const registry = yield* scopedViewRegistry(
+      yield* Layer.build(layerServices),
+    );
+    const runner = makeViewRunner(registry);
+    yield* Effect.promise(() => runner[Symbol.asyncDispose]());
+    const changes: boolean[] = [];
+    let running = () => false;
+    const slot = inFlightSlot(runner.run, Effect.void, () =>
+      changes.push(running()),
+    );
+    running = slot.running;
+    slot.start();
+    expect(changes).toEqual([true, false]);
+    expect(slot.running()).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
 it.effect(
   "answers a run's value, its release value on an interrupt, and throws its failure",
   () =>
@@ -190,4 +211,41 @@ it.effect(
       );
       expect(thrown).toBe(failure);
     }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "interrupts the older run when a newer one starts, and on request",
+  () =>
+    Effect.gen(function* () {
+      const runner = yield* scopedRunner;
+      const slot = latestSlot(runner.run);
+      const older = slot.run(Effect.never);
+      const newer = slot.run(Effect.never);
+      expect(Exit.hasInterrupts(yield* Fiber.await(older))).toBe(true);
+      expect(newer.pollUnsafe()).toBeUndefined();
+      slot.interrupt();
+      expect(Exit.hasInterrupts(yield* Fiber.await(newer))).toBe(true);
+    }).pipe(Effect.scoped),
+);
+
+it.effect("answers the released value to the caller of a superseded run", () =>
+  Effect.gen(function* () {
+    const runner = yield* scopedRunner;
+    const slot = latestSlot(runner.run);
+    const started = yield* Deferred.make<void>();
+    const older = yield* Effect.forkChild(
+      slot.join(
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.as("older"),
+        ),
+        "released",
+      ),
+    );
+    yield* Deferred.await(started);
+    // The newer run starts once the older one waits, as a later gesture does.
+    yield* Effect.yieldNow;
+    expect(yield* slot.join(Effect.succeed("newer"), "released")).toBe("newer");
+    expect(yield* Fiber.join(older)).toBe("released");
+  }).pipe(Effect.scoped),
 );

@@ -51,8 +51,9 @@ One module owns each surface, and each says what it owns at its head:
 
 ## Rulings that sit in no single file
 
-- Rendering runs on the page's own thread in [`render.ts`](render.ts), which awaits the
-  `Temporal` polyfill for a runtime that has none (ADR 0045).
+- Rendering runs on the page's own thread in [`render.ts`](render.ts). The Rendering service
+  in [`rendering.ts`](rendering.ts) loads the `Temporal` polyfill once for a runtime that has
+  none, and each render waits for that load (ADR 0045).
 - Every asynchronous step of the page is an Effect on the page runtime. Only
   [`runtime.tsx`](runtime.tsx) runs it; components fork through its bridge, and the host's
   runner is the bridge's. A read that belongs to one connection runs in that connection's

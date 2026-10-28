@@ -11,12 +11,12 @@ import { Menu } from "obsidian";
 
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { SuggestionSource } from "@zotlit/workbench/language";
+import { observeExit } from "@zotlit/workbench/ui";
 import type { WorkbenchRunner } from "@zotlit/workbench/ui";
 
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { onFiberSuccess } from "@/lib/view-runner";
 
 /**
  * Move `source` into a new Shared Partial: the host asks a name, writes the
@@ -89,9 +89,9 @@ export function extractPartialMenu(
           .setTitle(m.template_workbench_extract_partial())
           .setIcon("file-output")
           .onClick(() =>
-            onFiberSuccess(run(extractSelection(view, extract)), (outcome) =>
-              reportExtraction(outcome),
-            ),
+            observeExit(run(extractSelection(view, extract)), {
+              onSuccess: reportExtraction,
+            }),
           ),
       );
       menu.showAtMouseEvent(event);

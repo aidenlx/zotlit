@@ -21,13 +21,14 @@ import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { Template } from "./service";
 
+/** The services the Citation Template open runs with. */
+type CitationTemplateServices = Template | Notifier | Vault | Workspace;
+
 /**
  * The "Customize citation text" command. Its callback is a plain Obsidian
  * entry point, so it runs the open on the layer's own bridge, over the
  * services the layer was built with.
  */
-/** The services the Citation Template open runs with. */
-type CitationTemplateServices = Template | Notifier | Vault | Workspace;
 
 export const layerCitationTemplateActions: Layer.Layer<
   never,

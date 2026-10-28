@@ -7,6 +7,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { scopedViewRunner } from "@/lib/__fixtures__/view-runner";
 import { makeViewRunner } from "@/lib/view-runner";
 import { buildQueryService } from "@/services/item-query/__fixtures__";
 import {
@@ -147,9 +148,7 @@ it.effect(
           customFieldNames,
         }),
       });
-      const runner = yield* Effect.acquireDisposable(
-        Effect.sync(() => makeViewRunner(host.registry)),
-      );
+      const runner = yield* scopedViewRunner(host.registry);
       const data = createMatchData(runner.provide);
       const fiber = yield* Effect.forkChild(data.customFields);
       const running = yield* Effect.promise(() => started.promise);
@@ -174,9 +173,7 @@ it.effect("stops every concurrent read when its view closes", () =>
         },
       }),
     });
-    const runner = yield* Effect.acquireDisposable(
-      Effect.sync(() => makeViewRunner(host.registry)),
-    );
+    const runner = yield* scopedViewRunner(host.registry);
     const data = createMatchData(runner.provide);
     const fibers = [
       runner.run(data.customFields),

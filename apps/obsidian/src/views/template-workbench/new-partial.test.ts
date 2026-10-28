@@ -11,9 +11,10 @@ import type { App, PaneType, SplitDirection, WorkspaceLeaf } from "obsidian";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { exitOf } from "@/lib/__fixtures__/view-runner";
 import { valueOr } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
-import { exitOf, makeViewRunner } from "@/lib/view-runner";
+import { makeViewRunner } from "@/lib/view-runner";
 
 import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";

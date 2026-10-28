@@ -93,7 +93,6 @@ it.effect(
         Layer.mock(NoteFeature, {}),
         Layer.mock(Vault, {}),
         Layer.mock(Workspace, {}),
-        Layer.mock(Workspace, {}),
         Layer.succeed(
           PluginHost,
           stubService<PluginHost["Service"]>("PluginHost", {}),
