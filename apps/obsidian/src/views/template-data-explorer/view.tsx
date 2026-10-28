@@ -1,5 +1,6 @@
 // A native Explorer owns its data and navigation; workspace values supply its authoring context.
 import { Effect } from "effect";
+import type { Cause } from "effect";
 import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
@@ -25,9 +26,9 @@ import type { EffectBridge } from "@/lib/effect-bridge";
 import * as m from "@/lib/i18n/generated/messages";
 import { MENU_SECTION } from "@/lib/menu-section";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import type { ViewRegistryHandle } from "@/lib/view-atoms";
-import { answerOf, makeViewRunner } from "@/lib/view-runner";
-import type { ViewRun } from "@/lib/view-runner";
+import type { ViewRegistryHandle, ViewServices } from "@/lib/view-atoms";
+import { answerOf, inFlightSlot, makeViewRunner } from "@/lib/view-runner";
+import type { InFlightSlot, ViewRunner } from "@/lib/view-runner";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -43,9 +44,11 @@ import {
   createTemplateWorkbenchHost,
 } from "@/views/template-workbench/host";
 import {
-  chooseWorkbenchItem,
-  searchWorkbenchItem,
-  chooseWorkbenchAnnotation,
+  workbenchAnnotationChoice,
+  workbenchItemChoice,
+  workbenchItemSearch,
+} from "@/views/template-workbench/item-choice";
+import {
   publishWorkbenchSelection,
   subscribeWorkbenchSelection,
   selectionViewTitle,
@@ -99,7 +102,11 @@ export class TemplateDataExplorerView extends ItemView {
   #editor: TemplateWorkbenchView | null = null;
   #host: ReturnType<typeof createTemplateWorkbenchHost> | null = null;
   /** Forks on this leaf's view services; the close interrupts it. */
-  #run: ViewRun | null = null;
+  readonly #runner: ViewRunner;
+  /** The Item chooser; a second request while it is open joins it. */
+  readonly #choosingItem: InFlightSlot<void, never>;
+  /** The annotation chooser; a second request while it is open joins it. */
+  readonly #choosingAnnotation: InFlightSlot<void, never>;
   #actions: ExplorerActions | null = null;
   #closed = false;
   #choiceGeneration = 0;
@@ -109,6 +116,15 @@ export class TemplateDataExplorerView extends ItemView {
     this.#deps = deps;
     // Obsidian sets the layout state before the view opens.
     this.#release = holdExplorerModel(deps.registry, this.#model);
+    this.#runner = makeViewRunner(deps.registry);
+    this.#choosingItem = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#chooseItem()),
+    );
+    this.#choosingAnnotation = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#chooseAnnotation()),
+    );
   }
   #state(): ExplorerState {
     return this.#deps.registry.get(this.#model.state);
@@ -152,14 +168,14 @@ export class TemplateDataExplorerView extends ItemView {
         .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
-        .onClick(() => void this.#chooseItem()),
+        .onClick(() => this.#choosingItem.start()),
     );
     menu.addItem((item) =>
       item
         .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_annotation())
         .setIcon("highlighter")
-        .onClick(() => void this.#chooseAnnotation()),
+        .onClick(() => this.#choosingAnnotation.start()),
     );
     menu.addItem((item) =>
       item
@@ -231,7 +247,10 @@ export class TemplateDataExplorerView extends ItemView {
       "zotlitLaunch" in state &&
       state.zotlitLaunch === true;
     try {
-      await this.#restoreState(state, result);
+      await answerOf(
+        this.#runner.run(this.#restoreState(state, result)),
+        undefined,
+      );
     } finally {
       if (previous !== JSON.stringify(this.getState())) result.history = true;
       if (!launch)
@@ -247,8 +266,15 @@ export class TemplateDataExplorerView extends ItemView {
         });
     }
   }
-  async #restoreState(state: unknown, result: ViewStateResult): Promise<void> {
-    await super.setState(state, result);
+  #restoreState(
+    state: unknown,
+    result: ViewStateResult,
+  ): Effect.Effect<void, Cause.UnknownError, ViewServices> {
+    return Effect.tryPromise(() => super.setState(state, result)).pipe(
+      Effect.map(() => this.#applySaved(state)),
+    );
+  }
+  #applySaved(state: unknown): void {
     const saved = readSavedExplorer(state);
     if (!saved) return;
     const { anchorAnnotationKey: annotationId, root, sourceFile } = saved;
@@ -361,8 +387,9 @@ export class TemplateDataExplorerView extends ItemView {
       "search",
       m.workbench_choose_item(),
       () => {
-        if (this.#state().root === "annotation") void this.#chooseAnnotation();
-        else void this.#chooseItem();
+        if (this.#state().root === "annotation")
+          this.#choosingAnnotation.start();
+        else this.#choosingItem.start();
       },
     );
     cleanup.defer(
@@ -405,8 +432,7 @@ export class TemplateDataExplorerView extends ItemView {
       }),
     );
     // Closing the leaf interrupts every host Effect the Explorer still runs.
-    const runner = cleanup.use(makeViewRunner(registry));
-    this.#run = runner.run;
+    const runner = this.#runner;
     this.#host = cleanup.use(
       createTemplateWorkbenchHost(this.app, {
         run: runner.run,
@@ -420,7 +446,7 @@ export class TemplateDataExplorerView extends ItemView {
       }),
     );
     this.#actions = createExplorerActions({
-      onChooseItem: () => void this.#chooseItem(),
+      onChooseItem: () => this.#choosingItem.start(),
       onBackToNoteRoot: () => {
         this.#setTarget(this.#state().item, "note");
       },
@@ -499,9 +525,9 @@ export class TemplateDataExplorerView extends ItemView {
               <ExplorerActionsContext value={this.#actions}>
                 <Explorer
                   onSelectAnnotation={(id) => this.#selectAnnotation(id)}
-                  onChooseAnnotation={() => void this.#chooseAnnotation()}
+                  onChooseAnnotation={() => this.#choosingAnnotation.start()}
                   onSelectItem={(item) => this.#selectItem(item)}
-                  onSearchItem={() => void this.#chooseItem(true)}
+                  onSearchItem={() => this.#runner.run(this.#searchItem())}
                   lookup={this.#deps.itemLookup}
                   explorer={{
                     copy: copyToClipboard,
@@ -586,38 +612,52 @@ export class TemplateDataExplorerView extends ItemView {
       ? this.#editor
       : null;
   }
-  async #chooseItem(searchAll = false): Promise<void> {
-    const editor = this.#sourceEditor();
-    if (editor && !searchAll) {
-      if (!this.#run) return;
-      // The editor's chooser, on this leaf's runner until ticket 06.
-      const selected = await answerOf(this.#run(editor.chooseItem()), false);
-      if (selected && !this.#closed && editor === this.#sourceEditor())
-        this.#apply(editor.authoringContext, true);
-      return;
-    }
-    const host = this.#host;
-    const run = this.#run;
-    if (!host || !run) return;
-    const generation = ++this.#choiceGeneration;
-    const previous = this.#state().item;
-    const deps = {
+  #chooseItem(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const editor = this.#sourceEditor();
+      if (editor) {
+        // The editor's own chooser, so the two surfaces choose alike.
+        const selected = yield* editor.chooseItem();
+        if (selected && editor === this.#sourceEditor())
+          this.#apply(editor.authoringContext, true);
+        return;
+      }
+      const host = this.#host;
+      if (!host) return;
+      const previous = this.#state().item;
+      yield* this.#pickItem(
+        workbenchItemChoice(host, this.#searchDeps(), previous ?? undefined),
+      );
+    });
+  }
+  /** Search the Zotero library for an Item, past the chooser's short list. */
+  #searchItem(): Effect.Effect<void, never, ViewServices> {
+    return this.#pickItem(workbenchItemSearch(this.#searchDeps()));
+  }
+  #searchDeps() {
+    return {
       app: this.app,
       lookup: this.#deps.itemLookup,
       settings: this.#deps.settings,
       bridge: this.#deps.bridge,
     };
-    const item = await (searchAll
-      ? searchWorkbenchItem(deps)
-      : chooseWorkbenchItem({ run, host }, deps, previous ?? undefined));
-    if (
-      !item ||
-      this.#closed ||
-      generation !== this.#choiceGeneration ||
-      this.#state().item !== previous
-    )
-      return;
-    this.#selectItem(item);
+  }
+  /** Select the Item `choice` answers, unless a later choice or selection came first. */
+  #pickItem<R>(
+    choice: Effect.Effect<WorkbenchItemChoice | null, never, R>,
+  ): Effect.Effect<void, never, R> {
+    return Effect.gen({ self: this }, function* () {
+      const generation = ++this.#choiceGeneration;
+      const previous = this.#state().item;
+      const item = yield* choice;
+      if (
+        !item ||
+        generation !== this.#choiceGeneration ||
+        this.#state().item !== previous
+      )
+        return;
+      this.#selectItem(item);
+    });
   }
   #selectItem(item: WorkbenchItemChoice, notify = true): void {
     const state = this.#state();
@@ -640,26 +680,27 @@ export class TemplateDataExplorerView extends ItemView {
       this.#sourceEditor()?.leaf ?? null,
     );
   }
-  async #chooseAnnotation(): Promise<void> {
-    const host = this.#host;
-    if (!host) return;
-    const state = this.#state();
-    const generation = ++this.#choiceGeneration;
-    const id = await chooseWorkbenchAnnotation(
-      host,
-      state.annotations ?? [],
-      state.item
-        ? (annotationIndexedKey(state.item.id, state.annotationId) ??
-            state.annotationId)
-        : state.annotationId,
-    );
-    if (
-      id !== null &&
-      !this.#closed &&
-      generation === this.#choiceGeneration &&
-      state.item === this.#state().item
-    )
-      this.#selectAnnotation(id);
+  #chooseAnnotation(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const host = this.#host;
+      if (!host) return;
+      const state = this.#state();
+      const generation = ++this.#choiceGeneration;
+      const id = yield* workbenchAnnotationChoice(
+        host,
+        state.annotations ?? [],
+        state.item
+          ? (annotationIndexedKey(state.item.id, state.annotationId) ??
+              state.annotationId)
+          : state.annotationId,
+      );
+      if (
+        id !== null &&
+        generation === this.#choiceGeneration &&
+        state.item === this.#state().item
+      )
+        this.#selectAnnotation(id);
+    });
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;
@@ -667,10 +708,11 @@ export class TemplateDataExplorerView extends ItemView {
     this.#cleanup = null;
     this.#root = null;
     this.#host = null;
-    this.#run = null;
     this.#actions = null;
     this.#editor = null;
     this.#release?.();
     this.#release = null;
+    // Interrupts what the Explorer still runs, such as a chooser.
+    await this.#runner[Symbol.asyncDispose]();
   }
 }

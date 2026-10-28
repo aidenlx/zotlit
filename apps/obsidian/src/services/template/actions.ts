@@ -6,7 +6,6 @@
 
 import { Effect, Layer } from "effect";
 import type { Context, Scope } from "effect";
-import type { App } from "obsidian";
 
 import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
@@ -44,7 +43,7 @@ export const layerCitationTemplateActions: Layer.Layer<
 );
 
 export function addCitationTemplateActions(
-  host: Pick<PluginHostShape, "addCommand" | "app">,
+  host: Pick<PluginHostShape, "addCommand">,
   deps: {
     context: Context.Context<CitationTemplateServices>;
     bridge: Pick<EffectBridge, "runAndForget">;
@@ -56,9 +55,7 @@ export function addCitationTemplateActions(
       name: m.command_customize_citation_text_name(),
       callback: () =>
         deps.bridge.runAndForget(
-          reportCitationTemplateOpen(host.app).pipe(
-            Effect.provideContext(deps.context),
-          ),
+          reportCitationTemplateOpen.pipe(Effect.provideContext(deps.context)),
         ),
     }),
   );
@@ -70,25 +67,19 @@ export function addCitationTemplateActions(
  * "profile uses Eta" notice belongs to a Profile document, so it is not
  * offered here.
  */
-export const openCitationTemplate = Effect.fn("openCitationTemplate")(
-  function* (app: App) {
-    const file = yield* (yield* Template).materializeCitationTemplate;
-    yield* openTemplateWorkbench(app, file, { explainUnsupported: false });
-  },
-);
+export const openCitationTemplate = Effect.gen(function* () {
+  const file = yield* (yield* Template).materializeCitationTemplate;
+  yield* openTemplateWorkbench(file, { explainUnsupported: false });
+}).pipe(Effect.withSpan("openCitationTemplate"));
 
 /**
  * {@link openCitationTemplate} for an entry point: a failure is logged and a
  * notice tells the user; an interrupt passes on with no notice.
  */
-export const reportCitationTemplateOpen = Effect.fn(
-  "CitationTemplate.reportOpen",
-)(
-  function* (app: App) {
-    yield* reportOutcome(openCitationTemplate(app), {
-      success: () => undefined,
-      error: () => m.notice_citation_text_open_failed(),
-    });
-  },
+export const reportCitationTemplateOpen = reportOutcome(openCitationTemplate, {
+  success: () => undefined,
+  error: () => m.notice_citation_text_open_failed(),
+}).pipe(
   withLogCategory("template", "actions"),
+  Effect.withSpan("CitationTemplate.reportOpen"),
 );

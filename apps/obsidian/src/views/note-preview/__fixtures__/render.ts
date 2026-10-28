@@ -280,6 +280,14 @@ export async function createRenderFixture(options: { existing?: string; javascri
   return { cancelled, deps: previewDeps, settings, templates, client, snapshot, host, vault, zoteroReads, renderCitations, writes, async [Symbol.asyncDispose]() { await handles.disposeAsync(); await templates[Symbol.asyncDispose](); await settings[Symbol.asyncDispose](); await zoteroReads[Symbol.asyncDispose](); sqlite.close(); } };
 }
 
+/**
+ * Settles once the session's paper is loaded, or the session closes: its
+ * `ready`, for a test that awaits a Promise.
+ */
+export function paperLoaded(session: { readonly ready: Effect.Effect<void> }): Promise<void> {
+  return Effect.runPromise(session.ready);
+}
+
 /** One native render, run on a view runner the render alone owns. */
 export function renderNativeTemplate(deps: NativeRenderDeps, request: RenderRequest): Promise<NativeRenderResult> {
   return runOnView(deps.registry, makeNativeRenderer(deps).render(request));

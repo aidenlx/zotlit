@@ -81,7 +81,7 @@ function workbenchTargets(app: App, deps: RegistrationDeps) {
             )?.id
         : "default";
     if (!profileId)
-      return openNativeProfile(app, target, {
+      return openNativeProfile(target, {
         ...options,
         customize: true,
       });
@@ -156,7 +156,7 @@ export function registerTemplateWorkbenchView(
           startTemplateWorkbenchAction(
             deps,
             "open-editor",
-            openTemplateWorkbench(plugin.app, active, {
+            openTemplateWorkbench(active, {
               explainUnsupported: false,
               ...(leaf ? { leaf } : {}),
             }),
@@ -172,7 +172,7 @@ export function registerTemplateWorkbenchView(
         startTemplateWorkbenchAction(
           deps,
           "open-editor",
-          openNativeProfile(plugin.app, target, {
+          openNativeProfile(target, {
             ...(itemIndexedKey ? { itemIndexedKey } : {}),
             ...(leaf ? { leaf } : {}),
           }),
@@ -197,8 +197,8 @@ export function registerTemplateWorkbenchView(
         deps,
         "open-workbench",
         file
-          ? openTemplateWorkbench(plugin.app, file, options)
-          : openNativeProfile(plugin.app, deps.defaultProfile, options),
+          ? openTemplateWorkbench(file, options)
+          : openNativeProfile(deps.defaultProfile, options),
       );
     }),
   );
@@ -229,7 +229,7 @@ export function registerTemplateWorkbenchView(
             startTemplateWorkbenchAction(
               deps,
               "open-editor",
-              openTemplateWorkbench(plugin.app, file, {
+              openTemplateWorkbench(file, {
                 leaf: view.leaf,
                 ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
               }),
@@ -272,7 +272,7 @@ export function templateWorkbenchFileMenu(
             startTemplateWorkbenchAction(
               deps,
               "open-editor",
-              openTemplateWorkbench(app, file, {
+              openTemplateWorkbench(file, {
                 explainUnsupported: false,
                 ...(leaf ? { leaf } : {}),
               }),
@@ -328,7 +328,7 @@ export function templateWorkbenchFileMenu(
           startTemplateWorkbenchAction(
             deps,
             "open-editor",
-            openNativeProfile(app, target, {
+            openNativeProfile(target, {
               ...options,
               ...(leaf ? { leaf } : {}),
             }),

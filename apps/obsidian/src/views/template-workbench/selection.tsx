@@ -13,20 +13,15 @@ import type {
   PartialChoice,
 } from "@zotlit/workbench/render";
 import { annotationOption } from "@zotlit/workbench/ui";
-import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
+import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
-import { answerOf } from "@/lib/view-runner";
-import type { ViewRun } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
-import { pickItem } from "@/services/item-lookup/search-modal";
-import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
 
-import { workbenchAnnotationChoice, workbenchItemChoice } from "./item-choice";
 import {
   getSampleItem,
   getSampleItemType,
@@ -127,46 +122,6 @@ export async function recentItemChoices(
   } catch {
     return [];
   }
-}
-
-export async function searchWorkbenchItem(
-  deps: ItemSearchDeps,
-): Promise<WorkbenchItemChoice | null> {
-  const hit = await pickItem(deps, m.template_data_explorer_pick_placeholder());
-  return hit && !isChildItemFields(hit.item.fields)
-    ? {
-        id: hit.item.indexedKey,
-        title: itemSummary(hit.item, hit.item.fields).formatted,
-      }
-    : null;
-}
-
-/**
- * {@link workbenchItemChoice} on the view's runner, for a caller that awaits a
- * Promise. Closing the view interrupts the chooser, which reads as a
- * dismissal.
- */
-export function chooseWorkbenchItem(
-  view: { run: ViewRun; host: WorkbenchHost },
-  deps: ItemSearchDeps,
-  selected?: WorkbenchItemChoice,
-): Promise<WorkbenchItemChoice | null> {
-  return answerOf(
-    view.run(workbenchItemChoice(view.host, deps, selected)),
-    null,
-  );
-}
-
-/** {@link workbenchAnnotationChoice} for a caller that awaits a Promise. */
-export function chooseWorkbenchAnnotation(
-  host: WorkbenchHost,
-  current: readonly AnnotationChoice[],
-  selected: string | null,
-): Promise<string | null> {
-  return answerOf(
-    host.run(workbenchAnnotationChoice(host, current, selected)),
-    null,
-  );
 }
 
 /** The selected data's own name, which a pane shows wherever its header cannot. */

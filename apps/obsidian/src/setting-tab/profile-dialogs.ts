@@ -429,7 +429,7 @@ export const addProfileDestination = Effect.fn("addProfileDestination")(
         message: m.notice_profile_action_failed(),
       });
     yield* explainWorkbenchOpen(
-      yield* openTemplateWorkbench(app, file, { tab: "name", customize: true }),
+      yield* openTemplateWorkbench(file, { tab: "name", customize: true }),
     );
     yield* (yield* Notifier).show(
       m.notice_profile_created({ label: created.label }),

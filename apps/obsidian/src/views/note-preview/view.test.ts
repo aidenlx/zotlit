@@ -77,7 +77,6 @@ vi.mock("./register", () => ({
   },
   subscribeActiveTemplateWorkbench: vi.fn(),
   registerCompanionHistory: vi.fn(() => () => {}),
-  openWorkbenchLayout: vi.fn(),
   activeTemplateWorkbench: vi.fn(),
 }));
 vi.mock("@/services/item-lookup/search-modal", () => ({

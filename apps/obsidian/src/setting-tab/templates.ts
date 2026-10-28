@@ -233,7 +233,7 @@ function openPartial(ctx: SettingTabContext, path: string) {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
     yield* leaveSettingsFor(
-      openTemplateWorkbench(ctx.app, file, { explainUnsupported: false }),
+      openTemplateWorkbench(file, { explainUnsupported: false }),
     );
   });
 }
@@ -328,7 +328,7 @@ function renderCitationTextRow(setting: Setting, ctx: SettingTabContext): void {
         // row whose button materialized the file would keep its old state.
         btn.buttonEl.blur();
         void ctx.tab.run(
-          reportCitationTemplateOpen(ctx.app).pipe(Effect.ensuring(rebuild)),
+          reportCitationTemplateOpen.pipe(Effect.ensuring(rebuild)),
         );
       }),
   );

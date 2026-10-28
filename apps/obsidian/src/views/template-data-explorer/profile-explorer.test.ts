@@ -15,8 +15,9 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
+import { answerOf } from "@/lib/view-runner";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
-import { chooseWorkbenchAnnotation } from "@/views/template-workbench/selection";
+import { workbenchAnnotationChoice } from "@/views/template-workbench/item-choice";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { makeExplorerHost, waitFor } from "./__fixtures__";
@@ -304,14 +305,20 @@ it("switches annotation data locally through the annotation chooser", async () =
             onSearchItem: () => {},
             onChooseAnnotation: async () => {
               const state = session.state();
-              const id = await chooseWorkbenchAnnotation(
-                stubService<WorkbenchHost>("WorkbenchHost", {
-                  suggester,
-                  run: Effect.runFork,
-                }),
-                state.annotations ?? [],
-                annotationIndexedKey(state.item!.id, state.annotationId) ??
-                  state.annotationId,
+              const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
+                suggester,
+                run: Effect.runFork,
+              });
+              const id = await answerOf(
+                chooser.run(
+                  workbenchAnnotationChoice(
+                    chooser,
+                    state.annotations ?? [],
+                    annotationIndexedKey(state.item!.id, state.annotationId) ??
+                      state.annotationId,
+                  ),
+                ),
+                null,
               );
               if (id) session.setTarget(state.item, "annotation", id);
             },

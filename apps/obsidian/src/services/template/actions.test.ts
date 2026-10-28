@@ -97,9 +97,9 @@ it.effect(
   "materializes the document, then opens it in the Template Workbench View",
   () =>
     Effect.gen(function* () {
-      const { app, opened, workspace } = workspaceApp();
+      const { opened, workspace } = workspaceApp();
 
-      yield* openCitationTemplate(app).pipe(
+      yield* openCitationTemplate.pipe(
         Effect.provide(
           servicesOver(Effect.succeed(CITATION), undefined, workspace),
         ),
@@ -113,9 +113,9 @@ it.effect(
 
 it.effect("fails with the Template failure and opens nothing", () =>
   Effect.gen(function* () {
-    const { app, opened } = workspaceApp();
+    const { opened } = workspaceApp();
 
-    const error = yield* openCitationTemplate(app).pipe(
+    const error = yield* openCitationTemplate.pipe(
       Effect.provide(servicesOver(Effect.fail(failure))),
       Effect.flip,
     );
@@ -127,9 +127,9 @@ it.effect("fails with the Template failure and opens nothing", () =>
 
 it.effect("opens nothing once interrupted", () =>
   Effect.gen(function* () {
-    const { app, opened } = workspaceApp();
+    const { opened } = workspaceApp();
 
-    const fiber = yield* openCitationTemplate(app).pipe(
+    const fiber = yield* openCitationTemplate.pipe(
       Effect.provide(servicesOver(Effect.never)),
       Effect.forkChild,
     );
@@ -148,7 +148,7 @@ it.effect(
     Effect.gen(function* () {
       const notifier = testNotifier();
       const report = (materialize: Effect.Effect<TFile, TemplateFailure>) =>
-        reportCitationTemplateOpen(workspaceApp().app).pipe(
+        reportCitationTemplateOpen.pipe(
           Effect.provide(servicesOver(materialize, notifier.service)),
         );
 

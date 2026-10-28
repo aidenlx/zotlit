@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { Cause, Effect, Exit } from "effect";
 
 import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
@@ -45,15 +46,18 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import type { EffectBridge } from "@/lib/effect-bridge";
+import { readLiveText } from "@/lib/effect-live-text";
 import * as m from "@/lib/i18n/generated/messages";
-import { readLiveText } from "@/lib/live-text";
 import { MENU_SECTION } from "@/lib/menu-section";
+import { Vault } from "@/lib/obsidian-vault";
 import { openSettingsTab } from "@/lib/open-settings";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
-import { answerOf, makeViewRunner } from "@/lib/view-runner";
-import type { ViewRun } from "@/lib/view-runner";
+import type { ViewServices } from "@/lib/view-atoms";
+import { answerOf, inFlightSlot, makeViewRunner } from "@/lib/view-runner";
+import type { InFlightSlot, ViewRunner } from "@/lib/view-runner";
 import type { ItemLookupHandle } from "@/services/item-lookup/handle";
 import { profilesAtom } from "@/services/profile/atoms";
+import { Profile } from "@/services/profile/service";
 import { templateFolderAtom } from "@/services/settings/atoms";
 import type { PluginSettings } from "@/services/settings/service";
 import { templatePartialName } from "@/views/template-workbench/document-kind";
@@ -62,8 +66,10 @@ import {
   hostEffect,
 } from "@/views/template-workbench/host";
 import {
-  chooseWorkbenchItem,
-  chooseWorkbenchAnnotation,
+  workbenchAnnotationChoice,
+  workbenchItemChoice,
+} from "@/views/template-workbench/item-choice";
+import {
   publishWorkbenchSelection,
   subscribeWorkbenchSelection,
   selectionName,
@@ -81,7 +87,6 @@ import type {
   TemplateAuthoringContext,
 } from "@/views/template-workbench/view";
 
-import { makeBuiltInSourceCommand, makeChoiceCommand } from "./atoms";
 import { NativeMarkdown } from "./markdown";
 import {
   makePreviewModel,
@@ -176,9 +181,12 @@ export class NotePreviewView extends ItemView {
   readonly model = makePreviewModel();
   readonly state;
   #releaseModel: (() => void) | null = null;
-  readonly #restoreBuiltIn;
-  readonly #chooseItemCommand;
-  readonly #chooseAnnotationCommand;
+  /** Forks on this leaf's view services; the close interrupts it. */
+  readonly #runner: ViewRunner;
+  /** The Item chooser; a second request while it is open joins it. */
+  readonly #choosingItem: InFlightSlot<void, never>;
+  /** The annotation chooser; a second request while it is open joins it. */
+  readonly #choosingAnnotation: InFlightSlot<void, never>;
   #root: Root | null = null;
   #cleanup: DisposableStack | null = null;
   #editor: TemplateWorkbenchView | null = null;
@@ -198,18 +206,20 @@ export class NotePreviewView extends ItemView {
   #problemHost: TemplateWorkbenchView | null = null;
   readonly #rendered = () => this.#restorePresentation();
   #host: (WorkbenchHost & Disposable) | null = null;
-  /** Forks on this leaf's view services; the close interrupts it. */
-  #run: ViewRun | null = null;
   constructor(leaf: WorkspaceLeaf, pluginId: string, deps: PreviewViewDeps) {
     super(leaf);
     this.#pluginId = pluginId;
     this.#deps = deps;
     this.state = previewStateHandle(deps.registry, this.model);
     this.#releaseModel = holdPreviewModel(deps.registry, this.model);
-    this.#restoreBuiltIn = makeBuiltInSourceCommand();
-    this.#chooseItemCommand = makeChoiceCommand(() => this.#chooseItem());
-    this.#chooseAnnotationCommand = makeChoiceCommand(() =>
-      this.#chooseAnnotation(),
+    this.#runner = makeViewRunner(deps.registry);
+    this.#choosingItem = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#chooseItem()),
+    );
+    this.#choosingAnnotation = inFlightSlot(
+      this.#runner.run,
+      Effect.suspend(() => this.#chooseAnnotation()),
     );
     this.contentEl.addClass("zt-root");
   }
@@ -253,9 +263,7 @@ export class NotePreviewView extends ItemView {
         .setSection(MENU_SECTION.action)
         .setTitle(m.workbench_choose_item())
         .setIcon("search")
-        .onClick(() =>
-          this.#deps.registry.set(this.#chooseItemCommand, undefined),
-        ),
+        .onClick(() => this.#choosingItem.start()),
     );
     const citationSet =
       mode === "citation" || partialContextOf(state.context) === "citation";
@@ -266,9 +274,7 @@ export class NotePreviewView extends ItemView {
           .setSection(MENU_SECTION.action)
           .setTitle(m.workbench_choose_annotation())
           .setIcon("highlighter")
-          .onClick(() =>
-            this.#deps.registry.set(this.#chooseAnnotationCommand, undefined),
-          ),
+          .onClick(() => this.#choosingAnnotation.start()),
       );
     menu.addItem((item) =>
       item
@@ -481,16 +487,13 @@ export class NotePreviewView extends ItemView {
     );
   }
 
-  protected override async onOpen(): Promise<void> {
+  protected override onOpen(): Promise<void> {
     using cleanup = new DisposableStack();
     this.#releaseModel ??= holdPreviewModel(this.#deps.registry, this.model);
     cleanup.defer(() => {
       this.#releaseModel?.();
       this.#releaseModel = null;
     });
-    for (const atom of [this.#chooseItemCommand, this.#chooseAnnotationCommand])
-      cleanup.defer(this.#deps.registry.mount(atom));
-    cleanup.defer(this.#deps.registry.mount(this.#restoreBuiltIn));
     cleanup.defer(this.#deps.registry.mount(profilesAtom));
     cleanup.defer(this.#deps.registry.mount(templateFolderAtom));
     cleanup.defer(registerCompanionHistory(this));
@@ -499,7 +502,6 @@ export class NotePreviewView extends ItemView {
       this.#session = null;
       this.#scheduler = null;
       this.#host = null;
-      this.#run = null;
       this.#editor = null;
       this.#file = null;
       this.#sourceGeneration++;
@@ -508,7 +510,7 @@ export class NotePreviewView extends ItemView {
     const deps = this.#deps;
     const renderer = makeNativeRenderer(deps);
     // Closing the leaf interrupts every host Effect the preview still runs.
-    const runner = resources.use(makeViewRunner(deps.registry));
+    const runner = this.#runner;
     const render = (request: RenderRequest) =>
       hostEffect(runner.provide(renderer.render(request)));
     const scheduler = resources.use(
@@ -549,7 +551,6 @@ export class NotePreviewView extends ItemView {
     this.#scheduler = scheduler;
     this.#session = session;
     this.#host = host;
-    this.#run = runner.run;
     // Added first, so it sits nearest More options; Obsidian prepends actions.
     const sectionAction = this.addAction(
       "rows-3",
@@ -577,9 +578,8 @@ export class NotePreviewView extends ItemView {
       "search",
       m.workbench_choose_item(),
       () => {
-        if (this.#annotationChoice())
-          this.#deps.registry.set(this.#chooseAnnotationCommand, undefined);
-        else this.#deps.registry.set(this.#chooseItemCommand, undefined);
+        if (this.#annotationChoice()) this.#choosingAnnotation.start();
+        else this.#choosingItem.start();
       },
     );
     let syncedMarkdown: boolean | null = null;
@@ -685,7 +685,7 @@ export class NotePreviewView extends ItemView {
     );
     cleanup.defer(() => this.app.workspace.offref(sourceEvent));
     const modify = this.app.vault.on("modify", (file) => {
-      if (file === this.#file) void this.#readSource(this.#file);
+      if (file === this.#file) runner.run(this.#readSource(this.#file));
     });
     cleanup.defer(() => this.app.vault.offref(modify));
     const rename = this.app.vault.on("rename", (file) => {
@@ -693,7 +693,7 @@ export class NotePreviewView extends ItemView {
       const context = session?.state.getState().context;
       if (file !== this.#file || !session || !context) return;
       session.setContext({ ...context, path: file.path });
-      void this.#readSource(this.#file);
+      runner.run(this.#readSource(this.#file));
     });
     cleanup.defer(() => this.app.vault.offref(rename));
     const remove = this.app.vault.on("delete", (file) => {
@@ -719,8 +719,15 @@ export class NotePreviewView extends ItemView {
       ),
     );
     this.#cleanup = cleanup.move();
-    if (!this.#editor) await this.#restoreSource();
-    updateSelectionTitle(this);
+    return answerOf(
+      runner.run(
+        Effect.gen({ self: this }, function* () {
+          if (!this.#editor) yield* this.#restoreSource();
+          updateSelectionTitle(this);
+        }),
+      ),
+      undefined,
+    );
   }
   override getState(): Record<string, unknown> {
     const state = this.state.getState();
@@ -751,7 +758,10 @@ export class NotePreviewView extends ItemView {
   ): Promise<void> {
     const previous = JSON.stringify(this.getState());
     try {
-      await this.#restoreState(input, result);
+      await answerOf(
+        this.#runner.run(this.#restoreState(input, result)),
+        undefined,
+      );
     } finally {
       if (previous !== JSON.stringify(this.getState())) result.history = true;
       onCompanionStateRestored(this.app, result, () => {
@@ -767,96 +777,103 @@ export class NotePreviewView extends ItemView {
       });
     }
   }
-  async #restoreState(input: unknown, result: ViewStateResult): Promise<void> {
-    const value = readSavedPreview(input);
-    if (value) {
-      const source = value.source;
-      const path = source?.path ?? null;
-      const item = value.item === null ? null : { id: value.item, title: null };
-      const previous = this.state.getState();
-      const citation = {
-        variant: value.variant,
-        citationExample: value.citationExample,
-      };
-      const root = value.root;
-      const partialName =
-        path === null
-          ? null
-          : templatePartialName(
-              path,
-              this.#deps.registry.get(templateFolderAtom),
-            );
-      const context: TemplateAuthoringContext | null =
-        source && (path !== null || source.builtin === true)
-          ? {
-              leaf: this.leaf,
-              path,
-              item,
-              kind:
-                value["kind"] === "citation" || value["kind"] === "partial"
-                  ? value["kind"]
-                  : "profile",
-              root,
-              tab: value.tab,
-              advanced: value["advanced"] === true,
-              annotationId:
-                typeof value["annotationId"] === "string"
-                  ? value["annotationId"]
-                  : null,
-              citation:
-                root === "citation"
-                  ? {
-                      variant: citation.variant,
-                      example: citation.citationExample,
-                    }
-                  : null,
-              partial:
-                value["kind"] === "partial" && partialName !== null
-                  ? {
-                      name: partialName,
-                      context: isPartialContext(root)
-                        ? root
-                        : DEFAULT_PARTIAL_CONTEXT,
-                      profile:
-                        typeof value["partialProfile"] === "string"
-                          ? value["partialProfile"]
-                          : null,
-                    }
-                  : null,
-            }
-          : null;
-      this.state.setState({
-        context,
-        annotationId: context?.annotationId ?? null,
-        showMarkdown: value["showMarkdown"] === true,
-        showManaged: value["showManaged"] === true,
-        ...(previous.context?.path !== context?.path ||
-        previous.item?.id !== item?.id ||
-        previous.annotationId !== context?.annotationId ||
-        previous.context?.root !== context?.root ||
-        previous.context?.tab !== context?.tab ||
-        previous.context?.advanced !== context?.advanced
-          ? { presentation: { scrollTop: 0, reveal: null, pending: false } }
-          : {}),
-      });
-      const preview = {
-        mode:
-          value["mode"] === "update"
-            ? ("update" as const)
-            : ("create" as const),
-        live: value["live"] !== false,
-      };
-      if (this.#session) {
-        this.#restoring = true;
-        this.#session.setPreview(preview);
-        this.#session.setCitation(citation);
-        this.#session.setItem(item);
-        this.#session.select(context?.annotationId ?? null);
-      } else this.state.setState({ item, preview, ...citation });
-      await this.#restoreSource();
-      this.#mount();
-    }
-    await super.setState(input, result);
+  #restoreState(
+    input: unknown,
+    result: ViewStateResult,
+  ): Effect.Effect<void, Cause.UnknownError, ViewServices> {
+    const restoreBase = Effect.tryPromise(() => super.setState(input, result));
+    return Effect.gen({ self: this }, function* () {
+      const value = readSavedPreview(input);
+      if (value) {
+        const source = value.source;
+        const path = source?.path ?? null;
+        const item =
+          value.item === null ? null : { id: value.item, title: null };
+        const previous = this.state.getState();
+        const citation = {
+          variant: value.variant,
+          citationExample: value.citationExample,
+        };
+        const root = value.root;
+        const partialName =
+          path === null
+            ? null
+            : templatePartialName(
+                path,
+                this.#deps.registry.get(templateFolderAtom),
+              );
+        const context: TemplateAuthoringContext | null =
+          source && (path !== null || source.builtin === true)
+            ? {
+                leaf: this.leaf,
+                path,
+                item,
+                kind:
+                  value["kind"] === "citation" || value["kind"] === "partial"
+                    ? value["kind"]
+                    : "profile",
+                root,
+                tab: value.tab,
+                advanced: value["advanced"] === true,
+                annotationId:
+                  typeof value["annotationId"] === "string"
+                    ? value["annotationId"]
+                    : null,
+                citation:
+                  root === "citation"
+                    ? {
+                        variant: citation.variant,
+                        example: citation.citationExample,
+                      }
+                    : null,
+                partial:
+                  value["kind"] === "partial" && partialName !== null
+                    ? {
+                        name: partialName,
+                        context: isPartialContext(root)
+                          ? root
+                          : DEFAULT_PARTIAL_CONTEXT,
+                        profile:
+                          typeof value["partialProfile"] === "string"
+                            ? value["partialProfile"]
+                            : null,
+                      }
+                    : null,
+              }
+            : null;
+        this.state.setState({
+          context,
+          annotationId: context?.annotationId ?? null,
+          showMarkdown: value["showMarkdown"] === true,
+          showManaged: value["showManaged"] === true,
+          ...(previous.context?.path !== context?.path ||
+          previous.item?.id !== item?.id ||
+          previous.annotationId !== context?.annotationId ||
+          previous.context?.root !== context?.root ||
+          previous.context?.tab !== context?.tab ||
+          previous.context?.advanced !== context?.advanced
+            ? { presentation: { scrollTop: 0, reveal: null, pending: false } }
+            : {}),
+        });
+        const preview = {
+          mode:
+            value["mode"] === "update"
+              ? ("update" as const)
+              : ("create" as const),
+          live: value["live"] !== false,
+        };
+        if (this.#session) {
+          this.#restoring = true;
+          this.#session.setPreview(preview);
+          this.#session.setCitation(citation);
+          this.#session.setItem(item);
+          this.#session.select(context?.annotationId ?? null);
+        } else this.state.setState({ item, preview, ...citation });
+        yield* this.#restoreSource();
+        this.#mount();
+      }
+      yield* restoreBase;
+    });
   }
   /** Whether the shown root is an Annotation, so the chooser offers those. */
   #annotationChoice(): boolean {
@@ -927,63 +944,47 @@ export class NotePreviewView extends ItemView {
       },
     });
   }
-  async #restoreSource(): Promise<void> {
-    const context = this.state.getState().context;
-    if (!context || !this.#session) return;
-    if (context.path === null) {
-      this.#file = null;
-      this.#sourceGeneration++;
-      const registry = this.#deps.registry;
-      const generation = this.#sourceGeneration;
+  #restoreSource(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const context = this.state.getState().context;
       const session = this.#session;
-      await new Promise<void>((resolve) => {
-        const unsubscribe = registry.subscribe(
-          this.#restoreBuiltIn,
-          (result) => {
-            if (result.waiting || result._tag === "Initial") return;
-            if (
-              result._tag === "Success" &&
-              generation === this.#sourceGeneration &&
-              this.#session === session
-            )
-              session.setSource(result.value);
-            unsubscribe();
-            resolve();
-          },
-        );
-        this.#cleanup?.defer(() => {
-          unsubscribe();
-          resolve();
+      if (!context || !session) return;
+      if (context.path === null) {
+        this.#file = null;
+        const generation = ++this.#sourceGeneration;
+        const source = yield* Effect.exit((yield* Profile).getBuiltInSource);
+        if (Exit.isSuccess(source) && generation === this.#sourceGeneration)
+          session.setSource(source.value);
+        return;
+      }
+      this.#file = yield* (yield* Vault).getFileByPath(context.path);
+      if (this.#file) yield* this.#readSource(this.#file);
+      else {
+        this.#sourceGeneration++;
+        this.state.setState({
+          sourceProblem: m.settings_profile_document_missing({
+            path: context.path,
+          }),
         });
-        registry.set(this.#restoreBuiltIn, undefined);
-      });
-      return;
-    }
-    this.#file = this.app.vault.getFileByPath(context.path);
-    if (this.#file) await this.#readSource(this.#file);
-    else {
-      this.#sourceGeneration++;
-      this.state.setState({
-        sourceProblem: m.settings_profile_document_missing({
-          path: context.path,
-        }),
-      });
-      this.#scheduler?.setInput({ hold: true });
-    }
+        this.#scheduler?.setInput({ hold: true });
+      }
+    });
   }
-  async #readSource(file: TFile): Promise<void> {
-    const generation = ++this.#sourceGeneration;
-    try {
-      const source = await readLiveText(this.app, file);
-      if (file === this.#file && generation === this.#sourceGeneration)
-        this.#session?.setSource(source);
-    } catch (error) {
+  #readSource(file: TFile): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const generation = ++this.#sourceGeneration;
+      const read = yield* Effect.exit(readLiveText(file));
       if (file !== this.#file || generation !== this.#sourceGeneration) return;
+      if (Exit.isSuccess(read)) {
+        this.#session?.setSource(read.value);
+        return;
+      }
+      const error = Cause.squash(read.cause);
       this.#session?.state.setState({
         sourceProblem: error instanceof Error ? error.message : String(error),
       });
       this.#scheduler?.setInput({ hold: true });
-    }
+    });
   }
   #apply(context: TemplateAuthoringContext, explicit = false): void {
     const session = this.#session;
@@ -1056,51 +1057,50 @@ export class NotePreviewView extends ItemView {
       ? this.#editor
       : null;
   }
-  async #chooseItem(): Promise<void> {
-    const editor = this.#sourceEditor();
-    const session = this.#session;
-    const host = this.#host;
-    const run = this.#run;
-    if (!session || !host || !run) return;
-    const generation = ++this.#choiceGeneration;
-    if (editor) {
-      // The editor's chooser, on this leaf's runner until ticket 06.
-      const accepted = await answerOf(run(editor.chooseItem()), false);
+  #chooseItem(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const editor = this.#sourceEditor();
+      const session = this.#session;
+      const host = this.#host;
+      if (!session || !host) return;
+      const generation = ++this.#choiceGeneration;
+      if (editor) {
+        // The editor's own chooser, so the two surfaces choose alike.
+        const accepted = yield* editor.chooseItem();
+        if (
+          accepted &&
+          this.#sourceEditor() === editor &&
+          generation === this.#choiceGeneration
+        )
+          this.#apply(editor.authoringContext, true);
+        return;
+      }
+      const previousItem = session.state.getState().item;
+      const previousContext = session.state.getState().context;
+      const choice = yield* workbenchItemChoice(
+        host,
+        {
+          app: this.app,
+          settings: this.#deps.settings,
+          bridge: this.#deps.bridge,
+          lookup: this.#deps.itemLookup,
+        },
+        previousItem ?? undefined,
+      );
       if (
-        accepted &&
-        this.#session === session &&
-        this.#sourceEditor() === editor &&
-        generation === this.#choiceGeneration
+        !choice ||
+        generation !== this.#choiceGeneration ||
+        session.state.getState().context !== previousContext ||
+        session.state.getState().item !== previousItem
       )
-        this.#apply(editor.authoringContext, true);
-      return;
-    }
-    const previousItem = session.state.getState().item;
-    const previousContext = session.state.getState().context;
-    const choice = await chooseWorkbenchItem(
-      { run, host },
-      {
-        app: this.app,
-        settings: this.#deps.settings,
-        bridge: this.#deps.bridge,
-        lookup: this.#deps.itemLookup,
-      },
-      previousItem ?? undefined,
-    );
-    if (
-      !choice ||
-      this.#session !== session ||
-      generation !== this.#choiceGeneration ||
-      session.state.getState().context !== previousContext ||
-      session.state.getState().item !== previousItem
-    )
-      return;
-    this.#setItem(choice);
-    publishWorkbenchSelection(
-      this,
-      { kind: "item", item: choice },
-      this.#sourceEditor()?.leaf ?? null,
-    );
+        return;
+      this.#setItem(choice);
+      publishWorkbenchSelection(
+        this,
+        { kind: "item", item: choice },
+        this.#sourceEditor()?.leaf ?? null,
+      );
+    });
   }
   #setItem(item: WorkbenchItemChoice): void {
     const session = this.#session;
@@ -1134,30 +1134,31 @@ export class NotePreviewView extends ItemView {
       this.#sourceEditor()?.leaf ?? null,
     );
   }
-  async #chooseAnnotation(): Promise<void> {
-    const session = this.#session;
-    const host = this.#host;
-    if (!session || !host) return;
-    const generation = ++this.#choiceGeneration;
-    const state = session.state.getState();
-    const id = await chooseWorkbenchAnnotation(
-      host,
-      state.current,
-      state.example?.id ?? null,
-    );
-    if (
-      id !== null &&
-      this.#session === session &&
-      generation === this.#choiceGeneration &&
-      state.item === session.state.getState().item
-    ) {
-      session.select(id);
-      publishWorkbenchSelection(
-        this,
-        { kind: "annotation", annotationId: id },
-        this.#sourceEditor()?.leaf ?? null,
+  #chooseAnnotation(): Effect.Effect<void, never, ViewServices> {
+    return Effect.gen({ self: this }, function* () {
+      const session = this.#session;
+      const host = this.#host;
+      if (!session || !host) return;
+      const generation = ++this.#choiceGeneration;
+      const state = session.state.getState();
+      const id = yield* workbenchAnnotationChoice(
+        host,
+        state.current,
+        state.example?.id ?? null,
       );
-    }
+      if (
+        id !== null &&
+        generation === this.#choiceGeneration &&
+        state.item === session.state.getState().item
+      ) {
+        session.select(id);
+        publishWorkbenchSelection(
+          this,
+          { kind: "annotation", annotationId: id },
+          this.#sourceEditor()?.leaf ?? null,
+        );
+      }
+    });
   }
   #mount(): void {
     const session = this.#session;
@@ -1173,15 +1174,8 @@ export class NotePreviewView extends ItemView {
                 rendered={this.#rendered}
                 scheduler={scheduler}
                 editorAvailable={this.#sourceEditor() !== null}
-                chooseItem={() =>
-                  this.#deps.registry.set(this.#chooseItemCommand, undefined)
-                }
-                chooseAnnotation={() =>
-                  this.#deps.registry.set(
-                    this.#chooseAnnotationCommand,
-                    undefined,
-                  )
-                }
+                chooseItem={() => this.#choosingItem.start()}
+                chooseAnnotation={() => this.#choosingAnnotation.start()}
                 publishProblems={(diagnostics) =>
                   this.#publishProblems(diagnostics)
                 }
@@ -1215,6 +1209,8 @@ export class NotePreviewView extends ItemView {
     this.#problemHost = null;
     this.#cleanup?.dispose();
     this.#cleanup = null;
+    // Interrupts what the preview still runs, such as a chooser or a read.
+    await this.#runner[Symbol.asyncDispose]();
   }
 }
 const sidebarBar = selectionBar({ placement: "sidebar" });

@@ -407,7 +407,6 @@ it.effect(
         .click();
       yield* Queue.take(rebuilt);
       expect(openNativeProfile).toHaveBeenCalledWith(
-        ctx.app,
         expect.objectContaining({ path: paths[0] }),
         { customize: true },
       );

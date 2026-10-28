@@ -1,5 +1,6 @@
-import { Effect } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { it } from "@effect/vitest";
+import { Effect, Fiber } from "effect";
+import { afterEach, describe, expect, vi } from "vitest";
 
 import {
   failedRender,
@@ -12,9 +13,14 @@ import {
   createWorkbenchStore,
 } from "@zotlit/workbench/ui";
 
+import { makeViewRunner } from "@/lib/view-runner";
 import { SAMPLE_ITEM_CHOICES } from "@/views/template-workbench/selection-data";
 
-import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
+import {
+  createRenderFixture,
+  paperLoaded,
+  PROFILE_SOURCE,
+} from "./__fixtures__/render";
 import { nativeResult } from "./render";
 import type { NativeRenderResult } from "./render";
 import { NativePreviewSession } from "./session";
@@ -130,14 +136,14 @@ describe("native preview load boundaries", () => {
       using session = new NativePreviewSession(fixture.deps, scheduler, {
         item,
       });
-      await session.ready;
+      await paperLoaded(session);
       expect(session.state.getState()).toMatchObject({
         item,
         status: "ready",
         snapshot: { provenance: { kind: "sample" } },
       });
       session.refresh();
-      await session.ready;
+      await paperLoaded(session);
       expect(session.state.getState().item?.id).toBe(item.id);
       expect(acquire).not.toHaveBeenCalled();
     },
@@ -152,7 +158,7 @@ describe("native preview load boundaries", () => {
     const { render, scheduler } = scheduling(true);
     using _scheduler = scheduler;
     using session = new NativePreviewSession(fixture.deps, scheduler);
-    await session.ready;
+    await paperLoaded(session);
     await vi.advanceTimersByTimeAsync(300);
     expect(render).not.toHaveBeenCalled();
     expect(session.state.getState()).toMatchObject({
@@ -191,7 +197,7 @@ describe("native preview load boundaries", () => {
     using session = new NativePreviewSession(fixture.deps, scheduler, {
       item: { id: "sample:removed", title: null },
     });
-    await session.ready;
+    await paperLoaded(session);
     expect(session.state.getState()).toMatchObject({
       status: "error",
       snapshot: null,
@@ -217,9 +223,9 @@ describe("native preview load boundaries", () => {
       using session = new NativePreviewSession(fixture.deps, scheduler, {
         item: { id: "MAIN2345", title: null },
       });
-      const firstRead = session.ready;
+      const firstRead = paperLoaded(session);
       session.setItem({ id: "sample:book", title: null });
-      await session.ready;
+      await paperLoaded(session);
       if (outcome === "resolve") pending.resolve(await acquire());
       else pending.reject(new Error("Old database failed"));
       await firstRead;
@@ -249,14 +255,14 @@ describe("native preview load boundaries", () => {
       item: { id: "MAIN2345", title: null },
     });
     expect(session.state.getState().status).toBe("loading");
-    await session.ready;
+    await paperLoaded(session);
     expect(session.state.getState()).toMatchObject({
       status: "error",
       error: "Database offline",
       snapshot: null,
     });
     session.refresh();
-    await session.ready;
+    await paperLoaded(session);
     expect(session.state.getState().status).toBe("ready");
     expect(session.state.getState().current).toEqual([]);
     expect(session.state.getState().example?.id).toBe(
@@ -280,9 +286,9 @@ describe("native preview load boundaries", () => {
     using session = new NativePreviewSession(fixture.deps, scheduler, {
       item: { id: "MAIN2345", title: null },
     });
-    const firstRead = session.ready;
+    const firstRead = paperLoaded(session);
     session.setItem({ id: "ABCD2345", title: null });
-    await session.ready;
+    await paperLoaded(session);
     expect(session.state.getState().status).toBe("error");
     pending.resolve(await acquire());
     await firstRead;
@@ -312,7 +318,60 @@ describe("native preview load boundaries", () => {
     expect(session.state.getState().snapshot).toBeNull();
     session[Symbol.dispose]();
     pending.resolve(await acquire());
-    await session.ready;
+    await paperLoaded(session);
     expect(changed).not.toHaveBeenCalled();
   });
+
+  it.effect(
+    "drops its wait for the paper when a partial preview is interrupted",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* Effect.acquireDisposable(
+          Effect.promise(() => createRenderFixture()),
+        );
+        const { scheduler } = scheduling(false);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => scheduler[Symbol.dispose]()),
+        );
+        const acquire = fixture.deps.zoteroReads.acquireRead.bind(
+          fixture.deps.zoteroReads,
+        );
+        const pending =
+          Promise.withResolvers<Awaited<ReturnType<typeof acquire>>>();
+        vi.spyOn(
+          fixture.deps.zoteroReads,
+          "acquireRead",
+        ).mockImplementationOnce(() => pending.promise);
+        const session = new NativePreviewSession(fixture.deps, scheduler, {
+          item: { id: "MAIN2345", title: null },
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => session[Symbol.dispose]()),
+        );
+        const registry = fixture.deps.registry;
+        const subscribe = registry.subscribe.bind(registry);
+        const released = vi.fn();
+        vi.spyOn(registry, "subscribe").mockImplementation((atom, listener) => {
+          const unsubscribe = subscribe(atom, listener);
+          return () => {
+            released();
+            unsubscribe();
+          };
+        });
+        const runner = makeViewRunner(registry);
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(() => runner[Symbol.asyncDispose]()),
+        );
+        const render = yield* Effect.forkChild(
+          Effect.ignore(
+            runner.provide(session.renderPartial("summary", "note")),
+          ),
+        );
+        yield* Effect.yieldNow;
+        expect(registry.subscribe).toHaveBeenCalled();
+        yield* Fiber.interrupt(render);
+        expect(released).toHaveBeenCalled();
+        pending.resolve(yield* Effect.promise(() => acquire()));
+      }),
+  );
 });

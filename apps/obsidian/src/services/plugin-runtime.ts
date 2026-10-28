@@ -192,7 +192,7 @@ export async function createPluginRuntime(
           rememberPreference: (value) =>
             saveProfileCustomization(plugin.app, value),
           openNative: ({ item, originatingNote }, target) =>
-            openNativeProfile(plugin.app, target, {
+            openNativeProfile(target, {
               ...(item ? { itemIndexedKey: item.key } : {}),
               originatingNote,
               explainUnsupported: false,
