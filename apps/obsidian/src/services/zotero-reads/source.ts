@@ -717,22 +717,31 @@ export function layerSource(
           return;
         }
         if (yield* Ref.get(walWatcherScope)) return;
-        const scope = yield* Scope.make();
-        // #1798: nothing holds the scope until the watch is ready, so an
-        // interrupt while it starts closes it here.
-        const result = yield* Effect.result(
-          watchPath(walPath, () => enqueueWatchSignal({ trusted: false })).pipe(
-            Scope.provide(scope),
-          ),
-        ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void)));
-        if (result._tag === "Failure") {
-          yield* Scope.close(scope, Exit.void);
-          yield* logWarningCause("Failed to watch Zotero WAL", result.failure, {
-            walPath,
-          });
-          return;
-        }
-        yield* Ref.set(walWatcherScope, scope);
+        // #1798: nothing else holds the scope until `walWatcherScope` does, so
+        // only the wait for the watch can be interrupted, and an interrupt
+        // there closes the scope.
+        yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const scope = yield* Scope.make();
+            const result = yield* Effect.result(
+              restore(
+                watchPath(walPath, () =>
+                  enqueueWatchSignal({ trusted: false }),
+                ).pipe(Scope.provide(scope)),
+              ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void))),
+            );
+            if (result._tag === "Failure") {
+              yield* Scope.close(scope, Exit.void);
+              yield* logWarningCause(
+                "Failed to watch Zotero WAL",
+                result.failure,
+                { walPath },
+              );
+              return;
+            }
+            yield* Ref.set(walWatcherScope, scope);
+          }),
+        );
       });
 
       const enqueueWatchSignal = (signal: WatchSignal): void => {
@@ -745,33 +754,40 @@ export function layerSource(
         readMode: EffectiveReadMode;
       }) {
         const parent = dirname(current.sourcePath);
-        const scope = yield* Scope.make();
-        // #1798: nothing holds the scope until both watches are ready, so an
-        // interrupt while they start closes it here.
-        const result = yield* Effect.result(
+        // #1798: nothing else holds the scope until `mainWatcherScope` does, so
+        // only the wait for the watches can be interrupted, and an interrupt
+        // there closes the scope.
+        yield* Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
-            yield* watchPath(parent, (event) => {
-              const name = event.path;
-              if (!watchedFilename(name)) return;
-              enqueueWatchSignal({
-                trusted: false,
-                ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
-              });
-            });
-            yield* watchPath(current.sourcePath, () =>
-              enqueueWatchSignal({ trusted: false }),
+            const scope = yield* Scope.make();
+            const result = yield* Effect.result(
+              restore(
+                Effect.gen(function* () {
+                  yield* watchPath(parent, (event) => {
+                    const name = event.path;
+                    if (!watchedFilename(name)) return;
+                    enqueueWatchSignal({
+                      trusted: false,
+                      ...(name === ZOTERO_WAL_FILENAME && { filename: name }),
+                    });
+                  });
+                  yield* watchPath(current.sourcePath, () =>
+                    enqueueWatchSignal({ trusted: false }),
+                  );
+                }).pipe(Scope.provide(scope)),
+              ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void))),
             );
-          }).pipe(Scope.provide(scope)),
-        ).pipe(Effect.onInterrupt(() => Scope.close(scope, Exit.void)));
-        if (result._tag === "Failure") {
-          yield* Scope.close(scope, Exit.void);
-          yield* logWarningCause(
-            "Failed to watch the Zotero database",
-            result.failure,
-          );
-          return null;
-        }
-        return scope;
+            if (result._tag === "Failure") {
+              yield* Scope.close(scope, Exit.void);
+              yield* logWarningCause(
+                "Failed to watch the Zotero database",
+                result.failure,
+              );
+              return;
+            }
+            yield* Ref.set(mainWatcherScope, scope);
+          }),
+        );
       });
 
       const rebindWatchers = Effect.fnUntraced(function* () {
@@ -782,11 +798,10 @@ export function layerSource(
           return;
         }
         if (!current.sourcePath || !current.readMode) return;
-        const scope = yield* acquireMainWatchers({
+        yield* acquireMainWatchers({
           sourcePath: current.sourcePath,
           readMode: current.readMode,
         });
-        if (scope) yield* Ref.set(mainWatcherScope, scope);
         yield* syncWalWatcher();
       });
 
