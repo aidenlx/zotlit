@@ -208,7 +208,7 @@ One flat SVG drawing of an academic's desk seen from above (view box
 | 4 | Take literature notes | Notebook | Literature notes |
 | 5 | Cite while you write | Manuscript on a clipboard | Citations in Live Preview (with Citation Suggester, Any citation style); Citation Popover |
 | 6 | See how your sources connect | Pinboard with string | Citations in the graph view; References Sidebar |
-| 7 | Export and submit | Out tray | Export with citations |
+| 7 | Export and submit | Printer, a page with a reference list coming out | Export with citations |
 | 8 | Make it yours | Laptop and toolbox | Template Workbench |
 
 - **Drawing language.** Flat fills from the desk palette; 1px hairline edges
@@ -225,8 +225,9 @@ One flat SVG drawing of an academic's desk seen from above (view box
   | Paper | `#ffffff` | `#c9c5bd` |
   | Edge | `#a7a297` | `#3a3e46` |
   | Shadow | `rgb(60 45 20 / 0.16)` | `rgb(0 0 0 / 0.40)` |
-  | Steel (box, tray frame) | `#dcd7cd` | `#4a4f58` |
-  | Tray / screen | `#3b4555` / `#222a36` | `#2b3442` / `#10151d` |
+  | Steel (file box) | `#dcd7cd` | `#4a4f58` |
+  | Device (laptop, printer) | `#d9dbdf` | `#5a5e66` |
+  | Screen / printer slot | `#222a36` / `#2e3744` | `#10151d` / `#222935` |
   | Notebook | `#56685b` | `#3d4c42` |
   | Books | `#44587a`, `#8a7660`, `#8e3f35` | `#34445e`, `#6b5c4b`, `#6e342d` |
   | Cork | `#ece5d6` | `#8f887c` |

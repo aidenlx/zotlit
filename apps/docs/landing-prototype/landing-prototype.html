@@ -7,9 +7,11 @@
     <!--
       VERDICT
         Round 4 winner: A "Journal". The user's words: "good, use A". This file is take A
-        alone, trimmed from prototype-desk-r4.html (commit 20cf496cf); B's tokens and desk
-        palette remain in the stylesheets, unused. The design spec that follows from it is
-        apps/docs/DESIGN.md on this branch (prototype/landing-research-desk).
+        alone, trimmed from the round-4 build; B's tokens and desk palette remain in the
+        stylesheets, unused. The design spec that follows from it is apps/docs/DESIGN.md on
+        this branch (prototype/landing-research-desk).
+        After the verdict: "Export and submit use a printer". The desk's out tray is now a
+        printer (K_ArtPrinter) with a printed reference list coming out of it.
 
       PROTOTYPE (round 4), throwaway. Not production code. Exploration: proto/landing-page.
       Round 3 (commit 6dd4d29c9, prototype-desk-r3/) had four structures. The user picked B
@@ -626,7 +628,7 @@
           name: "Export and submit",
           outcome:
             "Send a chapter to Word with a correct reference list, in the style your journal asks for.",
-          desk: "Out tray",
+          desk: "Printer",
           icon: "FileOutput",
         },
         {
@@ -2937,107 +2939,130 @@
         );
       }
 
-      function K_ArtOutTray() {
+      // A printer seen from above: fresh paper in the tray at the back, the lid, a small control
+      // panel, and a printed page with its reference list coming out of the front.
+      function K_ArtPrinter() {
         return (
           <g>
             <rect
-              width="260"
-              height="200"
-              rx="8"
-              fill="var(--k-tray)"
+              x="68"
+              y="4"
+              width="128"
+              height="30"
+              rx="3"
+              fill="var(--k-paper)"
               stroke="var(--k-edge)"
               strokeWidth={K_SW}
             />
             <rect
-              x="12"
-              y="12"
-              width="236"
-              height="160"
+              x="62"
+              y="0"
+              width="136"
+              height="30"
+              rx="3"
+              fill="var(--k-paper)"
+              stroke="var(--k-edge)"
+              strokeWidth={K_SW}
+            />
+            <rect
+              y="18"
+              width="260"
+              height="132"
+              rx="10"
+              fill="var(--k-laptop)"
+              stroke="var(--k-edge)"
+              strokeWidth={K_SW}
+            />
+            <rect
+              x="14"
+              y="30"
+              width="232"
+              height="68"
+              rx="5"
+              fill="var(--k-key)"
+            />
+            <rect
+              x="22"
+              y="38"
+              width="216"
+              height="52"
+              rx="3"
+              fill="none"
+              stroke="var(--k-tool-seam)"
+              strokeWidth={K_SW}
+            />
+            <circle
+              cx="146"
+              cy="115"
+              r="7"
+              fill="var(--k-key)"
+              stroke="var(--k-edge)"
+              strokeWidth={K_SW}
+            />
+            <rect
+              x="166"
+              y="106"
+              width="50"
+              height="18"
+              rx="3"
+              fill="var(--k-screen)"
+            />
+            <rect
+              x="172"
+              y="113"
+              width="26"
+              height="4"
+              rx="2"
+              fill="#D8E2F0"
+              opacity="0.6"
+            />
+            <circle cx="232" cy="115" r="5" fill="var(--z-green)" />
+            <rect
+              x="34"
+              y="132"
+              width="192"
+              height="9"
               rx="4"
               fill="var(--k-tray-deep)"
             />
             <rect
-              x="44"
-              y="22"
-              width="166"
-              height="150"
-              rx="4"
+              x="54"
+              y="135"
+              width="152"
+              height="65"
+              rx="3"
               fill="var(--k-paper)"
-              stroke="var(--k-edge)"
-              strokeWidth={K_SW}
-              transform="rotate(-5 127 97)"
-            />
-            <g transform="rotate(2 135 100)">
-              <rect
-                x="52"
-                y="28"
-                width="166"
-                height="150"
-                rx="4"
-                fill="var(--k-paper)"
-                stroke="var(--k-edge)"
-                strokeWidth={K_SW}
-              />
-              <rect
-                x="68"
-                y="44"
-                width="96"
-                height="9"
-                rx="3.5"
-                fill="var(--k-head)"
-              />
-              <rect
-                x="190"
-                y="42"
-                width="14"
-                height="18"
-                rx="2"
-                fill="var(--cite)"
-              />
-              <K_Bars x={68} y={66} rows={[134, 88, 134, 96]} step={11} h={5} />
-              <rect
-                x="160"
-                y="76.5"
-                width="40"
-                height="6"
-                rx="3"
-                fill="var(--cite)"
-              />
-              <rect
-                x="68"
-                y="116"
-                width="56"
-                height="6"
-                rx="3"
-                fill="var(--k-head)"
-              />
-              <K_Bars x={68} y={128} rows={[130, 100, 126]} step={10} h={4} />
-            </g>
-            <path
-              d="M0 164 H260 V192 a8 8 0 0 1 -8 8 H8 a8 8 0 0 1 -8 -8 Z"
-              fill="var(--k-tray)"
               stroke="var(--k-edge)"
               strokeWidth={K_SW}
             />
             <rect
-              x="98"
-              y="172"
-              width="64"
-              height="20"
+              x="68"
+              y="146"
+              width="58"
+              height="6"
               rx="3"
-              fill="var(--k-paper)"
-            />
-            <text
-              x="130"
-              y="186"
-              textAnchor="middle"
-              fontSize="12"
-              letterSpacing="2"
               fill="var(--k-head)"
-              style={{ fontFamily: "var(--font-mono)" }}
-            >
-              OUT
-            </text>
+            />
+            {[0, 1, 2].map((i) => (
+              <g key={i}>
+                <rect
+                  x="68"
+                  y={160 + i * 12}
+                  width="24"
+                  height="5"
+                  rx="2.5"
+                  fill="var(--cite)"
+                />
+                <rect
+                  x="96"
+                  y={160 + i * 12}
+                  width={[90, 72, 84][i]}
+                  height="5"
+                  rx="2.5"
+                  fill="var(--k-text)"
+                />
+              </g>
+            ))}
           </g>
         );
       }
@@ -3354,8 +3379,12 @@
         export: {
           w: 260,
           h: 200,
-          Art: K_ArtOutTray,
-          shade: [[0, 0, 260, 200, 8]],
+          Art: K_ArtPrinter,
+          shade: [
+            [62, 0, 136, 30, 3],
+            [0, 18, 260, 132, 10],
+            [54, 135, 152, 65, 3],
+          ],
           vb: [-12, -12, 288, 230],
         },
         customise: {
