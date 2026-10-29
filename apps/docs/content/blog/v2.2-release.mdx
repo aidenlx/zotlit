@@ -7,12 +7,12 @@ date: 2026-10-30
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 
-Hey everyone! For **Obsidian October 2026**, I am participating with **ZotLit 2.2** to tackle the persistent friction in how academic research actually happens in Obsidian.
+Hey everyone! For **Obsidian October 2026**, I am releasing **ZotLit 2.2** to tackle the persistent friction in how academic research actually happens in Obsidian.
 
 Following the ground-up engine rewrite in [ZotLit v2](/blog/v2-release) and the in-editor citation and bibliography system in [ZotLit v2.1](/blog/v2.1-release), v2.2 bridges the remaining gaps. The goal is to turn Obsidian into a complete, distraction-free research desk where exploring papers, reading PDFs, managing reading queues, and synthesizing notes happen in one fluid environment.
 
 <Callout title="At a Glance">
-ZotLit 2.2 introduces database query tables with in-cell property editing, a native Zotero library browser, in-vault PDF reading with two-way annotation sync, automatic citation networks in Obsidian's graph view, and a unified Template Workbench.
+ZotLit 2.2 introduces a native Zotero library browser, in-vault PDF reading with two-way annotation sync, ZotLit Query tables with in-cell property editing, automatic citation networks in Obsidian's graph view, and a unified Template Workbench.
 
 <ActionLink href="/docs/install-zotlit" kind="external">
   Install ZotLit
@@ -39,41 +39,7 @@ ZotLit 2.2 changes this paradigm. It treats your local Zotero SQLite database as
 
 ---
 
-## 1. Manage Literature Without Note Bloat: Visual Query Views
-
-You should not need a Markdown file just to track whether you have read a paper. ZotLit 2.2 introduces standalone **Query Files (`.zotquery`)** and embedded **Query Blocks** that render directly over your local Zotero library.
-
-![A table of papers with reading status, note, related, done, rating, and finished columns from each literature note, with the status cell of one paper open for editing and suggesting read, reading, to-read, and unread](/img/blog/v2.2-reading-status-table.webp)
-
-### In-Cell Property Editing (Like Obsidian Bases)
-
-Switch any query file to the **Table** layout and add literature note frontmatter properties as columns—such as `reading-status`, `priority`, `rating`, or custom tags:
-
-- **Interactive cells:** Click a cell to toggle a checkbox, pick from tag chips, select a date, or choose a status option.
-- **Notes on demand:** A paper without a note displays `(no note)`. You can read, filter, and track it as long as you like. When you finally edit a property cell or decide to write a summary, ZotLit generates the note on demand.
-- **Native metadata alignment:** Properties live in your note's frontmatter, meaning Obsidian's native Properties panel, Dataview, and Obsidian Bases always stay in sync.
-
-![A query file showing papers in a table with reading status and note columns, beside a note whose embedded query block groups annotations by paper](/img/blog/v2.2-query-file-and-block.webp)
-
-### Embedded Query Blocks
-
-Inside your notes, you can embed query blocks that display items or annotations dynamically. The default literature note template now embeds an interactive query block for annotations instead of copying static text. When you add or adjust highlights in Zotero or Obsidian, they appear immediately in your note without running manual note updates.
-
-![A literature note with an embedded query block that groups the paper's annotations by color, with the Yellow group's four cards in two columns above the Red group](/img/blog/v2.2-query-block-in-note.webp)
-
-<ActionLink href="/docs/concepts/query-files-and-query-blocks" kind="external">
-  Query files and query blocks
-</ActionLink>
-<ActionLink href="/docs/how-to/track-reading-status" kind="external">
-  Track reading status in the Query View
-</ActionLink>
-<ActionLink href="/docs/how-to/use-query-files" kind="external">
-  How to use query files
-</ActionLink>
-
----
-
-## 2. Browse and Inspect Without Context-Switching: The Library View
+## 1. Browse and Inspect Without Context-Switching: The Library View
 
 Constantly switching between Zotero and Obsidian breaks deep focus. The new **Library View** brings a full-featured Zotero browser into your Obsidian sidebar or main workspace.
 
@@ -105,7 +71,7 @@ Whenever you encounter a citation in Obsidian—whether in the References sideba
 
 ---
 
-## 3. In-Vault PDF Reading Backed by Zotero: Zero Bloat, Two-Way Sync
+## 2. In-Vault PDF Reading Backed by Zotero: Zero Bloat, Two-Way Sync
 
 Reading academic PDFs in Obsidian used to require copying large PDF files into your vault folder. ZotLit 2.2 changes this completely.
 
@@ -138,6 +104,40 @@ Hover over any annotation link in your notes to display a rich popover containin
 </ActionLink>
 <ActionLink href="/docs/how-to/edit-pdf-annotations" kind="external">
   Edit PDF annotations in Obsidian
+</ActionLink>
+
+---
+
+## 3. Manage Literature Without Note Bloat: ZotLit Query and the Query View
+
+You should not need a Markdown file just to track whether you have read a paper. ZotLit 2.2 introduces standalone **Query Files (`.zotquery`)** and embedded **Query Blocks** that render directly over your local Zotero library.
+
+![A table of papers with reading status, note, related, done, rating, and finished columns from each literature note, with the status cell of one paper open for editing and suggesting read, reading, to-read, and unread](/img/blog/v2.2-reading-status-table.webp)
+
+### In-Cell Property Editing (Like Obsidian Bases)
+
+Switch any query file to the **Table** layout and add literature note frontmatter properties as columns—such as `reading-status`, `priority`, `rating`, or custom tags:
+
+- **Interactive cells:** Click a cell to toggle a checkbox, pick from tag chips, select a date, or choose a status option.
+- **Notes on demand:** A paper without a note displays `(no note)`. You can read, filter, and track it as long as you like. When you finally edit a property cell or decide to write a summary, ZotLit generates the note on demand.
+- **Native metadata alignment:** Properties live in your note's frontmatter, meaning Obsidian's native Properties panel, Dataview, and Obsidian Bases always stay in sync.
+
+![A query file showing papers in a table with reading status and note columns, beside a note whose embedded query block groups annotations by paper](/img/blog/v2.2-query-file-and-block.webp)
+
+### Embedded Query Blocks
+
+Inside your notes, you can embed query blocks that display items or annotations dynamically. The default literature note template now embeds an interactive query block for annotations instead of copying static text. When you add or adjust highlights in Zotero or Obsidian, they appear immediately in your note without running manual note updates.
+
+![A literature note with an embedded query block that groups the paper's annotations by color, with the Yellow group's four cards in two columns above the Red group](/img/blog/v2.2-query-block-in-note.webp)
+
+<ActionLink href="/docs/concepts/query-files-and-query-blocks" kind="external">
+  Query files and query blocks
+</ActionLink>
+<ActionLink href="/docs/how-to/track-reading-status" kind="external">
+  Track reading status in the Query View
+</ActionLink>
+<ActionLink href="/docs/how-to/use-query-files" kind="external">
+  How to use query files
 </ActionLink>
 
 ---
@@ -206,10 +206,7 @@ ZotLit 2.2 includes deep engineering improvements under the hood:
 
 - **Asynchronous database engine:** Database queries, citation indexing, and full-text lookups run in background threads. Typing in search modals and citation pickers remains fluid, even in libraries with tens of thousands of items.
 - **Chinese word segmentation:** An optional segmenter splits Chinese titles into searchable words, making literature search across non-Latin scripts fast and accurate.
-- **Filter expression editor:** Query view filters and formula properties feature syntax highlighting, function autocompletion, and real-time validation underlines.
-- **Experimental Query CLI:** Query your Zotero library from the Obsidian CLI (`zotlit:query`) to export structured JSON for custom research scripts, data analysis, or LLM agents.
-
-![A Query View filter written as an expression, with field names, functions, numbers, and text in different colors, a wavy underline and an error message under "year", and the completion list open with "tags" at the top](/img/blog/v2.2-filter-expression-editor.webp)
+- **Query CLI:** Query your Zotero library from the Obsidian CLI (`zotlit:query`) to export structured JSON for custom research scripts, data analysis, or LLM agents.
 
 <ActionLink href="/docs/how-to/query-zotero-library" kind="external">
   Query your Zotero library from CLI
@@ -220,31 +217,22 @@ ZotLit 2.2 includes deep engineering improvements under the hood:
 
 ---
 
-## Obsidian October & Coming in November
+## What's Next: Documentation and Tutorials in November
 
-The database engine, query tables, graph integration, PDF reader, and Template Workbench are fully implemented and running in the **ZotLit 2.2 Public Beta**.
+ZotLit 2.2 is the official release, available now in Obsidian's community plugin directory.
 
-### Release Schedule Update
+I am aware that the current documentation is long and dense for newcomers and for busy academics who want to get back to their research. I am writing a new documentation site, together with a series of video tutorials that walk through real research workflows. I could not finish them all during Obsidian October, so they will arrive in November.
 
-I initially set out to launch the stable v2.2 release alongside a completely rewritten documentation site and comprehensive workflow tutorials during Obsidian October 2026. However, due to unexpected personal commitments and health considerations this month, **the official stable release, new documentation site, and tutorial series will launch in November 2026**.
-
-During the coming weeks, efforts are focused on completing:
-
-1. **Task-focused documentation:** Replacing dense technical references with practical, scenario-based guides.
-2. **End-to-end workflow tutorials:** Step-by-step walkthroughs for literature reviews, active reading queues, and research synthesis.
-3. **Workflow refinement:** Smoothing out micro-interactions between browsing, reading, querying, and writing.
+Some workflow improvements have already landed in this release, such as annotation links that preview and open the exact passage, and reviewing papers in the Library View. More are on the way, and there is still room for polish. If anything in your work with ZotLit feels slow, confusing, or awkward, please tell me: suggestions and reports of friction are always welcome on [GitHub Issues](https://github.com/aidenlx/zotlit/issues) or in the Obsidian Discord community.
 
 ---
 
-## Try the Beta Today
+## Get ZotLit 2.2
 
-All the features described above are available right now in the public beta. You can install ZotLit 2.2 through the Obsidian BRAT plugin:
+1. In Obsidian, open **Settings > Community plugins**, select **Browse**, and install or update **ZotLit**.
+2. In Zotero, install the matching [ZotLit Companion](/docs/install-companion) add-on.
+3. Open the command palette and run **ZotLit: Open Library View** or **ZotLit: New Query File**.
 
-1. In Obsidian, install **BRAT** via Community Plugins.
-2. Add `aidenlx/zotlit` to BRAT's beta plugin list.
-3. In Zotero, install the matching [ZotLit Companion](/docs/install-companion) add-on.
-4. Open the command palette and run **ZotLit: Open Library View** or **ZotLit: New Query File**.
-
-If you run into issues or have suggestions, please share your thoughts on [GitHub Issues](https://github.com/aidenlx/zotlit/issues) or reach out in the Obsidian Discord community.
-
-Stay tuned for the full release in November!
+<ActionLink href="/docs/install-zotlit" kind="external">
+  Install ZotLit
+</ActionLink>
