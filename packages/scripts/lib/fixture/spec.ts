@@ -1815,6 +1815,11 @@ interface FixtureAnnotationBase {
   color: string;
   /** Manual (`0`) or automatic (`1`) Zotero tags on the Annotation. */
   tags?: readonly { name: string; type: 0 | 1 }[];
+  /**
+   * An External Annotation: Zotero imported it from the PDF file and keeps it
+   * read-only. Absent for an Annotation drawn in Zotero.
+   */
+  isExternal?: true;
   pageLabel: string;
   sortIndex: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
@@ -1881,7 +1886,9 @@ export type FixtureAnnotation = FixtureAnnotationBase &
 /**
  * A reader's Annotations on the demo papers, captured from a Zotero 10 reader
  * session: Zotero drew each one, so its position, text, Sort Index, and page
- * label are Zotero's own.
+ * label are Zotero's own. The one External Annotation, `XTPPV7Q3`, is the
+ * exception: the Spec writes the row Zotero keeps after it imports a highlight
+ * from the PDF file.
  */
 export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
   {
@@ -2159,6 +2166,32 @@ export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
     cacheImageAsset: null,
     dateAdded: "2026-09-26 16:57:17",
     dateModified: "2026-09-26 16:57:18",
+  },
+  {
+    // A highlight that another PDF reader saved in the file, as Zotero stores
+    // it after import: read-only, so its card shows the lock. Its rects are
+    // the two full lines, measured from the page's text layer.
+    itemID: 916,
+    libraryID: 1,
+    key: "XTPPV7Q3",
+    parentItemID: 903,
+    type: 1,
+    isExternal: true,
+    text: "the post-study probability that it is true is the positive predictive value, PPV.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "696",
+    sortIndex: "00000|002931|00430",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [393.002, 345.104, 544.022, 352.952],
+        [393.002, 334.104, 533.042, 341.952],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:58:02",
+    dateModified: "2026-09-26 16:58:02",
   },
 ];
 

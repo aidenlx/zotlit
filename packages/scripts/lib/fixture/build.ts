@@ -792,7 +792,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)" +
-      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     annotations.map((annotation) => [
       annotation.itemID,
       annotation.parentItemID,
@@ -803,6 +803,7 @@ function seedDatabase(
       annotation.pageLabel,
       annotation.sortIndex,
       JSON.stringify(annotation.position),
+      annotation.isExternal ? 1 : 0,
     ]),
   );
 
