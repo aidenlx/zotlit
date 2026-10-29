@@ -1,6 +1,7 @@
 import * as p from "@clack/prompts";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { inc, prerelease, valid } from "semver";
 import { $ } from "zx";
 
@@ -22,6 +23,12 @@ import { getWorkspaceRoot } from "#package-roots";
  * a non-prerelease version targets `main` (stable graduation), a prerelease
  * targets `next`. Primary development happens on `next`; `main` receives
  * stable graduations and emergency hotfixes (patch-only).
+ *
+ * `--obsidian <bump|version>` and `--zotero <bump|version>` name the apps and
+ * their versions on the command line and run without prompts: every
+ * confirmation is taken as yes, and the release PR merges only with `--merge`.
+ * A bump is one the interactive picker offers on this branch (e.g.
+ * `prerelease`); a version is any semver.
  *
  * @see CONTRIBUTING.md "Branching model"
  * @see docs/adr/0021-next-is-the-primary-branch.md
@@ -56,7 +63,22 @@ interface Bump {
   next: string;
 }
 
-p.intro("ZotLit release");
+const { values: flags } = parseArgs({
+  options: {
+    obsidian: { type: "string" },
+    zotero: { type: "string" },
+    merge: { type: "boolean", default: false },
+  },
+});
+
+/** Version specs named on the command line, by app. Any one of them turns prompts off. */
+const requested: Partial<Record<AppName, string>> = {
+  ...(flags.obsidian !== undefined && { obsidian: flags.obsidian }),
+  ...(flags.zotero !== undefined && { zotero: flags.zotero }),
+};
+const interactive = Object.keys(requested).length === 0;
+
+p.intro(interactive ? "ZotLit release" : "ZotLit release (non-interactive)");
 
 await assertCleanWorkingTree();
 
@@ -77,25 +99,18 @@ if (currentBranch !== "main" && currentBranch !== "next") {
 // and reconciles a branch that runs ahead of origin.
 const baseRef = await resolveBaseRef(currentBranch);
 
-const selection = await p.select({
-  message: "Which app(s) to release?",
-  options: [
-    { value: "obsidian", label: "Obsidian (@zotlit/obsidian)" },
-    { value: "zotero", label: "Zotero (@zotlit/zotero)" },
-    { value: "both", label: "Both" },
-  ] as const,
-});
-if (p.isCancel(selection)) cancel();
-
-const targets: AppMeta[] =
-  selection === "both"
-    ? [APPS.obsidian, APPS.zotero]
-    : [APPS[selection as AppName]];
+const targets: AppMeta[] = interactive
+  ? await pickApps()
+  : (Object.keys(requested) as AppName[]).map((name) => APPS[name]);
 
 const bumps: Bump[] = [];
 for (const app of targets) {
   const current = (await readPackageJson(app.pkgPath)).version as string;
-  const next = await pickVersion(app, current);
+  const spec = requested[app.name];
+  const next =
+    spec === undefined
+      ? await pickVersion(app, current)
+      : resolveVersion(app, current, spec);
   if (next === null) cancel();
   bumps.push({ app, current, next });
 }
@@ -120,7 +135,7 @@ if (currentBranch === "next") {
   if (isStableGraduation) {
     if (bumps.length < Object.keys(APPS).length) {
       p.cancel(
-        "Stable releases from next must include all apps — select Both.",
+        "Stable releases from next must include all apps — select Both, or pass both --obsidian and --zotero.",
       );
       process.exit(1);
     }
@@ -140,8 +155,7 @@ async function completeRelease(): Promise<void> {
   const confirmMsg = isStableGraduation
     ? `Stable release ${summary} (PR targets main). Proceed?`
     : `Release ${summary}?`;
-  const confirmed = await p.confirm({ message: confirmMsg });
-  if (p.isCancel(confirmed) || !confirmed) cancel();
+  if (!(await confirm(confirmMsg))) cancel();
 
   const stagedPaths = new Set<string>();
   const s = p.spinner();
@@ -177,10 +191,11 @@ async function completeRelease(): Promise<void> {
   const branchName = `release/${prTarget}/${bumps.map((b) => `${b.app.name}-${b.next}`).join("+")}`;
   const commitMsg = `chore: release ${summary}`;
 
-  const gitConfirm = await p.confirm({
-    message: `Create branch ${branchName}, commit, push to origin, and open a PR?`,
-  });
-  if (p.isCancel(gitConfirm) || !gitConfirm) {
+  if (
+    !(await confirm(
+      `Create branch ${branchName}, commit, push to origin, and open a PR?`,
+    ))
+  ) {
     p.outro(
       [
         "Version files updated but not committed.",
@@ -203,20 +218,21 @@ async function completeRelease(): Promise<void> {
   await $({ cwd: workspaceRoot })`git push -u origin ${branchName}`;
   s.stop("Pushed");
 
-  const openPr = await p.confirm({ message: `Open a PR to ${prTarget}?` });
-  const prUrl =
-    !p.isCancel(openPr) && openPr
-      ? await openPR(branchName, commitMsg, prTarget)
-      : undefined;
+  const prUrl = (await confirm(`Open a PR to ${prTarget}?`))
+    ? await openPR(branchName, commitMsg, prTarget)
+    : undefined;
 
   // Pull requests run no checks (ADR 0076), so the PR is ready to merge as
-  // soon as it exists. Merging starts `release.yml`.
+  // soon as it exists. Merging starts `release.yml`, so without prompts it
+  // takes `--merge`.
   let merged = false;
   if (prUrl) {
-    const merge = await p.confirm({
-      message: `Merge the PR into ${prTarget} now? release.yml then verifies and publishes.`,
-    });
-    if (!p.isCancel(merge) && merge) {
+    const merge = interactive
+      ? await confirm(
+          `Merge the PR into ${prTarget} now? release.yml then verifies and publishes.`,
+        )
+      : flags.merge;
+    if (merge) {
       s.start("Merging");
       await $({ cwd: workspaceRoot })`gh pr merge ${prUrl} --merge`;
       // The API call leaves the local checkout and the pre-push hook alone.
@@ -290,32 +306,44 @@ async function openPR(
   return undefined;
 }
 
-/**
- * Interactive semver picker.
- *
- * Options are filtered by context: on `main`, only `patch` and `custom` are
- * shown (hotfix path). On `next` with a prerelease current version, `patch`
- * and `prepatch` are hidden (they produce nonsensical versions from a
- * prerelease base). `custom` is always available as an escape hatch.
- *
- * @returns the chosen version, or `null` if cancelled.
- */
-async function pickVersion(
-  app: AppMeta,
-  current: string,
-): Promise<string | null> {
-  const preid = prerelease(current)?.[0]?.toString() ?? "beta";
-  const currentIsPrerelease = prerelease(current) !== null;
+async function pickApps(): Promise<AppMeta[]> {
+  const selection = await p.select({
+    message: "Which app(s) to release?",
+    options: [
+      { value: "obsidian", label: "Obsidian (@zotlit/obsidian)" },
+      { value: "zotero", label: "Zotero (@zotlit/zotero)" },
+      { value: "both", label: "Both" },
+    ] as const,
+  });
+  if (p.isCancel(selection)) cancel();
+  return selection === "both"
+    ? [APPS.obsidian, APPS.zotero]
+    : [APPS[selection as AppName]];
+}
 
-  type BumpKind =
-    | "patch"
-    | "minor"
-    | "major"
-    | "prepatch"
-    | "preminor"
-    | "premajor"
-    | "prerelease"
-    | "custom";
+type BumpKind =
+  | "patch"
+  | "minor"
+  | "major"
+  | "prepatch"
+  | "preminor"
+  | "premajor"
+  | "prerelease"
+  | "custom";
+
+function preidOf(current: string): string {
+  return prerelease(current)?.[0]?.toString() ?? "beta";
+}
+
+/**
+ * The bumps offered for `current` on this branch: on `main`, only `patch` and
+ * `custom` (hotfix path). On `next` with a prerelease current version, `patch`
+ * and `prepatch` are left out (they produce nonsensical versions from a
+ * prerelease base). `custom` is always available as an escape hatch.
+ */
+function bumpOptions(current: string): { value: BumpKind; label: string }[] {
+  const preid = preidOf(current);
+  const currentIsPrerelease = prerelease(current) !== null;
 
   const allOptions: { value: BumpKind; label: string }[] = [
     { value: "patch", label: `patch (${inc(current, "patch")})` },
@@ -349,7 +377,20 @@ async function pickVersion(
           ["patch", "prepatch"]
         : [],
   );
-  const options = allOptions.filter((o) => !hidden.has(o.value));
+  return allOptions.filter((o) => !hidden.has(o.value));
+}
+
+/**
+ * Interactive semver picker over {@link bumpOptions}.
+ *
+ * @returns the chosen version, or `null` if cancelled.
+ */
+async function pickVersion(
+  app: AppMeta,
+  current: string,
+): Promise<string | null> {
+  const preid = preidOf(current);
+  const options = bumpOptions(current);
 
   while (true) {
     const kind = await p.select({
@@ -376,6 +417,38 @@ async function pickVersion(
     }
     return next;
   }
+}
+
+/**
+ * Resolves a command-line version spec: a bump {@link bumpOptions} offers on
+ * this branch, or an explicit semver version. Exits on anything else.
+ */
+function resolveVersion(app: AppMeta, current: string, spec: string): string {
+  const kinds = bumpOptions(current)
+    .map((o) => o.value)
+    .filter((kind) => kind !== "custom");
+  const next = (kinds as string[]).includes(spec)
+    ? inc(current, spec as Exclude<BumpKind, "custom">, preidOf(current))
+    : // Normalize: `valid()` also accepts noncanonical input like `v2.0.0`.
+      valid(spec);
+  if (next === null) {
+    p.cancel(
+      `--${app.name} ${spec}: expected a semver version or one of ${kinds.join(", ")} (current ${current}).`,
+    );
+    process.exit(1);
+  }
+  p.log.info(`${app.display}: ${current} → ${next}`);
+  return next;
+}
+
+/** Asks `message`; without prompts, logs it and answers yes. */
+async function confirm(message: string): Promise<boolean> {
+  if (!interactive) {
+    p.log.info(`${message} Yes (non-interactive).`);
+    return true;
+  }
+  const answer = await p.confirm({ message });
+  return !p.isCancel(answer) && answer;
 }
 
 /**
@@ -486,6 +559,14 @@ async function resolveBaseRef(branch: string): Promise<string> {
     return "HEAD";
   }
 
+  // Without prompts, a push of commits the command line never named stays a
+  // decision for the maintainer.
+  if (!interactive) {
+    p.cancel(
+      `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them, then release again.`,
+    );
+    process.exit(1);
+  }
   const push = await p.confirm({
     message: `"${branch}" has ${ahead} commit(s) not on origin/${branch}. Push them before bumping the version?`,
   });
