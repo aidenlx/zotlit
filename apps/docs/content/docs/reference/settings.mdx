@@ -527,6 +527,23 @@ The row shows only the actions that apply at the moment:
 
 ZotLit saves the permission for this vault on this device only, in Obsidian's Keychain. Another computer that shares the vault asks for its own permission. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
 
+### Search [#search]
+
+| Label                                                  | Key              | Control                                                                                                                                                                             | Default       | Storage    |
+| ------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------- |
+| <UiLabel name={m.settings_chinese_segmenter_name()} /> | (managed binary) | <UiLabel name={m.settings_chinese_segmenter_install()} />, <UiLabel name={m.settings_chinese_segmenter_retry()} />, and <UiLabel name={m.settings_chinese_segmenter_uninstall()} /> | Not installed | Per device |
+
+#### Chinese word search [#chinese-segmenter]
+
+<UiLabel name={m.settings_chinese_segmenter_name()} /> installs a managed binary
+that splits Chinese titles into words. Until you install it, search splits
+Chinese titles with built-in rules, which miss some words. With it, the Library
+View, citation suggester, and quick switcher find more papers whose title holds
+your search term in the middle. The installation applies to every vault on this
+device.
+
+The row provides one-click installation and shows real-time status indicators while downloading, when installed (including version), or if a checksum mismatch occurs.
+
 ## Attachments
 
 Open this page from <SettingsPath page={m.settings_page_attachments()} />.

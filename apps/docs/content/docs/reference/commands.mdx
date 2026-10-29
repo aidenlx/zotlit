@@ -68,6 +68,16 @@ Opens the Library View, a tab titled <UiLabel name={m.library_view_name()} /> th
 
 A selected row in the view answers the quick switcher's chords below, and its right-click menu lists every action on the item. See [Open, write, and cite from a row](/docs/how-to/use-library-view#rows).
 
+<Command name={m.command_show_in_library_name()} />
+
+Reveals the active literature note's item in the Library View. Opens the Library View if closed, clears any active search text and filters so the paper is not hidden, and flashes the paper's row to highlight it.
+
+| Entry point     | Details                                                                               |
+| --------------- | ------------------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                           |
+| File menu       | Active on a literature note (<UiLabel name={m.library_view_show_in_library()} />)     |
+| Tab menu        | Active on a literature note tab (<UiLabel name={m.library_view_show_in_library()} />) |
+
 ## Literature note quick switcher [#quick-switcher]
 
 <Command name={m.command_open_lit_note_name()} />
@@ -451,6 +461,7 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_update_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_import_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_open_library_view_name()} />               |   yes   |  yes   |      no      | Always                                              |
+| <UiLabel name={m.command_show_in_library_name()} />                 |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_open_lit_note_name()} />                   |   yes   |   no   |      no      | Always                                              |
 | <UiLabel name={m.command_insert_citation_name()} />                 |   yes   |   no   |      no      | An editor is open                                   |
 | <UiLabel name={m.command_open_citekey_name()} />                    |   yes   |   no   |      no      | Cursor on a recognized citation key                 |

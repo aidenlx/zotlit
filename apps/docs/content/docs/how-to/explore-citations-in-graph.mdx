@@ -17,6 +17,8 @@ ZotLit draws an edge from each note to the works it cites. The edge ends on the 
 
 Everything native keeps working: search, color groups, depth, incoming and outgoing links, arrows, and the local graph following the active note. Depth walks citation edges too, so depth 2 from a Literature Note reaches the notes that share its sources.
 
+![The global graph view showing citation edges linking literature notes and a dimmed Cited Work Node, beside a note's local graph and the References Sidebar](/img/how-to/graph-view-citations.webp)
+
 ## Before you start
 
 - Turn on Obsidian's **Graph view** core plugin under **Settings > Core plugins**.
@@ -164,11 +166,11 @@ A key that matches several items keeps its Cited Work Node. Picking a candidate 
 
 Right-click a Cited Work Node for the actions its key can carry out.
 
-| The citation key             | Menu items                                                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Matches one Zotero item      | <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, <UiLabel name={m.graph_citations_menu_copy_citekey()} /> |
-| Matches several Zotero items | <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                   |
-| Matches no Zotero item       | <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                            |
+| The citation key             | Menu items                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Matches one Zotero item      | <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, <UiLabel name={m.library_view_show_in_library()} />, <UiLabel name={m.graph_citations_menu_copy_citekey()} /> |
+| Matches several Zotero items | <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                        |
+| Matches no Zotero item       | <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                                                                                 |
 
 Every other node keeps Obsidian's own menu.
 

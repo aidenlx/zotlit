@@ -120,7 +120,9 @@ Select <UiLabel name={m.query_view_filter()} />. The filter editor has two parts
 
 The properties depend on the records of the view. An annotations view offers the color, Tags, comment, text, page, and dates of each annotation. Every view offers the paper's title, creators, first author, year, item type, Collection, and library. Annotations and attachments views also offer the file's title and file type. An items view also offers the properties of your Literature Notes, as [Track reading status](/docs/how-to/track-reading-status#filter) shows.
 
-To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The expression is colored to make its parts easy to read. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual row.
+To write a condition as a [Filter Expression](/docs/concepts/how-zotlit-query-works#steps), select <UiLabel name={m.workbench_match_edit_as_expression()} /> on its row. The filter expression editor provides syntax highlighting for field names, functions, numbers, and strings. As you type, autocompletion suggests available fields and functions (press `Tab` or `Enter` to insert), parameter hints show expected arguments, and wavy underlines flag syntax errors immediately. Select <UiLabel name={m.workbench_match_edit_visually()} /> to return to the visual condition row.
+
+![A Query View filter written as an expression, with field names, functions, numbers, and text in different colors, a wavy underline and an error message under "year", and the completion list open with "tags" at the top](/img/how-to/filter-expression-editor.webp)
 
 When a condition has an error, its row shows the reason. The view keeps the rows it showed last and shows <UiLabel name={m.query_view_filter_error()} />
 

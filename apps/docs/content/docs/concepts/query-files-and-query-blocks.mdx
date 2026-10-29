@@ -36,6 +36,8 @@ views:
 
 A new query file opens on a Table of your papers, so it shows something useful before you have any highlights. Its second view shows your annotations.
 
+![A query file showing papers in a table with reading status and note columns, beside a note whose embedded query block groups annotations by paper](/img/concepts/query-file-and-block.webp)
+
 The sidebar <UiLabel name={m.annot_view_name()} /> is the same kind of view. It shows the annotations of the attachment that it follows.
 
 ## Views, records, and layouts [#views]
@@ -103,6 +105,8 @@ A filter that reads `this` where it has no value cannot run. The view then shows
 ## Annotations in Literature Notes [#literature-notes]
 
 The default Literature Note template puts a query block under the note's **Annotations** heading, where earlier versions listed the annotations as text. The block shows the annotations of the note's own paper, and it stays current with Zotero.
+
+![A literature note with an embedded query block that groups the paper's annotations by color, with the Yellow group's two cards side by side above the Red and Purple groups](/img/concepts/query-block-in-note.webp)
 
 When ZotLit updates the note, it keeps the block text that the note holds, so a change you made in the block's toolbar stays. A Literature Note that you made with an earlier default template, and that still has its managed region, gets the block on its next update. A custom template stays as you wrote it.
 
