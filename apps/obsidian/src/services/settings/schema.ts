@@ -150,6 +150,12 @@ export const schema = v.object({
   /** Show recognized Citations with the selected CSL style. */
   "citation.show-formatted": v.boolean(),
   /**
+   * Show an Annotation Citation in its place as its formatted text, and add
+   * its Item's entry to its hover. Takes effect with
+   * `citation.annotation-citations` and `citation.show-formatted`.
+   */
+  "citation.render-annotation-citations": v.boolean(),
+  /**
    * Navigate to the Literature Note when a Citation is clicked, on both Pandoc
    * Citations and Literature Note wikilinks rendered as Citations.
    */
@@ -285,6 +291,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.annotation-citations": false,
   "citation.graph-citations": true,
   "citation.show-formatted": true,
+  "citation.render-annotation-citations": false,
   "citation.open-as-links": false,
   "citation.locale": null,
   "citation.hover-action": "popover",

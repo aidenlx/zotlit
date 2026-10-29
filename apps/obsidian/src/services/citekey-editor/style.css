@@ -77,3 +77,15 @@
   text-decoration-color: var(--link-unresolved-decoration-color);
   text-decoration-style: var(--link-unresolved-decoration-style);
 }
+
+/* An Annotation Citation shown as its formatted text. Obsidian still draws its
+   external-link icon after the link's end, outside the replaced range; the
+   citation stands for the link, so that icon goes. */
+:where(
+  .markdown-source-view.mod-cm6
+    .zt-annotation-citation
+    + .cm-widgetBuffer
+    + .external-link:empty
+) {
+  display: none;
+}

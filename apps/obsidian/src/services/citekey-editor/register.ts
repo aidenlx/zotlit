@@ -55,6 +55,7 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
       navigationEnabled: false,
       showFormatted: false,
       active: false,
+      annotationCitations: false,
       hover: hoverPreferences(defaults),
     };
     /** Registered once; its contents are the on/off switch. */
@@ -77,6 +78,11 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
     const annotationLinkHover = annotationLinkHoverExtension({
       showAnnotation: (request) =>
         bridge.runAndForget(annotationPopover.show(request)),
+      showCitations: () => treatment.annotationCitations,
+      citationText: (path) => run(citationText.peek(path)),
+      // Unload interrupts a pending open.
+      openItem: (indexedKey, pane) =>
+        bridge.runAndForget(editor.openIndexedKey(indexedKey, pane)),
     });
 
     /**
@@ -88,7 +94,7 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
      */
     const decorateAgain = (path?: string) =>
       Effect.gen(function* () {
-        if (!treatment.active) return;
+        if (!treatment.active && !treatment.annotationCitations) return;
         const editors = dispatchToMarkdownEditors(
           yield* workspace.markdownViews,
           citekeyDecorationsChanged.of(undefined),
@@ -116,7 +122,15 @@ export const layerCitekeyEditorExtension = Layer.effectDiscard(
           yield* Effect.logInfo(
             next.active ? "Citekey editor enabled" : "Citekey editor disabled",
           );
-        } else if (treatmentChanged) {
+        }
+        if (next.annotationCitations !== previous.annotationCitations) {
+          yield* decorateAgain();
+          yield* Effect.logDebug("Annotation citation treatment changed").pipe(
+            Effect.annotateLogs({
+              annotationCitations: next.annotationCitations,
+            }),
+          );
+        } else if (!activeChanged && treatmentChanged) {
           yield* decorateAgain();
           yield* Effect.logDebug("Citekey editor treatment changed").pipe(
             Effect.annotateLogs({
