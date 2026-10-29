@@ -89,6 +89,16 @@ When connected to Zotero 10, annotations are fully bidirectional:
 - **Live database persistence:** Every mark you make in Obsidian writes straight back to Zotero's database. When you open the same PDF in Zotero, your annotations, comments, and color codes are already there.
 - **Instant Obsidian reflection:** Highlights created in Zotero appear immediately in Obsidian's reader and annotation sidebar.
 
+### A Cleaner Annotation View
+
+The **Zotero annotations** sidebar has a new, cleaner design, built on the same engine as the Query View:
+
+- **Compact cards:** Each annotation shows its quote, your comment, its tags, and its page. Image and ink annotations show their picture.
+- **Work on several at once:** Select cards with `Ctrl`/`Command`-click, `Shift`-click, or select all, then recolor them with the keys `1` to `8`, copy their text together, or delete them. One undo reverses the whole group.
+- **Quiet filters:** Color and tag filters open as small popovers, so the list stays in place.
+- **Insert from the keyboard:** **Insert into note** in a card's menu puts the annotation at your cursor, the same text a drag leaves.
+- **Follow what you read:** The view follows the active tab or the Zotero reader, or stays pinned to one paper. Save the view and its filters as a `.zotquery` file.
+
 ![A thesis chapter note with an inserted annotation callout that links back to page 1 of the PDF, beside the PDF and the annotation view with the same annotation selected](/img/blog/v2.2-pdf-reader-insert-into-note.webp)
 
 {/* PLACEHOLDER: Image - Caption: Side-by-side comparison showing an image annotation captured from a PDF table inserted into a literature note, with hover preview active */}
@@ -97,6 +107,8 @@ When connected to Zotero 10, annotations are fully bidirectional:
 
 Hover over any annotation link in your notes to display a rich popover containing the exact quote, your personal comment, page numbers, color tags, or extracted figure images. All annotation links now generate standard `zotero://open` URLs, ensuring they resolve across any desktop or synced computer.
 
+An annotation link can also count as a citation of its paper. Turn on **Annotation citations** under **Settings > Citations**, and an annotation link with no link text, such as `[](zotero://…)`, lists its paper in the **References** sidebar, numbered in order with your other citations, and lists your note in the paper's **Cited by** sidebar.
+
 ![A thesis chapter with two inserted annotations, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar](/img/blog/v2.2-annotation-link-popover.webp)
 
 <ActionLink href="/docs/how-to/open-pdf-in-obsidian" kind="external">
@@ -104,6 +116,9 @@ Hover over any annotation link in your notes to display a rich popover containin
 </ActionLink>
 <ActionLink href="/docs/how-to/edit-pdf-annotations" kind="external">
   Edit PDF annotations in Obsidian
+</ActionLink>
+<ActionLink href="/docs/how-to/use-annotation-view" kind="external">
+  Use the annotation view
 </ActionLink>
 
 ---
