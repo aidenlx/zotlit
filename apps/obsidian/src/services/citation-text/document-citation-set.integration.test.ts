@@ -292,6 +292,35 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
   );
 
   it.effect(
+    "#1678 holds an Annotation Citation's text under its link source",
+    () =>
+      Effect.promise(async () => {
+        const source = `[](${annotationUri})`;
+        await using harness = await makeHarness(
+          { "draft.md": `@roe2025 then ${source}.` },
+          {
+            zoteroRows: annotationRows,
+            settings: { "citation.annotation-citations": true },
+          },
+        );
+        await using engine = await openEngine();
+        await using text = openText(harness, engine, NUMERIC_STYLE);
+        await harness.index.bridge.runPromise(
+          harness.index.getDocumentCitationSet(harness.draft),
+        );
+
+        const occurrences = (await readText(text, harness.draft)).formatted.get(
+          source,
+        );
+        expect(firstText(occurrences)).toBe("[2]");
+        expect(occurrences?.[0]?.start).toBe("@roe2025 then ".length);
+        expect(occurrences?.[0]?.text.citations.map(({ id }) => id)).toEqual([
+          KEY_A,
+        ]);
+      }),
+  );
+
+  it.effect(
     "#1693 preserves the Annotation Citation locator for a following ibid",
     () =>
       Effect.promise(async () => {

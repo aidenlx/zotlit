@@ -5,12 +5,13 @@
 // moving within one link, a section Obsidian unloads, and a service that is
 // gone while its sections stay rendered.
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Layer, Scope } from "effect";
+import { Deferred, Effect, Exit, Layer, Scope, Stream } from "effect";
 import { Component, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
   MarkdownRenderChild,
+  MarkdownSectionInformation,
   WorkspaceLeaf,
 } from "obsidian";
 import { describe, expect, vi } from "vitest";
@@ -23,13 +24,22 @@ import {
   setup,
   useFakeTimers,
 } from "@/services/annotation-repository/__fixtures__";
+import { lookupAnswer } from "@/services/citation-index/__fixtures__/lookup";
+import { presented } from "@/services/citation-text/__fixtures__";
+import type { DocumentCitations } from "@/services/citation-text/present";
+import { CitationText } from "@/services/citation-text/service";
+import { CitekeyEditor } from "@/services/citekey-editor/service";
+import { defaults } from "@/services/settings/schema";
+import { PluginSettings } from "@/services/settings/service";
 
 import { AnnotationPopoverCore } from "./popover";
 import {
   AnnotationLinkReadingCore,
   layerAnnotationLinkReading,
 } from "./reading";
+import type { AnnotationLinkReadingDeps } from "./reading";
 import { AnnotationPopover } from "./service";
+import type { AnnotationHoverRequest } from "./service";
 
 const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
 
@@ -39,7 +49,21 @@ const HREF = "zotero://open/library/items/RGRPDF24?annotation=PUPR5FG5&page=1";
  * Obsidian's post-processor registry and its workspace stand outside the
  * test; the section is a real component Obsidian would unload.
  */
-async function harness(stack: AsyncDisposableStack) {
+async function harness(
+  stack: AsyncDisposableStack,
+  {
+    html = `<p><a class="external-link" href="${HREF}"><strong>p. 1</strong></a></p>`,
+    citations = () => null,
+    show,
+    section: sectionInfo = null,
+  }: {
+    html?: string;
+    citations?: AnnotationLinkReadingDeps["citations"];
+    show?: AnnotationLinkReadingDeps["show"];
+    /** Where Obsidian places the section in its note. */
+    section?: MarkdownSectionInformation | null;
+  } = {},
+) {
   const { service: repository, bridge } = await setup(stack);
   const popover = stack.use(
     new AnnotationPopoverCore({
@@ -77,11 +101,15 @@ async function harness(stack: AsyncDisposableStack) {
           return postProcessor;
         },
       },
-      show: (request) => popover.show(request),
+      show: show ?? ((request) => popover.show(request)),
+      citations,
+      openItem: () => {
+        throw new Error("Nothing opens a Literature Note here");
+      },
     }),
   );
   const el = container.appendChild(document.createElement("div"));
-  el.innerHTML = `<p><a class="external-link" href="${HREF}"><strong>p. 1</strong></a></p>`;
+  el.innerHTML = html;
   const section = new Component();
   section.load();
   stack.defer(() => section.unload());
@@ -90,6 +118,7 @@ async function harness(stack: AsyncDisposableStack) {
     stubService<MarkdownPostProcessorContext>("MarkdownPostProcessorContext", {
       sourcePath: "drafts/chapter.md",
       addChild: (child: MarkdownRenderChild) => section.addChild(child),
+      getSectionInfo: () => sectionInfo,
     }),
   );
   // Obsidian's hover delay runs on a fake clock; the repository's reads do not.
@@ -100,6 +129,7 @@ async function harness(stack: AsyncDisposableStack) {
   const anchor = el.querySelector("a")!;
   return {
     anchor,
+    el,
     service,
     section,
     /** Whether a popover opened on the view once Obsidian's delay passed. */
@@ -178,6 +208,12 @@ describe("AnnotationLinkReading", () => {
             Layer.mergeAll(
               host.layer,
               layerWorkspaceFrom(workspace),
+              Layer.mock(PluginSettings, {
+                current: Effect.succeed(defaults),
+                changes: Stream.never,
+              }),
+              Layer.mock(CitationText, { events: Stream.never }),
+              Layer.mock(CitekeyEditor, {}),
               Layer.mock(AnnotationPopover, {
                 show: () =>
                   Deferred.succeed(started, undefined).pipe(
@@ -217,4 +253,106 @@ describe("AnnotationLinkReading", () => {
       expect(interrupted).toBe(true);
     }),
   );
+});
+
+/** An Annotation Citation: the same link with no text of its own. */
+const CITATION = `[](${HREF})`;
+
+/** The note's citations, formatting {@link CITATION} at each of `starts`. */
+function citationsOf(starts: readonly number[]): DocumentCitations {
+  const text = presented("(Rougier 2014, 1)");
+  return {
+    lookup: lookupAnswer({}, { RUGIER24: "rougierTenSimpleRules2014" }),
+    formatted: new Map([
+      [
+        CITATION,
+        starts.map((start) => ({
+          ...text,
+          text: {
+            ...text.text,
+            citations: [{ id: "RUGIER24", mode: "normal" as const }],
+          },
+          start,
+        })),
+      ],
+    ]),
+    entrySerials: false,
+    summaries: new Map(),
+    literalWorks: new Map(),
+  };
+}
+
+describe("Annotation Citations in reading view", () => {
+  it("shows the formatted citation in an empty link, and its hover carries the Item", async () => {
+    await using stack = new AsyncDisposableStack();
+    const shown: AnnotationHoverRequest[] = [];
+    const run = await harness(stack, {
+      html: `<p>See <a class="external-link" href="${HREF}"></a>.</p>`,
+      citations: () => citationsOf([4]),
+      show: (request) => shown.push(request),
+    });
+
+    expect(run.anchor.textContent).toBe("(Rougier 2014, 1)");
+
+    enter(run.anchor);
+    expect(shown[0]?.reference).toMatchObject({
+      work: { citekey: "rougierTenSimpleRules2014", indexedKey: "RUGIER24" },
+      shown: {
+        citation: { source: CITATION },
+        at: { kind: "offset", start: 4 },
+      },
+    });
+  });
+
+  it("keeps a link with text, and gives its hover no Item", async () => {
+    await using stack = new AsyncDisposableStack();
+    const shown: AnnotationHoverRequest[] = [];
+    const run = await harness(stack, {
+      citations: () => citationsOf([4]),
+      show: (request) => shown.push(request),
+    });
+
+    expect(run.anchor.textContent).toBe("p. 1");
+    enter(run.anchor);
+    expect(shown[0]?.reference).toBeUndefined();
+  });
+
+  it("matches each link to the citation its section holds", async () => {
+    await using stack = new AsyncDisposableStack();
+    const second = "(Rougier 2014, 1) again";
+    const run = await harness(stack, {
+      html: `<p><a class="external-link" href="${HREF}"></a></p>`,
+      // The note writes the link twice; this section is its second line.
+      section: { text: `${CITATION}\n${CITATION}`, lineStart: 1, lineEnd: 1 },
+      citations: () => {
+        const citations = citationsOf([0, CITATION.length + 1]);
+        const [first, later] = citations.formatted.get(CITATION)!;
+        (citations.formatted as Map<string, unknown>).set(CITATION, [
+          first,
+          {
+            ...later!,
+            text: { ...later!.text, content: [{ t: "Str", c: second }] },
+          },
+        ]);
+        return citations;
+      },
+    });
+
+    expect(run.anchor.textContent).toBe(second);
+  });
+
+  it("rewrites the citation in place when its note's citations change", async () => {
+    await using stack = new AsyncDisposableStack();
+    let citations: DocumentCitations | null = null;
+    const run = await harness(stack, {
+      html: `<p><a class="external-link" href="${HREF}"></a></p>`,
+      citations: () => citations,
+    });
+    expect(run.anchor.hasChildNodes()).toBe(false);
+
+    citations = citationsOf([0]);
+    run.service.refresh("drafts/chapter.md");
+
+    expect(run.anchor.textContent).toBe("(Rougier 2014, 1)");
+  });
 });

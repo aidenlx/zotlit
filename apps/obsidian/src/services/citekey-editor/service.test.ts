@@ -36,6 +36,7 @@ import { NoteFeature } from "@/services/note-feature/service";
 import { createNoteHost } from "@/services/note-index/__fixtures__";
 import { layerNoteIndex } from "@/services/note-index/service";
 import { Profile } from "@/services/profile/service";
+import { defaults } from "@/services/settings/schema";
 import {
   layerPluginSettings,
   PluginSettings,
@@ -56,7 +57,7 @@ import type { SeededWork } from "@/services/zotero-reads/test-utils";
 import { openLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
-import { CitekeyEditor, layerCitekeyEditor } from "./service";
+import { CitekeyEditor, citekeyTreatment, layerCitekeyEditor } from "./service";
 import type { CitekeyEditorEvent } from "./service";
 
 const MY_LIBRARY: AvailableLibrary = {
@@ -605,3 +606,40 @@ function planning(
   );
   return { planCreations, create };
 }
+
+describe("citekeyTreatment", () => {
+  it.each([
+    [{}, false],
+    [{ "citation.render-annotation-citations": true }, false],
+    [
+      {
+        "citation.render-annotation-citations": true,
+        "citation.annotation-citations": true,
+      },
+      true,
+    ],
+    [
+      {
+        "citation.render-annotation-citations": true,
+        "citation.annotation-citations": true,
+        "citation.show-formatted": false,
+      },
+      false,
+    ],
+    [
+      {
+        "citation.render-annotation-citations": true,
+        "citation.annotation-citations": true,
+        "citation.pandoc-citations": false,
+      },
+      true,
+    ],
+  ] as const)(
+    "shows Annotation Citations as citations only once they count and show formatted (%o)",
+    (changed, annotationCitations) => {
+      expect(
+        citekeyTreatment({ ...defaults, ...changed }).annotationCitations,
+      ).toBe(annotationCitations);
+    },
+  );
+});
