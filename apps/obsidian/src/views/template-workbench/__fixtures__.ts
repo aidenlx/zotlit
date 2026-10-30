@@ -18,9 +18,14 @@ import { Workspace } from "@/lib/obsidian-workspace";
 import { vaultError } from "@/lib/vault-errors";
 import type { ViewServices } from "@/lib/view-atoms";
 import { makeViewRegistry } from "@/lib/view-atoms";
+import { ItemLookup } from "@/services/item-lookup/service";
+import type { SearchOptions } from "@/services/item-lookup/service";
 import type { QueryHandle } from "@/services/item-query/handle";
 import { QueryService } from "@/services/item-query/service";
+import { Customize } from "@/services/local-bridge/customize";
+import { NoteWriteAborted } from "@/services/note-feature/errors";
 import type { NoteFeatureHandle } from "@/services/note-feature/operations";
+import { NoteFeature } from "@/services/note-feature/service";
 import { Profile } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 import { PluginSettings } from "@/services/settings/service";
@@ -37,6 +42,7 @@ import type {
 import type { NativeRenderDeps } from "@/views/note-preview/render";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
+import type { WorkbenchActionServices } from "./actions";
 import type { TemplateWorkbenchDeps } from "./view";
 type TemplateFixture = TemplateOperations & {
   readonly "compile-status-changed": Stream.Stream<void>;
@@ -113,6 +119,40 @@ export type WorkbenchHostDeps = Omit<
       | "defaultDocumentPath"
     >;
   };
+
+/**
+ * The services a Workbench launch runs with: `notifier`, and a vault, a
+ * workspace, the Customize flow and the Profile service whose members each
+ * test supplies when its launch reads them.
+ */
+export function workbenchActionContext(
+  notifier: Notifier["Service"] = testNotifier().service,
+  services: {
+    vault?: Partial<Vault["Service"]>;
+    workspace?: Partial<Workspace["Service"]>;
+    customize?: Partial<Customize["Service"]>;
+    profile?: Partial<Profile["Service"]>;
+  } = {},
+): Context.Context<WorkbenchActionServices> {
+  return Context.make(Notifier, notifier).pipe(
+    Context.add(
+      Vault,
+      stubService<Vault["Service"]>("Vault", services.vault ?? {}),
+    ),
+    Context.add(
+      Workspace,
+      stubService<Workspace["Service"]>("Workspace", services.workspace ?? {}),
+    ),
+    Context.add(
+      Customize,
+      stubService<Customize["Service"]>("Customize", services.customize ?? {}),
+    ),
+    Context.add(
+      Profile,
+      stubService<Profile["Service"]>("Profile", services.profile ?? {}),
+    ),
+  );
+}
 
 export function makeWorkbenchHost(
   input: Partial<WorkbenchHostDeps> = {},
@@ -234,6 +274,23 @@ export function makeWorkbenchHost(
   ).pipe(
     Context.add(Template, deps.services?.template ?? template),
     Context.add(Notifier, testNotifier().service),
+    // The Item search over the test's lookup handle.
+    Context.add(
+      ItemLookup,
+      stubService<ItemLookup["Service"]>("ItemLookup", {
+        search: (query, opts) =>
+          Effect.promise(() => deps.itemLookup.search(query, opts)),
+        openSession: Effect.map(
+          Effect.acquireDisposable(
+            Effect.sync(() => deps.itemLookup.openSession()),
+          ),
+          (session) => ({
+            search: (query: string, opts?: SearchOptions) =>
+              Effect.promise(() => session.search(query, opts)),
+          }),
+        ),
+      }),
+    ),
     Context.add(Profile, deps.services?.profile ?? profile),
     Context.add(
       ZoteroReads,
@@ -307,6 +364,21 @@ export function makeWorkbenchHost(
       }),
     ),
     Context.add(
+      NoteFeature,
+      stubService<NoteFeature["Service"]>("NoteFeature", {
+        // The service's write runs to its end once started; a rejection is
+        // what the note operation's write stopped on.
+        updateNote: (file, options) =>
+          Effect.uninterruptible(
+            Effect.tryPromise({
+              try: () => deps.noteFeature!.updateNote(file, options),
+              catch: (cause) =>
+                new NoteWriteAborted({ path: file.path, cause }),
+            }),
+          ),
+      }),
+    ),
+    Context.add(
       Workspace,
       stubService<Workspace["Service"]>("Workspace", {
         getLeaf: (pane) => Effect.sync(() => deps.app!.workspace.getLeaf(pane)),
@@ -333,7 +405,6 @@ export function makeWorkbenchHost(
     own: (close: () => void | Promise<void>) => owners.push(close),
     deps: {
       registry,
-      noteFeature: deps.noteFeature,
       nativePreview: deps.nativePreview,
       render: deps.render,
       pluginVersion: deps.pluginVersion,

@@ -1,9 +1,10 @@
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { Effect } from "effect";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { AnnotationPane } from "./annotation";
-import { WorkbenchHostProvider } from "./host";
+import { WorkbenchHostError, WorkbenchHostProvider } from "./host";
 import { NotePane } from "./note-pane";
 import type { PartialPlaceholderHost } from "./partial-boxes";
 import { fakeHost, renderWithMessages as render } from "./test-host";
@@ -30,8 +31,8 @@ function placeholders(
     missing: [],
     onEdit: vi.fn<(name: string) => void>(),
     onShowProblem: vi.fn<(name: string) => void>(),
-    onRender: vi.fn<(name: string) => Promise<string>>(() =>
-      Promise.resolve("Smith, J., Doe, A."),
+    onRender: vi.fn<PartialPlaceholderHost["onRender"]>(() =>
+      Effect.succeed("Smith, J., Doe, A."),
     ),
     ...partials,
   } satisfies PartialPlaceholderHost;
@@ -91,7 +92,10 @@ it("opens the partial's own text under the call and routes Edit to its editor", 
 
 it("names the failure a partial preview came back with", async () => {
   placeholders(withCalls(), {
-    onRender: () => Promise.reject(new Error("Unexpected tag")),
+    onRender: () =>
+      Effect.fail(
+        new WorkbenchHostError({ cause: new Error("Unexpected tag") }),
+      ),
   });
 
   fireEvent.click(
@@ -123,9 +127,9 @@ it("marks a partial the last render could not find and leads to its problem", ()
 
 it("renders the open preview again when the caller data changes", async () => {
   const onRender = vi
-    .fn<(name: string) => Promise<string>>()
-    .mockResolvedValueOnce("Smith, J.")
-    .mockResolvedValueOnce("Doe, A.");
+    .fn<PartialPlaceholderHost["onRender"]>()
+    .mockReturnValueOnce(Effect.succeed("Smith, J."))
+    .mockReturnValueOnce(Effect.succeed("Doe, A."));
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(withCalls());
   const pane = (dataRevision: string) => (
@@ -166,8 +170,8 @@ it("boxes the calls inside the Annotation Section too", async () => {
       '{% render "authors" %}\n{{ zt.imgLink | embed }}{{ zt.text }}',
     ),
   );
-  const onRender = vi.fn<(name: string) => Promise<string>>(() =>
-    Promise.resolve("Page 12"),
+  const onRender = vi.fn<PartialPlaceholderHost["onRender"]>(() =>
+    Effect.succeed("Page 12"),
   );
   render(
     <WorkbenchHostProvider host={host}>

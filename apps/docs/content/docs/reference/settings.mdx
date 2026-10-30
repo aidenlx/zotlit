@@ -267,15 +267,23 @@ view](/docs/how-to/explore-citations-in-graph).
 
 ### In-text citations
 
-| Label                                                        | Key                       | Control | Default | Dependency                                                                  | Storage |
-| ------------------------------------------------------------ | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
-| <UiLabel name={m.settings_citation_show_formatted_name()} /> | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
-| <UiLabel name={m.settings_citation_open_as_links_name()} />  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
+| Label                                                                     | Key                                    | Control | Default | Dependency                                                                                                                             | Storage |
+| ------------------------------------------------------------------------- | -------------------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_show_formatted_name()} />              | `citation.show-formatted`              | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text                                                            | Synced  |
+| <UiLabel name={m.settings_citation_render_annotation_citations_name()} /> | `citation.render-annotation-citations` | Toggle  | Off     | <UiLabel name={m.settings_citation_annotation_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on | Synced  |
+| <UiLabel name={m.settings_citation_open_as_links_name()} />               | `citation.open-as-links`               | Toggle  | Off     | Active citation source                                                                                                                 | Synced  |
 
 <UiLabel name={m.settings_citation_show_formatted_name()} />: Show citations in
 Live Preview and reading view with the selected citation and references style.
 Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot
 format them.
+
+<UiLabel name={m.settings_citation_render_annotation_citations_name()} />: Show
+annotation links with no link text, such as `[](zotero://…)`, as the formatted
+citation of the annotation's item, with the annotation's page as the locator.
+`[](zotero://…?annotation=…&page=12)` shows as `[@key, p. 12]` would. Selecting
+the citation still opens the annotation. When off, these links stay links.
+Source mode always shows Markdown.
 
 <UiLabel name={m.settings_citation_open_as_links_name()} />: Open literature
 notes when you select a Pandoc citation or a literature note wikilink shown as a
@@ -297,7 +305,7 @@ plugin settings.
 
 One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the bibliography entry of every cited item. <UiLabel name={m.settings_citation_hover_action_page_preview()} /> shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. <UiLabel name={m.settings_citation_hover_action_off()} /> adds no ZotLit hover result.
 
-A durable annotation link shows its annotation under both <UiLabel name={m.settings_citation_hover_action_popover()} /> and <UiLabel name={m.settings_citation_hover_action_page_preview()} />. Under <UiLabel name={m.settings_citation_hover_action_page_preview()} />, it waits for Ctrl (Windows) or Command (macOS) exactly when the Page preview plugin's <UiLabel name={m.hover_source_citekey()} /> row asks for it, as a citation does.
+A durable annotation link shows its annotation on every hover, whatever <UiLabel name={m.settings_citation_hover_action_name()} /> is set to. Below the annotation, the popover shows the bibliography entry of the annotation's item, with the same actions as a citation popover. An annotation on a standalone PDF has no item, so its popover shows the annotation alone.
 
 #### Require modifier key
 
@@ -526,6 +534,23 @@ The row shows only the actions that apply at the moment:
 | <UiLabel name={m.settings_zotero_editing_forget()} /> | While this device has a saved permission                   | Removes the saved permission. Editing stops until you allow it again.   |
 
 ZotLit saves the permission for this vault on this device only, in Obsidian's Keychain. Another computer that shares the vault asks for its own permission. See [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+
+### Search [#search]
+
+| Label                                                  | Key              | Control                                                                                                                                                                             | Default       | Storage    |
+| ------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ---------- |
+| <UiLabel name={m.settings_chinese_segmenter_name()} /> | (managed binary) | <UiLabel name={m.settings_chinese_segmenter_install()} />, <UiLabel name={m.settings_chinese_segmenter_retry()} />, and <UiLabel name={m.settings_chinese_segmenter_uninstall()} /> | Not installed | Per device |
+
+#### Chinese word search [#chinese-segmenter]
+
+<UiLabel name={m.settings_chinese_segmenter_name()} /> installs a managed binary
+that splits Chinese titles into words. Until you install it, search splits
+Chinese titles with built-in rules, which miss some words. With it, the Library
+View, citation suggester, and quick switcher find more papers whose title holds
+your search term in the middle. The installation applies to every vault on this
+device.
+
+The row installs the binary in one click and shows its status: downloading, installed with its version, or a checksum mismatch.
 
 ## Attachments
 

@@ -14,7 +14,6 @@ import { withLogCategory } from "@/lib/effect-log";
 import { awaitModal } from "@/lib/effect-modal";
 import type { ClosableModal } from "@/lib/effect-modal";
 import * as m from "@/lib/i18n/generated/messages";
-import { portCall } from "@/lib/legacy-port";
 import { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { MetadataCache } from "@/lib/obsidian-metadata-cache";
@@ -29,6 +28,7 @@ import { PluginSettings } from "@/services/settings/service";
 import { Template } from "@/services/template/service";
 import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
 import type { WorkbenchOpened } from "@/views/template-workbench/actions";
+import type { NativeOpenError } from "@/views/template-workbench/open";
 import type { ProfileCustomization } from "@/views/template-workbench/preferences";
 
 import { profileDisplayName } from "./profile-name";
@@ -82,15 +82,15 @@ export type ConfirmLaunch = (
 
 /**
  * The document the native editor opens: a Profile's own file, or the Default
- * Profile, whose document may not exist yet. `getSource` answers the Default
- * Profile's text.
+ * Profile, whose document may not exist yet. The editor reads the Default
+ * Profile's text from the `Profile` service when the document is missing.
  */
-export type NativeProfileTarget =
-  | TFile
-  | {
-      readonly defaultDocumentPath: string;
-      readonly getSource: (selector: typeof DEFAULT_PROFILE) => Promise<string>;
-    };
+export type NativeProfileTarget = TFile | DefaultProfileTarget;
+
+/** The Default Profile's document path. */
+export interface DefaultProfileTarget {
+  readonly defaultDocumentPath: string;
+}
 
 /** What the flow reaches outside the services: the build, the UI and the device. */
 export interface CustomizePorts {
@@ -106,7 +106,11 @@ export interface CustomizePorts {
   readonly openNative: (
     request: CustomizeRequest,
     target: NativeProfileTarget,
-  ) => Promise<WorkbenchOpened | void>;
+  ) => Effect.Effect<
+    WorkbenchOpened | void,
+    NativeOpenError,
+    Workspace | Vault | Profile
+  >;
   /** The destination this device remembers (`views/template-workbench/preferences`). */
   readonly preference: () => ProfileCustomization;
   readonly rememberPreference: (
@@ -183,9 +187,7 @@ export const customize = Effect.fn("LocalBridge.customize")(function* (
     const target = yield* nativeTarget(request.profileId);
     if (target)
       yield* explainWorkbenchOpen(
-        yield* portCall("open-native", () =>
-          ports.openNative(nativeRequest, target),
-        ),
+        yield* ports.openNative(nativeRequest, target),
       );
   });
   if (!ports.webWorkbenchEnabled) {
@@ -276,19 +278,8 @@ const nativeTarget = Effect.fn("LocalBridge.nativeTarget")(function* (
 ) {
   const profile = yield* Profile;
   if (profileId === DEFAULT_PROFILE) {
-    const defaultDocumentPath = yield* profile.defaultDocumentPath;
-    // The editor opens a saved document as written, so one that does not
-    // parse stays open for repair. Only the draft that stands in for a missing
-    // document needs the source.
-    const saved = yield* (yield* Vault).getFileByPath(defaultDocumentPath);
-    const source = saved ? null : yield* profile.getSource(DEFAULT_PROFILE);
     const target: NativeProfileTarget = {
-      defaultDocumentPath,
-      getSource: async () => {
-        if (source === null)
-          throw new Error(`${defaultDocumentPath} was removed while opening`);
-        return source;
-      },
+      defaultDocumentPath: yield* profile.defaultDocumentPath,
     };
     return target;
   }

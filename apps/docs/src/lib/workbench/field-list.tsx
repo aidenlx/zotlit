@@ -13,6 +13,8 @@ import { m } from "@/paraglide/messages.js";
 
 import { FIELD_TRIGGER, rootData } from "./fields";
 import type { SampleItem } from "./fields";
+import { usePageBridge } from "./runtime";
+import { copyThrough } from "./transfer";
 
 interface FieldListInput {
   sample: SampleItem | null;
@@ -66,6 +68,7 @@ export function FieldList({
   ready,
   ...props
 }: FieldListProps) {
+  const bridge = usePageBridge();
   const anchor =
     props.root === "note"
       ? null
@@ -133,7 +136,7 @@ export function FieldList({
       navigation={navigation}
       onNavigationChange={(navigation) => store.setState({ navigation })}
       trigger={FIELD_TRIGGER}
-      copy={(text) => navigator.clipboard.writeText(text)}
+      copy={copyThrough(bridge)}
     />
   );
 }

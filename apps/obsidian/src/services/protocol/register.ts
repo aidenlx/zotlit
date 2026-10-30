@@ -45,7 +45,6 @@ import { scopedBridge } from "@/lib/effect-bridge";
 import type { EffectBridge } from "@/lib/effect-bridge";
 import { logAndContinue, withLogCategory } from "@/lib/effect-log";
 import { forkEach } from "@/lib/effect-stream";
-import { portCall } from "@/lib/legacy-port";
 import type { Notifier } from "@/lib/notifier";
 import { ObsidianEnv } from "@/lib/obsidian-env";
 import { Vault } from "@/lib/obsidian-vault";
@@ -94,7 +93,7 @@ import type { ProfileDialogServices } from "@/setting-tab/profile-dialogs";
 import { ShowInLibrary } from "@/views/library/show-in-library";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
-import { openTemplateWorkbench } from "@/views/template-workbench/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/open";
 
 import { showProtocolOutcome } from "./notices";
 import { ProtocolOutcome } from "./outcome";
@@ -452,15 +451,13 @@ const handleExploreProtocol = Effect.fn("protocol.handleExploreProtocol")(
     const ref = yield* resolveProtocolItem(query.success, action);
     if (Result.isFailure(ref)) return ref.failure;
 
-    yield* portCall("open-template-data-explorer", () =>
-      openTemplateDataExplorer(
-        deps.app,
-        {
-          itemIndexedKey: ref.success.indexedKey,
-          anchorAnnotationKey: query.success.annotation,
-        },
-        { paneType: query.success.paneType },
-      ),
+    yield* openTemplateDataExplorer(
+      deps.app,
+      {
+        itemIndexedKey: ref.success.indexedKey,
+        anchorAnnotationKey: query.success.annotation,
+      },
+      { paneType: query.success.paneType },
     );
     return ProtocolOutcome.Opened();
   },
@@ -712,11 +709,7 @@ const openImportedProfile = Effect.fn("protocol.openImportedProfile")(
     const options = paneType
       ? { leaf: yield* (yield* Workspace).getLeaf(paneType) }
       : {};
-    yield* explainWorkbenchOpen(
-      yield* portCall("open-template-workbench", () =>
-        openTemplateWorkbench(deps.app, file, options),
-      ),
-    );
+    yield* explainWorkbenchOpen(yield* openTemplateWorkbench(file, options));
     yield* Effect.logDebug("Opened imported Profile in editor").pipe(
       Effect.annotateLogs({ path: profile.path }),
     );

@@ -1,0 +1,295 @@
+---
+version: "2.2.0"
+companion: "2.2.0"
+date: "2026-10-30"
+description: "Library View, PDF reading in Obsidian, ZotLit Query tables"
+---
+
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This is the first stable release of ZotLit 2.2. It collects every change since 2.1. For a guided tour of the main features, read the [release post](/blog/v2.2-release).
+
+<Callout type="info" title="Version requirements">
+
+- **Obsidian 1.14.5 or later.** ZotLit 2.2 does not install on an older Obsidian. ZotLit 2.1 needed 1.13.4.
+- **Zotero 10 or later** to save annotation changes from Obsidian. With Zotero 9, you can read PDFs and their annotations, but you cannot edit them.
+- **ZotLit Companion 2.2.0** in Zotero. ZotLit 2.2 does not work with Companion 2.1.
+
+</Callout>
+
+## Breaking Changes
+
+### Obsidian 1.14.5 or later
+
+ZotLit 2.2 needs Obsidian 1.14.5 or later. ZotLit 2.1 needed 1.13.4. On an older Obsidian, the plugin stays at 2.1.4 and does not update. Update Obsidian first, then update ZotLit. See [Install ZotLit](/docs/install-zotlit).
+
+### Update ZotLit Companion together with the plugin
+
+ZotLit 2.2 does not accept requests from ZotLit Companion 2.1. Until you install Companion 2.2.0 in Zotero, these stop working and ZotLit asks you to update the Companion:
+
+- Live updates of literature notes when you change an item in Zotero.
+- The Obsidian note column in Zotero's item list.
+- Updating or importing many selected items at once from Zotero.
+
+Links that open a single item from Zotero still work. See [Install ZotLit Companion](/docs/install-companion).
+
+### PDF file links open in Obsidian
+
+A click on a PDF file link in a note now opens the PDF in Obsidian's reader, not in your system's PDF app or in Zotero. This includes the `file:///` attachment links that the 2.1 default template wrote into your notes. To keep the old behavior, turn off <UiLabel name={m.settings_reader_open_file_links_name()} /> and <UiLabel name={m.settings_reader_open_annotation_links_name()} /> under <SettingsPath page={m.settings_page_reader()} />.
+
+### Eta tag suggestions removed
+
+Obsidian's note editor no longer suggests Eta tags in template files, and the **Auto-pair Eta tags** setting is gone. Edit templates in the Template Workbench, which completes and pairs tags.
+
+### 2.1 template files become profile documents
+
+2.1 template files keep working until you convert them. The Welcome view and the settings offer the conversion. It folds the note, managed-region, filename, and annotation files into `zotlit-profile.default.md`, the two citation files into `zotlit-citation.md`, and other files into partials. ZotLit checks that the output stays the same before it writes, then moves the old files to the trash.
+
+Until you convert, the frontmatter field list has no editor, and you cannot add or import a profile of your own. See [Converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates).
+
+### New default literature notes
+
+A new note from the default template is written once. Its body has the title, the Zotero link, attachment links, and an Annotations section with a query block that reads Zotero live. After that, the body is yours to edit.
+
+- <Command inline name={m.command_update_note_name()} /> refreshes the note's
+  properties and leaves the body as you wrote it.
+- The default template adds no `%%zt-managed%%` markers and no list of Zotero child notes.
+- Notes you already have keep their markers, and an update still refreshes the text between them. If you use the default templates, that text is now the Annotations query block: the next update replaces the static annotation list and the list of child notes with it. Annotations in the block show only inside Obsidian, not in search, Publish, or other apps. To keep the static text, delete the two marker lines before you update.
+- If you customized or duplicated the Default profile, add a `{% managed %}` block to its document to keep refreshing older notes.
+
+See [Keep notes up to date](/docs/how-to/keep-notes-updated) and [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+### Child notes import only when you ask
+
+Creating or updating a literature note no longer writes Zotero child notes into your vault. Run <Command inline name={m.command_import_child_notes_name()} /> or <Command inline name={m.command_import_all_notes_name()} />, or start an import from Zotero. In a template, `noteLink` links to the imported file when one exists, and opens the note in Zotero otherwise. See [Import Zotero notes](/docs/how-to/import-zotero-notes).
+
+### Export stops on an unknown key or a missing style
+
+- <Command inline name={m.command_pandoc_export_name()} /> now reads literal
+  `@citation-key` text, as Pandoc does. A key that matches no item, or several
+  items, stops the export and names the keys. Before, such a note exported
+  without a reference list.
+- Exports format citations in the style the note uses in Obsidian. When Zotero cannot supply that style, the export stops and tells you. Before, it fell back to a bundled style.
+- If you run Pandoc yourself with ZotLit's integration files, save them again from this version.
+
+See [Export a note with citations](/docs/how-to/export-note-with-citations) and [Export with native Pandoc](/docs/how-to/export-with-native-pandoc).
+
+### Settings moved
+
+- Maintenance is now <SettingsPath page={m.settings_page_advanced()} />, which also holds the template folder, the template engine rows, and the local server.
+- The Database and Library pages merged into <SettingsPath page={m.settings_page_zotero()} />. Connection and database overrides are on its <UiLabel name={m.settings_page_zotero_location()} /> sub-page.
+- Note import is now <SettingsPath page={m.settings_page_note_import()} />, and the citation text is under <SettingsPath page={m.settings_page_citations()} />.
+
+Row names are unchanged, so Obsidian's settings search still finds them. See [Where settings moved](/docs/reference/settings#moved).
+
+### Agent template commands retired
+
+Eight template and frontmatter commands from ZotLit 2.1 are retired from the Obsidian CLI. Use `zotlit:template-inspect`, `zotlit:template-data`, and `zotlit:template-check` instead. See the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired).
+
+## Highlights
+
+### Library View
+
+![The Library View with a collection filtered to papers with PDFs, and the Reading Card showing a paper's abstract, attachment, and annotation counts by color](/img/changelog/library-view.webp)
+
+Browse your Zotero library in an Obsidian tab. Run <Command inline name={m.command_open_library_view_name()} /> or select the ribbon icon. The view reads your local Zotero database, so it works without the Companion.
+
+- The tree shows your libraries, collections, and paper counts. You can collapse and resize it.
+- Quick filters show <UiLabel name={m.library_view_facet_unread()} />, <UiLabel name={m.library_view_facet_annotated()} />, papers with literature notes, or papers with PDFs. You can also filter by tag.
+- Drag a paper into a note to cite it.
+- The Reading Card shows the metadata, the abstract, the attachments, and annotation counts by color. Show or hide it with <UiLabel name={m.library_view_details_toggle()} /> or `Space`. With no paper selected, it shows counts for the library or collection.
+
+See [Browse your library in the Library View](/docs/how-to/use-library-view).
+
+### Read and annotate PDFs in Obsidian
+
+![A paper open in Obsidian's PDF reader with its Zotero highlights and underlines, one highlight's popup showing its comment and tag, and the annotation view listing each annotation as a card](/img/changelog/pdf-reader-annotations.webp)
+
+A paper's PDF opens in an Obsidian tab beside your note. The file stays in Zotero's storage, outside your vault. Your Zotero highlights and notes show on the page in their Zotero colors.
+
+- Open a PDF with <Command inline name={m.command_open_pdf_name()} />, with `Shift+Enter` in <Command inline name={m.command_open_lit_note_name()} />, from a file link in a note, or from Zotero's item menu and reader page menu.
+- The toolbar creates the same annotations as Zotero's reader: highlight, underline, note, text, image, and ink.
+- Change an annotation's color, comment, or tags, drag it to move or resize it, and undo with `Ctrl+Z` or `Command+Z`.
+- With Zotero 10, every change saves to Zotero and syncs like an annotation you made there. If both apps change one annotation, ZotLit shows both versions and you choose one.
+
+Editing needs Zotero running on the same computer, Zotero's **Allow other applications on this computer to communicate with Zotero** setting turned on, and your permission once. Select <UiLabel name={m.capability_enable_editing()} /> in the annotation view and choose **Always Allow** in Zotero. Only PDFs open in Obsidian; EPUBs and web snapshots stay in Zotero. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian) and [Edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations).
+
+### ZotLit Query and the Query View
+
+![A table of papers with reading status, note, related, done, rating, and finished columns from each literature note, with the status cell of one paper open for editing and suggesting read, reading, to-read, and unread](/img/changelog/reading-status-table.webp)
+
+Show your papers in a table, much like Obsidian Bases. Create a `.zotquery` query file with <Command inline name={m.command_new_query_file_name()} />, or embed a query block in any note.
+
+- Show results as a Table, Cards, a List, or Annotations.
+- Add a literature note property such as `reading-status` as a column, then edit cells in place. Values save to the note, so Properties and Bases show the same values.
+- A paper without a note shows <UiLabel name={m.query_view_vault_no_note()} />. Type a value there to create the note.
+- Filter with nested condition groups or with an expression. The expression editor colors the text, underlines errors, and completes field and function names.
+- Sort, group, search, add Formula columns, rename columns, and export to CSV or TSV.
+
+See [Track reading status in the Query View](/docs/how-to/track-reading-status), [Query files and query blocks](/docs/concepts/query-files-and-query-blocks), and [Use query files](/docs/how-to/use-query-files).
+
+## What's New
+
+### Citations in the graph view
+
+![The global graph view showing citation edges linking literature notes and a dimmed Cited Work Node, beside a note's local graph and the References Sidebar](/img/changelog/graph-view-citations.webp)
+
+- Obsidian's graph draws an edge from a note to every work it cites. A cited work without a literature note shows as a dimmed Cited Work Node.
+- Rows in the graph's Filters and Display sections choose citation types, author and title labels, colored citation edges, and a hover popover.
+- Select a Cited Work Node to create its literature note. Right-click it to open it in Zotero or copy its citation key.
+- <Command inline name={m.command_open_citation_graph_name()} /> and
+  <Command inline name={m.command_open_local_citation_graph_name()} /> open a
+  graph arranged as a research map.
+
+This is on by default. Turn it off with <UiLabel name={m.settings_citation_graph_name()} /> under <SettingsPath page={m.settings_page_citations()} />. See [Explore citations in the graph view](/docs/how-to/explore-citations-in-graph).
+
+### Literature note profiles
+
+![A profile document open in the editor beside the Literature note profiles settings page, listing the Default profile, a Books profile, and the book-details partial](/img/changelog/literature-note-profiles.webp)
+
+- Each profile is one Markdown document that holds the note name, the folder, the properties, the body, and the annotation format.
+- `zotlit-citation.md` holds the citation text for the whole vault, and partials hold text that several profiles share.
+- Manage profiles under <SettingsPath page={m.settings_page_profiles()} />. A new profile needs only a name; leave the folder empty to use the Default profile's folder.
+- A Profile Match picks a profile by library, item type, tag, or collection.
+- <Command inline name={m.command_switch_literature_note_profile_name()} />
+  moves a note to another profile and keeps its subfolders.
+- Links and menu commands from Zotero can name a profile.
+
+See [Profiles](/docs/concepts/profiles), [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates).
+
+### Template Workbench
+
+![The Template Workbench layout with the Fields pane, the profile editor showing a Liquid template with a field hover card, and the Note preview pane](/img/changelog/template-workbench-layout.webp)
+
+- Edit a profile in a desktop view with the fields on one side and a live note preview on the other. <Command inline name={m.template_workbench_open_layout()} /> opens all three panes.
+- From a literature note, <Command inline name={m.command_customize_note_template_name()} /> opens its profile with that paper selected, and <UiLabel name={m.template_workbench_update_this_note()} /> applies your change to it.
+- Tabs cover the note, properties, annotations, name and folder, and match. The name and folder tab shows the full vault path the note gets.
+- The editor highlights Liquid and Eta, suggests fields and partials, and lists problems with their place in the document.
+- Turn selected text into a partial with <UiLabel name={m.template_workbench_extract_partial()} />.
+- The template data explorer groups fields into sections and copies a field as a value, a path, or a loop.
+
+See [Template Workbench View](/docs/concepts/template-workbench-view), [Customize a template](/docs/how-to/customize-a-template), and [Explore template data](/docs/how-to/explore-template-data).
+
+### Annotation view
+
+- The view has compact cards with the quote, your comment, the tags, and the page. Image and ink annotations show their picture.
+- Select several cards, then recolor them with the keys `1` to `8`, copy their text, or delete them. One undo reverses the group.
+- Color and tag filters open as popovers. Save the view and its filters as a `.zotquery` file with <UiLabel name={m.annot_view_save_as_query_file()} />.
+- The view follows the active tab or the Zotero reader, or stays pinned to one paper.
+- <UiLabel name={m.annot_view_menu_insert()} /> in a card's menu inserts the
+  annotation at your cursor. Inserted annotations get correct spacing around the
+  text.
+- The page chip opens the PDF in Obsidian when the file is on this computer, and in Zotero otherwise.
+
+See [Use the annotation view](/docs/how-to/use-annotation-view).
+
+### Annotation links and citations
+
+![A thesis chapter with two annotations in the new default layout, each with the quote, the paper's citation after it, and the page number as the link, and a popover over the second link that shows the quote, the comment, page 1, and a green highlight bar above the paper's reference buttons and bibliography entry](/img/changelog/annotation-popover-reference.webp)
+
+- Annotation links in notes are Zotero open links that name the annotation, so they work on every computer where you open the vault. A link opens the PDF in Obsidian when the file is there, and Zotero otherwise. See [Zotero open links](/docs/reference/protocol-links#zotero-open-links).
+- Hover an annotation link to see the quote, your comment, the page, and the color, or the image. Below the annotation, the popover shows the paper's reference with the same buttons as the citation popover. An annotation on a standalone PDF shows alone.
+- The default annotation layout puts the paper's citation after the quote and uses the page label as the link.
+- Turn on <UiLabel name={m.settings_citation_annotation_citations_name()} /> under <SettingsPath page={m.settings_page_citations()} /> to list the paper in the <UiLabel name={m.references_view_name()} /> and <UiLabel name={m.cited_by_view_name()} /> sidebars.
+
+![A thesis chapter where an annotation link shows as the citation "(Ioannidis 2005, 696)" next to an ordinary citation of Rougier et al. 2014, with its popover open: the page-696 quote and the comment "Both apply to the pilot cohort (n = 24)" above the paper's reference buttons and bibliography entry](/img/changelog/annotation-link-as-citation.webp)
+
+Turn on <UiLabel name={m.settings_citation_render_annotation_citations_name()} />, also under <SettingsPath page={m.settings_page_citations()} /> and off by default, to show an annotation link with no link text, such as `[](zotero://…)`, as a citation of its paper. The annotation's page becomes the locator, as in `[@key, p. 12]`, and the citation shares the note's numbering. Selecting the citation still opens the annotation. The option needs <UiLabel name={m.settings_citation_annotation_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} />. See [In-text citations](/docs/reference/settings#in-text-citations).
+
+### Show in Library
+
+![A thesis chapter with the citation popover open over a Rougier et al. citation and the tooltip "Show in Zotero library" on its library button, beside the Library View with that paper's row selected and its details below the list](/img/changelog/show-in-library.webp)
+
+<UiLabel name={m.library_view_show_in_library()} /> takes you to a paper in the
+Library View. Find it in the citation popover, the
+<UiLabel name={m.references_view_name()} /> and
+<UiLabel name={m.cited_by_view_name()} /> sidebars, the graph menu, a literature
+note's file menu, and as `Alt+Enter` in the quick switcher. The
+<Command inline name={m.command_show_in_library_name()} /> command does the
+same, and templates get a `zt.librarylink` variable. See [Show a paper in the
+library](/docs/how-to/use-library-view#show-in-library).
+
+### Recent papers
+
+Recent lists put the papers you worked on last at the top. Opening a note, reading a PDF, citing, and editing all count. The Library View, the quick switcher, the citation suggester, and the Template Workbench share this order. With Zotero editing on, reading a PDF in Obsidian updates Zotero's Recently Read list. See [How Recent orders papers](/docs/how-to/use-library-view#recent).
+
+### Citations and the suggester
+
+- With nothing typed, the citation suggester and <Command inline name={m.command_insert_citation_name()} /> list the papers the note already cites first.
+- Suggester results read as one line with the venue, volume, and pages, and mark group library items.
+- Hovering from one citation to the next moves one popover.
+- A citation with a locator writes Pandoc's braced form, `[@key, {p. 62}]`.
+- Templates gain a LaTeX citation filter: `tex_cite` in Liquid and `texCite` in Eta. See [`tex_cite`](/docs/reference/templates/syntax#tex-cite).
+
+See [Insert citations](/docs/how-to/insert-citations).
+
+### Search and performance
+
+- Database reads, search, and citation lookups run in the background, so Obsidian stays responsive in large libraries.
+- <UiLabel name={m.settings_chinese_segmenter_name()} /> under
+  <SettingsPath page={m.settings_page_zotero()} /> is an optional download. It
+  splits Chinese titles into words, so a search finds a word in the middle of a
+  title.
+- <Command inline name={m.command_update_all_notes_name()} /> shows its
+  confirmation in about one second for 10,000 new notes, down from about ten.
+- Batch confirmations group rows by profile and load each group when you expand it. See [Keep notes up to date](/docs/how-to/keep-notes-updated#batch).
+- Notes with many citations open and update faster.
+
+### ZotLit Query CLI
+
+Query your Zotero library from the Obsidian CLI with `zotlit:query`. Search, filter, group, and pick fields from items, attachments, and annotations, and export JSON for scripts or AI agents. `zotlit:query-values`, `zotlit:query-schema`, `zotlit:query-guide`, and `zotlit:query-cancel` help you build and run queries. See [How ZotLit Query works](/docs/concepts/how-zotlit-query-works) and [Query your Zotero library](/docs/how-to/query-zotero-library).
+
+### Imported notes
+
+<SettingsPath
+  page={m.settings_page_note_import()}
+  setting={m.settings_note_import_highlight_mappings_name()}
+/>
+maps each Zotero highlight color to an emoji, a mark, or a custom emoji. See
+[Import Zotero notes](/docs/how-to/import-zotero-notes).
+
+### ZotLit Companion
+
+- <UiLabel name={m["zotero.prefs_pane_type"]()} /> in Zotero's ZotLit settings
+  chooses where notes opened from Zotero appear: the active tab, a new tab, a
+  split, or a new window.
+- Zotero's item menu and reader page menu open a PDF in Obsidian.
+- ZotLit links take a `paneType` parameter with the same choice. See [Where the link opens](/docs/reference/protocol-links#pane-type).
+
+### Other improvements
+
+- File and tab menus put ZotLit entries in their own groups beside Obsidian's.
+- Item pickers open with their rows ready or show a loading message.
+- The <Command inline name={m.command_open_lit_note_name()} /> search box says what you can search by.
+- The export dialog shows the destination as a short, readable path.
+- The Welcome view has an optional step to install the ZotLit Companion. See [Install ZotLit Companion](/docs/install-companion).
+- [Migrate from Zotero Integration](/docs/how-to/migrate-from-zotero-integration) maps that plugin's templates onto profiles.
+
+## Bug Fixes
+
+- Pressing `Enter` or clicking right after typing in a picker could act on an earlier search and insert the wrong citation or create the wrong note. Now `Enter` waits for the results of what you typed.
+- A search for an eight-letter word, such as "thinking", found nothing. Now it finds the matches.
+- With <UiLabel name={m.settings_citation_open_as_links_name()} /> off, a click on a citation did not put the cursor in it. Now the cursor goes where you clicked.
+- `[[@key]]` was read as a citation. Now it is an ordinary wikilink.
+- An inserted citation such as `[@key]` got a space after it. Now punctuation can follow it directly.
+- Editing the locator in `[@key, p. 5]` opened the citation suggester. Now it stays closed.
+- A citation inside the prefix or suffix of another citation broke its Pandoc export. Now the inner citation exports as text and its work stays in the bibliography.
+- Word exports showed a callout as raw `[!type]` text, turned a quote under a line of text into plain text, and gave the reference list no heading. Now a callout becomes a quote with a bold title, the quote stays a quote, and the reference list has a heading in the citation style's language.
+- Live note updates moved your reading position. Now the note stays where you were.
+- <Command inline name={m.command_update_note_name()} /> was not available with
+  the cursor in the note title or Properties. Now it works from anywhere in the
+  note.
+- A dragged annotation dropped at the end of a sentence joined that line. Now it goes in as its own block.
+- Inserting an annotation into a note in Reading view wrote into the hidden editor. Now ZotLit asks you to switch to an editing view.
+- In Live Preview, the closing `%%/zt-managed%%` marker hid inside the last callout. Now it stays outside.
+- The <UiLabel name={m.cited_by_view_name()} /> view showed zero counts when no literature note was open. Now it shows counts only for a literature note.
+- In Zotero, right-clicking a PDF attachment opened an empty ZotLit submenu. Now the submenu is dimmed.
+- When another service used Zotero's port, the connection check failed with an unclear error. Now it asks you to open Zotero and check its settings.
+- Welcome view steps stayed to-do after you completed them. Now they show as done.
+- <Command inline name={m.command_open_welcome_name()} /> replaced the active
+  note. Now it opens in a new tab.
+- Turning ZotLit off and on quickly could lose commands or show a start-up error. Now ZotLit starts cleanly.

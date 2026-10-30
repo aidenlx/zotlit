@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 import type { LiteratureNotes } from "@/views/query-view/table-notes";
 
 /** A vault with no Literature Note: no note to link, and no vault property. */
@@ -10,11 +12,11 @@ export function noLiteratureNotes(): LiteratureNotes {
     propertyType: () => "text",
     read: () => ({ note: false }),
     managed: () => false,
-    write: () => Promise.resolve("cancelled"),
+    write: () => Effect.succeed("cancelled"),
     suggestions: () => [],
     resolves: () => false,
-    openLink: () => {},
-    open: () => {},
-    create: () => Promise.resolve(),
+    openLink: () => Effect.void,
+    open: () => Effect.void,
+    create: () => Effect.void,
   };
 }

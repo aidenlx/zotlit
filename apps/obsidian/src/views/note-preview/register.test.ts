@@ -1,10 +1,15 @@
+import { it } from "@effect/vitest";
+import { Context, Effect, Exit, Fiber, Scope } from "effect";
 import type { App, Command, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, onTestFinished, vi } from "vitest";
 
 import { openTestBridge } from "@/lib/__fixtures__/effect-bridge";
 import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
+import { makeWorkspace, Workspace } from "@/lib/obsidian-workspace";
+import type { WorkspaceSource } from "@/lib/obsidian-workspace";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
+import { workbenchActionContext } from "@/views/template-workbench/__fixtures__";
 import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 import {
   TemplateWorkbenchView,
@@ -12,10 +17,9 @@ import {
 } from "@/views/template-workbench/view";
 import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
 
+import { openNotePreview, openWorkbenchLayout } from "./layout";
 import {
   activeTemplateWorkbench,
-  openNotePreview,
-  openWorkbenchLayout,
   registerNotePreview,
   registerCompanionHistory,
   onCompanionStateRestored,
@@ -39,7 +43,6 @@ vi.mock("@/views/template-workbench/view", async () => {
       file = { path: `templates/profile-${++nextProfile}.md` };
       isDefaultProfile = false;
       store = createStore(() => ({ explorer: "simple" }));
-      ensureItem = vi.fn(async () => true);
       onResize = vi.fn();
       getViewType() {
         return "zotlit-template-workbench";
@@ -179,11 +182,23 @@ function setup() {
   });
   const bridge = openTestBridge();
   onTestFinished(() => bridge[Symbol.asyncDispose]());
+  // The Workspace tag over this workspace, for the layout opens.
+  const scope = Scope.makeUnsafe();
+  onTestFinished(() => Effect.runPromise(Scope.close(scope, Exit.void)));
+  const workspaceTag = Effect.runSync(
+    makeWorkspace(workspace as unknown as WorkspaceSource).pipe(
+      Scope.provide(scope),
+    ),
+  );
+  const run = <A, E>(effect: Effect.Effect<A, E, Workspace>) =>
+    Effect.provideService(effect, Workspace, workspaceTag);
   registerNotePreview(
     plugin,
     stubService<PreviewViewDeps & WorkbenchActionDeps>("PreviewViewDeps", {
       bridge,
-      notifier: testNotifier().service,
+      context: workbenchActionContext(testNotifier().service).pipe(
+        Context.add(Workspace, workspaceTag),
+      ),
     }),
   );
   const editorLeaf = makeLeaf();
@@ -210,6 +225,7 @@ function setup() {
     cleanup,
     commands,
     makeLeaf,
+    run,
   };
 }
 
@@ -298,156 +314,196 @@ describe("active Template Workbench sidebars", () => {
     expect(seen).toEqual([test.editor, null]);
   });
 
-  it("moves the same editor into three columns only on explicit action and reuses its window", async () => {
-    const test = setup();
-    test.activate(test.editor);
-    const first = openWorkbenchLayout(test.app, test.editor);
-    expect(openWorkbenchLayout(test.app, test.editor)).toBe(first);
-    await first;
-    expect(test.workspace.moveLeafToPopout).toHaveBeenCalledExactlyOnceWith(
-      test.editorLeaf,
-      { size: { width: 1440, height: 900 } },
-    );
-    expect(test.editorLeaf.view).toBe(test.editor);
-    expect(test.workspace.createLeafBySplit.mock.calls).toEqual([
-      [test.editorLeaf, "vertical", true],
-      [test.editorLeaf, "vertical", false],
-    ]);
-    expect(test.leaves.map(({ view }) => view.getViewType())).toEqual([
-      TEMPLATE_WORKBENCH_VIEW_TYPE,
-      EXPLORER_VIEW_TYPE,
-      NOTE_PREVIEW_VIEW_TYPE,
-    ]);
-    expect(
-      test.leaves.every((leaf) => leaf.container === test.editorLeaf.container),
-    ).toBe(true);
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(test.workspace.moveLeafToPopout).toHaveBeenCalledOnce();
-    expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-    expect(test.editorLeaf.container.focus).toHaveBeenCalledTimes(2);
-  });
+  it.effect(
+    "moves the same editor into three columns only on explicit action and reuses its window",
+    () =>
+      Effect.gen(function* () {
+        const test = setup();
+        test.activate(test.editor);
+        yield* test.run(
+          Effect.all(
+            [
+              openWorkbenchLayout(test.editor),
+              openWorkbenchLayout(test.editor),
+            ],
+            { concurrency: "unbounded" },
+          ),
+        );
+        expect(test.workspace.moveLeafToPopout).toHaveBeenCalledExactlyOnceWith(
+          test.editorLeaf,
+          { size: { width: 1440, height: 900 } },
+        );
+        expect(test.editorLeaf.view).toBe(test.editor);
+        expect(test.workspace.createLeafBySplit.mock.calls).toEqual([
+          [test.editorLeaf, "vertical", true],
+          [test.editorLeaf, "vertical", false],
+        ]);
+        expect(test.leaves.map(({ view }) => view.getViewType())).toEqual([
+          TEMPLATE_WORKBENCH_VIEW_TYPE,
+          EXPLORER_VIEW_TYPE,
+          NOTE_PREVIEW_VIEW_TYPE,
+        ]);
+        expect(
+          test.leaves.every(
+            (leaf) => leaf.container === test.editorLeaf.container,
+          ),
+        ).toBe(true);
+        yield* test.run(openWorkbenchLayout(test.editor));
+        expect(test.workspace.moveLeafToPopout).toHaveBeenCalledOnce();
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+        expect(test.editorLeaf.container.focus).toHaveBeenCalledTimes(2);
+      }),
+  );
 
-  it("loads a deferred saved workbench before reusing its window", async () => {
-    const test = setup();
-    const restored = addEditor(test, {
-      container: { focus: vi.fn() },
-      path: test.editor.file!.path,
-    });
-    restored.leaf.group = "saved-workbench";
-    const preview = test.makeLeaf(restored.leaf.container);
-    preview.group = "saved-workbench";
-    preview.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
-    restored.leaf.view = {
-      getViewType: () => TEMPLATE_WORKBENCH_VIEW_TYPE,
-      getState: () => ({ file: test.editor.file!.path }),
-    };
-    const load = vi.fn(async () => {
-      restored.leaf.view = restored.editor;
-    });
-    Object.assign(restored.leaf, { loadIfDeferred: load });
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(load).toHaveBeenCalledOnce();
-    expect(test.workspace.revealLeaf).toHaveBeenCalledWith(restored.leaf);
-    expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
-    expect(test.workspace.createLeafBySplit).not.toHaveBeenCalled();
-  });
+  it.effect("loads a deferred saved workbench before reusing its window", () =>
+    Effect.gen(function* () {
+      const test = setup();
+      const restored = addEditor(test, {
+        container: { focus: vi.fn() },
+        path: test.editor.file!.path,
+      });
+      restored.leaf.group = "saved-workbench";
+      const preview = test.makeLeaf(restored.leaf.container);
+      preview.group = "saved-workbench";
+      preview.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
+      restored.leaf.view = {
+        getViewType: () => TEMPLATE_WORKBENCH_VIEW_TYPE,
+        getState: () => ({ file: test.editor.file!.path }),
+      };
+      const load = vi.fn(async () => {
+        restored.leaf.view = restored.editor;
+      });
+      Object.assign(restored.leaf, { loadIfDeferred: load });
+      yield* test.run(openWorkbenchLayout(test.editor));
+      expect(load).toHaveBeenCalledOnce();
+      expect(test.workspace.revealLeaf).toHaveBeenCalledWith(restored.leaf);
+      expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
+      expect(test.workspace.createLeafBySplit).not.toHaveBeenCalled();
+    }),
+  );
 
-  it("moves the requested editor when another compact editor has the same Profile", async () => {
-    const test = setup();
-    const compact = addEditor(test, {
-      container: { focus: vi.fn() },
-      path: test.editor.file!.path,
-    });
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(test.workspace.moveLeafToPopout).toHaveBeenCalledWith(
-      test.editorLeaf,
-      { size: { width: 1440, height: 900 } },
-    );
-    expect(test.workspace.revealLeaf).toHaveBeenCalledWith(test.editorLeaf);
-    expect(compact.leaf.group).toBeNull();
-  });
+  it.effect(
+    "moves the requested editor when another compact editor has the same Profile",
+    () =>
+      Effect.gen(function* () {
+        const test = setup();
+        const compact = addEditor(test, {
+          container: { focus: vi.fn() },
+          path: test.editor.file!.path,
+        });
+        yield* test.run(openWorkbenchLayout(test.editor));
+        expect(test.workspace.moveLeafToPopout).toHaveBeenCalledWith(
+          test.editorLeaf,
+          { size: { width: 1440, height: 900 } },
+        );
+        expect(test.workspace.revealLeaf).toHaveBeenCalledWith(test.editorLeaf);
+        expect(compact.leaf.group).toBeNull();
+      }),
+  );
 
-  it("moves an editor out of a window with unrelated unlinked companions", async () => {
-    const test = setup();
-    const original = { focus: vi.fn() };
-    test.editorLeaf.container = original;
-    const pinned = test.makeLeaf(original);
-    pinned.pinned = true;
-    pinned.view = {
-      getViewType: () => NOTE_PREVIEW_VIEW_TYPE,
-      getState: () => ({ source: { path: "templates/other.md" } }),
-    };
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(test.editorLeaf.container).not.toBe(original);
-    expect(pinned.container).toBe(original);
-    expect(pinned.group).toBeNull();
-    expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-  });
+  it.effect(
+    "moves an editor out of a window with unrelated unlinked companions",
+    () =>
+      Effect.gen(function* () {
+        const test = setup();
+        const original = { focus: vi.fn() };
+        test.editorLeaf.container = original;
+        const pinned = test.makeLeaf(original);
+        pinned.pinned = true;
+        pinned.view = {
+          getViewType: () => NOTE_PREVIEW_VIEW_TYPE,
+          getState: () => ({ source: { path: "templates/other.md" } }),
+        };
+        yield* test.run(openWorkbenchLayout(test.editor));
+        expect(test.editorLeaf.container).not.toBe(original);
+        expect(pinned.container).toBe(original);
+        expect(pinned.group).toBeNull();
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+      }),
+  );
 
-  it("adds companions in the existing native window of a popout editor", async () => {
-    const test = setup();
-    const ordinary = { focus: vi.fn() };
-    test.editorLeaf.container = ordinary;
-    test.activate(test.editor);
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
-    expect(test.editorLeaf.container).toBe(ordinary);
-    expect(test.leaves.every((leaf) => leaf.container === ordinary)).toBe(true);
-  });
+  it.effect(
+    "adds companions in the existing native window of a popout editor",
+    () =>
+      Effect.gen(function* () {
+        const test = setup();
+        const ordinary = { focus: vi.fn() };
+        test.editorLeaf.container = ordinary;
+        test.activate(test.editor);
+        yield* test.run(openWorkbenchLayout(test.editor));
+        expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
+        expect(test.editorLeaf.container).toBe(ordinary);
+        expect(test.leaves.every((leaf) => leaf.container === ordinary)).toBe(
+          true,
+        );
+      }),
+  );
 
-  it("keeps a closed preview closed until its reopen command runs in the workbench window", async () => {
-    const test = setup();
-    test.activate(test.editor);
-    await openWorkbenchLayout(test.app, test.editor);
-    test.leaves.splice(2, 1);
-    test.callbacks.get("layout-change")?.();
-    test.activate(test.editor);
-    expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-    const command = test.commands.get("open-note-preview")!;
-    expect(command.checkCallback!(true)).toBe(true);
-    expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-    command.checkCallback!(false);
-    await vi.waitFor(() =>
-      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3),
-    );
-    expect(test.leaves[2]!.getContainer()).toBe(test.editorLeaf.getContainer());
-    await openNotePreview(test.app, test.editor);
-    expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3);
-  });
+  it.effect(
+    "keeps a closed preview closed until its reopen command runs in the workbench window",
+    () =>
+      Effect.gen(function* () {
+        const test = setup();
+        test.activate(test.editor);
+        yield* test.run(openWorkbenchLayout(test.editor));
+        test.leaves.splice(2, 1);
+        test.callbacks.get("layout-change")?.();
+        test.activate(test.editor);
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+        const command = test.commands.get("open-note-preview")!;
+        expect(command.checkCallback!(true)).toBe(true);
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+        command.checkCallback!(false);
+        yield* Effect.promise(() =>
+          vi.waitFor(() =>
+            expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3),
+          ),
+        );
+        expect(test.leaves[2]!.getContainer()).toBe(
+          test.editorLeaf.getContainer(),
+        );
+        yield* test.run(openNotePreview(test.editor));
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3);
+      }),
+  );
 
-  it("binds companion views to their native group across windows", async () => {
-    const test = setup();
-    test.activate(test.editor);
-    await openWorkbenchLayout(test.app, test.editor);
-    const companion = test.leaves[1]!;
-    const seen: (TemplateWorkbenchView | null)[] = [];
-    subscribeActiveTemplateWorkbench(
-      test.app,
-      (editor) => seen.push(editor),
-      companion as unknown as WorkspaceLeaf,
-    );
-    const otherLeaf = test.makeLeaf();
-    const other = new TemplateWorkbenchView(
-      otherLeaf as unknown as WorkspaceLeaf,
-      emptyWorkbenchDeps,
-    );
-    otherLeaf.view = other;
-    test.activate(other);
-    expect(activeTemplateWorkbench(test.app)).toBe(other);
-    expect(seen).toEqual([test.editor]);
-    test.activate(companion.view);
-    expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
-    test.leaves.splice(2, 1);
-    test.commands.get("open-note-preview")!.checkCallback!(false);
-    await vi.waitFor(() =>
-      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3),
-    );
-    expect(test.workspace.createLeafBySplit).toHaveBeenLastCalledWith(
-      test.editorLeaf,
-      "vertical",
-      false,
-    );
-  });
+  it.effect("binds companion views to their native group across windows", () =>
+    Effect.gen(function* () {
+      const test = setup();
+      test.activate(test.editor);
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const companion = test.leaves[1]!;
+      const seen: (TemplateWorkbenchView | null)[] = [];
+      subscribeActiveTemplateWorkbench(
+        test.app,
+        (editor) => seen.push(editor),
+        companion as unknown as WorkspaceLeaf,
+      );
+      const otherLeaf = test.makeLeaf();
+      const other = new TemplateWorkbenchView(
+        otherLeaf as unknown as WorkspaceLeaf,
+        emptyWorkbenchDeps,
+      );
+      otherLeaf.view = other;
+      test.activate(other);
+      expect(activeTemplateWorkbench(test.app)).toBe(other);
+      expect(seen).toEqual([test.editor]);
+      test.activate(companion.view);
+      expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
+      test.leaves.splice(2, 1);
+      test.commands.get("open-note-preview")!.checkCallback!(false);
+      yield* Effect.promise(() =>
+        vi.waitFor(() =>
+          expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3),
+        ),
+      );
+      expect(test.workspace.createLeafBySplit).toHaveBeenLastCalledWith(
+        test.editorLeaf,
+        "vertical",
+        false,
+      );
+    }),
+  );
   it("uses native group order across windows and detects peers joining and closing", () => {
     using cleanup = new DisposableStack();
     const test = setup();
@@ -565,20 +621,24 @@ describe("active Template Workbench sidebars", () => {
     expect(seen.at(-1)).toBeNull();
   });
 
-  it("preserves an editor's existing native group on move and reuses its cross-window companions", async () => {
-    const test = setup();
-    const preview = test.makeLeaf();
-    preview.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
-    preview.setGroupMember(test.editorLeaf);
-    const group = test.editorLeaf.group;
-    const resize = vi.spyOn(test.editor, "onResize");
-    await openWorkbenchLayout(test.app, test.editor);
-    expect(test.editorLeaf.group).toBe(group);
-    expect(preview.group).toBe(group);
-    expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
-    expect(test.leaves.every((leaf) => leaf.group === group)).toBe(true);
-    expect(resize).toHaveBeenCalledOnce();
-  });
+  it.effect(
+    "preserves an editor's existing native group on move and reuses its cross-window companions",
+    () =>
+      Effect.gen(function* () {
+        const test = setup();
+        const preview = test.makeLeaf();
+        preview.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
+        preview.setGroupMember(test.editorLeaf);
+        const group = test.editorLeaf.group;
+        const resize = vi.spyOn(test.editor, "onResize");
+        yield* test.run(openWorkbenchLayout(test.editor));
+        expect(test.editorLeaf.group).toBe(group);
+        expect(preview.group).toBe(group);
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+        expect(test.leaves.every((leaf) => leaf.group === group)).toBe(true);
+        expect(resize).toHaveBeenCalledOnce();
+      }),
+  );
   it("reports an earlier native group peer while pinned and repeats its binding on unpin", () => {
     using cleanup = new DisposableStack();
     const test = setup();
@@ -695,182 +755,263 @@ it("preserves native completion before waiting for layout-ready restoration", ()
   expect(events).toEqual(["native done", "restore"]);
 });
 
-it("reveals an existing file-backed Default workbench for a compact built-in Default without adding columns", async () => {
-  const test = setup();
-  Object.assign(test.editor, {
-    file: { path: "templates/zotlit-profile.default.md" },
-    isDefaultProfile: true,
-  });
-  await openWorkbenchLayout(test.app, test.editor);
-  const window = test.editorLeaf.container;
-  const compact = addEditor(test, {
-    container: { focus: vi.fn() },
-    path: null,
-    defaultProfile: true,
-  });
-  await openWorkbenchLayout(test.app, compact.editor);
-  expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(test.editorLeaf);
-  expect(test.workspace.setActiveLeaf).toHaveBeenLastCalledWith(
-    test.editorLeaf,
-    { focus: true },
-  );
-  expect(window.focus).toHaveBeenCalledTimes(2);
-  expect(compact.leaf.container).not.toBe(window);
-});
+it.effect(
+  "reveals an existing file-backed Default workbench for a compact built-in Default without adding columns",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      Object.assign(test.editor, {
+        file: { path: "templates/zotlit-profile.default.md" },
+        isDefaultProfile: true,
+      });
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const window = test.editorLeaf.container;
+      const compact = addEditor(test, {
+        container: { focus: vi.fn() },
+        path: null,
+        defaultProfile: true,
+      });
+      yield* test.run(openWorkbenchLayout(compact.editor));
+      expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(
+        test.editorLeaf,
+      );
+      expect(test.workspace.setActiveLeaf).toHaveBeenLastCalledWith(
+        test.editorLeaf,
+        { focus: true },
+      );
+      expect(window.focus).toHaveBeenCalledTimes(2);
+      expect(compact.leaf.container).not.toBe(window);
+    }),
+);
 
-it("moves another Profile's compact editor out of an existing workbench window and reuses its new workbench", async () => {
-  const test = setup();
-  await openWorkbenchLayout(test.app, test.editor);
-  const firstWindow = test.editorLeaf.container;
-  const originalLeaves = [...test.leaves];
-  const books = addEditor(test, {
-    container: firstWindow,
-    path: "templates/books.md",
-  });
-  const historyOwner = books.editor;
-  await openWorkbenchLayout(test.app, books.editor);
-  expect(test.workspace.moveLeafToPopout).toHaveBeenLastCalledWith(books.leaf, {
-    size: { width: 1440, height: 900 },
-  });
-  expect(books.leaf.view).toBe(historyOwner);
-  expect(books.leaf.container).not.toBe(firstWindow);
-  expect(originalLeaves.every((leaf) => leaf.container === firstWindow)).toBe(
-    true,
-  );
-  expect(
-    test.leaves.filter((leaf) => leaf.container === firstWindow),
-  ).toHaveLength(3);
-  expect(
-    test.leaves.filter((leaf) => leaf.container === books.leaf.container),
-  ).toHaveLength(3);
-  expect(books.leaf.group).not.toBe(test.editorLeaf.group);
-  const compact = addEditor(test, { path: "templates/books.md" });
-  await openWorkbenchLayout(test.app, compact.editor);
-  expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(2);
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(4);
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(books.leaf);
-});
+it.effect(
+  "moves another Profile's compact editor out of an existing workbench window and reuses its new workbench",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const firstWindow = test.editorLeaf.container;
+      const originalLeaves = [...test.leaves];
+      const books = addEditor(test, {
+        container: firstWindow,
+        path: "templates/books.md",
+      });
+      const historyOwner = books.editor;
+      yield* test.run(openWorkbenchLayout(books.editor));
+      expect(test.workspace.moveLeafToPopout).toHaveBeenLastCalledWith(
+        books.leaf,
+        {
+          size: { width: 1440, height: 900 },
+        },
+      );
+      expect(books.leaf.view).toBe(historyOwner);
+      expect(books.leaf.container).not.toBe(firstWindow);
+      expect(
+        originalLeaves.every((leaf) => leaf.container === firstWindow),
+      ).toBe(true);
+      expect(
+        test.leaves.filter((leaf) => leaf.container === firstWindow),
+      ).toHaveLength(3);
+      expect(
+        test.leaves.filter((leaf) => leaf.container === books.leaf.container),
+      ).toHaveLength(3);
+      expect(books.leaf.group).not.toBe(test.editorLeaf.group);
+      const compact = addEditor(test, { path: "templates/books.md" });
+      yield* test.run(openWorkbenchLayout(compact.editor));
+      expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(2);
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(4);
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(books.leaf);
+    }),
+);
 
-it("keeps an unlinked or partially closed workbench window occupied when another Profile opens", async () => {
-  const test = setup();
-  await openWorkbenchLayout(test.app, test.editor);
-  const firstWindow = test.editorLeaf.container;
-  const preview = test.leaves.find(
-    (leaf) => leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
-  )!;
-  test.leaves.splice(test.leaves.indexOf(preview), 1);
-  const explorer = test.leaves.find(
-    (leaf) => leaf.view.getViewType() === EXPLORER_VIEW_TYPE,
-  )!;
-  explorer.group = null;
-  test.editorLeaf.group = null;
-  explorer.view.getState = () => ({ sourceFile: test.editor.file!.path });
-  const books = addEditor(test, {
-    container: firstWindow,
-    path: "templates/books.md",
-  });
-  await openWorkbenchLayout(test.app, books.editor);
-  expect(books.leaf.container).not.toBe(firstWindow);
-  expect(explorer.container).toBe(firstWindow);
-  const compact = addEditor(test, { path: test.editor.file!.path });
-  await openWorkbenchLayout(test.app, compact.editor);
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(test.editorLeaf);
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(4);
-});
+it.effect(
+  "keeps an unlinked or partially closed workbench window occupied when another Profile opens",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const firstWindow = test.editorLeaf.container;
+      const preview = test.leaves.find(
+        (leaf) => leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
+      )!;
+      test.leaves.splice(test.leaves.indexOf(preview), 1);
+      const explorer = test.leaves.find(
+        (leaf) => leaf.view.getViewType() === EXPLORER_VIEW_TYPE,
+      )!;
+      explorer.group = null;
+      test.editorLeaf.group = null;
+      explorer.view.getState = () => ({ sourceFile: test.editor.file!.path });
+      const books = addEditor(test, {
+        container: firstWindow,
+        path: "templates/books.md",
+      });
+      yield* test.run(openWorkbenchLayout(books.editor));
+      expect(books.leaf.container).not.toBe(firstWindow);
+      expect(explorer.container).toBe(firstWindow);
+      const compact = addEditor(test, { path: test.editor.file!.path });
+      yield* test.run(openWorkbenchLayout(compact.editor));
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(
+        test.editorLeaf,
+      );
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(4);
+    }),
+);
 
-it("reopens missing companions for the workbench's own editor without creating a window", async () => {
-  const test = setup();
-  await openWorkbenchLayout(test.app, test.editor);
-  const window = test.editorLeaf.container;
-  const explorer = test.leaves.find(
-    (leaf) => leaf.view.getViewType() === EXPLORER_VIEW_TYPE,
-  )!;
-  test.leaves.splice(test.leaves.indexOf(explorer), 1);
-  await openWorkbenchLayout(test.app, test.editor);
-  expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3);
-  expect(test.leaves.filter((leaf) => leaf.container === window)).toHaveLength(
-    3,
-  );
-});
+it.effect(
+  "reopens missing companions for the workbench's own editor without creating a window",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const window = test.editorLeaf.container;
+      const explorer = test.leaves.find(
+        (leaf) => leaf.view.getViewType() === EXPLORER_VIEW_TYPE,
+      )!;
+      test.leaves.splice(test.leaves.indexOf(explorer), 1);
+      yield* test.run(openWorkbenchLayout(test.editor));
+      expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3);
+      expect(
+        test.leaves.filter((leaf) => leaf.container === window),
+      ).toHaveLength(3);
+    }),
+);
 
-it("converges simultaneous openings from two editors of the same Profile", async () => {
-  const test = setup();
-  const compact = addEditor(test, { path: test.editor.file!.path });
-  await Promise.all([
-    openWorkbenchLayout(test.app, test.editor),
-    openWorkbenchLayout(test.app, compact.editor),
-  ]);
-  expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(test.editorLeaf);
-});
+it.effect("opens one Note Preview when two opens run at once", () =>
+  Effect.gen(function* () {
+    const test = setup();
+    // The new pane takes its view only once Obsidian has loaded it.
+    const loaded = Promise.withResolvers<void>();
+    test.workspace.createLeafBySplit.mockImplementation((leaf) => {
+      const created = test.makeLeaf(leaf.container);
+      created.setViewState = vi.fn(async ({ type }: { type: string }) => {
+        await loaded.promise;
+        created.view = { getViewType: () => type, getState: () => ({}) };
+      });
+      return created;
+    });
+    const opens = yield* Effect.forkChild(
+      test.run(
+        Effect.all(
+          [openNotePreview(test.editor), openNotePreview(test.editor)],
+          { concurrency: "unbounded" },
+        ),
+      ),
+    );
+    yield* Effect.promise(() =>
+      vi.waitFor(() =>
+        expect(test.workspace.createLeafBySplit).toHaveBeenCalled(),
+      ),
+    );
+    loaded.resolve();
+    yield* Fiber.join(opens);
+    expect(test.workspace.createLeafBySplit).toHaveBeenCalledOnce();
+    expect(
+      test.leaves.filter(
+        (leaf) => leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
+      ),
+    ).toHaveLength(1);
+  }),
+);
 
-it("promotes a built-in Default workbench through the native leaf when its file is materialized", async () => {
-  const test = setup();
-  Object.assign(test.editor, {
-    file: null,
-    isDefaultProfile: true,
-    getState: () => ({ itemIndexedKey: "MAIN2345", defaultDraft: true }),
-  });
-  await openWorkbenchLayout(test.app, test.editor);
-  const compact = addEditor(test, {
-    path: "templates/zotlit-profile.default.md",
-    defaultProfile: true,
-  });
-  await openWorkbenchLayout(test.app, compact.editor);
-  expect(test.editorLeaf.setViewState).toHaveBeenCalledWith({
-    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
-    state: {
-      itemIndexedKey: "MAIN2345",
-      defaultDraft: false,
-      file: "templates/zotlit-profile.default.md",
-    },
-  });
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(test.editorLeaf);
-});
+it.effect(
+  "converges simultaneous openings from two editors of the same Profile",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      const compact = addEditor(test, { path: test.editor.file!.path });
+      yield* test.run(
+        Effect.all(
+          [
+            openWorkbenchLayout(test.editor),
+            openWorkbenchLayout(compact.editor),
+          ],
+          { concurrency: "unbounded" },
+        ),
+      );
+      expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(
+        test.editorLeaf,
+      );
+    }),
+);
 
-it("keeps the requested Default workbench and its Item when another full Default workbench comes first", async () => {
-  const test = setup();
-  const firstContext = { item: { key: "MAIN2345" } };
-  Object.assign(test.editor, {
-    isDefaultProfile: true,
-    authoringContext: firstContext,
-  });
-  await openWorkbenchLayout(test.app, test.editor);
-  const later = addEditor(test, {
-    container: { focus: vi.fn() },
-    path: test.editor.file!.path,
-    defaultProfile: true,
-  });
-  const laterContext = { item: { key: "BOOK2345" } };
-  Object.assign(later.editor, { authoringContext: laterContext });
-  later.leaf.group = "later-default";
-  for (const type of [EXPLORER_VIEW_TYPE, NOTE_PREVIEW_VIEW_TYPE]) {
-    const companion = test.makeLeaf(later.leaf.container);
-    companion.group = later.leaf.group;
-    companion.view = { getViewType: () => type };
-  }
-  await openWorkbenchLayout(test.app, later.editor);
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(later.leaf);
-  expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
-  expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
-  expect(test.editor.authoringContext).toBe(firstContext);
-  expect(later.editor.authoringContext).toBe(laterContext);
-  const preview = test.leaves.find(
-    (leaf) =>
-      leaf.group === later.leaf.group &&
-      leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
-  )!;
-  test.leaves.splice(test.leaves.indexOf(preview), 1);
-  await openWorkbenchLayout(test.app, later.editor);
-  expect(test.workspace.createLeafBySplit).toHaveBeenLastCalledWith(
-    later.leaf,
-    "vertical",
-    false,
-  );
-  expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(later.leaf);
-});
+it.effect(
+  "promotes a built-in Default workbench through the native leaf when its file is materialized",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      Object.assign(test.editor, {
+        file: null,
+        isDefaultProfile: true,
+        getState: () => ({ itemIndexedKey: "MAIN2345", defaultDraft: true }),
+      });
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const compact = addEditor(test, {
+        path: "templates/zotlit-profile.default.md",
+        defaultProfile: true,
+      });
+      yield* test.run(openWorkbenchLayout(compact.editor));
+      expect(test.editorLeaf.setViewState).toHaveBeenCalledWith({
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+        state: {
+          itemIndexedKey: "MAIN2345",
+          defaultDraft: false,
+          file: "templates/zotlit-profile.default.md",
+        },
+      });
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(
+        test.editorLeaf,
+      );
+    }),
+);
+
+it.effect(
+  "keeps the requested Default workbench and its Item when another full Default workbench comes first",
+  () =>
+    Effect.gen(function* () {
+      const test = setup();
+      const firstContext = { item: { key: "MAIN2345" } };
+      Object.assign(test.editor, {
+        isDefaultProfile: true,
+        authoringContext: firstContext,
+      });
+      yield* test.run(openWorkbenchLayout(test.editor));
+      const later = addEditor(test, {
+        container: { focus: vi.fn() },
+        path: test.editor.file!.path,
+        defaultProfile: true,
+      });
+      const laterContext = { item: { key: "BOOK2345" } };
+      Object.assign(later.editor, { authoringContext: laterContext });
+      later.leaf.group = "later-default";
+      for (const type of [EXPLORER_VIEW_TYPE, NOTE_PREVIEW_VIEW_TYPE]) {
+        const companion = test.makeLeaf(later.leaf.container);
+        companion.group = later.leaf.group;
+        companion.view = { getViewType: () => type };
+      }
+      yield* test.run(openWorkbenchLayout(later.editor));
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(later.leaf);
+      expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
+      expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
+      expect(test.editor.authoringContext).toBe(firstContext);
+      expect(later.editor.authoringContext).toBe(laterContext);
+      const preview = test.leaves.find(
+        (leaf) =>
+          leaf.group === later.leaf.group &&
+          leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
+      )!;
+      test.leaves.splice(test.leaves.indexOf(preview), 1);
+      yield* test.run(openWorkbenchLayout(later.editor));
+      expect(test.workspace.createLeafBySplit).toHaveBeenLastCalledWith(
+        later.leaf,
+        "vertical",
+        false,
+      );
+      expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(later.leaf);
+    }),
+);

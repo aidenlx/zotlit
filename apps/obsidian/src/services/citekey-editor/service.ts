@@ -60,11 +60,21 @@ export interface CitekeyTreatment {
   readonly showFormatted: boolean;
   /** Whether the extension is installed at all. */
   readonly active: boolean;
+  /**
+   * Whether Live Preview shows an Annotation Citation as its formatted text,
+   * which its hover answers with the Item's reference too. Independent of
+   * `active`: the annotation link extension is always installed.
+   */
+  readonly annotationCitations: boolean;
   /** What hover answers with. */
   readonly hover: HoverPreferences;
 }
 
-/** The treatment `settings` ask for: nothing while Pandoc citations are off. */
+/**
+ * The treatment `settings` ask for: nothing while Pandoc citations are off.
+ * An Annotation Citation shows as one while it is a Citation at all and
+ * Citations show formatted, whichever other syntaxes are on.
+ */
 export function citekeyTreatment(
   settings: Readonly<Settings>,
 ): CitekeyTreatment {
@@ -76,6 +86,10 @@ export function citekeyTreatment(
     navigationEnabled,
     showFormatted,
     active: navigationEnabled || showFormatted,
+    annotationCitations:
+      settings["citation.annotation-citations"] &&
+      settings["citation.show-formatted"] &&
+      settings["citation.render-annotation-citations"],
     hover: hoverPreferences(settings),
   };
 }

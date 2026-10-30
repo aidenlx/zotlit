@@ -263,6 +263,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     await clearNotices(vaultId!);
     await openPdfWithAnnotationView(vaultId!, { attachmentPath, cleanup });
     let recorded: { instant: string } | null;
+    // The Local API reads the item from memory: while Zotero commits the
+    // read's PATCH, the record shows the new lastRead at the old version. The
+    // write has landed once both have moved.
+    let stored = attachmentBefore;
     expect(
       await waitFor(async () => {
         recorded = await obRun(
@@ -282,21 +286,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           undefined,
         );
         if (!recorded) return false;
-        const item = await readItem(attachment.key);
+        stored = await readItem(attachment.key);
         return (
-          item.data.lastRead ===
-          Math.floor(
-            Temporal.Instant.from(recorded.instant).epochMilliseconds / 1000,
-          )
+          stored.data.lastRead ===
+            Math.floor(
+              Temporal.Instant.from(recorded.instant).epochMilliseconds / 1000,
+            ) && stored.version > attachmentBefore.version
         );
       }),
     ).toBe(true);
     expect((await readItem("RUGIER24")).data.dateModified).toBe(
       before.data.dateModified,
     );
-    expect((await readItem(attachment.key)).version).toBeGreaterThan(
-      attachmentBefore.version,
-    );
+    expect(stored.version).toBeGreaterThan(attachmentBefore.version);
     await verifyPdfReadSource(vaultId!, {
       vaultPath: environment!.vaultPath,
       api,
@@ -5765,12 +5767,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           // The seed's right edge, 570, moves out to 575; nothing else moves.
           const expected = [48.75, 395.509, 575, 743.723];
+          // The Local API reads the item from memory: while Zotero commits a
+          // PATCH, the record shows the new position at the old version. The
+          // write has landed once both have moved.
+          let stored = await image.stored();
           expect(
-            await waitFor(async () =>
-              rectIs((await image.stored()).data.annotationPosition, expected),
-            ),
+            await waitFor(async () => {
+              stored = await image.stored();
+              return (
+                rectIs(stored.data.annotationPosition, expected) &&
+                stored.version > version
+              );
+            }),
           ).toBe(true);
-          const stored = await image.stored();
           expect(stored.version).toBeGreaterThan(version);
           expect(stored.data.annotationSortIndex).toBe(
             await recomputedSortIndex(vaultId!, {
@@ -8870,8 +8879,30 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             position: { pageIndex: 0, rects: [[100, 560, 300, 580]] },
           };
 
-          const createDraft = () =>
-            obRun(
+          /**
+           * Creates the draft once the reopened view has read the Attachment's
+           * list. Until that read binds the Attachment to its database, the
+           * capability reads `server-changed` and a create answers `db-source`.
+           */
+          const createDraft = async () => {
+            await obRunUntil(
+              vaultId!,
+              async (
+                { zotlit },
+                { attachmentKey }: { attachmentKey: string },
+              ) => {
+                const { annotationRepository: repository, bridge } =
+                  zotlit.services;
+                return bridge.runSync(repository.capabilityFor(attachmentKey))
+                  .kind;
+              },
+              { attachmentKey: attachment.key },
+              {
+                ready: (value) => value === "writable",
+                what: "the attachment's annotation capability to report writable",
+              },
+            );
+            return obRun(
               vaultId!,
               async (
                 { zotlit },
@@ -8899,6 +8930,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               },
               { attachmentKey: attachment.key, draft },
             );
+          };
 
           const eraseThrough = (annotationKey: string) =>
             obRun(

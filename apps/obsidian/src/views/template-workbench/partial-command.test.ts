@@ -9,6 +9,7 @@ import { testNotifier } from "@/lib/__fixtures__/notifier";
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
+import { Vault } from "@/lib/obsidian-vault";
 import { Workspace } from "@/lib/obsidian-workspace";
 import { Template, templateFailure } from "@/services/template/service";
 
@@ -40,6 +41,7 @@ it.effect.each(["interrupt", "failure"] as const)(
                   : Effect.fail(templateFailure(new Error("disk full"))),
             }),
             Layer.mock(Workspace, {}),
+            Layer.mock(Vault, {}),
             Layer.succeed(Notifier, notifier.service),
             Logger.layer([
               Logger.make(({ logLevel, message }) => {

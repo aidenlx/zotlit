@@ -38,18 +38,26 @@ One module owns each surface, and each says what it owns at its head:
 | Module | Owns |
 | --- | --- |
 | [`workbench.tsx`](workbench.tsx) | Page layout, header menu, the editor's view store and what a tab or mode change does beyond it, slice routing, the `{{` popup and the narrow sheet, problem navigation |
-| [`use-workbench-connection.ts`](use-workbench-connection.ts) | The `LocalBridgeClient` state machine: the launch-fragment code exchange, hydration, the citation-style refetch, Save with revision reconciliation, disconnect |
+| [`runtime.tsx`](runtime.tsx) | The page runtime: one `ManagedRuntime` over every service below and the Local Bridge client (`@zotlit/workbench/bridge`), created with the page and disposed when it closes, and the one bridge React and CodeMirror reach the services through |
+| [`workbench-connection.ts`](workbench-connection.ts) | The Workbench Connection service: the launch-fragment code exchange, hydration, the dependency and citation-style re-reads, Save with revision reconciliation, disconnect, and the connection Scope that Disconnect closes |
+| [`use-workbench-connection.ts`](use-workbench-connection.ts) | The page's view of the Workbench Connection: its state, the draft it follows, and the reader's actions |
+| [`rendering.ts`](rendering.ts) | The Rendering service: the render the host hands the Workbench, and the `Temporal` load |
 | [`use-workbench-draft.ts`](use-workbench-draft.ts) | The baseline a draft is measured against, the autosave keyed by document reference, the restore prompt |
 | [`sample-bar.tsx`](sample-bar.tsx) | The paper the page is shown against, and whether it is a Sample Item, the connection's own, or retained work |
 | [`connection-bar.tsx`](connection-bar.tsx) | The connection status line |
 | [`field-list.tsx`](field-list.tsx) with [`fields.ts`](fields.ts) | The field column |
 | [`handoff.tsx`](handoff.tsx) with [`unsupported.ts`](unsupported.ts) | The handoff screen for a Profile this host cannot run |
-| [`transfer.ts`](transfer.ts), [`annotation-mark.ts`](annotation-mark.ts), [`reading-view.tsx`](reading-view.tsx) | Import and download, the annotation mark, the rendered note |
+| [`transfer.ts`](transfer.ts), [`annotation-mark.ts`](annotation-mark.ts), [`reading-view.tsx`](reading-view.tsx) | Import and download, the Transfer service (clipboard, Open in Obsidian, a picked file), the annotation mark, the rendered note |
 
 ## Rulings that sit in no single file
 
-- Rendering runs on the page's own thread in [`render.ts`](render.ts), which awaits the
-  `Temporal` polyfill for a runtime that has none (ADR 0045).
+- Rendering runs on the page's own thread in [`render.ts`](render.ts). The Rendering service
+  in [`rendering.ts`](rendering.ts) loads the `Temporal` polyfill once for a runtime that has
+  none, and each render waits for that load (ADR 0045).
+- Every asynchronous step of the page is an Effect on the page runtime. Only
+  [`runtime.tsx`](runtime.tsx) runs it; components fork through its bridge, and the host's
+  runner is the bridge's. A read that belongs to one connection runs in that connection's
+  Scope, so Disconnect stops it; closing the page disposes the runtime and stops everything.
 - The layout folds twice — under 780 px the pane fills the screen with the result on a tab of
   its own, and under 1180 px the field column becomes the sheet the pane's **Add a field**
   button opens, because three columns inside that width leave the editing pane too narrow to

@@ -15,8 +15,8 @@ import type {
   AnnotationRepository,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
-import { HoverVisits } from "@/services/citation-popover/visits";
-import type { HoverVisit } from "@/services/citation-popover/visits";
+import type { PopoverPart } from "@/services/citation-popover/visits";
+import type { NavigationPane } from "@/services/citekey-navigation";
 import type {
   ExcerptDisplayDemand,
   ExcerptDisplays,
@@ -38,6 +38,8 @@ export interface AnnotationHoverRequest {
   sourcePath: string;
   /** The Annotation the link names, by bare keys. */
   link: AnnotationOpenUriOptions;
+  /** Opens the Literature Note of the Annotation's parent Item. */
+  open: (indexedKey: string, pane: NavigationPane) => void;
 }
 
 export interface AnnotationPopoverCoreDeps {
@@ -67,26 +69,20 @@ export interface AnnotationPopoverCoreDeps {
   commentRenderer: (owner: Component, sourcePath: string) => CommentRenderer;
 }
 
-/** One hovered link's popover: what it holds, and its newest read. */
-type Visit = HoverVisit<{
-  /** The newest read; an older one draws nothing. */
-  generation: number;
-}>;
-
 /**
  * Shows what a hovered Durable Annotation Link names: the Annotation's quoted
  * text, comment, page label and colour, and the Excerpt Image of an image or
  * ink Annotation from ZotLit's own cache and renderer — with no reader open.
  *
- * The popover is the Citation Popover's own chrome, opened on the hover and
- * filled once the Annotation is read. Every hover reads the repository again,
- * and an open popover holds the Attachment's list and redraws on its change,
- * so an edit made in Zotero or in the Annotation View shows without a note
- * refresh. A link to an Annotation the list no longer holds says so briefly.
+ * It draws into a part of the Citation Popover, above the parent Item's
+ * reference, once the Annotation is read. Every hover reads the repository
+ * again, and an open popover holds the Attachment's list and redraws on its
+ * change, so an edit made in Zotero or in the Annotation View shows without a
+ * note refresh. A link to an Annotation the list no longer holds says so
+ * briefly.
  */
 export class AnnotationPopoverCore implements Disposable {
   readonly #deps;
-  readonly #visits = new HoverVisits(() => ({ generation: 0 }));
   #closed = false;
 
   constructor(deps: AnnotationPopoverCoreDeps) {
@@ -95,40 +91,29 @@ export class AnnotationPopoverCore implements Disposable {
 
   [Symbol.dispose](): void {
     this.#closed = true;
-    this.#visits.hideAll();
   }
 
   /**
-   * Opens the popover for one hovered link and reads what it names.
-   *
-   * @returns settles once that first read has drawn, or has been dropped
-   *   because a newer read or a hide superseded it. A hover needs not wait
-   *   on it.
-   */
-  show(request: AnnotationHoverRequest): Promise<void> {
-    if (this.#closed) return Promise.resolve();
-    const visit = this.#visits.open(request.hoverParent, request.targetEl);
-    // A read still running when the target moves or the popover hides draws
-    // nothing.
-    visit.subscriptions.defer(() => visit.state.generation++);
-    return this.#follow(visit, request.sourcePath, request.link);
-  }
-
-  /**
-   * Holds the link's list for the visit and draws it now and on every change.
+   * Holds the link's list for the part's visit and draws the Annotation into
+   * the part now and on every change.
    *
    * @returns the first draw.
    */
-  #follow(
-    visit: Visit,
-    sourcePath: string,
-    link: AnnotationOpenUriOptions,
+  follow(
+    part: PopoverPart,
+    { sourcePath, link }: Pick<AnnotationHoverRequest, "sourcePath" | "link">,
   ): Promise<void> {
+    if (this.#closed) return Promise.resolve();
     const deps = this.#deps;
-    const { popover, subscriptions } = visit;
+    const { owner, subscriptions } = part;
     const attachmentKey = formatIndexedKey(link.attachmentKey, link.groupID);
     const annotationKey = formatIndexedKey(link.annotationKey, link.groupID);
-    const renderComment = deps.commentRenderer(popover, sourcePath);
+    const renderComment = deps.commentRenderer(owner, sourcePath);
+    /** The newest read; an older one draws nothing. */
+    let generation = 0;
+    // A read still running when the target moves or the popover hides draws
+    // nothing.
+    subscriptions.defer(() => generation++);
     let excerpt: ExcerptDisplayDemand | null = null;
     /** Whether this visit drew the link's Annotation, or its absence, yet. */
     let drawn = false;
@@ -139,8 +124,8 @@ export class AnnotationPopoverCore implements Disposable {
       deps.bridge.runSync(deps.annotations.hold([attachmentKey])),
     );
     const draw = (): Promise<void> => {
-      const generation = ++visit.state.generation;
-      const current = (): boolean => visit.state.generation === generation;
+      const read = ++generation;
+      const current = (): boolean => generation === read;
       return deps
         .read(attachmentKey)
         .then((list) => {
@@ -157,7 +142,7 @@ export class AnnotationPopoverCore implements Disposable {
               attachmentKey,
               annotationKey,
             });
-            popover.render(<AnnotationPopoverContent kind="unavailable" />);
+            part.draw(<AnnotationPopoverContent kind="unavailable" />);
             return;
           }
           if (list !== null && hasExcerptImage(annotation)) {
@@ -173,7 +158,7 @@ export class AnnotationPopoverCore implements Disposable {
                 if (current()) demand.demand(request);
               });
           }
-          const shown = popover.render(
+          const shown = part.draw(
             <AnnotationPopoverContent
               kind="annotation"
               annotation={annotation}
@@ -193,7 +178,7 @@ export class AnnotationPopoverCore implements Disposable {
             attachmentKey,
             error,
           });
-          popover.render(<AnnotationPopoverContent kind="unavailable" />);
+          part.draw(<AnnotationPopoverContent kind="unavailable" />);
         });
     };
     subscriptions.defer(

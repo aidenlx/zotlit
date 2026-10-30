@@ -1,7 +1,7 @@
 // Welcome gestures run on the plugin's view registry; conversions belong to one banner.
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect } from "effect";
+import * as Atom from "effect/reactivity/Atom";
 
-import { AbortError } from "@/lib/abort-error";
 import { withLogCategory } from "@/lib/effect-log";
 import * as m from "@/lib/i18n/generated/messages";
 import { Notifier } from "@/lib/notifier";
@@ -10,7 +10,6 @@ import { viewRuntime } from "@/lib/view-atoms";
 import { Release } from "@/services/release/service";
 import { PluginSettings } from "@/services/settings/service";
 import type { SettingsPatch } from "@/services/settings/service";
-import { plainTemplateError } from "@/services/template/errors";
 import { TemplateMigration } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 import { ZoteroPref } from "@/services/zotero-pref/service";
@@ -89,12 +88,14 @@ export const openReleaseNoteCommand = viewRuntime.fn(() =>
   }),
 );
 
+/**
+ * One banner's template conversion. Its result is the atom's value, which
+ * the banner reads; closing the banner interrupts the conversion before its
+ * notice.
+ */
 export const makeConversionCommand = () =>
-  viewRuntime.fn(
-    (request: {
-      readonly retry: boolean;
-      readonly result: PromiseWithResolvers<LiteratureNoteTemplateMigrationResult>;
-    }) =>
+  Atom.setIdleTTL(
+    viewRuntime.fn((request: { readonly retry: boolean }) =>
       Effect.gen(function* () {
         const migration = yield* TemplateMigration;
         const result = yield* request.retry
@@ -103,20 +104,29 @@ export const makeConversionCommand = () =>
         yield* Notifier.use((notifier) =>
           notifier.show(templateMigrationNotice(result)),
         );
-        request.result.resolve(result);
+        return { retry: request.retry, result };
       }).pipe(
-        Effect.onExit((exit) =>
-          Effect.sync(() => {
-            if (Exit.isFailure(exit))
-              request.result.reject(
-                Cause.hasInterruptsOnly(exit.cause)
-                  ? new AbortError()
-                  : plainTemplateError(Cause.squash(exit.cause)),
-              );
-          }),
+        Effect.tapCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (error) =>
+            Effect.logWarning(
+              "The Welcome View banner could not convert the templates",
+              { error },
+            ),
         ),
+        withLogCategory("welcome", "banner"),
       ),
+    ),
+    // A closed banner stops the conversion at once, not after the registry's
+    // idle delay; the conversion's own writes still finish.
+    0,
   );
+
+/** What one run of the conversion command answered. */
+export interface ConversionRun {
+  readonly retry: boolean;
+  readonly result: LiteratureNoteTemplateMigrationResult;
+}
 
 export const setFolderCommand = viewRuntime.fn((path: string) =>
   PluginSettings.use((settings) =>

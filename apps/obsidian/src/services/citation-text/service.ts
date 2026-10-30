@@ -409,8 +409,9 @@ export const layerCitationText = (open?: OpenDocuments) =>
                       : { label: "p.", value: occurrence.pageLabel },
                 },
               ]),
-              // Annotation link replacement belongs to #1678.
-              complete: false,
+              // Held under the link's own source, which is what a surface
+              // that shows the link as a citation reads it by.
+              complete: true,
             });
           }
         }

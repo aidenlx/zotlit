@@ -1,9 +1,9 @@
 // Native selection shares examples, search, and labels across independent views.
 import "./selection.css";
 import type { ItemView, WorkspaceLeaf } from "obsidian";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { isChildItemFields, isPageNumber } from "@zotlit/db";
+import { isPageNumber } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import { useUniqueId } from "@zotlit/ui";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
@@ -12,20 +12,19 @@ import type {
   CitationExampleId,
   PartialChoice,
 } from "@zotlit/workbench/render";
-import { annotationOption } from "@zotlit/workbench/ui";
-import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
+import {
+  annotationOption,
+  useForkedEffect,
+  useWorkbenchHost,
+} from "@zotlit/workbench/ui";
+import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
-import { itemSummary } from "@/lib/item-summary";
-import type { ItemLookupHandle } from "@/services/item-lookup/handle";
-import { pickItem } from "@/services/item-lookup/search-modal";
-import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 
-import type { NativeWorkbenchSuggesterRequest } from "./host";
+import type { RecentItems } from "./item-choice";
 import {
   getSampleItem,
   getSampleItemType,
@@ -106,136 +105,6 @@ export function sampleTypeLabel(id: string): string {
     default:
       return m.workbench_example_item();
   }
-}
-
-export async function recentItemChoices(
-  lookup: Pick<ItemLookupHandle, "search">,
-): Promise<readonly WorkbenchItemChoice[]> {
-  try {
-    const hits = await lookup.search("", { limit: 3 });
-    return hits.flatMap(({ item }) =>
-      isChildItemFields(item.fields)
-        ? []
-        : [
-            {
-              id: item.indexedKey,
-              title: itemSummary(item, item.fields).formatted,
-            },
-          ],
-    );
-  } catch {
-    return [];
-  }
-}
-
-export async function searchWorkbenchItem(
-  deps: ItemSearchDeps,
-): Promise<WorkbenchItemChoice | null> {
-  const hit = await pickItem(deps, m.template_data_explorer_pick_placeholder());
-  return hit && !isChildItemFields(hit.item.fields)
-    ? {
-        id: hit.item.indexedKey,
-        title: itemSummary(hit.item, hit.item.fields).formatted,
-      }
-    : null;
-}
-
-export async function chooseWorkbenchItem(
-  host: WorkbenchHost,
-  deps: ItemSearchDeps & { lookup: Pick<ItemLookupHandle, "search"> },
-  selected?: WorkbenchItemChoice,
-): Promise<WorkbenchItemChoice | null> {
-  const recent = await recentItemChoices(deps.lookup);
-  const choices = [...SAMPLE_ITEM_CHOICES, ...recent];
-  const retained =
-    selected && !choices.some(({ id }) => id === selected.id) ? [selected] : [];
-  const found = new Map<string, WorkbenchItemChoice>();
-  // The chooser's typed searches; the recent Items above stay one-shot.
-  using session = deps.lookup.openSession();
-  const request: NativeWorkbenchSuggesterRequest = {
-    title: m.workbench_choose_item(),
-    selected: selected?.id,
-    groups: [
-      {
-        label: "",
-        options: [
-          {
-            id: "search-zotero",
-            label: m.workbench_search_zotero(),
-            icon: "choose-sample",
-          },
-        ],
-      },
-      ...retained.map((item) => ({
-        label: m.workbench_selected_label(),
-        options: [{ id: item.id, label: item.title ?? item.id }],
-      })),
-      {
-        label: m.workbench_sample_examples(),
-        options: SAMPLE_ITEM_CHOICES.map((item) => ({
-          id: item.id,
-          label: sampleTypeLabel(item.id),
-          hint: item.title ?? undefined,
-        })),
-      },
-      {
-        label: m.workbench_recently_updated(),
-        options: recent.map((item) => ({
-          id: item.id,
-          label: item.title ?? item.id,
-        })),
-      },
-    ],
-    searchItems: async (query) => {
-      const hits = await session.search(query, { limit: DEFAULT_LIMIT });
-      return hits.flatMap(({ item }) => {
-        if (isChildItemFields(item.fields)) return [];
-        const choice = {
-          id: item.indexedKey,
-          title: itemSummary(item, item.fields).formatted,
-        };
-        found.set(choice.id, choice);
-        return [{ id: choice.id, label: choice.title }];
-      });
-    },
-  };
-  const id = await host.suggester(request);
-  return id === "search-zotero"
-    ? searchWorkbenchItem(deps)
-    : ([...retained, ...choices].find((item) => item.id === id) ??
-        (id ? found.get(id) : null) ??
-        null);
-}
-
-export async function chooseWorkbenchAnnotation(
-  host: WorkbenchHost,
-  current: readonly AnnotationChoice[],
-  selected: string | null,
-): Promise<string | null> {
-  const options = (examples: readonly AnnotationChoice[]) =>
-    examples.map((example) => {
-      const option = annotationOption(workbenchM, example);
-      return {
-        id: option.value,
-        label: option.label,
-        hint: option.description,
-      };
-    });
-  return host.suggester({
-    title: m.workbench_choose_annotation(),
-    selected: selected ?? undefined,
-    groups: [
-      {
-        label: m.workbench_annotation_from_item(),
-        options: options(current),
-        empty: m.workbench_annotation_empty(),
-      },
-      {
-        label: m.workbench_sample_examples(),
-        options: options(SAMPLE_ANNOTATIONS),
-      },
-    ],
-  });
 }
 
 /** The selected data's own name, which a pane shows wherever its header cannot. */
@@ -363,24 +232,21 @@ function SelectionOption({
 }
 
 export function ItemSelectionList({
-  lookup,
+  recentItems,
   onSelect,
   onSearch,
 }: {
-  lookup: Pick<ItemLookupHandle, "search">;
+  /** The read of the recent Items, with the services it needs provided. */
+  recentItems: RecentItems;
   onSelect: (item: WorkbenchItemChoice) => void;
   onSearch: () => void;
 }) {
   const [recent, setRecent] = useState<readonly WorkbenchItemChoice[]>([]);
-  useEffect(() => {
-    let active = true;
-    void recentItemChoices(lookup).then((items) => {
-      if (active) setRecent(items);
-    });
-    return () => {
-      active = false;
-    };
-  }, [lookup]);
+  // The host's runner interrupts the read when the list unmounts.
+  useForkedEffect(useWorkbenchHost().run, () => recentItems, {
+    deps: [recentItems],
+    onSuccess: setRecent,
+  });
   return (
     <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">

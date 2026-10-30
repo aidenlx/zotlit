@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,7 +11,7 @@ import type {
   RenderRequest,
 } from "@zotlit/workbench/render";
 
-import { renderInThread } from "./render";
+import { layerRendering, Rendering } from "./rendering";
 
 // The synchronous renderer stands in for the real one, so a test can read the
 // runtime it was handed and the value the caller gets back.
@@ -47,9 +48,9 @@ afterEach(() => {
   globalThis.Temporal = present;
 });
 
-describe("renderInThread", () => {
+describe("Rendering.render", () => {
   it("has Temporal in place before the render runs", async () => {
-    // @ts-expect-error the runtime without Temporal is what the await is for
+    // @ts-expect-error the runtime without Temporal is what the load is for
     delete globalThis.Temporal;
     let seen: typeof globalThis.Temporal | undefined;
     renderProfile.mockImplementation(() => {
@@ -57,10 +58,13 @@ describe("renderInThread", () => {
       return RESULT;
     });
 
-    const rendering = renderInThread(REQUEST);
-    expect(renderProfile).not.toHaveBeenCalled();
-    await rendering;
+    const result = await Effect.runPromise(
+      Rendering.use((rendering) => rendering.render(REQUEST)).pipe(
+        Effect.provide(layerRendering),
+      ),
+    );
 
+    expect(result).toBe(RESULT);
     expect(seen?.PlainDate.from("2026-09-08").year).toBe(2026);
   });
 });

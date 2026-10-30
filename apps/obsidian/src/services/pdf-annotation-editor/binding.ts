@@ -107,6 +107,7 @@ import {
   onPageChanged,
   openFileOf,
   pageViewOf,
+  scrollOffsetOf,
   pdfDocumentOf,
   PdfSeamProbeLog,
   probeController,
@@ -776,27 +777,56 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#surfaces.use(onPageRendered(controller, onRender));
     // The move to the position a document reopens at is PDF.js's own, not a
     // page turn: page changes count from the initial view on. PDF.js sets its
-    // flag before that move, so the binding keeps its own, which turns on at
-    // `documentinit` and off when the document closes for a reload in place.
+    // flag before that move, so the binding keeps its own. It turns on at
+    // `documentinit`, or at the first page change after PDF.js set its flag,
+    // which is not counted; it turns off when the document closes for a
+    // reload in place.
+    // PDF.js names the page that move shows on its next scroll update, which
+    // can come after `documentinit`; that change leaves the reader where the
+    // initial view put it. So the reopen position is kept until the reader
+    // leaves it, and a page change that leaves the reader there is not a
+    // turn. A link or subpath turn names its page before it scrolls in the
+    // same task, so the position is read once that task's work is done.
     let initialView = initialViewSet(controller);
+    let reopenedAt = initialView ? scrollOffsetOf(controller) : null;
     this.#surfaces.use(
       onInitialView(controller, () => {
         initialView = true;
+        reopenedAt = scrollOffsetOf(controller);
       }),
     );
     this.#surfaces.use(
       onDocumentClosed(controller, () => {
         initialView = false;
+        reopenedAt = null;
       }),
     );
     this.#surfaces.use(
       onPageChanged(controller, () => {
-        if (
-          this.#attachment.kind === "resolved" &&
-          this.#pageProbed &&
-          initialView
-        )
-          this.#reads?.record(this.#attachment, "page");
+        // #1870: PDF.js 5.3.34 sets the initial view from the `.catch` of
+        // `load` when its open handler throws, and `documentinit` never
+        // follows. A page change after PDF.js set its flag is that move or a
+        // later one, so the binding takes the view as set and counts from the
+        // next change. On the usual path this is the move `documentinit`
+        // follows in the same task, which stays uncounted.
+        if (!initialView && initialViewSet(controller)) {
+          initialView = true;
+          return;
+        }
+        if (!initialView) return;
+        const turned = () => {
+          if (this.#attachment.kind === "resolved" && this.#pageProbed)
+            this.#reads?.record(this.#attachment, "page");
+        };
+        const reopened = reopenedAt;
+        if (!reopened) return turned();
+        queueMicrotask(() => {
+          if (this.#surfaces.disposed || reopenedAt !== reopened) return;
+          const at = scrollOffsetOf(controller);
+          if (at?.top === reopened.top && at.left === reopened.left) return;
+          reopenedAt = null;
+          turned();
+        });
       }),
     );
     this.#probePage(loadedPageOf(controller));

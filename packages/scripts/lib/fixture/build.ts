@@ -50,6 +50,9 @@ import {
   findVaultCase,
   FIXTURE_ITEM_FIELDS,
   FIXTURE_ITEM_TYPES,
+  GRAPH_ITEMS,
+  GRAPH_LITERATURE_NOTE_BODIES,
+  GRAPH_VIEW_OPTIONS,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -105,6 +108,10 @@ export {
   findVaultCase,
   FIXTURE_ITEM_TYPES,
   FIXTURE_PARTIAL_NAME,
+  GRAPH_ITEMS,
+  GRAPH_LITERATURE_NOTE_BODIES,
+  GRAPH_RESEARCH_FOLDERS,
+  GRAPH_VIEW_OPTIONS,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -252,12 +259,13 @@ export async function buildFixture(
       "a build takes one Stress Build: an additive Item count or a My Library Item count",
     );
   }
+  const vaultCase = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
   if (
     options.stressLibraryItemCount !== undefined &&
-    options.vaultCase === "demo"
+    vaultCase.ownItems !== undefined
   ) {
     throw new Error(
-      'the "demo" vault case holds only its own Items: build the Stress Build of My Library with another vault case',
+      `the "${vaultCase.id}" vault case holds only its own Items: build the Stress Build of My Library with another vault case`,
     );
   }
   if (
@@ -289,7 +297,7 @@ export async function buildFixture(
 
   assertSeededCitationKeys(items);
   const baseData = vaultCaseZoteroData(
-    options.vaultCase ?? DEFAULT_VAULT_CASE,
+    vaultCase.id,
     items,
     stressLibrary ? [...COLLECTIONS, ...stressLibrary.collections] : undefined,
   );
@@ -317,7 +325,8 @@ export async function buildFixture(
   await writePrefs(layout, options);
   await writeLocalApiAuthorizations(layout, options);
   await writeVault(layout, options);
-  if (!demo) await writeExcerptAcceptanceFiles(layout);
+  if (vaultCase.ownItems === undefined)
+    await writeExcerptAcceptanceFiles(layout);
 }
 
 /** Rewrite only the saved Library Scope of an already-built vault. */
@@ -349,6 +358,8 @@ const ATTACHMENT_LINK_MODES = {
 const VAULT_PAGES_DIR = join(import.meta.dirname, "vault-pages");
 /** The Demo Vault Case's notes, each one ZotLit wrote in a real session. */
 const DEMO_PAGES_DIR = join(import.meta.dirname, "demo-pages");
+/** The Graph Vault Case's research notes, which cite its Items. */
+const GRAPH_PAGES_DIR = join(import.meta.dirname, "graph-pages");
 const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 
 function attachmentDatabasePath(
@@ -792,7 +803,7 @@ function seedDatabase(
   );
   insert(
     "insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal)" +
-      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+      " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     annotations.map((annotation) => [
       annotation.itemID,
       annotation.parentItemID,
@@ -803,6 +814,7 @@ function seedDatabase(
       annotation.pageLabel,
       annotation.sortIndex,
       JSON.stringify(annotation.position),
+      annotation.isExternal ? 1 : 0,
     ]),
   );
 
@@ -1224,6 +1236,8 @@ async function writeVault(
       join(layout.vaultDir, "templates", DEMO_PROFILE_DOCUMENT.filename),
       DEMO_PROFILE_DOCUMENT.source,
     );
+  } else if (vaultCase.id === "graph") {
+    await writeGraphVault(layout);
   } else {
     // The v2.1 vault predates Profiles, so it seeds every note unstamped.
     await writeVaultNotes(
@@ -1234,7 +1248,7 @@ async function writeVault(
   }
   if (vaultCase.id === "upgrader") {
     await writeLegacyTemplates(layout);
-  } else if (vaultCase.id !== "demo") {
+  } else if (vaultCase.ownItems === undefined) {
     for (const document of LITERATURE_NOTE_DOCUMENTS) {
       await writeFile(
         join(layout.vaultDir, "templates", document.filename),
@@ -1371,6 +1385,57 @@ async function writeVaultNotes(
   }
 }
 
+/**
+ * The Graph Vault Case's research notes, a Literature Note for each Graph
+ * Item in My Library, and the saved global graph. The works in a group
+ * Library get no note, so the graph draws each one as a Cited Work Node.
+ */
+async function writeGraphVault(layout: FixtureLayout): Promise<void> {
+  await cp(GRAPH_PAGES_DIR, layout.vaultDir, { recursive: true });
+  await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
+  for (const item of GRAPH_ITEMS.filter(
+    ({ libraryID }) => libraryID === USER_LIBRARY_ID,
+  )) {
+    await writeFile(
+      join(layout.vaultDir, "literatures", `${item.citationKey}.md`),
+      graphLiteratureNote(item),
+    );
+  }
+  await writeJson(
+    join(layout.vaultDir, ".obsidian", "graph.json"),
+    GRAPH_VIEW_OPTIONS,
+  );
+}
+
+/**
+ * A Graph Vault Case Literature Note: what the shipped default templates
+ * render for an Item with no Annotations, with the researcher's reading notes
+ * typed above the Annotations section.
+ */
+function graphLiteratureNote(item: FixtureItem): string {
+  const body = GRAPH_LITERATURE_NOTE_BODIES[item.citationKey ?? ""];
+  if (body === undefined) {
+    throw new Error(`Graph Item ${item.key} needs a Literature Note body`);
+  }
+  return [
+    "---",
+    `title: ${JSON.stringify(item.title)}`,
+    `zotero-key: ${item.key}`,
+    `citekey: ${item.citationKey}`,
+    "---",
+    `# ${item.title}`,
+    "",
+    `[Zotero](zotero://select/library/items/${item.key})`,
+    "",
+    "## Reading notes",
+    "",
+    body,
+    "",
+    renderedAnnotationsSection(),
+    "",
+  ].join("\n");
+}
+
 /** Eject the Upgrader vault's Legacy Template Files, each with its visible edit applied. */
 async function writeLegacyTemplates(layout: FixtureLayout): Promise<void> {
   for (const template of UPGRADER_LEGACY_TEMPLATES) {
@@ -1475,6 +1540,7 @@ function vaultSettings(
     "server.enabled": true,
     ...(liveUpdatePort === undefined ? {} : { "server.port": liveUpdatePort }),
     [LIBRARY_SCOPE_SETTING_KEY]: scope,
+    ...(vaultCase.id === "graph" ? { "citation.graph-citations": true } : {}),
   };
   if (vaultCase.id === "upgrader") {
     // The flat v2.1 shape: note bindings still vault-global, no Profiles, and

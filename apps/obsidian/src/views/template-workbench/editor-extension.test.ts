@@ -174,6 +174,33 @@ describe("code panes", () => {
     expect(editor.root).toBe(destination);
   });
 
+  it("takes the document it stands in as its root as its closed popover opens, though no move was told", async () => {
+    // An editor made in a closed popover in the main window, whose view then
+    // moves to a popout, draws there with its styles from its first frame.
+    using _host = windowMigration();
+    const popover = document.createElement("div");
+    popover.setAttribute("popover", "auto");
+    document.body.append(popover);
+    const editor = new EditorView({
+      state: EditorState.create({ doc: "x", extensions: [codePane] }),
+      parent: popover,
+    });
+    try {
+      await Promise.resolve();
+      const destination = document.implementation.createHTMLDocument();
+      destination.body.append(popover);
+      const rootAsItOpens = vi.fn(() => editor.root);
+      popover.addEventListener("beforetoggle", rootAsItOpens);
+      popover.dispatchEvent(
+        Object.assign(new Event("beforetoggle"), { newState: "open" }),
+      );
+      expect(rootAsItOpens).toHaveReturnedWith(destination);
+    } finally {
+      editor.destroy();
+      popover.remove();
+    }
+  });
+
   it("copies in a popout without moving focus through a fallback textarea", () => {
     using host = windowMigration();
     const frame = document.createElement("iframe");

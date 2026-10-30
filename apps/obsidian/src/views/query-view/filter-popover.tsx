@@ -8,6 +8,10 @@
 // ADR 0044).
 // Obsidian's typing suggestions draw in the page under it, so the value fields
 // take the browser's own suggestion list instead.
+import { useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -30,12 +34,16 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { cn } from "@/lib/utils";
-import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
+import type { ViewRun } from "@/lib/view-runner";
+import {
+  createTemplateWorkbenchHost,
+  refuseRender,
+} from "@/views/template-workbench/host";
 import { matchTheme } from "@/views/template-workbench/match-pane";
 import { matchRows, onKeymap } from "@/views/template-workbench/theme";
 
+import { filterValuesAtom } from "./atoms";
 import {
   expressionVocabulary,
   useFilterExpressions,
@@ -60,11 +68,10 @@ import type { QueryView } from "./view";
 import { fieldLabel, useViewProperties } from "./view-properties";
 import type { ViewProperties } from "./view-properties";
 
-const logger = getLogger(["views", "query-view", "filter"]);
-
 export type { FilterValues };
 
 const NO_VALUES: FilterValues = { tags: [], collections: [], libraries: [] };
+const noValuesAtom = Atom.make(AsyncResult.success(NO_VALUES));
 
 /** The issue of one condition, as the Query View last found it. */
 export type FilterIssue = ConditionIssue | null;
@@ -177,6 +184,8 @@ const filterTheme = {
 };
 
 export interface FilterEditorProps {
+  /** The runner of the view the filters belong to, for the host's Effects. */
+  run: ViewRun;
   /** The dataset of the view whose filters show. */
   dataset: QueryFileDataset;
   /** The dataset the filters for all views are written for. */
@@ -205,6 +214,7 @@ export interface FilterEditorProps {
 
 /** The two sections of a view's filters: for all views, and for this view. */
 export function FilterEditor({
+  run,
   dataset,
   allViewsDataset: shared,
   allViews,
@@ -221,15 +231,15 @@ export function FilterEditor({
   const app = useObsidianApp();
   const host = useMemo(() => {
     const created = createTemplateWorkbenchHost(app, {
-      render: () =>
-        Promise.reject(new Error("The Query View filter renders no template.")),
+      run,
+      render: refuseRender("The Query View filter renders no template."),
       // The Filter offers its own values and tests no Item.
       matchData: NO_MATCH_DATA,
       insertTarget: () => null,
     });
     // The popover sits in the top layer, over Obsidian's suggestion popups.
     return { ...created, inputSuggestions: undefined };
-  }, [app]);
+  }, [app, run]);
   useEffect(() => () => host[Symbol.dispose](), [host]);
   // Per section, and kept while the issue stays, so a row underlines again
   // only when the issue changes.
@@ -401,8 +411,10 @@ export function FilterButton({ view }: { view: QueryView }) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- `vaultVersion` reads the types again
     [names, literatureNotes, properties, vaultVersion],
   );
-  const [values, setValues] = useState<FilterValues>(NO_VALUES);
   const [open, setOpen] = useState(false);
+  // Read while the popover is open; each opening after a pause reads again.
+  const read = useAtomValue(open ? filterValuesAtom : noValuesAtom);
+  const values = Option.getOrElse(AsyncResult.value(read), () => NO_VALUES);
   const expressions = useFilterExpressions(view, properties, {
     reading: open,
     vaultNames: names,
@@ -416,15 +428,11 @@ export function FilterButton({ view }: { view: QueryView }) {
       count={conditionCount(file.filters) + conditionCount(shown.filters)}
       hook="filter"
       className="zt:w-[min(--spacing(130),calc(100vw_-_var(--size-4-8)))] zt:max-w-none"
-      onOpen={() => {
-        setOpen(true);
-        view.filterValues().then(setValues, (error: unknown) => {
-          logger.warn("The filter values could not be read", { error });
-        });
-      }}
+      onOpen={() => setOpen(true)}
       onClose={() => setOpen(false)}
     >
       <FilterEditor
+        run={view.run}
         dataset={shown.from ?? "annotations"}
         allViewsDataset={allViewsDataset(file)}
         allViews={file.filters}

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Effect } from "effect";
 import type { WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
@@ -14,8 +15,9 @@ import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { ViewRegistryProvider } from "@/lib/view-atoms";
+import { answerOf, makeViewRunner } from "@/lib/view-runner";
 import type { TemplateDataLoadResult } from "@/services/template-workbench/data";
-import { chooseWorkbenchAnnotation } from "@/views/template-workbench/selection";
+import { workbenchAnnotationChoice } from "@/views/template-workbench/item-choice";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { makeExplorerHost, waitFor } from "./__fixtures__";
@@ -183,6 +185,7 @@ describe("independent native Explorer", () => {
     using session = host.openSession();
     const choose = vi.fn();
     using cleanup = new DisposableStack();
+    const { run } = cleanup.use(makeViewRunner(host.registry));
     const container = cleanup.adopt(document.createElement("div"), (element) =>
       element.remove(),
     );
@@ -199,6 +202,7 @@ describe("independent native Explorer", () => {
               messages: workbenchM,
               getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
+              run,
             }),
           },
           withModel(
@@ -211,8 +215,8 @@ describe("independent native Explorer", () => {
                 }),
               },
               createElement(Explorer, {
-                explorer: { copy: async () => {} },
-                lookup: { search: async () => [] },
+                explorer: { copy: () => Effect.void },
+                recentItems: Effect.succeed([]),
                 onSearchItem: choose,
                 onSelectItem: (item) => session.setTarget(item, "note"),
                 onSelectAnnotation: (id) =>
@@ -233,6 +237,111 @@ describe("independent native Explorer", () => {
       (container.querySelector("button") as HTMLButtonElement).click(),
     );
     expect(choose).toHaveBeenCalledOnce();
+  });
+  it("lists the recent Items the host reads, and stops the read at unmount", async () => {
+    using session = host.openSession();
+    using cleanup = new DisposableStack();
+    const { run } = cleanup.use(makeViewRunner(host.registry));
+    const container = cleanup.adopt(document.createElement("div"), (element) =>
+      element.remove(),
+    );
+    document.body.append(container);
+    const root = createRoot(container);
+    const renderList = (recentItems: Effect.Effect<readonly never[]>) =>
+      act(async () =>
+        root.render(
+          createElement(
+            WorkbenchHostProvider,
+            {
+              host: stubService<WorkbenchHost>("WorkbenchHost", {
+                messages: workbenchM,
+                getLocale: () => "en",
+                persistence: { read: () => null, write: () => {} },
+                run,
+              }),
+            },
+            withModel(
+              session.model,
+              createElement(
+                ExplorerActionsContext,
+                {
+                  value: stubService<ExplorerActions>("ExplorerActions", {
+                    onChooseItem: () => {},
+                  }),
+                },
+                createElement(Explorer, {
+                  explorer: { copy: () => Effect.void },
+                  recentItems,
+                  onSearchItem: () => {},
+                  onSelectItem: () => {},
+                  onSelectAnnotation: () => {},
+                  onChooseAnnotation: () => {},
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    const interrupted = vi.fn();
+    await renderList(
+      Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(interrupted))),
+    );
+    expect(interrupted).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+
+    await waitFor(() => expect(interrupted).toHaveBeenCalledOnce());
+  });
+  it("lists the recent Items the host reads", async () => {
+    using session = host.openSession();
+    using cleanup = new DisposableStack();
+    const { run } = cleanup.use(makeViewRunner(host.registry));
+    const container = cleanup.adopt(document.createElement("div"), (element) =>
+      element.remove(),
+    );
+    document.body.append(container);
+    const root = cleanup.adopt(createRoot(container), (root) => {
+      void act(() => root.unmount());
+    });
+    await act(async () =>
+      root.render(
+        createElement(
+          WorkbenchHostProvider,
+          {
+            host: stubService<WorkbenchHost>("WorkbenchHost", {
+              messages: workbenchM,
+              getLocale: () => "en",
+              persistence: { read: () => null, write: () => {} },
+              run,
+            }),
+          },
+          withModel(
+            session.model,
+            createElement(
+              ExplorerActionsContext,
+              {
+                value: stubService<ExplorerActions>("ExplorerActions", {
+                  onChooseItem: () => {},
+                }),
+              },
+              createElement(Explorer, {
+                explorer: { copy: () => Effect.void },
+                recentItems: Effect.succeed([
+                  { id: "PAPER234g42", title: "Recent paper" },
+                ]),
+                onSearchItem: () => {},
+                onSelectItem: () => {},
+                onSelectAnnotation: () => {},
+                onChooseAnnotation: () => {},
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    await waitFor(() =>
+      expect(container.textContent).toContain("Recent paper"),
+    );
   });
 });
 
@@ -269,8 +378,11 @@ it("switches annotation data locally through the annotation chooser", async () =
   session.setContext(authoring);
   other.setContext(authoring);
   await Promise.all([session.ready(), other.ready()]);
-  const suggester = vi.fn(async (_request: unknown) => "ANNT2346g42");
+  const suggester = vi.fn((_request: unknown) =>
+    Effect.succeed<string | null>("ANNT2346g42"),
+  );
   await using cleanup = new AsyncDisposableStack();
+  const { run } = cleanup.use(makeViewRunner(host.registry));
   const container = cleanup.adopt(document.createElement("div"), (element) =>
     element.remove(),
   );
@@ -289,22 +401,32 @@ it("switches annotation data locally through the annotation chooser", async () =
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,
+            run,
           }),
         },
         withModel(
           session.model,
           createElement(Explorer, {
-            explorer: { copy: async () => {} },
-            lookup: { search: async () => [] },
+            explorer: { copy: () => Effect.void },
+            recentItems: Effect.succeed([]),
             onSelectItem: (item) => session.setTarget(item, "note"),
             onSearchItem: () => {},
             onChooseAnnotation: async () => {
               const state = session.state();
-              const id = await chooseWorkbenchAnnotation(
-                stubService<WorkbenchHost>("WorkbenchHost", { suggester }),
-                state.annotations ?? [],
-                annotationIndexedKey(state.item!.id, state.annotationId) ??
-                  state.annotationId,
+              const chooser = stubService<WorkbenchHost>("WorkbenchHost", {
+                suggester,
+                run,
+              });
+              const id = await answerOf(
+                chooser.run(
+                  workbenchAnnotationChoice(
+                    chooser,
+                    state.annotations ?? [],
+                    annotationIndexedKey(state.item!.id, state.annotationId) ??
+                      state.annotationId,
+                  ),
+                ),
+                null,
               );
               if (id) session.setTarget(state.item, "annotation", id);
             },
@@ -331,7 +453,7 @@ it("switches annotation data locally through the annotation chooser", async () =
   expect(session.state().annotationId).toBe("ANNT2346g42");
   expect(session.state().context).toBe(authoring);
   expect(other.state().annotationId).toBe("ANNT2345");
-  suggester.mockResolvedValueOnce(SAMPLE_ANNOTATIONS[1]!.id);
+  suggester.mockReturnValueOnce(Effect.succeed(SAMPLE_ANNOTATIONS[1]!.id));
   await act(async () => {
     container
       .querySelector<HTMLButtonElement>(

@@ -1,4 +1,4 @@
-// The Workbench's state seam, service dependencies, and command lifetime.
+// The Workbench's state seam and service dependencies.
 import { expect, it } from "@effect/vitest";
 import { Effect, Stream, SubscriptionRef } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -7,7 +7,6 @@ import type { App } from "obsidian";
 import { vi } from "vitest";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
-import { AbortError } from "@/lib/abort-error";
 import type { MetadataEvent } from "@/lib/obsidian-metadata-cache";
 import { fileProfileAtom } from "@/services/profile/atoms";
 import { defaultBindingsAtom } from "@/services/settings/atoms";
@@ -20,8 +19,6 @@ import { waitFor } from "@/views/template-data-explorer/__fixtures__";
 
 import { makeWorkbenchHost } from "./__fixtures__";
 import type { WorkbenchHostDeps } from "./__fixtures__";
-import { makeWorkbenchCommands } from "./atoms";
-import { makeWorkbenchTask } from "./command";
 import {
   holdWorkbenchModel,
   makeWorkbenchModel,
@@ -48,45 +45,6 @@ it.effect(
       unsubscribe();
       release();
     }),
-);
-
-it.effect("interrupts the selected Item read when its leaf closes", () =>
-  Effect.gen(function* () {
-    const started: string[] = [];
-    const cancelled: string[] = [];
-    const host = makeWorkbenchHost({
-      zoteroReads: stubService<WorkbenchHostDeps["zoteroReads"]>(
-        "ZoteroReads",
-        {
-          state: "ready",
-          reads: stubService<WorkbenchHostDeps["zoteroReads"]["reads"]>(
-            "ZoteroReadsApi",
-            {
-              ItemsByIndexedKeys: ({ indexedKeys }) =>
-                Effect.promise((signal) => {
-                  const key = indexedKeys[0]!;
-                  started.push(key);
-                  signal.addEventListener("abort", () => cancelled.push(key));
-                  return new Promise<never>(() => {});
-                }),
-            },
-          ),
-        },
-      ),
-    });
-    const commands = makeWorkbenchCommands(host.registry);
-    const read = commands.select
-      .run("MAIN2345")
-      .catch((error: unknown) => error);
-    yield* Effect.promise(() =>
-      waitFor(() => expect(started).toEqual(["MAIN2345"])),
-    );
-    commands[Symbol.dispose]();
-    yield* Effect.promise(() =>
-      waitFor(() => expect(cancelled).toEqual(["MAIN2345"])),
-    );
-    expect(yield* Effect.promise(() => read)).toBeInstanceOf(AbortError);
-  }),
 );
 
 it.effect(
@@ -211,18 +169,5 @@ it.effect("reads a note's Profile again when its metadata changes", () =>
       waitFor(() => expect(profileOf).toHaveBeenCalledTimes(count + 1)),
     );
     release();
-  }),
-);
-
-it.effect("settles a command closed in the same turn as its gesture", () =>
-  Effect.gen(function* () {
-    const host = makeWorkbenchHost();
-    const command = makeWorkbenchTask(host.registry, () => Effect.never);
-    const result = command.run().catch((error: unknown) => error);
-    command[Symbol.dispose]();
-    expect(yield* Effect.promise(() => result)).toBeInstanceOf(AbortError);
-    yield* Effect.promise(() =>
-      expect(command.run()).rejects.toBeInstanceOf(AbortError),
-    );
   }),
 );

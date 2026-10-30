@@ -138,6 +138,7 @@ export const FIXTURE_ITEM_FIELDS = [
   "pages",
   "place",
   "abstractNote",
+  "DOI",
 ] as const;
 
 export type FixtureItemField = (typeof FIXTURE_ITEM_FIELDS)[number];
@@ -1815,6 +1816,11 @@ interface FixtureAnnotationBase {
   color: string;
   /** Manual (`0`) or automatic (`1`) Zotero tags on the Annotation. */
   tags?: readonly { name: string; type: 0 | 1 }[];
+  /**
+   * An External Annotation: Zotero imported it from the PDF file and keeps it
+   * read-only. Absent for an Annotation drawn in Zotero.
+   */
+  isExternal?: true;
   pageLabel: string;
   sortIndex: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
@@ -1881,7 +1887,9 @@ export type FixtureAnnotation = FixtureAnnotationBase &
 /**
  * A reader's Annotations on the demo papers, captured from a Zotero 10 reader
  * session: Zotero drew each one, so its position, text, Sort Index, and page
- * label are Zotero's own.
+ * label are Zotero's own. The one External Annotation, `XTPPV7Q3`, is the
+ * exception: the Spec writes the row Zotero keeps after it imports a highlight
+ * from the PDF file.
  */
 export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
   {
@@ -2159,6 +2167,32 @@ export const DEMO_ANNOTATIONS: readonly FixtureAnnotation[] = [
     cacheImageAsset: null,
     dateAdded: "2026-09-26 16:57:17",
     dateModified: "2026-09-26 16:57:18",
+  },
+  {
+    // A highlight that another PDF reader saved in the file, as Zotero stores
+    // it after import: read-only, so its card shows the lock. Its rects are
+    // the two full lines, measured from the page's text layer.
+    itemID: 916,
+    libraryID: 1,
+    key: "XTPPV7Q3",
+    parentItemID: 903,
+    type: 1,
+    isExternal: true,
+    text: "the post-study probability that it is true is the positive predictive value, PPV.",
+    comment: null,
+    color: "#ffd400",
+    pageLabel: "696",
+    sortIndex: "00000|002931|00430",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [393.002, 345.104, 544.022, 352.952],
+        [393.002, 334.104, 533.042, 341.952],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-09-26 16:58:02",
+    dateModified: "2026-09-26 16:58:02",
   },
 ];
 
@@ -3189,12 +3223,487 @@ export type FixtureLegacyTemplate = FixtureTemplateEdit & {
       }
   );
 
+/** The graph showcase Items of {@link ITEMS} the Graph Vault Case reuses. */
+const GRAPH_SHOWCASE_ITEM_IDS: ReadonlySet<number> = new Set([
+  70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+]);
+
+/** Library of the works the Graph Vault Case's reader cites but has not written up. */
+const GRAPH_CITED_ONLY_LIBRARY_ID = 2;
+
+/**
+ * The works the Graph Vault Case reads: the ten graph showcase Items and
+ * further real works on hypertext, citation analysis, and memory and note
+ * taking, with their published metadata. The showcase Items come without
+ * their test collection, and their Literature Notes carry none of their vault
+ * properties or showcase citations. Every My Library Item gets a
+ * Literature Note; the works in {@link GRAPH_CITED_ONLY_LIBRARY_ID} get none,
+ * so each one is a Cited Work Node.
+ */
+export const GRAPH_ITEMS: readonly FixtureItem[] = [
+  ...ITEMS.filter(({ itemID }) => GRAPH_SHOWCASE_ITEM_IDS.has(itemID)).map(
+    (item) => ({ ...item, collectionIDs: [] }),
+  ),
+  // ── Hypertext and augmentation ──
+  {
+    itemID: 800,
+    libraryID: 1,
+    key: "LICKLD6A",
+    itemType: "journalArticle",
+    citationKey: "lickliderManComputerSymbiosis1960",
+    title: "Man-Computer Symbiosis",
+    venue: "IRE Transactions on Human Factors in Electronics",
+    fields: {
+      volume: "HFE-1",
+      issue: "1",
+      pages: "4–11",
+      DOI: "10.1109/THFE2.1960.4503259",
+    },
+    date: "1960",
+    creators: [author("J. C. R.", "Licklider")],
+    dateModified: "2025-03-02 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 801,
+    libraryID: 1,
+    key: "KAYGLD7A",
+    itemType: "journalArticle",
+    citationKey: "kayPersonalDynamicMedia1977",
+    title: "Personal Dynamic Media",
+    venue: "Computer",
+    fields: {
+      volume: "10",
+      issue: "3",
+      pages: "31–41",
+      DOI: "10.1109/C-M.1977.217672",
+    },
+    date: "1977",
+    creators: [author("Alan", "Kay"), author("Adele", "Goldberg")],
+    dateModified: "2025-03-03 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 802,
+    libraryID: 1,
+    key: "NELSN74A",
+    itemType: "book",
+    citationKey: "nelsonComputerLib1974",
+    title: "Computer Lib / Dream Machines",
+    date: "1974",
+    creators: [author("Theodor H.", "Nelson")],
+    dateModified: "2025-03-04 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 803,
+    libraryID: 1,
+    key: "HALSZ88A",
+    itemType: "journalArticle",
+    citationKey: "halaszReflectionsNoteCards1988",
+    title:
+      "Reflections on NoteCards: Seven Issues for the Next Generation of Hypermedia Systems",
+    venue: "Communications of the ACM",
+    fields: {
+      volume: "31",
+      issue: "7",
+      pages: "836–852",
+      DOI: "10.1145/48511.48514",
+    },
+    date: "1988",
+    creators: [author("Frank G.", "Halasz")],
+    dateModified: "2025-03-05 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 804,
+    libraryID: 1,
+    key: "SHNDR96A",
+    itemType: "conferencePaper",
+    citationKey: "shneidermanEyesHaveIt1996",
+    title:
+      "The Eyes Have It: A Task by Data Type Taxonomy for Information Visualizations",
+    venue: "Proceedings 1996 IEEE Symposium on Visual Languages",
+    fields: { pages: "336–343", DOI: "10.1109/VL.1996.545307" },
+    date: "1996",
+    creators: [author("Ben", "Shneiderman")],
+    dateModified: "2025-03-06 10:00:00",
+    collectionIDs: [],
+  },
+  // ── Citation analysis and link analysis ──
+  {
+    itemID: 805,
+    libraryID: 1,
+    key: "PRICE65A",
+    itemType: "journalArticle",
+    citationKey: "priceNetworksScientificPapers1965",
+    title: "Networks of Scientific Papers",
+    venue: "Science",
+    fields: {
+      volume: "149",
+      issue: "3683",
+      pages: "510–515",
+      DOI: "10.1126/science.149.3683.510",
+    },
+    date: "1965",
+    creators: [author("Derek J. de Solla", "Price")],
+    dateModified: "2025-03-07 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 806,
+    libraryID: GRAPH_CITED_ONLY_LIBRARY_ID,
+    key: "KESSL63A",
+    itemType: "journalArticle",
+    citationKey: "kesslerBibliographicCoupling1963",
+    title: "Bibliographic Coupling between Scientific Papers",
+    venue: "American Documentation",
+    fields: {
+      volume: "14",
+      issue: "1",
+      pages: "10–25",
+      DOI: "10.1002/asi.5090140103",
+    },
+    date: "1963",
+    creators: [author("M. M.", "Kessler")],
+    dateModified: "2025-03-08 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 807,
+    libraryID: 1,
+    key: "GRFLD72A",
+    itemType: "journalArticle",
+    citationKey: "garfieldCitationAnalysisTool1972",
+    title: "Citation Analysis as a Tool in Journal Evaluation",
+    venue: "Science",
+    fields: {
+      volume: "178",
+      issue: "4060",
+      pages: "471–479",
+      DOI: "10.1126/science.178.4060.471",
+    },
+    date: "1972",
+    creators: [author("Eugene", "Garfield")],
+    dateModified: "2025-03-09 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 808,
+    libraryID: 1,
+    key: "MERTN68A",
+    itemType: "journalArticle",
+    citationKey: "mertonMatthewEffect1968",
+    title: "The Matthew Effect in Science",
+    venue: "Science",
+    fields: {
+      volume: "159",
+      issue: "3810",
+      pages: "56–63",
+      DOI: "10.1126/science.159.3810.56",
+    },
+    date: "1968",
+    creators: [author("Robert K.", "Merton")],
+    dateModified: "2025-03-10 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 809,
+    libraryID: 1,
+    key: "BRINPG98",
+    itemType: "journalArticle",
+    citationKey: "brinAnatomyLargeScale1998",
+    title: "The Anatomy of a Large-Scale Hypertextual Web Search Engine",
+    venue: "Computer Networks and ISDN Systems",
+    fields: {
+      volume: "30",
+      issue: "1–7",
+      pages: "107–117",
+      DOI: "10.1016/S0169-7552(98)00110-X",
+    },
+    date: "1998",
+    creators: [author("Sergey", "Brin"), author("Lawrence", "Page")],
+    dateModified: "2025-03-11 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 810,
+    libraryID: 1,
+    key: "KLNBG99A",
+    itemType: "journalArticle",
+    citationKey: "kleinbergAuthoritativeSources1999",
+    title: "Authoritative Sources in a Hyperlinked Environment",
+    venue: "Journal of the ACM",
+    fields: {
+      volume: "46",
+      issue: "5",
+      pages: "604–632",
+      DOI: "10.1145/324133.324140",
+    },
+    date: "1999",
+    creators: [author("Jon M.", "Kleinberg")],
+    dateModified: "2025-03-12 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 811,
+    libraryID: 1,
+    key: "HIRSCH5A",
+    itemType: "journalArticle",
+    citationKey: "hirschIndexQuantify2005",
+    title: "An Index to Quantify an Individual's Scientific Research Output",
+    venue: "Proceedings of the National Academy of Sciences",
+    fields: {
+      volume: "102",
+      issue: "46",
+      pages: "16569–16572",
+      DOI: "10.1073/pnas.0507655102",
+    },
+    date: "2005",
+    creators: [author("J. E.", "Hirsch")],
+    dateModified: "2025-03-13 10:00:00",
+    collectionIDs: [],
+  },
+  // ── Memory, cognition, and note taking ──
+  {
+    itemID: 812,
+    libraryID: 1,
+    key: "CLARK98A",
+    itemType: "journalArticle",
+    citationKey: "clarkExtendedMind1998",
+    title: "The Extended Mind",
+    venue: "Analysis",
+    fields: {
+      volume: "58",
+      issue: "1",
+      pages: "7–19",
+      DOI: "10.1093/analys/58.1.7",
+    },
+    date: "1998",
+    creators: [author("Andy", "Clark"), author("David", "Chalmers")],
+    dateModified: "2025-03-14 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 813,
+    libraryID: 1,
+    key: "HUTCH95A",
+    itemType: "book",
+    citationKey: "hutchinsCognitionWild1995",
+    title: "Cognition in the Wild",
+    venue: "MIT Press",
+    fields: { place: "Cambridge, MA" },
+    date: "1995",
+    creators: [author("Edwin", "Hutchins")],
+    dateModified: "2025-03-15 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 814,
+    libraryID: 1,
+    key: "RDGRKP6A",
+    itemType: "journalArticle",
+    citationKey: "roedigerTestEnhancedLearning2006",
+    title:
+      "Test-Enhanced Learning: Taking Memory Tests Improves Long-Term Retention",
+    venue: "Psychological Science",
+    fields: {
+      volume: "17",
+      issue: "3",
+      pages: "249–255",
+      DOI: "10.1111/j.1467-9280.2006.01693.x",
+    },
+    date: "2006",
+    creators: [
+      author("Henry L.", "Roediger"),
+      author("Jeffrey D.", "Karpicke"),
+    ],
+    dateModified: "2025-03-16 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 815,
+    libraryID: 1,
+    key: "SWELL88A",
+    itemType: "journalArticle",
+    citationKey: "swellerCognitiveLoad1988",
+    title: "Cognitive Load During Problem Solving: Effects on Learning",
+    venue: "Cognitive Science",
+    fields: {
+      volume: "12",
+      issue: "2",
+      pages: "257–285",
+      DOI: "10.1207/s15516709cog1202_4",
+    },
+    date: "1988",
+    creators: [author("John", "Sweller")],
+    dateModified: "2025-03-17 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 816,
+    libraryID: GRAPH_CITED_ONLY_LIBRARY_ID,
+    key: "EBBNG85A",
+    itemType: "book",
+    citationKey: "ebbinghausGedachtnis1885",
+    title:
+      "Über das Gedächtnis: Untersuchungen zur experimentellen Psychologie",
+    venue: "Duncker & Humblot",
+    fields: { place: "Leipzig" },
+    date: "1885",
+    creators: [author("Hermann", "Ebbinghaus")],
+    dateModified: "2025-03-18 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 817,
+    libraryID: 1,
+    key: "MUELLR4A",
+    itemType: "journalArticle",
+    citationKey: "muellerPenMightier2014",
+    title:
+      "The Pen Is Mightier Than the Keyboard: Advantages of Longhand Over Laptop Note Taking",
+    venue: "Psychological Science",
+    fields: {
+      volume: "25",
+      issue: "6",
+      pages: "1159–1168",
+      DOI: "10.1177/0956797614524581",
+    },
+    date: "2014",
+    creators: [author("Pam A.", "Mueller"), author("Daniel M.", "Oppenheimer")],
+    dateModified: "2025-03-19 10:00:00",
+    collectionIDs: [],
+  },
+  {
+    itemID: 818,
+    libraryID: 1,
+    key: "RISKGB6A",
+    itemType: "journalArticle",
+    citationKey: "riskoCognitiveOffloading2016",
+    title: "Cognitive Offloading",
+    venue: "Trends in Cognitive Sciences",
+    fields: {
+      volume: "20",
+      issue: "9",
+      pages: "676–688",
+      DOI: "10.1016/j.tics.2016.07.002",
+    },
+    date: "2016",
+    creators: [author("Evan F.", "Risko"), author("Sam J.", "Gilbert")],
+    dateModified: "2025-03-20 10:00:00",
+    collectionIDs: [],
+  },
+];
+
+/**
+ * The reading notes a researcher wrote below the template output of each
+ * Graph Vault Case Literature Note, by Citation Key. A citation here draws an
+ * edge from one Literature Note to another work. Every Graph Item in My
+ * Library has an entry.
+ */
+export const GRAPH_LITERATURE_NOTE_BODIES: Readonly<Record<string, string>> = {
+  bushAsWeMayThink1945:
+    "Bush's real problem is selection: the record grows faster than anyone can consult it, and indexing by class and subclass does not follow how a reader thinks. The memex answers with association. A reader ties two items together, and the tie stays as a trail that a colleague can copy and follow.",
+  nelsonComplexInformation1965:
+    "Nelson coins *hypertext* and proposes the evolutionary list file, a structure for writing that keeps changing. He presents it as a way to build the memex [@bushAsWeMayThink1945].",
+  garfieldCitationIndexes1955:
+    "Garfield proposes an index that lists, for each paper, the later papers that cite it, so a reader can follow an idea forward in time. His subtitle, *association of ideas*, reads like a bibliographic version of Bush's trails [@bushAsWeMayThink1945].",
+  smallCoCitationScientific1973:
+    "Small relates two papers by how often later papers cite them together. Co-citation looks forward from the cited pair, where bibliographic coupling looks back from the citing pair [@kesslerBibliographicCoupling1963]. The counts come from the citation index that [@garfieldCitationIndexes1955] proposed.",
+  luhmannCommunicatingSlipBoxes1981:
+    "Luhmann describes his slip box as a partner in communication. Fixed card numbers let a new card branch off any older card, and cross-references let one card point to any other, so the box can surprise its owner.",
+  ahrensHowTakeSmartNotes2017:
+    "A practical account of the slip-box method for students and academic writers. The method depends on permanent notes in one's own words, each one linked to existing notes, as Luhmann worked [@luhmannCommunicatingSlipBoxes1981].",
+  bernersLeeSemanticWeb2001:
+    "The Web gave every document a global address, but its links carry no meaning a program can read. The semantic web adds that meaning through shared ontologies. Compare Nelson's typed links [@nelsonComplexInformation1965].",
+  forteBuildingSecondBrain2022:
+    "Forte organizes notes by project and by how soon they become useful, not by topic. Compare the slip box, where a note earns its place through its links [@ahrensHowTakeSmartNotes2017].",
+  matuschakTransformativeTools2019:
+    "Matuschak and Nielsen ask why so few tools for thought followed the early work on augmentation [@engelbartAugmentingHuman1962] [@kayPersonalDynamicMedia1977]. Their mnemonic medium puts spaced-repetition prompts inside an essay and relies on retrieval practice [@roedigerTestEnhancedLearning2006].",
+  lickliderManComputerSymbiosis1960:
+    'Licklider timed his own working day and found that most of his "thinking" time went to finding and arranging information. Where [@bushAsWeMayThink1945] imagined a better library, Licklider imagines a partner that works with the person in real time.',
+  kayPersonalDynamicMedia1977:
+    "The Dynabook as a medium, not a tool: a personal computer that children and adults can use to read, write, draw, and simulate. The line runs from [@lickliderManComputerSymbiosis1960] through [@engelbartAugmentingHuman1962].",
+  nelsonComputerLib1974:
+    "A self-published, two-sided book that argues computers belong to everyone. The Dream Machines side brings back the hypertext of [@nelsonComplexInformation1965] and praises the demonstrations of [@engelbartAugmentingHuman1962].",
+  halaszReflectionsNoteCards1988:
+    "Seven open issues for hypermedia, from search and composite nodes to versioning and collaborative work. Most of them are still open problems in note-taking software. The roots are in [@nelsonComplexInformation1965] and [@engelbartAugmentingHuman1962].",
+  shneidermanEyesHaveIt1996:
+    "The visual information-seeking mantra: overview first, zoom and filter, then details on demand. A useful checklist for any map of a literature.",
+  priceNetworksScientificPapers1965:
+    "Price treats the literature as a network and finds that each year's papers cite a small, recent research front much more often than the older archive. His data come from the citation index of [@garfieldCitationIndexes1955].",
+  garfieldCitationAnalysisTool1972:
+    "Garfield ranks journals by how often others cite them, the basis of the later Journal Impact Factor. A small core of journals receives most of the citations. Builds on [@garfieldCitationIndexes1955] and [@priceNetworksScientificPapers1965].",
+  mertonMatthewEffect1968:
+    "Eminent scientists receive more credit than lesser-known colleagues for comparable work, and recognition then gathers where it has already gathered. Any count of citations carries this bias.",
+  brinAnatomyLargeScale1998:
+    "PageRank treats a link as a citation and gives more weight to a citation from a page that many others cite. Compare the hubs and authorities of [@kleinbergAuthoritativeSources1999] and the journal rankings of [@garfieldCitationAnalysisTool1972].",
+  kleinbergAuthoritativeSources1999:
+    "Hubs point to good authorities, and authorities receive links from good hubs. Kleinberg connects the method to bibliometrics: co-citation [@smallCoCitationScientific1973], bibliographic coupling [@kesslerBibliographicCoupling1963], and journal impact [@garfieldCitationAnalysisTool1972].",
+  hirschIndexQuantify2005:
+    "The *h*-index is the largest *h* such that *h* papers have at least *h* citations each. Like raw counts, it rewards cumulative advantage [@mertonMatthewEffect1968]. Journal-level counts are a different measure [@garfieldCitationAnalysisTool1972].",
+  clarkExtendedMind1998:
+    "The parity principle: if a process in the world does the work that we would call cognitive when it happens in the head, it is part of cognition. Otto's notebook stands in for his memory. Compare distributed cognition [@hutchinsCognitionWild1995].",
+  hutchinsCognitionWild1995:
+    "Navigation on a ship's bridge as a cognitive system that includes people, charts, and instruments. Cognition is spread across the team and its tools, not held in one head.",
+  roedigerTestEnhancedLearning2006:
+    "Students who took a test on a passage remembered more of it a week later than students who studied it again. The forgetting curve of [@ebbinghausGedachtnis1885] is the baseline that both groups fight.",
+  swellerCognitiveLoad1988:
+    "Means-ends problem solving uses working memory that would otherwise go to learning the structure of the problem. Worked examples free that capacity.",
+  muellerPenMightier2014:
+    "Students who typed their lecture notes wrote more words and copied more of the lecture word for word, and they did worse on conceptual questions. Read with [@swellerCognitiveLoad1988]: the effort of summarizing may be the learning.",
+  riskoCognitiveOffloading2016:
+    "A review of how people use their bodies and their tools to reduce the cognitive demand of a task, such as reminders and written notes. The philosophical frame is [@clarkExtendedMind1998].",
+};
+
+/** Vault folders that hold the Graph Vault Case's research notes. */
+export const GRAPH_RESEARCH_FOLDERS = [
+  "Projects",
+  "Reading log",
+  "Topics",
+] as const;
+
+/**
+ * The global graph options the Graph Vault Case saves in
+ * `.obsidian/graph.json`: the values ZotLit's Citation Graph preset applies,
+ * with author and title labels on, and two colour groups — Literature Notes in
+ * the ZotLit accent, research notes in blue.
+ */
+export const GRAPH_VIEW_OPTIONS = {
+  search: "",
+  showTags: false,
+  showAttachments: false,
+  hideUnresolved: false,
+  showOrphans: false,
+  colorGroups: [
+    { query: '["zotero-key"]', color: { a: 1, rgb: 0xe8622c } },
+    {
+      query: GRAPH_RESEARCH_FOLDERS.map((folder) =>
+        folder.includes(" ") ? `path:"${folder}"` : `path:${folder}`,
+      ).join(" OR "),
+      color: { a: 1, rgb: 0x3b82c4 },
+    },
+  ],
+  showArrow: true,
+  "zotlit-pandoc-citations": true,
+  "zotlit-citation-connected-only": true,
+  "zotlit-color-citation-links": true,
+  "zotlit-citation-popover": true,
+  "zotlit-author-title-labels": true,
+} as const;
+
 export interface FixtureVaultCase {
-  id: "configured" | "fresh" | "upgrader" | "demo";
+  id: "configured" | "fresh" | "upgrader" | "demo" | "graph";
   /** One line for the maintainer choosing a case. */
   summary: string;
   /** Core features for a capture scenario. */
   corePlugins?: Readonly<Record<string, boolean>>;
+  /**
+   * The only Items the case's Zotero data holds, with their child rows and
+   * parents. Absent, the case holds every Fixture Item.
+   */
+  ownItems?: readonly FixtureItem[];
 }
 
 /**
@@ -3221,8 +3730,16 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   {
     id: "demo",
     corePlugins: { sync: false },
+    ownItems: DEMO_ITEMS,
     summary:
       "A researcher's vault for screenshots and walkthroughs: the demo papers' PDFs, their Literature Notes, and the pages that cite them, with only the demo papers and their annotations, English Zotero UI, and Sync disabled.",
+  },
+  {
+    id: "graph",
+    corePlugins: { sync: false, graph: true },
+    ownItems: GRAPH_ITEMS,
+    summary:
+      "A researcher's vault for graph view screenshots: research notes and Literature Notes on hypertext, citation analysis, and memory that cite one another, three cited works with no Literature Note, only those works in Zotero, a saved Citation Graph, and Sync disabled.",
   },
 ];
 
@@ -3254,7 +3771,8 @@ export function vaultCaseZoteroData(
   items: readonly FixtureItem[],
   collections: readonly FixtureCollection[] = COLLECTIONS,
 ): FixtureZoteroData {
-  if (findVaultCase(vaultCaseId).id !== "demo") {
+  const { ownItems } = findVaultCase(vaultCaseId);
+  if (ownItems === undefined) {
     return {
       items,
       libraries: LIBRARIES,
@@ -3264,8 +3782,7 @@ export function vaultCaseZoteroData(
       annotations: ANNOTATIONS,
     };
   }
-  const selected = new Set(DEMO_ITEMS.map(({ itemID }) => itemID));
-  const demoItems = items.filter(({ itemID }) => selected.has(itemID));
+  const selected = new Set(ownItems.map(({ itemID }) => itemID));
   const children = <T extends { itemID: number; parentItemID: number | null }>(
     rows: readonly T[],
   ): T[] =>
@@ -3278,18 +3795,16 @@ export function vaultCaseZoteroData(
   const attachments = children(ATTACHMENTS);
   const notes = children(NOTES);
   const annotations = children(ANNOTATIONS);
-  const collectionIDs = new Set(
-    demoItems.flatMap((item) => item.collectionIDs),
-  );
+  const collectionIDs = new Set(ownItems.flatMap((item) => item.collectionIDs));
   for (const id of collectionIDs) {
     const parent = COLLECTIONS.find(
       (collection) => collection.collectionID === id,
     )?.parentCollectionID;
     if (parent != null) collectionIDs.add(parent);
   }
-  const libraryIDs = new Set(demoItems.map((item) => item.libraryID));
+  const libraryIDs = new Set(ownItems.map((item) => item.libraryID));
   return {
-    items: demoItems,
+    items: ownItems,
     attachments,
     notes,
     annotations,

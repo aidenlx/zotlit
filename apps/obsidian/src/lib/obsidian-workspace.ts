@@ -12,11 +12,13 @@ import type {
   Menu,
   OpenViewState,
   PaneType,
+  SplitDirection,
   TAbstractFile,
   TextFileView,
   TFile,
   Workspace as ObsidianWorkspace,
   WorkspaceLeaf,
+  WorkspaceRoot,
 } from "obsidian";
 
 import { logAndContinue } from "@/lib/effect-log";
@@ -50,6 +52,11 @@ export type WorkspaceSource = Pick<
   | "updateOptions"
   | "openLinkText"
   | "getLeaf"
+  | "getRightLeaf"
+  | "createLeafBySplit"
+  | "openPopoutLeaf"
+  | "moveLeafToPopout"
+  | "rootSplit"
   | "setActiveLeaf"
   | "revealLeaf"
   | "trigger"
@@ -140,6 +147,35 @@ export interface WorkspaceShape {
    * open in.
    */
   getLeaf(newLeaf?: PaneType | boolean): Effect.Effect<WorkspaceLeaf>;
+  /**
+   * Obsidian's `getRightLeaf`: a leaf in the right sidebar, a new one when
+   * `split`; `null` when the sidebar has no room for it.
+   */
+  getRightLeaf(split: boolean): Effect.Effect<WorkspaceLeaf | null>;
+  /**
+   * Obsidian's `createLeafBySplit`: a new leaf beside `leaf`, split in
+   * `direction`, and before it when `before`.
+   */
+  createLeafBySplit(
+    leaf: WorkspaceLeaf,
+    direction?: SplitDirection,
+    before?: boolean,
+  ): Effect.Effect<WorkspaceLeaf>;
+  /** Obsidian's `openPopoutLeaf`: a leaf in a new window of `size`. */
+  openPopoutLeaf(size: {
+    readonly width: number;
+    readonly height: number;
+  }): Effect.Effect<WorkspaceLeaf>;
+  /** Obsidian's `moveLeafToPopout`: move `leaf` into a new window of `size`. */
+  moveLeafToPopout(
+    leaf: WorkspaceLeaf,
+    size: { readonly width: number; readonly height: number },
+  ): Effect.Effect<void>;
+  /**
+   * Obsidian's `rootSplit`: the main window's split, the container of each
+   * leaf that sits in no popout window and no sidebar.
+   */
+  readonly rootSplit: Effect.Effect<WorkspaceRoot>;
   /** Reveal an existing leaf before focusing it. */
   revealLeaf(leaf: WorkspaceLeaf): Effect.Effect<void, Cause.UnknownError>;
   /** Obsidian's `setActiveLeaf`: make `leaf` the active leaf, focused when `focus`. */
@@ -271,6 +307,22 @@ export const makeWorkspace = Effect.fnUntraced(function* (
     ),
     getLeaf: Effect.fn("Workspace.getLeaf")((newLeaf) =>
       Effect.sync(() => source.getLeaf(newLeaf)),
+    ),
+    getRightLeaf: Effect.fn("Workspace.getRightLeaf")((split) =>
+      Effect.sync(() => source.getRightLeaf(split)),
+    ),
+    createLeafBySplit: Effect.fn("Workspace.createLeafBySplit")(
+      (leaf, direction, before) =>
+        Effect.sync(() => source.createLeafBySplit(leaf, direction, before)),
+    ),
+    openPopoutLeaf: Effect.fn("Workspace.openPopoutLeaf")((size) =>
+      Effect.sync(() => source.openPopoutLeaf({ size })),
+    ),
+    moveLeafToPopout: Effect.fn("Workspace.moveLeafToPopout")((leaf, size) =>
+      Effect.sync(() => void source.moveLeafToPopout(leaf, { size })),
+    ),
+    rootSplit: Effect.sync(() => source.rootSplit).pipe(
+      Effect.withSpan("Workspace.rootSplit"),
     ),
     revealLeaf: Effect.fn("Workspace.revealLeaf")((leaf) =>
       Effect.tryPromise((_signal) => source.revealLeaf(leaf)),

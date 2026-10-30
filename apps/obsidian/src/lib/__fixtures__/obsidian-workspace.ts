@@ -11,6 +11,8 @@ import type {
   PaneType,
   View,
   WorkspaceLeaf,
+  WorkspaceRoot,
+  WorkspaceWindow,
 } from "obsidian";
 
 import type { WorkspaceSource } from "@/lib/obsidian-workspace";
@@ -149,6 +151,29 @@ export class MemoryWorkspace implements WorkspaceSource {
     this.leafRequests.push(newLeaf);
     return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
   }
+
+  /** A sidebar leaf; the leaf shows no view. */
+  getRightLeaf(): WorkspaceLeaf {
+    return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  }
+
+  /** A leaf beside `leaf`; the leaf shows no view. */
+  createLeafBySplit(): WorkspaceLeaf {
+    return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  }
+
+  /** A leaf in a new window; no window opens. */
+  openPopoutLeaf(): WorkspaceLeaf {
+    return stubService<WorkspaceLeaf>("WorkspaceLeaf", {});
+  }
+
+  /** No window opens; the leaf stays where it is. */
+  moveLeafToPopout(): WorkspaceWindow {
+    return stubService<WorkspaceWindow>("WorkspaceWindow", {});
+  }
+
+  /** The main window's split, which holds no leaf of this host. */
+  readonly rootSplit = stubService<WorkspaceRoot>("WorkspaceRoot", {});
 
   /** Records the leaf; the active file stays. */
   async revealLeaf(_leaf: WorkspaceLeaf): Promise<void> {}

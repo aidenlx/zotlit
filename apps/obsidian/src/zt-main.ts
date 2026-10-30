@@ -10,7 +10,7 @@ import {
   WEB_WORKBENCH_ENABLED,
 } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
-import { UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
+import { logLateRelease, UnloadAwarePlugin } from "@/lib/plugin-lifecycle";
 
 import { startI18n } from "./lib/i18n";
 import { enableStartupLogging } from "./lib/log";
@@ -235,9 +235,16 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     // fails before the plugin commits ownership with `stack.move()`.
     await using stack = new AsyncDisposableStack();
 
+    // Start once the instance a quick off and on unloaded has released its
+    // commands, zotlit:* names and port.
+    const lateRelease = await this.waitForPreviousAndHoldRelease(stack);
+    if (this.unloaded) return;
+
     const services = await createPluginRuntime(this, stack, languagePack).catch(
       reportStartupFailure,
     );
+    // Logged now: the runtime's logging layer has given LogTape its sinks.
+    if (lateRelease) logLateRelease(this.manifest.id);
 
     // A disable during the build has already unloaded this instance: leave
     // now, and the stack releases the services the build acquired.
@@ -304,7 +311,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         workspace: this.app.workspace,
         query: services.query,
         bridge: services.bridge,
-        annotationNotes: services.annotationNotes,
+        runner: services.annotationInsertRunner,
         settings: services.settings,
         notify: (message) => void new BaseNotice(message),
         commentRenderer: (owner, sourcePath) =>
@@ -357,6 +364,10 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       itemLookup: services.itemLookup,
       settings: services.settings,
       registry: services.viewRegistry,
+      explorer: {
+        bridge: services.bridge,
+        context: services.workbenchActionContext,
+      },
     });
     registerQueryFileView(this, queryViewDeps);
     registerQueryBlock(this, queryViewDeps);
@@ -404,10 +415,9 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
     const templateWorkbenchDeps = {
       registry: services.viewRegistry,
       bridge: services.bridge,
-      notifier: services.notifier,
-      noteFeature: services.noteFeature,
+      context: services.workbenchActionContext,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
-      customize,
+      defaultProfile: services.defaultProfile,
       itemLookup: services.itemLookup,
       settings: services.settings,
       nativePreview: {
@@ -419,6 +429,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
 
     registerTemplateDataExplorer(this, {
       bridge: services.bridge,
+      context: services.workbenchActionContext,
       app: this.app,
       registry: services.viewRegistry,
       itemLookup: services.itemLookup,
@@ -429,7 +440,7 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
       app: this.app,
       registry: services.viewRegistry,
       bridge: services.bridge,
-      notifier: services.notifier,
+      context: services.workbenchActionContext,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });
@@ -488,7 +499,10 @@ export default class ZotLitPlugin extends UnloadAwarePlugin implements CliHost {
         showInLibraryFileMenu((indexedKey) =>
           services.bridge.runAndForget(services.showInLibrary.show(indexedKey)),
         ),
-        explorerFileMenu(this.app),
+        explorerFileMenu(this.app, {
+          bridge: services.bridge,
+          context: services.workbenchActionContext,
+        }),
         queryFileFileMenu(this.app),
       ],
       [queryFileFolderMenu(this.app)],

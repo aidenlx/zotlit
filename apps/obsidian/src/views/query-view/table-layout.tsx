@@ -1,9 +1,10 @@
-import { Keymap } from "obsidian";
 // The Table layout: the Items of a view as rows, like Zotero's item list, with
 // the visible properties as columns, the Literature Note Property among them. An Item
 // row expands into its Attachments and Child Notes, and an Attachment row
 // into its Annotations. Each kind of child row comes from one Table Child
 // Source, so a new kind joins the list without another branch.
+import { Effect, Schema } from "effect";
+import { Keymap } from "obsidian";
 import {
   useEffect,
   useMemo,
@@ -18,21 +19,23 @@ import { isPageNumber, itemSelectUri, parseIndexedKey } from "@zotlit/db";
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn } from "@/lib/utils";
+import type { ViewServices } from "@/lib/view-atoms";
 import type { TargetOpenGesture } from "@/services/attachment-open/actions";
 import { zoteroUri } from "@/services/attachment-open/open-target";
 import type { OpenTarget } from "@/services/attachment-open/open-target";
-import type { QueryHandle } from "@/services/item-query/handle";
 import type {
+  QueryViewOutcome,
   QueryViewRequest,
   QueryViewRow,
   QueryViewValue,
 } from "@/services/item-query/query-view";
+import type { ItemQueryError } from "@/services/item-query/service";
 import { useAnnotStore } from "@/views/annot-view/store";
 
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
-import { useQueryViewState } from "./model";
+import { useQueryTask, useQueryViewState } from "./model";
 import { LITERATURE_NOTE, vaultName } from "./query-file";
 import type { ColumnSizes } from "./query-file";
 import { CellContent, recordCells, searchFinds } from "./record-rows";
@@ -62,6 +65,22 @@ export interface TableRecord {
   readonly values: QueryViewRow["values"];
 }
 
+/** The query a Table Child Source reads its rows through. */
+export interface ChildQuery {
+  run(
+    request: QueryViewRequest,
+  ): Effect.Effect<QueryViewOutcome, ItemQueryError, ViewServices>;
+}
+
+/** A query for the rows under a parent answered no rows: it failed or was cancelled. */
+export class ChildRowsUnread extends Schema.TaggedError<
+  ChildRowsUnread,
+  { readonly brand: unique symbol }
+>()("ChildRowsUnread", {
+  /** The kind of outcome the query answered. */
+  outcome: Schema.Literals(["failed", "cancelled"]),
+}) {}
+
 /** The rows of one kind that a row of another kind expands into. */
 export interface TableChildSource {
   /** The kind of row that expands into these rows. */
@@ -79,9 +98,12 @@ export interface TableChildSource {
    */
   load(
     parent: TableRecord,
-    query: Pick<QueryHandle, "run">,
-    signal: AbortSignal,
-  ): Promise<readonly TableRecord[]>;
+    query: ChildQuery,
+  ): Effect.Effect<
+    readonly TableRecord[],
+    ItemQueryError | ChildRowsUnread,
+    ViewServices
+  >;
   /**
    * The text of one row, under the row it expands from. An Attachment or
    * Annotation row puts its text in a `link` that opens it in its reader.
@@ -105,18 +127,20 @@ function queried(
   kind: TableRowKind,
   request: (parentKey: string) => QueryViewRequest,
 ): TableChildSource["load"] {
-  return async (parent, query, signal) => {
-    const outcome = await query.run(request(parent.key), signal);
-    if (outcome.kind !== "result") throw new Error(outcome.kind);
-    const rows =
-      outcome.result.rows ??
-      outcome.result.groups.flatMap((group) => group.rows);
-    return rows.map((row) => ({
-      kind,
-      key: row.indexedKey,
-      values: row.values,
-    }));
-  };
+  return (parent, query) =>
+    Effect.gen(function* () {
+      const outcome = yield* query.run(request(parent.key));
+      if (outcome.kind !== "result")
+        return yield* new ChildRowsUnread({ outcome: outcome.kind });
+      const rows =
+        outcome.result.rows ??
+        outcome.result.groups.flatMap((group) => group.rows);
+      return rows.map((row) => ({
+        kind,
+        key: row.indexedKey,
+        values: row.values,
+      }));
+    });
 }
 
 export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
@@ -144,16 +168,17 @@ export const TABLE_CHILD_SOURCES: readonly TableChildSource[] = [
     // The Item row's `notes` list holds the key and title of each live Child
     // Note, so these rows need no query of their own.
     marker: "notes",
-    load: async (parent) => {
-      const notes = parent.values.notes;
-      if (!Array.isArray(notes)) return [];
-      return notes.flatMap((note: QueryViewValue): TableRecord[] => {
-        if (note === null || typeof note !== "object" || Array.isArray(note))
-          return [];
-        const values = note as QueryViewRow["values"];
-        return [{ kind: "note", key: text(values.indexedKey), values }];
-      });
-    },
+    load: (parent) =>
+      Effect.sync(() => {
+        const notes = parent.values.notes;
+        if (!Array.isArray(notes)) return [];
+        return notes.flatMap((note: QueryViewValue): TableRecord[] => {
+          if (note === null || typeof note !== "object" || Array.isArray(note))
+            return [];
+          const values = note as QueryViewRow["values"];
+          return [{ kind: "note", key: text(values.indexedKey), values }];
+        });
+      }),
     render: ({ key, values }) => (
       <ZoteroNoteLink noteKey={key}>{text(values.title) || key}</ZoteroNoteLink>
     ),
@@ -283,15 +308,16 @@ export const LOADING_TEXT =
   "zt:truncate zt:animate-in zt:fade-in zt:fill-mode-backwards zt:delay-150";
 
 /** The expanded rows and the rows under them, read when a row expands. */
-export function useChildren(query: Pick<QueryHandle, "run">) {
+export function useChildren(view: QueryView) {
+  const { query } = view.tableDeps;
   const [children, setChildren] = useState<ReadonlyMap<string, ChildState>>(
     () => new Map(),
   );
-  const runs = useRef(new Map<string, AbortController>());
+  const runs = useRef(new Map<string, () => void>());
   useEffect(() => {
     const open = runs.current;
     return () => {
-      for (const controller of open.values()) controller.abort();
+      for (const stop of open.values()) stop();
       open.clear();
     };
   }, []);
@@ -306,7 +332,7 @@ export function useChildren(query: Pick<QueryHandle, "run">) {
     const key = id(record);
     const running = runs.current.get(key);
     if (children.has(key)) {
-      running?.abort();
+      running?.();
       runs.current.delete(key);
       set(key, null);
       return;
@@ -318,27 +344,30 @@ export function useChildren(query: Pick<QueryHandle, "run">) {
       set(key, { phase: "ready", rows: [] });
       return;
     }
-    const controller = new AbortController();
-    runs.current.set(key, controller);
     set(key, {
       phase: "loading",
       pending: reads.flatMap(({ source, keys }) =>
         keys.map((childKey) => ({ kind: source.kind, key: childKey })),
       ),
     });
-    void Promise.all(
-      reads.map(({ source }) => source.load(record, query, controller.signal)),
-    ).then(
-      (lists) => {
-        if (controller.signal.aborted) return;
+    const land = (state: ChildState) =>
+      Effect.sync(() => {
         runs.current.delete(key);
-        set(key, { phase: "ready", rows: lists.flat() });
-      },
-      () => {
-        if (controller.signal.aborted) return;
-        runs.current.delete(key);
-        set(key, { phase: "failed" });
-      },
+        set(key, state);
+      });
+    runs.current.set(
+      key,
+      view.runTask(
+        Effect.all(
+          reads.map(({ source }) => source.load(record, query)),
+          { concurrency: "unbounded" },
+        ).pipe(
+          Effect.matchEffect({
+            onSuccess: (lists) => land({ phase: "ready", rows: lists.flat() }),
+            onFailure: () => land({ phase: "failed" }),
+          }),
+        ),
+      ),
     );
   };
   return { children, toggle };
@@ -399,6 +428,7 @@ function NoteCell({
     () => notes.find(itemKey)?.path ?? null,
   );
   const [creating, setCreating] = useState(false);
+  const run = useQueryTask();
   const note = path === null ? null : notes.find(itemKey);
   if (note)
     return (
@@ -408,7 +438,7 @@ function NoteCell({
         data-query-note={note.path}
         onClick={(event) => {
           event.preventDefault();
-          notes.open(note, event.nativeEvent);
+          run(notes.open(note, event.nativeEvent));
         }}
       >
         {note.basename}
@@ -424,7 +454,12 @@ function NoteCell({
       data-query-create-note={itemKey}
       onClick={() => {
         setCreating(true);
-        void notes.create(itemKey).finally(() => setCreating(false));
+        run(
+          notes
+            .create(itemKey)
+            .pipe(Effect.ensuring(Effect.sync(() => setCreating(false)))),
+          () => m.notice_create_note_failed(),
+        );
       }}
     >
       <Icon name="file-plus" size="xs" />
@@ -700,8 +735,8 @@ export function TableLayout({ view }: { view: QueryView }) {
   const search = useAnnotStore((s) => s.filterQuery)
     .trim()
     .toLowerCase();
-  const { query, literatureNotes, readers } = view.tableDeps;
-  const { children: expanded, toggle } = useChildren(query);
+  const { literatureNotes, readers } = view.tableDeps;
+  const { children: expanded, toggle } = useChildren(view);
   const properties = useViewProperties(view);
   const dataset = useQueryViewState(view, (s) => s.view?.from ?? "annotations");
   const columns = useMemo(() => properties?.visible ?? [], [properties]);

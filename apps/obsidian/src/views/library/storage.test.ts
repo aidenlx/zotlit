@@ -167,7 +167,7 @@ async function openLibrary() {
     );
     await query.settled;
   });
-  return { query, plugin, saveData, storage };
+  return { query, plugin, saveData, storage, registry: host.registry };
 }
 
 /** The document plugin data holds now. */
@@ -286,4 +286,49 @@ it("writes the Reading Card's width to disk at once, and drops it on a reset", a
   expect(saveData).toHaveBeenCalledTimes(2);
   expect(saved(plugin)).not.toHaveProperty("cardWidth");
   expect(storage.document()).not.toHaveProperty("cardWidth");
+});
+
+it("finishes a write that has started when the view closes", async () => {
+  const { plugin, saveData, storage } = await openLibrary();
+  saveData.mockClear();
+  const disk = Promise.withResolvers<void>();
+  saveData.mockImplementationOnce(async (data) => {
+    await disk.promise;
+    plugin.data = data;
+  });
+  const saving = storage.change((doc) => withSearch(doc, "attention"));
+  await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+  storage.close();
+  // The close ends the wait at once; the write goes on to disk.
+  await saving;
+  disk.resolve();
+  await vi.waitFor(() =>
+    expect(saved(plugin)).toMatchObject({ search: "attention" }),
+  );
+});
+
+it("settles a write when the plugin's registry closes under it, as a plugin reload does", async () => {
+  // Obsidian starts a view's close as the plugin unloads and does not wait
+  // for it; the plugin then disposes the registry while the close still
+  // waits for its write. The close must end, or the leaf keeps the old view.
+  const { plugin, saveData, storage, registry } = await openLibrary();
+  saveData.mockClear();
+  const disk = Promise.withResolvers<void>();
+  saveData.mockImplementationOnce(async (data) => {
+    await disk.promise;
+    plugin.data = data;
+  });
+  const saving = storage.change((doc) => withSearch(doc, "reload"));
+  await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+  registry.dispose();
+  disk.resolve();
+  await expect(saving).resolves.toBeUndefined();
+  expect(saved(plugin)).toMatchObject({ search: "reload" });
+});
+
+it("settles a write that has not started when the plugin's registry closes", async () => {
+  const { storage, registry } = await openLibrary();
+  const saving = storage.change((doc) => withSearch(doc, "closed"));
+  registry.dispose();
+  await expect(saving).resolves.toBeUndefined();
 });

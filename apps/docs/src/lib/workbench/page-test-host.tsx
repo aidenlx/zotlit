@@ -1,4 +1,6 @@
 import { EditorView } from "@codemirror/view";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
@@ -7,6 +9,7 @@ import {
   BRIDGE_CAPABILITIES,
   BRIDGE_VERSION,
   LOCAL_BRIDGE_PATHS,
+  LocalBridgeStorage,
   connectFragment,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileResponse } from "@zotlit/workbench/bridge";
@@ -19,18 +22,24 @@ import type {
   TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
+import type { WorkbenchHostError } from "@zotlit/workbench/ui";
 
 import { Toaster } from "@/components/ui/toast";
 // Browser storage, render, and Local Bridge fixtures for web host tests.
 import { m } from "@/paraglide/messages.js";
 
+import { layerPage } from "./runtime";
 import { Workbench } from "./workbench";
 
 // The page's own renderer, behind a spy so a test can read every request it was
 // given and hold one render open.
 const { renderInThread } = vi.hoisted(() => ({
   renderInThread:
-    vi.fn<(request: RenderRequest) => Promise<TemplateRenderResult>>(),
+    vi.fn<
+      (
+        request: RenderRequest,
+      ) => Effect.Effect<TemplateRenderResult, WorkbenchHostError>
+    >(),
 }));
 
 vi.mock("./render", () => ({ renderInThread }));
@@ -85,6 +94,17 @@ export const FIXTURE_CSL_STYLE =
   '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">' +
   "<citation><layout/></citation></style>";
 
+/** The fetch the page's Local Bridge client sends through. */
+let bridge: typeof fetch;
+
+/**
+ * Answers the Local Bridge requests of every page this test opens from now
+ * on with `fetch`. With none served, no Local Bridge is running.
+ */
+export function serveBridge(fetch: typeof globalThis.fetch): void {
+  bridge = fetch;
+}
+
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
 beforeEach(() => {
@@ -93,13 +113,10 @@ beforeEach(() => {
   installStorage("localStorage");
   installStorage("sessionStorage");
   window.history.replaceState(null, "", "/workbench");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => Promise.reject(new Error("No Local Bridge is running."))),
-  );
+  bridge = () => Promise.reject(new Error("No Local Bridge is running."));
   renderInThread.mockClear();
   renderInThread.mockImplementation((request) =>
-    Promise.resolve(renderProfile(request.source, request.snapshot, request)),
+    Effect.sync(() => renderProfile(request.source, request.snapshot, request)),
   );
 });
 
@@ -140,7 +157,11 @@ export interface OpenPage extends AsyncDisposable {
   waitFor: (assertion: () => void) => Promise<void>;
 }
 
-/** The page mounted for real, so its own effects run. */
+/**
+ * The page mounted for real, so its own effects run, over a page layer whose
+ * Local Bridge sends through the served fetch and keeps its grant in this
+ * test's tab storage.
+ */
 export async function open({
   strict = false,
 }: { strict?: boolean } = {}): Promise<OpenPage> {
@@ -153,7 +174,16 @@ export async function open({
   resources.defer(() => act(async () => root.unmount()));
   const content = (
     <>
-      <Workbench />
+      <Workbench
+        layer={layerPage.pipe(
+          Layer.provide([
+            FetchHttpClient.layer.pipe(
+              Layer.provide(Layer.succeed(FetchHttpClient.Fetch, bridge)),
+            ),
+            Layer.succeed(LocalBridgeStorage, sessionStorage),
+          ]),
+        )}
+      />
       <Toaster />
     </>
   );
@@ -346,7 +376,6 @@ export interface BridgeRequest {
   readonly origin: string;
   readonly path: string;
   readonly body: unknown;
-  readonly receiver: unknown;
 }
 
 export interface BridgeFixtureOptions {
@@ -371,12 +400,11 @@ export interface BridgeFixtureOptions {
   readonly noSelectedItem?: boolean;
   /** Answers the selected Item 401, the way a revoked credential does. */
   readonly revokeAfterConnect?: boolean;
+  /** Never answers Disconnect, the way a bridge that went away does. */
+  readonly disconnectUnreachable?: boolean;
   readonly save?: SaveSelectedProfileResponse;
-}
-
-export function receiverName(receiver: unknown): string | undefined {
-  if (receiver === null || typeof receiver !== "object") return undefined;
-  return receiver.constructor.name;
+  /** Holds the answer to a request at `path` until the Promise it returns settles. */
+  readonly hold?: (path: string) => Promise<void> | undefined;
 }
 
 export function bridgeFetch(
@@ -391,11 +419,7 @@ export function bridgeFetch(
     options.itemNetworkFailureOnce === true ||
     options.initialItemFailure === true;
   let itemProtocolFailurePending = options.itemProtocolFailureOnce === true;
-  return async function (
-    this: typeof globalThis,
-    input: string | URL | Request,
-    init?: RequestInit,
-  ) {
+  return async function (input: string | URL | Request, init?: RequestInit) {
     const url = new URL(
       typeof input === "string" || input instanceof URL ? input : input.url,
     );
@@ -405,8 +429,8 @@ export function bridgeFetch(
       origin: url.origin,
       path: url.pathname,
       body,
-      receiver: this,
     });
+    await options.hold?.(url.pathname);
 
     if (url.pathname === LOCAL_BRIDGE_PATHS.selectedItem) itemReads += 1;
 
@@ -428,6 +452,12 @@ export function bridgeFetch(
       );
     }
 
+    if (
+      options.disconnectUnreachable &&
+      url.pathname === LOCAL_BRIDGE_PATHS.disconnect
+    ) {
+      throw new TypeError("The Local Bridge disappeared.");
+    }
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.selectedItem &&
       itemNetworkFailurePending &&

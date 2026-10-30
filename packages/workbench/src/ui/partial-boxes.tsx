@@ -15,6 +15,7 @@ import { MapMode, StateEffect } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, EditorView } from "@codemirror/view";
+import type { Effect } from "effect";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -23,8 +24,9 @@ import { useUniqueId } from "@zotlit/ui";
 
 import { useDocumentRevision } from "./editor";
 import { PreviewWidget, boxAt, boxField, boxRanges } from "./editor-boxes";
-import { useOptionalHost, useTooltip } from "./host";
+import { useTooltip, useWorkbenchHost, WorkbenchHostError } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { useForkedEffect } from "./run";
 import { useIcon, useParts } from "./theme";
 
 import { partialCalls } from "#/document/index";
@@ -61,7 +63,9 @@ export interface PartialPlaceholderHost {
    */
   readonly onShowProblem: (name: string) => void;
   /** The text `name` produces for the caller this pane's slice supplies. */
-  readonly onRender: (name: string) => Promise<string>;
+  readonly onRender: (
+    name: string,
+  ) => Effect.Effect<string, WorkbenchHostError>;
 }
 
 /** One pane's Partial Placeholders: the editor extension, and their contents. */
@@ -258,11 +262,11 @@ function PartialPreview({
   name: string;
   revision: string | number | undefined;
   dataRevision: string | number | undefined;
-  onRender: (name: string) => Promise<string>;
+  onRender: (name: string) => Effect.Effect<string, WorkbenchHostError>;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("notePane");
-  const Markdown = useOptionalHost()?.markdown;
+  const { markdown: Markdown, run } = useWorkbenchHost();
   const [state, setState] = useState<
     { kind: "text"; text: string } | { kind: "error"; message: string } | null
   >(null);
@@ -270,29 +274,30 @@ function PartialPreview({
   // every draw would otherwise start a render on every draw.
   const render = useRef(onRender);
   render.current = onRender;
-  useEffect(() => {
-    let current = true;
-    setState(null);
-    void render.current(name).then(
-      (text) => {
-        if (current) setState({ kind: "text", text });
+  // `revision` re-renders the open preview after the partial itself is
+  // saved, `dataRevision` after the reader chooses other data to read it
+  // against: the render callback is read through a ref, so the key alone
+  // decides when a preview follows the selection. A new key, or the
+  // placeholder leaving the editor, interrupts the render before it.
+  useForkedEffect(
+    run,
+    () => {
+      setState(null);
+      return render.current(name);
+    },
+    {
+      deps: [name, revision, dataRevision],
+      onSuccess: (text) => setState({ kind: "text", text }),
+      onFailure: (failure) => {
+        const error =
+          failure instanceof WorkbenchHostError ? failure.cause : failure;
+        setState({
+          kind: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
       },
-      (error: unknown) => {
-        if (current)
-          setState({
-            kind: "error",
-            message: error instanceof Error ? error.message : String(error),
-          });
-      },
-    );
-    return () => {
-      current = false;
-    };
-    // `revision` re-renders the open preview after the partial itself is
-    // saved, `dataRevision` after the reader chooses other data to read it
-    // against: the render callback is read through a ref, so the key alone
-    // decides when a preview follows the selection.
-  }, [name, revision, dataRevision]);
+    },
+  );
   return (
     <div id={id} data-partial-preview {...part("annotation-preview")}>
       {state?.kind === "error" && (

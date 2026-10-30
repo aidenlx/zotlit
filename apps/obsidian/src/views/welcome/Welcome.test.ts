@@ -2,6 +2,7 @@
 // The Welcome View banner as it draws from its store: its header, its checklist
 // of setup steps, its Help Links, and the template conversion and migration
 // sections.
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
@@ -17,7 +18,9 @@ import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/
 import { makeWelcomeHost } from "./__fixtures__";
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
+import type { ConversionRun } from "./atoms";
 import { WelcomeModelProvider } from "./model";
+import type { WelcomeModel } from "./model";
 import type { WelcomeState } from "./presentation";
 import { Welcome } from "./Welcome";
 
@@ -414,31 +417,32 @@ it("replaces the pending prompt with the persisted result after conversion", asy
 });
 
 it("keeps a refusal readable in the banner after the notice is gone", async () => {
-  const { actions, container } = await render("upgraded", {
+  const { actions, container, converted } = await render("upgraded", {
     templateConversionPending: true,
     templateFolder: "templates",
   });
-  vi.mocked(actions.convertLiteratureNoteTemplates).mockResolvedValueOnce({
-    outcome: "refused",
-    diagnostic: {
-      code: "unsupported-legacy-template",
-      message:
-        "Legacy note template must contain one supported content insertion",
-      difference: "content insertion",
-      hint: "Keep one standard content render in the legacy note template.",
-      files: ["templates/zotlit-note.liquid.md"],
-    },
-  });
+  vi.mocked(actions.convertLiteratureNoteTemplates).mockImplementationOnce(() =>
+    converted({
+      retry: false,
+      result: {
+        outcome: "refused",
+        diagnostic: {
+          code: "unsupported-legacy-template",
+          message:
+            "Legacy note template must contain one supported content insertion",
+          difference: "content insertion",
+          hint: "Keep one standard content render in the legacy note template.",
+          files: ["templates/zotlit-note.liquid.md"],
+        },
+      },
+    }),
+  );
   const button = [...container.querySelectorAll("button")].find(
     (candidate) =>
       candidate.textContent === m.welcome_template_conversion_action(),
   );
 
-  await act(async () => {
-    button?.click();
-    // Let the conversion promise settle before reading the banner.
-    await Promise.resolve();
-  });
+  await act(() => button?.click());
 
   const alert = container.querySelector('[role="alert"]');
   expect(alert?.textContent).toBe(
@@ -499,11 +503,20 @@ async function render(
   actions: WelcomeActions;
   container: HTMLElement;
   store: { setState(patch: Partial<WelcomeState>): void };
+  converted: (run: ConversionRun) => void;
 }> {
   const host = cleanup.use(await makeWelcomeHost());
   const { registry } = host;
   const session = cleanup.use(host.openSession());
+  const conversion = Atom.make<Atom.Type<WelcomeModel["conversion"]>>(
+    AsyncResult.initial(),
+  );
+  cleanup.defer(registry.mount(conversion));
+  // The banner runs the conversion command; here each gesture answers at once.
+  const converted = (run: ConversionRun) =>
+    registry.set(conversion, AsyncResult.success(run));
   const model = {
+    conversion,
     state: Atom.make<WelcomeState>({
       ...session.state(),
       migrationPending: mode === "upgraded",
@@ -519,9 +532,13 @@ async function render(
       registry.update(model.state, (s) => ({ ...s, ...patch })),
   };
   const actions: WelcomeActions = {
-    convertLiteratureNoteTemplates: vi.fn(async () => CONVERTED),
+    convertLiteratureNoteTemplates: vi.fn(() =>
+      converted({ retry: false, result: CONVERTED }),
+    ),
     dismiss: vi.fn(),
-    retryTemplateCleanup: vi.fn(async () => {}),
+    retryTemplateCleanup: vi.fn(() =>
+      converted({ retry: true, result: CONVERTED }),
+    ),
     locateZotero: vi.fn(),
     openExternal: vi.fn(),
     openReleaseNote: vi.fn(),
@@ -551,5 +568,5 @@ async function render(
       ),
     );
   });
-  return { actions, container, store };
+  return { actions, container, store, converted };
 }

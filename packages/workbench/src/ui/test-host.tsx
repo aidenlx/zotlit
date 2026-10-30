@@ -4,10 +4,15 @@
 import type { RenderRequest } from "#/render/request";
 import type { TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
+import { Effect } from "effect";
 import type { ReactNode } from "react";
 
 import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
-import { WorkbenchHostProvider } from "./host";
+import {
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+  WorkbenchHostProvider,
+} from "./host";
 import type {
   WorkbenchHost,
   WorkbenchMenuRequest,
@@ -15,6 +20,7 @@ import type {
   WorkbenchSuggesterRequest,
 } from "./host";
 import { WorkbenchMessagesProvider } from "./messages";
+import { makeWorkbenchRunner } from "./run";
 import type { RenderScheduler } from "./scheduler";
 import type { WorkbenchStore, WorkbenchViewState } from "./store";
 import { m } from "./test-messages";
@@ -30,7 +36,27 @@ export interface PendingRender {
   readonly request: RenderRequest;
   /** Answers with `result` merged over an empty result for this request. */
   answer(result?: Partial<TemplateRenderResult>): void;
+  /** Fails the render with a host failure caused by `error`. */
   reject(error: unknown): void;
+  /** Whether the tree interrupted the render before it was answered. */
+  readonly interrupted: boolean;
+}
+
+/** A request the host holds open while `hold` is set. */
+export interface HeldRequest {
+  readonly kind:
+    | "confirm"
+    | "suggester"
+    | "copy"
+    | "tags"
+    | "collections"
+    | "libraries"
+    | "matches"
+    | "customFields";
+  answer(value: unknown): void;
+  fail(error: unknown): void;
+  /** Whether the tree interrupted the request before it was answered. */
+  readonly interrupted: boolean;
 }
 
 export interface FakeHost extends WorkbenchHost {
@@ -44,11 +70,19 @@ export interface FakeHost extends WorkbenchHost {
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
+  /**
+   * While set, `confirm`, `suggester`, `copy` and every Match data read wait
+   * in `held` until the test answers them; otherwise they answer at once.
+   */
+  hold: boolean;
+  readonly held: HeldRequest[];
   readonly preferences: Map<string, string>;
-  /** What the next `confirm` resolves. */
+  /** What the next `confirm` answers. */
   confirmAnswer: boolean;
-  /** Whether `copy` rejects, which stands for a clipboard the host refused. */
+  /** Whether `copy` fails, which stands for a clipboard the host refused. */
   copyFails: boolean;
+  /** Closes the runner, as a host does when its mount goes. */
+  close(): void;
 }
 
 export function fakeHost(): FakeHost {
@@ -56,57 +90,112 @@ export function fakeHost(): FakeHost {
   const key = (scope: WorkbenchPreferenceScope, name: string) =>
     `${scope}:${name}`;
   const renders: PendingRender[] = [];
+  const held: HeldRequest[] = [];
+  const runner = makeWorkbenchRunner();
+  /** A request that answers at once, or waits in `held` while `hold` is set. */
+  function holdable<A, E>(
+    kind: HeldRequest["kind"],
+    immediate: () => Effect.Effect<A, E>,
+  ): Effect.Effect<A, E> {
+    return Effect.suspend(() =>
+      host.hold
+        ? Effect.callback<A, E>((resume) => {
+            let interrupted = false;
+            held.push({
+              kind,
+              answer: (value) => resume(Effect.succeed(value as A)),
+              fail: (error) => resume(Effect.fail(error as E)),
+              get interrupted() {
+                return interrupted;
+              },
+            });
+            return Effect.sync(() => {
+              interrupted = true;
+            });
+          })
+        : immediate(),
+    );
+  }
   const host: FakeHost = {
     messages: m,
+    run: runner.run,
+    close: runner.close,
     getLocale: () => "en",
     calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
     renders,
+    hold: false,
+    held,
     preferences,
     confirmAnswer: true,
     copyFails: false,
     menu: (request) => void host.calls.menus.push(request),
     dialog: () => ({ close() {} }),
-    confirm: (request) => {
-      host.calls.confirms.push(request.title);
-      return Promise.resolve(host.confirmAnswer);
-    },
-    suggester: (request) => {
-      host.calls.suggesters.push(request);
-      return Promise.resolve(request.selected ?? null);
-    },
+    confirm: (request) =>
+      holdable("confirm", () => {
+        host.calls.confirms.push(request.title);
+        return Effect.succeed(host.confirmAnswer);
+      }),
+    suggester: (request) =>
+      holdable("suggester", () => {
+        host.calls.suggesters.push(request);
+        return Effect.succeed(request.selected ?? null);
+      }),
     tooltip: (text) => ({ "aria-description": text }),
     notice: (text) => void host.calls.notices.push(text),
-    copy: (text) => {
-      host.calls.copies.push(text);
-      return host.copyFails
-        ? Promise.reject(new Error("Clipboard denied"))
-        : Promise.resolve();
-    },
+    copy: (text) =>
+      holdable("copy", () => {
+        host.calls.copies.push(text);
+        return host.copyFails
+          ? Effect.fail(
+              new WorkbenchClipboardError({
+                cause: new Error("Clipboard denied"),
+              }),
+            )
+          : Effect.void;
+      }),
     communityUrl: "https://example.invalid/community",
     // Every render is held open, so a test decides when a result lands and
     // what the reader had time to change before it did.
     render: (request) =>
-      new Promise<TemplateRenderResult>((resolve, reject) => {
+      Effect.callback<TemplateRenderResult, WorkbenchHostError>((resume) => {
         const identity = renderIdentity(request);
+        let interrupted = false;
         renders.push({
           request,
           answer: (result) =>
-            resolve({
-              ...failedRender(identity, { code: "render-error" }),
-              diagnostics: [],
-              ...result,
-            }),
-          reject,
+            resume(
+              Effect.succeed({
+                ...failedRender(identity, { code: "render-error" }),
+                diagnostics: [],
+                ...result,
+              }),
+            ),
+          reject: (error) =>
+            resume(Effect.fail(new WorkbenchHostError({ cause: error }))),
+          get interrupted() {
+            return interrupted;
+          },
+        });
+        return Effect.sync(() => {
+          interrupted = true;
         });
       }),
     markdown: ({ markdown }) => <div role="document">{markdown}</div>,
     matchData: {
-      tags: () => Promise.resolve(["reading", "methods"]),
-      collections: () => Promise.resolve([["Thesis", "Chapter 1"]]),
-      libraries: () =>
-        Promise.resolve([{ id: "personal", name: "My Library" }]),
-      matches: () => Promise.resolve({ kind: "result", matched: false }),
-      customFields: () => Promise.resolve(["Reading status"]),
+      tags: holdable("tags", () => Effect.succeed(["reading", "methods"])),
+      collections: holdable("collections", () =>
+        Effect.succeed([["Thesis", "Chapter 1"]]),
+      ),
+      libraries: holdable("libraries", () =>
+        Effect.succeed([{ id: "personal", name: "My Library" }] as const),
+      ),
+      matches: () =>
+        holdable("matches", () =>
+          Effect.succeed({ kind: "result", matched: false } as const),
+        ),
+      customFields: holdable("customFields", () =>
+        Effect.succeed(["Reading status"]),
+      ),
     },
     insertTarget: () => null,
     persistence: {
@@ -178,6 +267,7 @@ export function mount(
     ),
     [Symbol.dispose]() {
       editor[Symbol.dispose]();
+      host.close();
     },
   };
 }

@@ -21,7 +21,7 @@ import { installedStyles } from "@/services/note-feature/creation-view";
 import { Profile } from "@/services/profile/service";
 import { PluginSettings } from "@/services/settings/service";
 import { explainWorkbenchOpen } from "@/views/template-workbench/actions";
-import { openNativeProfile } from "@/views/template-workbench/register";
+import { openNativeProfile } from "@/views/template-workbench/open";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -341,9 +341,7 @@ function openDocument(ctx: SettingTabContext, path: string) {
     const file = yield* (yield* Vault).getFileByPath(path);
     if (!file) return;
     yield* explainWorkbenchOpen(
-      yield* leaveSettingsFor("open-native-profile", () =>
-        openNativeProfile(ctx.app, file, { customize: true }),
-      ),
+      yield* leaveSettingsFor(openNativeProfile(file, { customize: true })),
     );
   });
 }

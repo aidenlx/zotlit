@@ -62,7 +62,7 @@ import { citationPopoverBlocks } from "./blocks";
 import type { CitationPopoverBlock } from "./blocks";
 import { CitationPopoverContent } from "./content";
 import { HoverVisits } from "./visits";
-import type { HoverVisit } from "./visits";
+import type { HoverVisit, PopoverPart } from "./visits";
 
 /** The services one popover read yields. */
 type PopoverServices =
@@ -101,12 +101,19 @@ export interface WorkHoverRequest extends Pick<
 > {
   work:
     | { kind: "item"; indexedKey: string }
-    | { kind: "citekey"; citekey: string };
+    | { kind: "citekey"; citekey: string }
+    /** The parent Item of the Annotation `annotationKey`, an Indexed Key. */
+    | { kind: "annotation"; annotationKey: string };
   /** Open the exact Item displayed, using its current Literature Note. */
   open: (
     indexedKey: string,
     pane: Parameters<CitationHoverRequest["open"]>[1],
   ) => void;
+  /**
+   * Starts drawing a part another surface owns above the entry, for as long as
+   * the visit lasts: the Annotation of a Durable Annotation Link.
+   */
+  lead?: (part: PopoverPart) => void;
 }
 
 type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
@@ -114,6 +121,10 @@ type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
 /** What one hovered target's popover reads and shows. */
 interface CitationVisitState {
   content: ReactNode;
+  /** The part a request's `lead` draws above the entries. */
+  lead: ReactNode;
+  /** What the popover shows below the lead now. */
+  painted: ReactNode;
 }
 
 type PopoverVisit = HoverVisit<CitationVisitState>;
@@ -189,6 +200,8 @@ export const layerCitationPopover: Layer.Layer<
     const context = yield* Effect.context<PopoverServices>();
     const visits = new HoverVisits<CitationVisitState>(() => ({
       content: null,
+      lead: null,
+      painted: null,
     }));
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -216,6 +229,16 @@ export const layerCitationPopover: Layer.Layer<
       if (bridge.closed()) return undefined;
       const currentVisit = visits.open(request.hoverParent, request.targetEl);
       const { popover, subscriptions } = currentVisit;
+      if ("work" in request && request.lead) {
+        request.lead({
+          owner: popover,
+          subscriptions,
+          draw: (content) => {
+            currentVisit.state.lead = content;
+            return paint(currentVisit, currentVisit.state.painted);
+          },
+        });
+      }
       const scope = yield* Scope.fork(layerScope);
       subscriptions.defer(() =>
         bridge.runAndForget(Scope.close(scope, Exit.void)),
@@ -260,7 +283,7 @@ export const layerCitationPopover: Layer.Layer<
         bridge.runSync(read);
       };
       subscriptions.defer(bridge.subscribe(renderInvalidated(render), draw));
-      if (!("work" in request) || request.work.kind === "citekey") {
+      if (!("work" in request) || request.work.kind !== "item") {
         subscriptions.defer(bridge.subscribe(lookupChanged(lookup), draw));
         let freshness = (yield* lookup.current).status;
         subscriptions.defer(
@@ -353,9 +376,11 @@ const fill = Effect.fn("CitationPopover.fill")(function* (
   }
   const { blocks, note, profileFailure, pending, unavailable } = read;
   // Every work the hover carries becomes a block, so an empty stack means
-  // the document itself could not be read — nothing the popover can say.
+  // the document itself could not be read — nothing the popover can say,
+  // beyond the lead it holds.
   if (blocks.length === 0 && !unavailable) {
-    popover.hide();
+    if ("work" in request && request.lead) paint(visit, null);
+    else popover.hide();
     return;
   }
   const actions = createCitationPopoverActions({
@@ -381,7 +406,8 @@ const fill = Effect.fn("CitationPopover.fill")(function* (
             const { sources, database } = join;
             const source = sources.get(read.indexedKey!);
             if (database === "unreadable" || !source) {
-              popover.render(
+              paint(
+                visit,
                 <CitationPopoverContent
                   blocks={[]}
                   actions={actions}
@@ -413,7 +439,7 @@ const fill = Effect.fn("CitationPopover.fill")(function* (
       unavailable={unavailable}
     />
   );
-  const shown = popover.render(visit.state.content);
+  const shown = paint(visit, visit.state.content);
   yield* Effect.logDebug("Citation popover entries read").pipe(
     Effect.annotateLogs({
       path: "sourcePath" in request ? request.sourcePath : undefined,
@@ -448,7 +474,16 @@ const readWork = Effect.fn("CitationPopover.readWork")(function* (
     };
   }
   let indexedKey: string;
-  if (work.kind === "citekey") {
+  if (work.kind === "annotation") {
+    const answer = yield* lookup
+      .read({ annotationKeys: [work.annotationKey] })
+      .pipe(recover(() => Effect.void, Effect.succeed(null)));
+    if (answer === null) return { ...empty, unavailable: "database" };
+    const parent = answer.parentOfAnnotation(work.annotationKey);
+    // The library holds no such Annotation, which the lead says.
+    if (parent === null) return empty;
+    indexedKey = parent.indexedKey;
+  } else if (work.kind === "citekey") {
     const answer = yield* lookup
       .read({ citekeys: [work.citekey], indexedKeys: [], annotationKeys: [] })
       .pipe(recover(() => Effect.void, Effect.succeed(null)));
@@ -485,6 +520,8 @@ const readWork = Effect.fn("CitationPopover.readWork")(function* (
   ]);
   if (database === "unreadable") return { ...empty, unavailable: "database" };
   const source = sources.get(indexedKey);
+  // An Annotation on a standalone PDF has no Item to reference.
+  if (!source && work.kind === "annotation") return empty;
   if (!source) return { ...empty, unavailable: "item" };
   // Read through to the render that stands: the popover shows one entry and
   // has no stale list of its own to keep on screen meanwhile.
@@ -627,9 +664,31 @@ function renderedEntries(
   );
 }
 
+/**
+ * Draws `reference` below the visit's lead, which is everything the popover
+ * shows of a citation that carries none.
+ *
+ * @returns whether the popover was still live to draw it.
+ */
+function paint(visit: PopoverVisit, reference: ReactNode): boolean {
+  visit.state.painted = reference;
+  const { lead } = visit.state;
+  return visit.popover.render(
+    lead === null ? (
+      reference
+    ) : (
+      <>
+        {lead}
+        {reference}
+      </>
+    ),
+  );
+}
+
 /** Failed freshness keeps the content delivered for this visit. */
 function showFailure(visit: PopoverVisit): void {
-  visit.popover.render(
+  paint(
+    visit,
     <>
       <div role="status" data-citation-lookup-status="failed">
         {m.citation_popover_database_unavailable()}

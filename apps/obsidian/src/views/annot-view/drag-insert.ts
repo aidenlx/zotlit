@@ -1,44 +1,62 @@
 // Asynchronous annotation insertion for the menu action and ZotLit-owned drops.
 import { nanoid } from "nanoid";
 import { MarkdownView } from "obsidian";
-import type { App, Editor, MarkdownFileInfo } from "obsidian";
+import type { App, Editor, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent } from "react";
+
+import { observeExit } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import { latestSlot } from "@/lib/view-runner";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type {
-  AnnotationInsertRequest,
   AnnotationInsertOutcome,
   AnnotationSnapshot,
 } from "@/services/note-feature/insert-action";
 export type { AnnotationInsertOutcome } from "@/services/note-feature/insert-action";
 
 import { captureInsertion } from "./async-insert";
+import { startInsert } from "./insert-run";
+import type { InsertFiber, InsertRunner } from "./insert-run";
 
 const SOURCE_TAG = "application/x-zotlit-annotation";
 
-interface AsyncInsertDeps {
+/** What an insert needs; `R` is the services its Effects run with. */
+export interface InsertDeps<R> extends InsertRunner<R> {
   app: App;
-  execute: (
-    request: AnnotationInsertRequest,
-    signal: AbortSignal,
-  ) => Promise<AnnotationInsertOutcome | undefined>;
   snapshot: (annotation: AnnotationRecord) => AnnotationSnapshot;
   notify: (message: string | DocumentFragment) => void;
 }
 
-export type InsertionTarget = ReturnType<typeof captureInsertion>;
+/** The function that shows the notice of an outcome. */
+const reporter =
+  (deps: Pick<InsertDeps<never>, "app" | "notify">) =>
+  (outcome: AnnotationInsertOutcome): void => {
+    const message = insertOutcomeMessage(deps.app, outcome);
+    if (message !== null) deps.notify(message);
+  };
 
-/** Show the notice of `outcome`, if it has one, and answer `outcome`. */
-function report(
-  deps: Pick<AsyncInsertDeps, "app" | "notify">,
-  outcome: AnnotationInsertOutcome | undefined,
-): AnnotationInsertOutcome | undefined {
-  if (!outcome) return;
-  const message = insertOutcomeMessage(deps.app, outcome);
-  if (message !== null) deps.notify(message);
-  return outcome;
+/**
+ * The one insert a handler has in flight: starting a newer one interrupts it.
+ * The outcome of an insert that finishes is shown; an interrupted one shows
+ * nothing.
+ */
+function insertSlot<R>(
+  deps: InsertDeps<R>,
+  report: (outcome: AnnotationInsertOutcome) => void,
+) {
+  const latest = latestSlot(deps.run);
+  const runner: InsertDeps<R> = { ...deps, run: latest.run };
+  return {
+    cancel: latest.interrupt,
+    /** Starts the insert `start` makes on the slot's runner. */
+    hold(start: (runner: InsertDeps<R>) => InsertFiber): InsertFiber {
+      const fiber = start(runner);
+      observeExit(fiber, { onSuccess: report });
+      return fiber;
+    },
+  };
 }
 
 /**
@@ -96,45 +114,43 @@ export function getInsertionEditor(app: App): MarkdownFileInfo | null {
     : null;
 }
 
-export function createInsertHandler(deps: AsyncInsertDeps) {
-  let pending: InsertionTarget | null = null;
-  const cancel = () => pending?.cancel();
-  const insertInto = async (
+export function createInsertHandler<R>(deps: InsertDeps<R>) {
+  const report = reporter(deps);
+  const slot = insertSlot(deps, report);
+  const { cancel } = slot;
+  /** The insert in flight, or `null` where it ended at once with its notice. */
+  const insertInto = (
     annotation: AnnotationRecord,
     info: MarkdownFileInfo | null,
-  ): Promise<AnnotationInsertOutcome | undefined> => {
+  ): InsertFiber | null => {
     cancel();
-    const { workspace } = deps.app;
     const editor = info?.editor;
-    if (!info?.file || !editor) return report(deps, { kind: "no-note" });
+    const file = info?.file;
+    if (!info || !file || !editor) {
+      report({ kind: "no-note" });
+      return null;
+    }
     const snapshot = deps.snapshot(annotation);
-    if (!snapshot.source || snapshot.sourceScope === null)
-      return report(deps, { kind: "source-unavailable" });
-    using target = captureInsertion({
-      editor,
-      info,
-      isCurrent: () => {
-        const current = getInsertionEditor(deps.app);
-        return current?.editor === editor && current.file === info.file;
-      },
-      workspace,
-    });
-    using cleanup = new DisposableStack();
-    cleanup.defer(() => {
-      if (pending === target) pending = null;
-    });
-    pending = target;
-    return report(
-      deps,
-      await deps.execute(
-        {
-          annotation,
-          snapshot,
-          target,
-          notePath: info.file.path,
-        },
-        target.signal,
-      ),
+    if (!snapshot.source || snapshot.sourceScope === null) {
+      report({ kind: "source-unavailable" });
+      return null;
+    }
+    return slot.hold((runner) =>
+      startInsert(runner, {
+        annotation,
+        snapshot,
+        notePath: file.path,
+        capture: () =>
+          captureInsertion({
+            editor,
+            info,
+            isCurrent: () => {
+              const current = getInsertionEditor(deps.app);
+              return current?.editor === editor && current.file === info.file;
+            },
+            workspace: deps.app.workspace,
+          }),
+      }),
     );
   };
   const offer = () => {
@@ -142,7 +158,7 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
     const file = info?.file;
     const editor = info?.editor;
     if (!info || !file || !editor) return null;
-    return async (annotation: AnnotationRecord) => {
+    return (annotation: AnnotationRecord) => {
       const current = getInsertionEditor(deps.app);
       if (
         current?.file !== file ||
@@ -150,8 +166,8 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
         info.file !== file ||
         info.editor !== editor
       )
-        return;
-      await insertInto(annotation, info);
+        return null;
+      return insertInto(annotation, info);
     };
   };
   const insert = (annotation: AnnotationRecord) =>
@@ -163,12 +179,13 @@ interface ActiveDrag {
   cancel(): void;
 }
 
-export function createDragInsertHandler(deps: AsyncInsertDeps) {
+export function createDragInsertHandler<R>(deps: InsertDeps<R>) {
+  const report = reporter(deps);
+  const slot = insertSlot(deps, report);
   let active: ActiveDrag | null = null;
-  let pending: InsertionTarget | null = null;
   const cancel = () => {
     active?.cancel();
-    pending?.cancel();
+    slot.cancel();
   };
   const drag = (
     event: DragEvent<HTMLElement>,
@@ -178,7 +195,7 @@ export function createDragInsertHandler(deps: AsyncInsertDeps) {
     const snapshot = deps.snapshot(annotation);
     if (!snapshot.source || snapshot.sourceScope === null) {
       event.preventDefault();
-      report(deps, { kind: "source-unavailable" });
+      report({ kind: "source-unavailable" });
       return;
     }
 
@@ -205,20 +222,21 @@ export function createDragInsertHandler(deps: AsyncInsertDeps) {
       dropEvent.preventDefault();
       dropEvent.dataTransfer.dropEffect = "copy";
       cleanup();
-      void insertDrop(deps, {
-        annotation,
-        snapshot,
-        dropEvent,
-        editor,
-        info,
-        current: (target) => {
-          pending?.cancel();
-          pending = target;
-        },
-        settled: (target) => {
-          if (pending === target) pending = null;
-        },
-      });
+      const file = info.file;
+      if (!file) {
+        report({ kind: "no-note" });
+        return;
+      }
+      slot.hold((runner) =>
+        insertDrop(runner, {
+          annotation,
+          snapshot,
+          dropEvent,
+          editor,
+          info,
+          file,
+        }),
+      );
     });
     active = operation;
     win.addEventListener("dragend", onDragEnd, { once: true });
@@ -226,8 +244,8 @@ export function createDragInsertHandler(deps: AsyncInsertDeps) {
   return Object.assign(drag, { cancel });
 }
 
-async function insertDrop(
-  deps: AsyncInsertDeps,
+function insertDrop<R>(
+  deps: InsertDeps<R>,
   options: {
     annotation: AnnotationRecord;
     snapshot: AnnotationSnapshot;
@@ -235,42 +253,27 @@ async function insertDrop(
     dropEvent: globalThis.DragEvent;
     editor: Editor;
     info: MarkdownFileInfo;
-    current: (target: InsertionTarget) => void;
-    settled: (target: InsertionTarget) => void;
+    file: TFile;
   },
-): Promise<void> {
-  const { editor, info } = options;
-  const file = info.file;
+): InsertFiber {
+  const { editor, info, file } = options;
   // The nearest position, as CodeMirror's own drop handler asks for: the
   // exact form is null over an empty active line.
   const position = editor.cm.posAtCoords(
     { x: options.dropEvent.clientX, y: options.dropEvent.clientY },
     false,
   );
-  if (!file) {
-    report(deps, { kind: "no-note" });
-    return;
-  }
-  using target = captureInsertion({
-    editor,
-    info,
-    range: { from: position, to: position },
-    isCurrent: () => info.file === file && info.editor === editor,
-    workspace: deps.app.workspace,
+  return startInsert(deps, {
+    annotation: options.annotation,
+    snapshot: options.snapshot,
+    notePath: file.path,
+    capture: () =>
+      captureInsertion({
+        editor,
+        info,
+        range: { from: position, to: position },
+        isCurrent: () => info.file === file && info.editor === editor,
+        workspace: deps.app.workspace,
+      }),
   });
-  options.current(target);
-  using cleanup = new DisposableStack();
-  cleanup.defer(() => options.settled(target));
-  report(
-    deps,
-    await deps.execute(
-      {
-        annotation: options.annotation,
-        snapshot: options.snapshot,
-        target,
-        notePath: file.path,
-      },
-      target.signal,
-    ),
-  );
 }

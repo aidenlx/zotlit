@@ -19,7 +19,7 @@ import { describe, expect } from "vitest";
 import {
   buildNoteContextFromSource,
   getIndexedItemIDsByLibrary,
-  getIndexSignature,
+  getIndexSignatureRange,
 } from "@zotlit/db";
 import type { NoteResolvers } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
@@ -1867,7 +1867,10 @@ describe("ZoteroReads SearchItems", () => {
   }
   /** A build reads each Library's ids once; nothing else runs this. */
   const ID_READ = sqlOf((client) => getIndexedItemIDsByLibrary(client, 1));
-  const SIGNATURE_READ = sqlOf((client) => getIndexSignature(client, 1));
+  // The Item Index reads the signature one Item ID range at a time.
+  const SIGNATURE_READ = sqlOf((client) =>
+    getIndexSignatureRange(client, 1, { from: 0, to: 1 }),
+  );
 
   /**
    * Run `effect` until `accept` holds for its value, at most 500 times a

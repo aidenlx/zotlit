@@ -39,14 +39,14 @@ export function rowMenu(
         .setSection(SECTION.open)
         .setTitle(m.library_view_menu_open_pdf())
         .setIcon("file-text")
-        .onClick(() => void actions.openPdf(indexedKey, false)),
+        .onClick(() => actions.openPdf(indexedKey, false)),
     );
     menu.addItem((item) =>
       item
         .setSection(SECTION.open)
         .setTitle(m.library_view_menu_open_pdf_right())
         .setIcon("separator-vertical")
-        .onClick(() => void actions.openPdf(indexedKey, "split")),
+        .onClick(() => actions.openPdf(indexedKey, "split")),
     );
   }
   const note = deps.literatureNotes.find(indexedKey);
@@ -59,21 +59,21 @@ export function rowMenu(
           : m.library_view_menu_write_note(),
       )
       .setIcon(note ? "notebook-pen" : "file-plus")
-      .onClick(() => void actions.openNote(indexedKey, false)),
+      .onClick(() => actions.openNote(indexedKey, false)),
   );
   menu.addItem((item) =>
     item
       .setSection(SECTION.insert)
       .setTitle(m.library_view_menu_insert_citation())
       .setIcon("quote")
-      .onClick(() => void actions.insertCitation(indexedKey)),
+      .onClick(() => actions.insertCitation(indexedKey)),
   );
   menu.addItem((item) =>
     item
       .setSection(SECTION.clipboard)
       .setTitle(m.graph_citations_menu_copy_citekey())
       .setIcon("copy")
-      .onClick(() => void actions.copyCitationKey(indexedKey)),
+      .onClick(() => actions.copyCitationKey(indexedKey)),
   );
   menu.addItem((item) =>
     item

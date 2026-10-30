@@ -46,10 +46,15 @@ export {
 export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
 export {
   NO_MATCH_DATA,
+  WorkbenchClipboardError,
+  WorkbenchHostError,
   WorkbenchHostProvider,
   useTooltip,
   useWorkbenchHost,
 } from "./host";
+export { useFork, useForkedEffect } from "./run";
+export { joinForked, observeExit } from "#/language/host-effects";
+export type { ExitHandlers, WorkbenchRunner } from "#/language/host-effects";
 export type {
   WorkbenchConfirmRequest,
   WorkbenchDialogHandle,

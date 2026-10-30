@@ -15,6 +15,7 @@ import { Release } from "@/services/release/service";
 import { settingsAtom } from "@/services/settings/atoms";
 import { zoteroStateAtom } from "@/services/zotero-reads/atoms";
 
+import { makeConversionCommand } from "./atoms";
 import { companionInstalledAtom } from "./companion";
 import { connectionAtom, connectionLoadAtom, unavailable } from "./connection";
 import { bannerSections } from "./presentation";
@@ -86,7 +87,13 @@ export function makeWelcomeModel() {
     };
   });
   const shown = Atom.map(state, (s) => bannerSections(s) !== null);
-  return { session, state, shown, loaded: connectionLoadAtom };
+  return {
+    session,
+    state,
+    shown,
+    loaded: connectionLoadAtom,
+    conversion: makeConversionCommand(),
+  };
 }
 
 export type WelcomeModel = ReturnType<typeof makeWelcomeModel>;
@@ -110,14 +117,29 @@ export const setConverted =
   (state: WelcomeSession): WelcomeSession =>
     state.converted === converted ? state : { ...state, converted };
 
-const WelcomeModelContext = createContext<Pick<WelcomeModel, "state"> | null>(
-  null,
-);
+/**
+ * What the banner's tree reads: its state and its conversion's last run. The
+ * tree only reads them, so it takes any atom of the model's value types.
+ */
+type WelcomeModelView = {
+  readonly [K in "state" | "conversion"]: Atom.Atom<Atom.Type<WelcomeModel[K]>>;
+};
+
+const WelcomeModelContext = createContext<WelcomeModelView | null>(null);
 export const WelcomeModelProvider = WelcomeModelContext.Provider;
 
-export function useWelcomeState<A>(select: (state: WelcomeState) => A): A {
+function useWelcomeModel(): WelcomeModelView {
   const model = useContext(WelcomeModelContext);
   if (!model)
-    throw new Error("useWelcomeState must be used within WelcomeModelProvider");
-  return useAtomValue(model.state, select);
+    throw new Error("useWelcomeModel must be used within WelcomeModelProvider");
+  return model;
+}
+
+export function useWelcomeState<A>(select: (state: WelcomeState) => A): A {
+  return useAtomValue(useWelcomeModel().state, select);
+}
+
+/** The last run of the banner's template conversion, while it runs and after. */
+export function useConversion() {
+  return useAtomValue(useWelcomeModel().conversion);
 }

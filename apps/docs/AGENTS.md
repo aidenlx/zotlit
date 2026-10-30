@@ -65,7 +65,7 @@ The site wears the "Manuscript & Machine" design. Its spec — theme, the four-f
 
 ## Verification
 
-- Each suite sits beside what it pins, and its names say which behaviour. Run them through turbo so dependencies build first. The Workbench splits by surface: `web-connection` (the Local Bridge, hydration, Save), `web-editor` (problem navigation, the sample paper, the editing flow, the annotation box), `web-draft` (the restore prompt, handoff, import and download), `web-frame` (the narrow layout), `web-preview` (render scheduling), and `workbench.test.tsx` (StrictMode replay, and what no surface owns alone). The editor panes live in the shared tree, so their suites run in `@zotlit/workbench` under React and Preact. The Fixture Local Bridge test also connects through the real loopback server after a browser CORS preflight.
+- Each suite sits beside what it pins, and its names say which behaviour. Run them through turbo so dependencies build first. The Workbench splits by surface: `web-connection` (the Local Bridge, hydration, Save), `workbench-connection` (which reads Disconnect and a closed page stop), `web-editor` (problem navigation, the sample paper, the editing flow, the annotation box), `web-draft` (the restore prompt, handoff, import and download), `web-frame` (the narrow layout), `web-preview` (render scheduling), and `workbench.test.tsx` (StrictMode replay, and what no surface owns alone). The editor panes live in the shared tree, so their suites run in `@zotlit/workbench` under React and Preact. The Fixture Local Bridge test also connects through the real loopback server after a browser CORS preflight.
 
 ## Deployment
 

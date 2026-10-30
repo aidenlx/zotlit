@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { partialSuggestions } from "./partial-suggestions";
@@ -7,8 +8,11 @@ describe("partialSuggestions", () => {
   it("takes the vault's registered names over the draft's own scan", () => {
     // The draft calls "cite" and nothing else; the vault holds two partials.
     const config = partialSuggestions(m, ["cite"], {
-      names: () => ["authors", "venue-line"],
-      create: () => Promise.resolve(null),
+      run: Effect.runFork,
+      partials: {
+        names: () => ["authors", "venue-line"],
+        create: () => Effect.succeed(null),
+      },
     });
 
     expect(config.partials).toEqual(["authors", "venue-line"]);
@@ -16,7 +20,10 @@ describe("partialSuggestions", () => {
   });
 
   it("falls back to the draft's scan and offers no create entry", () => {
-    const config = partialSuggestions(m, ["cite", "summary"], undefined);
+    const config = partialSuggestions(m, ["cite", "summary"], {
+      run: Effect.runFork,
+      partials: undefined,
+    });
 
     expect(config.partials).toEqual(["cite", "summary"]);
     expect(config.createPartial).toBeUndefined();
@@ -25,14 +32,19 @@ describe("partialSuggestions", () => {
   it("hands the create flow the name the reader typed", async () => {
     const asked: string[] = [];
     const config = partialSuggestions(m, [], {
-      names: () => [],
-      create: (query) => {
-        asked.push(query);
-        return Promise.resolve("venue-line");
+      run: Effect.runFork,
+      partials: {
+        names: () => [],
+        create: (query) => {
+          asked.push(query);
+          return Effect.succeed("venue-line");
+        },
       },
     });
 
-    await expect(config.createPartial!.run("ven")).resolves.toBe("venue-line");
+    await expect(
+      Effect.runPromise(config.createPartial!.run("ven")),
+    ).resolves.toBe("venue-line");
     expect(asked).toEqual(["ven"]);
   });
 });

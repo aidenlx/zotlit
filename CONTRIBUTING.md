@@ -45,6 +45,18 @@ counterpart line before merging a release PR.
    the version picked: a non-prerelease version on `next` targets `main` (stable
    graduation); a prerelease targets `next`; on `main`, all releases target
    `main`.
+
+   To release without prompts, name each app and its version — a bump the
+   picker offers on that branch, or an explicit version:
+
+   ```sh
+   pnpm release --obsidian prerelease            # stop at the open PR
+   pnpm release --obsidian 2.2.0-beta.5 --merge  # also merge the PR
+   pnpm release --obsidian minor --zotero minor  # stable graduation from next
+   ```
+
+   Every confirmation is taken as yes; the PR merges only with `--merge`. A
+   branch with commits not yet on origin stops the run: push them first.
 3. Pull requests run no checks: the pre-push hook runs `pnpm verify`, and the
    release gate already passed in step 2. See
    [ADR 0076](docs/adr/0076-checks-run-before-push-and-ci-runs-only-to-release.md).

@@ -1,4 +1,5 @@
 // Shared controls use the site's locale for each concurrent server render.
+import { Effect } from "effect";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
@@ -34,7 +35,7 @@ it("keeps shared labels in the locale of each web request", async () => {
             onNavigationChange={() => {}}
             root="note"
             data={{ title: "A paper" }}
-            copy={async () => {}}
+            copy={() => Effect.void}
           />
         </WebTestHost>,
       );

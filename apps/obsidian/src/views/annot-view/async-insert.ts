@@ -182,7 +182,8 @@ export function captureInsertion(options: {
   const file = info.file;
   const path = file?.path;
   const initial = options.range ?? cm.state.selection.main;
-  const controller = new AbortController();
+  let cancelled = false;
+  const cancelListeners = new Set<() => void>();
   const compartment = new Compartment();
   const marker = StateField.define<{ from: number; to: number } | null>({
     create: () => ({ from: initial.from, to: initial.to }),
@@ -208,7 +209,7 @@ export function captureInsertion(options: {
     },
   });
   const cancelOnOverlap = EditorView.updateListener.of((update) => {
-    if (update.state.field(marker, false) === null) controller.abort();
+    if (update.state.field(marker, false) === null) cancel();
   });
   cm.dispatch({
     effects: StateEffect.appendConfig.of(
@@ -218,7 +219,7 @@ export function captureInsertion(options: {
   let settled = false;
   const valid = () =>
     !settled &&
-    !controller.signal.aborted &&
+    !cancelled &&
     !!file &&
     info.file === file &&
     file.path === path &&
@@ -227,7 +228,12 @@ export function captureInsertion(options: {
     cm.dom.isConnected &&
     options.isCurrent() &&
     cm.state.field(marker, false) != null;
-  const cancel = () => controller.abort();
+  function cancel() {
+    if (cancelled) return;
+    cancelled = true;
+    for (const listener of cancelListeners) listener();
+    cancelListeners.clear();
+  }
   const win = cm.dom.ownerDocument.defaultView;
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") cancel();
@@ -244,14 +250,26 @@ export function captureInsertion(options: {
     if (settled) return;
     settled = true;
     if (!completed) cancel();
+    cancelListeners.clear();
     win?.removeEventListener("keydown", onKey);
     for (const ref of workspaceRefs) workspace.offref(ref);
     if (!completed && cm.dom.isConnected)
       cm.dispatch({ effects: compartment.reconfigure([]) });
   };
   return {
-    /** Aborted by cancellation or disposal before completion; a successful commit releases without aborting. */
-    signal: controller.signal,
+    /**
+     * Call `listener` once the destination is cancelled, by the researcher
+     * or by disposal before completion; a successful commit releases it
+     * without a call. Answers the function that removes the listener.
+     */
+    onCancel(listener: () => void): () => void {
+      if (cancelled) {
+        listener();
+        return () => {};
+      }
+      cancelListeners.add(listener);
+      return () => void cancelListeners.delete(listener);
+    },
     valid,
     cancel,
     /** The held range as edits since the capture moved it; `null` once one touched it. */

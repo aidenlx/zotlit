@@ -11,7 +11,12 @@ import { cn } from "@/lib/cn";
 import { blogs } from "@/lib/collections";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
-import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
+import {
+  appName,
+  blogRoute,
+  formatReleaseDate,
+  ogImageUrl,
+} from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
 import { m } from "@/paraglide/messages.js";
@@ -97,6 +102,7 @@ export const Route = createFileRoute("/_home/blog/$slug")({
               date: post.date,
               modified: post.modified,
               url: post.url,
+              image: ogImageUrl("blog", post.slugs),
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },

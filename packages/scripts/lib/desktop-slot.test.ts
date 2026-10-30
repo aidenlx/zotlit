@@ -32,6 +32,10 @@ import {
   readDesktopSlotStatus,
 } from "./desktop-slot.ts";
 
+// Desktop Slots serve the local End-to-end Run and manual app sessions; the
+// hosted runner has no desktop, so these cases run on development machines only.
+const desktopOnly = describe.skipIf(process.env.GITHUB_ACTIONS === "true");
+
 const MINUTE = 60_000;
 const ENV_KEYS = [
   DESKTOP_DIR_ENV,
@@ -286,7 +290,7 @@ function start(...args: string[]): ChildProcess {
   });
 }
 
-describe("a free slot", () => {
+desktopOnly("a free slot", () => {
   it("is taken at once, records its holder and Lease, and is gone after release", async () => {
     const slot = await acquireDesktopSlot({
       ...IN_TEST,
@@ -312,7 +316,7 @@ describe("a free slot", () => {
   });
 });
 
-describe("the Desktop Queue", () => {
+desktopOnly("the Desktop Queue", () => {
   it("passes the slot on in enqueue order, not poll order", async () => {
     const holder = await acquireDesktopSlot(IN_TEST);
     const trace = join(dir, "trace");
@@ -419,7 +423,7 @@ describe("the Desktop Queue", () => {
   });
 });
 
-describe("a pool of two Desktop Slots", () => {
+desktopOnly("a pool of two Desktop Slots", () => {
   beforeEach(() => {
     process.env[DESKTOP_SLOTS_ENV] = "2";
   });
@@ -552,7 +556,7 @@ describe("a pool of two Desktop Slots", () => {
   });
 });
 
-describe("one Desktop Slot", () => {
+desktopOnly("one Desktop Slot", () => {
   it("makes a holder from another worktree wait", async () => {
     const holder = holderIn("/a");
     await printed(holder, "held");
@@ -561,7 +565,7 @@ describe("one Desktop Slot", () => {
   });
 });
 
-describe("the desktop mutex", () => {
+desktopOnly("the desktop mutex", () => {
   it("lets a second holder in only after the first releases", async () => {
     const released = join(dir, "released");
     const first = track(
@@ -615,7 +619,7 @@ setInterval(() => {}, 1000);`,
   });
 });
 
-describe("a dead holder", () => {
+desktopOnly("a dead holder", () => {
   it("is taken over", async () => {
     await mkdir(join(dir, "slot-0"));
     const pid = await deadPid();
@@ -731,7 +735,7 @@ describe("a dead holder", () => {
   });
 });
 
-describe("the Lease", () => {
+desktopOnly("the Lease", () => {
   it("ends an in-process holder with exit 76 and frees the slot", async () => {
     const holder = child(
       `await slot.acquireDesktopSlot({ leaseMs: 200, log: (message) => console.log(message) });
@@ -807,7 +811,7 @@ console.log("held");`,
   });
 });
 
-describe("a child of the holder", () => {
+desktopOnly("a child of the holder", () => {
   it("reuses the slot at once and leaves it held", async () => {
     using _slot = await acquireDesktopSlot(IN_TEST);
     const nested = child(
@@ -842,7 +846,7 @@ inner.release();`,
   });
 });
 
-describe("the desktop-slot command", () => {
+desktopOnly("the desktop-slot command", () => {
   async function cli(...args: string[]) {
     const run = start(...args);
     let stdout = "";

@@ -40,6 +40,7 @@ Use this guide to inspect an active note's references and correct entries that Z
 
     - <UiLabel name={m.references_open_note()} /> opens the note. ZotLit creates it first when the Zotero item has no Literature Note.
     - <UiLabel name={m.references_open_in_zotero()} /> selects the item in Zotero.
+    - <UiLabel name={m.library_view_show_in_library()} /> reveals and flashes the paper in the Library View.
     - <UiLabel name={m.references_open_attachment()} /> opens its attachment. When several attachments exist, ZotLit opens a selection menu.
 
     An attachment action appears only when the item has an attachment to open.
@@ -50,7 +51,7 @@ Use this guide to inspect an active note's references and correct entries that Z
 
     Under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_heading()} />, set <UiLabel name={m.settings_citation_hover_action_name()} /> to <UiLabel name={m.settings_citation_hover_action_popover()} />.
 
-    Hover a formatted citation. The popover shows each cited item's complete bibliography entry and the same Literature Note, Zotero, and attachment actions.
+    Hover a formatted citation. The popover shows each cited item's complete bibliography entry and the same Literature Note, Zotero, <UiLabel name={m.library_view_show_in_library()} />, and attachment actions.
 
     Use <UiLabel name={m.settings_citation_hover_mod_page_name()} /> to control hover separately for <UiLabel name={m.settings_citation_hover_mod_source_name()} />, <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} />, and reading view.
 

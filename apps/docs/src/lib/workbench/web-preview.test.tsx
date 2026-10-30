@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { Effect } from "effect";
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -132,11 +133,10 @@ describe("preview scheduling", () => {
 
   it("disposes every StrictMode effect owner and drops late completion after close", async () => {
     let deliver!: (result: TemplateRenderResult) => void;
-    renderInThread.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          deliver = resolve;
-        }),
+    renderInThread.mockImplementation(() =>
+      Effect.callback((resume) => {
+        deliver = (result) => resume(Effect.succeed(result));
+      }),
     );
     using page = openPreview(true);
     const owners = vi

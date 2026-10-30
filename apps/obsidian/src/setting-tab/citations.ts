@@ -130,6 +130,15 @@ export function citationsPageItems(
           control: { type: "toggle", key: "citation.show-formatted" },
         },
         {
+          id: "settings_citation_render_annotation_citations",
+          name: m.settings_citation_render_annotation_citations_name(),
+          desc: m.settings_citation_render_annotation_citations_desc(),
+          control: {
+            type: "toggle",
+            key: "citation.render-annotation-citations",
+          },
+        },
+        {
           id: "settings_citation_open_as_links",
           name: m.settings_citation_open_as_links_name(),
           desc: m.settings_citation_open_as_links_desc(),

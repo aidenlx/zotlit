@@ -24,6 +24,7 @@ import type { QueryViewValue } from "@/services/item-query/query-view";
 import { useItemRow } from "./item-rows";
 import type { ItemRowGestures } from "./item-rows";
 import type { QueryLayout } from "./layouts";
+import { useQueryTask } from "./model";
 import { RecordGroupHeading, useRecordGroups } from "./record-rows";
 import {
   Expander,
@@ -174,8 +175,8 @@ function useNotePath(notes: LiteratureNotes, itemKey: string): string | null {
 /** The rows of the shown view as a reading list, under their group headings. */
 export function PapersLayout({ view }: { view: QueryView }) {
   const { groups } = useRecordGroups(view);
-  const { query, literatureNotes, readers } = view.tableDeps;
-  const { children: expanded, toggle } = useChildren(query);
+  const { literatureNotes, readers } = view.tableDeps;
+  const { children: expanded, toggle } = useChildren(view);
   return (
     <div
       className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-1 zt:pb-11 zt:not-in-[.zt-query-note]:scroll-gutter zt:in-[.zt-query-note]:pb-2"
@@ -435,6 +436,7 @@ function LiteratureNoteRow({
   notes: LiteratureNotes;
   item: TableRecord;
 }) {
+  const run = useQueryTask();
   const note = notes.find(item.key);
   if (!note) return null;
   return (
@@ -457,7 +459,7 @@ function LiteratureNoteRow({
         data-query-note={note.path}
         onClick={(event) => {
           event.preventDefault();
-          notes.open(note, event.nativeEvent);
+          run(notes.open(note, event.nativeEvent));
         }}
       >
         {note.basename}

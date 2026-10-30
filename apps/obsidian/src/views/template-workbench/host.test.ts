@@ -1,20 +1,38 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { Menu, Modal, SuggestModal } from "@mock/obsidian";
+import { ConfirmationModal, Menu, Modal, SuggestModal } from "@mock/obsidian";
+import { Cause, Effect, Exit } from "effect";
+import type { Fiber } from "effect";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { liquidTemplate } from "@zotlit/workbench/language";
-import { AnnotationPointer, NO_MATCH_DATA } from "@zotlit/workbench/ui";
+import {
+  AnnotationPointer,
+  NO_MATCH_DATA,
+  WorkbenchClipboardError,
+  WorkbenchHostError,
+} from "@zotlit/workbench/ui";
 
 import { stubService } from "@/lib/__fixtures__/service-stub";
 import * as m from "@/lib/i18n/generated/messages";
 
 import { createTemplateWorkbenchHost } from "./host";
 import type { NativeWorkbenchSuggesterRequest } from "./host";
+
+/** How `fiber` ended: its value, or its failure as a rejection. */
+function settled<A, E>(fiber: Fiber.Fiber<A, E>): Promise<A> {
+  return new Promise((resolve, reject) =>
+    fiber.addObserver((exit) =>
+      Exit.isSuccess(exit)
+        ? resolve(exit.value)
+        : reject(Cause.squash(exit.cause)),
+    ),
+  );
+}
 
 function setup() {
   const memory = new Map<string, string | null>();
@@ -24,7 +42,13 @@ function setup() {
       memory.set(key, value),
   });
   const host = createTemplateWorkbenchHost(app, {
-    render: () => Promise.reject(new Error("This test renders nothing.")),
+    run: Effect.runFork,
+    render: () =>
+      Effect.fail(
+        new WorkbenchHostError({
+          cause: new Error("This test renders nothing."),
+        }),
+      ),
     matchData: NO_MATCH_DATA,
     insertTarget: () => null,
   });
@@ -124,10 +148,10 @@ describe("Template Workbench host", () => {
       groups: [],
       searchItems: vi
         .fn()
-        .mockReturnValueOnce(first.promise)
-        .mockReturnValueOnce(second.promise),
+        .mockReturnValueOnce(Effect.promise(() => first.promise))
+        .mockReturnValueOnce(Effect.promise(() => second.promise)),
     };
-    void host.suggester(request);
+    void host.run(host.suggester(request));
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
     const older = modal.getSuggestions("roug");
     const newer = modal.getSuggestions("ioannidis");
@@ -151,10 +175,10 @@ describe("Template Workbench host", () => {
       groups: [],
       searchItems: vi
         .fn()
-        .mockResolvedValueOnce([figures, rules])
-        .mockReturnValueOnce(typed.promise),
+        .mockReturnValueOnce(Effect.succeed([figures, rules]))
+        .mockReturnValueOnce(Effect.promise(() => typed.promise)),
     };
-    const chosen = host.suggester(request);
+    const chosen = host.run(host.suggester(request));
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
     const [earlier] = await modal.getSuggestions("ten");
     void modal.getSuggestions("ten simple rules");
@@ -163,7 +187,7 @@ describe("Template Workbench host", () => {
     modal.selectSuggestion(earlier, { type: "keydown" } as KeyboardEvent);
     typed.resolve([rules, figures]);
 
-    await expect(chosen).resolves.toBe("RUGIER24");
+    await expect(settled(chosen)).resolves.toBe("RUGIER24");
   });
 
   it("waits on Enter before the first item answer, while the list has no row", async () => {
@@ -174,9 +198,11 @@ describe("Template Workbench host", () => {
     const request: NativeWorkbenchSuggesterRequest = {
       title: "Items",
       groups: [],
-      searchItems: vi.fn().mockReturnValueOnce(typed.promise),
+      searchItems: vi
+        .fn()
+        .mockReturnValueOnce(Effect.promise(() => typed.promise)),
     };
-    const chosen = host.suggester(request);
+    const chosen = host.run(host.suggester(request));
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
     void modal.getSuggestions("ten simple rules");
 
@@ -193,7 +219,7 @@ describe("Template Workbench host", () => {
       .func({ type: "keydown", key: "Enter" } as KeyboardEvent);
     typed.resolve([rules]);
 
-    await expect(chosen).resolves.toBe("RUGIER24");
+    await expect(settled(chosen)).resolves.toBe("RUGIER24");
   });
 
   it("settles SuggestModal cancellation and restores control focus", async () => {
@@ -201,42 +227,81 @@ describe("Template Workbench host", () => {
     using open = vi.spyOn(SuggestModal.prototype, "open");
     const anchor = document.createElement("button");
     document.body.append(anchor);
-    const chosen = host.suggester({
-      title: "Styles",
-      anchor,
-      groups: [
-        {
-          label: "Installed",
-          options: [{ id: "apa", label: "APA", hint: "Author-date" }],
-        },
-      ],
-    });
+    const chosen = host.run(
+      host.suggester({
+        title: "Styles",
+        anchor,
+        groups: [
+          {
+            label: "Installed",
+            options: [{ id: "apa", label: "APA", hint: "Author-date" }],
+          },
+        ],
+      }),
+    );
     const modal = open.mock.contexts.at(-1)! as SuggestModal<unknown>;
     expect(modal.getSuggestions("author")).toEqual([
       { id: "apa", label: "APA", hint: "Author-date", group: "Installed" },
     ]);
     modal.close();
-    await expect(chosen).resolves.toBeNull();
+    await expect(settled(chosen)).resolves.toBeNull();
     expect(document.activeElement).toBe(anchor);
     anchor.remove();
+  });
+
+  it("closes the chooser when its Effect is interrupted", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    using close = vi.spyOn(SuggestModal.prototype, "close");
+    const fiber = host.run(host.suggester({ title: "Styles", groups: [] }));
+    expect(open).toHaveBeenCalledOnce();
+
+    fiber.interruptUnsafe();
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("answers a confirm, and closes it when its Effect is interrupted", async () => {
+    const { host } = setup();
+    using open = vi.spyOn(ConfirmationModal.prototype, "open");
+    using close = vi.spyOn(ConfirmationModal.prototype, "close");
+    const request = { title: "Replace?", body: "", confirm: "Replace" };
+    const dismissed = host.run(host.confirm(request));
+    (open.mock.contexts.at(-1) as ConfirmationModal).close();
+    await expect(settled(dismissed)).resolves.toBe(false);
+
+    host.run(host.confirm(request)).interruptUnsafe();
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("names a refused clipboard by its tag", async () => {
+    const { host } = setup();
+    using _write = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockRejectedValue(new Error("Denied"));
+    await expect(
+      settled(host.run(host.copy!("report"))),
+    ).rejects.toBeInstanceOf(WorkbenchClipboardError);
   });
 
   it("draws a suggestion row the way Obsidian's own complex rows read", () => {
     const { host } = setup();
     using open = vi.spyOn(SuggestModal.prototype, "open");
-    void host.suggester({
-      title: "Styles",
-      selected: "apa",
-      groups: [
-        {
-          label: "Installed",
-          options: [
-            { id: "apa", label: "APA", hint: "Author-date" },
-            { id: "ieee", label: "IEEE", icon: "choose-sample" },
-          ],
-        },
-      ],
-    });
+    void host.run(
+      host.suggester({
+        title: "Styles",
+        selected: "apa",
+        groups: [
+          {
+            label: "Installed",
+            options: [
+              { id: "apa", label: "APA", hint: "Author-date" },
+              { id: "ieee", label: "IEEE", icon: "choose-sample" },
+            ],
+          },
+        ],
+      }),
+    );
     type Row = { id: string; label: string; hint?: string; group: string };
     const modal = open.mock.contexts.at(-1)! as SuggestModal<Row>;
     const rows = (modal.getSuggestions("") as Row[]).map((option) => {
@@ -286,15 +351,17 @@ describe("Template Workbench host", () => {
   it("highlights the searched text in the title and the hint", () => {
     const { host } = setup();
     using open = vi.spyOn(SuggestModal.prototype, "open");
-    void host.suggester({
-      title: "Styles",
-      groups: [
-        {
-          label: "Installed",
-          options: [{ id: "ieee", label: "IEEE", hint: "Engineering" }],
-        },
-      ],
-    });
+    void host.run(
+      host.suggester({
+        title: "Styles",
+        groups: [
+          {
+            label: "Installed",
+            options: [{ id: "ieee", label: "IEEE", hint: "Engineering" }],
+          },
+        ],
+      }),
+    );
     type Row = { id: string; label: string; hint?: string; group: string };
     const modal = open.mock.contexts.at(-1)! as SuggestModal<Row>;
     const [row] = modal.getSuggestions("ee") as Row[];

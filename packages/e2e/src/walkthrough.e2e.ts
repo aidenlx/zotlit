@@ -2251,10 +2251,9 @@ describe.skipIf(!reachable)("Walkthrough regressions", () => {
         const el = view()!.contentEl;
         // Choose item has its own walkthrough; this one starts from the paper.
         if (
-          !(await view()!.selectItem({
-            id: hit.item.indexedKey,
-            title: noteTitle,
-          }))
+          !(await services.bridge.runPromise(
+            view()!.selectItem({ id: hit.item.indexedKey, title: noteTitle }),
+          ))
         )
           throw new Error("Profile item was not selected");
         press(

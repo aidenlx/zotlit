@@ -49,6 +49,8 @@ import { readerText } from "@/views/query-view/reader-diagnostic";
 import { QueryView } from "@/views/query-view/view";
 import type { QueryViewDeps, QueryViewHost } from "@/views/query-view/view";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
+import { startTemplateWorkbenchAction } from "@/views/template-workbench/actions";
+import type { WorkbenchActionDeps } from "@/views/template-workbench/actions";
 
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
@@ -150,6 +152,8 @@ export interface AnnotViewDeps extends QueryViewDeps {
   settings: Pick<PluginSettings["Service"], "current">;
   /** The plugin's view registry, which holds each leaf's Follow Mode state. */
   registry: ViewRegistryHandle;
+  /** What an open of the Template data explorer runs with. */
+  explorer: WorkbenchActionDeps;
 }
 
 export class AnnotationView extends ItemView implements HistorySurface {
@@ -281,10 +285,14 @@ export class AnnotationView extends ItemView implements HistorySurface {
         fillViewMenu: (menu) => this.#fillViewMenu(menu),
         onExploreAnnotation: (annotationKey) => {
           if (!this.#itemKey) return;
-          void openTemplateDataExplorer(this.#deps.app, {
-            itemIndexedKey: this.#itemKey,
-            anchorAnnotationKey: annotationKey,
-          });
+          startTemplateWorkbenchAction(
+            this.#deps.explorer,
+            "open-template-data-explorer",
+            openTemplateDataExplorer(this.#deps.app, {
+              itemIndexedKey: this.#itemKey,
+              anchorAnnotationKey: annotationKey,
+            }),
+          );
         },
       },
       // A click on the empty list leaves the focus on the body, and the key
