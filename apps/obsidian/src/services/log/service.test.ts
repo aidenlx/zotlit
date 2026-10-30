@@ -10,7 +10,12 @@ import { settingsOf } from "@/services/settings/__fixtures__";
 import { settingsMigrations } from "@/services/settings/migrate";
 import { PluginSettings } from "@/services/settings/service";
 
-import { layerLogging, LogOutput, STARTUP_LOG_SETTINGS } from "./service";
+import {
+  layerLogging,
+  layerLogOutput,
+  LogOutput,
+  STARTUP_LOG_SETTINGS,
+} from "./service";
 
 /** The failure the fake LogTape answers a configure with. */
 class ConfigureFailed extends Schema.TaggedError<
@@ -210,5 +215,36 @@ it.effect("reports a change it cannot apply and applies it again later", () =>
     yield* settings.update({ "citation.editor-suggester": false });
     expect(zotlitLogger(yield* Queue.take(started)).lowestLevel).toBe("debug");
     yield* TestClock.adjust(CONFIGURE_TIME);
+  }),
+);
+
+// Failure mode: LogTape's exit hook on the host process, or its root logger on
+// the window, holds the disabled plugin in memory (#1882).
+it.effect("leaves nothing of LogTape on the host once it resets", () =>
+  Effect.gen(function* () {
+    const plugin = stubService<Plugin>("Plugin", {
+      app: stubService<App>("App", {
+        vault: stubService<App["vault"]>("Vault", {
+          adapter: stubService<App["vault"]["adapter"]>("Adapter", {}),
+        }),
+      }),
+      manifest: stubService<Plugin["manifest"]>("Manifest", { dir: "zotlit" }),
+    });
+    const output = yield* LogOutput.pipe(
+      Effect.provide(layerLogOutput(plugin)),
+    );
+    const config: Config<string, string> = {
+      reset: true,
+      sinks: { none: () => {} },
+      loggers: [{ category: ["zotlit"], sinks: ["none"] }],
+    };
+    const before = process.listenerCount("exit");
+
+    yield* output.configureSync(config);
+    yield* output.configure(config);
+    yield* output.reset;
+
+    expect(process.listenerCount("exit")).toBe(before);
+    expect(Symbol.for("logtape.rootLogger") in globalThis).toBe(false);
   }),
 );

@@ -71,6 +71,16 @@ const viewStorePaths = ["zustand", "zustand/vanilla", "zustand/middleware"].map(
   }),
 );
 
+// LogTape's own configure and reset leave a host-process listener and a
+// window-wide root logger that hold a disabled plugin in memory (#1882);
+// src/lib/log.ts releases both.
+const logTapeConfigurePath = {
+  name: "@logtape/logtape",
+  importNames: ["configure", "configureSync", "reset"],
+  message:
+    "Configure and reset LogTape through configureLogTape, configureLogTapeSync, and resetLogTape from @/lib/log.",
+};
+
 const runtimeImports = {
   ...commonImports,
   paths: [
@@ -99,6 +109,7 @@ const runtimeImports = {
         "Obsidian scheduling is owned by @/lib/effect-runtime and @/lib/browser-scheduler.",
     },
     ...effectWrapperPaths,
+    logTapeConfigurePath,
     ...commonImports.paths,
   ],
 };
@@ -528,6 +539,21 @@ export default defineConfig({
           {
             patterns: [parentImportPattern, datePattern],
             paths: [...effectWrapperPaths, ...obsidianImportPaths],
+          },
+        ],
+      },
+    },
+    {
+      // The owner of LogTape's configuration.
+      files: ["src/lib/log.ts"],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            ...runtimeImports,
+            paths: runtimeImports.paths.filter(
+              (path) => path !== logTapeConfigurePath,
+            ),
           },
         ],
       },
